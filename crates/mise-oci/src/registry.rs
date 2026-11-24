@@ -795,8 +795,8 @@ pub async fn pull_base_image(
 
     // Validate every registry-supplied digest up front — a malicious
     // registry could otherwise return `sha256:../../etc/passwd` and have it
-    // slip through the `blob_path().exists()` cache-check below (which
-    // bypasses the digest verification inside `write_blob_with_digest`).
+    // slip through the `reuse_base` skip below (which bypasses the digest
+    // verification inside `write_blob_with_digest`).
     crate::layout::validate_sha256_digest(&manifest.config.digest)?;
     for layer in &manifest.layers {
         crate::layout::validate_sha256_digest(&layer.digest)?;
@@ -814,8 +814,9 @@ pub async fn pull_base_image(
     let mpr = mise_ui::multi_progress_report::MultiProgressReport::get();
     for layer in &manifest.layers {
         let layer_url = format!("{base_url}/v2/{}/blobs/{}", r.repository, layer.digest);
-        let blob_path = layout.blob_path(&layer.digest);
-        if blob_path.exists() || reuse_base {
+        // A layer an earlier build left is reused only while it still hashes to its digest: the
+        // layout defaults to `./mise-oci`, which the repository the build runs in can ship.
+        if reuse_base || layout.has_blob(&layer.digest)? {
             continue;
         }
         let pr = mpr.add(&format!("pull {}", short_digest(&layer.digest)));
@@ -2396,6 +2397,58 @@ mod tests {
             config_get.assert_async().await;
             layer_get.assert_async().await;
         }
+    }
+
+    #[tokio::test]
+    async fn a_base_layer_already_in_the_layout_is_reused_only_if_it_hashes_to_its_digest() {
+        let mut server = mockito::Server::new_async().await;
+        let reference = format!("{}/tools:base", server.host_with_port());
+        let layer = "genuine base layer";
+        let digest = sha256_digest(layer.as_bytes());
+        let config = serde_json::json!({
+            "architecture": "amd64", "os": "linux",
+            "rootfs": {"type": "layers", "diff_ids": [digest]}
+        })
+        .to_string();
+        let config_digest = sha256_digest(config.as_bytes());
+        let manifest = serde_json::json!({
+            "schemaVersion": 2,
+            "mediaType": MEDIA_TYPE_OCI_MANIFEST,
+            "config": {"mediaType": "application/vnd.oci.image.config.v1+json",
+                       "digest": config_digest, "size": config.len()},
+            "layers": [{"mediaType": "application/vnd.oci.image.layer.v1.tar",
+                        "digest": digest, "size": layer.len()}]
+        });
+        server
+            .mock("GET", "/v2/tools/manifests/base")
+            .with_header("content-type", MEDIA_TYPE_OCI_MANIFEST)
+            .with_body(manifest.to_string())
+            .create_async()
+            .await;
+        server
+            .mock("GET", format!("/v2/tools/blobs/{config_digest}").as_str())
+            .with_body(&config)
+            .create_async()
+            .await;
+        // fetched in place of the planted file, and not again once the genuine layer is there
+        let layer_get = server
+            .mock("GET", format!("/v2/tools/blobs/{digest}").as_str())
+            .with_body(layer)
+            .expect(1)
+            .create_async()
+            .await;
+
+        let td = tempfile::tempdir().unwrap();
+        let layout = ImageLayout::init(td.path()).unwrap();
+        // what a repository can ship in the default `./mise-oci`
+        std::fs::write(layout.blob_path(&digest), "planted base layer").unwrap();
+        for _ in 0..2 {
+            pull_base_image(&reference, &layout, None, None)
+                .await
+                .unwrap();
+            assert_eq!(layout.read_blob(&digest).unwrap(), layer.as_bytes());
+        }
+        layer_get.assert_async().await;
     }
 
     #[tokio::test]
