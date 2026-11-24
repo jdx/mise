@@ -17,7 +17,7 @@ tool = "dummy"
 version = "2.0.0"
 EOF
 chmod +x one/bin/dummy two/bin/dummy
-touch -d '2001-01-01' one/bin/dummy two/bin/dummy
+touch -t 200101010000 one/bin/dummy two/bin/dummy
 
 cd one || exit 1
 assert_contains "bin/dummy" "This is Dummy 1.0.0!"
@@ -32,9 +32,30 @@ cat >bin/dummy <<'EOF'
 tool = "dummy"
 version = "2.0.0"
 EOF
-touch -d '2001-01-01' bin/dummy
+touch -t 200101010000 bin/dummy
 assert_contains "bin/dummy" "This is Dummy 2.0.0!"
 
 # a piped stub cannot be read twice, so it is never mistaken for another one
 assert_contains "printf 'tool = \"dummy\"\nbin = \"dummy\"\nversion = \"1.0.0\"\n' | mise tool-stub /dev/stdin" "This is Dummy 1.0.0!"
 assert_contains "printf 'tool = \"dummy\"\nbin = \"dummy\"\nversion = \"2.0.0\"\n' | mise tool-stub /dev/stdin" "This is Dummy 2.0.0!"
+
+# The entry a run saves is for the stub it read, even when the file changes while the
+# tool installs: here the install itself rewrites the stub to ask for another version.
+cd .. || exit 1
+mkdir -p three/bin
+cat >three/next <<'EOF'
+#!/usr/bin/env -S mise tool-stub
+tool = "dummy"
+version = "1.0.0"
+EOF
+cat >three/bin/dummy <<EOF
+#!/usr/bin/env -S mise tool-stub
+tool = "dummy"
+version = "2.0.1"
+postinstall = "cp '$PWD/three/next' '$PWD/three/bin/dummy'"
+EOF
+chmod +x three/bin/dummy
+cd three || exit 1
+assert_contains "bin/dummy" "This is Dummy 2.0.1!"
+assert_contains "cat bin/dummy" 'version = "1.0.0"'
+assert_contains "bin/dummy" "This is Dummy 1.0.0!"

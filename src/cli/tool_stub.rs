@@ -24,7 +24,11 @@ impl BinPathCache {
     /// archives and checkouts choose the mtime, so unrelated stubs, or the old and new
     /// version of one stub, can share it. Only a regular file has a key: a pipe or
     /// `/dev/stdin` is consumed by the first read, so it cannot be read again to find it.
-    fn cache_key(stub_path: &Path) -> Result<Option<String>> {
+    ///
+    /// `content` is the text the stub was read as. A run hashes the text it parsed, so an entry
+    /// saved after the install names the stub that was installed for, even when the file
+    /// changed meanwhile.
+    fn cache_key(stub_path: &Path, content: &[u8]) -> Result<Option<String>> {
         if !stub_path.is_file() {
             return Ok(None);
         }
@@ -32,7 +36,7 @@ impl BinPathCache {
         let mut hasher = Sha256::new();
         hasher.update(path.as_os_str().as_encoded_bytes());
         hasher.update([0]);
-        hasher.update(file::read(stub_path)?);
+        hasher.update(content);
         Ok(Some(hex::encode(hasher.finalize())))
     }
 
@@ -231,12 +235,10 @@ async fn find_cached_or_resolve_bin_path(
     config: &std::sync::Arc<Config>,
     stub: &ToolStubFile,
     stub_path: &Path,
+    cache_key: Option<&str>,
 ) -> Result<Result<PathBuf, BinPathError>> {
-    // Generate cache key from file path and content
-    let cache_key = BinPathCache::cache_key(stub_path)?;
-
     // Try to load from cache first
-    if let Some(bin_path) = cache_key.as_deref().and_then(BinPathCache::load) {
+    if let Some(bin_path) = cache_key.and_then(BinPathCache::load) {
         return Ok(Ok(bin_path));
     }
 
@@ -250,7 +252,7 @@ async fn find_cached_or_resolve_bin_path(
 
     if let Some(bin_path) = bin_path {
         // Cache the result
-        if let Some(cache_key) = &cache_key
+        if let Some(cache_key) = cache_key
             && let Err(e) = BinPathCache::save(&bin_path, cache_key)
         {
             // Don't fail if caching fails, just log it
@@ -298,6 +300,7 @@ async fn execute_with_tool_request(
     config: &mut std::sync::Arc<Config>,
     args: Vec<String>,
     stub_path: &Path,
+    cache_key: Option<&str>,
 ) -> Result<()> {
     // Use direct ToolRequest creation with ToolVersionOptions
     let tool_request = stub.to_tool_request(stub_path)?;
@@ -333,7 +336,7 @@ async fn execute_with_tool_request(
     toolset.notify_missing_versions(missing);
 
     // Find the binary path using cache
-    match find_cached_or_resolve_bin_path(&toolset, &*config, stub, stub_path).await? {
+    match find_cached_or_resolve_bin_path(&toolset, &*config, stub, stub_path, cache_key).await? {
         Ok(bin_path) => {
             // env_with_path already has _.path and filters outer install dirs.
             // Prepend backend dependency bins (e.g. node for npm); see #7777.
@@ -454,7 +457,9 @@ impl ToolStub {
             }
         }; // Drop the lock before await
 
-        let stub = ToolStubFile::from_file(&self.file)?;
+        let content = file::read_to_string(&self.file)?;
+        let cache_key = BinPathCache::cache_key(&self.file, content.as_bytes())?;
+        let stub = ToolStubFile::from_content(&self.file, content)?;
 
         // Track the stub so `mise prune` knows its tool is still needed. Stubs
         // can live anywhere, so execution time is the only chance to find them.
@@ -464,7 +469,14 @@ impl ToolStub {
 
         let mut config = Config::get().await?;
 
-        return execute_with_tool_request(&stub, &mut config, args, &self.file).await;
+        return execute_with_tool_request(
+            &stub,
+            &mut config,
+            args,
+            &self.file,
+            cache_key.as_deref(),
+        )
+        .await;
     }
 }
 
@@ -490,8 +502,11 @@ pub(crate) async fn short_circuit_stub(args: &[String]) -> Result<()> {
         return Ok(());
     }
 
-    // Generate cache key from file path and content
-    let Some(cache_key) = BinPathCache::cache_key(potential_stub_path)? else {
+    if !potential_stub_path.is_file() {
+        return Ok(());
+    }
+    let content = file::read(potential_stub_path)?;
+    let Some(cache_key) = BinPathCache::cache_key(potential_stub_path, &content)? else {
         return Ok(());
     };
 
@@ -534,6 +549,26 @@ mod tests {
             .unwrap();
     }
 
+    fn key_on_disk(path: &Path) -> Result<Option<String>> {
+        BinPathCache::cache_key(path, &std::fs::read(path)?)
+    }
+
+    #[test]
+    fn cache_key_names_the_text_that_was_parsed() {
+        let tmp = tempfile::tempdir().unwrap();
+        let stub = tmp.path().join("bin/scan");
+        write_stub(&stub, "1.0.0");
+        let parsed = std::fs::read(&stub).unwrap();
+        let installed_for = key_on_disk(&stub).unwrap();
+        // the file changes while the tool it named installs
+        write_stub(&stub, "2.0.0");
+        assert_eq!(
+            installed_for,
+            BinPathCache::cache_key(&stub, &parsed).unwrap()
+        );
+        assert_ne!(installed_for, key_on_disk(&stub).unwrap());
+    }
+
     #[test]
     fn cache_key_tells_apart_stubs_with_the_same_mtime() {
         let tmp = tempfile::tempdir().unwrap();
@@ -541,29 +576,20 @@ mod tests {
         let other = tmp.path().join("other/bin/scan");
         write_stub(&acme, "2.0.0");
         write_stub(&other, "1.0.0");
-        let acme_key = BinPathCache::cache_key(&acme).unwrap().unwrap();
-        assert_ne!(
-            Some(&acme_key),
-            BinPathCache::cache_key(&other).unwrap().as_ref()
-        );
+        let acme_key = key_on_disk(&acme).unwrap().unwrap();
+        assert_ne!(Some(&acme_key), key_on_disk(&other).unwrap().as_ref());
 
         // the same stub in another project is another stub: it has its own mise.lock
         write_stub(&other, "2.0.0");
-        assert_ne!(
-            Some(&acme_key),
-            BinPathCache::cache_key(&other).unwrap().as_ref()
-        );
+        assert_ne!(Some(&acme_key), key_on_disk(&other).unwrap().as_ref());
 
         // replaced in place without a newer mtime
         write_stub(&acme, "1.0.0");
-        assert_ne!(
-            Some(&acme_key),
-            BinPathCache::cache_key(&acme).unwrap().as_ref()
-        );
+        assert_ne!(Some(&acme_key), key_on_disk(&acme).unwrap().as_ref());
         write_stub(&acme, "2.0.0");
-        assert_eq!(Some(acme_key), BinPathCache::cache_key(&acme).unwrap());
+        assert_eq!(Some(acme_key), key_on_disk(&acme).unwrap());
 
         // a directory, or a pipe that cannot be read twice, has no entry
-        assert_eq!(None, BinPathCache::cache_key(tmp.path()).unwrap());
+        assert_eq!(None, BinPathCache::cache_key(tmp.path(), b"").unwrap());
     }
 }

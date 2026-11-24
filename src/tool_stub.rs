@@ -121,7 +121,11 @@ fn extract_toml_from_bootstrap(content: &str) -> Option<String> {
 
 impl ToolStubFile {
     pub fn from_file(path: &Path) -> Result<Self> {
-        let content = file::read_to_string(path)?;
+        Self::from_content(path, file::read_to_string(path)?)
+    }
+
+    /// The stub at `path` whose text is `content`.
+    pub fn from_content(path: &Path, content: String) -> Result<Self> {
         let stub_name = path
             .file_name()
             .and_then(|name| name.to_str())
