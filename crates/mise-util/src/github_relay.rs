@@ -318,15 +318,34 @@ pub mod unix {
             }
         }
     }
-    /// Set by the service once a request on the connection carried the capability.
+    /// Whether a connection has presented the capability or was closed to make
+    /// room. A connection starts unproven and moves once, to proven or to
+    /// evicted, by a single compare-and-swap: whichever of the service and the
+    /// listener gets there first wins, so a connection that proves itself is
+    /// never closed afterwards, and an evicted one can no longer prove itself.
     #[derive(Clone, Default)]
-    struct Proven(Arc<std::sync::atomic::AtomicBool>);
+    struct Proven(Arc<std::sync::atomic::AtomicU8>);
     impl Proven {
-        fn get(&self) -> bool {
-            self.0.load(std::sync::atomic::Ordering::Relaxed)
+        const UNPROVEN: u8 = 0;
+        const PROVEN: u8 = 1;
+        const EVICTED: u8 = 2;
+        fn transition(&self, to: u8) -> std::result::Result<u8, u8> {
+            use std::sync::atomic::Ordering::{AcqRel, Acquire};
+            self.0.compare_exchange(Self::UNPROVEN, to, AcqRel, Acquire)
         }
-        fn set(&self) {
-            self.0.store(true, std::sync::atomic::Ordering::Relaxed);
+        fn is_unproven(&self) -> bool {
+            self.0.load(std::sync::atomic::Ordering::Acquire) == Self::UNPROVEN
+        }
+        /// Marks the connection proven; false once it has been evicted.
+        fn prove(&self) -> bool {
+            match self.transition(Self::PROVEN) {
+                Ok(_) => true,
+                Err(state) => state == Self::PROVEN,
+            }
+        }
+        /// Marks the connection evicted; false once it has proven itself.
+        fn evict(&self) -> bool {
+            self.transition(Self::EVICTED).is_ok()
         }
     }
     impl<L: axum::serve::Listener> Connected<IncomingStream<'_, BoundedListener<L>>> for Proven {
@@ -395,11 +414,17 @@ pub mod unix {
             let proven = Proven::default();
             let evict = CancellationToken::new();
             if let Some(unproven) = &mut self.unproven {
-                unproven.retain(|(proven, evict)| !proven.get() && !evict.is_cancelled());
-                if self.permits.available_permits() == 0
-                    && let Some((_, oldest)) = unproven.pop_front()
-                {
-                    oldest.cancel();
+                unproven.retain(|(proven, closed)| proven.is_unproven() && !closed.is_cancelled());
+                if self.permits.available_permits() == 0 {
+                    // A connection may prove itself or close after the
+                    // `retain`; only one that is still open and loses no race
+                    // to its own proof is closed.
+                    while let Some((proven, oldest)) = unproven.pop_front() {
+                        if !oldest.is_cancelled() && proven.evict() {
+                            oldest.cancel();
+                            break;
+                        }
+                    }
                 }
                 unproven.push_back((proven.clone(), evict.clone()));
             }
@@ -580,7 +605,9 @@ pub mod unix {
             };
             let task = tokio::spawn(async move {
                 let _ = axum::serve(
-                    // Only the owner of the private socket can connect.
+                    // No capability: the socket is private to this account, and
+                    // the ssh forward reaches it only from the remote account
+                    // whose own bootstrap and commands are the relay's clients.
                     BoundedListener::new(listener, false),
                     Router::new().fallback(handle).with_state(broker),
                 )
@@ -849,7 +876,9 @@ pub mod unix {
                         {
                             bail!("invalid capability");
                         }
-                        proven.0.set();
+                        if !proven.0.prove() {
+                            bail!("connection closed to make room");
+                        }
                         // The client below resolves dot segments, which could leave `git/`.
                         validate_path(request.uri().path().trim_start_matches('/'))?;
                         let path = request
@@ -1469,6 +1498,31 @@ pub mod unix {
             }
         }
 
+        #[test]
+        fn a_connection_is_either_proven_or_evicted_never_both() {
+            let proven = Proven::default();
+            assert!(proven.is_unproven());
+            assert!(proven.prove());
+            assert!(proven.prove(), "a second request on the connection");
+            assert!(!proven.evict());
+            assert!(!proven.is_unproven());
+
+            let evicted = Proven::default();
+            assert!(evicted.evict());
+            assert!(!evicted.prove());
+            assert!(!evicted.is_unproven());
+
+            // Racing threads agree on one winner.
+            for _ in 0..1000 {
+                let state = Proven::default();
+                let other = state.clone();
+                let prover = std::thread::spawn(move || other.prove());
+                let evicted = state.evict();
+                let proved = prover.join().unwrap();
+                assert_ne!(proved, evicted);
+            }
+        }
+
         #[tokio::test]
         async fn connections_without_the_capability_give_way_at_the_limit() {
             use axum::serve::Listener;
@@ -1485,7 +1539,7 @@ pub mod unix {
                 clients.push(tokio::net::TcpStream::connect(address).await.unwrap());
                 let (mut connection, _) = listener.accept().await;
                 if index == 0 {
-                    connection.proven.set();
+                    assert!(connection.proven.prove());
                 }
                 proofs.push(connection.proven.clone());
                 // Like hyper, keep the connection until its I/O fails.
@@ -1502,10 +1556,12 @@ pub mod unix {
                 .unwrap();
             let evicted = served.remove(1).await.unwrap().unwrap_err();
             assert_eq!(evicted.kind(), std::io::ErrorKind::ConnectionAborted);
+            // A request that arrives on it after that is refused.
+            assert!(!proofs.remove(1).prove());
             assert!(served.iter().all(|task| !task.is_finished()));
             // Connections that presented it are never closed to admit another.
-            connection.proven.set();
-            proofs.iter().for_each(Proven::set);
+            assert!(connection.proven.prove());
+            assert!(proofs.iter().all(Proven::prove));
             clients.push(tokio::net::TcpStream::connect(address).await.unwrap());
             let waiting = tokio::time::timeout(Duration::from_millis(50), listener.accept()).await;
             assert!(waiting.is_err());
