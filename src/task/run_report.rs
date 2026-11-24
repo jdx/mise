@@ -99,7 +99,7 @@ struct RunJson<'a> {
 /// time the report is written: a task's own `redact = true` env values are registered only
 /// when the task starts, after it was scheduled.
 fn redact_arg(arg: &str) -> String {
-    mise_util::redactions::redact_global(&mise_util::redactions::redact_url_userinfo_in_arg(arg))
+    mise_util::redactions::redact_global(&mise_util::redactions::redact_url_credentials_in_arg(arg))
 }
 
 fn timestamp(time: SystemTime) -> String {

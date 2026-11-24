@@ -1609,7 +1609,7 @@ fn validate_cd_path(cd: &Option<PathBuf>) -> Result<()> {
 /// once joined, a space inside a URL's userinfo looks like an argument break.
 fn display_args(args: &[String]) -> String {
     args.iter()
-        .map(|arg| mise_util::redactions::redact_url_userinfo_in_arg(arg))
+        .map(|arg| mise_util::redactions::redact_url_credentials_in_arg(arg))
         .collect::<Vec<_>>()
         .join(" ")
 }

@@ -2321,7 +2321,7 @@ fn history_args(config: &Config, task: &Task) -> Vec<String> {
 }
 
 fn history_arg(config: &Config, arg: &str) -> String {
-    config.redact(&mise_util::redactions::redact_url_userinfo_in_arg(arg))
+    config.redact(&mise_util::redactions::redact_url_credentials_in_arg(arg))
 }
 
 /// Record how a started task ended.

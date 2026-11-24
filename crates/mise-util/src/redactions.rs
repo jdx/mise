@@ -19,8 +19,9 @@ pub static GLOBAL_REDACTOR: LazyLock<Mutex<Redactor>> = LazyLock::new(|| {
 
 /// Every form of `value` that should be redacted: the value itself; for a
 /// multi-line value each trimmed line of at least 4 bytes that contains an
-/// ASCII alphanumeric (output is redacted line by line); and its JSON-escaped
-/// form (without quotes) when that differs from the value.
+/// ASCII alphanumeric (output is redacted line by line); its JSON-escaped and
+/// Rust debug forms (without quotes) when they differ from the value; and the
+/// shell-quoted spelling of each of those when it holds a `'`.
 pub fn secret_patterns(value: &str) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     let mut push = |p: String| {
@@ -46,6 +47,14 @@ pub fn secret_patterns(value: &str) -> Vec<String> {
     let debug = format!("{value:?}");
     if let Some(inner) = debug.strip_prefix('"').and_then(|d| d.strip_suffix('"')) {
         push(inner.to_string());
+    }
+    // The POSIX shell spelling inside single quotes (`{{ x | quote }}`, a
+    // displayed command line), where `'` is written `'\''`.
+    for form in out.clone() {
+        let quoted = form.replace('\'', r"'\''");
+        if !out.contains(&quoted) {
+            out.push(quoted);
+        }
     }
     out
 }
@@ -137,50 +146,86 @@ pub fn strip_url_credentials_in_arg(arg: &str) -> Cow<'_, str> {
 }
 
 /// Whether a URL query parameter named `name` (decoded) carries a credential,
-/// judged by its name: `token`, `access_token`, `key`, `sig`, `signature`,
-/// `password`, `X-Amz-Credential`, or one ending in `_token`, `-key`,
-/// `_secret`, `_password`, `-signature` and the like.
+/// judged by its name in any case and naming style (`access_token`,
+/// `access-token`, `accessToken`, `ACCESSTOKEN`): `auth`, `authorization`,
+/// `key`, `sig`, `jwt`, `pwd`, `X-Amz-Credential`, or one ending in `token`,
+/// `secret`, `password`, `signature` or `_key` (`apiKey`, `x-api-key`).
 pub fn is_credential_query_param(name: &str) -> bool {
+    use heck::ToSnakeCase;
     const NAMES: &[&str] = &[
-        "token",
-        "access_token",
-        "private_token",
         "auth",
-        "api_key",
+        "authorization",
+        "bearer",
+        "jwt",
         "apikey",
         "key",
         "sig",
-        "signature",
-        "password",
+        "pass",
         "passwd",
         "pwd",
-        "secret",
         "credential",
         "credentials",
-        "x-amz-credential",
-        "x-goog-credential",
+        "x_amz_credential",
+        "x_goog_credential",
     ];
-    const SUFFIXES: &[&str] = &["token", "key", "secret", "password", "signature"];
-    let name = name.to_ascii_lowercase();
-    NAMES.contains(&name.as_str())
-        || SUFFIXES.iter().any(|suffix| {
-            name.strip_suffix(suffix)
-                .is_some_and(|rest| rest.ends_with('_') || rest.ends_with('-'))
-        })
+    const SUFFIXES: &[&str] = &["token", "secret", "password", "signature", "_key"];
+    let judge =
+        |name: &str| NAMES.contains(&name) || SUFFIXES.iter().any(|suffix| name.ends_with(suffix));
+    let name = name.replace(TAB_OR_NEWLINE, "");
+    // `APIKey` splits as `api_key`, `APIkey` only once lowercased.
+    judge(&name.to_snake_case()) || judge(&name.to_lowercase().to_snake_case())
 }
 
+/// What a URL parser drops wherever it is in a URL, a parameter name included.
+const TAB_OR_NEWLINE: [char; 3] = ['\t', '\n', '\r'];
+
+/// The query of each URL in free text (an argument list, a message), where
+/// whitespace or a quote ends a URL.
 static URL_QUERY: LazyLock<regex::Regex> =
     LazyLock::new(|| regex::Regex::new(r#"(://[^\s?#'"]*)\?([^\s#'"]*)"#).unwrap());
 
+/// The query of a text that starts with a URL, or with a name that holds one
+/// (`cargo:https://...`). There raw whitespace and quotes are part of the URL:
+/// a URL parser percent-encodes them in a path or query, and the request is
+/// sent. The query runs from the first `?` to the `#`. Anchored at the start,
+/// so the URLs inside an argument list are read as free text only.
+static WHOLE_URL_QUERY: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"^(\s*[A-Za-z][A-Za-z0-9+._:-]*://[^?#]*)\?([^#]*)").unwrap()
+});
+
+/// The query of one command-line argument, which is one URL wherever its
+/// `://` is (`--index-url=https://...`).
+static ARG_URL_QUERY: LazyLock<regex::Regex> =
+    LazyLock::new(|| regex::Regex::new(r"(://[^?#]*)\?([^#]*)").unwrap());
+
+/// The decoded name of the query parameter `pair` (`name=value`).
+fn query_param_name(pair: &str) -> String {
+    let pair = pair.replace(TAB_OR_NEWLINE, "");
+    url::form_urlencoded::parse(pair.as_bytes())
+        .next()
+        .map(|(name, _)| name.into_owned())
+        .unwrap_or_default()
+}
+
 /// The decoded names of the query parameters of every URL in `text`.
+///
+/// `text` is read both as a value that is one URL and as free text: a
+/// parameter after raw whitespace or a quote (`https://host/my tool?token=x`)
+/// is found by the first reading only, and the URLs after the first one in an
+/// argument list by the second.
 pub fn url_query_param_names(text: &str) -> Vec<String> {
-    URL_QUERY
-        .captures_iter(text)
+    [&WHOLE_URL_QUERY, &URL_QUERY]
+        .into_iter()
+        .flat_map(|url_query| url_query.captures_iter(text))
         .flat_map(|captures| {
-            url::form_urlencoded::parse(captures[2].as_bytes())
-                .map(|(name, _)| name.into_owned())
+            captures[2]
+                .split('&')
+                .map(query_param_name)
+                .filter(|name| !name.is_empty())
                 .collect::<Vec<_>>()
         })
+        .collect::<IndexSet<_>>()
+        .into_iter()
         .collect()
 }
 
@@ -189,20 +234,43 @@ pub fn url_query_param_names(text: &str) -> Vec<String> {
 /// parameters are kept as written, so two URLs that select different things
 /// stay different, and stripping twice changes nothing. For identifiers that
 /// are stored or used as names; a lockfile refuses such URLs instead.
+///
+/// `text` is read as a value that is one URL, and then as free text; see
+/// [`url_query_param_names`].
 pub fn strip_credential_query_params(text: &str) -> Cow<'_, str> {
     if !text.contains("://") || !text.contains('?') {
         return Cow::Borrowed(text);
     }
+    let mut out = Cow::Borrowed(text);
+    for url_query in [&WHOLE_URL_QUERY, &URL_QUERY] {
+        if let Some(stripped) = strip_credential_params_of(url_query, &out) {
+            out = Cow::Owned(stripped);
+        }
+    }
+    // The two readings split a text differently, so what one removes can
+    // change a name the other reads. Reading again until neither finds one
+    // takes quadratic time on a text built for it, so a text that still shows
+    // a credential name loses its queries whole: that leaves none, and a
+    // second strip changes nothing.
+    if url_query_param_names(&out)
+        .iter()
+        .any(|name| is_credential_query_param(name))
+    {
+        let whole = WHOLE_URL_QUERY.replace(&out, "$1");
+        out = Cow::Owned(URL_QUERY.replace_all(&whole, "$1").into_owned());
+    }
+    out
+}
+
+/// `text` without the credential parameters of the queries `url_query` finds
+/// in it, or `None` when it finds none.
+fn strip_credential_params_of(url_query: &regex::Regex, text: &str) -> Option<String> {
     let mut changed = false;
-    let out = URL_QUERY.replace_all(text, |captures: &regex::Captures<'_>| {
+    let out = url_query.replace_all(text, |captures: &regex::Captures<'_>| {
         let kept = captures[2]
             .split('&')
             .filter(|pair| {
-                let name = url::form_urlencoded::parse(pair.as_bytes())
-                    .next()
-                    .map(|(name, _)| name.into_owned())
-                    .unwrap_or_default();
-                let credential = is_credential_query_param(&name);
+                let credential = is_credential_query_param(&query_param_name(pair));
                 changed |= credential;
                 !credential
             })
@@ -213,19 +281,81 @@ pub fn strip_credential_query_params(text: &str) -> Cow<'_, str> {
             format!("{}?{}", &captures[1], kept.join("&"))
         }
     });
-    if changed {
-        Cow::Owned(out.into_owned())
+    changed.then(|| out.into_owned())
+}
+
+/// Replace the value of every query parameter, of any URL in `text`, whose
+/// name says it carries a credential ([`is_credential_query_param`]) with
+/// `[redacted]`, and the userinfo as [`redact_url_userinfo`] does.
+///
+/// `https://host/r.git?ref=main&private_token=t` becomes
+/// `https://host/r.git?ref=main&private_token=[redacted]`. A token written
+/// into a URL (a tool named by its URL, a config value) is never registered
+/// with the [`Redactor`]. Unlike [`strip_credential_query_params`], which is
+/// for stored names, this marks where a credential was for a reader.
+///
+/// A value runs to the next `&`, `#`, quote or whitespace, so what is glued to
+/// the URL goes with it (the version of `cargo:https://host/r?token=t@1.0`): an
+/// unencoded `@` can be part of a token. A control character cannot be part of
+/// a URL, so the terminal style that ends a styled URL is kept.
+pub fn redact_url_credentials(text: &str) -> Cow<'_, str> {
+    redact_credentials(text, true)
+}
+
+/// [`redact_url_credentials`] for one command-line argument, which is one
+/// URL: whitespace and quotes are part of it, and a value runs to the next `&`
+/// or `#`. Redact each argument before joining them for display.
+pub fn redact_url_credentials_in_arg(arg: &str) -> Cow<'_, str> {
+    redact_credentials(arg, false)
+}
+
+fn redact_credentials(text: &str, whitespace_ends_url: bool) -> Cow<'_, str> {
+    let userinfo = redact_userinfo(text, whitespace_ends_url);
+    let url_query: &regex::Regex = if whitespace_ends_url {
+        &URL_QUERY
     } else {
-        Cow::Borrowed(text)
+        &ARG_URL_QUERY
+    };
+    match redact_query_credentials(url_query, &userinfo) {
+        Some(redacted) => Cow::Owned(redacted),
+        None => userinfo,
     }
+}
+
+/// `text` with the values of the credential parameters of the queries
+/// `url_query` finds in it replaced, or `None` when it finds none.
+fn redact_query_credentials(url_query: &regex::Regex, text: &str) -> Option<String> {
+    if !text.contains("://") || !text.contains('?') {
+        return None;
+    }
+    let mut changed = false;
+    let out = url_query.replace_all(text, |captures: &regex::Captures<'_>| {
+        let query = &captures[2];
+        let (query, rest) = query.split_at(query.find(char::is_control).unwrap_or(query.len()));
+        let pairs = query
+            .split('&')
+            .map(|pair| {
+                let (name, value) = pair.split_once('=').unwrap_or((pair, ""));
+                if matches!(value, "" | "[redacted]")
+                    || !is_credential_query_param(&query_param_name(name))
+                {
+                    return pair.to_string();
+                }
+                changed = true;
+                format!("{name}=[redacted]")
+            })
+            .collect::<Vec<_>>();
+        format!("{}?{}{rest}", &captures[1], pairs.join("&"))
+    });
+    changed.then(|| out.into_owned())
 }
 
 /// Text that mise writes to the terminal or a file without going through the
 /// logger, redacted the way the logger redacts every record: registered secrets,
-/// then the userinfo of every URL.
+/// then the credentials of every URL ([`redact_url_credentials`]).
 pub fn redact_output(text: &str) -> String {
     let text = redact_global(text);
-    match redact_url_userinfo(&text) {
+    match redact_url_credentials(&text) {
         Cow::Borrowed(_) => text,
         Cow::Owned(redacted) => redacted,
     }
@@ -496,6 +626,10 @@ mod tests {
             ("https://host/t?api%5Fkey=s3cret&x=1", "https://host/t?x=1"),
             ("https://host/t?ref=main", "https://host/t?ref=main"),
             ("not a url?token=x", "not a url?token=x"),
+            (
+                "https://host/t.tgz?accessToken=s3cret&v=1",
+                "https://host/t.tgz?v=1",
+            ),
         ];
         for (input, want) in cases {
             let got = strip_credential_query_params(input);
@@ -510,6 +644,175 @@ mod tests {
             url_query_param_names("https://h/t?api%5Fkey=1&b"),
             ["api_key", "b"]
         );
+    }
+
+    /// A value that is one URL keeps raw whitespace and quotes in its path and
+    /// query, so a credential after one is still found; an argument list is
+    /// still read URL by URL.
+    #[test]
+    fn test_strip_credential_query_params_after_a_space_or_quote() {
+        let cases = [
+            ("https://host/my tool?token=s3cret", "https://host/my tool"),
+            (
+                "cargo:https://host/bob's?token=s3cret",
+                "cargo:https://host/bob's",
+            ),
+            (
+                "https://host/t?file=my tool&token=s3cret&page=2",
+                "https://host/t?file=my tool&page=2",
+            ),
+            (
+                "https://host/t-{{ version }}.tgz?access_token=s3cret",
+                "https://host/t-{{ version }}.tgz",
+            ),
+            (" https://host/a\"b?to\tken=s3cret", " https://host/a\"b"),
+            ("https://host/t?v=1&\ntoken=s3cret", "https://host/t?v=1"),
+            (
+                "--index-url https://h/s?token=s3cret --pre",
+                "--index-url https://h/s --pre",
+            ),
+            (
+                "--a https://host/t?x=1 --b 'https://host/u?token=s3cret' --c",
+                "--a https://host/t?x=1 --b 'https://host/u' --c",
+            ),
+            ("https://host/t?x& a://b_token?key", "https://host/t?x"),
+        ];
+        for (input, want) in cases {
+            let got = strip_credential_query_params(input);
+            assert_eq!(got, want, "{input:?}");
+            assert_eq!(strip_credential_query_params(&got), got, "idempotent");
+        }
+        for text in [
+            "https://h/my tool?token=1",
+            "https://h/bob's?v=1&token=1",
+            "https://h/t?file=my tool&token=1",
+            "https://h/t?file=a\nb&to\tken=1",
+            "--a https://h/t --b \"https://h/u?token=1\"",
+        ] {
+            let names = url_query_param_names(text);
+            assert!(names.contains(&"token".to_string()), "{text:?}: {names:?}");
+        }
+    }
+
+    #[test]
+    fn test_credential_query_params_in_any_naming_style() {
+        for name in [
+            "token",
+            "access_token",
+            "access-token",
+            "accessToken",
+            "ACCESSTOKEN",
+            "authtoken",
+            "authToken",
+            "privateToken",
+            "AUTH",
+            "Authorization",
+            "bearer",
+            "API_KEY",
+            "apiKey",
+            "APIKey",
+            "APIkey",
+            "x-api-key",
+            "key",
+            "sig",
+            "clientSecret",
+            "secretKey",
+            "jwt",
+            "password",
+            "X-Amz-Signature",
+            "X-Amz-Credential",
+            "X-Amz-Security-Token",
+            "x-goog-credential",
+            "_token",
+            "to\tken",
+        ] {
+            assert!(is_credential_query_param(name), "{name:?}");
+        }
+        for name in [
+            "", "ref", "page", "version", "keyword", "keys", "monkey", "tokens", "author",
+            "passing", "signed",
+        ] {
+            assert!(!is_credential_query_param(name), "{name:?}");
+        }
+    }
+
+    #[test]
+    fn test_redact_output_hides_url_query_credentials() {
+        assert_eq!(
+            redact_output("cargo:https://u:p@host/r.git?ref=main&private_token=TOKEN failed"),
+            "cargo:https://[redacted]@host/r.git?ref=main&private_token=[redacted] failed"
+        );
+    }
+
+    #[test]
+    fn test_redact_url_credentials() {
+        for (input, expected) in [
+            (
+                "GET https://host/t.tgz?ref=main&token=TOKEN&page=2 failed",
+                "GET https://host/t.tgz?ref=main&token=[redacted]&page=2 failed",
+            ),
+            // The name is matched decoded and kept as written.
+            (
+                "https://host/t?api%5Fkey=TOKEN&x=1",
+                "https://host/t?api%5Fkey=[redacted]&x=1",
+            ),
+            (
+                "https://bucket.example/t.tgz?X-Amz-Signature=TOKEN#frag",
+                "https://bucket.example/t.tgz?X-Amz-Signature=[redacted]#frag",
+            ),
+            // An unencoded `@` can be part of a token, so the version that
+            // follows a tool name goes with it.
+            (
+                "cargo:https://host/r.git?token=TOKEN@tag:1.0.0  installed",
+                "cargo:https://host/r.git?token=[redacted]  installed",
+            ),
+            // A terminal style ends the URL.
+            (
+                "\u{1b}[34mcargo:https://host/r.git?token=TOKEN\u{1b}[0m@1.0.0",
+                "\u{1b}[34mcargo:https://host/r.git?token=[redacted]\u{1b}[0m@1.0.0",
+            ),
+            (
+                r#"{"url":"https://host/t?accessToken=TOKEN","n":1}"#,
+                r#"{"url":"https://host/t?accessToken=[redacted]","n":1}"#,
+            ),
+            (
+                "https://a.example/x?token=TOKEN https://b.example/y?access_token=TOKEN",
+                "https://a.example/x?token=[redacted] https://b.example/y?access_token=[redacted]",
+            ),
+            (
+                "https://host/t?ref=main&id=2",
+                "https://host/t?ref=main&id=2",
+            ),
+            ("https://host/t?token=&token", "https://host/t?token=&token"),
+            ("not a url?token=x", "not a url?token=x"),
+        ] {
+            let redacted = redact_url_credentials(input);
+            assert_eq!(redacted, expected, "{input}");
+            assert!(!redacted.contains("TOKEN"));
+            assert_eq!(redact_url_credentials(&redacted), redacted, "idempotent");
+        }
+        assert!(matches!(
+            redact_url_credentials("https://host/t?ref=main&id=2"),
+            Cow::Borrowed(_)
+        ));
+        // One argument is one URL: a space does not end the token.
+        assert_eq!(
+            redact_url_credentials_in_arg("https://u:p w@host/my tool?token=TO KEN&v=1"),
+            "https://[redacted]@host/my tool?token=[redacted]&v=1"
+        );
+    }
+
+    #[test]
+    fn test_secret_patterns_cover_shell_quoted_spelling() {
+        for secret in ["it's s3cret", "two\nl'ines", r#"{"k":"it's"}"#] {
+            let r = Redactor::new(secret_patterns(secret));
+            assert_eq!(
+                r.redact(&format!("login {}", shell_words::quote(secret))),
+                "login '[redacted]'",
+                "{secret:?}"
+            );
+        }
+        assert_eq!(secret_patterns("abc&123 %"), vec!["abc&123 %"]);
     }
 
     #[test]

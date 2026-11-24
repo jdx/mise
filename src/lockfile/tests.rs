@@ -5642,6 +5642,15 @@ fn test_credential_query_params_are_found_by_name() {
         ),
         ("https://h.example/t?password", "password"),
         ("https://h.example/t?api%5Fkey=x", "api_key"),
+        ("https://h.example/t?accessToken=x", "accessToken"),
+        ("https://h.example/t?X-API-KEY=x", "X-API-KEY"),
+        // a raw space or quote is part of a value that is one URL
+        (
+            "https://dl.example.com/my tool.tgz?access_token=x",
+            "access_token",
+        ),
+        ("https://dl.example.com/bob's.tgz?v=1&sig=x", "sig"),
+        ("https://dl.example.com/get?file=my tool&token=x", "token"),
     ] {
         assert_eq!(
             credential_query_param(text).as_deref(),

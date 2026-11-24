@@ -8,7 +8,7 @@ use crate::args::BackendArg;
 use crate::config::Config;
 use crate::toolset::{ToolSource, ToolVersionOptions, ToolsetBuilder, redact_tool_options};
 use crate::ui::table;
-use mise_util::redactions::redact_url_userinfo_in_arg;
+use mise_util::redactions::redact_url_credentials_in_arg;
 
 /// Show information about a tool
 ///
@@ -111,7 +111,7 @@ impl Tool {
         };
         // Printed outside the logger, and the tool's spelling, its backend and
         // its options can carry credentials.
-        let redact = |s: &str| config.redact(&redact_url_userinfo_in_arg(s));
+        let redact = |s: &str| config.redact(&redact_url_credentials_in_arg(s));
         let redact_all = |v: Vec<String>| v.iter().map(|s| redact(s)).collect::<Vec<_>>();
         let info = ToolInfo {
             backend: redact(&ba.full()),
