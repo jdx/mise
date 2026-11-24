@@ -119,7 +119,7 @@ When a command needs a config that is not trusted:
 
 - A command you type in a terminal trusts the config's directory without
   asking, records it as `mise trust` would, and says
-  ``mise trusted <dir> because you ran a mise command there. Undo with `mise untrust`.``<!-- cli: skip -->
+  ``mise trusted <dir> because you ran a mise command there. Undo with `mise untrust <file>`.``<!-- cli: skip -->
   See [Typed in a terminal](#typed-in-a-terminal) for what counts.
 - Otherwise, when stdin and stderr are a terminal, mise asks
   `mise config files in <dir> are not trusted. Trust them?`<!-- cli: skip -->
@@ -188,13 +188,23 @@ when all of these hold:
 - mise is not running as a shim, as the `mise x` a shim runs, for shell
   completion, or for the shell's command-not-found handler after you mistype a
   command.
-- On Unix systems such as Linux and macOS, you own the config file and its directory, and the
-  target of either when it is a symlink. A `mise.toml` another account left in a
-  shared directory still asks. Windows does not check ownership.
+- On Unix systems such as Linux and macOS, you own the config file and its
+  directory, every other config file the command loads from that directory,
+  and the target of each one that is a symlink. A config file another account
+  left in a shared directory, such as a `.config/mise.toml` beside your own
+  `mise.toml`, still asks. Windows does not check ownership.
+
+mise cannot tell a command you typed from one a program started on the same
+terminal, so a mise command run from a script or a Makefile target you start
+there, with stdin, stdout and stderr all still the terminal, trusts the project
+too. Paranoid mode's `config` category turns this off.
 
 mise trusts the config's directory as `mise trust` would and prints
-``mise trusted <dir> because you ran a mise command there. Undo with `mise untrust`.``<!-- cli: skip -->
-once per directory, which `--quiet` hides. A directory on the ignore list or
+``mise trusted <dir> because you ran a mise command there. Undo with `mise untrust <file>`.``<!-- cli: skip -->
+once per directory, which `--quiet` hides. `<file>` is the config file whose
+directory was trusted; `mise untrust` without it acts on the nearest config
+only. The notice is printed as soon as the trust is recorded, so it appears even
+when the project's settings then fail to load. A directory on the ignore list or
 under `ignored_config_paths` stays ignored, and shell activation still skips
 untrusted config. Only paranoid mode turns this off.
 
@@ -233,13 +243,13 @@ A [conf.d folder](/configuration.html#conf-d-folders) and `.config/mise` are
 config roots of their own inside a project. `mise trust --untrust` and
 `mise trust --ignore` with a directory or no path act on the project and on
 every such root in it, and an ignored project's nested roots stay ignored,
-including ones added later. Name a file in a nested root to act on that root
-alone.
+including ones added later. Name a file to act on that file's root alone, so
+`mise untrust mise.toml` leaves a nested root you trusted on its own trusted.
 
 A config that mise reaches through a symlink inside a project, such as a linked
-`mise.toml`, a linked `conf.d` folder or a linked `.mise` directory, belongs to
-that project: it is trusted when the project is, and trust in the file or
-directory the link leads to does not count. `mise trust` in the project trusts
+`mise.toml`, a linked `conf.d` folder or a linked `.mise` or `.config`
+directory, belongs to that project: it is trusted when the project is, and trust
+in the file or directory the link leads to does not count. `mise trust` in the project trusts
 it. Paranoid mode approves a file by its content and refuses such a config with
 an error; replace the link with a copy, or add the project to
 `trusted_config_paths`. Links in global config are yours and are not affected.

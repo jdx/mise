@@ -213,23 +213,20 @@ fn nearest_local_config_file(filenames: &[String]) -> Option<PathBuf> {
 /// The trust roots `--ignore` and `--untrust` act on for `path`, whose own trust root is `cfr`.
 /// The project's root comes first.
 ///
-/// Outside paranoid mode a project stands for the config roots nested in it, a conf.d folder or
-/// `.config/mise`, whichever of its files was picked: the project's root and each nested root
-/// it holds now. Otherwise a file the project ships in such a folder would take the refusal for
-/// itself and leave the project trusted. A file the user named inside a nested root stands only
-/// for that root, and in paranoid mode, where trust is per file, every file stands only for
-/// `cfr`.
+/// A file the user named stands only for its own root, and in paranoid mode, where trust is per
+/// file, every file stands only for `cfr`. Otherwise, given a directory or no path, a project
+/// stands for the config roots nested in it, a conf.d folder or `.config/mise`, whichever of its
+/// files was picked: the project's root and each nested root it holds now, including one whose
+/// only configs are for another environment. That way a file the project ships in such a folder
+/// cannot take the refusal for itself and leave the project trusted.
 fn refused_roots(path: &Path, cfr: &Path, named_file: bool) -> Vec<PathBuf> {
-    if cfr == path || Settings::get().paranoid.config() {
+    if named_file || cfr == path || Settings::get().paranoid.config() {
         return vec![cfr.to_path_buf()];
     }
-    let nested = config_file::config_root::nested_root_project(path);
-    if named_file && nested.is_some() {
-        return vec![cfr.to_path_buf()];
-    }
-    let project = nested.unwrap_or_else(|| cfr.to_path_buf());
+    let project =
+        config_file::config_root::nested_root_project(path).unwrap_or_else(|| cfr.to_path_buf());
     let mut roots = vec![project.clone(), cfr.to_path_buf()];
-    for file in config_files_in_dir(&project) {
+    for file in config::config_files_in_dir_for_any_env(&project) {
         if !is_global_config(&file) {
             let root = config_trust_root(&file);
             if root.starts_with(&project) {
@@ -511,7 +508,7 @@ impl Trust {
                 break;
             }
             for path in pending {
-                config_file::trust(&path)?;
+                config_file::trust_env_file(&path)?;
                 info!("trusted {}", display_path(&path.canonicalize()?));
                 trusted += 1;
             }

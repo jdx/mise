@@ -74,11 +74,20 @@ pub fn nested_root_project(path: &Path) -> Option<PathBuf> {
     }
     let path = path.absolutize().ok()?.to_path_buf();
     let root = config_root(&path);
-    let mut project = enclosing_project(&path);
-    if project.ends_with(".config/mise") {
-        project = project.parent()?.parent()?.to_path_buf();
-    }
+    let project = outer_project(&path);
     (project != root && root.starts_with(&project)).then_some(project)
+}
+
+/// The project directory a config belongs to: [`enclosing_project`], with `.config/mise` taken
+/// back to the directory that holds `.config`.
+fn outer_project(path: &Path) -> PathBuf {
+    let project = enclosing_project(path);
+    if project.ends_with(".config/mise")
+        && let Some(outer) = project.parent().and_then(Path::parent)
+    {
+        return outer.to_path_buf();
+    }
+    project
 }
 
 /// The project a config was found in, when a symlink lies between that project's directory and
@@ -92,7 +101,7 @@ pub(crate) fn linked_project(path: &Path) -> Option<PathBuf> {
         return None;
     }
     let path = path.absolutize().ok()?.to_path_buf();
-    let project = enclosing_project(&path);
+    let project = outer_project(&path);
     path.ancestors()
         .take_while(|p| *p != project && p.starts_with(&project))
         .any(Path::is_symlink)
@@ -354,6 +363,27 @@ mod tests {
         std::fs::create_dir_all(w.join("mise")).unwrap();
         symlink(other.join("mise.toml"), w.join("mise/config.toml")).unwrap();
         assert_eq!(linked_project(&w.join("mise/config.toml")), Some(w.clone()));
+
+        // `.config/mise/mise.toml` has `.config/mise` as its root, but a link at `.config` or
+        // `.config/mise` still lies inside the project that holds `.config`
+        for link in [".config", ".config/mise"] {
+            let project = root.join(format!("dot-{}", link.replace('/', "-")));
+            let link = project.join(link);
+            std::fs::create_dir_all(link.parent().unwrap()).unwrap();
+            symlink(&other, &link).unwrap();
+            assert_eq!(
+                linked_project(&project.join(".config/mise/mise.toml")),
+                Some(project.clone()),
+                "{}",
+                link.display()
+            );
+        }
+        let plain_config = root.join("plain-config");
+        std::fs::create_dir_all(plain_config.join(".config/mise")).unwrap();
+        assert_eq!(
+            linked_project(&plain_config.join(".config/mise/mise.toml")),
+            None
+        );
     }
 
     #[test]

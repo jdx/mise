@@ -761,8 +761,15 @@ pub fn trust_active_config() -> Result<()> {
 /// Trusts a config root. The settings snapshot was built without the project's
 /// `[settings]` while it was untrusted, so rebuild it to pick them up.
 fn trust_and_reload_settings(config_root: &Path) -> eyre::Result<()> {
+    trust_then_reload_settings(config_root, || {})
+}
+
+/// [`trust_and_reload_settings`] that runs `on_trusted` once the record is saved, before the
+/// reload, which can fail on the project's own `[settings]`.
+fn trust_then_reload_settings(config_root: &Path, on_trusted: impl FnOnce()) -> eyre::Result<()> {
     let was_trusted = is_trusted(config_root);
     trust(config_root)?;
+    on_trusted();
     if !was_trusted && settings::is_loaded() {
         Settings::reload()?;
     }
@@ -1336,6 +1343,18 @@ pub(crate) fn is_ignored(path: &Path) -> bool {
 }
 
 pub fn trust(path: &Path) -> Result<()> {
+    trust_as(path, TrustAs::Config)
+}
+
+/// Approves `path` as an env file, which is never trust in the same path as config, whichever
+/// paranoid categories are on.
+pub fn trust_env_file(path: &Path) -> Result<()> {
+    trust_as(path, TrustAs::EnvFile)
+}
+
+/// Records trust in `path` for `kind`. [`trust`] approves an env file too, under only the
+/// `env_files` category, when the file is not named like a config.
+fn trust_as(path: &Path, kind: TrustAs) -> Result<()> {
     rm_ignored(path.to_path_buf())?;
     let hashed_path = trust_path(path);
     let canonicalized_path = path.canonicalize()?;
@@ -1351,7 +1370,12 @@ pub fn trust(path: &Path) -> Result<()> {
     let paranoid = &Settings::get().paranoid;
     let trust_hash_path = with_appended_extension(&hashed_path, "hash");
     let env_file_path = with_appended_extension(&hashed_path, ENV_FILE_APPROVAL);
-    if paranoid.config() || (paranoid.env_files() && path.is_file()) {
+    let env_file = kind == TrustAs::EnvFile
+        || (paranoid.env_files()
+            && !paranoid.config()
+            && path.is_file()
+            && !looks_like_config_file(path));
+    if env_file || paranoid.config() || (paranoid.env_files() && path.is_file()) {
         let hash = hash::file_hash_sha256(path, None)?;
         file::write(trust_hash_path, hash)?;
     } else if trust_hash_path.exists() {
@@ -1359,10 +1383,8 @@ pub fn trust(path: &Path) -> Result<()> {
         // would keep the record bound to that file's content.
         file::remove_file(&trust_hash_path)?;
     }
-    // With only `env_files` on, a file that is not named like a config is approved as an env
-    // file, which `is_trusted` never takes as trust in it as config.
-    if paranoid.env_files() && !paranoid.config() && path.is_file() && !looks_like_config_file(path)
-    {
+    // An env file approval, which `is_trusted` never takes as trust in the path as config.
+    if env_file {
         file::write(env_file_path, "")?;
     } else if env_file_path.exists() {
         file::remove_file(&env_file_path)?;
@@ -2601,6 +2623,31 @@ mod env_file_trust_tests {
         assert!(!has_trust_hash(&path));
         untrust(&path).unwrap();
         untrust(&config).unwrap();
+    }
+
+    /// With both categories on, an env file `mise trust` approves for an env directive is still
+    /// not trust in the same path as config.
+    #[test]
+    fn an_env_file_approval_is_not_config_trust_in_full_paranoid_mode() {
+        use confique::Layer;
+        use mise_settings::Paranoid;
+        let _held = crate::test::SettingsGuard::lock();
+        let mut settings = crate::config::settings::SettingsPartial::empty();
+        settings.paranoid = Some(Paranoid::all());
+        Settings::reset(Some(settings));
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("env.toml");
+        std::fs::write(&path, "A = 1\n").unwrap();
+
+        trust_env_file(&path).unwrap();
+        assert!(env_file_trust_check(&path).unwrap());
+        assert!(!is_trusted(&path));
+
+        // Trusting the path as config replaces the approval.
+        trust(&path).unwrap();
+        assert!(is_trusted(&path));
+        untrust(&path).unwrap();
+        Settings::reset(None);
     }
 
     #[test]
