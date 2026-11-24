@@ -274,8 +274,18 @@ impl Plugin {
     /// called on a plugin used as `<plugin>:<tool>`, and a tool plugin used that
     /// way has none, so this turns a Lua `require` failure into an error that
     /// names the plugin and the hook.
+    /// Refuses a plugin that does not ship `hooks/<hook>.lua`, by looking at its files,
+    /// so none of its Lua (metadata or other hooks) runs for a hook it does not define.
     pub(crate) fn ensure_backend_hook(&self, hook: &str) -> Result<()> {
-        if !self.load()?.hooks.contains(hook) {
+        let ships_hook = match &self.source {
+            PluginSource::Filesystem(dir) => {
+                dir.join("hooks").join(format!("{hook}.lua")).is_file()
+            }
+            PluginSource::Embedded(embedded) => {
+                embedded.hooks.iter().any(|(name, _)| *name == hook)
+            }
+        };
+        if !ships_hook {
             error!(
                 "vfox plugin {} has no hooks/{hook}.lua, so it is not a backend plugin and cannot be used as {}:<tool>",
                 self.name, self.name
@@ -549,5 +559,32 @@ mod tests {
             );
         }
         assert_eq!(cpath, "");
+    }
+
+    #[tokio::test]
+    async fn a_missing_backend_hook_is_refused_before_any_plugin_code_runs() {
+        let dir = tempfile::tempdir().unwrap();
+        let plugin_dir = dir.path().join("demo");
+        std::fs::create_dir_all(plugin_dir.join("hooks")).unwrap();
+        std::fs::write(plugin_dir.join("metadata.lua"), r#"error("metadata ran")"#).unwrap();
+        std::fs::write(
+            plugin_dir.join("hooks/available.lua"),
+            r#"error("available ran")"#,
+        )
+        .unwrap();
+        let plugin = Plugin::from_dir(&plugin_dir).unwrap();
+        let ctx = crate::hooks::backend_list_versions::BackendListVersionsContext {
+            tool: "demo".to_string(),
+            options: Default::default(),
+        };
+        let err = plugin
+            .backend_list_versions(ctx)
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("vfox plugin demo has no hooks/backend_list_versions.lua"),
+            "{err}"
+        );
     }
 }
