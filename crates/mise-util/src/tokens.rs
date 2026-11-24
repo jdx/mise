@@ -650,12 +650,32 @@ logins:
                 Some(home.clone()),
                 "{cmd} would run in the directory mise was called in"
             );
-            assert!(
-                !command
-                    .get_envs()
-                    .any(|(key, value)| key == "GIT_DIR" && value.is_some()),
-                "{cmd} would inherit $GIT_DIR"
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_credential_command_does_not_inherit_git_dir() {
+        let inherited = "/inherited/git-dir";
+        let mut env = crate::testing::EnvVarGuard::new();
+        env.set("GIT_DIR", inherited)
+            .set("GIT_WORK_TREE", inherited);
+        // The first runs through the shell, the second without it.
+        for (cmd, direct) in [
+            ("echo \"[$GIT_DIR][$GIT_WORK_TREE]\"", false),
+            ("env", true),
+        ] {
+            let mut command =
+                credential_command_process("test-git-dir", cmd, "example.com").unwrap();
+            assert_eq!(
+                std::path::Path::new(command.get_program()).file_name() == Some("env".as_ref()),
+                direct,
+                "{cmd} took an unexpected path"
             );
+            let output = command.output().unwrap();
+            assert!(output.status.success(), "{cmd} failed: {output:?}");
+            let stdout = String::from_utf8(output.stdout).unwrap();
+            assert!(!stdout.contains(inherited), "{cmd} inherited it: {stdout}");
         }
     }
 
