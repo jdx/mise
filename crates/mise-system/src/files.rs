@@ -2877,7 +2877,14 @@ fn expand_target_pattern(pattern: &str, captures: &[String]) -> Option<PathBuf> 
 }
 
 fn normalize_path_separators(path: &str) -> String {
-    path.replace('\\', "/")
+    // Only Windows separates with `\`. On unix it is an ordinary file-name
+    // character: rewriting it would let a file named `..\x` expand to a
+    // target outside the directory its pattern names.
+    if cfg!(windows) {
+        path.replace('\\', "/")
+    } else {
+        path.to_string()
+    }
 }
 
 fn native_path_separators(path: &str) -> String {
@@ -9430,6 +9437,26 @@ source = "oldrc""#,
         assert_eq!(target, PathBuf::from("/home/me/.config/theme-a.toml"));
     }
 
+    /// On unix a backslash is an ordinary file-name character, so a source
+    /// file named `..\mise\conf.d\zz.toml` is one file inside the target
+    /// directory, not a path that climbs out of it.
+    #[cfg(unix)]
+    #[test]
+    fn test_wildcard_expansion_keeps_backslash_in_file_name() {
+        let captures = wildcard_captures(
+            "/repo/presets/**/*.toml",
+            Path::new(r"/repo/presets/..\mise\conf.d\zz.toml"),
+        )
+        .unwrap();
+        let target = expand_target_pattern("/home/me/.config/app/**/*.toml", &captures).unwrap();
+        assert_eq!(
+            target,
+            PathBuf::from(r"/home/me/.config/app/..\mise\conf.d\zz.toml")
+        );
+        assert_eq!(target.parent(), Some(Path::new("/home/me/.config/app")));
+    }
+
+    #[cfg(windows)]
     #[test]
     fn test_windows_separator_wildcard_expansion() {
         let captures = wildcard_captures(
@@ -9444,6 +9471,7 @@ source = "oldrc""#,
         );
     }
 
+    #[cfg(windows)]
     #[test]
     fn test_windows_separator_recursive_wildcard_expansion() {
         let captures = wildcard_captures(
