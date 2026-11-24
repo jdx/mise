@@ -521,9 +521,15 @@ impl CondaBackend {
                 }
                 _ => Cow::Borrowed(entry.relative_path.as_path()),
             };
-            if !path.to_str().is_some_and(file::is_safe_relative_path)
-                || path.starts_with(CLOBBERS_DIR)
-            {
+            // rattler keeps clobbered files in `__clobbers__`, which a case-insensitive
+            // file system also opens under any other case
+            let in_clobbers = path.components().next().is_some_and(|first| {
+                first
+                    .as_os_str()
+                    .to_str()
+                    .is_some_and(|first| first.eq_ignore_ascii_case(CLOBBERS_DIR))
+            });
+            if !path.to_str().is_some_and(file::is_safe_relative_path) || in_clobbers {
                 eyre::bail!(
                     "refusing to install conda package {}: it has the unsafe path {}, which is not a plain path inside the environment",
                     archive.display(),
@@ -2538,11 +2544,15 @@ mod tests {
         // A file below a link of an earlier package is linked to
         // `__clobbers__/<name>/<path>` instead of through the link, so no package may
         // bring that directory, lead out of it with its name, or share the name.
-        let links = [("__clobbers__/other/share", "../../lib")];
-        let clobber = write_conda_package(dir, "clobber", README, &links);
-        let err = error(link_packages(dir, &[clobber.as_path()]).await);
-        assert!(err.contains("unsafe path"), "{err}");
-        assert!(prefix.join("__clobbers__").symlink_metadata().is_err());
+        // A case-insensitive file system opens the directory under any case.
+        for dir_name in ["__clobbers__", "__CLOBBERS__"] {
+            let link = format!("{dir_name}/other/share");
+            let links = [(link.as_str(), "../../lib")];
+            let clobber = write_conda_package(dir, "clobber", README, &links);
+            let err = error(link_packages(dir, &[clobber.as_path()]).await);
+            assert!(err.contains("unsafe path"), "{dir_name}: {err}");
+            assert!(prefix.join(dir_name).symlink_metadata().is_err());
+        }
 
         // named `..`, the second package would have `d/s/link` and `t/victim` linked
         // through the links `d/s` and `t` of the first, onto the file next to the prefix
