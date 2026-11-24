@@ -237,7 +237,34 @@ impl ToolVersion {
         request: ToolRequest,
         opts: &ResolveOptions,
     ) -> Result<Self> {
-        request.ensure_safe_url_tool_key()?;
+        // A tool URL that safe mode does not fetch can still be used as
+        // installed: resolve it without remote lookups, and refuse it unless
+        // that finds a version on disk.
+        if let Err(refused) = request.ensure_safe_url_tool_key() {
+            let offline = ResolveOptions {
+                offline: true,
+                ..opts.clone()
+            };
+            return match Self::resolve_fetchable(config, request, &offline).await {
+                Ok(tv)
+                    if tv
+                        .backend()
+                        .is_ok_and(|backend| backend.is_version_installed(config, &tv, true)) =>
+                {
+                    Ok(tv)
+                }
+                _ => Err(refused),
+            };
+        }
+        Self::resolve_fetchable(config, request, opts).await
+    }
+
+    /// [`Self::resolve`] for a request whose tool key safe mode lets mise fetch.
+    async fn resolve_fetchable(
+        config: &Arc<Config>,
+        request: ToolRequest,
+        opts: &ResolveOptions,
+    ) -> Result<Self> {
         let install_env = request.options().core.install_env;
         let ba = request.ba().clone();
         let resolve =

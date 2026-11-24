@@ -25,6 +25,25 @@ EOF
   assert_fail "MISE_SAFE=1 mise ls-remote '$tool'" "$refused"
 done
 
+# A version already installed needs no fetch, so safe mode uses it; one that
+# is not installed is still refused.
+digest=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+installed="$MISE_DATA_DIR/installs/npm-https-pkg-example-invalid-tool-tgz/$digest"
+mkdir -p "$installed/bin"
+printf '#!/bin/sh\necho tool ran\n' >"$installed/bin/url-tool"
+chmod +x "$installed/bin/url-tool"
+cat <<EOF >mise.toml
+[tools]
+"npm:https://pkg.example.invalid/tool.tgz" = "$digest"
+EOF
+assert "MISE_SAFE=1 mise where npm:https://pkg.example.invalid/tool.tgz" "$installed"
+assert "MISE_SAFE=1 mise exec -- url-tool" "tool ran"
+cat <<EOF >mise.toml
+[tools]
+"npm:https://pkg.example.invalid/tool.tgz" = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+EOF
+assert_fail "MISE_SAFE=1 mise install" "$refused"
+
 # A tool that only a task declares is a project tool too.
 cat <<EOF >mise.toml
 [tasks.build]
