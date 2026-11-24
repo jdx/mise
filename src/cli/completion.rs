@@ -35,7 +35,80 @@ pub(crate) fn completion_request(argv: &[OsString]) -> Option<String> {
         .get(request.split.cword)
         .map_or("", String::as_str);
     tell_task_mounts_the_word(&mut spec.cmd, word);
+    if let Some(exe) = exe_word(&crate::env::MISE_BIN) {
+        run_mise_by_path(&mut spec, &exe);
+    }
     complete_spec(&spec, request).ok().or_else(compiled)
+}
+
+/// Start the running mise, written as `exe`, wherever a completer or mount of `spec` starts
+/// `mise`.
+///
+/// A completer runs in the directory where TAB was pressed, and when Windows has no `sh`, usage
+/// hands it to `cmd /c`, which looks for a bare `mise` in that directory before `PATH`. A
+/// repository could then ship a `mise.bat` that runs on TAB, before anything is trusted.
+fn run_mise_by_path(spec: &mut usage::Spec, exe: &str) {
+    for complete in spec.complete.values_mut() {
+        if let Some(run) = &mut complete.run {
+            *run = run_mise_as(run, exe);
+        }
+    }
+    run_mise_as_in(&mut spec.cmd, exe);
+}
+
+fn run_mise_as_in(cmd: &mut usage::SpecCommand, exe: &str) {
+    for complete in cmd.complete.values_mut() {
+        if let Some(run) = &mut complete.run {
+            *run = run_mise_as(run, exe);
+        }
+    }
+    let flag_args = cmd.flags.iter_mut().filter_map(|f| f.arg.as_mut());
+    for arg in cmd.args.iter_mut().chain(flag_args) {
+        if let Some(run) = arg.complete.as_mut().and_then(|c| c.run.as_mut()) {
+            *run = run_mise_as(run, exe);
+        }
+    }
+    for mount in &mut cmd.mounts {
+        mount.run = run_mise_as(&mount.run, exe);
+    }
+    for sub in cmd.subcommands.values_mut() {
+        run_mise_as_in(sub, exe);
+    }
+}
+
+/// `script` with every `mise` in command position replaced by `exe`: at the start of a line,
+/// after `;`, `|` or `&`, and at the start of a `$(…)`.
+fn run_mise_as(script: &str, exe: &str) -> String {
+    static PROGRAM: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(r"(?m)(^|\$\(|[;|&])([ \t]*)mise([ \t\n]|$)").unwrap()
+    });
+    PROGRAM
+        .replace_all(script, |c: &regex::Captures<'_>| {
+            format!("{}{}{exe}{}", &c[1], &c[2], &c[3])
+        })
+        .into_owned()
+}
+
+/// `exe` as one word that both `sh -c` and, on Windows, `cmd /c` read back as the path, or
+/// `None` when it is not absolute or cannot be written that way, which leaves `mise` bare.
+fn exe_word(exe: &std::path::Path) -> Option<String> {
+    if !exe.is_absolute() {
+        return None;
+    }
+    let exe = exe.to_str()?;
+    if cfg!(windows) {
+        windows_exe_word(exe)
+    } else {
+        Some(shell_words::quote(exe).into_owned())
+    }
+}
+
+/// A Windows path in double quotes, which `cmd` and `sh` both read as the characters between
+/// them so long as the path holds none that either expands there: `%` and `!` for `cmd`, `$`,
+/// a backtick and a `\` before `\` for `sh`. A Windows path cannot hold `"`.
+fn windows_exe_word(exe: &str) -> Option<String> {
+    let expands = exe.contains(['"', '%', '!', '$', '`', '\n']) || exe.contains(r"\\");
+    (!expands).then(|| format!("\"{exe}\""))
 }
 
 /// Pass the word being completed to the mounts that list tasks.
@@ -148,6 +221,11 @@ fn complete_spec(
     spec: &usage::Spec,
     request: &usage_rs::complete::CompletionRequest,
 ) -> Result<String> {
+    // Completers run in the directory where TAB was pressed, and on Windows without `sh` usage
+    // runs them with `cmd /c`, which looks for every bare program name (`awk`, `sed`, and `mise`
+    // where it cannot be named by path) in that directory before `PATH` unless this is set. Only
+    // `cmd` reads it, and what a completer starts inherits it.
+    crate::env::set_var("NoDefaultCurrentDirectoryInExePath", "1");
     let answer = usage_cli::complete_answer(
         spec,
         &request.split.words,
@@ -672,6 +750,101 @@ mod shell_name_tests {
         .collect();
         let answer = usage_spec_request(&argv).unwrap().unwrap();
         assert!(answer.contains("--from-spec"), "{answer}");
+    }
+
+    #[test]
+    fn completers_start_mise_by_path() {
+        let exe = "'/opt/my mise/mise'";
+        assert_eq!(
+            run_mise_as("mise ls -i | awk '{print $1}' | uniq", exe),
+            "'/opt/my mise/mise' ls -i | awk '{print $1}' | uniq"
+        );
+        assert_eq!(
+            run_mise_as(
+                "case x in\n  *)\n    v=$(mise ls -- \"$t\")\n    mise x\n",
+                exe
+            ),
+            "case x in\n  *)\n    v=$('/opt/my mise/mise' ls -- \"$t\")\n    '/opt/my mise/mise' x\n"
+        );
+        assert_eq!(run_mise_as("mise", exe), exe);
+        assert_eq!(
+            run_mise_as("echo mise; mise-x a", exe),
+            "echo mise; mise-x a"
+        );
+
+        let mut spec = super::super::usage::completion_spec();
+        run_mise_by_path(&mut spec, exe);
+        fn scripts(cmd: &usage::SpecCommand, out: &mut Vec<String>) {
+            out.extend(cmd.complete.values().filter_map(|c| c.run.clone()));
+            out.extend(cmd.mounts.iter().map(|m| m.run.clone()));
+            for sub in cmd.subcommands.values() {
+                scripts(sub, out);
+            }
+        }
+        let mut found: Vec<String> = spec
+            .complete
+            .values()
+            .filter_map(|c| c.run.clone())
+            .collect();
+        scripts(&spec.cmd, &mut found);
+        assert!(found.iter().any(|s| s.starts_with(exe)), "{found:?}");
+        assert!(
+            found.iter().any(|s| s.contains("tasks --usage")),
+            "{found:?}"
+        );
+        for script in found {
+            assert!(
+                !script.trim_start().starts_with("mise ") && !script.contains("$(mise "),
+                "{script}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_windows_path_is_one_word_for_sh_and_cmd() {
+        assert_eq!(
+            windows_exe_word(r"C:\Users\me\AppData\Local\mise\bin\mise.exe").as_deref(),
+            Some(r#""C:\Users\me\AppData\Local\mise\bin\mise.exe""#)
+        );
+        assert_eq!(
+            windows_exe_word(r"C:\Program Files (x86)\a&b\mise.exe").as_deref(),
+            Some(r#""C:\Program Files (x86)\a&b\mise.exe""#)
+        );
+        for path in [
+            r"C:\100%\mise.exe",
+            r"C:\a!b\mise.exe",
+            r"C:\$x\mise.exe",
+            r"\\host\share\mise.exe",
+        ] {
+            assert_eq!(windows_exe_word(path), None, "{path}");
+        }
+        assert_eq!(exe_word(std::path::Path::new("mise")), None);
+    }
+
+    #[test]
+    fn completers_run_without_cmd_searching_the_current_directory() {
+        crate::env::remove_var("NoDefaultCurrentDirectoryInExePath");
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("probe.kdl");
+        std::fs::write(
+            &path,
+            "name \"probe\"\narg \"<x>\"\ncomplete \"x\" run=\"printenv NoDefaultCurrentDirectoryInExePath | sed s/^/seen-/\"\n",
+        )
+        .unwrap();
+        let encoded = crate::packslip::completions::encode_spec_path(&path);
+        let argv: Vec<OsString> = [
+            "__usage_complete_word",
+            &encoded,
+            "--shell",
+            "bash",
+            "--line",
+            "probe ",
+        ]
+        .into_iter()
+        .map(OsString::from)
+        .collect();
+        let answer = usage_spec_request(&argv).unwrap().unwrap();
+        assert!(answer.contains("seen-1"), "{answer}");
     }
 
     #[test]
