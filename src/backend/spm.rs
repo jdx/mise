@@ -750,16 +750,7 @@ impl SPMBackend {
             return Ok(false);
         }
 
-        let bin_path = tv.install_path().join("bin");
-        let artifact_bin_path = tv.install_path().join("artifactbundle").join("bin");
-        file::create_dir_all(&bin_path)?;
-        file::create_dir_all(&artifact_bin_path)?;
-        for binary in binaries {
-            let installed_binary = artifact_bin_path.join(&binary.name);
-            file::copy(&binary.path, &installed_binary)?;
-            file::make_executable(&installed_binary)?;
-            file::make_symlink(&installed_binary, &bin_path.join(&binary.name))?;
-        }
+        install_artifactbundle_binaries(&tv.install_path(), binaries)?;
         file::remove_all(tv.cache_path())?;
         Ok(true)
     }
@@ -1551,6 +1542,42 @@ struct ArtifactBundleArtifact {
 struct ArtifactBundleVariant {
     path: String,
     supported_triples: Vec<String>,
+}
+
+/// Copies the bundle's executables into `artifactbundle/bin` and links each
+/// name into `bin`.
+///
+/// info.json can list one file under any number of names. Each file is copied
+/// once and its other names link to that copy, so the install takes no more
+/// space than the unpacked bundle, which `extract_max_ratio` bounds.
+fn install_artifactbundle_binaries(
+    install_path: &Path,
+    binaries: Vec<ArtifactBundleBinary>,
+) -> Result<()> {
+    let bin_path = install_path.join("bin");
+    let artifact_bin_path = install_path.join("artifactbundle").join("bin");
+    file::create_dir_all(&bin_path)?;
+    file::create_dir_all(&artifact_bin_path)?;
+    // A name that several bundles of the zip list goes to the last of them.
+    let mut sources = BTreeMap::new();
+    for binary in binaries {
+        sources.insert(binary.name, binary.path.canonicalize()?);
+    }
+    let mut copies: BTreeMap<PathBuf, PathBuf> = BTreeMap::new();
+    for (name, source) in sources {
+        let installed_binary = match copies.get(&source) {
+            Some(copy) => copy.clone(),
+            None => {
+                let copy = artifact_bin_path.join(&name);
+                file::copy(&source, &copy)?;
+                file::make_executable(&copy)?;
+                copies.insert(source, copy.clone());
+                copy
+            }
+        };
+        file::make_symlink(&installed_binary, &bin_path.join(&name))?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -2737,6 +2764,50 @@ mod tests {
         let binaries = artifactbundle_binaries(&extract, &triples).unwrap();
         assert_eq!(binaries.len(), 1);
         assert_eq!(binaries[0].name, "tool");
+    }
+
+    /// One file listed under many names is installed once, so the names in
+    /// info.json cannot multiply the space the unpacked bundle takes.
+    #[cfg(unix)]
+    #[test]
+    fn test_install_artifactbundle_binaries_copies_each_file_once() {
+        let tmp = tempfile::tempdir().unwrap();
+        let bundle = tmp.path().join("extract/tool.artifactbundle");
+        file::create_dir_all(bundle.join("bin")).unwrap();
+        file::write(bundle.join("bin/tool"), "tool").unwrap();
+        file::write(bundle.join("bin/other"), "other").unwrap();
+        let binary = |name: &str, path: &str| ArtifactBundleBinary {
+            name: name.to_string(),
+            path: bundle.join(path),
+        };
+        let install = tmp.path().join("install");
+
+        install_artifactbundle_binaries(
+            &install,
+            vec![
+                binary("tool", "bin/tool"),
+                binary("alias", "bin/tool"),
+                binary("respelled", "bin/../bin/tool"),
+                binary("other", "bin/other"),
+                // a name that a later bundle lists again is that bundle's
+                binary("alias", "bin/other"),
+            ],
+        )
+        .unwrap();
+
+        let copies = std::fs::read_dir(install.join("artifactbundle/bin")).unwrap();
+        assert_eq!(copies.count(), 2);
+        for (name, content) in [
+            ("tool", "tool"),
+            ("respelled", "tool"),
+            ("alias", "other"),
+            ("other", "other"),
+        ] {
+            let link = install.join("bin").join(name);
+            assert!(link.is_symlink(), "{name}");
+            assert_eq!(file::read_to_string(&link).unwrap(), content, "{name}");
+            assert!(file::is_executable(&link), "{name}");
+        }
     }
 
     #[test]
