@@ -152,11 +152,11 @@ impl EnvResults {
         let mut out = IndexMap::new();
         let mut patterns = Vec::with_capacity(inputs.len());
         for input in &inputs {
-            patterns.push(PathBuf::from(ctx.parse_template("_.file", input)?));
+            patterns.push(ctx.parse_path_template("_.file", input)?);
         }
         let has_glob = patterns
             .iter()
-            .any(|pattern| crate::config::is_glob_pattern(&pattern.to_string_lossy()));
+            .any(|pattern| crate::config::is_glob_pattern(&pattern.path.to_string_lossy()));
         let expand = expand && crate::config::Settings::get().env_shell_expand;
         // Accumulate loaded vars so opted-in expansion can reference values from
         // an earlier file in the same directive or an earlier env block.
@@ -167,17 +167,32 @@ impl EnvResults {
             // A relative name starts at the config root, like every other relative path in a
             // config. An absolute path, such as `{{cwd}}/.env`, starts at its own directory and
             // searches for its file name. Consecutive names with the same start are searched
-            // together, directory by directory, and groups apply in the order written.
-            let mut groups: Vec<(PathBuf, Vec<PathBuf>)> = Vec::new();
+            // together, directory by directory, and groups apply in the order written. A glob is
+            // matched below each directory, from the directory it is written in.
+            let mut groups: Vec<(PathBuf, Vec<(PathBuf, Option<String>)>)> = Vec::new();
             for pattern in &patterns {
-                let pattern = file::replace_path(pattern);
-                let (start, name) = if pattern.is_absolute() {
-                    match (pattern.parent(), pattern.file_name()) {
-                        (Some(dir), Some(name)) => (normalize_dots(dir), PathBuf::from(name)),
-                        _ => continue,
+                let (start, name) = match &pattern.dir {
+                    None => {
+                        let path = file::replace_path(&pattern.path);
+                        if path.is_absolute() {
+                            match (path.parent(), path.file_name()) {
+                                (Some(dir), Some(name)) => {
+                                    (normalize_dots(dir), (PathBuf::from(name), None))
+                                }
+                                _ => continue,
+                            }
+                        } else {
+                            (ctx.config_root.to_path_buf(), (path, None))
+                        }
                     }
-                } else {
-                    (ctx.config_root.to_path_buf(), pattern)
+                    Some((dir, glob)) => {
+                        let dir = file::replace_path(dir);
+                        if dir.is_absolute() {
+                            (normalize_dots(&dir), (PathBuf::new(), Some(glob.clone())))
+                        } else {
+                            (ctx.config_root.to_path_buf(), (dir, Some(glob.clone())))
+                        }
+                    }
                 };
                 match groups.last_mut() {
                     Some((dir, names)) if *dir == start => names.push(name),
@@ -192,8 +207,11 @@ impl EnvResults {
                 // directory a later name wins. A single name is the same walk with one name.
                 let mut nearest_first = Vec::new();
                 for dir in start.ancestors() {
-                    for name in names.iter().rev() {
-                        let mut matches = xx::file::glob(dir.join(name)).unwrap_or_default();
+                    for (name, glob) in names.iter().rev() {
+                        let mut matches = match glob {
+                            None => vec![dir.join(name)],
+                            Some(glob) => super::glob_files_in(&dir.join(name), glob),
+                        };
                         matches.reverse();
                         nearest_first.extend(matches);
                     }
@@ -203,8 +221,8 @@ impl EnvResults {
             paths
         } else {
             patterns
-                .into_iter()
-                .flat_map(|pattern| xx::file::glob(ctx.normalize_path(pattern)).unwrap_or_default())
+                .iter()
+                .flat_map(|pattern| ctx.expand_path(pattern))
                 .collect()
         };
         // A global entry that names its file outright is the operator's own choice. One that

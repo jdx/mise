@@ -14,7 +14,8 @@ impl EnvResults {
         // Note: in safe mode `_.source` directives are dropped during env
         // resolution (see EnvResults::resolve), so this is never reached.
         let mut out = IndexMap::new();
-        let s = ctx.parse_template("_.source", &input)?;
+        let path = ctx.parse_path_template("_.source", &input)?;
+        let s = path.path.to_string_lossy().to_string();
         let orig_path = ctx
             .exec_env
             .get(&*env::PATH_KEY)
@@ -27,7 +28,7 @@ impl EnvResults {
         // needs those approved like config.
         let operator_owned =
             crate::config::is_global_config(ctx.source) && !crate::config::is_glob_pattern(&s);
-        for p in xx::file::glob(ctx.normalize_path(s.into())).unwrap_or_default() {
+        for p in ctx.expand_path(&path) {
             if !p.exists() {
                 continue;
             }

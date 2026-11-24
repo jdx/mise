@@ -99,6 +99,138 @@ impl EnvDirectiveContext<'_> {
     fn normalize_path(&self, path: PathBuf) -> PathBuf {
         (self.normalize_path)(self.config_root, path)
     }
+
+    /// Renders a `_.file` or `_.source` path and splits it where the glob the entry writes
+    /// begins. A `*` only makes a pattern when the entry itself writes it: what a template or
+    /// `$VAR` puts into the path, such as a directory named `src*` that `{{cwd}}` names, is part
+    /// of a name.
+    fn parse_path_template(&mut self, origin: &str, input: &str) -> eyre::Result<EnvPath> {
+        let Some(start) = written_pattern_start(input) else {
+            let path = self.parse_template(origin, input)?;
+            return Ok(EnvPath::literal(path));
+        };
+        let marked = format!("{}{PATTERN_MARK}{}", &input[..start], &input[start..]);
+        let rendered = self.parse_template(origin, &marked)?;
+        Ok(match rendered.split_once(PATTERN_MARK) {
+            Some((dir, pattern)) if !pattern.contains(PATTERN_MARK) => EnvPath {
+                path: format!("{dir}{pattern}").into(),
+                dir: Some((dir.into(), pattern.to_string())),
+            },
+            // a template dropped or repeated the text that holds the pattern
+            _ => EnvPath::literal(rendered.replace(PATTERN_MARK, "")),
+        })
+    }
+
+    /// The files an [`EnvPath`] names: the path itself, or the files its pattern matches.
+    fn expand_path(&self, path: &EnvPath) -> Vec<PathBuf> {
+        match &path.dir {
+            None => vec![self.normalize_path(path.path.clone())],
+            Some((dir, pattern)) => glob_files_in(&self.normalize_path(dir.clone()), pattern),
+        }
+    }
+}
+
+/// Marks, through rendering, where the pattern an entry writes begins. No path holds a NUL.
+const PATTERN_MARK: char = '\0';
+
+/// A rendered `_.file` or `_.source` path.
+pub(super) struct EnvPath {
+    /// The whole rendered path.
+    path: PathBuf,
+    /// For a glob, the directory it is taken in, as named, and the pattern below it.
+    dir: Option<(PathBuf, String)>,
+}
+
+impl EnvPath {
+    fn literal(path: String) -> Self {
+        Self {
+            path: path.into(),
+            dir: None,
+        }
+    }
+}
+
+/// Where the path component that holds the first glob metacharacter the entry writes begins,
+/// when the entry writes a `*`. Template tags and `$VAR`s are skipped: what they render is data.
+fn written_pattern_start(input: &str) -> Option<usize> {
+    let bytes = input.as_bytes();
+    let mut i = 0;
+    let mut component = 0;
+    let mut first_meta = None;
+    let mut has_star = false;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'{' if matches!(bytes.get(i + 1), Some(b'{' | b'%' | b'#')) => {
+                let close = match bytes[i + 1] {
+                    b'{' => "}}",
+                    b'%' => "%}",
+                    _ => "#}",
+                };
+                match input[i + 2..].find(close) {
+                    Some(end) => i += 2 + end + 2,
+                    None => break,
+                }
+                continue;
+            }
+            b'$' if bytes.get(i + 1) == Some(&b'{') => {
+                match input[i..].find('}') {
+                    Some(end) => i += end + 1,
+                    None => break,
+                }
+                continue;
+            }
+            b'$' => {
+                i += 1;
+                while bytes
+                    .get(i)
+                    .is_some_and(|b| b.is_ascii_alphanumeric() || *b == b'_')
+                {
+                    i += 1;
+                }
+                continue;
+            }
+            b'/' => {
+                if first_meta.is_none() {
+                    component = i + 1;
+                }
+            }
+            b'\\' if cfg!(windows) => {
+                if first_meta.is_none() {
+                    component = i + 1;
+                }
+            }
+            b'*' => {
+                has_star = true;
+                first_meta.get_or_insert(component);
+            }
+            b'?' | b'[' | b'{' => {
+                first_meta.get_or_insert(component);
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    if has_star { first_meta } else { None }
+}
+
+/// The files `pattern` matches below `dir`, in name order. As in a shell, `*` stays within one
+/// directory and only `**` descends, so `.env.*` does not reach into a repository cloned below
+/// the config. `dir` is taken as it is named.
+fn glob_files_in(dir: &Path, pattern: &str) -> Vec<PathBuf> {
+    let alternatives = crate::task::task_source_checker::expand_enumeration_patterns(pattern)
+        .unwrap_or_else(|_| vec![pattern.to_string()]);
+    let mut files = Vec::new();
+    for alternative in alternatives {
+        let Ok(walker) = crate::task::task_source_checker::glob_walk_in(dir, &alternative) else {
+            continue;
+        };
+        for entry in walker.filter_map(|entry| entry.ok()) {
+            if entry.file_type().is_file() && !files.iter().any(|f| f == entry.path()) {
+                files.push(entry.into_path());
+            }
+        }
+    }
+    files
 }
 
 #[derive(Debug, Clone, Default)]
@@ -1219,6 +1351,79 @@ mod tests {
         assert!(msg.contains(&display_path(path)), "{msg}");
         // The existing escape hatch has to survive the rewording.
         assert!(msg.contains("${DB_HOST:-}"), "{msg}");
+    }
+
+    /// A `_.file` or `_.source` glob reads as it does in a shell. `.env.*` names the files next
+    /// to the config, not those of a repository cloned somewhere below it.
+    #[test]
+    fn test_glob_files_in_stays_in_its_directory() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        for file in [
+            ".env.local",
+            ".env.test",
+            ".env.dir/inner",
+            "cloned/.env.example",
+            "cloned/docs/.env.example",
+            "env.d/a.env",
+            "env.d/nested/b.env",
+        ] {
+            let file = root.join(file);
+            std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+            std::fs::write(file, "").unwrap();
+        }
+        let glob = |pattern: &str| glob_files_in(root, pattern);
+        let files = |names: &[&str]| names.iter().map(|name| root.join(name)).collect_vec();
+
+        assert_eq!(glob(".env.*"), files(&[".env.local", ".env.test"]));
+        assert_eq!(glob("env.d/*.env"), files(&["env.d/a.env"]));
+        assert_eq!(glob("*/.env.*"), files(&["cloned/.env.example"]));
+        assert_eq!(
+            glob("{env.d,cloned}/*"),
+            files(&["env.d/a.env", "cloned/.env.example"])
+        );
+        // `**` asks for the tree
+        assert_eq!(
+            glob("**/.env.example"),
+            files(&["cloned/.env.example", "cloned/docs/.env.example"])
+        );
+    }
+
+    /// A directory is taken as it is named, even when its name holds a `*`.
+    #[test]
+    fn test_glob_files_in_takes_the_directory_literally() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        for file in ["src*/.env.a", "srcfoo/.env.b"] {
+            let file = root.join(file);
+            std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+            std::fs::write(file, "").unwrap();
+        }
+        assert_eq!(
+            glob_files_in(&root.join("src*"), ".env.*"),
+            vec![root.join("src*/.env.a")]
+        );
+    }
+
+    /// Only a wildcard the entry writes makes a pattern, and the pattern starts at the path
+    /// component that holds it. What a template or `$VAR` renders is part of a name.
+    #[test]
+    fn test_written_pattern_start() {
+        assert_eq!(written_pattern_start(".env"), None);
+        assert_eq!(written_pattern_start("{{cwd}}/.env"), None);
+        assert_eq!(
+            written_pattern_start("{{ env.X | default(value='*') }}"),
+            None
+        );
+        assert_eq!(written_pattern_start("${X:-*}/.env"), None);
+        assert_eq!(written_pattern_start("{# * #}.env"), None);
+        // `?` alone is not a glob, as before
+        assert_eq!(written_pattern_start("a?.env"), None);
+        assert_eq!(written_pattern_start(".env.*"), Some(0));
+        assert_eq!(written_pattern_start("{{cwd}}/.env.*"), Some(8));
+        assert_eq!(written_pattern_start("$PWD/env.d/*.env"), Some(11));
+        assert_eq!(written_pattern_start("conf/[ab]/*.env"), Some(5));
+        assert_eq!(written_pattern_start("conf/*/{{name}}/x.env"), Some(5));
     }
 
     /// `ToolsFilter::ToolsOnlyVals` must select only `tools = true` `Val`

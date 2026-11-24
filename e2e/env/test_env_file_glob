@@ -14,3 +14,40 @@ echo "VAR2=2" >env.d/2.env
 mise env -s bash
 assert_contains "mise env -s bash" "VAR1=1"
 assert_contains "mise env -s bash" "VAR2=2"
+
+# `*` stays in its directory, as in a shell: a file below it is not loaded
+mkdir -p env.d/nested cloned/docs
+echo "VAR3=3" >env.d/nested/3.env
+echo "CLONED=1" >cloned/docs/.env.example
+assert_contains "mise env -s bash" "VAR2=2"
+assert_not_contains "mise env -s bash" "VAR3=3"
+
+# `**` descends
+cat <<'EOS' >.mise.toml
+[env]
+_.file = ["env.d/**/*.env", ".env.*"]
+EOS
+assert_contains "mise env -s bash" "VAR1=1"
+assert_contains "mise env -s bash" "VAR3=3"
+assert_not_contains "mise env -s bash" "CLONED=1"
+
+# a `*` that a template renders is part of a directory's name
+mkdir -p 'src*' srcfoo
+echo "OWN=1" >'src*/.env'
+echo "OWN_LOCAL=1" >'src*/.env.local'
+echo "SIBLING=1" >srcfoo/.env
+echo "SIBLING_LOCAL=1" >srcfoo/.env.local
+cat <<'EOS' >.mise.toml
+[env]
+_.file = ["{{cwd}}/.env", "{{cwd}}/.env.*"]
+EOS
+cd 'src*' || exit 1
+assert_contains "mise env -s bash" "OWN=1"
+assert_contains "mise env -s bash" "OWN_LOCAL=1"
+assert_not_contains "mise env -s bash" "SIBLING"
+cat <<'EOS' >../.mise.toml
+[env]
+_.file = { path = "{{cwd}}/.env", find_up = true }
+EOS
+assert_contains "mise env -s bash" "OWN=1"
+assert_not_contains "mise env -s bash" "SIBLING"

@@ -731,9 +731,40 @@ pub(crate) fn glob_walk_pruned(
         pattern_depth += 1;
     }
 
-    let Some(mut glob_pattern) = pattern_from_path(&glob_pattern) else {
+    let Some(glob_pattern) = pattern_from_path(&glob_pattern) else {
         bail!("glob pattern is not valid UTF-8: {}", pattern.display());
     };
+    build_glob_walker(
+        base,
+        glob_pattern,
+        (!recursive).then_some(pattern_depth),
+        case_insensitive,
+        pruner,
+    )
+}
+
+/// Walks `base` for the entries `pattern`, a `/`-separated glob relative to it, selects. `base`
+/// is a directory taken as it is named, even when its name holds glob metacharacters, and as
+/// with [`glob_walk`] a `*` stays within one directory and only `**` descends.
+pub(crate) fn glob_walk_in(base: &Path, pattern: &str) -> Result<GlobWalker> {
+    let components = pattern.split('/').filter(|c| !c.is_empty()).collect_vec();
+    let max_depth = (!components.contains(&"**")).then_some(components.len());
+    build_glob_walker(
+        base.to_path_buf(),
+        components.join("/"),
+        max_depth,
+        false,
+        &DirPruner::none(),
+    )
+}
+
+fn build_glob_walker(
+    base: PathBuf,
+    mut glob_pattern: String,
+    max_depth: Option<usize>,
+    case_insensitive: bool,
+    pruner: &DirPruner,
+) -> Result<GlobWalker> {
     if glob_pattern.starts_with('!') {
         glob_pattern.insert(0, '\\');
     }
@@ -778,8 +809,8 @@ pub(crate) fn glob_walk_pruned(
     let mut walker = WalkDir::new(&base)
         .follow_links(true)
         .sort_by(|a, b| a.file_name().cmp(b.file_name()));
-    if !recursive {
-        walker = walker.max_depth(pattern_depth);
+    if let Some(max_depth) = max_depth {
+        walker = walker.max_depth(max_depth);
     }
     Ok(GlobWalker {
         overrides: overrides.build()?,

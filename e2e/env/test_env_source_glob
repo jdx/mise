@@ -19,3 +19,9 @@ EOF
 
 assert_contains "mise env -s bash" "SOURCE1=1"
 assert_contains "mise env -s bash" "SOURCE2=2"
+
+# `*` stays in its directory, as in a shell: a script below it is not run
+mkdir -p source.d/nested
+echo "export SOURCE3=3" >source.d/nested/3.sh
+assert_contains "mise env -s bash" "SOURCE2=2"
+assert_not_contains "mise env -s bash" "SOURCE3=3"
