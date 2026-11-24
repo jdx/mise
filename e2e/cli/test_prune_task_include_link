@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# A task file of a tracked project that is a link out of the project is not
+# quoted when `mise prune` fails to parse it: the text is the user's.
+
+mkdir -p proj other
+cat >proj/mise.toml <<'TOML'
+[task_config]
+includes = ["tasks.toml"]
+TOML
+printf 'password s3cr3t\n' >"$HOME/private.toml"
+
+assert "mise trust proj/mise.toml"
+# track this config
+assert "mise ls -C proj"
+ln -s "$HOME/private.toml" proj/tasks.toml
+
+cd other || exit 1
+assert_contains "mise prune --dry-run 2>&1" "details hidden"
+assert_not_contains "mise prune --dry-run 2>&1" "s3cr3t"
+assert_not_contains "mise ls --prunable 2>&1" "s3cr3t"
+
+# the project's own file is still quoted
+rm ../proj/tasks.toml
+printf 'password s3cr3t\n' >../proj/tasks.toml
+assert_contains "mise prune --dry-run 2>&1" "s3cr3t"

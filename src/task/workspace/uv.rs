@@ -5,6 +5,8 @@ use eyre::{Context, Result, bail};
 use glob::{MatchOptions, Pattern};
 use serde::Deserialize;
 
+use crate::config::config_file::diagnostic::hide_linked_source;
+
 use super::{
     ProjectId, WorkspaceDiscoveryContext, WorkspaceProject, WorkspaceProvenance, WorkspaceProvider,
 };
@@ -307,6 +309,7 @@ fn read_pyproject(context: &WorkspaceDiscoveryContext, path: &Path) -> Result<Py
         .read_to_string(path)
         .wrap_err_with(|| format!("failed to read uv project metadata {}", path.display()))?;
     toml::from_str(&contents)
+        .map_err(|err| hide_linked_source(err, &contents, path))
         .wrap_err_with(|| format!("failed to parse uv project metadata {}", path.display()))
 }
 
@@ -705,5 +708,31 @@ mod tests {
                 .unwrap()
                 .is_empty()
         );
+    }
+
+    /// A project can ship the manifest as a link to a file of the user's, and
+    /// a TOML error quotes the failing line.
+    #[test]
+    #[cfg(unix)]
+    fn does_not_quote_a_linked_manifest() {
+        let temp = tempdir().unwrap();
+        // resolved, as the working directory mise starts from is
+        let temp = temp.path().canonicalize().unwrap();
+        let (home, root) = (temp.join("home"), temp.join("project"));
+        write(&home.join("netrc"), "password s3cr3t\n");
+        let report = |root: &Path| {
+            let error = UvWorkspaceProvider.discover(root).unwrap_err();
+            format!("{error:#}")
+        };
+
+        // the project's own file is quoted
+        write(&root.join(PYPROJECT_TOML), "password s3cr3t\n");
+        assert!(report(&root).contains("s3cr3t"));
+
+        fs::remove_file(root.join(PYPROJECT_TOML)).unwrap();
+        std::os::unix::fs::symlink(home.join("netrc"), root.join(PYPROJECT_TOML)).unwrap();
+        let linked = report(&root);
+        assert!(!linked.contains("s3cr3t"), "{linked}");
+        assert!(linked.contains("line 1, column 10: "), "{linked}");
     }
 }

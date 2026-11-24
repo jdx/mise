@@ -256,8 +256,20 @@ pub(crate) fn hide_linked_source_below(
 
 /// What a parse error about a linked file says in place of the parser's
 /// message, which can quote the file's text.
-const LINKED_DETAILS_HIDDEN: &str =
+pub(crate) const LINKED_DETAILS_HIDDEN: &str =
     "details hidden because the file is reached through a link out of the project";
+
+/// For callers that report what a JSON or YAML parser says about `path`. Such
+/// a message can quote a value (`invalid type: string "…"`), and a text with no
+/// `key: value` line is one YAML string, so [`LINKED_DETAILS_HIDDEN`] takes its
+/// place unless [`may_quote`] allows `path` to be quoted.
+pub(crate) fn hide_linked_details(error: impl fmt::Display, path: &Path) -> String {
+    if may_quote(path) {
+        error.to_string()
+    } else {
+        LINKED_DETAILS_HIDDEN.to_string()
+    }
+}
 
 /// Create an eyre error from a toml::de::Error with rich source context.
 pub(crate) fn toml_parse_error(err: &toml::de::Error, source: &str, path: &Path) -> eyre::Report {

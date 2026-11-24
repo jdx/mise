@@ -6,6 +6,8 @@ use eyre::{Context, Result};
 use mise_util::yaml::{self, Value};
 use serde::Deserialize;
 
+use crate::config::config_file::diagnostic;
+
 use super::{
     ProjectId, WorkspaceDiscoveryContext, WorkspaceProject, WorkspaceProjectGraph,
     WorkspaceProvenance, WorkspaceProvider, WorkspaceTask, WorkspaceTaskSuggestions,
@@ -92,8 +94,20 @@ impl WorkspaceProvider for NodeWorkspaceProvider {
             WorkspaceDiscoveryOptions::confined_to_root(),
         )
         .map_err(|error| {
+            // aube reads these at the root itself, and its message quotes
+            // what it could not parse
+            let linked = aube::embed::host()
+                .workspace_yaml
+                .into_iter()
+                .chain([PNPM_WORKSPACE, PACKAGE_JSON])
+                .map(|name| workspace_root.join(name))
+                .find(|path| !diagnostic::may_quote(path));
+            let details = match linked {
+                Some(path) => format!("{}: {}", path.display(), diagnostic::LINKED_DETAILS_HIDDEN),
+                None => error.to_string(),
+            };
             eyre::eyre!(
-                "failed to discover Node workspace packages under {}: {error}",
+                "failed to discover Node workspace packages under {}: {details}",
                 workspace_root.display()
             )
         })?
@@ -614,7 +628,11 @@ fn read_turbo_json(
     match mise_util::structured_merge::from_jsonc_str(&contents) {
         Ok(turbo) => Ok(Some(turbo)),
         Err(error) => {
-            warn!("failed to parse optional {}: {error}", path.display());
+            warn!(
+                "failed to parse optional {}: {}",
+                path.display(),
+                diagnostic::hide_linked_details(error, &path)
+            );
             Ok(None)
         }
     }
@@ -673,8 +691,9 @@ fn read_package_json(context: &WorkspaceDiscoveryContext, path: &Path) -> Result
     })?;
     PackageJson::parse(path, contents.to_string()).map_err(|error| {
         eyre::eyre!(
-            "failed to parse Node package manifest {}: {error}",
-            path.display()
+            "failed to parse Node package manifest {}: {}",
+            path.display(),
+            diagnostic::hide_linked_details(error, path)
         )
     })
 }
@@ -1731,6 +1750,57 @@ snapshots:
         assert!(
             err.to_string()
                 .contains("missing the package.json \"name\"")
+        );
+    }
+
+    /// A project can ship its workspace metadata as a link to a file of the
+    /// user's, and the parser's message quotes what it could not use.
+    #[test]
+    #[cfg(unix)]
+    fn does_not_quote_linked_workspace_metadata() {
+        use std::os::unix::fs::symlink;
+
+        let temp = tempdir().unwrap();
+        // resolved, as the working directory mise starts from is
+        let temp = temp.path().canonicalize().unwrap();
+        let (home, root) = (temp.join("home"), temp.join("project"));
+        write(
+            &home.join("key"),
+            "-----BEGIN-----\ns3cr3t\n-----END-----\n",
+        );
+        write(&home.join("token.json"), "\"s3cr3t\"\n");
+        let report = |root: &Path| {
+            let error = NodeWorkspaceProvider.discover(root).unwrap_err();
+            format!("{error:#}")
+        };
+
+        // the project's own file is quoted
+        fs::create_dir_all(&root).unwrap();
+        fs::copy(home.join("key"), root.join(PNPM_WORKSPACE)).unwrap();
+        assert!(report(&root).contains("s3cr3t"));
+
+        fs::remove_file(root.join(PNPM_WORKSPACE)).unwrap();
+        symlink(home.join("key"), root.join(PNPM_WORKSPACE)).unwrap();
+        let linked_workspace = report(&root);
+        assert!(!linked_workspace.contains("s3cr3t"), "{linked_workspace}");
+        assert!(
+            linked_workspace.contains("details hidden"),
+            "{linked_workspace}"
+        );
+
+        fs::remove_file(root.join(PNPM_WORKSPACE)).unwrap();
+        write(&root.join(PNPM_WORKSPACE), "packages:\n  - packages/*\n");
+        fs::create_dir_all(root.join("packages/app")).unwrap();
+        symlink(
+            home.join("token.json"),
+            root.join("packages/app/package.json"),
+        )
+        .unwrap();
+        let linked_manifest = report(&root);
+        assert!(!linked_manifest.contains("s3cr3t"), "{linked_manifest}");
+        assert!(
+            linked_manifest.contains("details hidden"),
+            "{linked_manifest}"
         );
     }
 }

@@ -9202,7 +9202,12 @@ fn included_task_definitions(
                 }
                 let loaded = if is_toml(&path) {
                     file::read_config_to_string(&path).and_then(|raw| {
-                        Ok(toml::from_str::<Tasks>(&raw)?
+                        Ok(toml::from_str::<Tasks>(&raw)
+                            .map_err(|err| {
+                                config_file::diagnostic::hide_linked_source_below(
+                                    err, &raw, &path, dir,
+                                )
+                            })?
                             .0
                             .into_iter()
                             .map(|(name, mut task)| {
