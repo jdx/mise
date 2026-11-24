@@ -1010,6 +1010,31 @@ static CHECKSUM_PATTERNS: LazyLock<Vec<Regex>> = LazyLock::new(|| {
     ]
 });
 
+/// Signatures, certificates, keys and attestation bundles: files that sit next
+/// to a checksum list (`checksums.txt.sig`, `SHASUMS.txt.asc`) and match its
+/// name, but never hold a digest.
+fn is_signature_file(name: &str) -> bool {
+    let name = name.to_lowercase();
+    [
+        ".asc",
+        ".sig",
+        ".sign",
+        ".minisig",
+        ".pem",
+        ".cert",
+        ".cer",
+        ".crt",
+        ".key",
+        ".pub",
+        ".sigstore",
+        ".sigstore.json",
+        ".bundle",
+        ".intoto.jsonl",
+    ]
+    .iter()
+    .any(|suffix| name.ends_with(suffix))
+}
+
 /// Validate a `matching_regex` option string, returning a hard error that names
 /// the pattern if it fails to compile (an empty/`None` value is a no-op).
 ///
@@ -1130,34 +1155,54 @@ impl AssetMatcher {
         self.match_by_auto_detection(assets)
     }
 
-    /// Find checksum file for a given asset
-    pub(crate) fn find_checksum_for(&self, asset_name: &str, assets: &[String]) -> Option<String> {
+    /// Every release file that can hold `asset_name`'s checksum, most specific
+    /// first: `<asset>.sha256` and the like, the common list names, then any
+    /// other file named like a checksum list. A list may be one of several
+    /// (`checksums-darwin.txt`, `checksums-linux.txt`) or sit next to its own
+    /// signature (`checksums.txt.sig`), so a caller tries each in turn instead
+    /// of stopping at the first name that matches. Signatures, certificates and
+    /// keys are left out: they never hold a digest.
+    pub(crate) fn checksum_files_for(&self, asset_name: &str, assets: &[String]) -> Vec<String> {
         let base_name = extraction_suffix_len(asset_name)
             .map(|suffix_len| &asset_name[..asset_name.len() - suffix_len])
             .unwrap_or(asset_name);
+        let mut found: Vec<String> = Vec::new();
+        let mut add = |name: &String| {
+            if !is_signature_file(name) && !found.contains(name) {
+                found.push(name.clone());
+            }
+        };
 
-        // Try exact match with checksum extension
         for ext in CHECKSUM_EXTENSIONS.iter() {
-            let checksum_name = format!("{asset_name}{ext}");
-            if assets.iter().any(|a| a == &checksum_name) {
-                return Some(checksum_name);
-            }
-            let checksum_name = format!("{base_name}{ext}");
-            if assets.iter().any(|a| a == &checksum_name) {
-                return Some(checksum_name);
+            for checksum_name in [format!("{asset_name}{ext}"), format!("{base_name}{ext}")] {
+                assets
+                    .iter()
+                    .filter(|a| **a == checksum_name)
+                    .for_each(&mut add);
             }
         }
-
-        // Try common checksum file patterns
         for pattern in CHECKSUM_PATTERNS.iter() {
-            for asset in assets {
-                if pattern.is_match(asset) {
-                    return Some(asset.clone());
-                }
-            }
+            assets
+                .iter()
+                .filter(|a| pattern.is_match(a))
+                .for_each(&mut add);
         }
-
-        None
+        for global in [
+            "checksums.txt",
+            "SHA256SUMS",
+            "SHASUMS256.txt",
+            "sha256sums.txt",
+        ] {
+            assets
+                .iter()
+                .filter(|a| a.eq_ignore_ascii_case(global))
+                .for_each(&mut add);
+        }
+        assets
+            .iter()
+            .filter(|a| a.to_lowercase().contains("checksum"))
+            .for_each(&mut add);
+        found
     }
 
     // ========== Internal Methods ==========
@@ -1299,69 +1344,29 @@ impl<'a> ChecksumFetcher<'a> {
 
     /// Find and fetch the checksum for a specific asset
     ///
-    /// This method:
-    /// 1. Finds a checksum file that matches the asset name
-    /// 2. Fetches the checksum file
-    /// 3. Parses it to extract the checksum for the target file
+    /// Each file [`AssetMatcher::checksum_files_for`] names is fetched and
+    /// searched for the asset in turn, until one holds its checksum. `source`
+    /// downloads each checksum file's text.
     ///
-    /// `source` downloads each checksum file's text.
-    ///
-    /// Returns None if no checksum file is found or parsing fails.
+    /// Returns None if no checksum file holds the asset's checksum.
     pub(crate) async fn fetch_checksum_for(
         &self,
         asset_name: &str,
         source: &impl ChecksumSource,
     ) -> Option<ChecksumResult> {
         let asset_names: Vec<String> = self.assets.iter().map(|a| a.name.clone()).collect();
-        let matcher = AssetMatcher::new();
-
-        // First try to find an asset-specific checksum file (e.g., file.tar.gz.sha256)
-        if let Some(checksum_filename) = matcher.find_checksum_for(asset_name, &asset_names)
-            && let Some(checksum_asset) = self.assets.iter().find(|a| a.name == checksum_filename)
-            && let Some(result) = self
+        for checksum_filename in AssetMatcher::new().checksum_files_for(asset_name, &asset_names) {
+            let Some(checksum_asset) = self.assets.iter().find(|a| a.name == checksum_filename)
+            else {
+                continue;
+            };
+            if let Some(result) = self
                 .fetch_and_parse_checksum(checksum_asset, &checksum_filename, asset_name, source)
                 .await
-        {
-            return Some(result);
-        }
-
-        // Try common global checksum files by exact name match first
-        let global_patterns = [
-            "checksums.txt",
-            "SHA256SUMS",
-            "SHASUMS256.txt",
-            "sha256sums.txt",
-        ];
-        for pattern in global_patterns {
-            if let Some(checksum_asset) = self
-                .assets
-                .iter()
-                .find(|a| a.name.eq_ignore_ascii_case(pattern))
-                && let Some(result) = self
-                    .fetch_and_parse_checksum(
-                        checksum_asset,
-                        &checksum_asset.name,
-                        asset_name,
-                        source,
-                    )
-                    .await
             {
                 return Some(result);
             }
         }
-
-        // Last resort: try any file with "checksum" in the name
-        if let Some(checksum_asset) = self
-            .assets
-            .iter()
-            .find(|a| a.name.to_lowercase().contains("checksum"))
-            && let Some(result) = self
-                .fetch_and_parse_checksum(checksum_asset, &checksum_asset.name, asset_name, source)
-                .await
-        {
-            return Some(result);
-        }
-
         None
     }
 
@@ -1513,10 +1518,10 @@ mod tests {
     #[test]
     fn test_find_checksum() {
         let matcher = AssetMatcher::new();
-        let checksum = matcher.find_checksum_for("tool-1.0.0-linux-x86_64.tar.gz", &test_assets());
+        let checksum = matcher.checksum_files_for("tool-1.0.0-linux-x86_64.tar.gz", &test_assets());
         assert_eq!(
             checksum,
-            Some("tool-1.0.0-linux-x86_64.tar.gz.sha256".to_string())
+            ["tool-1.0.0-linux-x86_64.tar.gz.sha256", "checksums.txt"]
         );
     }
 
@@ -1524,8 +1529,26 @@ mod tests {
     fn test_find_checksum_global() {
         let matcher = AssetMatcher::new();
         let assets = vec!["tool-1.0.0.tar.gz".to_string(), "checksums.txt".to_string()];
-        let checksum = matcher.find_checksum_for("tool-1.0.0.tar.gz", &assets);
-        assert_eq!(checksum, Some("checksums.txt".to_string()));
+        let checksum = matcher.checksum_files_for("tool-1.0.0.tar.gz", &assets);
+        assert_eq!(checksum, ["checksums.txt"]);
+    }
+
+    #[test]
+    fn test_checksum_files_list_every_list_and_skip_signatures() {
+        let assets = [
+            "tool-linux.tar.gz",
+            "checksums.txt.sig",
+            "checksums-darwin.txt",
+            "checksums-linux.txt",
+            "SHASUMS.txt.asc",
+            "SHASUMS.txt",
+            "checksums.txt.pem",
+        ]
+        .map(String::from);
+        assert_eq!(
+            AssetMatcher::new().checksum_files_for("tool-linux.tar.gz", &assets),
+            ["SHASUMS.txt", "checksums-darwin.txt", "checksums-linux.txt"]
+        );
     }
 
     #[test]
@@ -1535,8 +1558,8 @@ mod tests {
             let asset = format!("tool.{suffix}");
             let assets = vec![asset.clone(), "tool.sha256".to_string()];
             assert_eq!(
-                matcher.find_checksum_for(&asset, &assets),
-                Some("tool.sha256".to_string()),
+                matcher.checksum_files_for(&asset, &assets),
+                ["tool.sha256"],
                 "failed to match checksum for {asset}"
             );
         }
@@ -3680,5 +3703,107 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-darwin.ta
             picker("musl").pick_best_provenance(&shared),
             Some("multiple.intoto.jsonl".to_string())
         );
+    }
+
+    // ========== ChecksumFetcher Tests ==========
+
+    const LINUX_SHA256: &str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+    const DARWIN_SHA256: &str = "abc123def456abc123def456abc123def456abc123def456abc123def456abcd";
+
+    /// Serves release files from memory: `Ok` text, or `Err` for a file whose
+    /// download fails. Fetching a file it does not list fails the test.
+    struct FilesSource(Vec<(&'static str, std::result::Result<String, &'static str>)>);
+
+    impl ChecksumSource for FilesSource {
+        async fn fetch_text(&self, file: &Asset) -> Result<String> {
+            match self.0.iter().find(|(name, _)| *name == file.name) {
+                Some((_, Ok(text))) => Ok(text.clone()),
+                Some((_, Err(e))) => Err(eyre::eyre!("{e}")),
+                None => panic!("fetched {}, which no test file lists", file.name),
+            }
+        }
+    }
+
+    fn release_files(names: &[&str]) -> Vec<Asset> {
+        names
+            .iter()
+            .map(|name| Asset {
+                name: name.to_string(),
+                url: format!("https://example.com/download/{name}"),
+                url_api: String::new(),
+            })
+            .collect()
+    }
+
+    fn list(entries: &[(&str, &str)]) -> String {
+        entries
+            .iter()
+            .map(|(hash, name)| format!("{hash}  {name}\n"))
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn test_checksum_list_after_its_signature_is_used() {
+        let assets = release_files(&[
+            "tool-linux.tar.gz",
+            "tool_1.0.0_checksums.txt.sig",
+            "tool_1.0.0_checksums.txt",
+        ]);
+        let source = FilesSource(vec![
+            (
+                "tool_1.0.0_checksums.txt.sig",
+                Ok("-----BEGIN PGP SIGNATURE-----".into()),
+            ),
+            (
+                "tool_1.0.0_checksums.txt",
+                Ok(list(&[(LINUX_SHA256, "tool-linux.tar.gz")])),
+            ),
+        ]);
+        let result = ChecksumFetcher::new(&assets)
+            .fetch_checksum_for("tool-linux.tar.gz", &source)
+            .await
+            .expect("the list holds the asset's checksum");
+        assert_eq!(result.hash, LINUX_SHA256);
+        assert_eq!(result.source_file, "tool_1.0.0_checksums.txt");
+    }
+
+    #[tokio::test]
+    async fn test_every_checksum_list_is_searched_for_the_asset() {
+        let assets = release_files(&[
+            "tool-linux.tar.gz",
+            "SHASUMS.txt.asc",
+            "checksum-signing.pub",
+            "checksums-darwin.txt",
+            "checksums-linux.txt",
+        ]);
+        let source = FilesSource(vec![
+            (
+                "checksums-darwin.txt",
+                Ok(list(&[(DARWIN_SHA256, "tool-darwin.tar.gz")])),
+            ),
+            (
+                "checksums-linux.txt",
+                Ok(list(&[(LINUX_SHA256, "tool-linux.tar.gz")])),
+            ),
+        ]);
+        let result = ChecksumFetcher::new(&assets)
+            .fetch_checksum_for("tool-linux.tar.gz", &source)
+            .await
+            .expect("the linux list holds the asset's checksum");
+        assert_eq!(result.hash, LINUX_SHA256);
+        assert_eq!(result.source_file, "checksums-linux.txt");
+    }
+
+    #[tokio::test]
+    async fn test_checksum_lists_that_do_not_name_the_asset_find_nothing() {
+        let assets = release_files(&["tool-windows.zip", "checksums.txt"]);
+        let source = FilesSource(vec![(
+            "checksums.txt",
+            Ok(list(&[(LINUX_SHA256, "tool-linux.tar.gz")])),
+        )]);
+        let result = ChecksumFetcher::new(&assets)
+            .fetch_checksum_for("tool-windows.zip", &source)
+            .await;
+        assert!(result.is_none(), "{result:?}");
     }
 }
