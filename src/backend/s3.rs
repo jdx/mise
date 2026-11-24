@@ -49,6 +49,7 @@ use crate::file;
 use crate::hash;
 use crate::install_context::InstallContext;
 use crate::lockfile::PlatformInfo;
+use crate::timeout;
 use crate::toolset::{ToolVersion, ToolVersionOptions};
 use crate::ui::progress_report::SingleReport;
 use async_trait::async_trait;
@@ -62,6 +63,10 @@ use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::OnceCell;
 use url::Url;
+
+/// The most pages (up to 1000 keys each) a `version_prefix` listing may span before it fails,
+/// so an endpoint that never answers with a last page cannot keep mise listing forever.
+const MAX_LISTING_PAGES: usize = 100;
 
 /// Parsed S3 URL components
 #[derive(Debug, Clone)]
@@ -324,7 +329,9 @@ impl S3Backend {
             Regex::new(version_regex).map_err(|e| eyre!("Invalid version_regex pattern: {e}"))?;
 
         let mut versions = Vec::new();
+        let mut seen = std::collections::HashSet::new();
         let mut continuation_token: Option<String> = None;
+        let mut pages = 0;
 
         loop {
             let mut request = client.list_objects_v2().bucket(bucket).prefix(prefix);
@@ -348,7 +355,7 @@ impl S3Backend {
                                 .or_else(|| captures.get(0))
                                 .map(|m| m.as_str().to_string());
                             if let Some(v) = version
-                                && !versions.contains(&v)
+                                && seen.insert(v.clone())
                             {
                                 versions.push(v);
                             }
@@ -358,6 +365,16 @@ impl S3Backend {
             }
 
             if response.is_truncated == Some(true) {
+                pages += 1;
+                // Without a token the next request would ask for the first page again.
+                if response.next_continuation_token.is_none() {
+                    bail!("S3 listing of s3://{bucket}/{prefix} is truncated without a token");
+                }
+                if pages >= MAX_LISTING_PAGES {
+                    bail!(
+                        "S3 listing of s3://{bucket}/{prefix} did not finish after {pages} pages"
+                    );
+                }
                 continuation_token = response.next_continuation_token;
             } else {
                 break;
@@ -644,7 +661,14 @@ impl Backend for S3Backend {
     }
 
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
-        let versions = self.fetch_versions(config).await?;
+        // These requests go through the AWS SDK, not mise's HTTP client, so the lookup budget
+        // that client enforces has to be applied here. It also ends a listing or a manifest
+        // download from an endpoint that stops answering.
+        let versions = timeout::run_with_timeout_async(
+            async || self.fetch_versions(config).await,
+            Settings::get().fetch_remote_versions_timeout(),
+        )
+        .await?;
         Ok(versions
             .into_iter()
             .map(|v| VersionInfo {
@@ -1021,6 +1045,122 @@ checksum = "sha256:abc123"
             .force_path_style(true)
             .build();
         S3Client::from_conf(config)
+    }
+
+    /// A `ListObjectsV2` page that says more follow, after `next_token` if it names one.
+    fn s3_test_truncated_page(next_token: Option<&str>) -> String {
+        let next_token = next_token
+            .map(|token| format!("<NextContinuationToken>{token}</NextContinuationToken>"))
+            .unwrap_or_default();
+        format!(
+            "<ListBucketResult><Contents><Key>tools/xtool-1.0.0</Key></Contents>\
+             <IsTruncated>true</IsTruncated>{next_token}</ListBucketResult>"
+        )
+    }
+
+    // An endpoint that answers every page with `IsTruncated` and a token is followed for at
+    // most MAX_LISTING_PAGES pages.
+    #[tokio::test]
+    async fn test_fetch_versions_from_listing_is_bounded() {
+        let mut server = mockito::Server::new_async().await;
+        let pages = server
+            .mock("GET", "/bucket/")
+            .match_query(mockito::Matcher::Any)
+            .with_status(200)
+            .with_header("content-type", "application/xml")
+            .with_body(s3_test_truncated_page(Some("next")))
+            .expect(MAX_LISTING_PAGES)
+            .create_async()
+            .await;
+
+        let err = s3_test_backend()
+            .fetch_versions_from_listing(
+                &s3_test_client(&server.url()),
+                "bucket",
+                "tools/xtool-",
+                "xtool-([0-9.]+)",
+            )
+            .await
+            .unwrap_err()
+            .to_string();
+        pages.assert_async().await;
+        assert!(
+            err.contains(&format!("did not finish after {MAX_LISTING_PAGES} pages")),
+            "{err}"
+        );
+    }
+
+    // A truncated page with no token would restart the listing from its first page.
+    #[tokio::test]
+    async fn test_fetch_versions_from_listing_rejects_truncated_page_without_token() {
+        let mut server = mockito::Server::new_async().await;
+        let page = server
+            .mock("GET", "/bucket/")
+            .match_query(mockito::Matcher::Any)
+            .with_status(200)
+            .with_header("content-type", "application/xml")
+            .with_body(s3_test_truncated_page(None))
+            .expect(1)
+            .create_async()
+            .await;
+
+        let err = s3_test_backend()
+            .fetch_versions_from_listing(
+                &s3_test_client(&server.url()),
+                "bucket",
+                "tools/xtool-",
+                "xtool-([0-9.]+)",
+            )
+            .await
+            .unwrap_err()
+            .to_string();
+        page.assert_async().await;
+        assert!(err.contains("is truncated without a token"), "{err}");
+    }
+
+    // A listing that ends is read across its pages, each version once.
+    #[tokio::test]
+    async fn test_fetch_versions_from_listing_follows_pages() {
+        let mut server = mockito::Server::new_async().await;
+        // mockito answers with the first mock that matches, so the second page goes first.
+        let last = server
+            .mock("GET", "/bucket/")
+            .match_query(mockito::Matcher::UrlEncoded(
+                "continuation-token".into(),
+                "p2".into(),
+            ))
+            .with_status(200)
+            .with_header("content-type", "application/xml")
+            .with_body(
+                "<ListBucketResult><Contents><Key>tools/xtool-1.0.0</Key></Contents>\
+                 <Contents><Key>tools/xtool-1.1.0</Key></Contents>\
+                 <IsTruncated>false</IsTruncated></ListBucketResult>",
+            )
+            .expect(1)
+            .create_async()
+            .await;
+        let first = server
+            .mock("GET", "/bucket/")
+            .match_query(mockito::Matcher::Any)
+            .with_status(200)
+            .with_header("content-type", "application/xml")
+            .with_body(s3_test_truncated_page(Some("p2")))
+            .expect(1)
+            .create_async()
+            .await;
+
+        let versions = s3_test_backend()
+            .fetch_versions_from_listing(
+                &s3_test_client(&server.url()),
+                "bucket",
+                "tools/xtool-",
+                "xtool-([0-9.]+)",
+            )
+            .await
+            .unwrap();
+        assert_eq!(versions, ["1.0.0", "1.1.0"]);
+        first.assert_async().await;
+        last.assert_async().await;
     }
 
     #[tokio::test]
