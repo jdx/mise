@@ -453,7 +453,10 @@ impl dyn ConfigFile {
     }
 }
 
-async fn init(path: &Path) -> Result<Arc<dyn ConfigFile>> {
+/// Starts a new, empty config for `path` without reading it. Nothing is written until the
+/// config is saved, so a preview of a new config uses this even where `path` is a dangling
+/// link that [`parse_or_init`] refuses.
+pub async fn init(path: &Path) -> Result<Arc<dyn ConfigFile>> {
     let settings = IdiomaticVersionFileSettings::current();
     let detection = detect_config_file_with_settings(path, &settings).await;
     match detection {

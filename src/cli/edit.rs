@@ -366,7 +366,13 @@ impl Edit {
     }
 
     async fn tool_versions(&self, tool_versions: &Path, path: &Path) -> Result<String> {
-        let to = config_file::parse_or_init(path).await?;
+        // A dry run writes nothing, so it previews a dangling link's new config instead of
+        // refusing it the way a write does.
+        let to = if self.dry_run && path.is_symlink() && !path.exists() {
+            config_file::init(path).await?
+        } else {
+            config_file::parse_or_init(path).await?
+        };
         let from = config_file::parse(tool_versions).await?;
         let tools = from.to_tool_request_set()?.tools;
         for (ba, tools) in tools {

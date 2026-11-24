@@ -112,3 +112,13 @@ ln -s ../outside/rm.toml mise.local.toml
 assert_fail_contains "MISE_YES=1 mise tasks rm a b 2>&1" "refusing to write"
 assert_contains "cat mise.toml" "[tasks.a]"
 assert_contains "cat ../outside/rm.toml" "[tasks.b]"
+
+echo "=== a dry run previews a dangling link's import without writing ==="
+mkdir -p ../preview
+cd ../preview || exit 1
+echo "tiny 1.0.0" >.tool-versions
+ln -s ../outside/preview.toml mise.toml
+assert_contains "mise edit --dry-run --tool-versions .tool-versions 2>&1" 'tiny = "1.0.0"'
+assert_fail "test -e ../outside/preview.toml"
+assert_fail_contains "mise edit --tool-versions .tool-versions 2>&1" "refusing to write"
+assert_fail "test -e ../outside/preview.toml"
