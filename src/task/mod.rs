@@ -959,12 +959,14 @@ fn refuse_usage_file_reads(file: &Path, raw: &str) -> usage::Result<()> {
     let Ok(doc) = raw.parse::<KdlDocument>() else {
         return Ok(());
     };
+    // Safe mode keeps a project task untrusted whatever was trusted, so trust is no advice there.
+    let why = match config::Settings::safe_mode() {
+        true => "safe mode reads no file a project task's spec names",
+        false => "this task's config is not trusted: run `mise trust` to read it",
+    };
     match find(&doc) {
         Some(node) => Err(usage::error::UsageErr::InvalidInput(
-            format!(
-                "`{}` reads a file, and this task's config is not trusted: run `mise trust` to read it",
-                node.name().value()
-            ),
+            format!("`{}` reads a file, and {why}", node.name().value()),
             node.span(),
             usage::miette::NamedSource::new(file.to_string_lossy(), raw.to_string()),
         )),

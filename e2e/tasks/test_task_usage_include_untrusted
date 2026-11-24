@@ -94,3 +94,7 @@ assert_contains "mise tasks --usage 2>/dev/null" "flag --from-include"
 assert_contains "mise tasks info schema --json 2>/dev/null" "hunter2"
 assert_not_contains "MISE_SAFE=1 mise tasks --usage 2>&1" "from-include"
 assert_not_contains "MISE_SAFE=1 mise tasks info schema --json 2>&1" "hunter2"
+# Trust does not help in safe mode, and the error says so rather than advising it.
+safe="$(MISE_SAFE=1 mise tasks --usage 2>&1)"
+assert_contains_text "$safe" "safe mode reads no file"
+assert_not_contains_text "$safe" "mise trust"
