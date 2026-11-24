@@ -860,12 +860,19 @@ fn is_task_stub_launcher(path: &Path) -> bool {
     if !is_native || path.is_symlink() {
         return false;
     }
-    // A stub is three short lines, so a file that fills the limit is not one.
-    read_file_prefix(&path.with_extension("")).is_ok_and(|contents| {
-        (contents.len() as u64) < SHIM_SCRIPT_INSPECTION_LIMIT
-            && std::str::from_utf8(&contents).is_ok_and(is_generated_task_stub)
-    })
+    // A file that fills the limit is not a stub the launcher can run, so it is not read further.
+    let mut contents = String::new();
+    fs::File::open(path.with_extension(""))
+        .and_then(|stub| stub.take(TASK_STUB_MAX_LEN).read_to_string(&mut contents))
+        .is_ok_and(|len| (len as u64) < TASK_STUB_MAX_LEN)
+        && is_generated_task_stub(&contents)
 }
+
+/// More bytes than a task stub the native launcher can run has. The launcher starts
+/// `<mise-bin> run <task>`, and a Windows command line holds 32,767 UTF-16 units. One unit is at
+/// most three bytes of UTF-8 in the stub, or four for a `'` the stub writes as `'\''`. The rest
+/// of the stub is under a hundred bytes.
+const TASK_STUB_MAX_LEN: u64 = 4 * 32_767 + 1024;
 
 /// Whether `contents` is a stub `mise generate task-stubs` wrote.
 pub fn is_generated_task_stub(contents: &str) -> bool {
@@ -3781,8 +3788,14 @@ mod tests {
         fs::write(&cmd, &shim).unwrap();
         assert!(is_shim_file(&cmd));
 
-        // Only the start of the file is read, and no stub is that long.
-        let limit = SHIM_SCRIPT_INSPECTION_LIMIT as usize;
+        // A long path to mise makes a long stub, which the launcher reads all the same.
+        let long = "m".repeat(SHIM_SCRIPT_INSPECTION_LIMIT as usize);
+        let long_path = generated.replace("exec mise", &format!("exec {long}"));
+        fs::write(&stub, long_path).unwrap();
+        assert!(!is_shim_file(&launcher));
+
+        // Only the start of the file is read, and no stub the launcher can run is that long.
+        let limit = TASK_STUB_MAX_LEN as usize;
         let long = "m".repeat(limit);
         let too_long = generated.replace("exec mise", &format!("exec {long}"));
         assert!(is_generated_task_stub(&too_long));
