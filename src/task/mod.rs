@@ -742,17 +742,24 @@ const FILE_TASK_BODY_KEYS: &[&str] = &["run", "run_windows", "file", "usage"];
 
 /// Header keys whose value guards how a task runs. A bad one fails the task instead of being
 /// skipped, so a typo cannot drop a confirmation prompt, a sandbox restriction or a lock.
-/// `cache` is one of them because `cache.sandbox` is a sandbox restriction.
+/// `cache` is one of them because `cache.sandbox` is a sandbox restriction, each `allow_*` list
+/// because a non-empty one turns its deny on, and `extends` because the template it names can
+/// carry any of these.
 const FILE_TASK_GUARD_KEYS: &[&str] = &[
     "confirm",
     "lock",
     "cache",
+    "extends",
     "deny_all",
     "deny_read",
     "deny_write",
     "deny_net",
     "deny_env",
     "deny_unix",
+    "allow_read",
+    "allow_write",
+    "allow_net",
+    "allow_env",
     "allow_unix",
 ];
 
@@ -7169,6 +7176,13 @@ echo "test"
         for (name, header) in [
             ("confirm", "confirm=1"),
             ("deny-net", "deny_net=\"yes\""),
+            // an allow list implies its deny, so skipping one would skip the sandbox
+            ("allow-read", "allow_read=\".\""),
+            ("allow-write", "allow_write=\"./dist\""),
+            ("allow-net", "allow_net=\"example.com\""),
+            ("allow-env", "allow_env=[1]"),
+            // a template can carry a confirmation prompt or a sandbox restriction
+            ("extends", "extends=[\"safe\"]"),
             ("lock", "lock=1"),
             (
                 "cache",
