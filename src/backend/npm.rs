@@ -282,9 +282,17 @@ fn validate_tarball_spec(name: &str) -> Result<()> {
     Ok(())
 }
 
-/// Download a tarball source to `dest` and return its version: a prefix of the
-/// SHA-256 of what the URL serves now. The URL is mutable (`…@343` follows the
-/// newest push), so the content is its only stable identity.
+/// The version of a downloaded tarball source: the whole SHA-256 of its bytes.
+/// The version is the only thing `mise.lock` holds for a tarball, so it is a
+/// full digest; a prefix would let whoever makes the tarball craft a second
+/// one with the same version.
+fn tarball_version(archive: &Path) -> eyre::Result<String> {
+    crate::hash::file_hash_sha256(archive, None)
+}
+
+/// Download a tarball source to `dest` and return its version, the SHA-256 of
+/// what the URL serves now. The URL is mutable (`…@343` follows the newest
+/// push), so the content is its only stable identity.
 async fn fetch_tarball(url: &str, dest: &Path) -> eyre::Result<String> {
     validate_tarball_spec(url)?;
     let display = redact_credentials(url);
@@ -301,8 +309,7 @@ async fn fetch_tarball(url: &str, dest: &Path) -> eyre::Result<String> {
                 redact_credentials(&format!("{err:#}"))
             )
         })?;
-    let digest = crate::hash::file_hash_sha256(dest, None)?;
-    Ok(digest[..16].to_string())
+    tarball_version(dest)
 }
 
 /// The version of a tarball source as it is served now. One run asks several
@@ -4136,6 +4143,17 @@ mod tests {
         let names = NPMBackend::tarball_package_names(aube.path());
         assert_eq!(names, vec!["@acme/hooky".to_string()]);
         assert!(NPMBackend::installed_package_lifecycle_scripts(aube.path(), &names[0]).is_none());
+    }
+
+    #[test]
+    fn tarball_version_is_the_whole_digest() {
+        use sha2::{Digest, Sha256};
+
+        let tmp = tempfile::tempdir().unwrap();
+        let archive = tmp.path().join("package.tgz");
+        std::fs::write(&archive, b"tarball bytes").unwrap();
+        let digest = hex::encode(Sha256::digest(b"tarball bytes"));
+        assert_eq!(tarball_version(&archive).unwrap(), digest);
     }
 
     #[tokio::test]
