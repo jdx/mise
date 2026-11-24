@@ -27,6 +27,13 @@ pub struct Pin {
     pub signer: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub issuer: Option<String>,
+    /// For a key-signed project, the fingerprint of the whole public key that
+    /// signed the last accepted release: the ID in `signer` is only text in
+    /// the key line, which a line for any other key can carry. Pins written
+    /// before mise recorded it have none: they hold by ID, and gain it from
+    /// the next release accepted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key_fingerprint: Option<String>,
     /// `vendor` or `repackager`.
     pub attested_by: String,
     /// Whether every artifact of an accepted release linked provenance.
@@ -231,6 +238,9 @@ fn save(path: &Path, pins: &Pins) -> Result<()> {
 pub struct Observed<'a> {
     pub scheme: &'a str,
     pub key_id: &'a str,
+    /// The fingerprint of the public key that verified the release, for a
+    /// key-signed project: `key_id` is then only the ID its key line carries.
+    pub key_fingerprint: Option<&'a str>,
     pub issuer: Option<&'a str>,
     pub attested_by: &'a str,
     pub provenance: bool,
@@ -348,6 +358,14 @@ fn check_against(pin: &Pin, key: &str, project: &str, observed: Observed<'_>) ->
             "is signed by {signer} ({}), but {} ({}) signed what mise accepted before",
             observed.scheme, pin.signer, pin.scheme
         ));
+    } else if let Some(pinned) = &pin.key_fingerprint
+        && observed.key_fingerprint != Some(pinned.as_str())
+    {
+        // The ID is only text in a key line, so another key can carry it.
+        problems.push(format!(
+            "is signed by another key that carries the ID {signer} (fingerprint {}), but the key with fingerprint {pinned} signed what mise accepted before",
+            observed.key_fingerprint.unwrap_or("unknown")
+        ));
     }
     if pin.attested_by == "vendor" && observed.attested_by == "repackager" {
         problems.push(
@@ -405,6 +423,7 @@ pub fn record_at(path: &Path, project: &str, observed: Observed<'_>) -> Result<P
             scheme: observed.scheme.to_string(),
             signer,
             issuer: observed.issuer.map(str::to_string),
+            key_fingerprint: observed.key_fingerprint.map(str::to_string),
             attested_by: observed.attested_by.to_string(),
             provenance: observed.provenance,
             unlogged: !observed.logged,
@@ -427,6 +446,9 @@ pub fn record_at(path: &Path, project: &str, observed: Observed<'_>) -> Result<P
         // options list beside the pinned one: remember it as it is now.
         signer,
         issuer: observed.issuer.map(str::to_string).or(pin.issuer.clone()),
+        // Likewise its key: the pinned one, or the one a pin from before
+        // mise recorded fingerprints holds to from here on.
+        key_fingerprint: observed.key_fingerprint.map(str::to_string),
         attested_by: observed.attested_by.to_string(),
         provenance: observed.provenance || any(|pin| pin.provenance),
         unlogged: !observed.logged || any(|pin| pin.unlogged),
@@ -584,6 +606,7 @@ mod tests {
         Observed {
             scheme,
             key_id,
+            key_fingerprint: None,
             issuer: Some("https://token.actions.githubusercontent.com"),
             attested_by: "vendor",
             provenance: false,
@@ -743,6 +766,68 @@ mod tests {
     }
 
     #[test]
+    fn another_key_with_the_pinned_key_id_is_another_signer() {
+        use packslip::minisign::{PublicKey, SecretKey, key_id_hex};
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("pins.toml");
+        let project = "tool.example.com";
+        let vendor = SecretKey::from_seed([7; 32]).public_key();
+        // Whoever writes a key line chooses the ID in it.
+        let copied = PublicKey {
+            key_id: vendor.key_id,
+            ..SecretKey::from_seed([8; 32]).public_key()
+        };
+        let id = key_id_hex(&vendor.key_id);
+        let (vendor, copied) = (vendor.fingerprint(), copied.fingerprint());
+        assert_ne!(vendor, copied);
+        let signed_with = |fingerprint| Observed {
+            key_fingerprint: fingerprint,
+            issuer: None,
+            ..observed("sigstore-key", &id)
+        };
+
+        let pin = record_at(&path, project, signed_with(Some(&vendor))).unwrap();
+        assert_eq!(pin.signer, id);
+        assert_eq!(pin.key_fingerprint.as_deref(), Some(vendor.as_str()));
+        check_at(&path, project, signed_with(Some(&vendor))).unwrap();
+        assert_eq!(
+            record_at(&path, project, signed_with(Some(&vendor))).unwrap(),
+            pin
+        );
+        for other in [Some(copied.as_str()), None] {
+            let err = check_at(&path, project, signed_with(other)).unwrap_err();
+            let msg = err.to_string();
+            assert!(msg.contains("another key that carries the ID"), "{msg}");
+            assert!(msg.contains(&vendor), "{msg}");
+            assert!(msg.contains("mise packslip forget"), "{msg}");
+            assert!(record_at(&path, project, signed_with(other)).is_err());
+        }
+        assert_eq!(load(&path).unwrap().pins[project], pin);
+
+        // A pin from before mise recorded fingerprints holds by ID, and then
+        // to the key of the next release accepted.
+        let mut pins = load(&path).unwrap();
+        pins.pins.get_mut(project).unwrap().key_fingerprint = None;
+        save(&path, &pins).unwrap();
+        assert!(
+            !file::read_to_string(&path)
+                .unwrap()
+                .contains("key_fingerprint")
+        );
+        let other_id = Observed {
+            key_id: "0000000000000000",
+            ..signed_with(Some(&vendor))
+        };
+        assert!(check_at(&path, project, other_id).is_err());
+        check_at(&path, project, signed_with(Some(&vendor))).unwrap();
+        assert_eq!(
+            record_at(&path, project, signed_with(Some(&vendor))).unwrap(),
+            pin
+        );
+        assert!(check_at(&path, project, signed_with(Some(&copied))).is_err());
+    }
+
+    #[test]
     fn a_repackager_pin_yields_to_the_vendor() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("pins.toml");
@@ -826,6 +911,7 @@ pinned_at = "2026-09-01T00:00:00Z"
                 scheme: "sigstore-oidc".into(),
                 signer: "https://github.com/new/r/.github/workflows/release.yml".into(),
                 issuer: None,
+                key_fingerprint: None,
                 attested_by: "vendor".into(),
                 provenance: false,
                 unlogged: false,
@@ -1290,6 +1376,7 @@ owner_id = "7"
                 scheme: "sigstore-oidc".into(),
                 signer: WORKFLOW.into(),
                 issuer: None,
+                key_fingerprint: None,
                 attested_by: "vendor".into(),
                 provenance: false,
                 unlogged: false,

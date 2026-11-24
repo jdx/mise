@@ -987,6 +987,17 @@ impl Pin {
             .collect()
     }
 
+    /// The fingerprint of the key a release verified under this pin was
+    /// signed with, for the signer pin to hold to. A verified release names
+    /// its key by the ID in the key line alone, which a line for any other
+    /// key can carry.
+    fn key_fingerprint(&self) -> Option<String> {
+        match self {
+            Pin::Key(key) => Some(key.fingerprint()),
+            Pin::Forge(_) | Pin::Identity(_) | Pin::Workflows(_) => None,
+        }
+    }
+
     /// What may have signed: one trust, or one per accepted identity.
     fn trusts(&self) -> Vec<Trust<'_>> {
         match self {
@@ -1990,11 +2001,13 @@ impl PackslipBackend {
         let scheme = verified.scheme.to_string();
         let attested_by = verified.attested_by.to_string();
         let listed = pin.listed_signers();
+        let key_fingerprint = pin.key_fingerprint();
         packslip_pins::check(
             project,
             Observed {
                 scheme: &scheme,
                 key_id: &verified.key_id,
+                key_fingerprint: key_fingerprint.as_deref(),
                 issuer: verified.issuer.as_deref(),
                 attested_by: &attested_by,
                 provenance: verified.provenance_linked,
@@ -2290,6 +2303,7 @@ pub(crate) struct PendingPin {
     project: String,
     scheme: String,
     key_id: String,
+    key_fingerprint: Option<String>,
     issuer: Option<String>,
     attested_by: String,
     provenance: bool,
@@ -2305,6 +2319,7 @@ impl PendingPin {
             Observed {
                 scheme: &self.scheme,
                 key_id: &self.key_id,
+                key_fingerprint: self.key_fingerprint.as_deref(),
                 issuer: self.issuer.as_deref(),
                 attested_by: &self.attested_by,
                 provenance: self.provenance,
@@ -2500,9 +2515,11 @@ impl PackslipBackend {
         // Nothing is recorded until the release is accepted in full, so a
         // refused install leaves no pin behind.
         let listed = pin.listed_signers();
+        let key_fingerprint = pin.key_fingerprint();
         let observed = Observed {
             scheme: &scheme,
             key_id: &verified.key_id,
+            key_fingerprint: key_fingerprint.as_deref(),
             issuer: verified.issuer.as_deref(),
             attested_by: &attested_by,
             provenance: verified.provenance_linked,
@@ -2680,6 +2697,7 @@ impl PackslipBackend {
                 project,
                 scheme: observed.scheme.to_owned(),
                 key_id: observed.key_id.to_owned(),
+                key_fingerprint: observed.key_fingerprint.map(str::to_owned),
                 issuer: observed.issuer.map(str::to_owned),
                 attested_by: observed.attested_by.to_owned(),
                 provenance: observed.provenance,

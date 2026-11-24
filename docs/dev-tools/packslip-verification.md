@@ -122,8 +122,11 @@ mise keeps trust decisions in two places:
 | `mise.lock`                                                                       | The project's signer, attestor, and forge-ID commitment beside each platform's artifact URL and checksum, which also applies on another machine's first install. |
 
 For a keyless signer, continuity compares the workflow path without its tag or
-branch ref, so a new release tag of the same workflow is the same signer. A new
-workflow path or key needs an explicit trust decision. A
+branch ref, so a new release tag of the same workflow is the same signer. For a
+key, the pin in `pins.toml` holds the key's ID and a fingerprint of the whole
+key, so another key that carries the same ID is another signer. `mise.lock`
+records the key's ID only. A new workflow path or key needs an explicit trust
+decision. A
 [`workflow`](/dev-tools/backends/packslip.html#workflow) list is one: a release
 may move between the workflows it names. A change of signing
 scheme, a change from vendor to repackager, or provenance links that disappear
