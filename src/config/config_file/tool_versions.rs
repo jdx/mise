@@ -109,15 +109,9 @@ impl ToolVersions {
             raw.lines().count() == s.lines().count() && !raw.contains("{%") && !raw.contains("{#");
         cf.unmapped_templates = !mapped;
         let raw = if mapped { raw } else { s.as_str() };
-        for line in raw.lines() {
-            if !line.trim_start().starts_with('#') {
-                break;
-            }
-            cf.pre.push_str(line);
-            cf.pre.push('\n');
-        }
-
-        cf.plugins = Mutex::new(Self::parse_lines(s.lines().zip(raw.lines())));
+        let (pre, plugins) = Self::parse_lines(s.lines().zip(raw.lines()));
+        cf.pre = pre;
+        cf.plugins = Mutex::new(plugins);
         cf.populate_toolset()?;
         trace!("{cf}");
         Ok(cf)
@@ -125,20 +119,29 @@ impl ToolVersions {
 
     #[cfg(test)]
     fn parse_plugins(input: &str) -> IndexMap<BackendArg, ToolVersionPlugin> {
-        Self::parse_lines(input.lines().zip(input.lines()))
+        Self::parse_lines(input.lines().zip(input.lines())).1
     }
 
-    /// Tools from pairs of a rendered line and the line as written.
+    /// The lines before the first tool, and the tools, from pairs of a rendered line
+    /// and the line as written. A line that is not a tool is kept as written, after the
+    /// tool before it, when it is a comment or a template: a template that renders to a
+    /// comment or to nothing here can declare a tool in another environment. Blank lines
+    /// without a template are dropped.
     fn parse_lines<'a>(
         lines: impl Iterator<Item = (&'a str, &'a str)>,
-    ) -> IndexMap<BackendArg, ToolVersionPlugin> {
+    ) -> (String, IndexMap<BackendArg, ToolVersionPlugin>) {
+        let mut pre = String::new();
         let mut plugins: IndexMap<BackendArg, ToolVersionPlugin> = IndexMap::new();
         for (line, raw_line) in lines {
-            if raw_line.trim_start().starts_with('#') || line.trim_start().starts_with('#') {
-                if let Some(prev) = &mut plugins.values_mut().last() {
-                    prev.post.push_str(raw_line);
-                    prev.post.push('\n');
-                }
+            let comment =
+                raw_line.trim_start().starts_with('#') || line.trim_start().starts_with('#');
+            if comment || (line.trim().is_empty() && raw_line != line) {
+                let kept = match plugins.values_mut().last() {
+                    Some(prev) => &mut prev.post,
+                    None => &mut pre,
+                };
+                kept.push_str(raw_line);
+                kept.push('\n');
                 continue;
             }
             let raw_tool = raw_line.split_once('#').map_or(raw_line, |(tool, _)| tool);
@@ -165,16 +168,7 @@ impl ToolVersions {
                 plugins.insert(ba, tvp);
             }
         }
-        plugins
-    }
-
-    fn add_version(
-        &self,
-        plugins: &mut IndexMap<BackendArg, ToolVersionPlugin>,
-        fa: &BackendArg,
-        version: String,
-    ) {
-        get_or_create_plugin(plugins, fa).versions.push(version);
+        (pre, plugins)
     }
 
     fn populate_toolset(&self) -> eyre::Result<()> {
@@ -221,24 +215,53 @@ impl ConfigFile for ToolVersions {
         ensure_versions_are_not_templates(&self.path, fa, &versions)?;
         let mut plugins = self.plugins.lock().unwrap();
         let plugin = get_or_create_plugin(&mut plugins, fa);
-        if let Some(raw) = plugin.raw.take() {
-            // Its versions are rewritten from what they rendered to. A template in the
-            // name would be replaced by its value as well.
-            if raw.split_whitespace().next() != Some(plugin.orig_name.as_str()) {
-                plugin.raw = Some(raw);
-                eyre::bail!(
-                    "not writing {}: the line of {fa} is written with a template, which mise would replace with the value it renders to. Edit the file by hand",
-                    display_path(&self.path)
-                );
+        let refuse = |what: &str| {
+            eyre::eyre!(
+                "not writing {}: {what} of {fa} is written with a template, which mise would replace with the value it renders to. Edit the file by hand",
+                display_path(&self.path)
+            )
+        };
+        // A version the line keeps is written as the line has it. That needs each word
+        // of the line to render to one version; otherwise a kept version could come from
+        // a template, and the edit is refused rather than writing what it rendered to.
+        let mut as_written: Vec<(String, String)> = vec![];
+        if let Some(raw) = &plugin.raw {
+            let words = words_as_written(raw);
+            // A template in the name would be replaced by its value.
+            if words.first() != Some(&plugin.orig_name.as_str()) {
+                return Err(refuse("the name"));
+            }
+            if words.len() - 1 == plugin.versions.len() {
+                as_written = plugin
+                    .versions
+                    .iter()
+                    .cloned()
+                    .zip(words[1..].iter().map(|w| w.to_string()))
+                    .collect();
+            } else if versions
+                .iter()
+                .any(|tr| plugin.versions.contains(&tr.version()))
+            {
+                return Err(refuse("a version"));
             }
         }
+        let mut words = vec![plugin.orig_name.clone()];
+        let mut templated = false;
         plugin.versions.clear();
         for tr in versions {
             if !tr.options().is_empty() {
                 warn!("tool options are not supported in .tool-versions files");
             }
-            self.add_version(&mut plugins, fa, tr.version());
+            let version = tr.version();
+            let word = match as_written.iter().position(|(v, _)| *v == version) {
+                Some(i) => as_written.remove(i).1,
+                None => version.clone(),
+            };
+            templated |= word != version;
+            words.push(word);
+            plugin.versions.push(version);
         }
+        plugin.raw = templated.then(|| words.join(" "));
         Ok(())
     }
 
@@ -293,6 +316,32 @@ impl ConfigFile for ToolVersions {
     fn to_tool_request_set(&self) -> eyre::Result<ToolRequestSet> {
         Ok(self.tools.lock().unwrap().clone())
     }
+}
+
+/// The whitespace-separated words of a line as written, where a `{{ ... }}`
+/// expression stays whole within its word.
+fn words_as_written(line: &str) -> Vec<&str> {
+    let mut words = vec![];
+    let mut start = None;
+    let mut in_expression = false;
+    for (i, c) in line.char_indices() {
+        if line[i..].starts_with("{{") {
+            in_expression = true;
+        } else if in_expression && line[..i].ends_with("}}") {
+            in_expression = false;
+        }
+        if c.is_whitespace() && !in_expression {
+            if let Some(s) = start.take() {
+                words.push(&line[s..i]);
+            }
+        } else if start.is_none() {
+            start = Some(i);
+        }
+    }
+    if let Some(s) = start {
+        words.push(&line[s..]);
+    }
+    words
 }
 
 fn get_or_create_plugin<'a>(
@@ -396,12 +445,6 @@ mod tests {
     /// rendered to.
     #[test]
     fn saving_keeps_the_templates_of_other_lines() {
-        let parsed = |raw: &str, rendered: &str| {
-            let tv = ToolVersions::init(Path::new("/tmp/.tool-versions"));
-            *tv.plugins.lock().unwrap() =
-                ToolVersions::parse_lines(rendered.lines().zip(raw.lines()));
-            tv
-        };
         let node: Arc<BackendArg> = Arc::new("node".into());
         let node_20 =
             || ToolRequest::new_version_for_test(node.clone(), "20.0.0", ToolSource::Unknown);
@@ -434,6 +477,82 @@ mod tests {
         };
         let err = tv.save().unwrap_err();
         assert!(err.to_string().contains("Edit the file by hand"), "{err}");
+    }
+
+    /// A file parsed from its text as written and the text it rendered to.
+    fn parsed(raw: &str, rendered: &str) -> ToolVersions {
+        let (pre, plugins) = ToolVersions::parse_lines(rendered.lines().zip(raw.lines()));
+        ToolVersions {
+            pre,
+            plugins: Mutex::new(plugins),
+            ..ToolVersions::init(Path::new("/tmp/.tool-versions"))
+        }
+    }
+
+    /// The versions a command keeps on a line are written as the line has them,
+    /// so removing one version keeps the template of another.
+    #[test]
+    fn kept_versions_keep_their_templates() {
+        let node: Arc<BackendArg> = Arc::new("node".into());
+        let node_version =
+            |v: &str| ToolRequest::new_version_for_test(node.clone(), v, ToolSource::Unknown);
+        assert_eq!(
+            words_as_written("node  {{ env.NV }} 20-{{ x }}{{ y }} 1"),
+            ["node", "{{ env.NV }}", "20-{{ x }}{{ y }}", "1"]
+        );
+
+        let tv = parsed(
+            "node {{ env.NV }} 18.0.0 # {{ env.NOTE }}\n",
+            "node 20.0.0 18.0.0 # note\n",
+        );
+        tv.replace_versions(&node, vec![node_version("20.0.0")])
+            .unwrap();
+        assert_eq!(tv.dump().unwrap(), "node {{ env.NV }} # {{ env.NOTE }}\n");
+
+        // a version written as it is stays as it is
+        let tv = parsed("node {{ env.NV }} 18.0.0\n", "node 20.0.0 18.0.0\n");
+        tv.replace_versions(&node, vec![node_version("18.0.0")])
+            .unwrap();
+        assert_eq!(tv.dump().unwrap(), "nodejs 18.0.0\n");
+
+        // a template that renders to several versions cannot keep only some of them
+        let tv = parsed("node {{ env.NV }}\n", "node 20.0.0 18.0.0\n");
+        let err = tv
+            .replace_versions(&node, vec![node_version("20.0.0")])
+            .unwrap_err();
+        assert!(err.to_string().contains("Edit the file by hand"), "{err}");
+        assert!(!err.to_string().contains("20.0.0"), "{err}");
+        assert_eq!(tv.dump().unwrap(), "node {{ env.NV }}\n");
+
+        // a new version replaces the templates
+        let tv = parsed("node {{ env.NV }}\n", "node 20.0.0 18.0.0\n");
+        tv.replace_versions(&node, vec![node_version("22.0.0")])
+            .unwrap();
+        assert_eq!(tv.dump().unwrap(), "nodejs 22.0.0\n");
+    }
+
+    /// A template line can render to a comment or to nothing in one environment
+    /// and to a tool in another, so saving writes it back as it is.
+    #[test]
+    fn lines_that_declare_no_tool_keep_their_templates() {
+        let node: Arc<BackendArg> = Arc::new("node".into());
+        let tv = parsed(
+            "{{ env.HEADER }}\n{{ env.FIRST }}\nnode 18.0.0\n{{ env.EXTRA }}\npython 3.12\n",
+            "# header\n\nnode 18.0.0\n\npython 3.12\n",
+        );
+        tv.replace_versions(
+            &node,
+            vec![ToolRequest::new_version_for_test(
+                node.clone(),
+                "20.0.0",
+                ToolSource::Unknown,
+            )],
+        )
+        .unwrap();
+        assert_eq!(
+            tv.dump().unwrap(),
+            "{{ env.HEADER }}\n{{ env.FIRST }}\nnodejs 20.0.0\n{{ env.EXTRA }}\npython 3.12\n"
+        );
     }
 
     /// `dump` relies on `post` to terminate each line, and `trim_end` only ever

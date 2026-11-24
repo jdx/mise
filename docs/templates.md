@@ -24,9 +24,11 @@ share task definitions through `extends`.
 | `.miserc.toml`                                              | The whole file, before it is parsed                                                                                                                             | Limited; see [below](#miserc-template-support)                |
 
 When `mise use`, `mise unuse` or `mise upgrade --bump` edits a `.tool-versions` that has templates,
-the lines it does not change are written back with their templates. The line it changes gets the
-new version in place of a templated one; a line whose tool name is a template is not changed, and
-mise asks you to edit the file by hand. A `.tool-versions` with a template tag (`{% ... %}`,
+the lines it does not change are written back with their templates, including a template line that
+renders to a comment or to nothing. On the line it changes, a version it keeps stays as written and
+a new version replaces the templated ones. mise asks you to edit the file by hand instead when the
+line's tool name is a template, or when a kept version may come from a template that renders to
+several versions. A `.tool-versions` with a template tag (`{% ... %}`,
 `{# ... #}`) or a value that spans lines is not written at all.
 
 ## Example
