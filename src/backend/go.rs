@@ -454,16 +454,26 @@ fn is_transient_go_network_failure(stderr: &str) -> bool {
 
 /// Whether `go install package@version` stderr says that `version` of the
 /// package's own module does not exist, which is the one failure the
-/// unprefixed version can fix. Version control reports it as
-/// `module@version: invalid version: unknown revision version`, and a module
-/// proxy answers 404 or 410 for `module/@v/version.info`; only the status code
-/// is matched, since not every proxy sends a reason phrase.
+/// unprefixed version can fix.
 ///
-/// The module is some leading part of the package path, and the message has
-/// to name it and the version: the same words about a dependency say nothing
-/// about the version that was asked for. A failed verification is never a
-/// missing version, whatever else the output quotes: Go found the version and
-/// refused what it downloaded.
+/// The rule: the output has a `module@version: ` token, at the start of the
+/// output or after whitespace, where the module is the package path or a
+/// leading part of it, followed by one of
+///
+/// - `invalid version: unknown revision rev`, from version control, where the
+///   revision is the version itself or, for a module in a subdirectory of its
+///   repository, `dir/version` with `dir` the trailing path elements of the
+///   module path without its `/vN` major version suffix;
+/// - `reading url: status`, from a module proxy, where the URL ends in
+///   `/module/@v/version.info` with the module path in the proxy's encoding and
+///   the status is 404 or 410; only the code is matched, since not every proxy
+///   sends a reason phrase.
+///
+/// The token has to name the module and the version: the same words about a
+/// dependency, another module whose path merely ends the same way, or another
+/// version say nothing about the version that was asked for. A failed
+/// verification is never a missing version, whatever else the output quotes:
+/// Go found the version and refused what it downloaded.
 fn is_missing_go_version(stderr: &str, package: &str, version: &str) -> bool {
     const VERIFICATION_MARKERS: &[&str] = &["verifying ", "checksum mismatch", "security error"];
     let stderr = stderr.to_lowercase();
@@ -476,19 +486,69 @@ fn is_missing_go_version(stderr: &str, package: &str, version: &str) -> bool {
         .map(|(i, _)| &package[..i])
         .chain([package])
         .any(|module| {
-            let unknown_revision = format!(
-                "{}@{version}: invalid version: unknown revision {version}",
-                module.to_lowercase()
-            );
-            let info = format!(
-                "/{}/@v/{version}.info: ",
-                encode_module_path(module).to_lowercase()
-            );
-            stderr.contains(&unknown_revision)
-                || [404, 410]
-                    .iter()
-                    .any(|status| stderr.contains(&format!("{info}{status}")))
+            let token = format!("{}@{version}: ", module.to_lowercase());
+            stderr.match_indices(&token).any(|(i, _)| {
+                let at_boundary = stderr[..i]
+                    .chars()
+                    .next_back()
+                    .is_none_or(char::is_whitespace);
+                at_boundary && says_version_is_missing(&stderr[i + token.len()..], module, &version)
+            })
         })
+}
+
+/// Whether `rest`, the text after a `module@version: ` token, is one of the two
+/// messages [`is_missing_go_version`] describes. `rest` and `version` are in
+/// lower case, `module` is as written.
+fn says_version_is_missing(rest: &str, module: &str, version: &str) -> bool {
+    let next_word = |s: &str| {
+        s.split(char::is_whitespace)
+            .next()
+            .unwrap_or_default()
+            .to_string()
+    };
+    if let Some(rest) = rest.strip_prefix("invalid version: unknown revision ") {
+        let revision = next_word(rest);
+        if revision == version {
+            return true;
+        }
+        let module = module.to_lowercase();
+        let module = strip_major_version_suffix(&module);
+        return revision
+            .strip_suffix(version)
+            .and_then(|dir| dir.strip_suffix('/'))
+            .is_some_and(|dir| !dir.is_empty() && module.ends_with(&format!("/{dir}")));
+    }
+    if let Some(rest) = rest.strip_prefix("reading ") {
+        let url = next_word(rest);
+        let info = format!(
+            "/{}/@v/{version}.info:",
+            encode_module_path(module).to_lowercase()
+        );
+        let status = rest[url.len()..].trim_start();
+        return url.ends_with(&info)
+            && ["404", "410"].iter().any(|code| {
+                status
+                    .strip_prefix(code)
+                    .is_some_and(|after| after.chars().next().is_none_or(char::is_whitespace))
+            });
+    }
+    false
+}
+
+/// The module path without a `/vN` major version suffix, which names no
+/// directory of the repository.
+fn strip_major_version_suffix(module: &str) -> &str {
+    match module.rsplit_once('/') {
+        Some((base, last))
+            if last.len() > 1
+                && last.starts_with('v')
+                && last[1..].bytes().all(|b| b.is_ascii_digit()) =>
+        {
+            base
+        }
+        _ => module,
+    }
 }
 
 fn go_install_retry_error(first_error: eyre::Report, retry_error: eyre::Report) -> eyre::Report {
@@ -1384,12 +1444,46 @@ mod tests {
                 "v1.2.3",
                 true,
             ),
-            // The module is a leading part of the package path.
+            // The module is the package path or a leading part of it.
             (
-                "go: example.com/tool/cmd/x@v1.2.3: reading https://proxy.golang.org/example.com/tool/@v/v1.2.3.info: 404 Not Found",
+                "go: example.com/tool/cmd/x@v1.2.3: example.com/tool/cmd/x@v1.2.3: reading https://proxy.golang.org/example.com/tool/cmd/x/@v/v1.2.3.info: 404 Not Found\n\tserver response: not found: example.com/tool/cmd/x@v1.2.3: invalid version: unknown revision cmd/x/v1.2.3",
                 "example.com/tool/cmd/x",
                 "v1.2.3",
                 true,
+            ),
+            (
+                "go: example.com/tool/cmd/x@v1.2.3: example.com/tool@v1.2.3: reading https://proxy.golang.org/example.com/tool/@v/v1.2.3.info: 404 Not Found",
+                "example.com/tool/cmd/x",
+                "v1.2.3",
+                true,
+            ),
+            // Version control names the revision of a module in a subdirectory
+            // of its repository with that directory, without a major version
+            // suffix.
+            (
+                "go: example.com/tool/sub@v1.2.3: example.com/tool/sub@v1.2.3: invalid version: unknown revision sub/v1.2.3",
+                "example.com/tool/sub",
+                "v1.2.3",
+                true,
+            ),
+            (
+                "go: example.com/tool/deep/cmd/x/v2@v2.0.0: example.com/tool/deep/cmd/x/v2@v2.0.0: invalid version: unknown revision deep/cmd/x/v2.0.0",
+                "example.com/tool/deep/cmd/x/v2",
+                "v2.0.0",
+                true,
+            ),
+            // A directory the module path does not end in is another module.
+            (
+                "go: example.com/tool/sub@v1.2.3: example.com/tool/sub@v1.2.3: invalid version: unknown revision other/v1.2.3",
+                "example.com/tool/sub",
+                "v1.2.3",
+                false,
+            ),
+            (
+                "go: example.com/tool/sub@v1.2.3: example.com/tool/sub@v1.2.3: invalid version: unknown revision /v1.2.3",
+                "example.com/tool/sub",
+                "v1.2.3",
+                false,
             ),
             // Module proxies spell an upper-case letter as `!` and the letter.
             (
@@ -1440,6 +1534,33 @@ mod tests {
             ),
             (
                 "go: example.com/tool@v1.2.3 requires\n\texample.com/tool-extras@v1.2.3: reading https://proxy.golang.org/example.com/tool-extras/@v/v1.2.3.info: 404 Not Found",
+                TOOL,
+                "v1.2.3",
+                false,
+            ),
+            // A module whose path only ends in the module path is another
+            // module, in the token and in the proxy URL.
+            (
+                "go: example.com/tool@v1.2.3 requires\n\tnotexample.com/tool@v1.2.3: invalid version: unknown revision v1.2.3",
+                TOOL,
+                "v1.2.3",
+                false,
+            ),
+            (
+                "go: example.com/tool@v1.2.3 requires\n\tgithub.com/foo/example.com/tool@v1.2.3: reading https://proxy.golang.org/github.com/foo/example.com/tool/@v/v1.2.3.info: 404 Not Found",
+                TOOL,
+                "v1.2.3",
+                false,
+            ),
+            // A proxy answer for another module or with another status.
+            (
+                "go: example.com/tool@v1.2.3: example.com/tool@v1.2.3: reading https://proxy.golang.org/example.com/dep/@v/v1.2.3.info: 404 Not Found",
+                TOOL,
+                "v1.2.3",
+                false,
+            ),
+            (
+                "go: example.com/tool@v1.2.3: example.com/tool@v1.2.3: reading https://proxy.golang.org/example.com/tool/@v/v1.2.3.info: 4040 Unknown",
                 TOOL,
                 "v1.2.3",
                 false,
