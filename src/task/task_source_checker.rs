@@ -743,11 +743,12 @@ pub(crate) fn glob_walk_pruned(
     )
 }
 
-/// Walks `base` for the entries `pattern`, a `/`-separated glob relative to it, selects. `base`
-/// is a directory taken as it is named, even when its name holds glob metacharacters, and as
-/// with [`glob_walk`] a `*` stays within one directory and only `**` descends.
+/// Walks `base` for the entries `pattern`, a glob relative to it, selects. `base` is a directory
+/// taken as it is named, even when its name holds glob metacharacters, and as with
+/// [`glob_walk`] a `*` stays within one directory and only `**` descends. `pattern` separates
+/// components with `/`, and on Windows also with `\`.
 pub(crate) fn glob_walk_in(base: &Path, pattern: &str) -> Result<GlobWalker> {
-    let components = pattern.split('/').filter(|c| !c.is_empty()).collect_vec();
+    let components = glob_components(pattern, cfg!(windows));
     let max_depth = (!components.contains(&"**")).then_some(components.len());
     build_glob_walker(
         base.to_path_buf(),
@@ -756,6 +757,15 @@ pub(crate) fn glob_walk_in(base: &Path, pattern: &str) -> Result<GlobWalker> {
         false,
         &DirPruner::none(),
     )
+}
+
+/// The non-empty components of a relative glob, split at `/` and, when `windows`, at `\`,
+/// where it is a separator rather than an escape.
+fn glob_components(pattern: &str, windows: bool) -> Vec<&str> {
+    pattern
+        .split(|c| c == '/' || (windows && c == '\\'))
+        .filter(|c| !c.is_empty())
+        .collect_vec()
 }
 
 fn build_glob_walker(
@@ -2079,6 +2089,24 @@ fn get_last_modified(root: &Path, patterns_or_paths: &[String]) -> Result<Option
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A `\` separates components only on Windows; elsewhere it stays in the component.
+    #[test]
+    fn glob_components_split_at_the_platform_separators() {
+        assert_eq!(
+            glob_components(r"env.d\*\local.env", true),
+            ["env.d", "*", "local.env"]
+        );
+        assert_eq!(
+            glob_components(r"env.d/*\local.env", true),
+            ["env.d", "*", "local.env"]
+        );
+        assert_eq!(
+            glob_components(r"env.d/\*.env", false),
+            ["env.d", r"\*.env"]
+        );
+        assert_eq!(glob_components("a//**/", false), ["a", "**"]);
+    }
 
     #[cfg(unix)]
     #[test]
