@@ -35,7 +35,23 @@ pub(crate) fn mod_popen(lua: &Lua) -> LuaResult<()> {
             }
         },
     )?;
-    io.set("popen", popen)
+    io.set("popen", popen)?;
+    // `io.type` tells a stock file from a closed one and returns nil for other
+    // values; it answers the same for the handles above.
+    let stock_type: Option<Function> = io.get("type")?;
+    let io_type = lua.create_function(move |lua, value: LuaValue| -> LuaResult<LuaValue> {
+        if let LuaValue::UserData(ud) = &value
+            && let Ok(file) = ud.borrow::<PopenFile>()
+        {
+            let kind = if file.closed { "closed file" } else { "file" };
+            return lua.create_string(kind).map(LuaValue::String);
+        }
+        match &stock_type {
+            Some(stock) => stock.call(value),
+            None => Ok(LuaNil),
+        }
+    })?;
+    io.set("type", io_type)
 }
 
 fn popen(lua: &Lua, command: &str, mode: Option<&str>, cwd: &str) -> LuaResult<LuaMultiValue> {
@@ -63,26 +79,44 @@ fn popen(lua: &Lua, command: &str, mode: Option<&str>, cwd: &str) -> LuaResult<L
         stdin: child.stdin.take(),
         stdout: child.stdout.take().map(BufReader::new),
         child: Some(child),
+        closed: false,
     };
     lua.create_userdata(file)?.into_lua_multi(lua)
 }
 
 /// The handle `io.popen` returns: the child's stdout to read in `"r"` mode, or its
 /// stdin to write in `"w"` mode. Closing it, or dropping it, waits for the child.
+///
+/// It answers as a Lua 5.1 popen file does, the version mlua is built with: `close`
+/// returns `true` once the child is reaped, whatever its exit status (5.1's
+/// `pclose` reports no status), and any use of a closed handle, a second `close`
+/// included, raises "attempt to use a closed file".
 struct PopenFile {
     stdin: Option<ChildStdin>,
     stdout: Option<BufReader<ChildStdout>>,
     child: Option<Child>,
+    closed: bool,
 }
 
 impl PopenFile {
+    fn open(&mut self) -> LuaResult<&mut Self> {
+        if self.closed {
+            return Err(LuaError::RuntimeError(
+                "attempt to use a closed file".to_string(),
+            ));
+        }
+        Ok(self)
+    }
+
     fn reader(&mut self) -> LuaResult<&mut BufReader<ChildStdout>> {
-        self.stdout
+        self.open()?
+            .stdout
             .as_mut()
             .ok_or_else(|| LuaError::RuntimeError("file is not readable".to_string()))
     }
 
     fn close(&mut self) {
+        self.closed = true;
         // Closing the pipes first lets a child blocked on a full pipe see EOF or
         // EPIPE and exit, as `pclose` does.
         self.stdin = None;
@@ -245,7 +279,7 @@ impl UserData for PopenFile {
             |_, (file, values): (AnyUserData, Variadic<LuaValue>)| {
                 {
                     let mut this = file.borrow_mut::<PopenFile>()?;
-                    let stdin = this.stdin.as_mut().ok_or_else(|| {
+                    let stdin = this.open()?.stdin.as_mut().ok_or_else(|| {
                         LuaError::RuntimeError("file is not writable".to_string())
                     })?;
                     for value in values {
@@ -267,13 +301,13 @@ impl UserData for PopenFile {
             },
         );
         methods.add_method_mut("flush", |_, this, ()| {
-            if let Some(stdin) = this.stdin.as_mut() {
+            if let Some(stdin) = this.open()?.stdin.as_mut() {
                 stdin.flush()?;
             }
             Ok(true)
         });
         methods.add_method_mut("close", |_, this, ()| {
-            this.close();
+            this.open()?.close();
             Ok(true)
         });
     }
@@ -371,6 +405,61 @@ mod tests {
             .eval()
             .unwrap();
         assert_eq!(kind, "file");
+    }
+
+    /// Runs the same handle checks against stock `io.popen` and the detached one.
+    fn close_and_type_results(lua: &Lua) -> Vec<String> {
+        lua.load(
+            r##"
+            local seen = {}
+            local function note(...)
+                local parts = {}
+                for i = 1, select("#", ...) do
+                    parts[#parts + 1] = tostring((select(i, ...)))
+                end
+                seen[#seen + 1] = table.concat(parts, ",")
+            end
+            local function closed_error(f)
+                local ok, err = pcall(f)
+                return ok, string.find(tostring(err), "attempt to use a closed file", 1, true) ~= nil
+            end
+            for _, command in ipairs({ "true", "exit 3", "kill -9 $$" }) do
+                local h = io.popen(command)
+                note(command, io.type(h), h:read("*a"))
+                note(h:close())
+                note(io.type(h))
+                note(closed_error(function() return h:close() end))
+                note(closed_error(function() return h:read("*a") end))
+            end
+            local w = io.popen("cat >/dev/null", "w")
+            note(io.type(w), w:close(), io.type(w))
+            note(closed_error(function() return w:write("x") end))
+            note(io.type("not a file"), io.type(io.stdout))
+            -- a handle dropped without close is reaped by the collector
+            io.popen("exit 4")
+            collectgarbage()
+            collectgarbage()
+            return seen
+            "##,
+        )
+        .eval()
+        .unwrap()
+    }
+
+    #[test]
+    fn popen_handles_answer_like_stock_ones() {
+        let stock = Lua::new();
+        let expected = close_and_type_results(&stock);
+        let dir = tempfile::tempdir().unwrap();
+        let detached = detached_lua(dir.path());
+        assert_eq!(close_and_type_results(&detached), expected);
+        // Lua 5.1's pclose reports no exit status: a failed or killed child
+        // still closes to true.
+        assert_eq!(expected[1], "true");
+        assert_eq!(expected[6], "true");
+        assert_eq!(expected[11], "true");
+        assert_eq!(expected[3], "false,true");
+        assert_eq!(expected[2], "closed file");
     }
 
     #[test]
