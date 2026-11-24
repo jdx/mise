@@ -152,7 +152,10 @@ file that a global `find_up = true` entry or a glob finds in a repository. It
 does not apply to a global `_.file` or `_.source` entry that names one file
 without a glob, which you chose.
 
-Approval is bound to the file's content whether or not `config` is on. To load
+Approval is bound to the file's content whether or not `config` is on. It
+approves the file as an env file only: if the same path is later loaded as a
+config, through a symlink, a directory that replaced the file or a filename
+setting, it needs trust as a config like any other. To load
 a file without approving each change, put it under
 [`trusted_config_paths`](/configuration/settings.html#trusted_config_paths).
 Like the other settings that stay trusted by path, it is global-only, so a

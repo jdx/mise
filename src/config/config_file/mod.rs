@@ -917,6 +917,15 @@ pub(crate) fn env_file_trust_check_from(
 }
 
 pub fn is_trusted(path: &Path) -> bool {
+    // An env file approved as one is approved for that, never as config: the same path can
+    // load as config through a link, a directory that replaced it or a filename setting.
+    // Only `trusted_config_paths`, which global config sets, trusts it as config.
+    if is_env_file_approval(path) {
+        return !is_config_ignored_via_setting(path)
+            && path
+                .canonicalize()
+                .is_ok_and(|path| trusted_config_path_matches(&path));
+    }
     is_trusted_with(path, Settings::get().paranoid.config())
 }
 
@@ -1027,13 +1036,20 @@ fn is_trusted_without_config_paths(
         // No direct trust record. A config inside a linked git worktree
         // shares trust with the equivalent path in the repo's main checkout.
         // Not applicable in paranoid mode (excluded above), where trust is
-        // tied to file contents that can differ between worktree branches.
+        // tied to file contents that can differ between worktree branches,
+        // nor to a main-checkout record with a hash, which approves the
+        // content of the file there and not the path.
         if let Some(main_path) = crate::git::main_checkout_equivalent(canonicalized_path)
+            && !has_trust_hash(&main_path)
             && is_trusted(&main_path)
         {
             add_trusted(canonicalized_path.to_path_buf());
             return true;
         }
+        return false;
+    } else if has_trust_hash(path) && !trust_file_hash(path).unwrap_or(false) {
+        // A record with a hash approves the content of one file, so it stops counting once
+        // that content changes, also when the path is loaded as config.
         return false;
     }
     add_trusted(canonicalized_path.to_path_buf());
@@ -1278,12 +1294,38 @@ pub fn trust(path: &Path) -> Result<()> {
     // bound to its content when only the `env_files` category is on. A trust root that is a
     // directory is a config trusted the normal way and has no content to hash.
     let paranoid = &Settings::get().paranoid;
+    let trust_hash_path = with_appended_extension(&hashed_path, "hash");
+    let env_file_path = with_appended_extension(&hashed_path, ENV_FILE_APPROVAL);
     if paranoid.config() || (paranoid.env_files() && path.is_file()) {
-        let trust_hash_path = with_appended_extension(&hashed_path, "hash");
         let hash = hash::file_hash_sha256(path, None)?;
         file::write(trust_hash_path, hash)?;
+    } else if trust_hash_path.exists() {
+        // This is trust by path. A hash left by an approval of a file that was at this path
+        // would keep the record bound to that file's content.
+        file::remove_file(&trust_hash_path)?;
+    }
+    // With only `env_files` on, a file that is not named like a config is approved as an env
+    // file, which `is_trusted` never takes as trust in it as config.
+    if paranoid.env_files() && !paranoid.config() && path.is_file() && !looks_like_config_file(path)
+    {
+        file::write(env_file_path, "")?;
+    } else if env_file_path.exists() {
+        file::remove_file(&env_file_path)?;
     }
     Ok(())
+}
+
+/// The sidecar of a trust record that approves an env file and not a config.
+pub const ENV_FILE_APPROVAL: &str = "env-file";
+
+/// Whether the trust record of `path` approves it as an env file only.
+fn is_env_file_approval(path: &Path) -> bool {
+    has_trust_record(path) && with_appended_extension(&trust_path(path), ENV_FILE_APPROVAL).exists()
+}
+
+/// Whether the trust record of `path` is bound to the content of a file.
+fn has_trust_hash(path: &Path) -> bool {
+    has_trust_record(path) && with_appended_extension(&trust_path(path), "hash").exists()
 }
 
 /// Records trust for the root of a config file mise has just written for the user, as
@@ -1387,7 +1429,7 @@ pub fn untrust(path: &Path) -> eyre::Result<()> {
         if record_points_at(&hashed_path, &identity) {
             file::remove_file(&hashed_path)?;
         }
-        for ext in ["hash", "monorepo"] {
+        for ext in ["hash", "monorepo", ENV_FILE_APPROVAL] {
             let sidecar = with_appended_extension(&hashed_path, ext);
             if sidecar.exists() {
                 file::remove_file(&sidecar)?;
@@ -2337,6 +2379,45 @@ mod env_file_trust_tests {
         assert!(env_file_trust_check(&path).unwrap());
         std::fs::write(&path, "A=2\n").unwrap();
         assert!(is_untrusted(&path));
+    }
+
+    /// With only `env_files` on, approving an env file is not trust in the same path as config,
+    /// in this run or a later one, and trusting that path the normal way replaces the approval.
+    #[test]
+    fn an_approved_env_file_is_not_config_trust() {
+        use confique::Layer;
+        use mise_settings::{Paranoid, ParanoidCategory};
+        let _held = crate::test::SettingsGuard::lock();
+        let mut settings = crate::config::settings::SettingsPartial::empty();
+        settings.paranoid = Some(Paranoid::only([ParanoidCategory::EnvFiles]));
+        Settings::reset(Some(settings));
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join(".env");
+        std::fs::write(&path, "A=1\n").unwrap();
+
+        trust(&path).unwrap();
+        assert!(env_file_trust_check(&path).unwrap());
+        assert!(!is_trusted(&path));
+        Settings::reset(None);
+        assert!(!is_trusted(&path));
+
+        // A config named by its file name is approved as config.
+        let config = tmp.path().join("mise.toml");
+        std::fs::write(&config, "").unwrap();
+        let mut settings = crate::config::settings::SettingsPartial::empty();
+        settings.paranoid = Some(Paranoid::only([ParanoidCategory::EnvFiles]));
+        Settings::reset(Some(settings));
+        trust(&config).unwrap();
+        assert!(!is_env_file_approval(&config));
+
+        // A directory that replaced the file is trusted by path once the user trusts it.
+        std::fs::remove_file(&path).unwrap();
+        std::fs::create_dir(&path).unwrap();
+        trust(&path).unwrap();
+        assert!(!is_env_file_approval(&path));
+        assert!(!has_trust_hash(&path));
+        untrust(&path).unwrap();
+        untrust(&config).unwrap();
     }
 
     #[test]

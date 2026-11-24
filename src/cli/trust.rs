@@ -147,9 +147,10 @@ impl Trust {
     /// delete every entry.
     ///
     /// Not everything in the directory is an entry. `config_file::trust` writes a `.hash` beside
-    /// one in paranoid mode and `mark_as_monorepo_root` writes a `.monorepo` marker; those hold a
-    /// checksum and nothing at all, not a path, so they are skipped here and removed with the
-    /// entry they belong to — the way `config_file::untrust` already removes all three together.
+    /// one in paranoid mode, with an `.env-file` marker for an env file it approves, and
+    /// `mark_as_monorepo_root` writes a `.monorepo` marker; those hold a checksum or nothing at
+    /// all, not a path, so they are skipped here and removed with the
+    /// entry they belong to — the way `config_file::untrust` already removes them all together.
     fn clean_in(dir: &Path) -> Result<()> {
         if dir.is_dir() {
             for path in file::ls(dir)? {
@@ -183,7 +184,7 @@ impl Trust {
 }
 
 /// The suffixes `config_file` appends to a trust entry for the metadata that belongs to it.
-const TRUST_METADATA_EXTENSIONS: [&str; 2] = ["hash", "monorepo"];
+const TRUST_METADATA_EXTENSIONS: [&str; 3] = ["hash", "monorepo", config_file::ENV_FILE_APPROVAL];
 
 /// Whether a file in the trust directory is metadata for an entry rather than an entry itself.
 fn is_trust_metadata(path: &Path) -> bool {
@@ -787,7 +788,7 @@ mod tests {
     #[test]
     fn a_removed_entry_takes_its_metadata_with_it() {
         // The other side of the check above: skipping metadata must not turn it into litter that
-        // outlives the entry it describes. `config_file::untrust` removes all three together.
+        // outlives the entry it describes. `config_file::untrust` removes them all together.
         let tmp = tempfile::tempdir().unwrap();
         let store = tmp.path().join("trusted-configs");
         std::fs::create_dir_all(&store).unwrap();
