@@ -8063,16 +8063,13 @@ fn copy_failure<'a>(source: &'a Path, target: &'a Path) -> impl Fn() -> String +
 /// The file is replaced by a new one instead when its current mode lets
 /// someone read it whom the new mode does not ([`mode_drops_readers`]): a
 /// reader who opened the old file keeps its handle after a chmod, and would
-/// read the new content through it.
+/// read the new content through it. See [`replace_copy_recorded`].
 fn overwrite_recorded(source: &Path, target: &Path, written: &mut Vec<PathBuf>) -> Result<()> {
     let mut from = CopySource::open(source, target)?;
     if let Ok(current) = std::fs::symlink_metadata(target)
         && mode_drops_readers(&current.permissions(), &from.source_mode())
     {
-        file::remove_file(target)?;
-        written.push(target.to_path_buf());
-        let to = create_private(target).wrap_err_with(copy_failure(source, target))?;
-        return from.copy_into(to, from.source_mode());
+        return replace_copy_recorded(&mut from, &current, written);
     }
     let to = std::fs::OpenOptions::new()
         .write(true)
@@ -8081,6 +8078,55 @@ fn overwrite_recorded(source: &Path, target: &Path, written: &mut Vec<PathBuf>) 
         .wrap_err_with(copy_failure(source, target))?;
     written.push(target.to_path_buf());
     from.copy_into(to, from.source_mode())
+}
+
+/// Replace the existing file at the copy's target, whose metadata is
+/// `current`, with a new file holding the source's content.
+///
+/// The replacement keeps what an in-place overwrite keeps: the old file's
+/// owner and group, with the source's content and mode. mise refuses, and
+/// leaves the target as it was, when it could not overwrite the target in
+/// place (it cannot open it for writing) or cannot give the new file the old
+/// owner and group. The new file is written beside the target and takes its
+/// name only once its content, owner and mode are all in place, so a copy
+/// that fails part-way leaves the old file, and the target is recorded in
+/// `written` only once it has been replaced.
+fn replace_copy_recorded(
+    from: &mut CopySource<'_>,
+    current: &std::fs::Metadata,
+    written: &mut Vec<PathBuf>,
+) -> Result<()> {
+    let target = from.target;
+    let failed = copy_failure(from.source, target);
+    std::fs::OpenOptions::new()
+        .write(true)
+        .open(target)
+        .wrap_err_with(&failed)?;
+    let parent = target
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    let new = tempfile::Builder::new()
+        .prefix(".mise-")
+        .tempfile_in(parent)
+        .wrap_err_with(&failed)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt as _;
+        let owner = (Some(current.uid().into()), Some(current.gid().into()));
+        nix::unistd::fchown(new.as_file(), owner.0, owner.1)
+            .wrap_err_with(|| format!("{}: could not keep the file's owner", failed()))?;
+    }
+    #[cfg(not(unix))]
+    let _ = current;
+    let mode = from.source_mode();
+    from.copy_into(new.as_file().try_clone().wrap_err_with(&failed)?, mode)?;
+    new.as_file().sync_all().wrap_err_with(&failed)?;
+    new.persist(target)
+        .map_err(|err| err.error)
+        .wrap_err_with(&failed)?;
+    written.push(target.to_path_buf());
+    Ok(())
 }
 
 /// Whether a file at mode `current` can be read by a group or other user
@@ -11012,6 +11058,8 @@ source = "oldrc""#,
         let target = dir.path().join("target");
         let elsewhere = dir.path().join("elsewhere");
         file::create_dir_all(&target)?;
+        // others may write here, so the link beneath counts as root's too
+        std::fs::set_permissions(&target, std::os::unix::fs::PermissionsExt::from_mode(0o770))?;
         file::create_dir_all(&elsewhere)?;
         std::os::unix::fs::symlink(&elsewhere, target.join("nested"))?;
         // the target alone crosses no link
@@ -11087,6 +11135,68 @@ source = "oldrc""#,
         overwrite_recorded(&source, &target, &mut vec![])?;
         assert_eq!(std::fs::metadata(&target)?.ino(), inode);
         assert_eq!(std::fs::read_to_string(&target)?, "secret 2");
+        Ok(())
+    }
+
+    /// What replacing a copy whose mode narrows keeps, and when it refuses:
+    /// the replacement keeps the old file's owner and group, a target mise
+    /// cannot write is refused, and a copy that fails part-way leaves the old
+    /// file in place.
+    #[cfg(unix)]
+    #[test]
+    fn a_narrowing_replacement_keeps_the_owner_or_leaves_the_target() -> Result<()> {
+        use std::io::Read as _;
+        use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
+        // a group of ours other than the one new files get, when we have one
+        let other_group = nix::unistd::getgroups()?
+            .into_iter()
+            .find(|gid| *gid != nix::unistd::getegid());
+        let unreadable = Path::new("/proc/self/mem");
+        for (name, target_mode, source, replaced) in [
+            ("writable", 0o644, None, true),
+            ("read-only", 0o444, None, false),
+            ("copy fails", 0o644, Some(unreadable), false),
+        ] {
+            if source.is_some_and(|source| !source.exists()) {
+                continue;
+            }
+            let dir = tempfile::tempdir()?;
+            let target = dir.path().join("target");
+            let secret = dir.path().join("source");
+            file::write(&secret, "secret")?;
+            std::fs::set_permissions(&secret, std::fs::Permissions::from_mode(0o600))?;
+            file::write(&target, "old")?;
+            if let Some(gid) = other_group {
+                nix::unistd::chown(&target, None, Some(gid))?;
+            }
+            std::fs::set_permissions(&target, std::fs::Permissions::from_mode(target_mode))?;
+            let before = std::fs::metadata(&target)?;
+            let mut reader = std::fs::File::open(&target)?;
+            let mut written = vec![];
+            let result = overwrite_recorded(source.unwrap_or(&secret), &target, &mut written);
+            let after = std::fs::metadata(&target)?;
+            assert_eq!(result.is_ok(), replaced, "{name}: {result:?}");
+            assert_eq!(
+                (after.uid(), after.gid()),
+                (before.uid(), before.gid()),
+                "{name}"
+            );
+            let mut seen = String::new();
+            reader.read_to_string(&mut seen)?;
+            assert_eq!(seen, "old", "{name}");
+            if replaced {
+                assert_eq!(std::fs::read_to_string(&target)?, "secret", "{name}");
+                assert_eq!(permission_bits(&after), 0o600, "{name}");
+                assert_eq!(written, vec![target.clone()], "{name}");
+            } else {
+                assert_eq!(after.ino(), before.ino(), "{name}");
+                assert_eq!(std::fs::read_to_string(&target)?, "old", "{name}");
+                assert_eq!(permission_bits(&after), target_mode, "{name}");
+                assert_eq!(written, Vec::<PathBuf>::new(), "{name}");
+            }
+            let leftovers = std::fs::read_dir(dir.path())?.count();
+            assert_eq!(leftovers, 2, "{name}: only the source and target remain");
+        }
         Ok(())
     }
 
