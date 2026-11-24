@@ -5942,8 +5942,9 @@ impl Lockfile {
 /// matches, and neither does a field this check does not know, whatever aube
 /// does with it:
 ///
-/// - only the sections a registry graph needs are present, and `settings`
-///   holds only aube's boolean settings;
+/// - only the sections a registry graph needs are present, each of the type
+///   aube writes (`settings`, `importers`, `packages`, `snapshots` and `time`
+///   are tables), and `settings` holds only aube's boolean settings;
 /// - every package key is `name@version` and its resolution is one non-empty
 ///   `integrity`;
 /// - an importer, package or snapshot entry carries only the fields aube
@@ -6121,10 +6122,12 @@ fn aube_graph_names_only_registry(lock: &AubeLock) -> bool {
         && graph
             .get("lockfileVersion")
             .is_none_or(|version| version.is_str() || version.is_integer() || version.is_float())
-        && table("settings").is_none_or(|settings| {
-            settings
-                .iter()
-                .all(|(key, value)| SETTINGS.contains(&key.as_str()) && value.is_bool())
+        && graph.get("settings").is_none_or(|settings| {
+            settings.as_table().is_some_and(|settings| {
+                settings
+                    .iter()
+                    .all(|(key, value)| SETTINGS.contains(&key.as_str()) && value.is_bool())
+            })
         })
         && graph.get("time").is_none_or(string_values)
         && packages.iter().all(|(key, package)| {
@@ -6148,25 +6151,27 @@ fn aube_graph_names_only_registry(lock: &AubeLock) -> bool {
                         })
                 })
         })
-        && table("snapshots").is_none_or(|snapshots| {
-            snapshots.iter().all(|(key, snapshot)| {
-                split_key(key).is_some_and(|(name, version)| has_package(&name, &version))
-                    && only_fields(snapshot, &SNAPSHOT)
-                    && optional(snapshot, "optional", &Value::is_bool)
-                    && optional(snapshot, "transitivePeerDependencies", &names)
-                    && bundled_ok(snapshot)
-                    && DEPENDENCIES.iter().all(|section| {
-                        snapshot
-                            .get(section)
-                            .is_none_or(|deps| match deps.as_table() {
-                                Some(deps) => deps.iter().all(|(name, version)| {
-                                    version
-                                        .as_str()
-                                        .is_some_and(|version| has_package(name, version))
-                                }),
-                                None => false,
-                            })
-                    })
+        && graph.get("snapshots").is_none_or(|snapshots| {
+            snapshots.as_table().is_some_and(|snapshots| {
+                snapshots.iter().all(|(key, snapshot)| {
+                    split_key(key).is_some_and(|(name, version)| has_package(&name, &version))
+                        && only_fields(snapshot, &SNAPSHOT)
+                        && optional(snapshot, "optional", &Value::is_bool)
+                        && optional(snapshot, "transitivePeerDependencies", &names)
+                        && bundled_ok(snapshot)
+                        && DEPENDENCIES.iter().all(|section| {
+                            snapshot
+                                .get(section)
+                                .is_none_or(|deps| match deps.as_table() {
+                                    Some(deps) => deps.iter().all(|(name, version)| {
+                                        version
+                                            .as_str()
+                                            .is_some_and(|version| has_package(name, version))
+                                    }),
+                                    None => false,
+                                })
+                        })
+                })
             })
         })
 }

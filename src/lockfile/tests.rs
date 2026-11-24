@@ -6174,8 +6174,19 @@ fn untrusted_lockfile_keeps_a_registry_only_aube_graph() {
     ] {
         assert!(snapshot_metadata.contains(added), "{added}");
     }
+    // A section aube writes as a table is never another type.
+    let scalar_settings =
+        with_package("").replace("settings:\n  autoInstallPeers: true\n", "settings: true\n");
+    let list_snapshots = with_package("").replace(
+        "snapshots:\n  cli@1.0.0:\n    dependencies:\n      string_decoder: 1.0.0\n  string_decoder@1.0.0: {}\n  '@scope/x@1.0.0': {}\n",
+        "snapshots: [cli@1.0.0]\n",
+    );
+    assert_ne!(scalar_settings, with_package(""));
+    assert_ne!(list_snapshots, with_package(""));
     let plain = with_package("");
     for (graph, kept) in [
+        (scalar_settings.as_str(), false),
+        (list_snapshots.as_str(), false),
         (plain.as_str(), true),
         (metadata.as_str(), true),
         (snapshot_metadata.as_str(), true),
