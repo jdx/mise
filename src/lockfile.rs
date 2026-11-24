@@ -5940,16 +5940,26 @@ impl Lockfile {
 
 /// Whether an aube dependency graph resolves every package from the registry
 /// by integrity hash alone. It is an allowlist of the exact shapes a registry
-/// graph has, so a source mise cannot name (a URL, git or `owner/repo`
-/// shorthand, a path or tarball file, `link:`, `file:`, `portal:`, an `npm:`
-/// alias) never matches:
+/// graph has: every section, entry field and value must be one listed here,
+/// so a source mise cannot name (a URL, git or `owner/repo` shorthand, a path
+/// or tarball file, `link:`, `file:`, `portal:`, an `npm:` alias) never
+/// matches, and neither does a field this check does not know, whatever aube
+/// does with it:
 ///
-/// - only the sections a registry graph needs are present;
+/// - only the sections a registry graph needs are present, and `settings`
+///   holds only aube's boolean settings;
 /// - every package key is `name@version` and its resolution is one non-empty
-///   `integrity`, with no `aliasOf`;
+///   `integrity`;
+/// - an importer, package or snapshot entry carries only the fields aube
+///   writes for a registry package (not `aliasOf` or `version`, which belong
+///   to aliases and URL sources), each of the type aube writes;
 /// - every importer and snapshot dependency names a package with that
-///   integrity entry, by a plain name and version.
+///   integrity entry, by a plain name and version;
+/// - every `bundledDependencies` entry is a plain package name: aube links the
+///   commands of `node_modules/<entry>` below the package, so a path there
+///   would reach outside what the registry served.
 fn aube_graph_names_only_registry(lock: &AubeLock) -> bool {
+    use toml::Value;
     const SECTIONS: [&str; 6] = [
         "lockfileVersion",
         "settings",
@@ -5958,14 +5968,49 @@ fn aube_graph_names_only_registry(lock: &AubeLock) -> bool {
         "snapshots",
         "time",
     ];
+    const SETTINGS: [&str; 3] = [
+        "autoInstallPeers",
+        "excludeLinksFromLockfile",
+        "lockfileIncludeTarballUrl",
+    ];
     const DEPENDENCIES: [&str; 4] = [
         "dependencies",
         "devDependencies",
         "optionalDependencies",
         "peerDependencies",
     ];
+    const IMPORTER: [&str; 5] = [
+        "dependencies",
+        "devDependencies",
+        "optionalDependencies",
+        "peerDependencies",
+        "skippedOptionalDependencies",
+    ];
+    const PACKAGE: [&str; 10] = [
+        "resolution",
+        "engines",
+        "cpu",
+        "os",
+        "libc",
+        "deprecated",
+        "hasBin",
+        "peerDependencies",
+        "peerDependenciesMeta",
+        "bundledDependencies",
+    ];
+    const SNAPSHOT: [&str; 7] = [
+        "dependencies",
+        "devDependencies",
+        "optionalDependencies",
+        "peerDependencies",
+        "transitivePeerDependencies",
+        "optional",
+        "bundledDependencies",
+    ];
+    // npm names never start with `.` or `_`, and `.` or `..` would be a path.
     let part_ok = |s: &str| {
         !s.is_empty()
+            && !s.starts_with(['.', '_'])
             && s.chars()
                 .all(|c| c.is_ascii_alphanumeric() || "._~-".contains(c))
     };
@@ -5997,8 +6042,38 @@ fn aube_graph_names_only_registry(lock: &AubeLock) -> bool {
         (name_ok(name) && version_ok(version))
             .then(|| format!("{name}@{}", version.split('(').next().unwrap_or(version)))
     };
+    let only_fields = |entry: &Value, fields: &[&str]| {
+        entry
+            .as_table()
+            .is_some_and(|entry| entry.keys().all(|key| fields.contains(&key.as_str())))
+    };
+    let is_name = |value: &Value| value.as_str().is_some_and(name_ok);
+    let names = |value: &Value| {
+        value
+            .as_array()
+            .is_some_and(|names| names.iter().all(is_name))
+    };
+    // aube reads `os`, `cpu` and `libc` as one string or a list of them.
+    let strings = |value: &Value| match value {
+        Value::String(_) => true,
+        Value::Array(values) => values.iter().all(Value::is_str),
+        _ => false,
+    };
+    let string_values = |value: &Value| {
+        value
+            .as_table()
+            .is_some_and(|table| table.values().all(Value::is_str))
+    };
+    let optional =
+        |entry: &Value, field: &str, ok: &dyn Fn(&Value) -> bool| entry.get(field).is_none_or(ok);
+    // `true` bundles the snapshot's dependencies, which are checked as names.
+    let bundled_ok = |entry: &Value| {
+        optional(entry, "bundledDependencies", &|bundled| {
+            bundled.is_bool() || names(bundled)
+        })
+    };
     let graph = &lock.graph;
-    let table = |name: &str| graph.get(name).and_then(toml::Value::as_table);
+    let table = |name: &str| graph.get(name).and_then(Value::as_table);
     let (Some(importers), Some(packages)) = (table("importers"), table("packages")) else {
         return false;
     };
@@ -6011,39 +6086,79 @@ fn aube_graph_names_only_registry(lock: &AubeLock) -> bool {
         let peers = &key[release.len()..];
         version_ok(&format!("{version}{peers}")).then(|| (name.to_string(), version.to_string()))
     };
+    let package_ok = |package: &Value| {
+        only_fields(package, &PACKAGE)
+            && package
+                .get("resolution")
+                .and_then(Value::as_table)
+                .is_some_and(|resolution| {
+                    resolution.len() == 1
+                        && resolution
+                            .get("integrity")
+                            .and_then(Value::as_str)
+                            .is_some_and(|integrity| !integrity.is_empty())
+                })
+            && optional(package, "engines", &string_values)
+            && ["cpu", "os", "libc"]
+                .iter()
+                .all(|field| optional(package, field, &strings))
+            && optional(package, "deprecated", &Value::is_str)
+            && optional(package, "hasBin", &Value::is_bool)
+            && optional(package, "peerDependencies", &|peers| {
+                string_values(peers)
+                    && peers
+                        .as_table()
+                        .is_some_and(|t| t.keys().all(|k| name_ok(k)))
+            })
+            && optional(package, "peerDependenciesMeta", &|meta| {
+                meta.as_table().is_some_and(|meta| {
+                    meta.iter().all(|(name, meta)| {
+                        name_ok(name)
+                            && only_fields(meta, &["optional"])
+                            && optional(meta, "optional", &Value::is_bool)
+                    })
+                })
+            })
+            && bundled_ok(package)
+    };
     graph.keys().all(|key| SECTIONS.contains(&key.as_str()))
+        && graph
+            .get("lockfileVersion")
+            .is_none_or(|version| version.is_str() || version.is_integer() || version.is_float())
+        && table("settings").is_none_or(|settings| {
+            settings
+                .iter()
+                .all(|(key, value)| SETTINGS.contains(&key.as_str()) && value.is_bool())
+        })
+        && graph.get("time").is_none_or(string_values)
         && packages.iter().all(|(key, package)| {
             split_key(key).is_some_and(|(name, version)| has_package(&name, &version))
-                && package.get("aliasOf").is_none()
-                && package
-                    .get("resolution")
-                    .and_then(toml::Value::as_table)
-                    .is_some_and(|resolution| {
-                        resolution.len() == 1
-                            && resolution
-                                .get("integrity")
-                                .and_then(toml::Value::as_str)
-                                .is_some_and(|integrity| !integrity.is_empty())
-                    })
+                && package_ok(package)
         })
         && importers.values().all(|importer| {
-            DEPENDENCIES.iter().all(|section| {
-                importer
-                    .get(section)
-                    .is_none_or(|deps| match deps.as_table() {
-                        Some(deps) => deps.iter().all(|(name, dep)| {
-                            let field = |field: &str| dep.get(field).and_then(toml::Value::as_str);
-                            field("specifier").is_some_and(specifier_ok)
-                                && field("version")
-                                    .is_some_and(|version| has_package(name, version))
-                        }),
-                        None => false,
-                    })
-            })
+            only_fields(importer, &IMPORTER)
+                && IMPORTER.iter().all(|section| {
+                    importer
+                        .get(section)
+                        .is_none_or(|deps| match deps.as_table() {
+                            Some(deps) => deps.iter().all(|(name, dep)| {
+                                let field = |field: &str| dep.get(field).and_then(Value::as_str);
+                                only_fields(dep, &["specifier", "version"])
+                                    && field("specifier").is_some_and(specifier_ok)
+                                    && field("version")
+                                        .is_some_and(|version| has_package(name, version))
+                            }),
+                            None => false,
+                        })
+                })
         })
         && table("snapshots").is_none_or(|snapshots| {
             snapshots.iter().all(|(key, snapshot)| {
                 split_key(key).is_some_and(|(name, version)| has_package(&name, &version))
+                    && only_fields(snapshot, &SNAPSHOT)
+                    && optional(snapshot, "optional", &Value::is_bool)
+                    && optional(snapshot, "transitivePeerDependencies", &names)
+                    && bundled_ok(snapshot)
                     && DEPENDENCIES.iter().all(|section| {
                         snapshot
                             .get(section)

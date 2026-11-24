@@ -6043,7 +6043,49 @@ fn untrusted_lockfile_keeps_a_registry_only_aube_graph() {
     let peer_link = "lockfileVersion: '9.0'\nimporters:\n  .:\n    dependencies:\n      cli:\n        specifier: 1.0.0\n        version: 1.0.0\n    peerDependencies:\n      evil: ../evil\npackages:\n  cli@1.0.0:\n    resolution: {integrity: sha512-abc}\n";
     let no_version = "lockfileVersion: '9.0'\nimporters:\n  .:\n    dependencies:\n      cli:\n        specifier: 1.0.0\npackages:\n  cli@1.0.0:\n    resolution: {integrity: sha512-abc}\n";
     let unlisted = "lockfileVersion: '9.0'\nimporters:\n  .:\n    dependencies:\n      cli:\n        specifier: 1.0.0\n        version: 1.0.0\npackages:\n  other@1.0.0:\n    resolution: {integrity: sha512-abc}\n";
+    // `fields` go on the `cli` package entry.
+    let with_package = |fields: &str| {
+        format!(
+            "lockfileVersion: '9.0'\nsettings:\n  autoInstallPeers: true\nimporters:\n  .:\n    dependencies:\n      cli:\n        specifier: ^1.0.0\n        version: 1.0.0\npackages:\n  cli@1.0.0:\n    resolution: {{integrity: sha512-abc}}\n{fields}  string_decoder@1.0.0:\n    resolution: {{integrity: sha512-def}}\n  '@scope/x@1.0.0':\n    resolution: {{integrity: sha512-ghi}}\nsnapshots:\n  cli@1.0.0:\n    dependencies:\n      string_decoder: 1.0.0\n  string_decoder@1.0.0: {{}}\n  '@scope/x@1.0.0': {{}}\n"
+        )
+    };
+    let metadata = with_package(
+        "    engines: {node: '>=18'}\n    cpu: [x64, arm64]\n    os: [linux]\n    deprecated: use something else\n    hasBin: true\n    peerDependencies:\n      '@scope/x': ^1\n    peerDependenciesMeta:\n      '@scope/x': {optional: true}\n    bundledDependencies: [string_decoder, '@scope/x']\n",
+    );
+    let bundled_true = with_package("    bundledDependencies: true\n");
+    let bundled_absolute = with_package("    bundledDependencies: [/proc/self/cwd/tools]\n");
+    let bundled_parent = with_package("    bundledDependencies: ['..']\n");
+    let bundled_scoped_parent = with_package("    bundledDependencies: ['@scope/..']\n");
+    let unknown_package_field = with_package("    version: link:/payload\n");
+    let unknown_settings = with_package("").replace(
+        "  autoInstallPeers: true\n",
+        "  autoInstallPeers: true\n  injectWorkspacePackages: true\n",
+    );
+    let unknown_snapshot_field = with_package("").replace(
+        "  string_decoder@1.0.0: {}\n",
+        "  string_decoder@1.0.0:\n    resolution: {tarball: 'http://attacker.example/x.tgz'}\n",
+    );
+    let snapshot_bundled_path = with_package("").replace(
+        "  string_decoder@1.0.0: {}\n",
+        "  string_decoder@1.0.0:\n    bundledDependencies: [../../bin]\n",
+    );
+    let unknown_dep_field = with_package("").replace(
+        "        version: 1.0.0\n",
+        "        version: 1.0.0\n        path: ../cli\n",
+    );
+    let plain = with_package("");
     for (graph, kept) in [
+        (plain.as_str(), true),
+        (metadata.as_str(), true),
+        (bundled_true.as_str(), true),
+        (bundled_absolute.as_str(), false),
+        (bundled_parent.as_str(), false),
+        (bundled_scoped_parent.as_str(), false),
+        (unknown_package_field.as_str(), false),
+        (unknown_settings.as_str(), false),
+        (unknown_snapshot_field.as_str(), false),
+        (snapshot_bundled_path.as_str(), false),
+        (unknown_dep_field.as_str(), false),
         (shorthand, false),
         (string_dep, false),
         (peer_link, false),
