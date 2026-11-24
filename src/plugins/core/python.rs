@@ -964,11 +964,15 @@ impl PythonPlugin {
             return Ok(false);
         }
 
-        // The python-build-standalone release `url` downloads from
-        let tag = url
-            .strip_prefix(PBS_RELEASE_DOWNLOAD_URL)
-            .and_then(|path| path.split_once('/'))
-            .map(|(tag, _)| tag.to_string());
+        // One python-build-standalone release holds builds of several python
+        // versions, all attested for its tag, so the tag alone does not name
+        // the version: `url` must be that release's build of `version`, and
+        // the attestation must be made for that release.
+        let Some(tag) = python_precompiled_release_from_url(url, version) else {
+            return Err(eyre!(
+                "{url} is not a python-build-standalone build of python@{version}, so its GitHub artifact attestations cannot vouch for python@{version}\n{ATTESTATION_HELP}"
+            ));
+        };
 
         pr.set_message("verify GitHub artifact attestations".to_string());
 
@@ -976,7 +980,7 @@ impl PythonPlugin {
             tarball_path,
             "astral-sh",
             "python-build-standalone",
-            tag.as_slice(),
+            &[tag.to_string()],
             None, // Accept any workflow from repo
             None,
             true,
@@ -1402,6 +1406,19 @@ fn python_precompiled_created_at(date: &str) -> Option<String> {
 }
 
 fn python_precompiled_filename_from_url<'a>(url: &'a str, version: &str) -> Option<&'a str> {
+    python_precompiled_parts_from_url(url, version).map(|(_, filename)| filename)
+}
+
+/// The python-build-standalone release `url` downloads `version` from, or
+/// `None` when `url` is not that release's build of `version`.
+fn python_precompiled_release_from_url<'a>(url: &'a str, version: &str) -> Option<&'a str> {
+    python_precompiled_parts_from_url(url, version).map(|(release, _)| release)
+}
+
+fn python_precompiled_parts_from_url<'a>(
+    url: &'a str,
+    version: &str,
+) -> Option<(&'a str, &'a str)> {
     let (release, filename) = url
         .strip_prefix(PBS_RELEASE_DOWNLOAD_URL)?
         .split_once('/')?;
@@ -1410,7 +1427,7 @@ fn python_precompiled_filename_from_url<'a>(url: &'a str, version: &str) -> Opti
     }
     filename
         .starts_with(&format!("cpython-{version}+{release}-"))
-        .then_some(filename)
+        .then_some((release, filename))
 }
 
 fn select_python_precompiled(
@@ -2040,6 +2057,36 @@ plugins/python-build/share/python-build/patches/3.14.5/foo.patch
             ),
             None
         );
+    }
+
+    #[tokio::test]
+    async fn attestations_vouch_only_for_the_build_of_the_requested_version() {
+        use crate::config::settings::SettingsPartial;
+        use confique::Layer;
+
+        let _guard = crate::test::SettingsGuard::lock();
+        let mut partial = SettingsPartial::empty();
+        partial.python.github_attestations = Some(true);
+        Settings::reset(Some(partial));
+        let backend = PythonPlugin::new();
+        let pr = crate::ui::progress_report::QuietReport::new();
+        let tarball = PathBuf::from("/nonexistent/cpython.tar.gz");
+        // the same release's build of another python version, and a URL
+        // outside python-build-standalone's releases
+        for url in [
+            "https://github.com/astral-sh/python-build-standalone/releases/download/20260728/cpython-3.11.15+20260728-x86_64-unknown-linux-gnu-install_only.tar.gz",
+            "https://example.com/cpython-3.12.13+20260728-x86_64-unknown-linux-gnu-install_only.tar.gz",
+        ] {
+            let err = backend
+                .verify_github_artifact_attestations(&pr, &tarball, "3.12.13", url)
+                .await
+                .unwrap_err()
+                .to_string();
+            assert!(
+                err.contains("is not a python-build-standalone build of python@3.12.13"),
+                "{url}: {err}"
+            );
+        }
     }
 
     #[test]
