@@ -14,8 +14,15 @@ pub(crate) fn completion_request(argv: &[OsString]) -> Option<String> {
     let argv = split_line_option(argv);
     let argv = argv.as_slice();
     let request = usage_rs::complete::CompletionRequest::parse(argv)?;
-    if request.candidates_for.is_some() || at_typed_completer(&request) {
+    // A `--candidates` answer goes back to usage, which reads values, not to a shell.
+    if request.candidates_for.is_some() {
         return Cli::completion_request(argv);
+    }
+    let shell = request.shell;
+    let compiled =
+        || Cli::completion_request(argv).map(|answer| quote_for_insertion(answer, shell));
+    if at_typed_completer(&request) {
+        return compiled();
     }
 
     let mut spec = super::usage::completion_spec();
@@ -28,9 +35,7 @@ pub(crate) fn completion_request(argv: &[OsString]) -> Option<String> {
         .get(request.split.cword)
         .map_or("", String::as_str);
     tell_task_mounts_the_word(&mut spec.cmd, word);
-    complete_spec(&spec, request)
-        .ok()
-        .or_else(|| Cli::completion_request(argv))
+    complete_spec(&spec, request).ok().or_else(compiled)
 }
 
 /// Pass the word being completed to the mounts that list tasks.
@@ -174,7 +179,71 @@ fn complete_spec(
         candidates,
         files: answer.files.then_some(usage_rs::complete::Files::Any),
     };
-    Ok(usage_rs::complete::render_request(&answer, request))
+    let rendered = usage_rs::complete::render_request(&answer, request);
+    Ok(quote_for_insertion(rendered, request.shell))
+}
+
+/// A rendered answer, with each candidate written the way `shell` reads it back.
+///
+/// usage-rs escapes what bash inserts and gives zsh a quoted form beside the value, and fish
+/// escapes a candidate itself. Nushell and PowerShell put a completer's text on the command line
+/// as it is, and usage-rs answers them with the bare value, so a task named `build;make` in a
+/// config nobody trusted would be inserted as two statements. Every script that asks mise, the
+/// completer `mise activate nu` defines included, inserts the first field of a line untouched,
+/// so the value is quoted here. A value made only of characters that mean nothing to either
+/// shell stays as it is, so flags and ordinary names complete as before. Nushell matches a
+/// quoted candidate against the unquoted prefix typed so far.
+fn quote_for_insertion(answer: String, shell: usage_rs::complete::Shell) -> String {
+    let quote: fn(&str) -> String = match shell {
+        usage_rs::complete::Shell::Nu => nu_quote,
+        usage_rs::complete::Shell::PowerShell => powershell_quote,
+        _ => return answer,
+    };
+    // A leading `@` splats in PowerShell and a leading `~` is a home directory in both, so
+    // those two are only plain inside a word, as in `node@22`.
+    let plain = |value: &str| {
+        !value.starts_with(['@', '~'])
+            && value
+                .chars()
+                .all(|c| c.is_alphanumeric() || "_-./:@+=,~".contains(c))
+    };
+    answer
+        .split_inclusive('\n')
+        .map(|line| {
+            // One candidate per line, its value up to the first tab; `\x01` opens an instruction.
+            let end = line.find(['\t', '\n']).unwrap_or(line.len());
+            let (value, rest) = line.split_at(end);
+            if value.is_empty() || line.starts_with('\u{1}') || plain(value) {
+                line.to_string()
+            } else {
+                format!("{}{rest}", quote(value))
+            }
+        })
+        .collect()
+}
+
+/// `value` as a Nushell string. Nothing is special between single quotes; a value holding one
+/// takes double quotes, where `\` and `"` are the characters to escape.
+fn nu_quote(value: &str) -> String {
+    if value.contains('\'') {
+        format!("\"{}\"", value.replace('\\', "\\\\").replace('"', "\\\""))
+    } else {
+        format!("'{value}'")
+    }
+}
+
+/// `value` as a PowerShell single-quoted string. PowerShell also closes one at a typographic
+/// single quote, and reads any of them doubled as the character itself.
+fn powershell_quote(value: &str) -> String {
+    let mut quoted = String::from("'");
+    for c in value.chars() {
+        if matches!(c, '\'' | '\u{2018}' | '\u{2019}' | '\u{201a}' | '\u{201b}') {
+            quoted.push(c);
+        }
+        quoted.push(c);
+    }
+    quoted.push('\'');
+    quoted
 }
 
 /// Treat the words after the last `:::` of a `mise run` line as a fresh `mise run` line.
@@ -603,6 +672,52 @@ mod shell_name_tests {
         .collect();
         let answer = usage_spec_request(&argv).unwrap().unwrap();
         assert!(answer.contains("--from-spec"), "{answer}");
+    }
+
+    #[test]
+    fn nushell_and_powershell_candidates_are_quoted_for_insertion() {
+        use usage_rs::complete::Shell;
+        let answer = "b1;x\tdesc\nplain-name\nnode@22\n~home\nit's\n\u{1}files\n".to_string();
+        assert_eq!(
+            quote_for_insertion(answer.clone(), Shell::Nu),
+            "'b1;x'\tdesc\nplain-name\nnode@22\n'~home'\n\"it's\"\n\u{1}files\n"
+        );
+        assert_eq!(
+            quote_for_insertion(answer.clone(), Shell::PowerShell),
+            "'b1;x'\tdesc\nplain-name\nnode@22\n'~home'\n'it''s'\n\u{1}files\n"
+        );
+        assert_eq!(quote_for_insertion(answer.clone(), Shell::Bash), answer);
+        assert_eq!(nu_quote(r#"a'b"c\d"#), r#""a'b\"c\\d""#);
+        assert_eq!(powershell_quote("a\u{2019}b"), "'a\u{2019}\u{2019}b'");
+    }
+
+    #[test]
+    fn a_usage_spec_answer_for_nushell_is_quoted() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("probe.kdl");
+        std::fs::write(
+            &path,
+            "name \"probe\"\narg \"<x>\" {\n  choices \"b1;^touch marker\" \"b2\"\n}\n",
+        )
+        .unwrap();
+        let encoded = crate::packslip::completions::encode_spec_path(&path);
+        let argv: Vec<OsString> = [
+            "__usage_complete_word",
+            &encoded,
+            "--shell",
+            "nu",
+            "--line",
+            "probe b",
+        ]
+        .into_iter()
+        .map(OsString::from)
+        .collect();
+        let answer = usage_spec_request(&argv).unwrap().unwrap();
+        let values: Vec<&str> = answer
+            .lines()
+            .map(|l| l.split('\t').next().unwrap())
+            .collect();
+        assert_eq!(values, ["'b1;^touch marker'", "b2"], "{answer}");
     }
 
     #[test]
