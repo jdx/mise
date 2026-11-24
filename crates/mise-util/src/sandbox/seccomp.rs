@@ -10,6 +10,16 @@ fn syscall_number<T: Into<i64>>(number: T) -> i64 {
     number.into()
 }
 
+/// An ioctl request number as the filter compares it. libc gives the numbers a
+/// different type per C library (an unsigned long on glibc, an int on musl);
+/// every request the kernel defines fits in the unsigned int it reads.
+fn ioctl_request<T: TryInto<u32>>(request: T) -> Result<u64> {
+    request
+        .try_into()
+        .map(u64::from)
+        .map_err(|_| eyre!("ioctl request number does not fit in 32 bits"))
+}
+
 /// Set on a system call number to call it through the x32 ABI.
 ///
 /// An x86_64 kernel built with x32 support takes x32 calls from any 64-bit
@@ -86,17 +96,15 @@ pub(super) fn apply_seccomp_filter(deny_net: bool, deny_process: bool) -> Result
 
     // The kernel reads an ioctl request as an unsigned int, so compare the low
     // 32 bits: a request with upper bits set still means TIOCSTI.
-    let terminal_injection = [libc::TIOCSTI, libc::TIOCLINUX]
-        .into_iter()
-        .map(|request| {
-            SeccompRule::new(vec![SeccompCondition::new(
-                1,
-                SeccompCmpArgLen::Dword,
-                SeccompCmpOp::Eq,
-                request as u64,
-            )?])
-        })
-        .collect::<std::result::Result<Vec<_>, _>>()?;
+    let mut terminal_injection = Vec::new();
+    for request in [libc::TIOCSTI, libc::TIOCLINUX] {
+        terminal_injection.push(SeccompRule::new(vec![SeccompCondition::new(
+            1,
+            SeccompCmpArgLen::Dword,
+            SeccompCmpOp::Eq,
+            ioctl_request(request)?,
+        )?])?);
+    }
     rules.insert(syscall_number(libc::SYS_ioctl), terminal_injection.clone());
     // ioctl is not shared with x32, which has its own number for it.
     #[cfg(target_arch = "x86_64")]
@@ -248,14 +256,14 @@ mod tests {
         let null = std::fs::File::open("/dev/null").unwrap();
         let fd = std::os::fd::AsRawFd::as_raw_fd(&null);
         let ioctl = syscall_number(libc::SYS_ioctl);
-        let tiocsti = libc::TIOCSTI as u64;
+        let tiocsti = ioctl_request(libc::TIOCSTI).unwrap();
         assert_eq!(ioctl_errno(ioctl, fd, tiocsti), libc::ENOTTY);
         std::thread::spawn(move || {
             apply_seccomp_filter(false, false).unwrap();
             for request in [
                 tiocsti,
                 tiocsti | 0xffff_ffff_0000_0000,
-                libc::TIOCLINUX as u64,
+                ioctl_request(libc::TIOCLINUX).unwrap(),
             ] {
                 assert_eq!(ioctl_errno(ioctl, fd, request), libc::EPERM, "{request:#x}");
             }
@@ -263,7 +271,7 @@ mod tests {
             assert_eq!(ioctl_errno(514 | X32_SYSCALL_BIT, fd, tiocsti), libc::EPERM);
             // other ioctls still reach the kernel
             assert_eq!(
-                ioctl_errno(ioctl, fd, libc::TIOCGWINSZ as u64),
+                ioctl_errno(ioctl, fd, ioctl_request(libc::TIOCGWINSZ).unwrap()),
                 libc::ENOTTY
             );
         })
