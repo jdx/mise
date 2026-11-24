@@ -36,6 +36,12 @@ impl IdiomaticVersionFile {
         if is_global_config(path) {
             return false;
         }
+        // `parse` does not read such a link, so it has nothing to ask trust for,
+        // and no plugin may read it here either: the size check below goes by
+        // what `stat` reports, which says nothing about a file under `/proc`.
+        if super::diagnostic::links_to_another_name(path) {
+            return false;
+        }
         // Before any plugin reads it whole: each reads the file unbounded.
         // `parse` refuses the oversized file once trust is settled.
         if file::ensure_config_file_size(path).is_err() {
@@ -325,6 +331,31 @@ mod tests {
         assert!(
             !backend.read.load(std::sync::atomic::Ordering::SeqCst),
             "a plugin read the oversized file"
+        );
+    }
+
+    /// `parse` skips a version file linked to a file of another name, so the
+    /// trust check must not hand it to the plugins either: the target is a file
+    /// outside the project, and may have no end, as `/proc/self/pagemap` has.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_trust_check_does_not_read_a_link_to_another_name() {
+        let tmp = tempfile::tempdir().unwrap();
+        let target = tmp.path().join("token");
+        std::fs::write(&target, "path:/tmp/bin\n").unwrap();
+        let path = tmp.path().join(".node-version");
+        std::os::unix::fs::symlink(&target, &path).unwrap();
+        let backend = Arc::new(MockBackend::new(
+            "node",
+            false,
+            Some("path:/tmp/bin".to_string()),
+        ));
+        let plugins: BackendList = vec![backend.clone()];
+
+        assert!(!IdiomaticVersionFile::path_requires_trust(&path, &plugins).await);
+        assert!(
+            !backend.read.load(std::sync::atomic::Ordering::SeqCst),
+            "a plugin read the linked file"
         );
     }
 
