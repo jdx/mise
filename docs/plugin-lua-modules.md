@@ -32,7 +32,10 @@ The rest of the Lua 5.1 standard library behaves as usual, except that the
 `debug` library is not loaded and `require` searches only the plugin's
 directories (see [Loading your own code](#loading-your-own-code)). `io.popen`
 runs its command in the [hook environment](#hook-environment) in hooks that
-have one, like `os.execute`.
+have one, like `os.execute`. There, and in hooks whose commands run in your
+home directory (see [hook environment](#hook-environment)), the handle it
+returns has the `read`, `lines`, `write`, `flush` and `close` methods, and
+`io.type` and `io.close` accept it, but `io.input` and `io.output` do not.
 
 ### `RUNTIME` {#runtime}
 
