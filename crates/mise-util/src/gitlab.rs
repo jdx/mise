@@ -323,6 +323,7 @@ pub async fn get_release(repo: &str, tag: &str) -> Result<GitlabRelease> {
         .get_or_try_init_async(async || get_release_(API_URL, repo, tag).await)
         .await?
         .clone())
+    .and_then(|release| ensure_release_tag(release, repo, tag))
 }
 
 pub async fn get_release_for_url(api_url: &str, repo: &str, tag: &str) -> Result<GitlabRelease> {
@@ -334,6 +335,22 @@ pub async fn get_release_for_url(api_url: &str, repo: &str, tag: &str) -> Result
         .get_or_try_init_async(async || get_release_(api_url, repo, tag).await)
         .await?
         .clone())
+    .and_then(|release| ensure_release_tag(release, repo, tag))
+}
+
+/// The version installed and what is verified for it follow the release's
+/// tag, so an answer for another tag is refused before anything caches it,
+/// and again when it is read from the cache, which a release written before
+/// this check may be in.
+fn ensure_release_tag(release: GitlabRelease, repo: &str, tag: &str) -> Result<GitlabRelease> {
+    if tag != "latest" && release.tag_name != tag {
+        eyre::bail!(
+            "refusing GitLab release {}: the API was asked for {repo}@{tag}; \
+             check the host `url_replacements` sends the GitLab API to",
+            release.tag_name
+        );
+    }
+    Ok(release)
 }
 
 async fn get_release_(api_url: &str, repo: &str, tag: &str) -> Result<GitlabRelease> {
@@ -347,16 +364,7 @@ async fn get_release_(api_url: &str, repo: &str, tag: &str) -> Result<GitlabRele
     let release: GitlabRelease = crate::http::HTTP_FETCH
         .json_with_headers(url, &headers)
         .await?;
-    // The version installed and what is verified for it follow the release's
-    // tag, so an answer for another tag is refused before anything caches it.
-    if tag != "latest" && release.tag_name != tag {
-        eyre::bail!(
-            "refusing GitLab release {}: the API was asked for {repo}@{tag}; \
-             check the host `url_replacements` sends the GitLab API to",
-            release.tag_name
-        );
-    }
-    Ok(release)
+    ensure_release_tag(release, repo, tag)
 }
 
 fn next_page(headers: &HeaderMap) -> Option<String> {
@@ -1044,6 +1052,30 @@ hosts:
             .await
             .unwrap_err();
         mock.assert_async().await;
+        assert!(
+            err.to_string().contains("refusing GitLab release v3.0.0"),
+            "{err}"
+        );
+    }
+
+    // A release kept in the cache under another tag, as one written before the tag was
+    // checked can be, is refused like a fresh answer.
+    #[tokio::test]
+    async fn test_cached_release_for_another_tag_is_refused() {
+        let server = mockito::Server::new_async().await;
+        let base = server.url();
+        let repo = "owner/cached-tag-mismatch";
+        let key = cache_key(&[&strip_url_credentials_in_arg(&base), repo, "v3.27.1"]);
+        {
+            let cache_group = get_release_cache(&key).await;
+            let cache = cache_group.get(&key).unwrap();
+            cache
+                .write(&serde_json::from_value(release_json("v3.0.0")).unwrap())
+                .unwrap();
+        }
+        let err = get_release_for_url(&base, repo, "v3.27.1")
+            .await
+            .unwrap_err();
         assert!(
             err.to_string().contains("refusing GitLab release v3.0.0"),
             "{err}"

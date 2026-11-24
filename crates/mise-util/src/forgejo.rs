@@ -174,6 +174,7 @@ pub async fn get_release_for_url(api_url: &str, repo: &str, tag: &str) -> Result
         .get_or_try_init_async(async || get_release_(api_url, repo, tag).await)
         .await?
         .clone())
+    .and_then(|release| ensure_release_tag(release, repo, tag))
 }
 
 fn release_url(api_url: &str, repo: &str, tag: &str) -> String {
@@ -190,14 +191,11 @@ fn release_url(api_url: &str, repo: &str, tag: &str) -> String {
     }
 }
 
-async fn get_release_(api_url: &str, repo: &str, tag: &str) -> Result<ForgejoRelease> {
-    let url = release_url(api_url, repo, tag);
-    let headers = get_headers(&url, api_url)?;
-    let release: ForgejoRelease = crate::http::HTTP_FETCH
-        .json_with_headers(url, &headers)
-        .await?;
-    // The version installed and what is verified for it follow the release's
-    // tag, so an answer for another tag is refused before anything caches it.
+/// The version installed and what is verified for it follow the release's
+/// tag, so an answer for another tag is refused before anything caches it,
+/// and again when it is read from the cache, which a release written before
+/// this check may be in.
+fn ensure_release_tag(release: ForgejoRelease, repo: &str, tag: &str) -> Result<ForgejoRelease> {
     if tag != "latest" && release.tag_name != tag {
         eyre::bail!(
             "refusing Forgejo release {}: the API was asked for {repo}@{tag}; \
@@ -206,6 +204,15 @@ async fn get_release_(api_url: &str, repo: &str, tag: &str) -> Result<ForgejoRel
         );
     }
     Ok(release)
+}
+
+async fn get_release_(api_url: &str, repo: &str, tag: &str) -> Result<ForgejoRelease> {
+    let url = release_url(api_url, repo, tag);
+    let headers = get_headers(&url, api_url)?;
+    let release: ForgejoRelease = crate::http::HTTP_FETCH
+        .json_with_headers(url, &headers)
+        .await?;
+    ensure_release_tag(release, repo, tag)
 }
 
 fn next_page(headers: &HeaderMap) -> Option<String> {
@@ -726,6 +733,27 @@ something_else = "value"
 
         let err = get_release_(&base, repo, "v3.27.1").await.unwrap_err();
         mock.assert_async().await;
+        assert!(
+            err.to_string().contains("refusing Forgejo release v3.0.0"),
+            "{err}"
+        );
+    }
+    // A release kept in the cache under another tag, as one written before the tag was
+    // checked can be, is refused like a fresh answer.
+    #[tokio::test]
+    async fn test_cached_release_for_another_tag_is_refused() {
+        let server = mockito::Server::new_async().await;
+        let base = server.url();
+        let repo = "owner/cached-tag-mismatch";
+        let key = release_cache_key(&base, repo, "v3.27.1");
+        {
+            let cache_group = get_release_cache(&key).await;
+            let cache = cache_group.get(&key).unwrap();
+            cache.write(&release("v3.0.0", false, false)).unwrap();
+        }
+        let err = get_release_for_url(&base, repo, "v3.27.1")
+            .await
+            .unwrap_err();
         assert!(
             err.to_string().contains("refusing Forgejo release v3.0.0"),
             "{err}"

@@ -195,6 +195,39 @@ async fn test_release_lookup_refuses_a_release_for_another_tag() {
     mock.assert_async().await;
 }
 
+/// A release kept in the cache under another tag, as one written before the
+/// tag was checked can be, is refused like a fresh answer.
+#[tokio::test]
+async fn test_cached_release_for_another_tag_is_refused() {
+    let server = mockito::Server::new_async().await;
+    let repo = "owner/cached-tag-mismatch-test";
+    for use_versions_host in [false, true] {
+        let key = release_cache_key(&server.url(), repo, "3.27.1", use_versions_host);
+        {
+            let cache_group = get_release_cache(&key).await;
+            let cache = cache_group.get(&key).unwrap();
+            cache
+                .write(&GithubRelease {
+                    assets: vec![make_asset("tool-3.0.0.tar.gz")],
+                    ..make_release("3.0.0")
+                })
+                .unwrap();
+        }
+        let err = get_release_for_url_with_versions_host(
+            &server.url(),
+            repo,
+            "3.27.1",
+            use_versions_host,
+        )
+        .await
+        .unwrap_err();
+        assert!(
+            format!("{err:#}").contains("refusing GitHub release 3.0.0"),
+            "{err:#}"
+        );
+    }
+}
+
 /// An asset ID mise-versions supplied is asked about once. GitHub's answer is
 /// recorded, so a later install, offline included, still uses the API URL its
 /// download was kept under instead of falling back to the browser URL.
