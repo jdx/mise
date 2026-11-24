@@ -773,21 +773,7 @@ static ENV_BACKENDS: Lazy<Mutex<HashMap<String, &'static str>>> =
 /// Whether any tool's backends may come from a MISE_BACKENDS_* override. When
 /// none can, a caller walking the whole registry can skip the per-tool check.
 pub(crate) fn has_backend_overrides() -> bool {
-    !ENV_BACKENDS.lock().unwrap().is_empty()
-        || crate::env::vars_safe().any(|(key, _)| is_backend_override_key(&key))
-}
-
-/// Whether `key` names a MISE_BACKENDS_* override. Windows variable names are
-/// case-insensitive, so `mise_backends_node` counts there as it does for
-/// `env::var`.
-fn is_backend_override_key(key: &str) -> bool {
-    const PREFIX: &str = "MISE_BACKENDS_";
-    if cfg!(windows) {
-        key.get(..PREFIX.len())
-            .is_some_and(|start| start.eq_ignore_ascii_case(PREFIX))
-    } else {
-        key.starts_with(PREFIX)
-    }
+    !ENV_BACKENDS.lock().unwrap().is_empty() || crate::env::backend_override_vars_set()
 }
 
 impl RegistryTool {
@@ -832,7 +818,9 @@ impl RegistryTool {
         }
 
         // Check environment variable
-        if let Ok(env_value) = env::var(&env_key) {
+        if crate::env::backend_override_vars_set()
+            && let Ok(env_value) = env::var(&env_key)
+        {
             // Store in cache with 'static lifetime
             let leaked = Box::leak(env_value.into_boxed_str());
             let mut cache = ENV_BACKENDS.lock().unwrap();
@@ -1357,8 +1345,9 @@ pub fn tool_enabled<T: Ord>(
 
 #[cfg(test)]
 mod tests {
-    use super::{BTreeMap, baked_registry, is_backend_override_key, registry_from_sources};
+    use super::{BTreeMap, baked_registry, registry_from_sources};
     use crate::config::Config;
+    use crate::env::is_backend_override_key;
 
     #[test]
     fn test_backend_override_key_prefix() {
@@ -2553,19 +2542,13 @@ url = "https://example.com/tool-{{ version }}.tar.gz"
             assert!(!default_backends.is_empty());
 
             // Test with env var override
-            // SAFETY: This is safe in a test environment
-            unsafe {
-                env::set_var("MISE_BACKENDS_NODE", "test:backend");
-            }
+            crate::env::set_var("MISE_BACKENDS_NODE", "test:backend");
             let overridden_backends = tool.backends();
             assert_eq!(overridden_backends.len(), 1);
             assert_eq!(overridden_backends[0], "test:backend");
 
             // Clean up
-            // SAFETY: This is safe in a test environment
-            unsafe {
-                env::remove_var("MISE_BACKENDS_NODE");
-            }
+            crate::env::remove_var("MISE_BACKENDS_NODE");
             ENV_BACKENDS.lock().unwrap().clear();
         }
     }

@@ -769,7 +769,7 @@ pub fn trust_check(path: &Path) -> eyre::Result<()> {
     // so unsafe config can load before the command starts; safe config is
     // persisted by `trust_active_config` after settings initialization.
     if implicitly_trusts_active_config()
-        && !ci_info::is_ci()
+        && !*mise_util::env::IS_CI
         && Settings::try_get().is_ok_and(|settings| !settings.paranoid.config())
     {
         let config_root = config_trust_root(path);
@@ -978,7 +978,7 @@ fn is_trusted_without_config_paths(
         if !trusted {
             return false;
         }
-    } else if mise_util::testing::in_tests() || ci_info::is_ci() {
+    } else if mise_util::testing::in_tests() || *mise_util::env::IS_CI {
         // in tests/CI we trust everything
         return true;
     } else if !trust_path(path).exists() {
@@ -1209,9 +1209,9 @@ pub(crate) fn is_persisted_ignored(path: &Path) -> bool {
             }
         }
     });
-    match path.canonicalize() {
-        Ok(path) => IS_IGNORED.lock().unwrap().contains(&path),
-        Err(_) => {
+    match file::canonicalize_cached(path) {
+        Some(path) => IS_IGNORED.lock().unwrap().contains(&path),
+        None => {
             debug!("is_persisted_ignored: path canonicalize failed");
             true
         }
@@ -1309,7 +1309,7 @@ fn config_requires_trust(path: &Path) -> bool {
 /// nobody trusted. CI trusts everything and records nothing, so it leaves the
 /// marker alone.
 pub(crate) fn set_monorepo_root_marker(path: &Path, enabled: bool) -> Result<()> {
-    if ci_info::is_ci() {
+    if *mise_util::env::IS_CI {
         return Ok(());
     }
     let config_root = config_trust_root(path);

@@ -7,8 +7,8 @@ socialDescription: "Control config trust, verify downloads, delay new releases, 
 
 Each mise security control covers one stage, from loading a project's config to
 running the commands it starts. The one you meet first is
-[configuration trust](#configuration-trust): mise asks before it lets a
-repository's config run code.
+[configuration trust](#configuration-trust), which controls when a
+repository's config can run code.
 
 ## What mise protects against
 
@@ -22,14 +22,26 @@ repository's config run code.
 | A task or command reads, writes or reaches more than it needs            | [Sandboxing](/sandboxing.html)                  | Off; Linux and macOS only                                    |
 | A secret ends up in your shell, a log or a process that does not need it | [Secrets](#secrets)                             | Opt in                                                       |
 
-Each control has its own scope. Trusting a config does not verify an upstream
-release, and sandboxing a task does not sandbox mise while it evaluates config.
+## Threat model
 
-These controls do not review the software you choose to install. A tool, a
-package or an asdf or vfox plugin runs with your permissions once you install
-it. Global and system config, such as `~/.config/mise/config.toml`, belongs to
-you, so mise trusts it without asking. mise itself runs as your user with no
-sandbox.
+- **Project configuration.** mise assumes you or your administrator control
+  global and system config. [Configuration trust](#configuration-trust) limits
+  what project config can do without your approval. Treat trusting a project as
+  trusting its code: trusted config can run commands as you. Some commands
+  [imply trust](#implicit-trust), and CI trusts project config by default.
+  Use [safe mode](#safe-mode) when automation only needs to read project config
+  you have not reviewed.
+- **Tools and plugins.** Choose tools, packages, and asdf or vfox plugins from
+  sources you trust. Plugins and install scripts can run with your permissions
+  during installation, before you ever run the tool.
+  [Download verification](#download-verification) checks the artifact against
+  the evidence available from the backend and upstream publisher. It does not
+  tell you whether that publisher or its software is safe.
+- **Running commands.** mise runs as your user. Optional
+  [sandboxing](/sandboxing.html) limits supported operations of the commands you
+  run with it. It does not sandbox mise while it evaluates config, installs
+  tools, or runs hooks. Run untrusted projects or tools in an isolated
+  environment without access to your usual files or credentials.
 
 ## Configuration trust
 
