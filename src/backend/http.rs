@@ -977,6 +977,25 @@ impl HttpBackend {
         Ok(())
     }
 
+    /// Rewrite the metadata of a reused extraction whose URL still holds a
+    /// credential, as [`Self::write_metadata`] would have stored it. An
+    /// extraction is reused without its metadata being written again, and
+    /// one made by an earlier mise recorded the URL as it was.
+    fn strip_metadata_credentials(cache_dir: &Path, cache_key: &str) -> Result<()> {
+        let path = Self::metadata_path(cache_dir, cache_key);
+        let mut metadata: serde_json::Value = serde_json::from_str(&file::read_to_string(&path)?)?;
+        let Some(url) = metadata.get("url").and_then(|url| url.as_str()) else {
+            return Ok(());
+        };
+        let stripped = strip_credentials_in_value(url);
+        if stripped == url {
+            return Ok(());
+        }
+        metadata["url"] = stripped.into_owned().into();
+        file::write(&path, serde_json::to_string_pretty(&metadata)?)?;
+        Ok(())
+    }
+
     // -------------------------------------------------------------------------
     // Symlink creation
     // -------------------------------------------------------------------------
@@ -1721,6 +1740,7 @@ impl Backend for HttpBackend {
                 ctx.pr.set_message("extracting from cache".into());
                 ctx.pr.set_length(1);
                 ctx.pr.set_position(1);
+                Self::strip_metadata_credentials(&cache_dir, &cache_plan.key)?;
                 self.extraction_type_from_cache(&file_path, &cache_plan.file_info, &opts)?
             } else {
                 ctx.pr.set_message("extracting to cache".into());
@@ -2645,6 +2665,36 @@ mod tests {
         );
         assert_eq!(
             recorded("https://dl.example.com/tool.tar.gz?ref=main"),
+            "https://dl.example.com/tool.tar.gz?ref=main"
+        );
+    }
+
+    #[test]
+    fn reused_metadata_loses_the_credentials_in_its_url() {
+        let cache_dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(cache_dir.path().join("key")).unwrap();
+        let path = HttpBackend::metadata_path(cache_dir.path(), "key");
+        let reused = |url: &str| {
+            let json = serde_json::json!({
+                "url": url,
+                "checksum": null,
+                "size": 16,
+                "extracted_at": 1,
+                "platform": "linux-x64",
+            });
+            std::fs::write(&path, json.to_string()).unwrap();
+            HttpBackend::strip_metadata_credentials(cache_dir.path(), "key").unwrap();
+            let metadata: CacheMetadata =
+                serde_json::from_str(&file::read_to_string(&path).unwrap()).unwrap();
+            assert_eq!(metadata.size, 16);
+            metadata.url
+        };
+        assert_eq!(
+            reused("https://ci:s3cret@dl.example.com/tool.tar.gz?token=s3cret"),
+            "https://dl.example.com/tool.tar.gz"
+        );
+        assert_eq!(
+            reused("https://dl.example.com/tool.tar.gz?ref=main"),
             "https://dl.example.com/tool.tar.gz?ref=main"
         );
     }
