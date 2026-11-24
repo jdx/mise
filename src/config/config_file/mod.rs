@@ -39,6 +39,7 @@ use eyre::{Result, eyre};
 use globset::{GlobBuilder, GlobMatcher};
 use idiomatic_version::IdiomaticVersionFile;
 use indexmap::{IndexMap, IndexSet};
+use path_absolutize::Absolutize;
 use std::sync::LazyLock as Lazy;
 use tool_versions::ToolVersions;
 
@@ -1490,9 +1491,9 @@ pub fn trust_check_before_write(path: &Path) -> Result<()> {
 /// home, or a trust record in mise's state directory. A link that stays in the config root is
 /// followed. One that leaves it is followed only for global or system config, which the user
 /// links into place themselves (a dotfiles checkout), or for a project outside safe mode that
-/// was trusted before this command started. Nothing is ever written into the state directory through a link, and a link out of
-/// the root whose target does not exist is not followed either, so a write never creates a
-/// file outside the project.
+/// was trusted before this command started. A project's link to global config, a link into the
+/// state directory, and a link out of the root whose target does not exist are never followed,
+/// so a write never creates a file outside the project.
 pub fn symlink_check_before_write(path: &Path) -> Result<()> {
     if !path.is_symlink() {
         return Ok(());
@@ -1512,6 +1513,17 @@ pub fn symlink_check_before_write(path: &Path) -> Result<()> {
     if unresolved || target.starts_with(&state_dir) {
         return refuse("the target is in mise's state directory or cannot be resolved");
     }
+    // Global config's root is the home directory, which holds the project too, so a project's
+    // link to global config would pass every check below, and the trust it would need is the
+    // home directory's. The project's author chose that link, and `-g` writes the same file.
+    if path
+        .absolutize()
+        .is_ok_and(|abs| config::is_project_link_to_global_config(&abs))
+    {
+        return refuse(
+            "a project's link to global config is not followed. Write global config with `-g`",
+        );
+    }
     let root = config_root::config_root(path).canonicalize().ok();
     let in_root = root.is_some_and(|root| target.starts_with(root))
         || path
@@ -1521,7 +1533,7 @@ pub fn symlink_check_before_write(path: &Path) -> Result<()> {
     if in_root {
         return Ok(());
     }
-    if config::is_global_config_write(path) && !config::is_project_link_to_global_config(path) {
+    if config::is_global_config_write(path) {
         return Ok(());
     }
     if !target.exists() {

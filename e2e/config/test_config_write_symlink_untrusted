@@ -66,3 +66,19 @@ assert "mise trust mise.toml"
 assert "mise set FOO=bar"
 assert_contains "cat ../outside/victim.toml" 'FOO = "bar"'
 assert_fail_contains "MISE_SAFE=1 mise set BAR=baz 2>&1" "refusing to write"
+
+echo "=== a project's link to global config is not followed, trusted or not ==="
+mkdir -p ../to-global "$HOME/.config/mise"
+cat <<'TOML' >"$HOME/.config/mise/config.toml"
+[env]
+GLOBAL = "1"
+TOML
+cd ../to-global || exit 1
+ln -s "$HOME/.config/mise/config.toml" mise.toml
+assert_fail_contains "mise set FOO=bar 2>&1" "refusing to write"
+assert_not_contains "cat $HOME/.config/mise/config.toml" "FOO"
+assert "mise trust ."
+assert_fail_contains "mise set FOO=bar 2>&1" "Write global config with"
+assert_not_contains "cat $HOME/.config/mise/config.toml" "FOO"
+assert "mise set -g FOO=bar"
+assert_contains "cat $HOME/.config/mise/config.toml" 'FOO = "bar"'

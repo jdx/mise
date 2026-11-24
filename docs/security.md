@@ -172,9 +172,10 @@ count, however it grants it: because you typed it in the project (see
 prompt, or because `--yes` or `MISE_YES` is set. The prompt names the
 directory, not where its links lead. Otherwise the write fails, names the link and its
 target, and tells you to run `mise trust` there. A link into mise's
-state directory, or a dangling link that leads out of the directory, is never
-followed. A global config file that links into a dotfiles checkout is written
-through.
+state directory, a dangling link that leads out of the directory, and a
+project's link to global config are never followed, trusted or not; write
+global config with `-g`. A global config file that links into a dotfiles
+checkout is written through.
 
 ### Typed in a terminal
 
