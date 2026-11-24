@@ -2300,18 +2300,13 @@ impl SshSession<'_> {
             .spawn()?;
         let stdout = child.stdout.take().expect("piped stdout");
         let stderr = child.stderr.take().expect("piped stderr");
+        // a stream over the limit fails its reader, which ends the join at
+        // once, even while the other stream is still open; returning drops the
+        // child, which kills it
         let (stdout, stderr) = tokio::try_join!(
-            Self::read_limited(stdout, Self::OUTPUT_LIMIT),
-            Self::read_limited(stderr, Self::OUTPUT_LIMIT),
+            self.read_limited(stdout, Self::OUTPUT_LIMIT),
+            self.read_limited(stderr, Self::OUTPUT_LIMIT),
         )?;
-        let (Some(stdout), Some(stderr)) = (stdout, stderr) else {
-            // dropping the child kills it
-            bail!(
-                "remote command on '{}' wrote more than {} bytes of output",
-                self.host.name,
-                Self::OUTPUT_LIMIT
-            );
-        };
         let status = child.wait().await?;
         checked_output(
             Output {
@@ -2325,16 +2320,23 @@ impl SshSession<'_> {
 
     const OUTPUT_LIMIT: u64 = 1024 * 1024;
 
-    /// Read `reader` to its end, or `None` once it has given more than
+    /// Read `reader` to its end, failing as soon as it has given more than
     /// `limit` bytes.
     async fn read_limited(
+        &self,
         reader: impl tokio::io::AsyncRead + Unpin,
         limit: u64,
-    ) -> std::io::Result<Option<Vec<u8>>> {
+    ) -> Result<Vec<u8>> {
         use tokio::io::AsyncReadExt as _;
         let mut buf = Vec::new();
         reader.take(limit + 1).read_to_end(&mut buf).await?;
-        Ok((buf.len() as u64 <= limit).then_some(buf))
+        if buf.len() as u64 > limit {
+            bail!(
+                "remote command on '{}' wrote more than {limit} bytes of output",
+                self.host.name
+            );
+        }
+        Ok(buf)
     }
 
     async fn status_with_stdin_async(&self, remote_argv: &[&str], input: File) -> Result<()> {
@@ -2597,11 +2599,22 @@ mod tests {
         for (script, limit_hit) in [
             ("head -c 3000000 /dev/zero", true),
             ("head -c 3000000 /dev/zero >&2", true),
+            // the other stream stays open: the limit must still end it
+            ("head -c 3000000 /dev/zero\nexec sleep 60 >/dev/null", true),
+            (
+                "head -c 3000000 /dev/zero >&2\nexec sleep 60 2>/dev/null",
+                true,
+            ),
             ("echo /home/me", false),
         ] {
             fs::write(&ssh, format!("#!/bin/sh\n{script}\n"))?;
             fs::set_permissions(&ssh, fs::Permissions::from_mode(0o700))?;
-            let result = session.output_async(&["true"]).await;
+            let result = tokio::time::timeout(
+                std::time::Duration::from_secs(20),
+                session.output_async(&["true"]),
+            )
+            .await
+            .unwrap_or_else(|_| panic!("{script}: still waiting after the limit"));
             if limit_hit {
                 let err = result.expect_err(script).to_string();
                 assert!(err.contains("more than 1048576 bytes"), "{script}: {err}");
