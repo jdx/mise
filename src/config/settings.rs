@@ -847,6 +847,15 @@ fn settings_path_resolver<'a>(
             return Ok(());
         };
         let rendered = if crate::tera::contains_template_syntax(value) {
+            // Safe mode never applies a project's [settings]; commands such as
+            // `mise settings` that parse every discovered file do not render
+            // its templates either.
+            if Settings::safe_mode() && !crate::config::is_global_config(path) {
+                bail!(
+                    "not rendering {label} in {}: safe mode does not render templates from project config; run without MISE_SAFE to show it",
+                    file::display_path(path)
+                );
+            }
             crate::tera::render_config_str(&mut tera, value, &context, path).map_err(|err| {
                 eyre!(
                     "failed to render {label} in {}: {err}",
@@ -1544,7 +1553,10 @@ impl SettingsExt for Settings {
             || Self::cli_settings_layer()
                 .unix_default_inline_shell_args
                 .is_some()
-            || Self::settings_layers_from(None, SettingsTrustPolicy::AsDiscovered)
+            // The setting is global-only, so no project file can hold it, and
+            // parsing a project file renders its templates: hooks and exec()
+            // run from the prompt hook in a project that is not trusted.
+            || Self::settings_layers_from(None, SettingsTrustPolicy::GlobalOnly)
                 .iter()
                 .any(|layer| layer.unix_default_inline_shell_args.is_some());
         *EXPLICIT_INLINE_SHELL.write().unwrap() = Some(explicit);
