@@ -120,8 +120,11 @@ impl Backend for GoBackend {
                 let mut resolution_error = None;
                 for mod_path in candidates {
                     match self.fetch_go_module_versions(config, mod_path).await {
-                        Ok(Some(versions)) if !versions.is_empty() => return Ok(versions),
-                        Ok(_) => {}
+                        // An empty list is an answer for this candidate, such as
+                        // one past the version limit: a parent module's versions
+                        // are not this tool's.
+                        Ok(Some(versions)) => return Ok(versions),
+                        Ok(None) => {}
                         Err(err) => {
                             debug!("failed to resolve Go module candidate {mod_path}: {err:#}");
                             resolution_error.get_or_insert(err);
@@ -771,9 +774,13 @@ impl GoBackend {
         if mod_info.versions.is_empty() {
             return self.fetch_go_module_latest_info(config, mod_path).await;
         }
-        // `go` relays whatever the proxy or the repository listed.
+        // `go` relays whatever the proxy or the repository listed. Too long a
+        // list is still the module's answer, and lists nothing.
         if mod_info.versions.len() > GO_MODULE_VERSIONS_LIMIT {
-            eyre::bail!("{mod_path} lists more than {GO_MODULE_VERSIONS_LIMIT} versions");
+            warn!(
+                "ignoring Go module version list for {mod_path}: more than {GO_MODULE_VERSIONS_LIMIT} versions"
+            );
+            return Ok(Some(vec![]));
         }
 
         let versions = self

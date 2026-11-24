@@ -18,5 +18,5 @@ start_http_server --dir "$PWD/goproxy"
 export GOPROXY="http://127.0.0.1:$HTTP_PORT" MISE_USE_VERSIONS_HOST=0
 
 assert_contains "mise ls-remote go:example.com/tool 2>&1" "more than 100000 versions"
-assert "mise ls-remote go:example.com/tool" ""
+assert_empty "mise ls-remote go:example.com/tool"
 assert_fail "grep -q '^list' '$HOME/go-invocations'"
