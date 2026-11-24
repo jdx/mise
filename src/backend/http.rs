@@ -1269,7 +1269,10 @@ impl HttpBackend {
         let headers = match opts.headers_for_target(Some(tv.version.as_str()), target) {
             Ok(headers) => headers,
             Err(e) => {
-                debug!("failed to build headers for {checksum_url}: {e}");
+                debug!(
+                    "{}",
+                    checksum_source_failure("build headers for", &checksum_url, &e)
+                );
                 return None;
             }
         };
@@ -1284,7 +1287,10 @@ impl HttpBackend {
             {
                 Ok(body) => body,
                 Err(e) => {
-                    debug!("failed to fetch checksum manifest {checksum_url}: {e}");
+                    debug!(
+                        "{}",
+                        checksum_source_failure("fetch checksum manifest", &checksum_url, &e)
+                    );
                     return None;
                 }
             };
@@ -2012,8 +2018,33 @@ fn rename_cache_token(rename: &toml::Value) -> String {
     hash::hash_blake3_to_str(&rename.to_string())
 }
 
+/// The debug message for a checksum source mise could not read. The URL is
+/// redacted as one value: a template can leave a raw space or quote in its
+/// path, where the logger, which reads URLs in free text, would end it before
+/// a token in the query.
+fn checksum_source_failure(what: &str, url: &str, error: &dyn std::fmt::Display) -> String {
+    let url = mise_util::redactions::redact_url_credentials_in_arg(url);
+    format!("failed to {what} {url}: {error}")
+}
+
 #[cfg(test)]
 mod tests {
+    use super::checksum_source_failure;
+
+    #[test]
+    fn checksum_source_failure_hides_a_token_after_a_raw_space() {
+        for url in [
+            "https://host.example/my sums.txt?token=hunter2",
+            "https://host.example/sums\"x.txt?token=hunter2",
+            "https://host.example/sums.txt?token=hunter2",
+        ] {
+            let message = checksum_source_failure("fetch checksum manifest", url, &"404");
+            let logged = mise_util::redactions::redact_url_credentials(&message);
+            assert!(!logged.contains("hunter2"), "{logged}");
+            assert!(logged.contains("token=[redacted]"), "{logged}");
+        }
+    }
+
     #[test]
     fn verbatim_prefixes_are_removed_for_comparison() {
         use super::without_verbatim_prefix as strip;
