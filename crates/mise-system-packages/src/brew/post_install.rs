@@ -757,7 +757,13 @@ mod tests {
         symlink(outside.join("kept"), dst.join("a.default"))?;
 
         let mut created = Vec::new();
-        copy_tree(&src, &dst, true, &mut created, &[prefix.clone()])?;
+        copy_tree(
+            &src,
+            &dst,
+            true,
+            &mut created,
+            std::slice::from_ref(&prefix),
+        )?;
         assert!(!outside.join("f").exists());
         assert_eq!(fs::read_to_string(outside.join("kept"))?, "kept");
         assert!(!dst.join("a.default").is_symlink());
