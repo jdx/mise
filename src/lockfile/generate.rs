@@ -388,11 +388,15 @@ pub fn is_current(
     Ok(true)
 }
 
+fn has_login(url: &str) -> bool {
+    crate::backend::static_helpers::lock_url(url) != url
+}
+
 /// An entry whose URL names another release was left behind when its `version`
 /// was rewritten (Renovate does this), so it is refreshed, not reused. So is
-/// one whose URL holds a login, so that the backend records it without one.
+/// one whose URL holds a login, so that the backend records it without one;
+/// its checksums stay pinned ([`keep_pins_recorded_with_a_login`]).
 fn can_reuse(info: &PlatformInfo, version: &str) -> bool {
-    let has_login = |url: &str| crate::backend::static_helpers::lock_url(url) != url;
     info.checksum.is_some()
         && info.url.as_deref().is_some_and(|url| {
             super::url_contradicts_version(version, url).is_none() && !has_login(url)
@@ -404,6 +408,35 @@ fn can_reuse(info: &PlatformInfo, version: &str) -> bool {
                 && !has_login(&artifact.url)
         })
         && !Settings::get().force_provenance_verify()
+}
+
+/// The checksums of `old`, an entry whose URLs held a login, carried into
+/// `new`, the entry the backend resolved again, for each artifact both name
+/// (the same URL once the login is left out). Taking the login out of a URL
+/// does not change the artifact, so it does not re-pin it: an entry with no
+/// login is reused with the checksums it has, and so is this one.
+fn keep_pins_recorded_with_a_login(old: &PlatformInfo, new: &mut PlatformInfo) {
+    use crate::backend::static_helpers::is_lock_url;
+    let old_has_login = old.url.as_deref().is_some_and(has_login)
+        || old.additional_artifacts.iter().any(|a| has_login(&a.url));
+    if !old_has_login {
+        return;
+    }
+    if old.checksum.is_some()
+        && let Some(url) = new.url.as_deref()
+        && is_lock_url(old.url.as_deref(), url)
+    {
+        new.checksum = old.checksum.clone();
+        new.checksum_source = old.checksum_source;
+    }
+    for artifact in &mut new.additional_artifacts {
+        if let Some(old) = old.additional_artifacts.iter().find(|old| {
+            old.checksum.is_some() && is_lock_url(Some(old.url.as_str()), &artifact.url)
+        }) {
+            artifact.checksum = old.checksum.clone();
+            artifact.checksum_source = old.checksum_source;
+        }
+    }
 }
 
 /// How the target platforms were chosen. Platforms the user named are replaced
@@ -593,6 +626,9 @@ pub async fn generate(
                 resolve(ba, tv.clone(), platform).await?
             };
             if let Ok(info) = &mut resolution.4 {
+                if let Some(old) = &previous_info {
+                    keep_pins_recorded_with_a_login(old, info);
+                }
                 complete_artifact_checksums(info).await?;
                 if let Some(old) = previous_info {
                     preserve_legacy_metadata(&old, info);
@@ -1659,6 +1695,63 @@ mod tests {
                 ..Default::default()
             });
         assert!(!can_reuse(&info, "20.0.0"));
+    }
+
+    #[test]
+    fn checksums_recorded_with_a_login_stay_pinned() {
+        let entry = |url: &str, checksum: &str, artifact: &str| PlatformInfo {
+            url: Some(url.into()),
+            checksum: Some(checksum.into()),
+            additional_artifacts: vec![crate::lockfile::ArtifactInfo {
+                checksum: Some(format!("{checksum}-sig")),
+                url: artifact.into(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let tarball = "https://mirror.example/v20.0.0/node-linux-x64.tar.gz";
+        let sig = "https://mirror.example/v20.0.0/SHASUMS256.txt.sig";
+        let with_login = |url: &str| url.replace("https://", "https://ci:token@");
+        // (old entry, newly resolved entry, checksums the new entry keeps)
+        let cases = [
+            // The same artifacts without the login keep the recorded pins.
+            (
+                entry(&with_login(tarball), "sha256:old", &with_login(sig)),
+                entry(tarball, "sha256:new", sig),
+                ("sha256:old", "sha256:old-sig"),
+            ),
+            // Only the artifact URL held a login.
+            (
+                entry(tarball, "sha256:old", &with_login(sig)),
+                entry(tarball, "sha256:new", sig),
+                ("sha256:old", "sha256:old-sig"),
+            ),
+            // Another artifact is resolved on its own.
+            (
+                entry(&with_login(tarball), "sha256:old", &with_login(sig)),
+                entry(
+                    "https://mirror.example/v20.0.1/node-linux-x64.tar.gz",
+                    "sha256:new",
+                    "https://mirror.example/v20.0.1/SHASUMS256.txt.sig",
+                ),
+                ("sha256:new", "sha256:new-sig"),
+            ),
+            // An entry with no login is not touched.
+            (
+                entry(tarball, "sha256:old", sig),
+                entry(tarball, "sha256:new", sig),
+                ("sha256:new", "sha256:new-sig"),
+            ),
+        ];
+        for (old, mut new, (checksum, artifact_checksum)) in cases {
+            keep_pins_recorded_with_a_login(&old, &mut new);
+            assert_eq!(new.checksum.as_deref(), Some(checksum), "{old:?}");
+            assert_eq!(
+                new.additional_artifacts[0].checksum.as_deref(),
+                Some(artifact_checksum),
+                "{old:?}"
+            );
+        }
     }
 
     #[tokio::test]
