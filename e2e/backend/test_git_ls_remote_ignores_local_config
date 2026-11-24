@@ -30,9 +30,15 @@ EOF
 
 mise ls || true
 GIT_DIR="$PWD/.git" mise ls || true
-mise ls-remote yarn || true
-GIT_DIR="$PWD/.git" mise ls-remote yarn || true
-assert_fail "test -e '$HOME/local-ssh-command-ran'"
-assert_fail "test -e '$HOME/upload-pack-ran'"
 # the user's own git config still applies
 assert "sort -u '$HOME/user-ssh-command-ran'" "ran"
+
+# each yarn listing reaches git, under the user's config only
+rm -f "$HOME/user-ssh-command-ran"
+mise ls-remote yarn || true
+assert "sort -u '$HOME/user-ssh-command-ran'" "ran"
+rm -f "$HOME/user-ssh-command-ran"
+GIT_DIR="$PWD/.git" mise ls-remote yarn || true
+assert "sort -u '$HOME/user-ssh-command-ran'" "ran"
+assert_fail "test -e '$HOME/local-ssh-command-ran'"
+assert_fail "test -e '$HOME/upload-pack-ran'"
