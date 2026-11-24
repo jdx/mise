@@ -294,8 +294,9 @@ impl Backend for VfoxBackend {
             return Ok(false);
         }
         // An install whose plugin is gone has no bin paths or environment, and
-        // installing the version again is what installs the plugin.
-        if !self.plugin.is_installed() {
+        // installing the version again is what installs the plugin. A `system`
+        // version needs no plugin: mise installed nothing for it.
+        if !self.plugin.is_installed() && !matches!(tv.request, ToolRequest::System { .. }) {
             debug!(
                 "{} install is not satisfied: plugin not installed",
                 tv.style()

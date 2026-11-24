@@ -85,3 +85,18 @@ assert_contains "mise hook-env -s bash 2>&1" "[lazy] plugin not installed"
 mise install
 assert_succeed "test -d '$PLUGIN_DIR'"
 assert_contains "mise env -s bash" "LAZY_TOOL_VERSION=2.0.0"
+
+# A `system` version counts as installed with or without the plugin, so
+# neither `mise install` nor `mise exec` installs the plugin for it.
+rm -rf "$PLUGIN_DIR"
+cat >mise.toml <<'TOML'
+[tool_alias]
+lazy = "vfox:mise-test/lazy-backend"
+
+[tools]
+"lazy:tool" = "system"
+TOML
+mise install
+assert_fail "test -e '$PLUGIN_DIR' -o -L '$PLUGIN_DIR'"
+assert "mise exec -- echo ran" "ran"
+assert_fail "test -e '$PLUGIN_DIR' -o -L '$PLUGIN_DIR'"
