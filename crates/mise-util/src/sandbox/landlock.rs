@@ -136,10 +136,12 @@ fn required_access(handled_access: BitFlags<AccessFs>) -> BitFlags<AccessFs> {
 /// for every right best-effort silently weakens the sandbox on an older
 /// kernel: without Truncate (Linux 6.2) a command under `--deny-write` can
 /// still empty any file with truncate(2). Only [`optional_access`] stays best
-/// effort.
+/// effort, and so does TCP under `deny_tcp`: the kernel handles it from Linux
+/// 6.7, and seccomp refuses network sockets on every kernel.
 fn create_ruleset(
     handled_access: BitFlags<AccessFs>,
     scope_abstract_sockets: bool,
+    deny_tcp: bool,
 ) -> Result<landlock::RulesetCreated> {
     let required = required_access(handled_access);
     let mut ruleset = Ruleset::default()
@@ -151,10 +153,16 @@ fn create_ruleset(
             .scope(Scope::AbstractUnixSocket)
             .map_err(|e| unsupported_error(required, e))?;
     }
-    ruleset
+    let mut ruleset = ruleset
         .set_compatibility(landlock::CompatLevel::BestEffort)
         .handle_access(handled_access)
-        .map_err(|e| eyre!("failed to create landlock ruleset: {e}"))?
+        .map_err(|e| eyre!("failed to create landlock ruleset: {e}"))?;
+    if deny_tcp {
+        ruleset = ruleset
+            .handle_access(AccessNet::BindTcp | AccessNet::ConnectTcp)
+            .map_err(|e| eyre!("failed to create landlock ruleset: {e}"))?;
+    }
+    ruleset
         .create()
         .map_err(|e| eyre!("failed to create landlock ruleset: {e}"))
 }
@@ -194,7 +202,11 @@ fn unsupported_error(required: BitFlags<AccessFs>, err: impl std::fmt::Display) 
 pub(super) fn check_kernel_support(config: &SandboxConfig) -> Result<()> {
     let handled_access = handled_access(config);
     if !handled_access.is_empty() {
-        create_ruleset(handled_access, config.effective_deny_unix())?;
+        create_ruleset(
+            handled_access,
+            config.effective_deny_unix(),
+            config.effective_deny_net(),
+        )?;
     }
     Ok(())
 }
@@ -224,7 +236,11 @@ pub(super) fn apply_landlock(
         return Ok(());
     }
 
-    let mut ruleset = create_ruleset(handled_access, config.effective_deny_unix())?;
+    let mut ruleset = create_ruleset(
+        handled_access,
+        config.effective_deny_unix(),
+        config.effective_deny_net(),
+    )?;
 
     if deny_read && deny_write {
         // Both restricted: add read rules for system paths, full for /tmp and /dev
@@ -328,7 +344,7 @@ pub(super) fn apply_landlock(
 }
 
 /// Put a network-only sandbox in a Landlock domain that refuses TCP bind and
-/// connect and grants or refuses nothing on the filesystem.
+/// connect and refuses nothing on the filesystem.
 ///
 /// seccomp keeps the command from creating a network socket, but not from
 /// borrowing one: a process outside any domain lets a same-user process
@@ -338,13 +354,26 @@ pub(super) fn apply_landlock(
 /// restriction a command could notice besides that scope (and `mount`, which
 /// every domain refuses).
 ///
+/// Every Landlock layer refuses a rename or hard link into another directory
+/// (`Refer`) unless one of its rules grants it, even a layer that handles no
+/// filesystem access. The domain grants it below `/`, so a command run inside
+/// another Landlock sandbox can still reparent what that sandbox allows.
+///
 /// Landlock handles network access from Linux 6.7. On an older kernel the
 /// domain is not created and the command runs under seccomp alone.
 fn apply_network_domain() -> Result<()> {
-    let status = Ruleset::default()
-        .set_compatibility(landlock::CompatLevel::BestEffort)
+    let Ok(ruleset) = Ruleset::default()
+        .set_compatibility(landlock::CompatLevel::HardRequirement)
         .handle_access(AccessNet::BindTcp | AccessNet::ConnectTcp)
+    else {
+        return Ok(());
+    };
+    let refer: BitFlags<AccessFs> = AccessFs::Refer.into();
+    let root = PathFd::new("/").map_err(|e| eyre!("failed to open / for landlock: {e}"))?;
+    let status = ruleset
+        .handle_access(refer)
         .and_then(|r| r.create())
+        .and_then(|r| r.add_rule(PathBeneath::new(root, refer)))
         .and_then(|r| r.restrict_self())
         .map_err(|e| eyre!("failed to apply landlock restrictions: {e}"))?;
     if !status.no_new_privs {
@@ -378,7 +407,13 @@ mod tests {
             .spawn()
             .unwrap();
         let mem = format!("/proc/{}/mem", outside.id());
-        std::fs::File::open(&mem).unwrap();
+        if std::fs::File::open(&mem).is_err() {
+            // Yama's `ptrace_scope` 2 and 3 refuse this even to the parent
+            outside.kill().unwrap();
+            outside.wait().unwrap();
+            eprintln!("skipping: this kernel refuses ptrace access to a child process");
+            return;
+        }
         let result = std::thread::spawn(move || {
             // the domain binds to the calling thread
             apply_landlock(
@@ -399,6 +434,89 @@ mod tests {
             result.unwrap_err().kind(),
             std::io::ErrorKind::PermissionDenied
         );
+    }
+
+    /// Under `--deny-net` with a file restriction too, the one Landlock domain
+    /// refuses TCP, as the network-only domain does: seccomp refuses creating a
+    /// network socket, not connecting one the command was handed.
+    #[test]
+    fn test_file_and_network_sandbox_refuses_tcp() {
+        if !Ruleset::default()
+            .set_compatibility(landlock::CompatLevel::HardRequirement)
+            .handle_access(AccessNet::BindTcp | AccessNet::ConnectTcp)
+            .is_ok_and(|r| r.create().is_ok())
+        {
+            eprintln!("skipping: Landlock on this kernel does not handle network access");
+            return;
+        }
+        let config = SandboxConfig {
+            deny_write: true,
+            deny_net: true,
+            ..Default::default()
+        };
+        if check_kernel_support(&config).is_err() {
+            eprintln!("skipping: Landlock on this kernel cannot restrict writes");
+            return;
+        }
+        let listener = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let addr = listener.local_addr().unwrap();
+        let result = std::thread::spawn(move || {
+            apply_landlock(&config, None).unwrap();
+            std::net::TcpStream::connect(addr).map(drop)
+        })
+        .join()
+        .unwrap();
+        assert_eq!(
+            result.unwrap_err().kind(),
+            std::io::ErrorKind::PermissionDenied
+        );
+    }
+
+    /// A command run inside another Landlock sandbox keeps what that sandbox
+    /// allows: the network domain does not refuse a rename or hard link into
+    /// another directory, which a Landlock layer refuses unless it grants it.
+    #[test]
+    fn test_network_only_sandbox_keeps_reparenting_an_outer_sandbox_allows() {
+        if !Ruleset::default()
+            .set_compatibility(landlock::CompatLevel::HardRequirement)
+            .handle_access(AccessNet::BindTcp | AccessNet::ConnectTcp)
+            .is_ok_and(|r| r.create().is_ok())
+        {
+            eprintln!("skipping: Landlock on this kernel does not handle network access");
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let (a, b) = (dir.path().join("a"), dir.path().join("b"));
+        std::fs::create_dir(&a).unwrap();
+        std::fs::create_dir(&b).unwrap();
+        std::fs::write(a.join("f"), "").unwrap();
+        let result = std::thread::spawn(move || {
+            // the outer sandbox: a domain that allows everything, reparenting included
+            let all = AccessFs::from_all(ABI::V5);
+            Ruleset::default()
+                .handle_access(all)
+                .unwrap()
+                .create()
+                .unwrap()
+                .add_rule(PathBeneath::new(PathFd::new("/").unwrap(), all))
+                .unwrap()
+                .restrict_self()
+                .unwrap();
+            std::fs::rename(a.join("f"), b.join("f")).unwrap();
+            apply_landlock(
+                &SandboxConfig {
+                    deny_net: true,
+                    ..Default::default()
+                },
+                None,
+            )
+            .unwrap();
+            std::fs::rename(b.join("f"), a.join("f"))
+                .and_then(|()| std::fs::hard_link(a.join("f"), b.join("g")))
+        })
+        .join()
+        .unwrap();
+        result.unwrap();
     }
 
     /// Before Linux 6.2 the kernel has no Truncate right, and best effort

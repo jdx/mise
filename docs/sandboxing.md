@@ -238,12 +238,14 @@ family. It also blocks io_uring, which can create sockets the filter does not
 see, so a program that needs io_uring does not run under `--deny-net`. It
 supports x86_64 and arm64; on other architectures, `--deny-net` is an error.
 
-Under `--deny-net` the command also runs in a Landlock domain, which refuses
-TCP and keeps the command from attaching to or reading the memory of
-processes outside the sandbox, so it cannot make one of them open a socket
-for it. A Landlock domain also refuses `mount`. Landlock handles network
-access from Linux 6.7; on an older kernel, a command under `--deny-net` with
-no file restriction gets no domain.
+Under `--deny-net` the command also runs in a Landlock domain, the same one
+as its file restrictions if it has any. The domain refuses TCP bind and
+connect, including on a socket the command was handed, and keeps the command
+from attaching to or reading the memory of processes outside the sandbox, so
+it cannot make one of them open a socket for it. A Landlock domain also
+refuses `mount`. Landlock handles network access from Linux 6.7: on an older
+kernel the domain refuses no TCP, and a command under `--deny-net` with no
+file restriction gets no domain.
 
 Every Linux sandbox with a file, network or process restriction installs a
 seccomp filter, which also refuses terminal input injection (see
