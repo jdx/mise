@@ -843,10 +843,13 @@ fn filter_executables(
     let Some(filter) = opts.filter_bins() else {
         return Ok(executables);
     };
+    // The package decides how many executables there are, so membership is
+    // checked in sets; the lists keep the order and the error text.
+    let available: HashSet<&str> = executables.iter().map(String::as_str).collect();
     let missing: Vec<&str> = filter
         .iter()
-        .filter(|b| !executables.contains(b))
-        .map(|s| s.as_str())
+        .map(String::as_str)
+        .filter(|b| !available.contains(b))
         .collect();
     if !missing.is_empty() {
         return Err(eyre::eyre!(
@@ -855,9 +858,10 @@ fn filter_executables(
             executables.join(", ")
         ));
     }
+    let selected: HashSet<&str> = filter.iter().map(String::as_str).collect();
     Ok(executables
         .into_iter()
-        .filter(|e| filter.contains(e))
+        .filter(|e| selected.contains(e.as_str()))
         .collect())
 }
 
