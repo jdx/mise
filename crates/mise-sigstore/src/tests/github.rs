@@ -205,6 +205,38 @@ async fn github_attestation_sources_fails_when_all_methods_fail() {
 }
 
 #[tokio::test]
+async fn github_attestation_sources_checks_no_more_than_an_api_answer_holds() {
+    // Whoever holds the list picks its length, and every entry checked costs
+    // a pass over the artifact, so entries past the limit are not looked at.
+    let capture = capture_logs();
+    let digest = fixture_digest();
+    let genuine = fixture_attestation(include_str!(
+        "../../tests/fixtures/github_release_attestation_jdx_mise.json"
+    ));
+    let verify = async |padding: usize| {
+        let mut attestations = vec![invalid_attestation(); padding];
+        attestations.push(genuine.clone());
+        crate::github::verify_github_attestation_sources_for_artifact(
+            Artifact::from(&digest),
+            &attestations,
+            None,
+        )
+        .await
+    };
+
+    let limit = crate::github::MAX_HELD_ATTESTATIONS;
+    assert_eq!(verify(limit - 1).await.unwrap(), ["jdx/mise"]);
+
+    let error = verify(10_000).await.unwrap_err();
+    assert!(matches!(error, AttestationError::Verification(_)));
+    let checked = captured_messages(&capture)
+        .iter()
+        .filter(|message| message.contains("invalid attestation JSON"))
+        .count();
+    assert_eq!(checked, limit - 1 + limit);
+}
+
+#[tokio::test]
 async fn github_attestation_made_by_another_repository_is_rejected() {
     // Whatever answers the attestations request picks the list, and any
     // repository can attest any digest, so a genuine jdx/mise attestation

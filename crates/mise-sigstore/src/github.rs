@@ -205,6 +205,12 @@ async fn verify_github_attestation_sources_with_trust_roots(
     .await
 }
 
+/// How many held attestations are checked: the `per_page` an answer from
+/// GitHub's attestations API is held to. Whoever holds the list (a mirror, a
+/// registry) picks its length, and every entry checked costs a pass over the
+/// whole artifact, plus a trust root refresh when the trust root fails to load.
+pub(crate) const MAX_HELD_ATTESTATIONS: usize = 30;
+
 async fn verify_sources(
     artifact: Artifact<'_>,
     attestations: &[Attestation],
@@ -215,7 +221,13 @@ async fn verify_sources(
     let mut sources = Vec::new();
     let mut errors = Vec::new();
     let mut trust_root_failures = 0;
-    for attestation in attestations {
+    if attestations.len() > MAX_HELD_ATTESTATIONS {
+        log::debug!(
+            "checking only the first {MAX_HELD_ATTESTATIONS} of {} cached GitHub attestations",
+            attestations.len()
+        );
+    }
+    for attestation in attestations.iter().take(MAX_HELD_ATTESTATIONS) {
         let Some(bundle_value) = &attestation.bundle else {
             continue;
         };
