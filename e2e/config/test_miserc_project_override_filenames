@@ -24,7 +24,7 @@ rm netrc-tool-versions
 echo 'override_config_filenames = ["workdir/other.toml"]' >.miserc.toml
 assert_contains "mise ls 2>&1" "must be a file name, without a directory"
 echo 'override_tool_versions_filenames = ["mise.toml", "config.toml"]' >.miserc.toml
-assert_contains "mise ls 2>&1" 'ignoring override filename "config.toml"'
+assert_contains "mise ls 2>&1" 'ignoring override filenames "mise.toml", "config.toml"'
 
 # A project still renames its own files.
 echo 'env.FROM_CUSTOM = "1"' >custom.toml

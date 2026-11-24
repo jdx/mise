@@ -502,7 +502,7 @@ fn load_miserc_files(files: Vec<PathBuf>) -> Result<MisercSettings> {
                 .map_err(|e| toml_parse_error(&e, &content, &path))?;
             resolve_ignored_config_paths(&mut settings, config_root);
             let global = is_global_miserc_dir(config_root);
-            drop_names_leaving_the_directory(&mut settings, &path, global);
+            check_names(&mut settings, &mut project_set_names, &path, global);
             if global {
                 merge_settings(&mut merged, settings);
                 global_env = merged.env.clone().unwrap_or_default();
@@ -512,7 +512,6 @@ fn load_miserc_files(files: Vec<PathBuf>) -> Result<MisercSettings> {
                     .map(|sets| sets.keys().cloned().collect())
                     .unwrap_or_default();
             } else {
-                limit_project_names(&mut settings, &mut project_set_names, &path);
                 keep_global_envs(&mut settings, &global_env);
                 keep_inherited_ignored_config_paths(
                     &mut settings,
@@ -529,6 +528,18 @@ fn load_miserc_files(files: Vec<PathBuf>) -> Result<MisercSettings> {
     }
 
     Ok(merged)
+}
+
+/// Caps the lists of a project file, then drops the names mise may not use.
+/// Capping first keeps the first entries as written and bounds the names that
+/// are checked, and with them the warnings.
+fn check_names(settings: &mut MisercSettings, set_names: &mut usize, path: &Path, global: bool) {
+    if !global {
+        limit_project_names(settings, set_names, path);
+    }
+    for warning in drop_names_leaving_the_directory(settings, path, global) {
+        warn_while_loading_settings(warning);
+    }
 }
 
 /// The most names a project `.miserc.toml` may list in `env` and in each
@@ -633,7 +644,11 @@ fn keep_inherited_ignored_config_paths(
 /// project file is limited to letters, digits, `_`, `-` and `.`, starting with
 /// a letter or digit: it cannot carry shell or template syntax into a trusted
 /// command built from `{{ mise_env }}`.
-fn drop_names_leaving_the_directory(settings: &mut MisercSettings, path: &Path, global: bool) {
+fn drop_names_leaving_the_directory(
+    settings: &mut MisercSettings,
+    path: &Path,
+    global: bool,
+) -> Vec<String> {
     let invalid_env_name = |name: &str| {
         if name.contains(['/', '\\']) {
             Some("a name cannot contain a path separator")
@@ -645,34 +660,21 @@ fn drop_names_leaving_the_directory(settings: &mut MisercSettings, path: &Path, 
             None
         }
     };
-    if let Some(envs) = settings.env.as_mut() {
-        envs.retain(|name| {
-            let Some(reason) = invalid_env_name(name) else {
-                return true;
-            };
-            warn_while_loading_settings(format!(
-                "{}: ignoring environment {name:?}: {reason}",
-                file::display_path(path)
-            ));
-            false
-        });
+    let mut warnings = vec![];
+    let mut envs = RejectedNames::default();
+    if let Some(names) = settings.env.as_mut() {
+        envs.retain(names, invalid_env_name);
     }
+    envs.warn(&mut warnings, path, "environment", "", "");
+    let mut set_members = RejectedNames::default();
     for members in settings
         .env_sets
         .iter_mut()
         .flat_map(|sets| sets.values_mut())
     {
-        members.retain(|name| {
-            let Some(reason) = invalid_env_name(name) else {
-                return true;
-            };
-            warn_while_loading_settings(format!(
-                "{}: ignoring environment {name:?} in env_sets: {reason}",
-                file::display_path(path)
-            ));
-            false
-        });
+        set_members.retain(members, invalid_env_name);
     }
+    set_members.warn(&mut warnings, path, "environment", " in env_sets", "");
     for (filenames, suffix) in [
         (settings.override_config_filenames.as_mut(), ".toml"),
         (
@@ -683,32 +685,68 @@ fn drop_names_leaving_the_directory(settings: &mut MisercSettings, path: &Path, 
         let Some(filenames) = filenames else {
             continue;
         };
-        filenames.retain(|filename| {
-            let reason = if filename.contains('\\')
+        let mut rejected = RejectedNames::default();
+        rejected.retain(filenames, |filename| {
+            if filename.contains('\\')
                 || !Path::new(filename)
                     .components()
                     .all(|c| matches!(c, Component::Normal(_) | Component::CurDir))
             {
-                "it must stay in its directory"
+                Some("it must stay in its directory")
             } else if global {
-                return true;
+                None
             } else if filename.contains('/') {
-                "a name in a project .miserc.toml must be a file name, without a directory"
+                Some("a name in a project .miserc.toml must be a file name, without a directory")
             } else if !filename.ends_with(suffix) || filename.len() == suffix.len() {
                 if suffix == ".toml" {
-                    "a name in a project .miserc.toml must end in `.toml`"
+                    Some("a name in a project .miserc.toml must end in `.toml`")
                 } else {
-                    "a name in a project .miserc.toml must end in `tool-versions`"
+                    Some("a name in a project .miserc.toml must end in `tool-versions`")
                 }
             } else {
+                None
+            }
+        });
+        rejected.warn(
+            &mut warnings,
+            path,
+            "override filename",
+            "",
+            "; set it in ~/.config/mise/miserc.toml instead",
+        );
+    }
+    warnings
+}
+
+/// The names a list dropped, by the reason it dropped them, so a long list of
+/// bad names gives one warning per reason rather than one per name.
+#[derive(Default)]
+struct RejectedNames(indexmap::IndexMap<&'static str, IndexSet<String>>);
+
+impl RejectedNames {
+    fn retain(&mut self, names: &mut Vec<String>, reason: impl Fn(&str) -> Option<&'static str>) {
+        names.retain(|name| {
+            let Some(reason) = reason(name) else {
                 return true;
             };
-            warn_while_loading_settings(format!(
-                "{}: ignoring override filename {filename:?}: {reason}; set it in ~/.config/mise/miserc.toml instead",
-                file::display_path(path)
-            ));
+            self.0.entry(reason).or_default().insert(name.clone());
             false
         });
+    }
+
+    fn warn(self, warnings: &mut Vec<String>, path: &Path, what: &str, place: &str, hint: &str) {
+        for (reason, names) in self.0 {
+            let plural = if names.len() == 1 { "" } else { "s" };
+            let names = names
+                .iter()
+                .map(|name| format!("{name:?}"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            warnings.push(format!(
+                "{}: ignoring {what}{plural} {names}{place}: {reason}{hint}",
+                file::display_path(path)
+            ));
+        }
     }
 }
 
@@ -1119,6 +1157,60 @@ override_tool_versions_filenames = [".tool-versions", "ci.tool-versions", "mise.
             true,
         );
         assert_eq!(settings.env.unwrap(), names);
+    }
+
+    #[test]
+    fn test_project_lists_are_capped_before_names_are_checked() {
+        let path = Path::new("/work/.miserc.toml");
+        let valid = |n: usize| (0..n).map(|i| format!("ok{i}")).collect::<Vec<_>>();
+        let invalid = |n: usize| (0..n).map(|i| format!("bad/{i}")).collect::<Vec<_>>();
+        // (entries, names kept)
+        let cases = [
+            ([valid(70)].concat(), valid(PROJECT_NAMES_MAX)),
+            ([invalid(70), valid(5)].concat(), vec![]),
+            ([valid(60), invalid(10), valid(5)].concat(), valid(60)),
+        ];
+        for (entries, kept) in cases {
+            let mut settings = MisercSettings {
+                env: Some(entries.clone()),
+                override_config_filenames: Some(
+                    entries.iter().map(|name| format!("{name}.toml")).collect(),
+                ),
+                env_sets: Some([("team".to_string(), entries.clone())].into()),
+                ..Default::default()
+            };
+            let mut set_names = PROJECT_NAMES_MAX;
+            check_names(&mut settings, &mut set_names, path, false);
+            assert_eq!(settings.env.unwrap(), kept, "{entries:?}");
+            assert_eq!(
+                settings.override_config_filenames.unwrap(),
+                kept.iter()
+                    .map(|name| format!("{name}.toml"))
+                    .collect::<Vec<_>>()
+            );
+        }
+
+        // one warning for each list and reason, naming every name it drops
+        let mut settings = MisercSettings {
+            env: Some([invalid(3), vec!["a b".into()]].concat()),
+            env_sets: Some(
+                [
+                    ("one".to_string(), invalid(2)),
+                    ("two".to_string(), invalid(3)),
+                ]
+                .into(),
+            ),
+            ..Default::default()
+        };
+        let warnings = drop_names_leaving_the_directory(&mut settings, path, false);
+        assert_eq!(warnings.len(), 3, "{warnings:#?}");
+        assert!(warnings[0].contains(
+            r#"ignoring environments "bad/0", "bad/1", "bad/2": a name cannot contain a path separator"#
+        ));
+        assert!(warnings[1].contains(r#"ignoring environment "a b": a name in a project"#));
+        assert!(warnings[2].contains(
+            r#"ignoring environments "bad/0", "bad/1", "bad/2" in env_sets: a name cannot"#
+        ));
     }
 
     #[test]
