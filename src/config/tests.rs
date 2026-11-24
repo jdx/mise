@@ -1714,7 +1714,8 @@ fn test_glob_finds_what_the_glob_crate_finds() -> Result<()> {
 
 /// `dir` is used as a path, not spelled into a pattern, so a directory whose
 /// name is not UTF-8 is searched like any other.
-#[cfg(unix)]
+// Linux file systems accept any bytes in a name; APFS refuses one that is not UTF-8.
+#[cfg(target_os = "linux")]
 #[test]
 fn test_glob_searches_a_directory_whose_name_is_not_utf8() -> Result<()> {
     use std::os::unix::ffi::OsStrExt;
