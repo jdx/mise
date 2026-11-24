@@ -522,15 +522,24 @@ mod tests {
         let newer_uid = |flags| self_signature(POSITIVE, 200, Some(flags));
 
         // the direct-key signature's flags win over any user ID, however new
-        assert!(!may_sign(&[certify_only.clone()], &[newer_uid(SIGN)]));
-        assert!(may_sign(&[signer.clone()], &[newer_uid(CERTIFY)]));
+        assert!(!may_sign(
+            std::slice::from_ref(&certify_only),
+            &[newer_uid(SIGN)]
+        ));
+        assert!(may_sign(
+            std::slice::from_ref(&signer),
+            &[newer_uid(CERTIFY)]
+        ));
         // only the newest direct-key signature speaks, and one without flags leaves it to the
         // user IDs
         assert!(may_sign(
             &[certify_only.clone(), no_flags.clone()],
             &[newer_uid(SIGN)]
         ));
-        assert!(!may_sign(&[no_flags.clone()], &[newer_uid(CERTIFY)]));
+        assert!(!may_sign(
+            std::slice::from_ref(&no_flags),
+            &[newer_uid(CERTIFY)]
+        ));
         // among user IDs the newest one with key flags decides
         assert!(may_sign(&[], &[older_uid(CERTIFY), newer_uid(SIGN)]));
         assert!(!may_sign(&[], &[older_uid(SIGN), newer_uid(CERTIFY)]));
