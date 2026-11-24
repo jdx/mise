@@ -130,8 +130,12 @@ When a command needs a config that is not trusted:
 - Without a terminal, such as in a script or an editor extension, mise cannot
   ask, so the command fails with
   [`Config files in <path> are not trusted`](/errors.html#untrusted-config).
-- Shell completion and the shell's command-not-found handler never ask. They
-  leave the config untrusted, as a command without a terminal does.
+- Shell completion never asks. It fails as a command without a terminal does,
+  so it completes no task names until you trust the config.
+- The shell's command-not-found handler never asks and says nothing about it.
+  It leaves the untrusted config out, so only trusted config, such as global
+  config, decides what it
+  [auto-installs](/configuration/settings.html#not_found_auto_install).
 - Shell activation never asks. It skips the untrusted config, warns
   `<path> is not trusted, run mise trust to enable it`, and still applies the
   trusted ones.

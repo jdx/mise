@@ -24,6 +24,10 @@ pub(crate) struct HookNotFound {
 
 impl HookNotFound {
     pub(crate) async fn run(self) -> Result<()> {
+        // A mistyped command is not a request to run this directory's config, so an untrusted
+        // config is left out and the trusted ones (global config) still decide what to
+        // auto-install. No warning: hook-env already warns once on entering the directory.
+        crate::config::skip_untrusted_configs();
         let mut config = Config::get().await?;
         let settings = Settings::try_get()?;
         if settings.not_found_auto_install {
