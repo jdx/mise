@@ -3806,6 +3806,53 @@ backend = "conda:jq"
     let _ = std::fs::remove_file(&test_lockfile);
 }
 
+/// Inline `"platforms.<name>"` keys are split off a tool entry wherever they
+/// sit in it: the keys around them are still read, and an inline key wins over
+/// the same platform in a nested `platforms` table.
+#[test]
+fn test_inline_platform_keys_parsing() {
+    let value: toml::Value = toml::from_str(
+        r#"
+"platforms.linux-x64" = { checksum = "sha256:inline" }
+version = "1.0.0"
+"platforms.macos-arm64" = "sha256:string"
+backend = "aqua:example/tool"
+"platforms.windows-x64" = { url = "https://example.com/tool.zip" }
+options = { exe = "tool" }
+
+[platforms.linux-x64]
+checksum = "sha256:nested"
+
+[platforms.linux-arm64]
+checksum = "sha256:nested-only"
+"#,
+    )
+    .unwrap();
+
+    let tool = LockfileTool::try_from(value).unwrap();
+
+    assert_eq!(tool.version, "1.0.0");
+    assert_eq!(tool.backend.as_deref(), Some("aqua:example/tool"));
+    assert_eq!(tool.options.get("exe").map(String::as_str), Some("tool"));
+    assert_eq!(
+        tool.platforms.keys().collect::<Vec<_>>(),
+        ["linux-arm64", "linux-x64", "macos-arm64", "windows-x64"]
+    );
+    let checksum = |platform: &str| tool.platforms[platform].checksum.as_deref();
+    assert_eq!(checksum("linux-x64"), Some("sha256:inline"));
+    assert_eq!(checksum("linux-arm64"), Some("sha256:nested-only"));
+    assert_eq!(checksum("macos-arm64"), Some("sha256:string"));
+    assert_eq!(
+        tool.platforms["windows-x64"].url.as_deref(),
+        Some("https://example.com/tool.zip")
+    );
+
+    // A malformed inline platform is still an error, not a skipped key.
+    let value: toml::Value =
+        toml::from_str("version = \"1.0.0\"\n\"platforms.linux-x64\" = 1\n").unwrap();
+    assert!(LockfileTool::try_from(value).is_err());
+}
+
 /// Lockfiles written while the pkgx backend existed must still load, and
 /// the next save drops what they recorded for it.
 #[test]

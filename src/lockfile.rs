@@ -7205,16 +7205,14 @@ impl TryFrom<toml::Value> for LockfileTool {
                     }
                 }
                 // Handle inline table format: "platforms.linux-x64" = { ... }
-                let platform_keys: Vec<_> = t
-                    .keys()
-                    .filter(|k| k.starts_with("platforms."))
-                    .cloned()
-                    .collect();
-                for key in platform_keys {
-                    if let Some(platform_info) = t.remove(&key) {
-                        let platform_name = key.strip_prefix("platforms.").unwrap().to_string();
-                        platforms.insert(platform_name, PlatformInfo::try_from(platform_info)?);
-                    }
+                // The table keeps its order, so removing a key shifts every
+                // later one: it is split in one pass instead.
+                let (inline_platforms, mut t): (toml::Table, toml::Table) = t
+                    .into_iter()
+                    .partition(|(key, _)| key.starts_with("platforms."));
+                for (key, platform_info) in inline_platforms {
+                    let platform_name = key.strip_prefix("platforms.").unwrap().to_string();
+                    platforms.insert(platform_name, PlatformInfo::try_from(platform_info)?);
                 }
                 let mut options = BTreeMap::new();
                 if let Some(opts) = t.remove("options") {
