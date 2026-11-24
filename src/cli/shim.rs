@@ -1,12 +1,13 @@
 //! Running mise as a shim: find which tool the shim stands for and hand off to `mise exec`.
 
-use crate::cli::exec::Exec;
+use crate::cli::exec::{Exec, ExecExtras, exec_program};
 use crate::config::{
     CommandWrapper, CommandWrapperOptions, Config, Settings, command_wrapper_source,
     insert_config_file_template_vars, load_command_wrappers,
 };
 use crate::file::display_path;
 use crate::request_exit;
+use crate::sandbox::SandboxConfig;
 use crate::shims::*;
 use crate::toolset::{ResolveOptions, Toolset, ToolsetBuilder};
 use crate::{env, file};
@@ -14,7 +15,7 @@ use color_eyre::eyre::{Result, bail};
 use itertools::Itertools;
 #[cfg(windows)]
 use path_absolutize::Absolutize;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
@@ -77,10 +78,15 @@ pub(crate) async fn handle_shim() -> Result<()> {
     let (bin, wrapper) = match command {
         ShimCommand::Tool(bin) => (bin, None),
         ShimCommand::Wrapper(wrapper) => (PathBuf::from(wrapper.command()), Some(wrapper)),
-        ShimCommand::SystemFallback(bin) | ShimCommand::PathLookup(bin) => {
+        ShimCommand::SystemFallback(bin) => {
             #[cfg(unix)]
             fallback_chain.record(bin_name, &file::canonicalize_or_self(&bin))?;
             (bin, None)
+        }
+        ShimCommand::PathLookup(bin) => {
+            #[cfg(unix)]
+            fallback_chain.record(bin_name, &file::canonicalize_or_self(&bin))?;
+            return pass_on(bin, args).await;
         }
     };
     args[0] = bin.to_string_lossy().to_string();
@@ -128,6 +134,25 @@ pub(crate) async fn handle_shim() -> Result<()> {
     } else {
         exec.run_with_toolset(config, ts).await?;
     }
+    Err(request_exit(0))
+}
+
+/// Runs what a wrapper-directory shim passes its command on to as if the shim were not there:
+/// with the arguments and the environment the shim was given. That environment is the caller's,
+/// so it holds a task's `_.path` and env or the tools of a `mise x tool@version`; the one mise
+/// would build for this directory holds neither.
+async fn pass_on(bin: PathBuf, args: Vec<String>) -> Result<()> {
+    time!("shim pass on");
+    exec_program(
+        bin,
+        args.into_iter().skip(1),
+        BTreeMap::new(),
+        BTreeSet::new(),
+        &SandboxConfig::default(),
+        false,
+        &ExecExtras::default(),
+    )
+    .await?;
     Err(request_exit(0))
 }
 
@@ -223,7 +248,7 @@ fn bin_behind_wrapper_dirs(bin_name: &str) -> Option<PathBuf> {
         .ok()?
         .next()?;
     let mise_bin = file::canonicalize_or_self(&env::MISE_BIN);
-    let is_mise_shim = bin.parent().is_some_and(file::is_mise_shims_dir)
+    let is_mise_shim = is_shim_file(&bin)
         || file::is_active_mise_shim(&bin)
         || file::canonicalize_cached(&bin).is_some_and(|bin| bin == mise_bin);
     (!is_mise_shim).then_some(bin)

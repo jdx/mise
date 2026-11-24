@@ -67,6 +67,12 @@ env = { WRAP_TEST = "1" }
         $output | Should -Contain 'WRAPPED:1'
         $output | Should -Contain 'REAL_TOOL:--fixed check'
 
+        # Windows command names ignore case, so another spelling reaches the wrapper too.
+        $output = mise x -- WrapTool check 2>&1
+        $LASTEXITCODE | Should -Be 0 -Because "mise x output: $($output | Out-String)"
+        $output | Should -Contain 'WRAPPED:1'
+        $output | Should -Contain 'REAL_TOOL:--fixed check'
+
         $output = & $shim check 2>&1
         $LASTEXITCODE | Should -Be 0 -Because "shim output: $($output | Out-String)"
         $output | Should -Contain 'WRAPPED:1'

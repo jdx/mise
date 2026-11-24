@@ -39,6 +39,12 @@ run = "dummy"
 
 [tasks.task-dummy.env]
 _.path = "./task-bin"
+
+[tasks.task-dummy-helper]
+run = "dummy --helper"
+
+[tasks.task-dummy-helper.env]
+_.path = "./task-bin"
 EOF
 
 mkdir -p task-bin
@@ -53,6 +59,9 @@ EOF
 cat >task-bin/dummy <<'EOF'
 #!/usr/bin/env bash
 echo task-path-dummy
+if [[ ${1:-} == --helper ]]; then
+	task-tool
+fi
 EOF
 chmod +x task-bin/cargo task-bin/task-tool task-bin/dummy
 
@@ -96,7 +105,11 @@ dummy = "1.0.0"
 EOF
 cat >"$fake_bin/dummy" <<'EOF'
 #!/usr/bin/env bash
-echo inherited-dummy
+if [[ ${1:-} == --env ]]; then
+	env | grep -v '^__MISE_SHIM_FALLBACK_CHAIN=' | sort
+else
+	echo inherited-dummy
+fi
 EOF
 chmod +x "$fake_bin/dummy"
 assert "mise x -- sh -c dummy" "inherited-dummy"
@@ -127,6 +140,11 @@ assert "mise x -- sh -c dummy" "$mise_dummy"
 mv "$fake_bin/dummy.off" "$fake_bin/dummy"
 # A task's `_.path` comes next when the inherited PATH has no shims directory.
 assert "PATH='$path_without_shims' mise run -q task-dummy" "task-path-dummy"
+# The command the shim passes on to gets the environment the shim was given, so it still finds
+# the other commands of the task's `_.path`.
+assert "PATH='$path_without_shims' mise run -q task-dummy-helper" "task-path-dummy
+task-tool"
+assert_succeed "mise x -- bash -c 'diff <(\"$fake_bin/dummy\" --env) <(dummy --env)'"
 
 # A tool's postinstall hook runs with the tool's own directories, then the inherited PATH. A
 # wrapper directory inherited from the shell keeps its place there instead of taking the lead.

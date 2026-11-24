@@ -597,8 +597,9 @@ your `PATH` already has it, behind the tool's own directories.
 
 All projects share one wrapper directory. A shim that another project's wrapper left
 there does nothing in a project that does not wrap that command: the command runs as
-it would without the shim, so a directory you list before mise's shims still wins
-over a mise tool, and the shim does not run `auto_update` for a tool of that name.
+it would without the shim, with the `PATH` and environment the shim was started
+with, so a directory you list before mise's shims still wins over a mise tool, and
+the shim does not run `auto_update` for a tool of that name.
 The exception is a Windows `exe` or `file` shim, which runs the command with
 `mise exec`, and that looks mise's tools up first.
 

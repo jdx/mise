@@ -838,6 +838,13 @@ fn symlink_target_names_mise(path: &Path) -> Result<bool> {
     }))
 }
 
+/// Whether `path` is one of mise's shims, judged by the file itself. The shims directory can be
+/// a shared one such as `~/.local/bin`, so the directory a file is in does not say.
+pub fn is_shim_file(path: &Path) -> bool {
+    is_mise_shim(path, &env::MISE_BIN).unwrap_or(false)
+        || symlink_target_names_mise(path).unwrap_or(false)
+}
+
 fn is_mise_shim(path: &Path, mise_bin: &Path) -> Result<bool> {
     let dedicated = path.parent().is_some_and(is_dedicated_shims_dir);
     is_mise_shim_in(path, mise_bin, dedicated)

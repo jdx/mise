@@ -786,7 +786,7 @@ fn config_wraps_command(config: &Config, ts: &Toolset, program: &str) -> Result<
     )?;
     Ok(wrappers
         .keys()
-        .any(|wrapper| crate::shims::command_names_eq(wrapper, name)))
+        .any(|wrapper| crate::shims::same_command_name(wrapper, name)))
 }
 
 fn scrub_env(keys: &[String]) {
