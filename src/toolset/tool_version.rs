@@ -1434,7 +1434,8 @@ impl ToolVersion {
         let request = request.with_registry_version(v);
         let backend = request.backend()?;
         let opts = &Self::without_covered_refresh(config, &request, &backend, opts).await;
-        if v == "latest" && opts.offline {
+        // An alias can stand for `latest` too, and resolving that asks the host.
+        if opts.offline && (v == "latest" || config.resolve_alias(&backend, v).await? == "latest") {
             let pathname = request.version().replace([':', '/'], "-");
             let path = backend.ba().installs_path().join(&pathname);
             let path = env::find_in_shared_installs(path, &backend.ba().tool_dir_name(), &pathname);

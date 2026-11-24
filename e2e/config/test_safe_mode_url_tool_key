@@ -38,6 +38,18 @@ cat <<EOF >mise.toml
 EOF
 assert "MISE_SAFE=1 mise where npm:https://pkg.example.invalid/tool.tgz" "$installed"
 assert "MISE_SAFE=1 mise exec -- url-tool" "tool ran"
+assert "MISE_SAFE=1 mise latest --installed npm:https://pkg.example.invalid/tool.tgz" "$digest"
+# Looking for an installed version does not ask the host, even for an alias
+# that stands for the latest version.
+cat <<EOF >mise.toml
+[tool_alias."npm:https://pkg.example.invalid/tool.tgz".versions]
+newest = "latest"
+
+[tools]
+"npm:https://pkg.example.invalid/tool.tgz" = "sub-1:newest"
+EOF
+assert_fail "MISE_SAFE=1 mise where npm:https://pkg.example.invalid/tool.tgz" "$refused"
+assert_not_contains "MISE_SAFE=1 MISE_DEBUG=1 mise where npm:https://pkg.example.invalid/tool.tgz 2>&1 || true" "GET https://pkg.example.invalid"
 cat <<EOF >mise.toml
 [tools]
 "npm:https://pkg.example.invalid/tool.tgz" = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
