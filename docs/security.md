@@ -316,6 +316,12 @@ These are skipped without an error, so resolution commands keep working:
   for their commands and does not install them on first use.
 - Project `[settings]`, so a repository cannot turn off verification or redirect
   a backend.
+- The `packslip:` backend's
+  [`trust = "vendor"`](/dev-tools/backends/packslip.html#trust) option, unless a
+  `[tools]` entry of global or system config sets it for the same tool, so a
+  repository cannot exempt a release from the
+  [`packslip.stampers`](/configuration/settings.html#packslip.stampers) you
+  require. This applies to a tool named on the command line too.
 - Remote `include` entries in project config, which mise does not fetch.
 - Remote task files (`file = "https://…"` or `git::…`) in project config. Their
   tasks are listed from their TOML alone.

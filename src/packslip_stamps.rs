@@ -23,11 +23,14 @@ use packslip::model::{ReleaseListStatement, ReleaseRef};
 use packslip::sigstore::Policy;
 use serde::{Deserialize, Serialize};
 
-use crate::backend::packslip::{Pin, fetch_policy_text, pinned_key, verify_release_list};
-use crate::config::Settings;
+use crate::backend::backend_type::BackendType;
+use crate::backend::packslip::{
+    Pin, fetch_policy_text, pinned_key, project_name, verify_release_list,
+};
+use crate::config::{Config, Settings, SettingsExt, is_global_config};
 use crate::dirs;
 use crate::file;
-use crate::toolset::ToolVersionOptions;
+use crate::toolset::{ToolOptionSource, ToolVersionOptions};
 
 /// GitHub's OIDC issuer, for a stamper pinned by a workflow identity.
 const GITHUB_ISSUER: &str = "https://token.actions.githubusercontent.com";
@@ -94,6 +97,35 @@ pub(crate) fn trusts_vendor(opts: &ToolVersionOptions) -> bool {
     matches!(opts.get("trust"), Some("vendor"))
 }
 
+/// Whether a `[tools]` entry of global or system config exempts a project.
+/// `packslip.stampers` is the operator's policy, so safe mode takes the
+/// exemption from there only: the options of a request can be what an
+/// untrusted project wrote, in its `[tools]`, a `[tool_alias]`, a task or a
+/// monorepo subproject, and they lift that policy no more than the project's
+/// `[settings]` do. The entry has to set the option itself.
+async fn global_config_trusts_vendor(project: &str) -> Result<bool> {
+    let config = Config::get().await?;
+    for cf in config.config_files.values() {
+        if !is_global_config(cf.get_path()) {
+            continue;
+        }
+        for tr in cf.to_tool_request_set()?.tools.values().flatten() {
+            let set_by_entry = matches!(
+                tr.option_source("trust"),
+                Some(ToolOptionSource::Request | ToolOptionSource::InlineBackendArg)
+            );
+            if set_by_entry
+                && trusts_vendor(&tr.options())
+                && tr.ba().backend_type() == BackendType::Packslip
+                && project_name(&tr.ba().tool_name()).is_ok_and(|p| p == project)
+            {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
+}
+
 /// One stamp: a trusted host's entry for a version.
 #[derive(Debug, Clone)]
 pub(crate) struct Stamp {
@@ -152,8 +184,14 @@ impl Stamps {
         if let Some(by) = self.yanked.get(version) {
             return eyre!("packslip:{project}@{version} was withdrawn by {by}");
         }
+        // Safe mode takes the exemption from global config only, see `fetch`.
+        let options = if Settings::safe_mode() {
+            "the tool's `[tools]` entry in global config"
+        } else {
+            "the tool's options"
+        };
         eyre!(
-            "packslip:{project}@{version} carries no stamp from {}; mise installs only versions a trusted stamper lists. Set `trust = \"vendor\"` in the tool's options to take the vendor's own manifest instead",
+            "packslip:{project}@{version} carries no stamp from {}; mise installs only versions a trusted stamper lists. Set `trust = \"vendor\"` in {options} to take the vendor's own manifest instead",
             self.hosts.iter().join(", ")
         )
     }
@@ -262,13 +300,19 @@ fn check_sequence_in(
 }
 
 /// Fetch and verify every trusted host's list for a project. `None` when
-/// no stampers are configured or the tool trusts its vendor alone. A host
-/// that has no list for the project stamps nothing; one whose list fails
-/// to verify is an error, since silently ignoring it would let a broken
-/// host widen what another admits.
+/// no stampers are configured or the tool trusts its vendor alone, which
+/// safe mode accepts from global or system config only. A host that has
+/// no list for the project stamps nothing; one whose list fails to verify
+/// is an error, since silently ignoring it would let a broken host widen
+/// what another admits.
 pub(crate) async fn fetch(project: &str, opts: &ToolVersionOptions) -> Result<Option<Stamps>> {
     if trusts_vendor(opts) {
-        return Ok(None);
+        if !Settings::safe_mode() || global_config_trusts_vendor(project).await? {
+            return Ok(None);
+        }
+        debug!(
+            "packslip:{project}: ignoring trust = \"vendor\": global config does not set it for this tool and safe mode (MISE_SAFE=1) is on"
+        );
     }
     let stampers = stampers()?;
     if stampers.is_empty() {
