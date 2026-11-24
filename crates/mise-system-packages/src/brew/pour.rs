@@ -315,6 +315,12 @@ pub(super) fn remove_legacy_rack_locks() {
     // prefix yet is retried after the prefix has been set up.
     static DONE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
     use std::sync::atomic::Ordering::Relaxed;
+    // As root in a prefix another account controls, nothing is touched:
+    // installing there is refused with the reason, and the sweep would
+    // otherwise create and remove files in it first.
+    if prefix::refuse_foreign_as_root().is_err() {
+        return;
+    }
     if !DONE.load(Relaxed) && remove_legacy_rack_locks_in(&prefix::cellar(), rack_lock_path) {
         DONE.store(true, Relaxed);
     }

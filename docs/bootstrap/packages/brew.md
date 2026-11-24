@@ -49,7 +49,8 @@ As root, mise refuses to install into or change a prefix when the prefix, a
 directory above it, or one of its standard directories belongs to another user,
 since that user could redirect root's writes. A standard directory that is a
 symlink, such as a Cellar on another disk, is checked along with the directories
-it leads to. The one exception is the user who ran `sudo mise`.
+it leads to. The one exception is the user who ran `sudo mise`. mise changes
+nothing in a refused prefix, including the lock files it cleans up otherwise.
 
 Linked commands go into `<prefix>/bin`. These packages get no mise shims, and
 mise does not change the current shell's `PATH`, so add the directory in your

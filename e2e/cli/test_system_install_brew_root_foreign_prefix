@@ -9,8 +9,9 @@ if [[ "$(uname)" != "Linux" ]] || [[ "$(id -u)" != 0 ]]; then
 fi
 
 FORMULAE_DIR="$TMPDIR/formulae"
-mkdir -p "$FORMULAE_DIR/api/cask"
+mkdir -p "$FORMULAE_DIR/api/cask" "$FORMULAE_DIR/api/formula"
 printf '{"token":"example-good","version":"1.0","url":"https://example.invalid/cask.zip","sha256":"no_check","artifacts":[{"font":["Example.ttf"]}]}\n' >"$FORMULAE_DIR/api/cask/example-good.json"
+printf '{"name":"example","versions":{"stable":"1.0"},"bottle":{"stable":{"files":{"x86_64_linux":{"cellar":":any","url":"https://example.invalid/b.tar.gz","sha256":"00"},"arm64_linux":{"cellar":":any","url":"https://example.invalid/b.tar.gz","sha256":"00"}}}}}\n' >"$FORMULAE_DIR/api/formula/example.json"
 start_http_server --dir "$FORMULAE_DIR"
 MISE_URL_REPLACEMENTS="$(printf '{"https://formulae.brew.sh":"http://127.0.0.1:%s"}' "$HTTP_PORT")"
 export MISE_URL_REPLACEMENTS
@@ -36,3 +37,15 @@ chown 65534 "$PWD/disk"
 ln -s "$PWD/disk/cellar" "$PWD/linked/brew-prefix/Cellar"
 export MISE_SYSTEM_BREW_PREFIX="$PWD/linked/brew-prefix"
 assert_fail_contains "mise bootstrap packages apply --dry-run --yes" "$PWD/disk is owned by"
+
+# nothing in a refused prefix is changed first, not even leftover lock files
+cat >mise.toml <<'TOML'
+[bootstrap.packages]
+"brew:example" = "latest"
+TOML
+export MISE_SYSTEM_BREW_PREFIX="$PWD/foreign/brew-prefix"
+mkdir -p "$MISE_SYSTEM_BREW_PREFIX/Cellar/old"
+touch "$MISE_SYSTEM_BREW_PREFIX/Cellar/old/.mise-staging.lock"
+assert_fail_contains "mise bootstrap packages apply --yes" "$PWD/foreign is owned by"
+assert_succeed "test -f '$MISE_SYSTEM_BREW_PREFIX/Cellar/old/.mise-staging.lock'"
+assert_fail "test -e '$MISE_SYSTEM_BREW_PREFIX/var/homebrew/locks'"
