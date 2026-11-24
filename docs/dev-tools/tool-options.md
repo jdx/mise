@@ -159,6 +159,14 @@ go = "1.27"
 "go:github.com/mikefarah/yq/v4" = { version = "latest", install_env = { GOPROXY = "{{ vars.goproxy }}" } }
 ```
 
+A value a template substitutes is text. If an environment variable, a
+directory name, or the output of `exec()` contains <span v-pre>`{{`</span>,
+<span v-pre>`{%`</span> or <span v-pre>`{#`</span>, the option gets those
+characters as they are, not as template code. Only the expressions that read
+`version`, the platform functions such as `os()` in an http or s3 `url`, and
+the body of a <span v-pre>`{% raw %}`</span> block are left for the backend to
+render at install time.
+
 ## OS-specific tools {#os-specific-tools}
 
 Set `os` to install and use a tool only on some platforms. Everywhere else,

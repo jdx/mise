@@ -202,8 +202,11 @@ impl TaskToolValueExt for TaskToolValue {
             context: &tera::Context,
         ) -> Result<()> {
             match value {
+                // Backends render tool options again at install time, so what this render
+                // substituted (an env var, a command's output) must stay data there.
                 toml::Value::String(value) if contains_template_syntax(value) => {
-                    *value = render_str(tera, value, context)?;
+                    *value =
+                        crate::tera::escape_template_syntax(&render_str(tera, value, context)?);
                 }
                 toml::Value::Array(values) => {
                     for value in values {
@@ -7838,6 +7841,38 @@ echo "test"
                 toml::Value::String("tool".to_string()),
                 toml::Value::String("static".to_string()),
             ]))
+        );
+    }
+
+    #[test]
+    fn test_task_tool_substituted_value_stays_data_for_the_backend_render() {
+        use indexmap::IndexMap;
+
+        use super::{TaskToolValue, TaskToolValueExt, TaskToolValueMap};
+        use crate::tera::{TeraEngine, render_str};
+
+        let branch = "{{ exec(command='touch RAN') }}";
+        let mut opts = IndexMap::new();
+        opts.insert(
+            "url".to_string(),
+            toml::Value::String("https://e/{{ branch }}".to_string()),
+        );
+        let mut tool = TaskToolValue::Map(TaskToolValueMap {
+            version: "1.0.0".to_string(),
+            opts,
+        });
+        let mut context = tera::Context::new();
+        context.insert("branch", branch);
+        let mut tera = TeraEngine::V2(Box::default());
+        tool.render_templates(&mut tera, &context).unwrap();
+        let TaskToolValue::Map(map) = &tool else {
+            panic!("tool is a map");
+        };
+        let url = map.opts["url"].as_str().unwrap();
+        // the backend's render gives the substituted value back as text
+        assert_eq!(
+            render_str(&mut tera, url, &context).unwrap(),
+            format!("https://e/{branch}")
         );
     }
 

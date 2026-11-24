@@ -50,6 +50,7 @@ async fn test_preserving_os_arch_round_trips_through_target() {
         get_tera_preserving_os_arch(None)
     };
     let preserved = render_str(&mut deferred, r#"{{ os(macos="darwin") }}"#, &ctx).unwrap();
+    let preserved = escape_rendered_data(&preserved);
     assert_eq!(preserved, r#"{{ os(macos="darwin") }}"#);
     let mut tera = locked_tera_for_target(None, "macos", "arm64");
     assert_eq!(render_str(&mut tera, &preserved, &ctx).unwrap(), "darwin");
@@ -66,6 +67,7 @@ async fn test_preserving_os_family_round_trips_through_target() {
         get_tera_preserving_os_arch(None)
     };
     let preserved = render_str(&mut deferred, r#"{{ os_family() }}"#, &ctx).unwrap();
+    let preserved = escape_rendered_data(&preserved);
     assert_eq!(preserved, r#"{{ os_family() }}"#);
     let mut tera = locked_tera_for_target(None, "windows", "x64");
     assert_eq!(render_str(&mut tera, &preserved, &ctx).unwrap(), "windows");
@@ -103,6 +105,7 @@ async fn test_preserving_libc_and_avx2_round_trip_through_target() {
         &ctx,
     )
     .unwrap();
+    let preserved = escape_rendered_data(&preserved);
     assert_eq!(
         preserved,
         r#"{{ avx2(no="-baseline", yes="") }}{{ libc(gnu="", musl="-musl") }}"#
@@ -112,4 +115,75 @@ async fn test_preserving_libc_and_avx2_round_trip_through_target() {
         render_str(&mut tera, &preserved, &ctx).unwrap(),
         "-baseline-musl"
     );
+}
+#[tokio::test]
+async fn test_substituted_template_syntax_renders_back_as_data() {
+    // A value the first render substitutes is data: rendering the escaped output again
+    // gives it back unchanged instead of evaluating it, while the re-emitted call stays live.
+    let mut ctx = BASE_CONTEXT.clone();
+    ctx.insert("cwd", "/");
+    ctx.insert(
+        "branch",
+        "{{ exec(command='touch RAN') }}{% if true %}x{% endif %}{# c #}",
+    );
+    let mut deferred = {
+        let _lock = crate::testing::lock_ignoring_poison(&crate::testing::SETTINGS_LOCK);
+        get_tera_preserving_os_arch(None)
+    };
+    let preserved = render_str(
+        &mut deferred,
+        r#"https://e/{{ branch }}/{{ os(macos="darwin") }}"#,
+        &ctx,
+    )
+    .unwrap();
+    let preserved = escape_rendered_data(&preserved);
+    let mut tera = locked_tera_for_target(None, "macos", "arm64");
+    assert_eq!(
+        render_str(&mut tera, &preserved, &ctx).unwrap(),
+        "https://e/{{ exec(command='touch RAN') }}{% if true %}x{% endif %}{# c #}/darwin"
+    );
+}
+#[tokio::test]
+async fn test_reemitted_argument_with_quotes_stays_a_literal() {
+    // An argument holding `"` or `\` must come back as the same string, not end the
+    // literal and become code.
+    let value = r#"x"and(exec(command='touch RAN'))and"y\z"#;
+    let mut ctx = BASE_CONTEXT.clone();
+    ctx.insert("cwd", "/");
+    ctx.insert("branch", value);
+    let mut deferred = {
+        let _lock = crate::testing::lock_ignoring_poison(&crate::testing::SETTINGS_LOCK);
+        get_tera_preserving_os_arch(None)
+    };
+    let preserved = render_str(
+        &mut deferred,
+        r#"{{ os(linux=branch, macos="main") }}"#,
+        &ctx,
+    )
+    .unwrap();
+    let preserved = escape_rendered_data(&preserved);
+    let mut tera = locked_tera_for_target(None, "linux", "x64");
+    assert_eq!(render_str(&mut tera, &preserved, &ctx).unwrap(), value);
+}
+#[test]
+fn test_reemitted_argument_with_quotes_stays_a_literal_in_tera_v1() {
+    let value = r#"x"~exec(command='touch RAN')~"y\z"#;
+    let mut first = tera1::Tera::default();
+    first.register_function("os", reemit_template_fn_v1("os"));
+    let mut ctx = Context::new();
+    ctx.insert("branch", value);
+    let mut first = TeraEngine::V1(Box::new(first));
+    let preserved = first.render_str("{{ os(linux=branch) }}", &ctx).unwrap();
+    let preserved = escape_rendered_data(&preserved);
+    let mut second = tera1::Tera::default();
+    second.register_function("os", |args: &HashMap<String, JsonValue>| {
+        Ok(args["linux"].clone())
+    });
+    let mut second = TeraEngine::V1(Box::new(second));
+    assert_eq!(second.render_str(&preserved, &ctx).unwrap(), value);
+}
+#[test]
+fn test_escape_template_syntax_leaves_plain_text_alone() {
+    assert_eq!(escape_template_syntax("a}}b%}c"), "a}}b%}c");
+    assert_eq!(escape_template_syntax("{{x"), r#"{{ "{{" }}x"#);
 }

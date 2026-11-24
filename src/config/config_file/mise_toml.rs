@@ -1520,7 +1520,7 @@ impl MiseToml {
         // Add placeholder for version since it's not available at config load time
         // This preserves {{ version }} in the output for install-time rendering
         let mut opts_context = context.clone();
-        opts_context.insert("version", "{{ version }}");
+        opts_context.insert("version", &crate::tera::mark_deferred("{{ version }}"));
         // The http and s3 backends re-render their url/checksum_url per
         // target platform (host at install, any target during `mise
         // lock`), so only those two options defer os()/arch() instead of
@@ -1742,6 +1742,10 @@ impl MiseToml {
                 } else {
                     self.parse_template_with_context(context, &shielded)?
                 };
+                // Backends render these options again once the version and platform are
+                // known. Only the expressions deferred on purpose may be code in that render;
+                // everything the render above substituted is data.
+                let rendered = crate::tera::escape_rendered_data(&rendered);
                 *s = restore_version_expressions(rendered, &deferred);
             }
             toml::Value::Array(values) => {
@@ -1773,20 +1777,31 @@ static VERSION_WORD: std::sync::LazyLock<regex::Regex> =
 static QUOTED_LITERAL: std::sync::LazyLock<regex::Regex> =
     std::sync::LazyLock::new(|| regex::Regex::new(r#""[^"]*"|'[^']*'|`[^`]*`"#).unwrap());
 
+static RAW_BLOCK: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+    regex::Regex::new(r"(?s)\{%-?\s*raw\s*-?%\}(.*?)\{%-?\s*endraw\s*-?%\}").unwrap()
+});
+
 const VERSION_SHIELD: &str = "__mise_deferred_version_expression_";
 
 /// `version` is not known at config load, so a bare `{{ version }}` renders to itself through a
 /// placeholder. A filter or function on it (`{{ version | replace(..) }}`) would instead act on
 /// that placeholder text, so every other `{{ }}` expression that reads `version` is swapped for
 /// a marker here and put back verbatim afterwards, to be rendered once the version is known.
+///
+/// The body of a `{% raw %}` block is deferred the same way: the author wrote it to be rendered
+/// by the backend, so it is put back as template code rather than treated as rendered data.
 fn shield_version_expressions(input: &str) -> (String, Vec<String>) {
     // Most option values hold no expression, and the first use of the regex
     // compiles it, which costs more than everything else a command does here.
-    if !input.contains("{{") {
+    if !input.contains("{{") && !input.contains("{%") {
         return (input.to_string(), vec![]);
     }
     let mut deferred = vec![];
-    let shielded = VERSION_EXPRESSION.replace_all(input, |caps: &regex::Captures| {
+    let input = RAW_BLOCK.replace_all(input, |caps: &regex::Captures| {
+        deferred.push(caps[1].to_string());
+        format!("{VERSION_SHIELD}{}__", deferred.len() - 1)
+    });
+    let shielded = VERSION_EXPRESSION.replace_all(&input, |caps: &regex::Captures| {
         let expr = &caps[0];
         let inner = expr
             .trim_start_matches("{{")
@@ -4187,6 +4202,54 @@ mod tests {
             Some(&EnvValue::String("{{version}}".to_string()))
         );
         assert_eq!(opts.get("url"), Some("https://example.com/{version}"));
+        file::remove_file(&p).unwrap();
+    }
+
+    /// A value substituted into a tool option at config load is data. The backend renders
+    /// the option again once the version and platform are known, and that render must give
+    /// the value back instead of evaluating template code inside it.
+    #[tokio::test]
+    async fn test_tool_option_substituted_value_is_not_rendered_again() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD.as_ref().unwrap().join(".test.mise.toml");
+        file::write(
+            &p,
+            r#"
+        # the tool-option render reads [env] values as written
+        [env]
+        BRANCH = "{% raw %}{{exec(command='touch RAN')}}{% endraw %}"
+
+        [tools]
+        "http:preview" = { version = "1.0.0", url = "https://e/{{ env.BRANCH }}/{{ version }}/{{ os(linux='L', macos='L', windows='L') }}", postinstall = "{% raw %}{{ tools.x }}{% endraw %} {{ env.BRANCH }}" }
+        "#,
+        )
+        .unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        let trs = cf.to_tool_request_set().unwrap();
+        let opts = trs
+            .tools
+            .iter()
+            .find(|(ba, _)| ba.short == "http:preview")
+            .and_then(|(_, reqs)| reqs.first())
+            .unwrap()
+            .options();
+        let mut ctx = crate::tera::BASE_CONTEXT.clone();
+        ctx.insert("version", "1.0.0");
+        ctx.insert("tools", &BTreeMap::from([("x", "/bin/x")]));
+        let mut engine = tera::Tera::default();
+        engine.register_function("os", |_: tera::Kwargs, _: &tera::State| {
+            Ok(tera::Value::from("L"))
+        });
+        let mut tera = crate::tera::TeraEngine::V2(Box::new(engine));
+        let mut render = |s: &str| crate::tera::render_str(&mut tera, s, &ctx).unwrap();
+        assert_eq!(
+            render(opts.get("url").unwrap()),
+            "https://e/{% raw %}{{exec(command='touch RAN')}}{% endraw %}/1.0.0/L"
+        );
+        assert_eq!(
+            render(opts.postinstall().unwrap().0),
+            "/bin/x {% raw %}{{exec(command='touch RAN')}}{% endraw %}"
+        );
         file::remove_file(&p).unwrap();
     }
 

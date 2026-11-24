@@ -55,6 +55,56 @@ pub fn contains_template_syntax(input: &str) -> bool {
     input.contains("{{") || input.contains("{%") || input.contains("{#")
 }
 
+/// Delimits template code that a first render emits on purpose for a later render (a
+/// re-emitted `os()` call, the `{{ version }}` placeholder). It holds a per-process random
+/// number, so a value substituted by the first render cannot produce it, and only digits
+/// between control characters, so no filter in the first render changes it.
+static DEFERRED_MARK: Lazy<String> =
+    Lazy::new(|| format!("\u{1f}{}\u{1f}", rand::rng().random::<u64>()));
+
+/// Wrap template code a first render emits for a later render, so that
+/// [`escape_rendered_data`] keeps it live.
+pub fn mark_deferred(code: &str) -> String {
+    let mark = &*DEFERRED_MARK;
+    format!("{mark}{code}{mark}")
+}
+
+/// Make the output of a first render safe to render again: the spans marked with
+/// [`mark_deferred`] stay template code, and everything else, which is data the first render
+/// produced (an environment variable, a directory name, a command's output), renders back to
+/// itself instead of being evaluated as template code.
+pub fn escape_rendered_data(rendered: &str) -> String {
+    let mark = &*DEFERRED_MARK;
+    if !rendered.contains(mark.as_str()) {
+        return escape_template_syntax(rendered);
+    }
+    rendered
+        .split(mark.as_str())
+        .enumerate()
+        .map(|(i, part)| {
+            if i % 2 == 1 {
+                part.to_string()
+            } else {
+                escape_template_syntax(part)
+            }
+        })
+        .collect()
+}
+
+/// Rewrite every `{{`, `{%` and `{#` in `data` as an expression that renders to it, so that a
+/// render of the result, by either engine, outputs `data` unchanged.
+pub fn escape_template_syntax(data: &str) -> String {
+    static OPENER: Lazy<Regex> = Lazy::new(|| Regex::new(r"\{[{%#]").unwrap());
+    if !contains_template_syntax(data) {
+        return data.to_string();
+    }
+    OPENER
+        .replace_all(data, |caps: &regex::Captures| {
+            format!("{{{{ \"{}\" }}}}", &caps[0])
+        })
+        .into_owned()
+}
+
 pub enum TeraEngine {
     V2(Box<Tera>),
     V1(Box<tera1::Tera>),
@@ -1944,17 +1994,10 @@ fn reemit_template_fn_v1(
     name: &'static str,
 ) -> impl Fn(&HashMap<String, JsonValue>) -> tera1::Result<JsonValue> {
     move |args| {
-        let mut parts: Vec<String> = args
+        let parts = args
             .iter()
-            .filter_map(|(k, v)| reemit_arg_literal(v).map(|lit| format!("{k}={lit}")))
-            .collect();
-        let rendered = if parts.is_empty() {
-            format!("{{{{ {name}() }}}}")
-        } else {
-            parts.sort();
-            format!("{{{{ {name}({}) }}}}", parts.join(", "))
-        };
-        Ok(json!(rendered))
+            .filter_map(|(k, v)| reemit_arg_literal_v1(v).map(|lit| format!("{k}={lit}")));
+        Ok(json!(reemit_call(name, parts)))
     }
 }
 
@@ -2055,30 +2098,48 @@ pub fn tera1_read_file(
 fn reemit_template_fn(name: &'static str) -> impl Fn(Kwargs, &State) -> TeraResult<Value> {
     move |args: Kwargs, _: &State| {
         let args = args.deserialize::<std::collections::BTreeMap<String, serde_json::Value>>()?;
-        let mut parts: Vec<String> = args
+        let parts = args
             .iter()
-            .filter_map(|(k, v)| reemit_arg_literal(v).map(|lit| format!("{k}={lit}")))
-            .collect();
-        let rendered = if parts.is_empty() {
-            format!("{{{{ {name}() }}}}")
-        } else {
-            parts.sort();
-            format!("{{{{ {name}({}) }}}}", parts.join(", "))
-        };
-        Ok(Value::from(rendered))
+            .filter_map(|(k, v)| reemit_arg_literal(v).map(|lit| format!("{k}={lit}")));
+        Ok(Value::from(reemit_call(name, parts)))
     }
 }
 
-/// Render a Tera function argument value back into its template literal form so
-/// it round-trips through re-emission. Tera string literals are literal (no
-/// escape sequences), so strings are simply re-quoted; numbers/bools render
-/// natively; other types are dropped (os()/arch() ignore non-string remaps).
+/// The call `name(parts)` as template code, marked as deferred so that
+/// [`escape_rendered_data`] keeps it live.
+fn reemit_call(name: &str, parts: impl Iterator<Item = String>) -> String {
+    let mut parts: Vec<String> = parts.collect();
+    parts.sort();
+    mark_deferred(&format!("{{{{ {name}({}) }}}}", parts.join(", ")))
+}
+
+/// Render a Tera 2 function argument value back into its template literal form so
+/// it round-trips through re-emission. Tera 2 decodes escape sequences in string
+/// literals, so `\` and `"` are escaped; numbers/bools render natively; other types
+/// are dropped (os()/arch() ignore non-string remaps).
 fn reemit_arg_literal(v: &serde_json::Value) -> Option<String> {
     match v {
-        serde_json::Value::String(s) => Some(format!("\"{s}\"")),
+        serde_json::Value::String(s) => Some(format!(
+            "\"{}\"",
+            s.replace('\\', "\\\\").replace('"', "\\\"")
+        )),
         serde_json::Value::Number(n) => Some(n.to_string()),
         serde_json::Value::Bool(b) => Some(b.to_string()),
         _ => None,
+    }
+}
+
+/// Tera 1 string literals have no escape sequences, so a string holding `"` is written as
+/// quoted pieces joined with `~` around a `'"'` literal.
+fn reemit_arg_literal_v1(v: &serde_json::Value) -> Option<String> {
+    match v {
+        serde_json::Value::String(s) => Some(
+            s.split('"')
+                .map(|piece| format!("\"{piece}\""))
+                .collect::<Vec<_>>()
+                .join(" ~ '\"' ~ "),
+        ),
+        _ => reemit_arg_literal(v),
     }
 }
 
