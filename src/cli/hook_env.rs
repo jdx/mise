@@ -3,7 +3,7 @@ use crate::direnv::DirenvDiff;
 use crate::env::{__MISE_DIFF, PATH_KEY, TERM_WIDTH};
 use crate::env::{join_paths, split_paths};
 use crate::env_diff::{EnvDiff, EnvDiffOperation, EnvMap, env_value_matches};
-use crate::file::{self, canonicalize_path_entry, display_path, display_rel_path};
+use crate::file::{self, canonicalize_path_entry, display_rel_path};
 use crate::hook_env::{PREV_SESSION, WatchFilePattern};
 use crate::shell::{EXAMPLE_SHELL, ShellType, require_shell};
 use crate::toolset::{ResolveOptions, Toolset, ToolsetBuilder};
@@ -249,7 +249,7 @@ impl HookEnv {
                     "{} {} {} is not trusted, run `mise trust` to enable it",
                     style::eyellow("mise"),
                     style::eyellow("WARN"),
-                    display_path(config_path)
+                    style::display_path_escaped(config_path)
                 );
             }
         }

@@ -4535,7 +4535,7 @@ async fn load_all_config_files(
                 Err(err) => {
                     return Err(err.wrap_err(format!(
                         "error parsing config file: {}",
-                        style::ebold(display_path(f))
+                        style::ebold(style::display_path_escaped(f))
                     )));
                 }
             };
@@ -4581,7 +4581,7 @@ pub async fn load_config_files_from_paths(
             Err(err) => {
                 return Err(err.wrap_err(format!(
                     "error parsing config file: {}",
-                    style::ebold(display_path(f))
+                    style::ebold(style::display_path_escaped(f))
                 )));
             }
         };

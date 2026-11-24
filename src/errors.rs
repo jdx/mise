@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
 use crate::args::BackendArg;
-use crate::file::display_path;
 use crate::toolset::{ToolRequest, ToolSource, ToolVersion};
+use crate::ui::style::display_path_escaped;
 use eyre::Report;
 use thiserror::Error;
 
@@ -38,13 +38,13 @@ pub enum Error {
     VersionNotInstalled(Box<BackendArg>, String),
     #[error(
         "Config files in {} are not trusted.\nTrust them with `mise trust`. See https://mise.jdx.dev/cli/trust.html for more information.",
-        display_path(.0)
+        display_path_escaped(.0)
     )]
     UntrustedConfig(PathBuf),
     #[error(
         "The environment file or script {} is not trusted, and paranoid mode ties trust to a file's contents.\nReview it, then trust it with `mise trust` or `mise trust {}`. See https://mise.jdx.dev/paranoid.html#environment-files for more information.",
-        display_path(.0),
-        display_path(.0)
+        display_path_escaped(.0),
+        display_path_escaped(.0)
     )]
     UntrustedEnvFile(PathBuf),
     /// A parent stopped waiting for its nested tasks because another task failed.
