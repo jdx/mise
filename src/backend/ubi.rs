@@ -532,46 +532,48 @@ impl UbiBackend {
         picked_file: &Path,
     ) -> eyre::Result<()> {
         let platform_key = self.checksum_platform_key(tv, EXTRACT_ALL_CHECKSUM_NAME);
-        let locked = tv
-            .lock_platforms
-            .get(&platform_key)
-            .and_then(|p| p.checksum.clone());
-
-        if let Some(checksum) = locked {
+        let prefix = self.checksum_platform_key(tv, "");
+        let own_musl = self.get_platform_key().ends_with("-musl");
+        let picked_name = checksum_file_name(picked_file)?;
+        if tv.lock_platforms.contains_key(&platform_key) {
             ctx.pr
                 .set_message(format!("checksum verify {platform_key}"));
-            let Some(expected) = checksum.strip_prefix("blake3:") else {
-                bail!("Invalid checksum: {platform_key}");
-            };
-            let actual = dir_hash_blake3(install_dir)?;
-            if actual != expected.to_lowercase() {
-                bail!(
-                    "Checksum mismatch for directory {}:\nExpected: blake3:{expected}\nActual:   blake3:{actual}",
-                    file::display_path(install_dir)
-                );
-            }
-            return Ok(());
         }
-
-        let picked_key = self.checksum_platform_key(tv, &checksum_file_name(picked_file)?);
-        if let Some(file_key) = self.one_file_checksum_key(tv) {
-            if ctx.locked {
-                bail!(
-                    "The lockfile checksum of {} ({file_key}) covers one file of an extract_all install (--locked mode)\n\
-                    hint: Reinstall it without locked mode to update the lockfile, or use the github backend",
-                    tv.style()
-                );
+        let checksums: Vec<(&str, &str)> = tv
+            .lock_platforms
+            .iter()
+            .filter_map(|(key, p)| Some((key.as_str(), p.checksum.as_deref()?)))
+            .collect();
+        let lock = extract_all_lock(&checksums, &prefix, &picked_name, own_musl, || {
+            dir_hash_blake3(install_dir)
+        })?;
+        match lock {
+            ExtractAllLock::TreeMatches => return Ok(()),
+            ExtractAllLock::TreeMismatch { expected, actual } => bail!(
+                "Checksum mismatch for directory {}:\nExpected: blake3:{expected}\nActual:   blake3:{actual}",
+                file::display_path(install_dir)
+            ),
+            ExtractAllLock::InvalidTree => bail!("Invalid checksum: {platform_key}"),
+            ExtractAllLock::OneFile { key, picked } => {
+                if ctx.locked {
+                    bail!(
+                        "The lockfile checksum of {} ({key}) covers one file of an extract_all install (--locked mode)\n\
+                        hint: Reinstall it without locked mode to update the lockfile, or use the github backend",
+                        tv.style()
+                    );
+                }
+                // The names in this install come from the release, which must not get
+                // to choose a file the lockfile has no checksum for.
+                if !picked {
+                    bail!(
+                        "The lockfile checksum of {} ({key}) names a file this install does not use\n\
+                        hint: Remove the entry from mise.lock to record a checksum of the whole install, or use the github backend",
+                        tv.style()
+                    );
+                }
+                self.verify_checksum(ctx, tv, picked_file)?;
             }
-            // The names in this install come from the release, which must not get
-            // to choose a file the lockfile has no checksum for.
-            if file_key != picked_key {
-                bail!(
-                    "The lockfile checksum of {} ({file_key}) names a file this install does not use\n\
-                    hint: Remove the entry from mise.lock to record a checksum of the whole install, or use the github backend",
-                    tv.style()
-                );
-            }
-            self.verify_checksum(ctx, tv, picked_file)?;
+            ExtractAllLock::Unlocked => {}
         }
         if Settings::get().lockfile_enabled() {
             ctx.pr
@@ -582,31 +584,121 @@ impl UbiBackend {
         }
         Ok(())
     }
+}
 
-    /// The key of a checksum of one file of an `extract_all` install for this
-    /// platform, whatever the file is called.
-    fn one_file_checksum_key(&self, tv: &ToolVersion) -> Option<String> {
-        let prefix = self.checksum_platform_key(tv, "");
-        let own_musl = self.get_platform_key().ends_with("-musl");
-        tv.lock_platforms
-            .iter()
-            .find(|(key, p)| {
-                p.checksum.is_some() && is_one_file_checksum_key(key, &prefix, own_musl)
-            })
-            .map(|(key, _)| key.clone())
+/// What the `mise.lock` checksum keys of one platform name for an `extract_all`
+/// install. A key is `<prefix><name>`, where `<prefix>` holds the platform and the
+/// `exe` and `matching` options, and `<name>` is `extract_all` for the checksum of
+/// the whole install or a file's name for the checksum of that file. One key can
+/// therefore name either, and this is the rule that tells them apart:
+///
+/// - the key of the picked file holds that file's checksum, whatever its name,
+///   so a file named `tool-extract_all` or `musl-tool` keeps its checksum;
+/// - the key `<prefix>extract_all` holds the checksum of the whole install, and,
+///   when the picked file is named `extract_all`, may hold that file's instead;
+/// - of the other keys, one ending in `-extract_all` is the whole-install key of
+///   other options, and on glibc one starting with `musl-` belongs to the musl
+///   platform, whose keys extend the glibc ones;
+/// - every other key holds the checksum of another file of this install.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ExtractAllKey {
+    Tree,
+    PickedFile,
+    TreeOrPickedFile,
+    OtherFile,
+    Unrelated,
+}
+
+fn extract_all_key(key: &str, prefix: &str, picked_name: &str, own_musl: bool) -> ExtractAllKey {
+    let Some(name) = key.strip_prefix(prefix) else {
+        return ExtractAllKey::Unrelated;
+    };
+    match (name == EXTRACT_ALL_CHECKSUM_NAME, name == picked_name) {
+        (true, true) => ExtractAllKey::TreeOrPickedFile,
+        (true, false) => ExtractAllKey::Tree,
+        (false, true) => ExtractAllKey::PickedFile,
+        (false, false)
+            if name.ends_with(&format!("-{EXTRACT_ALL_CHECKSUM_NAME}"))
+                || (!own_musl && name.starts_with("musl-")) =>
+        {
+            ExtractAllKey::Unrelated
+        }
+        (false, false) => ExtractAllKey::OtherFile,
     }
 }
 
-/// Whether `key` holds the checksum of one file of an install whose keys start
-/// with `prefix`. The keys of the musl platform start with the same prefix as
-/// those of the glibc one, followed by `musl-`.
-fn is_one_file_checksum_key(key: &str, prefix: &str, own_musl: bool) -> bool {
-    let Some(name) = key.strip_prefix(prefix) else {
-        return false;
-    };
-    name != EXTRACT_ALL_CHECKSUM_NAME
-        && !name.ends_with(&format!("-{EXTRACT_ALL_CHECKSUM_NAME}"))
-        && (own_musl || !name.starts_with("musl-"))
+/// The `mise.lock` checksum an `extract_all` install is held to; see [`ExtractAllKey`].
+#[derive(Debug, PartialEq, Eq)]
+enum ExtractAllLock {
+    /// The checksum of the whole install matched.
+    TreeMatches,
+    TreeMismatch {
+        expected: String,
+        actual: String,
+    },
+    /// The whole-install checksum is not a blake3 one.
+    InvalidTree,
+    /// The checksum of one file, under `key`, which is the picked file's when `picked`.
+    OneFile {
+        key: String,
+        picked: bool,
+    },
+    Unlocked,
+}
+
+/// Reads `checksums` (key and checksum) by the rule of [`ExtractAllKey`].
+/// `tree_hash` is called only when there is a whole-install checksum.
+fn extract_all_lock(
+    checksums: &[(&str, &str)],
+    prefix: &str,
+    picked_name: &str,
+    own_musl: bool,
+    tree_hash: impl FnOnce() -> eyre::Result<String>,
+) -> eyre::Result<ExtractAllLock> {
+    let kind = |key: &str| extract_all_key(key, prefix, picked_name, own_musl);
+    let tree = checksums.iter().find(|(key, _)| {
+        matches!(
+            kind(key),
+            ExtractAllKey::Tree | ExtractAllKey::TreeOrPickedFile
+        )
+    });
+    if let Some((key, checksum)) = tree {
+        let actual = tree_hash()?;
+        match checksum.strip_prefix("blake3:") {
+            Some(expected) if actual == expected.to_lowercase() => {
+                return Ok(ExtractAllLock::TreeMatches);
+            }
+            // The checksum of the picked file, read below.
+            _ if kind(key) == ExtractAllKey::TreeOrPickedFile => {}
+            Some(expected) => {
+                return Ok(ExtractAllLock::TreeMismatch {
+                    expected: expected.to_string(),
+                    actual,
+                });
+            }
+            None => return Ok(ExtractAllLock::InvalidTree),
+        }
+    }
+    let mut other = None;
+    for (key, _) in checksums {
+        match kind(key) {
+            ExtractAllKey::PickedFile | ExtractAllKey::TreeOrPickedFile => {
+                return Ok(ExtractAllLock::OneFile {
+                    key: key.to_string(),
+                    picked: true,
+                });
+            }
+            ExtractAllKey::OtherFile => other = other.or(Some(*key)),
+            ExtractAllKey::Tree | ExtractAllKey::Unrelated => {}
+        }
+    }
+    Ok(match other {
+        Some(key) => ExtractAllLock::OneFile {
+            key: key.to_string(),
+            picked: false,
+        },
+        None => ExtractAllLock::Unlocked,
+    })
 }
 
 /// What an `extract_all` install has in its `mise.lock` platform key where a single-file
@@ -1056,38 +1148,137 @@ mod tests {
     }
 
     #[test]
-    fn test_one_file_checksum_keys() {
-        let prefix = "linux-x64-";
-        assert!(is_one_file_checksum_key("linux-x64-LICENSE", prefix, false));
-        assert!(is_one_file_checksum_key("linux-x64-tool", prefix, false));
-        assert!(!is_one_file_checksum_key(
-            "linux-x64-extract_all",
-            prefix,
-            false
-        ));
-        assert!(!is_one_file_checksum_key("macos-arm64-tool", prefix, false));
-        // A musl entry is for another platform, unless this one is musl too.
-        assert!(!is_one_file_checksum_key(
-            "linux-x64-musl-tool",
-            prefix,
-            false
-        ));
-        assert!(!is_one_file_checksum_key(
-            "linux-x64-musl-extract_all",
-            prefix,
-            false
-        ));
-        let prefix = "linux-x64-musl-";
-        assert!(is_one_file_checksum_key(
-            "linux-x64-musl-tool",
-            prefix,
-            true
-        ));
-        assert!(!is_one_file_checksum_key(
-            "linux-x64-musl-extract_all",
-            prefix,
-            true
-        ));
+    fn test_extract_all_lock_reads_keys_by_one_rule() {
+        use ExtractAllLock::*;
+        let one_file = |key: &str, picked: bool| OneFile {
+            key: key.to_string(),
+            picked,
+        };
+        let glibc = "linux-x64-";
+        let musl = "linux-x64-musl-";
+        // (entries, prefix, picked file, own musl, expected); the install hashes to "aa".
+        let cases: Vec<(Vec<(&str, &str)>, &str, &str, bool, ExtractAllLock)> = vec![
+            (
+                vec![("linux-x64-extract_all", "blake3:aa")],
+                glibc,
+                "tool",
+                false,
+                TreeMatches,
+            ),
+            (
+                vec![("linux-x64-extract_all", "blake3:bb")],
+                glibc,
+                "tool",
+                false,
+                TreeMismatch {
+                    expected: "bb".into(),
+                    actual: "aa".into(),
+                },
+            ),
+            (
+                vec![("linux-x64-extract_all", "sha256:aa")],
+                glibc,
+                "tool",
+                false,
+                InvalidTree,
+            ),
+            // A file named `extract_all` shares the whole-install key.
+            (
+                vec![("linux-x64-extract_all", "blake3:aa")],
+                glibc,
+                "extract_all",
+                false,
+                TreeMatches,
+            ),
+            (
+                vec![("linux-x64-extract_all", "blake3:ff")],
+                glibc,
+                "extract_all",
+                false,
+                one_file("linux-x64-extract_all", true),
+            ),
+            // The picked file's key is its checksum, whatever the name.
+            (
+                vec![("linux-x64-tool-extract_all", "blake3:ff")],
+                glibc,
+                "tool-extract_all",
+                false,
+                one_file("linux-x64-tool-extract_all", true),
+            ),
+            (
+                vec![("linux-x64-musl-tool", "blake3:ff")],
+                glibc,
+                "musl-tool",
+                false,
+                one_file("linux-x64-musl-tool", true),
+            ),
+            (
+                vec![
+                    ("linux-x64-LICENSE", "blake3:ff"),
+                    ("linux-x64-tool", "blake3:ff"),
+                ],
+                glibc,
+                "tool",
+                false,
+                one_file("linux-x64-tool", true),
+            ),
+            // Other options' whole-install key, and the musl platform's keys.
+            (
+                vec![("linux-x64-tool-extract_all", "blake3:ff")],
+                glibc,
+                "tool",
+                false,
+                Unlocked,
+            ),
+            (
+                vec![("linux-x64-musl-tool", "blake3:ff")],
+                glibc,
+                "tool",
+                false,
+                Unlocked,
+            ),
+            (
+                vec![("linux-x64-musl-extract_all", "blake3:ff")],
+                glibc,
+                "tool",
+                false,
+                Unlocked,
+            ),
+            (
+                vec![("macos-arm64-tool", "blake3:ff")],
+                glibc,
+                "tool",
+                false,
+                Unlocked,
+            ),
+            // Any other key is another file of this install.
+            (
+                vec![("linux-x64-LICENSE", "blake3:ff")],
+                glibc,
+                "tool",
+                false,
+                one_file("linux-x64-LICENSE", false),
+            ),
+            (
+                vec![("linux-x64-musl-tool", "blake3:ff")],
+                musl,
+                "tool",
+                true,
+                one_file("linux-x64-musl-tool", true),
+            ),
+            (
+                vec![("linux-x64-musl-extract_all", "blake3:aa")],
+                musl,
+                "tool",
+                true,
+                TreeMatches,
+            ),
+        ];
+        for (entries, prefix, picked, own_musl, expected) in cases {
+            let lock =
+                extract_all_lock(&entries, prefix, picked, own_musl, || Ok("aa".into())).unwrap();
+            assert_eq!(lock, expected, "{entries:?} picking {picked}");
+        }
     }
 
     #[test]
