@@ -136,10 +136,15 @@ impl ErlangPlugin {
         // The source archive is another artifact, which the locked checksum does not cover, so
         // a download host must not be able to choose it by failing the lookup of the build the
         // lockfile pins.
-        if let Some(url) = lock_pins_precompiled(&tv.lock_platforms, &self.get_platform_key()) {
+        if let Some(pin) = lock_pins_precompiled(&tv.lock_platforms, &self.get_platform_key()) {
+            let url = pin
+                .url
+                .as_deref()
+                .map(|url| format!(" ({url})"))
+                .unwrap_or_default();
             bail!(
                 "precompiled erlang is not available: {reason}\n\
-                 mise.lock pins its checksum ({url}); refusing to compile from source instead\n\
+                 mise.lock pins its checksum{url}; refusing to compile from source instead\n\
                  set erlang.compile = true to build from source"
             );
         }
@@ -947,20 +952,20 @@ fn locked_platform_url(
         .and_then(|platform_info| platform_info.url.clone())
 }
 
-/// The URL of the precompiled build whose checksum mise.lock pins for this platform.
+/// The mise.lock entry for this platform when it pins the checksum of a precompiled build.
 ///
 /// A source build is a different artifact, so `set_lockfile_info` drops this pin and checks the
 /// archive against the digest resolved with it. That is right when the user asked for a source
-/// build, but a failed lookup of the pinned build must not be what selects it.
+/// build, but a failed lookup of the pinned build must not be what selects it. The checksum is
+/// the pin: a lockfile that is not trusted keeps it and drops the URL.
 #[cfg(any(linux, macos, windows, test))]
 fn lock_pins_precompiled<'a>(
     lock_platforms: &'a BTreeMap<String, PlatformInfo>,
     platform_key: &str,
-) -> Option<&'a str> {
+) -> Option<&'a PlatformInfo> {
     lock_platforms
         .get(platform_key)
         .filter(|pi| pi.install.is_none() && pi.checksum.is_some())
-        .and_then(|pi| pi.url.as_deref())
 }
 
 fn should_install_from_source(
@@ -1244,20 +1249,28 @@ mod tests {
                 ..Default::default()
             },
         )]);
+        let pinned = |lock_platforms: &BTreeMap<String, PlatformInfo>, key| {
+            lock_pins_precompiled(lock_platforms, key).map(|pi| pi.url.clone())
+        };
         assert_eq!(
-            lock_pins_precompiled(&lock_platforms, "linux-x64"),
-            Some(url)
+            pinned(&lock_platforms, "linux-x64"),
+            Some(Some(url.to_string()))
         );
-        assert_eq!(lock_pins_precompiled(&lock_platforms, "linux-arm64"), None);
+        assert_eq!(pinned(&lock_platforms, "linux-arm64"), None);
+
+        // A lockfile that is not trusted keeps the checksum and drops the URL: still a pin
+        lock_platforms.get_mut("linux-x64").unwrap().url = None;
+        assert_eq!(pinned(&lock_platforms, "linux-x64"), Some(None));
 
         // A platform locked as a source build still compiles
         lock_platforms.get_mut("linux-x64").unwrap().install = Some("source".to_string());
-        assert_eq!(lock_pins_precompiled(&lock_platforms, "linux-x64"), None);
+        assert_eq!(pinned(&lock_platforms, "linux-x64"), None);
 
         let info = lock_platforms.get_mut("linux-x64").unwrap();
         info.install = None;
+        info.url = Some(url.to_string());
         info.checksum = None;
-        assert_eq!(lock_pins_precompiled(&lock_platforms, "linux-x64"), None);
+        assert_eq!(pinned(&lock_platforms, "linux-x64"), None);
     }
 
     #[test]

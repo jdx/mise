@@ -86,6 +86,12 @@ assert_fail "mise install" "mise.lock pins its checksum"
 assert_fail "test -e '$MARKER'"
 assert_succeed "diff mise.lock.orig mise.lock"
 
+# Safe mode does not trust the lockfile, so it keeps the checksum and drops the
+# URL. That checksum still pins the precompiled build.
+assert_fail "MISE_SAFE=1 mise install" "mise.lock pins its checksum;"
+assert_fail "test -e '$MARKER'"
+assert_succeed "diff mise.lock.orig mise.lock"
+
 # Without a pin the fallback still applies
 rm mise.lock
 assert_succeed "MISE_LOCKFILE=0 mise install"
