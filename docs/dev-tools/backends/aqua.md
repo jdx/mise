@@ -120,6 +120,11 @@ run depends on what each package's recipe declares.
 | SLSA                         | A registry provenance configuration with `signer_identity` and `signer_issuer`, plus the publisher's provenance artifact. |
 | Minisign                     | A signature and the expected public key.                                                                                  |
 
+A Minisign signature whose trusted comment names a file (`file:<name>`, which
+`minisign -S` writes by default) must name the file mise downloaded, so a
+download host cannot pass off another release's file and signature as the
+requested version.
+
 The `aqua.*` verification [settings](#settings) are on by default. Some checks
 also have a global setting, such as
 [`github_attestations`](/configuration/settings.html#github_attestations) or

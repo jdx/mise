@@ -2357,7 +2357,9 @@ impl AquaBackend {
         };
         let data = file::read(check.artifact_path)?;
         let sig = file::read_to_string(&sig_path)?;
-        minisign::verify(
+        // The key signs every release, so the signature must also name this file: otherwise an
+        // older release's archive and its own signature pass as the requested version
+        minisign::verify_file(
             &check.config.public_key(
                 check.pkg,
                 check.version,
@@ -2366,6 +2368,7 @@ impl AquaBackend {
             )?,
             &data,
             &sig,
+            check.artifact_filename,
         )?;
         debug!("minisign verified");
         Ok(())
