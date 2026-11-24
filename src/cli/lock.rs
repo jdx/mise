@@ -3404,11 +3404,8 @@ impl Lock {
                 // A task loads without trust because it is inert until it
                 // runs, but its tools are resolved here. Their options need
                 // the trust they need on a `[tools]` entry of the config the
-                // task is locked for, and so does a key that picks the API
-                // host the forge token is sent to.
-                if tool.ba.explicit_opts().is_some_and(|opts| !opts.is_empty())
-                    || crate::config::config_file::tool_key_requires_trust(&tool.ba.short)
-                {
+                // task is locked for.
+                if tool.ba.explicit_opts().is_some_and(|opts| !opts.is_empty()) {
                     trust_check(&config_path)?;
                 }
                 let request = ToolRequest::new_with_options(
