@@ -1276,7 +1276,10 @@ impl VfoxBackend {
             let mut hasher = std::collections::hash_map::DefaultHasher::new();
             opts.hash(&mut hasher);
             cwd_trusted.hash(&mut hasher);
-            install_path.hash(&mut hasher);
+            // The hook gets the install path as an absolute path, and a
+            // relative data directory puts the same relative path in a
+            // different place in each project.
+            std::path::absolute(&install_path)?.hash(&mut hasher);
             // Refs such as `ref:a/b` and `ref:a-b` share an install path, but
             // a hook can read the raw version.
             tv.version.hash(&mut hasher);
