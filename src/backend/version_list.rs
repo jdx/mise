@@ -69,6 +69,7 @@ pub(crate) fn parse_version_list(
     // If a JSON path is provided (like ".[].version" or ".versions"), try to use it
     // but fall back to text parsing only when the body is not JSON.
     if let Some(json_path) = version_json_path {
+        mise_util::http::ensure_json_values_bounded(trimmed.as_bytes())?;
         if let Ok(json) = serde_json::from_str::<serde_json::Value>(trimmed) {
             parsed_json_path = true;
             if let Ok(extracted) = jq::extract(&json, json_path) {
@@ -98,6 +99,7 @@ pub(crate) fn parse_version_list(
         // Check if it looks like JSON array or object
         if trimmed.starts_with('[') || trimmed.starts_with('{') {
             // Try to parse as JSON
+            mise_util::http::ensure_json_values_bounded(trimmed.as_bytes())?;
             if let Ok(json) = serde_json::from_str::<serde_json::Value>(trimmed) {
                 versions = jq::extract_auto(&json);
             }
@@ -143,6 +145,8 @@ pub(crate) fn parse_version_list(
 /// The previously extracted version list is always injected as a `versions`
 /// variable so the expression can post-process it (e.g. sortVersions).
 fn eval_version_expr(expr_str: &str, body: &str, versions: &[String]) -> Result<Vec<String>> {
+    // `fromJSON(body)` builds the whole document.
+    mise_util::http::ensure_json_values_bounded(body.as_bytes())?;
     let mut ctx = Context::default();
     ctx.insert("body".to_string(), Value::String(body.to_string()));
     ctx.insert("versions".to_string(), string_array(versions));
@@ -262,6 +266,7 @@ pub(crate) async fn fetch_date_sources(
 
 /// Evaluate `version_date_next_expr` for one fetched page.
 fn next_date_url(expr_str: &str, body: &str, url: &str) -> Result<Option<String>> {
+    mise_util::http::ensure_json_values_bounded(body.as_bytes())?;
     let mut ctx = Context::default();
     ctx.insert("body".to_string(), Value::String(body.to_string()));
     ctx.insert("url".to_string(), Value::String(url.to_string()));
@@ -285,6 +290,9 @@ pub(crate) fn eval_version_dates(
     bodies: &[String],
     versions: &[String],
 ) -> Result<HashMap<String, String>> {
+    for body in bodies {
+        mise_util::http::ensure_json_values_bounded(body.as_bytes())?;
+    }
     let mut ctx = Context::default();
     ctx.insert(
         "body".to_string(),

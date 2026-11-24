@@ -168,8 +168,8 @@ async fn verify_subject(
     };
     // An answer that arrived but cannot be read is never a lookup failure:
     // it is refused whatever `provenance_api_failures_fatal` says.
-    let response: AttestationsResponse = serde_json::from_str(&body)
-        .map_err(|e| eyre::eyre!("npm attestations for {name}@{version} are malformed: {e}"))?;
+    let response: AttestationsResponse = mise_util::http::parse_json(body.as_bytes())
+        .map_err(|e| eyre::eyre!("npm attestations for {name}@{version} are malformed: {e:#}"))?;
     // npm also returns its own publish attestation, which names no repository
     // and is not provenance; a package with only that has none to verify.
     let provenance = select_provenance(response.attestations)

@@ -542,6 +542,52 @@ async fn test_buffered_bodies_are_bounded_after_decompression() {
     mock.assert_async().await;
 }
 
+#[test]
+fn test_json_value_count_is_an_upper_bound_outside_strings() {
+    assert_eq!(json_value_count(b"0"), 1);
+    assert_eq!(json_value_count(b"[[0],[0]]"), 5);
+    assert_eq!(json_value_count(br#"{"a":{"b":null},"c":[true,1.5]}"#), 6);
+    // Punctuation inside a string, after an escaped quote or backslash, is text.
+    assert_eq!(json_value_count(br#"["[,{\"[,{\\",0]"#), 3);
+}
+
+#[tokio::test]
+async fn test_json_is_bounded_in_values_as_well_as_bytes() {
+    // Well within `MAX_BODY_BYTES`, and about 100 times larger once parsed.
+    let body = format!("[{}[0]]", "[0],".repeat(MAX_JSON_VALUES / 2));
+    assert!(body.len() < MAX_BODY_BYTES / 8);
+    serde_json::from_str::<serde_json::Value>(&body).unwrap();
+    let at_the_limit = format!("[{}0]", "0,".repeat(MAX_JSON_VALUES - 2));
+    assert!(parse_json::<serde_json::Value>(at_the_limit.as_bytes()).is_ok());
+    assert!(ensure_json_values_bounded(body.as_bytes()).is_err());
+
+    // Not a transport failure, and the answer would be the same: no retry.
+    let _settings = set_test_http_retries(1);
+    let mut server = mockito::Server::new_async().await;
+    let mock = server
+        .mock("GET", "/values")
+        .with_status(200)
+        .with_body(body)
+        .expect(2)
+        .create_async()
+        .await;
+    let url = format!("{}/values", server.url());
+
+    let client = Client::new(Duration::from_secs(30), ClientKind::Http).unwrap();
+    for err in [
+        client.json::<serde_json::Value, _>(&url).await.unwrap_err(),
+        client
+            .json_cached::<serde_json::Value, _>(&url)
+            .await
+            .unwrap_err(),
+    ] {
+        let message = format!("{err:#}");
+        assert!(message.contains("holds more than 10000 values"), "{err:#}");
+        assert!(!is_transient(&err));
+    }
+    mock.assert_async().await;
+}
+
 #[tokio::test]
 async fn test_buffer_body_refuses_a_declared_length_over_the_limit() {
     let resp = Response::from(

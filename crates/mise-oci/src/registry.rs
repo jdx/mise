@@ -26,7 +26,7 @@ use crate::manifest::{
     MEDIA_TYPE_DOCKER_MANIFEST_LIST, MEDIA_TYPE_OCI_INDEX, MEDIA_TYPE_OCI_MANIFEST,
 };
 use mise_ui::progress_report::SingleReport;
-use mise_util::http::{HTTP, HTTP_UPLOAD, buffer_body};
+use mise_util::http::{HTTP, HTTP_UPLOAD, buffer_body, parse_json};
 
 /// A parsed registry reference.
 #[derive(Debug, Clone)]
@@ -607,8 +607,8 @@ async fn fetch_manifest_json(
             bail!("digest mismatch for {url}: expected {expected}, registry served {actual}");
         }
     }
-    let body: serde_json::Value = serde_json::from_slice(&bytes)
-        .wrap_err_with(|| format!("parsing JSON response from {url}"))?;
+    let body: serde_json::Value =
+        parse_json(&bytes).wrap_err_with(|| format!("parsing JSON response from {url}"))?;
     Ok((body, content_type))
 }
 
@@ -817,7 +817,7 @@ pub async fn pull_base_image(
         }
     }
 
-    let config_json: serde_json::Value = serde_json::from_slice(&config_bytes)?;
+    let config_json: serde_json::Value = parse_json(&config_bytes)?;
     let platform = config_json
         .get("architecture")
         .and_then(|a| a.as_str())
@@ -1198,7 +1198,7 @@ pub async fn fetch_remote_image(reference: &str) -> Result<Option<RemoteImage>> 
         StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => return Ok(None),
         s => bail!("fetching {manifest_url} failed: {}", s.as_u16()),
     }
-    let mut body: serde_json::Value = buffer_body(resp).await?.json().await?;
+    let mut body: serde_json::Value = parse_json(&buffer_body(resp).await?.bytes().await?)?;
     // An index (multi-arch, e.g. a tag maintained with --update-index):
     // descend into the entry for the build platform so its layers remain
     // reusable.
@@ -1252,7 +1252,7 @@ pub async fn fetch_remote_image(reference: &str) -> Result<Option<RemoteImage>> 
         r.repository, manifest.config.digest
     );
     let config_bytes = download_blob(&mut session, &config_url, manifest.config.size, None).await?;
-    let config: serde_json::Value = serde_json::from_slice(&config_bytes)?;
+    let config: serde_json::Value = parse_json(&config_bytes)?;
     let diff_ids: Vec<String> = config
         .get("rootfs")
         .and_then(|r| r.get("diff_ids"))
@@ -1961,7 +1961,7 @@ impl Pusher {
         }
         let content_type = header_str(&resp, "content-type");
         let bytes = buffer_body(resp).await?.bytes().await?;
-        let body: serde_json::Value = serde_json::from_slice(&bytes)?;
+        let body: serde_json::Value = parse_json(&bytes)?;
 
         // Already an index — take its entries.
         if body.get("manifests").map(|m| m.is_array()).unwrap_or(false) {
@@ -2018,7 +2018,7 @@ impl Pusher {
             self.base_url, self.repository
         );
         let config_bytes = download_blob(&mut self.session, &config_url, config_size, None).await?;
-        let config: serde_json::Value = serde_json::from_slice(&config_bytes)?;
+        let config: serde_json::Value = parse_json(&config_bytes)?;
         let platform = platform_from_config_value(&config)?;
         Ok(Descriptor {
             media_type,

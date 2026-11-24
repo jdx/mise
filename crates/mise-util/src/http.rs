@@ -1458,14 +1458,12 @@ impl Client {
             },
             |resp| async move {
                 let headers = resp.headers().clone();
-                Ok((
-                    buffer_body(resp)
-                        .await?
-                        .json()
-                        .await
-                        .map_err(redact_error_url)?,
-                    headers,
-                ))
+                let resp = buffer_body(resp).await?;
+                let url = resp.url().clone();
+                let body = resp.bytes().await.map_err(redact_error_url)?;
+                let json = parse_json(&body)
+                    .wrap_err_with(|| format!("failed to parse JSON from {}", log_url(&url)))?;
+                Ok((json, headers))
             },
         )
         .await
@@ -1487,7 +1485,7 @@ impl Client {
         T: serde::de::DeserializeOwned,
     {
         let text = self.get_text_cached(url).await?;
-        Ok(serde_json::from_str(&text)?)
+        parse_json(text.as_bytes())
     }
 
     pub async fn json_with_headers<T, U: IntoUrl>(&self, url: U, headers: &HeaderMap) -> Result<T>
@@ -3004,6 +3002,59 @@ pub async fn buffer_body_with_limit(mut resp: Response, limit: usize) -> Result<
         .body(bytes)?;
     *buffered.headers_mut() = std::mem::take(resp.headers_mut());
     Ok(buffered.into())
+}
+
+/// Most values (scalars, arrays and objects) a JSON document from the network
+/// may hold. [`MAX_BODY_BYTES`] bounds the text but not what it is parsed into:
+/// as a `serde_json::Value`, `[0],` is four bytes of text and about 360 bytes
+/// of memory, so a body within that limit could take over 10 GiB. A document
+/// at this many values takes about 1.5 GiB at worst. A body has to average
+/// under 32 bytes of text a value to hold them within the byte limit, so a
+/// document of real data, such as a GitHub release page, reaches that limit
+/// first. Lower in tests, which have to send more than this to reach it.
+pub const MAX_JSON_VALUES: usize = if cfg!(test) { 10_000 } else { 4_000_000 };
+
+/// Parses JSON that a server sent, failing before anything is built from it if
+/// it holds more than [`MAX_JSON_VALUES`] values. Use it instead of `json()` or
+/// `serde_json::from_slice` on a body that only [`buffer_body`] has bounded.
+pub fn parse_json<T: serde::de::DeserializeOwned>(json: &[u8]) -> Result<T> {
+    ensure_json_values_bounded(json)?;
+    Ok(serde_json::from_slice(json)?)
+}
+
+/// Fails when `text`, read as JSON, could hold more than [`MAX_JSON_VALUES`]
+/// values. For a body that an expression may parse with `fromJSON`, checked
+/// before the expression runs.
+pub fn ensure_json_values_bounded(text: &[u8]) -> Result<()> {
+    ensure!(
+        json_value_count(text) <= MAX_JSON_VALUES,
+        "JSON document holds more than {MAX_JSON_VALUES} values"
+    );
+    Ok(())
+}
+
+/// An upper bound on the values in `json`, without parsing it: every value but
+/// the outermost follows a `[` or a `,`, or is a member whose name follows a
+/// `{` or a `,`, so there are no more values than those three outside strings.
+fn json_value_count(json: &[u8]) -> usize {
+    let (mut values, mut in_string, mut escaped) = (1, false, false);
+    for &byte in json {
+        if in_string {
+            match byte {
+                _ if escaped => escaped = false,
+                b'\\' => escaped = true,
+                b'"' => in_string = false,
+                _ => {}
+            }
+        } else {
+            match byte {
+                b'"' => in_string = true,
+                b',' | b'[' | b'{' => values += 1,
+                _ => {}
+            }
+        }
+    }
+    values
 }
 
 /// Maximum body bytes buffered when building a GitHub error report, so an

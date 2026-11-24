@@ -229,6 +229,11 @@ pub(crate) fn eval_checksum_expr(
 ) -> Option<String> {
     use expr::{Context, Environment, Value};
 
+    // `fromJSON(body)` builds the whole document.
+    if let Err(err) = mise_util::http::ensure_json_values_bounded(body.as_bytes()) {
+        debug!("checksum expression not evaluated: {err}");
+        return None;
+    }
     let mut ctx = Context::default();
     ctx.insert("body".to_string(), Value::String(body.to_string()));
     for (key, value) in vars {
