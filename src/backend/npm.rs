@@ -27,10 +27,10 @@ use base64::{Engine, prelude::BASE64_STANDARD};
 use bytesize::ByteSize;
 use jiff::Timestamp;
 use serde_json::Value;
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
-use std::sync::{LazyLock, Mutex, OnceLock};
+use std::sync::{LazyLock, Mutex};
 use std::{fmt::Debug, sync::Arc};
 use tokio::sync::Mutex as TokioMutex;
 
@@ -411,7 +411,8 @@ fn git_package_install_spec(name: &str, version: &str, has_checksum: bool) -> Re
 pub(crate) struct NPMBackend {
     ba: Arc<BackendArg>,
     // use a mutex to prevent deadlocks that occurs due to reentrant cache access
-    latest_version_cache: OnceLock<TokioMutex<CacheManager<Option<String>>>>,
+    latest_version_caches:
+        Mutex<HashMap<Option<String>, Arc<TokioMutex<CacheManager<Option<String>>>>>>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1367,7 +1368,10 @@ impl Backend for NPMBackend {
             self.ensure_npm_for_version_check(config).await;
         }
 
-        let cache = self.latest_version_cache().lock().await;
+        // The registry that answers decides `latest`, as it decides the list.
+        let context = self.remote_version_cache_context(config).await?;
+        let cache = self.latest_version_cache(context.as_deref());
+        let cache = cache.lock().await;
         let this = self;
         timeout::run_with_timeout_async(
             async || {
@@ -2040,7 +2044,7 @@ impl NPMBackend {
 
     pub(crate) fn from_arg(ba: BackendArg) -> Self {
         Self {
-            latest_version_cache: OnceLock::new(),
+            latest_version_caches: Mutex::new(HashMap::new()),
             ba: Arc::new(ba),
         }
     }
@@ -2050,15 +2054,29 @@ impl NPMBackend {
     /// share, so the package is in the key too. Built on first use: `full()`
     /// reads aliases and the lockfile, which are only known once config loads,
     /// as for the version-list cache.
-    fn latest_version_cache(&self) -> &TokioMutex<CacheManager<Option<String>>> {
-        self.latest_version_cache.get_or_init(|| {
-            TokioMutex::new(
-                CacheManagerBuilder::new(self.ba.cache_path().join("latest_version.msgpack.z"))
-                    .with_cache_key(self.ba.full())
-                    .with_fresh_duration(Settings::get().fetch_remote_versions_cache())
-                    .build(),
-            )
-        })
+    ///
+    /// `context` is `remote_version_cache_context`: a registry other than
+    /// npmjs.org has its own `latest`, so it gets its own entry, as its
+    /// version list does.
+    fn latest_version_cache(
+        &self,
+        context: Option<&str>,
+    ) -> Arc<TokioMutex<CacheManager<Option<String>>>> {
+        self.latest_version_caches
+            .lock()
+            .unwrap()
+            .entry(context.map(str::to_string))
+            .or_insert_with(|| {
+                let mut cm =
+                    CacheManagerBuilder::new(self.ba.cache_path().join("latest_version.msgpack.z"))
+                        .with_cache_key(self.ba.full())
+                        .with_fresh_duration(Settings::get().fetch_remote_versions_cache());
+                if let Some(context) = context {
+                    cm = cm.with_cache_key(context.to_string());
+                }
+                TokioMutex::new(cm.build()).into()
+            })
+            .clone()
     }
 
     /// Legacy `npm view` version listing, kept behind `npm.shell_out` for
@@ -4375,12 +4393,32 @@ packages:
         assert_eq!(scoped.ba.cache_path(), unscoped.ba.cache_path());
 
         let latest = Some("1.0.0".to_string());
-        let unscoped_cache = unscoped.latest_version_cache().lock().await;
+        let unscoped_cache = unscoped.latest_version_cache(None);
+        let unscoped_cache = unscoped_cache.lock().await;
         unscoped_cache.write(&latest).unwrap();
         assert_eq!(unscoped_cache.get_cached().unwrap(), latest);
 
-        let scoped_cache = scoped.latest_version_cache().lock().await;
+        let scoped_cache = scoped.latest_version_cache(None);
+        let scoped_cache = scoped_cache.lock().await;
         assert!(scoped_cache.get_cached().is_err());
+    }
+
+    #[tokio::test]
+    async fn latest_version_cache_is_not_shared_between_registries() {
+        let _config = crate::config::Config::get().await.unwrap();
+        let backend = NPMBackend::from_arg("npm:acme-latest-cache-registry".into());
+
+        // What one registry calls `latest` says nothing about another's.
+        let latest = Some("1.0.0".to_string());
+        let other = backend.latest_version_cache(Some("https://npm.other.example/"));
+        let other = other.lock().await;
+        other.write(&latest).unwrap();
+        assert_eq!(other.get_cached().unwrap(), latest);
+
+        for context in [None, Some("https://npm.example/")] {
+            let cache = backend.latest_version_cache(context);
+            assert!(cache.lock().await.get_cached().is_err());
+        }
     }
 
     #[tokio::test]
