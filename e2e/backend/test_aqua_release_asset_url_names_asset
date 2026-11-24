@@ -79,9 +79,22 @@ TOML
 write_release tool-server
 assert_fail_contains "mise install" "release asset tool has a download URL that names another file"
 assert_fail "mise x -- tool"
+# `mise lock` refuses it too: it warns and locks no URL for the platform, and in generate mode
+# it fails
+detect_platform
+assert_contains "mise lock --platform $MISE_PLATFORM 2>&1" "release asset tool has a download URL that names another file"
+assert_not_contains "cat mise.lock" "releases/download"
+rm -f mise.lock
+assert_fail_contains "MISE_LOCKFILE=1 MISE_LOCKFILE_MODE=generate mise lock --platform $MISE_PLATFORM" "release asset tool has a download URL that names another file"
+if [[ -f mise.lock ]]; then
+  assert_not_contains "cat mise.lock" "releases/download"
+fi
 
 # GitHub's own answer installs `tool`
 write_release tool
 mise cache clear
 assert "mise install"
 assert "mise x -- tool" "acme-tool"
+rm -f mise.lock
+assert "mise lock --platform $MISE_PLATFORM"
+assert_contains "cat mise.lock" 'releases/download/2.0.0/tool"'

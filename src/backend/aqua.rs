@@ -943,7 +943,10 @@ impl Backend for AquaBackend {
                     Some(vp) => vec![vp.as_str(), v.as_str()],
                     None => vec![v.as_str()],
                 };
-                let mut result = (None, None, None);
+                let mut result = None;
+                // A release that has the asset, but under a download URL naming another file,
+                // is refused like at install, unless another tag spelling has the asset.
+                let mut refused = None;
                 for candidate in &candidates {
                     let asset_strs = pkg.asset_strs(candidate, target_os, target_arch)?;
                     match self
@@ -952,8 +955,11 @@ impl Backend for AquaBackend {
                     {
                         Ok((url, url_api, digest)) => {
                             v = candidate.to_string();
-                            result = (Some(url), url_api, digest);
+                            result = Some((Some(url), url_api, digest));
                             break;
+                        }
+                        Err(e) if e.downcast_ref::<AssetUrlNamesAnotherFile>().is_some() => {
+                            refused.get_or_insert(e);
                         }
                         Err(e) => {
                             debug!(
@@ -965,7 +971,11 @@ impl Backend for AquaBackend {
                         }
                     }
                 }
-                result
+                match (result, refused) {
+                    (Some(result), _) => result,
+                    (None, Some(e)) => return Err(e),
+                    (None, None) => (None, None, None),
+                }
             }
             AquaPackageType::GithubArchive => (
                 Some(self.github_archive_url(&pkg, &v)),
@@ -5121,15 +5131,23 @@ fn is_aqua_linux_libc_replacement(replacement: &str) -> bool {
     )
 }
 
+/// A release asset matched by its name whose download URL names another file.
+#[derive(Debug, thiserror::Error)]
+#[error("release asset {name} has a download URL that names another file: {url}")]
+struct AssetUrlNamesAnotherFile {
+    name: String,
+    url: String,
+}
+
 /// The asset is matched by `name`, but the download, the line read from a verified checksum file
 /// and the lockfile entry are named after its download URL, so the two must agree.
 fn ensure_download_url_names_asset(asset: &github::GithubAsset) -> Result<()> {
     if get_filename_from_url(&asset.browser_download_url) != asset.name {
-        bail!(
-            "release asset {} has a download URL that names another file: {}",
-            asset.name,
-            asset.browser_download_url
-        );
+        return Err(AssetUrlNamesAnotherFile {
+            name: asset.name.clone(),
+            url: asset.browser_download_url.clone(),
+        }
+        .into());
     }
     Ok(())
 }
