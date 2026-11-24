@@ -2942,10 +2942,14 @@ impl Task {
 
     pub(crate) async fn render(&mut self, config: &Arc<Config>, config_root: &Path) -> Result<()> {
         // A task only the operator wrote keeps `env` and `vars` for its templates in safe mode.
-        if self.is_operators() {
-            crate::tera::with_templates_trusted(true, self.render_fields(config, config_root)).await
+        // Boxed: held inline, the scope nests the render's future in that of every task
+        // loader, which then takes too deep a layout for the compiler to build.
+        let operators = self.is_operators();
+        let render = Box::pin(self.render_fields(config, config_root));
+        if operators {
+            crate::tera::with_templates_trusted(true, render).await
         } else {
-            self.render_fields(config, config_root).await
+            render.await
         }
     }
 
