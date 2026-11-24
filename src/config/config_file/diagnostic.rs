@@ -231,6 +231,53 @@ fn position(source: &str, offset: usize) -> (usize, usize) {
     (line, column)
 }
 
+/// [`position`] for any number of offsets in one text. An untrusted config can hold any number
+/// of keys to locate, below any number of lines or far into one long line, so each is counted
+/// from the nearest place remembered rather than from the start of the text.
+pub struct Positions<'a> {
+    text: &'a [u8],
+    /// The 0-based line and column of every [`Self::STRIDE`]th byte, and of the end of the text.
+    every_stride: Vec<(usize, usize)>,
+}
+
+impl<'a> Positions<'a> {
+    /// Bytes between the places remembered, and so the most that are read to find a position.
+    const STRIDE: usize = 256;
+
+    pub fn new(text: &'a str) -> Self {
+        let text = text.as_bytes();
+        let mut at = (0, 0);
+        let mut every_stride = vec![at];
+        every_stride.extend(text.chunks(Self::STRIDE).map(|chunk| {
+            at = Self::after(at, chunk);
+            at
+        }));
+        Self { text, every_stride }
+    }
+
+    /// The 1-based line and column of byte `offset`.
+    pub fn line_column(&self, offset: usize) -> (usize, usize) {
+        let offset = offset.min(self.text.len());
+        let near = offset / Self::STRIDE;
+        let rest = &self.text[near * Self::STRIDE..offset];
+        let (line, column) = Self::after(self.every_stride[near], rest);
+        (line + 1, column + 1)
+    }
+
+    /// The 0-based line and column after `text`, which starts at the line and column given.
+    fn after((mut line, mut column): (usize, usize), text: &[u8]) -> (usize, usize) {
+        for byte in text {
+            match byte {
+                b'\n' => (line, column) = (line + 1, 0),
+                // a UTF-8 continuation byte is part of the character before it
+                0x80..=0xBF => {}
+                _ => column += 1,
+            }
+        }
+        (line, column)
+    }
+}
+
 /// For callers that report a `toml::de::Error` as is. Its `Display` quotes the
 /// failing line and its message can quote a value, so only the position is kept
 /// unless [`may_quote`] allows `path` to be quoted.
@@ -448,6 +495,27 @@ mod tests {
         assert!(links_to_another_name(&project.join("ok")));
         assert!(!links_to_another_name(&project.join("sub/.tool-versions")));
         assert!(!links_to_another_name(&project.join(".node-version")));
+    }
+
+    #[test]
+    fn positions_are_those_counted_from_the_start() {
+        // Lines longer and shorter than a stride, with characters of several bytes across it.
+        let long = "é😀x".repeat(Positions::STRIDE);
+        let short = "=".repeat(Positions::STRIDE - 1);
+        let text = format!("{long}\n\n{short}\r\nk = 1\n");
+        let positions = Positions::new(&text);
+        for (offset, _) in text.char_indices().chain([(text.len(), ' ')]) {
+            assert_eq!(positions.line_column(offset), position(&text, offset));
+        }
+        assert_eq!(Positions::new("").line_column(0), (1, 1));
+        assert_eq!(
+            Positions::new(&short).line_column(usize::MAX),
+            position(&short, short.len())
+        );
+        assert_eq!(
+            Positions::new(&long).line_column(long.len()),
+            position(&long, long.len())
+        );
     }
 
     #[test]

@@ -11,6 +11,7 @@ use std::path::Path;
 
 use toml_edit::{Item, TableLike, Value};
 
+use super::diagnostic::Positions;
 use crate::file::display_path;
 
 /// The key path serde skipped, as the table keys and array indices that lead to it.
@@ -39,6 +40,7 @@ pub(crate) struct UnknownKeys<'a> {
     /// The text the keys are in, when `file` holds it; without it, a warning has no line.
     body: Option<&'a str>,
     doc: OnceCell<Option<toml_edit::Document<&'a str>>>,
+    positions: OnceCell<Positions<'a>>,
 }
 
 impl<'a> UnknownKeys<'a> {
@@ -47,6 +49,7 @@ impl<'a> UnknownKeys<'a> {
             file,
             body,
             doc: OnceCell::new(),
+            positions: OnceCell::new(),
         }
     }
 
@@ -56,7 +59,8 @@ impl<'a> UnknownKeys<'a> {
             .body
             .zip(self.key_span(segments))
             .map(|(body, span)| {
-                let (line, column) = line_column(body, span.start);
+                let positions = self.positions.get_or_init(|| Positions::new(body));
+                let (line, column) = positions.line_column(span.start);
                 format!(":{line}:{column}")
             })
             .unwrap_or_default();
@@ -112,18 +116,6 @@ fn suggestion(segments: &[String]) -> Option<&'static str> {
     let (unknown, parent) = segments.split_last()?;
     let parent: Vec<&str> = parent.iter().map(String::as_str).collect();
     crate::fuzzy::nearest(unknown, crate::config::schema::known_keys(&parent))
-}
-
-/// The 1-based line and column of byte `offset` in `body`.
-fn line_column(body: &str, offset: usize) -> (usize, usize) {
-    let before = &body[..offset.min(body.len())];
-    let line = before.matches('\n').count() + 1;
-    let column = before
-        .rsplit('\n')
-        .next()
-        .map_or(0, |line| line.chars().count())
-        + 1;
-    (line, column)
 }
 
 #[cfg(test)]

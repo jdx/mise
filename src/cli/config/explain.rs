@@ -1,4 +1,5 @@
 use super::keys::{quote_key, rejoin, split_keys};
+use crate::config::config_file::diagnostic::Positions;
 use crate::config::schema;
 use crate::file::display_path;
 use eyre::{Result, bail};
@@ -119,7 +120,8 @@ impl ConfigExplain {
         let doc = toml_edit::Document::parse(body.as_str())
             .map_err(|e| eyre::eyre!("{}: {e}", display_path(&file)))?;
         let mut keys = vec![];
-        walk(&body, doc.as_table(), &mut vec![], &mut keys);
+        let positions = Positions::new(&body);
+        walk(&positions, doc.as_table(), &mut vec![], &mut keys);
         // A table split across headers is walked as one, so put its keys back in file order.
         keys.sort_by_key(|k| k.line);
         if let Some(prefix) = &self.key {
@@ -163,26 +165,31 @@ impl Explained {
 }
 
 /// Appends every key below `table`, whose path is `path`, in file order.
-fn walk(body: &str, table: &dyn TableLike, path: &mut Vec<String>, out: &mut Vec<Explained>) {
+fn walk(
+    positions: &Positions,
+    table: &dyn TableLike,
+    path: &mut Vec<String>,
+    out: &mut Vec<Explained>,
+) {
     let parent = Written::table(table);
     for (name, item) in table.iter() {
         path.push(name.to_string());
         let line = table
             .get_key_value(name)
             .and_then(|(key, _)| key.span())
-            .map_or(0, |span| body[..span.start].matches('\n').count() + 1);
+            .map_or(0, |span| positions.line_column(span.start).0);
         let explained = explain(path, line, item, &parent);
         // Below an unknown key, or a key only an open table accepts, nothing more is known.
         let descend = explained.described;
         out.push(explained);
         if descend {
             match item {
-                Item::Table(t) => walk(body, t, path, out),
-                Item::Value(toml_edit::Value::InlineTable(t)) => walk(body, t, path, out),
+                Item::Table(t) => walk(positions, t, path, out),
+                Item::Value(toml_edit::Value::InlineTable(t)) => walk(positions, t, path, out),
                 Item::ArrayOfTables(tables) => {
                     for (i, t) in tables.iter().enumerate() {
                         path.push(i.to_string());
-                        walk(body, t, path, out);
+                        walk(positions, t, path, out);
                         path.pop();
                     }
                 }
@@ -190,7 +197,7 @@ fn walk(body: &str, table: &dyn TableLike, path: &mut Vec<String>, out: &mut Vec
                     for (i, value) in values.iter().enumerate() {
                         if let toml_edit::Value::InlineTable(t) = value {
                             path.push(i.to_string());
-                            walk(body, t, path, out);
+                            walk(positions, t, path, out);
                             path.pop();
                         }
                     }
