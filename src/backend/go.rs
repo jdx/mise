@@ -535,7 +535,8 @@ impl GoBackend {
     }
 
     /// Query `$GOPROXY` to find versions, matching `go install`'s resolution algorithm.
-    /// Returns `None` if no proxy is configured or Go should handle private-module routing.
+    /// Returns `None` if no proxy is configured or Go should handle private-module routing,
+    /// and an empty list when a proxy lists more versions than mise accepts.
     async fn fetch_proxy_versions(
         &self,
         config: &Arc<Config>,
@@ -618,6 +619,7 @@ impl GoBackend {
                     }
                 }
                 ProxyListResult::NotFound => continue,
+                ProxyListResult::TooMany => return Ok(Some(vec![])),
                 ProxyListResult::Error => return Ok(None),
             }
         }
@@ -981,6 +983,10 @@ fn module_path_candidates(package_path: &str) -> Vec<String> {
 enum ProxyListResult {
     Versions(Vec<String>),
     NotFound,
+    /// A proxy listed more than [`GO_MODULE_VERSIONS_LIMIT`] versions. Unlike
+    /// [`ProxyListResult::Error`], this does not hand the lookup to `go list`,
+    /// which would fetch the same list again: mise lists no versions.
+    TooMany,
     Error,
 }
 
@@ -1016,6 +1022,7 @@ fn parse_proxy_version_list(body: &str) -> Option<Vec<String>> {
 }
 
 async fn query_proxy_list(proxies: &[GoProxy], encoded_path: &str) -> ProxyListResult {
+    let mut too_many = false;
     for proxy in proxies {
         let url = format!("{}/{}/@v/list", proxy.url, encoded_path);
         match HTTP_FETCH.get_text(&url).await {
@@ -1023,15 +1030,17 @@ async fn query_proxy_list(proxies: &[GoProxy], encoded_path: &str) -> ProxyListR
                 if let Some(versions) = parse_proxy_version_list(&body) {
                     return ProxyListResult::Versions(versions);
                 }
-                // Not a usable answer, so treat it like any other proxy error.
+                // Not a usable answer. `|` moves on to the next proxy as after
+                // any error; otherwise the lookup ends here.
                 // The URL stays out of the message: GOPROXY can hold credentials.
                 warn!(
                     "ignoring Go module proxy version list for {encoded_path}: more than {GO_MODULE_VERSIONS_LIMIT} versions"
                 );
+                too_many = true;
                 if proxy.fall_through == FallThrough::OnAnyError {
                     continue;
                 }
-                return ProxyListResult::Error;
+                return ProxyListResult::TooMany;
             }
             Err(e) => {
                 let is_not_found_or_gone = e
@@ -1049,7 +1058,11 @@ async fn query_proxy_list(proxies: &[GoProxy], encoded_path: &str) -> ProxyListR
         }
     }
 
-    ProxyListResult::NotFound
+    if too_many {
+        ProxyListResult::TooMany
+    } else {
+        ProxyListResult::NotFound
+    }
 }
 
 async fn query_proxy_latest(proxies: &[GoProxy], encoded_path: &str) -> ProxyVersionInfoResult {
@@ -1538,14 +1551,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn proxy_version_lists_past_the_limit_are_a_proxy_error() {
+    async fn proxy_version_lists_past_the_limit_end_the_lookup() {
         let oversized = "v1.0.0\n".repeat(GO_MODULE_VERSIONS_LIMIT + 1);
         let mut hostile = mockito::Server::new_async().await;
         let listed = hostile
             .mock("GET", "/example.com/tool/@v/list")
             .with_status(200)
             .with_body(oversized)
-            .expect(2)
+            .expect(3)
             .create_async()
             .await;
         let mut fallback = mockito::Server::new_async().await;
@@ -1559,8 +1572,22 @@ mod tests {
         let only = parse_goproxy_value(&hostile.url());
         assert!(matches!(
             query_proxy_list(&only, "example.com/tool").await,
-            ProxyListResult::Error
+            ProxyListResult::TooMany
         ));
+        // A later proxy without the module does not turn the refusal into a
+        // miss, which would move on to other module paths or to `go list`.
+        let mut missing = mockito::Server::new_async().await;
+        let missing_list = missing
+            .mock("GET", "/example.com/tool/@v/list")
+            .with_status(404)
+            .create_async()
+            .await;
+        let then_missing = parse_goproxy_value(&format!("{}|{}", hostile.url(), missing.url()));
+        assert!(matches!(
+            query_proxy_list(&then_missing, "example.com/tool").await,
+            ProxyListResult::TooMany
+        ));
+        missing_list.assert_async().await;
         // `|` moves on to the next proxy after any error, this one included.
         let chained = parse_goproxy_value(&format!("{}|{}", hostile.url(), fallback.url()));
         assert!(matches!(

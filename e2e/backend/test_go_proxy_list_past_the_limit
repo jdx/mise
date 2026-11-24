@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+
+# A module proxy that lists more than 100,000 versions of a module gets no
+# second chance through `go list`: that would ask for the same list again.
+# mise lists nothing for the module and does not run go at all.
+
+cat >"$HOME/bin/go" <<'GO'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"$HOME/go-invocations"
+echo '{"Path":"example.com/tool","Versions":["v1.0.0"]}'
+GO
+chmod +x "$HOME/bin/go"
+export PATH="$HOME/bin:$PATH"
+
+mkdir -p goproxy/example.com/tool/@v
+seq 0 100000 | sed 's/^/v1.0./' >goproxy/example.com/tool/@v/list
+start_http_server --dir "$PWD/goproxy"
+export GOPROXY="http://127.0.0.1:$HTTP_PORT" MISE_USE_VERSIONS_HOST=0
+
+assert_contains "mise ls-remote go:example.com/tool 2>&1" "more than 100000 versions"
+assert "mise ls-remote go:example.com/tool" ""
+assert_fail "grep -q '^list' '$HOME/go-invocations'"
