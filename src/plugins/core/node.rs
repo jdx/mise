@@ -216,10 +216,12 @@ impl NodePlugin {
         }
         ctx.pr.next_operation();
         ctx.pr.set_message(format!("extract {tarball_name}"));
-        file::remove_all(&opts.build_dir)?;
+        let staging = opts.staging_dir();
+        file::remove_all(staging)?;
+        file::create_dir_all(staging)?;
         file::untar(
             &opts.source_tarball_path,
-            opts.build_dir.parent().unwrap(),
+            staging,
             ExtractionFormat::TarGz,
             &ExtractOptions {
                 pr: Some(ctx.pr.as_ref()),
@@ -230,6 +232,8 @@ impl NodePlugin {
         self.exec_configure(ctx, opts, tv)?;
         self.exec_make(ctx, opts, tv)?;
         self.exec_make_install(ctx, opts, tv)?;
+        // `always_keep_download` keeps the source tarball, not the build tree made from it
+        file::remove_all(staging)?;
         Ok(())
     }
 
@@ -250,7 +254,7 @@ impl NodePlugin {
         let patches = plugins::core::fetch_patch_contents(&sources).await?;
         for (source, patch) in sources.iter().zip(patches) {
             ctx.pr.set_message(format!("patch {source}"));
-            let patch_file = tv.download_path().join(format!(
+            let patch_file = opts.staging_dir().join(format!(
                 "node-v{}-{}.patch",
                 opts.version,
                 hash::hash_to_str(source)
@@ -1143,6 +1147,12 @@ struct BuildOpts {
 }
 
 impl BuildOpts {
+    /// The directory the source tarball is extracted into, which holds the build tree and the
+    /// patches applied to it and nothing else.
+    fn staging_dir(&self) -> &Path {
+        self.build_dir.parent().unwrap()
+    }
+
     async fn new(ctx: &InstallContext, tv: &ToolVersion) -> Result<Self> {
         let v = &tv.version;
         let install_path = tv.install_path();
@@ -1211,10 +1221,7 @@ impl BuildOpts {
         Ok(Self {
             version: v.clone(),
             path: ctx.ts.list_paths(&ctx.config).await,
-            // Next to the source tarball, in a directory only this user writes to.
-            // `MISE_TMP_DIR` defaults to a fixed name in the system temporary directory,
-            // where whoever created it first can swap the tree between build steps.
-            build_dir: tv.download_path().join(format!("node-v{v}")),
+            build_dir: source_build_dir(&tv.download_path(), v),
             configure_cmd: settings.node.configure_cmd(&install_path),
             make_cmd: settings.node.make_cmd(),
             make_install_cmd: settings.node.make_install_cmd(),
@@ -1315,6 +1322,15 @@ fn slug(v: &str) -> String {
     } else {
         format!("node-v{v}-{}-{}", os(), arch(&settings))
     }
+}
+
+/// Where a source build of `v` is extracted and compiled: under the version's download
+/// directory, which only this user writes to, in a subdirectory of its own. `MISE_TMP_DIR`
+/// defaults to a fixed name in the system temporary directory, where whoever created it first
+/// can swap the tree between build steps, and the download directory itself holds the source
+/// tarball, whose name comes from its URL and can be the build tree's.
+fn source_build_dir(download_path: &Path, v: &str) -> PathBuf {
+    download_path.join("build").join(format!("node-v{v}"))
 }
 
 fn source_tarball_name(v: &str) -> String {
@@ -1574,6 +1590,22 @@ mod tests {
         let musl = mirror_url_for(&node, "node-v24.14.0-linux-x64-musl.tar.gz");
         assert_eq!(glibc.as_str(), "https://corp.example/node/");
         assert_eq!(musl.as_str(), "https://corp.example/node/");
+    }
+
+    /// The source tarball is saved in the download directory under the last segment of its URL,
+    /// which a locked URL can make `node-v22.0.0`. Removing the build tree before extracting
+    /// must not remove the tarball.
+    #[test]
+    fn test_source_build_dir_is_apart_from_downloaded_files() {
+        let download_path = Path::new("/data/downloads/node/22.0.0");
+        let build_dir = source_build_dir(download_path, "22.0.0");
+        assert!(build_dir.ends_with("node-v22.0.0"));
+        assert!(build_dir.starts_with(download_path));
+        for tarball_name in ["node-v22.0.0", "node-v22.0.0.tar.gz"] {
+            let tarball = download_path.join(tarball_name);
+            assert!(!tarball.starts_with(&build_dir), "{tarball_name}");
+            assert!(!build_dir.starts_with(&tarball), "{tarball_name}");
+        }
     }
 
     #[test]
