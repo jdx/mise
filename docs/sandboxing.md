@@ -167,6 +167,11 @@ writing are also readable.
 - `/tmp`, and `/private/tmp` on macOS
 - `/dev`, for `/dev/null`, `/dev/tty` and similar files
 
+A command can still write to the terminal, but on Linux it cannot push input
+into it: the `TIOCSTI` and `TIOCLINUX` ioctls, which would let it type a
+command into your shell after it exits, fail with `Operation not permitted`
+under any file, network or process restriction.
+
 ### Environment variables
 
 When environment filtering is on, the command gets only `PATH`, `HOME`, `USER`,
@@ -232,6 +237,13 @@ filter that allows Unix and netlink sockets and blocks every other socket
 family. It also blocks io_uring, which can create sockets the filter does not
 see, so a program that needs io_uring does not run under `--deny-net`. It
 supports x86_64 and arm64; on other architectures, `--deny-net` is an error.
+
+Every Linux sandbox with a file, network or process restriction installs a
+seccomp filter, which also refuses terminal input injection (see
+[Always writable](#always-writable)). The filter stops a process that makes a
+system call for another architecture, so a 32-bit x86 program does not run
+under any of these restrictions. On architectures other than x86_64 and arm64,
+file restrictions run without the filter.
 
 Every allowed path must exist when the command starts. Landlock attaches a rule
 to an open file, so mise drops the rule for a missing path and warns:

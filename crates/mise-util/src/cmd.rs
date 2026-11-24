@@ -2552,7 +2552,9 @@ impl<'a> CmdLineRunner<'a> {
                         crate::sandbox::landlock_apply(&sandbox, &initial_program)
                             .map_err(|e| std::io::Error::other(e.to_string()))?;
                     }
-                    if sandbox.effective_deny_net() || sandbox.deny_process {
+                    // the filter also refuses terminal input injection, which every
+                    // sandbox needs
+                    if sandbox.restricts_more_than_env() {
                         crate::sandbox::seccomp_apply(
                             sandbox.effective_deny_net(),
                             sandbox.deny_process,

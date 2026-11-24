@@ -625,7 +625,8 @@ impl SandboxConfig {
         {
             landlock::apply_landlock(self, Some(std::path::Path::new(program)))?;
         }
-        if self.effective_deny_net() || self.deny_process {
+        // the filter also refuses terminal input injection, which every sandbox needs
+        if self.restricts_more_than_env() {
             self.reject_allow_net()?;
             seccomp::apply_seccomp_filter(self.effective_deny_net(), self.deny_process)?;
         }
@@ -709,7 +710,7 @@ pub fn landlock_apply(
     landlock::apply_landlock(config, Some(initial_program))
 }
 
-/// Apply seccomp network/process filter (Linux only).
+/// Apply the seccomp filter: terminal input injection always, network and processes as asked (Linux only).
 #[cfg(target_os = "linux")]
 pub fn seccomp_apply(deny_net: bool, deny_process: bool) -> eyre::Result<()> {
     seccomp::apply_seccomp_filter(deny_net, deny_process)
