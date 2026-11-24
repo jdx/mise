@@ -1459,9 +1459,34 @@ fn parse_checksum_content(
             source_file: source_file.to_string(),
         }))
     };
-    let lines: Vec<ChecksumLine<'_>> = trimmed.lines().filter_map(parse_checksum_line).collect();
+    // The text comes from the network and can be large, so it is read line by
+    // line and only what can become the answer is kept: no per-line or
+    // per-word copies.
+    let mut parsed_lines = 0usize;
+    let mut first_name = "";
+    let mut exact = Mentions::default();
+    let mut by_path = Mentions::default();
+    for line in trimmed.lines().filter_map(parse_checksum_line) {
+        parsed_lines += 1;
+        if parsed_lines == 1 {
+            first_name = line.name;
+        }
+        let line_algorithm = match line.algorithm {
+            LineAlgorithm::Unstated => Some(algorithm_by_length(line.hash, algorithm)),
+            LineAlgorithm::Stated(stated) => Some(stated),
+            LineAlgorithm::Unknown => None,
+        };
+        // An exact name wins. A list written from another directory names the
+        // file by path ("./file", "dist/file"); release assets have no
+        // directories, so the last component is the asset name.
+        if line.name == target_file {
+            exact.add(line.hash, line_algorithm);
+        } else if line.name.rsplit(['/', '\\']).next() == Some(target_file) {
+            by_path.add(line.hash, line_algorithm);
+        }
+    }
 
-    if lines.is_empty() {
+    if parsed_lines == 0 {
         // A checksum file of one asset holding only the hash ("<hash>")
         if let Some(first_word) = trimmed.split_whitespace().next() {
             let algorithm = algorithm_by_length(first_word, algorithm);
@@ -1477,56 +1502,61 @@ fn parse_checksum_content(
 
     // `sha256sum < file` names the file "-". Alone in a checksum file that is
     // a bare hash, taken as the target's like the case above.
-    let stdin_entry = lines.len() == 1 && lines[0].name == "-";
-    // An exact name wins. A list written from another directory names the
-    // file by path ("./file", "dist/file"); release assets have no
-    // directories, so the last component is the asset name.
-    let exact: Vec<&ChecksumLine<'_>> = lines
-        .iter()
-        .filter(|line| line.name == target_file || stdin_entry)
-        .collect();
-    let mentions = if exact.is_empty() {
-        lines
-            .iter()
-            .filter(|line| line.name.rsplit(['/', '\\']).next() == Some(target_file))
-            .collect()
-    } else {
-        exact
-    };
-    if mentions.is_empty() {
+    if parsed_lines == 1 && first_name == "-" {
+        let mut stdin = Mentions::default();
+        let line = trimmed.lines().find_map(parse_checksum_line);
+        if let Some(line) = line {
+            stdin.add(line.hash, Some(algorithm_by_length(line.hash, algorithm)));
+        }
+        exact = stdin;
+    }
+    let mentions = if exact.mentioned { exact } else { by_path };
+    if !mentions.mentioned {
         if is_sidecar {
             bail!("does not list {target_file}");
         }
         return Ok(None);
     }
 
-    let mut usable: Vec<(&str, &str)> = mentions
-        .iter()
-        .filter_map(|line| {
-            let line_algorithm = match line.algorithm {
-                LineAlgorithm::Unstated => algorithm_by_length(line.hash, algorithm),
-                LineAlgorithm::Stated(stated) => stated,
-                LineAlgorithm::Unknown => return None,
-            };
-            is_valid_hash(line.hash, line_algorithm).then_some((line.hash, line_algorithm))
-        })
-        .collect();
     // A list can hold a line per algorithm for each file (`rhash --bsd`): take
     // the one the checksum file's name suggests, and md5 or sha1 only when
     // there is no other.
-    usable.sort_by_key(|(_, algo)| (*algo != algorithm, matches!(*algo, "md5" | "sha1")));
-    let Some(&(hash, chosen)) = usable.first() else {
+    let Some(&(chosen, hash, conflict)) = mentions
+        .usable
+        .iter()
+        .min_by_key(|(algo, ..)| (*algo != algorithm, matches!(*algo, "md5" | "sha1")))
+    else {
         bail!("lists {target_file}, but with no sha256, sha512, blake3, sha1 or md5 hash");
     };
     // Entries of that name that disagree on the hash (`linux/tool`,
     // `darwin/tool`) name different files; mise does not guess between them.
-    if usable
-        .iter()
-        .any(|(other, algo)| *algo == chosen && !other.eq_ignore_ascii_case(hash))
-    {
+    if conflict {
         bail!("lists {target_file} more than once with different hashes");
     }
     found(hash, chosen)
+}
+
+/// The entries of a checksum list that name one file
+#[derive(Default)]
+struct Mentions<'a> {
+    /// Whether any line names the file, usable or not
+    mentioned: bool,
+    /// One `(algorithm, hash, conflict)` per algorithm with a usable hash:
+    /// the first hash seen, and whether another line gave a different one
+    usable: Vec<(&'a str, &'a str, bool)>,
+}
+
+impl<'a> Mentions<'a> {
+    fn add(&mut self, hash: &'a str, algorithm: Option<&'a str>) {
+        self.mentioned = true;
+        let Some(algorithm) = algorithm.filter(|algorithm| is_valid_hash(hash, algorithm)) else {
+            return;
+        };
+        match self.usable.iter_mut().find(|(algo, ..)| *algo == algorithm) {
+            Some((_, first, conflict)) => *conflict |= !first.eq_ignore_ascii_case(hash),
+            None => self.usable.push((algorithm, hash, false)),
+        }
+    }
 }
 
 /// Which algorithm one line of a checksum list says its hash is
@@ -3980,6 +4010,68 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-darwin.ta
             .unwrap()
             .expect("the linux list holds the asset's checksum");
         assert_eq!(result.hash, LINUX_SHA256);
+    }
+
+    /// Counts the bytes each thread allocates, so a test can tell how much
+    /// memory one call took without other tests' allocations mixing in.
+    struct CountingAllocator;
+
+    thread_local! {
+        static ALLOCATED: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    }
+
+    // SAFETY: every call is passed to the system allocator unchanged.
+    unsafe impl std::alloc::GlobalAlloc for CountingAllocator {
+        unsafe fn alloc(&self, layout: std::alloc::Layout) -> *mut u8 {
+            let _ = ALLOCATED.try_with(|n| n.set(n.get() + layout.size()));
+            // SAFETY: the caller's contract is the system allocator's.
+            unsafe { std::alloc::System.alloc(layout) }
+        }
+        unsafe fn dealloc(&self, ptr: *mut u8, layout: std::alloc::Layout) {
+            // SAFETY: the caller's contract is the system allocator's.
+            unsafe { std::alloc::System.dealloc(ptr, layout) }
+        }
+        unsafe fn realloc(
+            &self,
+            ptr: *mut u8,
+            layout: std::alloc::Layout,
+            new_size: usize,
+        ) -> *mut u8 {
+            let _ = ALLOCATED.try_with(|n| n.set(n.get() + new_size));
+            // SAFETY: the caller's contract is the system allocator's.
+            unsafe { std::alloc::System.realloc(ptr, layout, new_size) }
+        }
+    }
+
+    #[global_allocator]
+    static COUNTING_ALLOCATOR: CountingAllocator = CountingAllocator;
+
+    /// Bytes allocated on this thread while `f` runs
+    fn bytes_allocated_by<T>(f: impl FnOnce() -> T) -> usize {
+        let before = ALLOCATED.with(|n| n.get());
+        std::hint::black_box(f());
+        ALLOCATED.with(|n| n.get()) - before
+    }
+
+    #[test]
+    fn test_checksum_list_parsing_does_not_copy_the_list() {
+        // One long line of words, many short lines, and many lines naming the
+        // asset: none may cost memory in proportion to the list's size.
+        let words = "a ".repeat(2 << 20);
+        let lines = "a a\n".repeat(1 << 20);
+        let entries = list(&[(LINUX_SHA256, "tool-linux.tar.gz")]).repeat(1 << 16);
+        for (what, content) in [
+            ("one long line", &words),
+            ("many lines", &lines),
+            ("many entries", &entries),
+        ] {
+            let allocated = bytes_allocated_by(|| parse_for_linux(content, "checksums.txt"));
+            assert!(
+                allocated < 64 << 10,
+                "{what}: parsing a {} byte list allocated {allocated} bytes",
+                content.len()
+            );
+        }
     }
 
     const LINUX_SHA512: &str = "cf83e1357eefb8bdf1542850d66d8007d620e4050b5715dc83f4a921d36ce9ce47d0d13c5d85f2b0ff8318d2877eec2f63b931bd47417a81a538327af927da3e";
