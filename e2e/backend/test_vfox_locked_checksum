@@ -29,6 +29,9 @@ LUA
 
 cat >"$PLUGIN_DIR/hooks/pre_install.lua" <<LUA
 function PLUGIN:PreInstall(ctx)
+	if os.getenv("LOCKCK_NO_URL") then
+		return { version = ctx.version }
+	end
 	return { version = ctx.version, url = "http://127.0.0.1:$HTTP_PORT/tool-1.0.0.tar.gz" }
 end
 LUA
@@ -57,3 +60,7 @@ mv mise.lock.new mise.lock
 assert_fail_contains "mise install --locked" "Checksum mismatch"
 # Without --locked the checksum recorded in the lockfile is checked too.
 assert_fail_contains "mise install" "Checksum mismatch"
+
+# A plugin that stops returning a URL leaves nothing to check the recorded
+# checksum against, so the install fails instead of passing unchecked.
+assert_fail_contains "LOCKCK_NO_URL=1 mise install" "returned no URL"
