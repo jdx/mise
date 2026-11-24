@@ -24,7 +24,7 @@ for names in \
   'override_tool_versions_filenames = ["./.env"]'; do
   echo "$names" >.miserc.toml
   assert_contains "mise trust .env 2>&1" "trusted ~/workdir/proj/.env"
-  assert_contains 'mise trust "$PWD/.env" 2>&1' "trusted ~/workdir/proj/.env"
+  assert_contains "mise trust $PWD/.env 2>&1" "trusted ~/workdir/proj/.env"
   assert_not_contains "mise hook-env -s bash 2>&1 || true" "PROJECT_TEST"
   assert_not_contains "mise trust --show 2>&1" "proj: trusted"
   assert "mise untrust .env"
