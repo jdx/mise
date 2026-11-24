@@ -283,6 +283,22 @@ fn trailing_scheme(head: &str) -> &str {
     &head[start..]
 }
 
+/// Whether the URL parser that sends a request ends the authority of the URL
+/// whose `://` ends `head` at a `\`. It does for the special schemes of the URL
+/// standard (`http`, `https`, `ws`, `wss`, `ftp`, `file`) and for no other: in
+/// `ssh://git:pa\ss@host/` the password runs on to the `@`. A `git+https` URL
+/// is fetched as `https`, and the parser drops tabs and newlines before it
+/// reads the scheme.
+fn backslash_ends_authority(head: &str) -> bool {
+    let head: String = head
+        .chars()
+        .filter(|c| !matches!(c, '\t' | '\n' | '\r'))
+        .collect();
+    let scheme = trailing_scheme(&head).to_ascii_lowercase();
+    let scheme = scheme.rsplit('+').next().unwrap_or_default();
+    matches!(scheme, "http" | "https" | "ws" | "wss" | "ftp" | "file")
+}
+
 fn rewrite_userinfo(text: &str, whitespace_ends_url: bool, mode: Userinfo) -> Cow<'_, str> {
     if !text.contains("://") {
         return Cow::Borrowed(text);
@@ -298,9 +314,11 @@ fn rewrite_userinfo(text: &str, whitespace_ends_url: bool, mode: Userinfo) -> Co
         // unencoded `@` in a password is covered. A stripped URL names where a
         // request goes, and the `url` crate, which sends it, ends the authority
         // of an `http(s)` URL at a `\` too: `https://evil.example\@gitlab.com/`
-        // is evil.example. So stripping stops there, for every scheme, and
-        // keeps that host; redaction for a reader reaches as far as possible.
-        let backslash_ends_authority = matches!(mode, Userinfo::Strip);
+        // is evil.example. So stripping stops there for the schemes the parser
+        // reads that way ([`backslash_ends_authority`]) and keeps that host;
+        // redaction for a reader reaches as far as possible.
+        let backslash_ends_authority =
+            matches!(mode, Userinfo::Strip) && backslash_ends_authority(head);
         let end = tail
             .find(|c: char| {
                 matches!(c, '/' | '?' | '#')
@@ -502,6 +520,26 @@ mod tests {
             ] {
                 assert_eq!(host(&stripped), host(input), "{input:?} -> {stripped:?}");
             }
+        }
+        // An ssh URL reads a backslash as part of the password, so the whole
+        // password goes, as it does without one.
+        for (input, stripped) in [
+            (
+                r"ssh://git:pa\ss@host.example/r",
+                "ssh://git@host.example/r",
+            ),
+            (
+                r"git+ssh://git:pa\ss@host.example/r",
+                "git+ssh://git@host.example/r",
+            ),
+            (
+                r"SSH://git:\secret@host.example/r",
+                "SSH://git@host.example/r",
+            ),
+        ] {
+            assert_eq!(strip_url_credentials(input), stripped, "{input:?}");
+            assert_eq!(strip_url_credentials_in_arg(input), stripped, "{input:?}");
+            assert_eq!(strip_url_credentials_in_value(input), stripped, "{input:?}");
         }
         // The credentials in front of the real host still go.
         assert_eq!(
