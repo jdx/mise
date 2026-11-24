@@ -831,12 +831,12 @@ pub fn trust_check(path: &Path) -> eyre::Result<()> {
         Err(UntrustedConfig(path.into(), Untrusted::NotTrusted))?
     }
     ensure_trust_can_approve(path)?;
-    // `__USAGE` marks a `mise` that shell completion started, such as the `mise tasks
-    // --usage` mounted under `run`. Like hook-env it runs unasked, for a line nobody has
-    // entered: there is nobody to prompt, and neither a `--yes` on that line nor the `yes`
-    // setting is a decision to trust.
+    // A mise the shell runs for its own integration, such as the `mise tasks --usage` that
+    // completion starts under `run`, or the command-not-found handler, runs unasked like
+    // hook-env, for a line nobody has entered: there is nobody to prompt, and neither a
+    // `--yes` on that line nor the `yes` setting is a decision to trust.
     if cmd != "hook-env"
-        && env::__USAGE.is_none()
+        && !typed_consent::run_by_shell()
         && !strict
         && !is_ignored(&config_root)
         && !is_ignored(path)

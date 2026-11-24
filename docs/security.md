@@ -130,6 +130,8 @@ When a command needs a config that is not trusted:
 - Without a terminal, such as in a script or an editor extension, mise cannot
   ask, so the command fails with
   [`Config files in <path> are not trusted`](/errors.html#untrusted-config).
+- Shell completion and the shell's command-not-found handler never ask. They
+  leave the config untrusted, as a command without a terminal does.
 - Shell activation never asks. It skips the untrusted config, warns
   `<path> is not trusted, run mise trust to enable it`, and still applies the
   trusted ones.
@@ -206,9 +208,9 @@ trusted and records nothing. Configs on the ignore list or under
 do not load. `CI` also turns on [`yes`](/configuration/settings.html#yes).
 
 Outside CI, `--yes` or `MISE_YES=1` answers the trust prompt with yes, which
-records trust. That applies to a command you entered: shell activation and
-shell completion run mise unasked, so they neither ask nor take `--yes` or
-`MISE_YES=1` for an answer. Paranoid mode turns off both the CI exemption and
+records trust. That applies to a command you entered: shell activation, shell
+completion and the shell's command-not-found handler run mise unasked, so they
+neither ask nor take `--yes` or `MISE_YES=1` for an answer. Paranoid mode turns off both the CI exemption and
 `--yes` for trust.
 
 ### Manage trust

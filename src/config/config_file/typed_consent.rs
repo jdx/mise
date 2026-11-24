@@ -64,13 +64,24 @@ const SHELL_RUN_COMMANDS: &[&str] = &[
     "usage",
 ];
 
-fn read_signals(path: &Path, config_root: &Path) -> Signals {
-    let command = env::ARGS
+/// Whether the shell ran mise for its own integration rather than for a command the user entered:
+/// completion, including the `mise tasks --usage` it starts with `__USAGE` set, or one of
+/// [`SHELL_RUN_COMMANDS`]. A shim's arguments belong to its tool, so they never name one.
+pub(super) fn run_by_shell() -> bool {
+    if env::__USAGE.is_some() {
+        return true;
+    }
+    if *env::IS_RUNNING_AS_SHIM {
+        return false;
+    }
+    env::ARGS
         .read()
         .unwrap()
         .get(1)
-        .cloned()
-        .unwrap_or_default();
+        .is_some_and(|command| SHELL_RUN_COMMANDS.contains(&command.as_str()))
+}
+
+fn read_signals(path: &Path, config_root: &Path) -> Signals {
     Signals {
         stdin_tty: std::io::stdin().is_terminal(),
         stdout_tty: console::user_attended(),
@@ -81,7 +92,7 @@ fn read_signals(path: &Path, config_root: &Path) -> Signals {
         // A shim's arguments belong to its tool, and a shim that is not mise itself runs
         // `mise x` with `__MISE_SHIM_PATH` naming itself: the user typed the tool's name.
         shim: *env::IS_RUNNING_AS_SHIM || env::MISE_SHIM_PATH.read().unwrap().is_some(),
-        run_by_shell: env::__USAGE.is_some() || SHELL_RUN_COMMANDS.contains(&command.as_str()),
+        run_by_shell: run_by_shell(),
         owned_by_user: owned_by_user(path) && owned_by_user(config_root),
     }
 }
