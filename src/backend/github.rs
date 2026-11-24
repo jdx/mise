@@ -2595,7 +2595,7 @@ impl UnifiedGitBackend {
                 asset.digest
             } else {
                 self.try_fetch_checksum_from_assets(opts, &assets_with_urls, &asset.name)
-                    .await
+                    .await?
             };
 
             return Ok(ReleaseAsset {
@@ -2631,7 +2631,7 @@ impl UnifiedGitBackend {
             asset.digest.clone()
         } else {
             self.try_fetch_checksum_from_assets(opts, &assets_with_urls, &asset.name)
-                .await
+                .await?
         };
 
         Ok(ReleaseAsset {
@@ -2701,7 +2701,7 @@ impl UnifiedGitBackend {
             // GitLab doesn't provide digests, so try fetching from release assets
             let digest = self
                 .try_fetch_checksum_from_assets(opts, &assets_with_urls, &asset.name)
-                .await;
+                .await?;
 
             return Ok(ReleaseAsset {
                 name: asset.name,
@@ -2734,7 +2734,7 @@ impl UnifiedGitBackend {
         // GitLab doesn't provide digests, so try fetching from release assets
         let digest = self
             .try_fetch_checksum_from_assets(opts, &assets_with_urls, &asset.name)
-            .await;
+            .await?;
 
         Ok(ReleaseAsset {
             name: asset.name.clone(),
@@ -2808,7 +2808,7 @@ impl UnifiedGitBackend {
             // Try to get checksum from API digest or fetch from release assets
             let digest = self
                 .try_fetch_checksum_from_assets(opts, &assets_with_urls, &asset.name)
-                .await;
+                .await?;
 
             return Ok(ReleaseAsset {
                 name: asset.name,
@@ -2841,7 +2841,7 @@ impl UnifiedGitBackend {
         // Try to get checksum from API digest or fetch from release assets
         let digest = self
             .try_fetch_checksum_from_assets(opts, &assets_with_urls, &asset.name)
-            .await;
+            .await?;
 
         Ok(ReleaseAsset {
             name: asset.name.clone(),
@@ -2964,19 +2964,21 @@ impl UnifiedGitBackend {
     /// This method looks for checksum files (SHA256SUMS, *.sha256, etc.) in the release
     /// assets and attempts to extract the checksum for the target asset.
     ///
-    /// Returns the checksum in "sha256:hash" format if found, None otherwise.
+    /// Returns the checksum in "sha256:hash" format if found, None when the
+    /// release's checksum files do not list the asset. Fails when a checksum
+    /// file could not be downloaded and no other one lists the asset.
     async fn try_fetch_checksum_from_assets(
         &self,
         opts: &GitBackendOptions<'_>,
         assets: &[Asset],
         asset_name: &str,
-    ) -> Option<String> {
+    ) -> Result<Option<String>> {
         let fetcher = ChecksumFetcher::new(assets);
         let source = ForgeChecksumSource {
             backend: self,
             api_url: opts.api_url(),
         };
-        match fetcher.fetch_checksum_for(asset_name, &source).await {
+        match fetcher.fetch_checksum_for(asset_name, &source).await? {
             Some(result) => {
                 debug!(
                     "Found checksum for {} from {}: {}",
@@ -2984,11 +2986,11 @@ impl UnifiedGitBackend {
                     result.source_file,
                     result.to_string_formatted()
                 );
-                Some(result.to_string_formatted())
+                Ok(Some(result.to_string_formatted()))
             }
             None => {
                 trace!("No checksum file found for {}", asset_name);
-                None
+                Ok(None)
             }
         }
     }
@@ -5706,6 +5708,7 @@ platforms.macos-arm64.url = 'https://example.com/{{ version }}/tool-darwin-arm64
         let result = ChecksumFetcher::new(&assets)
             .fetch_checksum_for("tool-linux.tar.gz", &source)
             .await
+            .unwrap()
             .expect("checksum is found");
         assert_eq!(
             result.to_string_formatted(),
@@ -5740,6 +5743,7 @@ platforms.macos-arm64.url = 'https://example.com/{{ version }}/tool-darwin-arm64
         let result = ChecksumFetcher::new(&assets)
             .fetch_checksum_for("tool-linux.tar.gz", &source)
             .await
+            .unwrap()
             .expect("checksum is found");
         assert_eq!(
             result.to_string_formatted(),

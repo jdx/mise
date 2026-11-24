@@ -1348,26 +1348,48 @@ impl<'a> ChecksumFetcher<'a> {
     /// searched for the asset in turn, until one holds its checksum. `source`
     /// downloads each checksum file's text.
     ///
-    /// Returns None if no checksum file holds the asset's checksum.
+    /// Returns None if every checksum file was read and none holds the asset's
+    /// checksum. A file that could not be downloaded may be the one that holds
+    /// it, so when no other file does, the lookup fails instead of letting the
+    /// asset install unverified.
     pub(crate) async fn fetch_checksum_for(
         &self,
         asset_name: &str,
         source: &impl ChecksumSource,
-    ) -> Option<ChecksumResult> {
+    ) -> Result<Option<ChecksumResult>> {
         let asset_names: Vec<String> = self.assets.iter().map(|a| a.name.clone()).collect();
+        let mut unreadable: Vec<String> = Vec::new();
         for checksum_filename in AssetMatcher::new().checksum_files_for(asset_name, &asset_names) {
             let Some(checksum_asset) = self.assets.iter().find(|a| a.name == checksum_filename)
             else {
                 continue;
             };
-            if let Some(result) = self
+            match self
                 .fetch_and_parse_checksum(checksum_asset, &checksum_filename, asset_name, source)
                 .await
             {
-                return Some(result);
+                Ok(Some(result)) => return Ok(Some(result)),
+                Ok(None) => {}
+                Err(e) => {
+                    debug!(
+                        "failed to fetch checksum file {}: {e:#}",
+                        checksum_asset.url
+                    );
+                    unreadable.push(format!("{checksum_filename}: {e:#}"));
+                }
             }
         }
-        None
+        if unreadable.is_empty() {
+            return Ok(None);
+        }
+        // Text only: a 404 from the checksum file must not read as a missing
+        // release to callers that inspect the error chain.
+        Err(eyre::eyre!(
+            "cannot verify {asset_name}: the release publishes checksum files mise could not \
+             download, and no other checksum file lists it:\n  {}\n\
+             Check the network and the forge token, then retry.",
+            unreadable.join("\n  ")
+        ))
     }
 
     /// Fetch a checksum file and parse it for the target asset
@@ -1377,23 +1399,19 @@ impl<'a> ChecksumFetcher<'a> {
         checksum_filename: &str,
         target_asset: &str,
         source: &impl ChecksumSource,
-    ) -> Option<ChecksumResult> {
-        let content = match source.fetch_text(checksum_asset).await {
-            Ok(c) => c,
-            Err(e) => {
-                debug!(
-                    "Failed to fetch checksum file {}: {}",
-                    checksum_asset.url, e
-                );
-                return None;
-            }
-        };
+    ) -> Result<Option<ChecksumResult>> {
+        let content = source.fetch_text(checksum_asset).await?;
 
         // Detect algorithm from filename
         let algorithm = detect_checksum_algorithm(checksum_filename);
 
         // Try to parse the checksum
-        parse_checksum_content(&content, target_asset, &algorithm, checksum_filename)
+        Ok(parse_checksum_content(
+            &content,
+            target_asset,
+            &algorithm,
+            checksum_filename,
+        ))
     }
 }
 
@@ -3762,6 +3780,7 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-darwin.ta
         let result = ChecksumFetcher::new(&assets)
             .fetch_checksum_for("tool-linux.tar.gz", &source)
             .await
+            .unwrap()
             .expect("the list holds the asset's checksum");
         assert_eq!(result.hash, LINUX_SHA256);
         assert_eq!(result.source_file, "tool_1.0.0_checksums.txt");
@@ -3789,6 +3808,7 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-darwin.ta
         let result = ChecksumFetcher::new(&assets)
             .fetch_checksum_for("tool-linux.tar.gz", &source)
             .await
+            .unwrap()
             .expect("the linux list holds the asset's checksum");
         assert_eq!(result.hash, LINUX_SHA256);
         assert_eq!(result.source_file, "checksums-linux.txt");
@@ -3803,7 +3823,43 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-darwin.ta
         )]);
         let result = ChecksumFetcher::new(&assets)
             .fetch_checksum_for("tool-windows.zip", &source)
-            .await;
+            .await
+            .unwrap();
         assert!(result.is_none(), "{result:?}");
+    }
+
+    #[tokio::test]
+    async fn test_checksum_file_that_cannot_be_downloaded_fails_the_lookup() {
+        let assets = release_files(&["tool-linux.tar.gz", "checksums.txt"]);
+        let source = FilesSource(vec![("checksums.txt", Err("HTTP status 503"))]);
+        let err = ChecksumFetcher::new(&assets)
+            .fetch_checksum_for("tool-linux.tar.gz", &source)
+            .await
+            .unwrap_err();
+        let err = format!("{err:#}");
+        assert!(err.contains("cannot verify tool-linux.tar.gz"), "{err}");
+        assert!(err.contains("checksums.txt: HTTP status 503"), "{err}");
+    }
+
+    #[tokio::test]
+    async fn test_unreadable_checksum_file_is_not_needed_when_another_lists_the_asset() {
+        let assets = release_files(&[
+            "tool-linux.tar.gz",
+            "checksums-darwin.txt",
+            "checksums-linux.txt",
+        ]);
+        let source = FilesSource(vec![
+            ("checksums-darwin.txt", Err("HTTP status 503")),
+            (
+                "checksums-linux.txt",
+                Ok(list(&[(LINUX_SHA256, "tool-linux.tar.gz")])),
+            ),
+        ]);
+        let result = ChecksumFetcher::new(&assets)
+            .fetch_checksum_for("tool-linux.tar.gz", &source)
+            .await
+            .unwrap()
+            .expect("the linux list holds the asset's checksum");
+        assert_eq!(result.hash, LINUX_SHA256);
     }
 }
