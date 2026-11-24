@@ -1210,11 +1210,18 @@ mod tests {
         let value = [r"\'; touch injected #".to_string()];
         let fish_quoted = r"echo '\\\'; touch injected #'";
         let posix_quoted = r"echo '\'\''; touch injected #'";
+        // The default inline shell is `cmd /c` on Windows, which reads no quoting the template
+        // functions know, so they insert the value as it is there.
+        let default_quoted = if cfg!(windows) {
+            r"echo \'; touch injected #"
+        } else {
+            posix_quoted
+        };
         // A shebang picks the shell first, then the task's `shell`, then `mise run --shell`,
         // then the default inline shell setting.
         // (task shell, `mise run --shell`, script prefix, expected)
         let cases = [
-            (None, None, "", posix_quoted),
+            (None, None, "", default_quoted),
             (None, Some(&fish), "", fish_quoted),
             (Some("bash -c"), Some(&fish), "", posix_quoted),
             (None, Some(&fish), "#!/usr/bin/env bash\n", posix_quoted),
