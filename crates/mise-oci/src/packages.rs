@@ -424,12 +424,15 @@ fn apt_install_into_rootfs(
 ) -> Result<()> {
     let status = rootfs.join("var/lib/dpkg/status");
     // mise creates these and hands them to the host's apt-get, so a symlink
-    // the base image planted on the way would put them on the host
+    // the base image planted on the way would put them on the host. apt also
+    // appends to its logs, so a symlink at one of them would write a host file
     for path in [
         status.clone(),
         rootfs.join("var/cache/apt/archives/partial"),
         rootfs.join("var/lib/apt/lists/partial"),
-        rootfs.join("var/log/apt"),
+        rootfs.join("var/log/apt/history.log"),
+        rootfs.join("var/log/apt/term.log"),
+        rootfs.join("var/log/apt/eipp.log.xz"),
     ] {
         reject_symlink_components(rootfs, &path)
             .wrap_err("preparing apt state in the base image")?;
@@ -1263,6 +1266,9 @@ mod tests {
             "var/cache/apt",
             "var/lib/apt",
             "var/log/apt",
+            "var/log/apt/history.log",
+            "var/log/apt/term.log",
+            "var/log/apt/eipp.log.xz",
         ] {
             let td = TempDir::with_prefix("mise-oci-apt-state-symlink-").unwrap();
             let rootfs = td.path().join("rootfs");
