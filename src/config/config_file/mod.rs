@@ -656,9 +656,12 @@ pub fn is_path_trusted(path: &Path) -> bool {
 /// what `_.python.venv` and `_.path` in that project's own config need trust for.
 ///
 /// True when a loaded config file rooted at `dir` is trusted, or, outside paranoid mode, when
-/// `dir` itself is (`mise trust <dir>`). Trust of a parent directory does not count: a clone
-/// below a trusted project is not that project. A project file linked to global config does
-/// not lend it global config's trust. Safe mode trusts no project, so this is false there.
+/// `dir` itself is (`mise trust <dir>`). A trust record of a parent directory does not count: a
+/// clone below a trusted project is not that project. What already trusts every config file
+/// below a directory, a `trusted_config_paths` entry or a trusted monorepo root, does count,
+/// through [`is_trusted`]: the project's own config could then put its files on PATH anyway.
+/// A project file linked to global config does not lend it global config's trust. Safe mode
+/// trusts no project, so this is false there.
 pub fn is_project_dir_trusted(config: &Config, dir: &Path) -> bool {
     if Settings::safe_mode() {
         return false;

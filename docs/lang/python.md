@@ -166,8 +166,13 @@ python.uv_venv_auto = "create|source"
 mise activates a virtualenv inside the project only when the directory that
 contains `uv.lock` is trusted: a trusted mise config file in it, or
 `mise trust <dir>` (in [paranoid mode](/paranoid.html), a trusted mise config
-file in it). A trusted parent directory does not count. Otherwise mise warns
-and leaves the virtualenv alone. In safe mode it is never activated. A
+file in it). `mise trust` on a parent directory does not count. What trusts
+every config file below a directory does: an entry of
+[`trusted_config_paths`](/configuration/settings.html#trusted_config_paths)
+covers the directory it names and those below it, and a trusted
+[monorepo root](/tasks/monorepo.html) covers a project below it that has a mise
+config file (outside paranoid mode). Otherwise mise warns and leaves the
+virtualenv alone. In safe mode it is never activated. A
 `UV_PROJECT_ENVIRONMENT` outside the project is used either way.
 
 The `uv_create_args` and `python_create_args` options of `_.python.venv` do not

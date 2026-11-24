@@ -64,6 +64,25 @@ assert_contains "cd clone && mise env 2>/dev/null" "VIRTUAL_ENV=$PWD/clone/.venv
 assert_not_contains "cd clone && MISE_SAFE=1 mise env 2>/dev/null" "/clone/.venv"
 rm "$MISE_CONFIG_DIR/config.toml"
 
+echo "=== the env cache follows trust that is granted and revoked ==="
+cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
+[tools]
+python = { version = "3.13.5", virtualenv = ".venv" }
+EOF
+mkdir -p cached/.venv/bin
+touch cached/.tool-versions
+export MISE_ENV_CACHE=1
+export __MISE_ENV_CACHE_KEY="dGVzdGtleXRlc3RrZXl0ZXN0a2V5dGVzdGtleXRlc3Q="
+# mise exec trusts the config it runs in, so this asks mise env
+assert_not_contains "cd cached && mise env 2>/dev/null" "/cached/.venv"
+assert_directory_exists "$MISE_STATE_DIR/env-cache"
+mise trust cached
+assert_contains "cd cached && mise env 2>/dev/null" "VIRTUAL_ENV=$PWD/cached/.venv"
+mise trust --untrust cached
+assert_not_contains "cd cached && mise env 2>/dev/null" "/cached/.venv"
+unset MISE_ENV_CACHE __MISE_ENV_CACHE_KEY
+rm "$MISE_CONFIG_DIR/config.toml"
+
 echo "=== a trusted parent project does not vouch for a project below it ==="
 mkdir -p work/.venv/bin work/sub work/clone/.venv/bin
 cat >work/mise.toml <<'EOF'
@@ -74,6 +93,8 @@ mise trust work
 touch work/clone/.tool-versions
 assert_contains "cd work/sub && mise env 2>/dev/null" "VIRTUAL_ENV=$PWD/work/.venv"
 assert_not_contains "cd work/clone && mise env 2>/dev/null" "/work/clone/.venv"
+# trusted_config_paths trusts every config file below the directory it names
+assert_contains "cd work/clone && MISE_TRUSTED_CONFIG_PATHS=$PWD/work mise env 2>/dev/null" "VIRTUAL_ENV=$PWD/work/clone/.venv"
 
 echo "=== python.uv_venv_auto needs the uv project to be trusted ==="
 cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
