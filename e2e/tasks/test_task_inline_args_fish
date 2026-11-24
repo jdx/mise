@@ -33,6 +33,7 @@ assert "mise run say_sh -- \"\\\\'; touch injected #\"" "[\\'; touch injected #]
 assert "mise run say -- \"\\\\'; touch injected #\"" "[\\'; touch injected #]"
 assert "mise run say -- 'ends in a backslash\\' second" '[ends in a backslash\]
 [second]'
+# shellcheck disable=SC2016
 assert "mise run say -- 'C:\\dir\\file' '\$HOME' ''" '[C:\dir\file]
 [$HOME]
 []'

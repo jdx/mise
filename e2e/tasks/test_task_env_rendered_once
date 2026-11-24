@@ -61,5 +61,6 @@ assert_contains "mise run arg '{{ 1 + 1 }}'" "WORKDIR={{ 1 + 1 }}"
 
 # `$VAR` is expanded once as well: by the task that resolved the value, or for the env of
 # a `run` entry by the task that receives it
+# shellcheck disable=SC2016
 assert_contains "mise run dollar" 'WORKDIR=a$HOME'
 assert_contains "mise run entry-dollar" "WORKDIR=$HOME/w"
