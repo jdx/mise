@@ -159,13 +159,16 @@ go = "1.27"
 "go:github.com/mikefarah/yq/v4" = { version = "latest", install_env = { GOPROXY = "{{ vars.goproxy }}" } }
 ```
 
-A value a template substitutes is text. If an environment variable, a
+A value a template substitutes is text, never template code. Only the
+expressions that read `version`, the platform functions such as `os()` in an
+http or s3 `url`, and the body of a <span v-pre>`{% raw %}`</span> block are
+left for the backend to render at install time. If an environment variable, a
 directory name, or the output of `exec()` contains <span v-pre>`{{`</span>,
-<span v-pre>`{%`</span> or <span v-pre>`{#`</span>, the option gets those
-characters as they are, not as template code. Only the expressions that read
-`version`, the platform functions such as `os()` in an http or s3 `url`, and
-the body of a <span v-pre>`{% raw %}`</span> block are left for the backend to
-render at install time.
+<span v-pre>`{%`</span> or <span v-pre>`{#`</span>, it is escaped. An option
+the backend renders again, such as an http `url`, `checksum_url` or header, or
+a github `asset_pattern`, gets those characters as they are. Any other option,
+such as `version_list_url`, gets the escaped text, for example
+<span v-pre>`{{ "{{" }}`</span> in place of <span v-pre>`{{`</span>.
 
 ## OS-specific tools {#os-specific-tools}
 

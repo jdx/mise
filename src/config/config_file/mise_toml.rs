@@ -1736,17 +1736,13 @@ impl MiseToml {
         match value {
             toml::Value::String(s) => {
                 let preserve_os_arch = defer_os_arch && matches!(key, Some("url" | "checksum_url"));
-                let (shielded, deferred) = shield_version_expressions(s);
-                let rendered = if preserve_os_arch {
-                    self.parse_tool_option_template(context, &shielded)?
-                } else {
-                    self.parse_template_with_context(context, &shielded)?
-                };
-                // Backends render these options again once the version and platform are
-                // known. Only the expressions deferred on purpose may be code in that render;
-                // everything the render above substituted is data.
-                let rendered = crate::tera::escape_rendered_data(&rendered);
-                *s = restore_version_expressions(rendered, &deferred);
+                *s = render_option_for_backend(shield_version_expressions(s), |shielded| {
+                    if preserve_os_arch {
+                        self.parse_tool_option_template(context, shielded)
+                    } else {
+                        self.parse_template_with_context(context, shielded)
+                    }
+                })?;
             }
             toml::Value::Array(values) => {
                 for value in values {
@@ -1783,24 +1779,46 @@ static RAW_BLOCK: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|
 
 const VERSION_SHIELD: &str = "__mise_deferred_version_expression_";
 
+/// Render a tool option that a backend renders again once the version and platform are known.
+/// `shielded` is the option with the code deferred to the backend swapped for markers (from
+/// [`shield_raw_blocks`] or [`shield_version_expressions`]). `render` renders the rest, and
+/// everything it substituted (an env var, a directory name, a command's output) is escaped, so
+/// in the backend's render only the deferred code and the spans marked with
+/// [`crate::tera::mark_deferred`] are template code.
+pub(crate) fn render_option_for_backend(
+    (shielded, deferred): (String, Vec<String>),
+    render: impl FnOnce(&str) -> eyre::Result<String>,
+) -> eyre::Result<String> {
+    let rendered = crate::tera::escape_rendered_data(&render(&shielded)?);
+    Ok(restore_version_expressions(rendered, &deferred))
+}
+
+/// The body of a `{% raw %}` block is written to be rendered by the backend, so it is swapped
+/// for a marker and put back as template code after the config-load render.
+pub(crate) fn shield_raw_blocks(input: &str) -> (String, Vec<String>) {
+    let mut deferred = vec![];
+    // Most option values hold no block, and the first use of the regex
+    // compiles it, which costs more than everything else a command does here.
+    if !input.contains("{%") {
+        return (input.to_string(), deferred);
+    }
+    let shielded = RAW_BLOCK.replace_all(input, |caps: &regex::Captures| {
+        deferred.push(caps[1].to_string());
+        format!("{VERSION_SHIELD}{}__", deferred.len() - 1)
+    });
+    (shielded.into_owned(), deferred)
+}
+
 /// `version` is not known at config load, so a bare `{{ version }}` renders to itself through a
 /// placeholder. A filter or function on it (`{{ version | replace(..) }}`) would instead act on
 /// that placeholder text, so every other `{{ }}` expression that reads `version` is swapped for
 /// a marker here and put back verbatim afterwards, to be rendered once the version is known.
-///
-/// The body of a `{% raw %}` block is deferred the same way: the author wrote it to be rendered
-/// by the backend, so it is put back as template code rather than treated as rendered data.
+/// Raw blocks are deferred as [`shield_raw_blocks`] does.
 fn shield_version_expressions(input: &str) -> (String, Vec<String>) {
-    // Most option values hold no expression, and the first use of the regex
-    // compiles it, which costs more than everything else a command does here.
-    if !input.contains("{{") && !input.contains("{%") {
-        return (input.to_string(), vec![]);
+    let (input, mut deferred) = shield_raw_blocks(input);
+    if !input.contains("{{") {
+        return (input, deferred);
     }
-    let mut deferred = vec![];
-    let input = RAW_BLOCK.replace_all(input, |caps: &regex::Captures| {
-        deferred.push(caps[1].to_string());
-        format!("{VERSION_SHIELD}{}__", deferred.len() - 1)
-    });
     let shielded = VERSION_EXPRESSION.replace_all(&input, |caps: &regex::Captures| {
         let expr = &caps[0];
         let inner = expr

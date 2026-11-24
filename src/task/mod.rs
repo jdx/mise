@@ -196,17 +196,21 @@ impl TaskToolValueExt for TaskToolValue {
     }
 
     fn render_templates(&mut self, tera: &mut TeraEngine, context: &tera::Context) -> Result<()> {
+        use crate::config::config_file::mise_toml::{render_option_for_backend, shield_raw_blocks};
+
         fn render_value(
             value: &mut toml::Value,
             tera: &mut TeraEngine,
             context: &tera::Context,
         ) -> Result<()> {
             match value {
-                // Backends render tool options again at install time, so what this render
-                // substituted (an env var, a command's output) must stay data there.
+                // Backends render tool options again at install time: a raw block's body is
+                // code for that render, and what this render substituted (an env var, a
+                // command's output) stays data there, as for `[tools]` options.
                 toml::Value::String(value) if contains_template_syntax(value) => {
-                    *value =
-                        crate::tera::escape_template_syntax(&render_str(tera, value, context)?);
+                    *value = render_option_for_backend(shield_raw_blocks(value), |shielded| {
+                        Ok(render_str(tera, shielded, context)?)
+                    })?;
                 }
                 toml::Value::Array(values) => {
                     for value in values {
@@ -7901,6 +7905,48 @@ echo "test"
         assert_eq!(
             render_str(&mut tera, url, &context).unwrap(),
             format!("https://e/{branch}")
+        );
+    }
+
+    /// A task has no `version` at render time, so a raw block is how an option defers an
+    /// expression on `version` to the backend. Its body stays code for the backend's render,
+    /// next to substituted values that stay data.
+    #[test]
+    fn test_task_tool_raw_block_stays_code_for_the_backend_render() {
+        use indexmap::IndexMap;
+
+        use super::{TaskToolValue, TaskToolValueExt, TaskToolValueMap};
+        use crate::tera::{TeraEngine, render_str};
+
+        let mut opts = IndexMap::new();
+        opts.insert(
+            "url".to_string(),
+            toml::Value::String(
+                "https://e/{{ branch }}/t-{% raw %}{{ version | replace(from='.', to='_') }}{% endraw %}.tgz"
+                    .to_string(),
+            ),
+        );
+        let mut tool = TaskToolValue::Map(TaskToolValueMap {
+            version: "1.2.3".to_string(),
+            opts,
+        });
+        let mut context = tera::Context::new();
+        context.insert("branch", "{{ version }}");
+        let mut tera = TeraEngine::V2(Box::default());
+        tool.render_templates(&mut tera, &context).unwrap();
+        let TaskToolValue::Map(map) = &tool else {
+            panic!("tool is a map");
+        };
+        let mut backend_context = tera::Context::new();
+        backend_context.insert("version", "1.2.3");
+        assert_eq!(
+            render_str(
+                &mut tera,
+                map.opts["url"].as_str().unwrap(),
+                &backend_context
+            )
+            .unwrap(),
+            "https://e/{{ version }}/t-1_2_3.tgz"
         );
     }
 
