@@ -410,6 +410,8 @@ These are skipped without an error, so resolution commands keep working:
 - Project task files that resolve outside the project, whether named by `~`,
   an absolute path or `..`, or reached through a link. mise warns about each
   one. Task files elsewhere in the same git checkout or monorepo still load.
+  After skipping either kind of task file, `mise lock` removes no tool or
+  version from `mise.lock`, since it cannot tell which ones those tasks use.
 - Project `[deps]`, so `mise deps` and `mise exec` do not run a repository's
   dependency providers. Providers in global and system config still run.
 - Project daemon declarations. Daemons also do not start or stop when you change

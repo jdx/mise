@@ -7706,9 +7706,10 @@ fn expand_task_include(dir: &Path, pattern: &str) -> Vec<PathBuf> {
 
 static SAFE_MODE_SKIPPED_TASK_FILE: AtomicBool = AtomicBool::new(false);
 
-/// Whether safe mode has kept this process from reading a task file outside its
-/// project (see [`skip_task_file_outside`]). The tasks of that file, and the tools
-/// they name, are then missing from what this process saw.
+/// Whether safe mode has kept this process from reading a task file a config includes:
+/// one outside its project (see [`skip_task_file_outside`]) or a remote one. The tasks
+/// of that file, and the tools and versions they name, are then missing from what this
+/// process saw.
 pub fn safe_mode_skipped_task_file() -> bool {
     SAFE_MODE_SKIPPED_TASK_FILE.load(Ordering::Relaxed)
 }
@@ -8502,6 +8503,7 @@ async fn load_task_sources_from_configs(
             continue;
         }
         if skip_remote_includes && is_remote_task_include(include) {
+            SAFE_MODE_SKIPPED_TASK_FILE.store(true, Ordering::Relaxed);
             debug!("ignoring task include `{include}`: safe mode (MISE_SAFE=1)");
             continue;
         }

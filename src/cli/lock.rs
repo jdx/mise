@@ -2288,7 +2288,13 @@ impl Lock {
     /// Note: This must be called AFTER process_tools() so that provenance checks
     /// can compare against the old version entries before they are removed.
     fn prune_stale_versions(&self, lockfile: &mut Lockfile, tools: &[LockTool]) -> Result<()> {
-        let current_versions = self.current_tool_versions(tools);
+        // The versions pinned by a task file safe mode did not read are unknown, so
+        // every locked version of a tool stays.
+        let current_versions = if crate::config::safe_mode_skipped_task_file() {
+            BTreeMap::new()
+        } else {
+            self.current_tool_versions(tools)
+        };
         for (short, versions) in &current_versions {
             lockfile.retain_tool_versions(short, versions);
         }
@@ -2375,6 +2381,9 @@ impl Lock {
         lockfile: &Lockfile,
         tools: &[LockTool],
     ) -> BTreeMap<String, Vec<String>> {
+        if crate::config::safe_mode_skipped_task_file() {
+            return BTreeMap::new();
+        }
         let current_versions = self.current_tool_versions(tools);
         self.stale_versions_for_current(lockfile, &current_versions)
     }
