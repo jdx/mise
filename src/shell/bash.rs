@@ -1,4 +1,5 @@
 #![allow(unknown_lints)]
+use std::borrow::Cow;
 use std::fmt::Display;
 
 use shell_escape::unix::escape;
@@ -44,6 +45,22 @@ fn is_shell_name(name: &str) -> bool {
     !name.is_empty()
         && !name.starts_with(|c: char| c.is_ascii_digit())
         && name.chars().all(|c| c == '_' || c.is_alphanumeric())
+}
+
+/// The value of an `export k=v` or `alias k=v` statement, quoted for bash and zsh.
+///
+/// zsh writes these statements through this file too, and `shell_escape` leaves `=` bare. zsh
+/// (`EQUALS`, on by default) replaces an unquoted `=cmd` at the start of an assigned value with
+/// the path of `cmd`, and aborts the enclosing `eval` when there is no such command, so the rest
+/// of the `hook-env` output is never applied. A value that starts with `=` is quoted as well; it
+/// holds nothing else that needs quoting, or `shell_escape` would have quoted it.
+fn escape_value(v: Cow<'_, str>) -> Cow<'_, str> {
+    let v = escape(v);
+    if v.starts_with('=') {
+        format!("'{v}'").into()
+    } else {
+        v
+    }
 }
 
 impl Shell for Bash {
@@ -112,7 +129,7 @@ impl Shell for Bash {
             return String::new();
         }
         let k = shell_escape::unix::escape(k.into());
-        let v = shell_escape::unix::escape(v);
+        let v = escape_value(v);
         format!("export {k}={v}\n")
     }
 
@@ -145,7 +162,7 @@ impl Shell for Bash {
 
     fn set_alias(&self, name: &str, cmd: &str) -> String {
         let name = shell_escape::unix::escape(name.into());
-        let cmd = shell_escape::unix::escape(cmd.into());
+        let cmd = escape_value(cmd.into());
         format!("alias {name}={cmd}\n")
     }
 
@@ -192,6 +209,19 @@ mod tests {
     #[test]
     fn test_set_env() {
         assert_snapshot!(Bash::default().set_env("FOO", "1"));
+    }
+
+    #[test]
+    fn a_value_starting_with_equals_is_quoted() {
+        let bash = Bash::default();
+        assert_eq!(bash.set_env("FOO", "=bar"), "export FOO='=bar'\n");
+        assert_eq!(bash.set_env("FOO", "="), "export FOO='='\n");
+        assert_eq!(bash.set_env("FOO", "=a b"), "export FOO='=a b'\n");
+        assert_eq!(bash.set_env("FOO", "a:=b"), "export FOO='a:=b'\n");
+        assert_eq!(bash.set_env("FOO", "bar=baz="), "export FOO=bar=baz=\n");
+        assert_eq!(bash.set_env("FOO", ""), "export FOO=''\n");
+        assert_eq!(bash.set_alias("ll", "=ls"), "alias ll='=ls'\n");
+        assert_eq!(bash.set_alias("ll", "ls"), "alias ll=ls\n");
     }
 
     #[test]

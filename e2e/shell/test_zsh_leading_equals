@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+
+# zsh replaces an unquoted `=cmd` at the start of an assigned value with the path of `cmd`,
+# and aborts the whole eval when there is no such command. Values starting with `=` reach zsh
+# as they are written, and the variables after them still apply.
+if ! command -v zsh >/dev/null 2>&1; then
+  exit 0
+fi
+
+cat >mise.toml <<'TOML'
+[env]
+A_MISSING = "=nosuchcommand"
+B_EXISTING = "=ls"
+C_AFTER = "after"
+TOML
+
+cat >show.zsh <<'SH'
+eval "$(mise env -s zsh)" || exit 1
+printf '%s|%s|%s\n' "$A_MISSING" "$B_EXISTING" "$C_AFTER"
+SH
+assert "zsh show.zsh" "=nosuchcommand|=ls|after"
