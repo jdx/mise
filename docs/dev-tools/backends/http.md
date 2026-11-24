@@ -254,6 +254,12 @@ are available, such as `fromJSON`, `keys`, `filter`, `map` and `split`. mise add
 versioning, and use `sortVersions()` when the expression needs a sorted value
 along the way.
 
+[Safe mode](/security.html#safe-mode) refuses the expression options
+(`version_expr`, `version_date_expr`, `version_date_next_expr` and
+`checksum_expr`) of a tool that project config declares, because nothing limits
+the memory or time an expression takes. The registry's own expressions still
+run.
+
 ### `version_date_expr` and `version_date_url` {#version-date-expr}
 
 A version list without dates cannot take part in

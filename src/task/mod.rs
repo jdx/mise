@@ -1264,10 +1264,27 @@ impl Task {
     }
 
     pub fn tool_args(&self) -> Result<Vec<ToolArg>> {
-        self.tools
+        let args = self
+            .tools
             .iter()
             .map(|(tool, value)| value.to_tool_arg(tool))
-            .collect()
+            .collect::<Result<Vec<_>>>()?;
+        // In safe mode the tools of a project's task are the project's, like its `[tools]`, so
+        // their options are kept inert in the same way (see `is_safe_mode_project_tool`).
+        let global = |path: &Path| {
+            config::is_global_config(path) || config::is_global_task_include_path(path)
+        };
+        if config::Settings::safe_mode()
+            && !(global(&self.config_source)
+                && self.additional_config_sources.iter().all(|p| global(p)))
+        {
+            config::record_safe_mode_project_tools(
+                args.iter()
+                    .flat_map(|arg| [arg.ba.short.clone(), arg.ba.full()])
+                    .collect(),
+            );
+        }
+        Ok(args)
     }
 
     pub fn new(path: &Path, prefix: &Path, config_root: &Path) -> Result<Task> {

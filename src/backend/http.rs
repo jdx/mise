@@ -15,6 +15,7 @@ use crate::backend::version_list;
 use crate::backend::{MISE_BINS_DIR, runtime_path_for_install_path};
 use crate::config::Config;
 use crate::config::Settings;
+use crate::config::SettingsExt;
 use crate::http::{DownloadFileMetadata, HTTP};
 use crate::install_context::InstallContext;
 use crate::lockfile::PlatformInfo;
@@ -1173,6 +1174,21 @@ impl HttpBackend {
     // Version listing
     // -------------------------------------------------------------------------
 
+    /// Refuses, in safe mode, to evaluate the expression option `key` of a tool that
+    /// project config declares. Nothing limits the memory or time an expression takes
+    /// (`0..40000000` alone is an array of that many values), and safe mode loads project
+    /// config nobody reviewed. The registry's own expression for the tool still runs, and
+    /// so does every expression of a tool that only global or system config declares.
+    fn ensure_safe_expr(&self, key: &str, expr: &str) -> Result<()> {
+        if Settings::safe_mode()
+            && crate::config::is_safe_mode_project_tool(&self.ba)
+            && self.ba.registry_opts().get(key) != Some(expr)
+        {
+            Settings::ensure_not_safe(&format!("evaluating {key} of {}", self.ba.short))?;
+        }
+        Ok(())
+    }
+
     /// Fetch versions from version_list_url if configured, with release dates from
     /// `version_date_expr` when it is set.
     async fn fetch_versions(&self, config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
@@ -1187,6 +1203,15 @@ impl HttpBackend {
         let regex = opts.version_regex();
         let json_path = opts.version_json_path();
         let version_expr = opts.version_expr();
+        for (key, expr) in [
+            ("version_expr", version_expr),
+            ("version_date_expr", opts.version_date_expr()),
+            ("version_date_next_expr", opts.version_date_next_expr()),
+        ] {
+            if let Some(expr) = expr {
+                self.ensure_safe_expr(key, expr)?;
+            }
+        }
 
         let headers = opts.headers(None)?;
         let (versions, body) =
@@ -1513,6 +1538,11 @@ impl Backend for HttpBackend {
             .into());
         };
 
+        // Refused here, since a checksum that cannot be resolved still writes a url-only
+        // entry.
+        if let Some(expr) = opts.checksum_expr() {
+            self.ensure_safe_expr("checksum_expr", expr)?;
+        }
         let mut checksum = self.resolve_lock_checksum(&opts, tv, target, &url).await;
 
         // A checksum source was configured but produced nothing for this target
@@ -1616,6 +1646,9 @@ impl Backend for HttpBackend {
             && opts.checksum_url_for_target(&target).is_some()
         {
             ctx.pr.set_message(format!("resolve checksum {filename}"));
+            if let Some(expr) = opts.checksum_expr() {
+                self.ensure_safe_expr("checksum_expr", expr)?;
+            }
             let published = self
                 .resolve_lock_checksum(&opts, &tv, &target, &url)
                 .await

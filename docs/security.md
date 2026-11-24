@@ -271,6 +271,11 @@ These fail with `<operation> is disabled in safe mode (MISE_SAFE=1)`:
 - Running tasks.
 - The tool options `postinstall` and `install_env`, and the `spm:` backend's
   `install_command`.
+- The `http:` backend's `version_expr`, `version_date_expr`,
+  `version_date_next_expr` and `checksum_expr`, for a tool that project config
+  or a project task declares, since nothing limits the memory or time an expression takes. The
+  expressions the registry sets for a tool still run, and so do those of a tool
+  that only global or system config declares.
 - asdf plugin scripts, so tools from the `asdf:` backend cannot list or install
   versions.
 - Requests to S3, which are signed with your AWS credentials, so tools from the

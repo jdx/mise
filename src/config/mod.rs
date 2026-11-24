@@ -4643,7 +4643,7 @@ fn load_aliases(config_files: &ConfigMap) -> Result<AliasMap> {
 /// Adds to the tools recorded for [`is_safe_mode_project_tool`], never replaces
 /// them: a later load of global config alone (such as the global runtime's) must
 /// not drop the project tools of the main one.
-fn record_safe_mode_project_tools(tools: BTreeSet<String>) {
+pub(crate) fn record_safe_mode_project_tools(tools: BTreeSet<String>) {
     SAFE_MODE_PROJECT_TOOLS.lock().unwrap().extend(tools);
 }
 
@@ -4662,7 +4662,8 @@ mod safe_mode_project_tools_tests {
 }
 
 /// The tools that project config declares or aliases, recorded in safe mode by
-/// [`load_aliases`]; see [`is_safe_mode_project_tool`].
+/// [`load_aliases`], and the tools of project tasks, recorded as their tools are
+/// read; see [`is_safe_mode_project_tool`].
 static SAFE_MODE_PROJECT_TOOLS: std::sync::Mutex<BTreeSet<String>> =
     std::sync::Mutex::new(BTreeSet::new());
 
