@@ -660,6 +660,19 @@ logins:
         let mut env = crate::testing::EnvVarGuard::new();
         env.set("GIT_DIR", inherited)
             .set("GIT_WORK_TREE", inherited);
+        // Shell startup variables and exported functions send even a plain
+        // command through the shell, so they are cleared for the direct case.
+        let functions: Vec<_> = std::env::vars_os()
+            .map(|(key, _)| key)
+            .filter(|key| key.to_string_lossy().starts_with("BASH_FUNC_"))
+            .collect();
+        for key in ["ENV", "BASH_ENV", "SHELLOPTS", "BASHOPTS"]
+            .map(std::ffi::OsString::from)
+            .into_iter()
+            .chain(functions)
+        {
+            env.remove(key);
+        }
         // The first runs through the shell, the second without it.
         for (cmd, direct) in [
             ("echo \"[$GIT_DIR][$GIT_WORK_TREE]\"", false),
@@ -673,9 +686,19 @@ logins:
                 "{cmd} took an unexpected path"
             );
             let output = command.output().unwrap();
-            assert!(output.status.success(), "{cmd} failed: {output:?}");
+            // `env` prints the whole environment, which can hold credentials,
+            // so a failure names variables and never shows their values.
+            assert!(output.status.success(), "{cmd} failed: {}", output.status);
             let stdout = String::from_utf8(output.stdout).unwrap();
-            assert!(!stdout.contains(inherited), "{cmd} inherited it: {stdout}");
+            let inherited_in: Vec<&str> = stdout
+                .lines()
+                .filter(|line| line.contains(inherited))
+                .map(|line| line.split_once('=').map_or(line, |(name, _)| name))
+                .collect();
+            assert!(
+                inherited_in.is_empty(),
+                "{cmd} inherited it in {inherited_in:?}"
+            );
         }
     }
 
