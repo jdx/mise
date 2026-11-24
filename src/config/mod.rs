@@ -2953,8 +2953,13 @@ fn mise_env_with_auto_for(path: &Path) -> &'static [String] {
 /// which follows [`env::MISE_GLOBAL_ENV_WITH_AUTO`], lists those files
 /// instead, so with this filter a project can neither add a global environment
 /// file nor push one below global `config.toml`.
+///
+/// A file the walk found by a config filename with a directory in it stays: only
+/// the user's own `.miserc.toml` or environment can list such a name, and no
+/// environment selects the file it names.
 fn is_global_config_found_by_project_envs(path: &Path) -> bool {
     *env::MISE_GLOBAL_ENV_WITH_AUTO != *env::MISE_ENV_WITH_AUTO
+        && !is_named_by_user_config_filename(path)
         && (is_global_config(path)
             || is_in_global_config_dir(path)
             || path.parent().is_some_and(|dir| {
@@ -2963,6 +2968,17 @@ fn is_global_config_found_by_project_envs(path: &Path) -> bool {
                     .into_iter()
                     .any(|global| dir.starts_with(file::desymlink_path(global)))
             }))
+}
+
+/// Whether `path` ends in an `override_config_filenames` or
+/// `override_tool_versions_filenames` entry that has a directory in it. A
+/// project `.miserc.toml` can list only file names there.
+fn is_named_by_user_config_filename(path: &Path) -> bool {
+    env::MISE_OVERRIDE_CONFIG_FILENAMES
+        .iter()
+        .chain(env::MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES.iter().flatten())
+        .filter(|name| Path::new(name).components().count() > 1)
+        .any(|name| path.ends_with(name))
 }
 
 /// The `env_conf_d` setting and decision that apply to `path`.
