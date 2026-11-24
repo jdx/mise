@@ -977,10 +977,22 @@ impl HttpBackend {
         Ok(())
     }
 
+    /// [`Self::strip_metadata_credentials`] on an extraction that is about to
+    /// be reused. The reuse goes ahead when the rewrite fails: the metadata
+    /// may not be JSON, or the cache may belong to another user and be
+    /// read-only. The message names no URL, since the URL is what holds the
+    /// credential.
+    fn strip_reused_metadata_credentials(cache_dir: &Path, cache_key: &str) {
+        if let Err(err) = Self::strip_metadata_credentials(cache_dir, cache_key) {
+            debug!("left the metadata of cached extraction {cache_key} as it was: {err}");
+        }
+    }
+
     /// Rewrite the metadata of a reused extraction whose URL still holds a
     /// credential, as [`Self::write_metadata`] would have stored it. An
     /// extraction is reused without its metadata being written again, and
-    /// one made by an earlier mise recorded the URL as it was.
+    /// one made by an earlier mise recorded the URL as it was. Nothing is
+    /// written when the URL holds no credential.
     fn strip_metadata_credentials(cache_dir: &Path, cache_key: &str) -> Result<()> {
         let path = Self::metadata_path(cache_dir, cache_key);
         let mut metadata: serde_json::Value = serde_json::from_str(&file::read_to_string(&path)?)?;
@@ -1740,7 +1752,7 @@ impl Backend for HttpBackend {
                 ctx.pr.set_message("extracting from cache".into());
                 ctx.pr.set_length(1);
                 ctx.pr.set_position(1);
-                Self::strip_metadata_credentials(&cache_dir, &cache_plan.key)?;
+                Self::strip_reused_metadata_credentials(&cache_dir, &cache_plan.key);
                 self.extraction_type_from_cache(&file_path, &cache_plan.file_info, &opts)?
             } else {
                 ctx.pr.set_message("extracting to cache".into());
@@ -2697,6 +2709,17 @@ mod tests {
             reused("https://dl.example.com/tool.tar.gz?ref=main"),
             "https://dl.example.com/tool.tar.gz?ref=main"
         );
+    }
+
+    #[test]
+    fn reuse_goes_ahead_when_metadata_is_not_json() {
+        let cache_dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(cache_dir.path().join("key")).unwrap();
+        let path = HttpBackend::metadata_path(cache_dir.path(), "key");
+        std::fs::write(&path, "not json").unwrap();
+        assert!(HttpBackend::strip_metadata_credentials(cache_dir.path(), "key").is_err());
+        HttpBackend::strip_reused_metadata_credentials(cache_dir.path(), "key");
+        assert_eq!(file::read_to_string(&path).unwrap(), "not json");
     }
 
     #[test]
