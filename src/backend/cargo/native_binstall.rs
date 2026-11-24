@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
@@ -16,6 +16,7 @@ use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::toolset::ToolVersion;
 use crate::ui::progress_report::SingleReport;
+use crate::{dirs, env};
 
 pub(super) const WARN_AT: &str = "2027.1.0";
 pub(super) const DEFAULT_AT: &str = "2027.7.0";
@@ -37,6 +38,16 @@ pub(super) async fn install(
     let version = tv.version.as_str();
     let crate_name = opts.crate_arg().unwrap_or_else(|| tool_name.to_string());
     if Settings::get().cargo.registry_name.is_some() {
+        return Ok(false);
+    }
+    // This installer only reads crates.io, while the `cargo install` it stands
+    // in for takes the crate from the registry cargo is configured to use. The
+    // same name and version there can be another publisher's code.
+    let cargo_env = cargo_install_env(ctx, tv).await?;
+    if cargo_config_names_other_registry(&cargo_env, &tv.install_path()) {
+        debug!(
+            "cargo is configured to install crates from a registry other than crates.io, so {crate_name} is built with cargo install"
+        );
         return Ok(false);
     }
     let package = CratesIoPackage::fetch(&crate_name, version).await?;
@@ -476,6 +487,71 @@ const DEFAULT_PACKAGE_EXTENSIONS: &[(&str, &str)] = &[
     ("bin", ""),
     ("bin", ".exe"),
 ];
+
+/// The environment of the `cargo install` that `execute_install_command` runs:
+/// the process environment, overridden by the toolset's and then by the
+/// tool's `install_env`.
+async fn cargo_install_env(
+    ctx: &InstallContext,
+    tv: &ToolVersion,
+) -> Result<BTreeMap<String, String>> {
+    let mut cargo_env: BTreeMap<String, String> = env::vars_safe().collect();
+    cargo_env.extend(ctx.ts.env_with_path_without_tools(&ctx.config).await?);
+    for (key, value) in tv.install_env() {
+        match value.into_string() {
+            Some(value) => cargo_env.insert(key, value),
+            None => cargo_env.remove(&key),
+        };
+    }
+    Ok(cargo_env)
+}
+
+/// Whether `cargo install`, run with `cargo_env` in `cwd`, can take a crate
+/// from somewhere other than crates.io: a default registry, a
+/// `[source.crates-io]` table that replaces crates.io, or the legacy
+/// `registry.index`.
+///
+/// `cargo install` reads its configuration from `$CARGO_HOME` and the
+/// `.cargo` directories above it, not from the working directory. A file that
+/// cannot be parsed, or that includes other files, counts as naming another
+/// registry, since `cargo install` is the answer that is right either way.
+fn cargo_config_names_other_registry(cargo_env: &BTreeMap<String, String>, cwd: &Path) -> bool {
+    const CRATES_IO: &str = "crates-io";
+    let var = |key: &str| cargo_env.get(key).filter(|value| !value.is_empty());
+    if var("CARGO_REGISTRY_INDEX").is_some()
+        || var("CARGO_REGISTRY_DEFAULT").is_some_and(|registry| registry != CRATES_IO)
+    {
+        return true;
+    }
+    let cargo_home = match var("CARGO_HOME") {
+        Some(cargo_home) => cwd.join(cargo_home),
+        None => var(if cfg!(windows) { "USERPROFILE" } else { "HOME" })
+            .map_or_else(|| dirs::HOME.to_path_buf(), PathBuf::from)
+            .join(".cargo"),
+    };
+    std::iter::once(cargo_home.clone())
+        .chain(cargo_home.ancestors().map(|dir| dir.join(".cargo")))
+        .flat_map(|dir| [dir.join("config.toml"), dir.join("config")])
+        .filter(|path| path.is_file())
+        .any(|path| {
+            let Some(config) = fs::read_to_string(&path)
+                .ok()
+                .and_then(|body| body.parse::<toml::Table>().ok())
+            else {
+                return true;
+            };
+            config.contains_key("include")
+                || config.get("registry").is_some_and(|registry| {
+                    registry.get("index").is_some()
+                        || registry
+                            .get("default")
+                            .is_some_and(|default| default.as_str() != Some(CRATES_IO))
+                })
+                || config
+                    .get("source")
+                    .is_some_and(|source| source.get(CRATES_IO).is_some())
+        })
+}
 
 async fn discover_native_binstall_metadata(
     package: &CratesIoPackage,
@@ -1606,5 +1682,76 @@ mod tests {
         }));
 
         assert!(response.is_err());
+    }
+
+    #[test]
+    fn cargo_registry_config_sends_the_install_to_cargo() {
+        let root = tempfile::tempdir().unwrap();
+        let cargo_home = root.path().join("up").join("cargo");
+        let cwd = root.path().join("cwd");
+        fs::create_dir_all(&cargo_home).unwrap();
+        fs::create_dir_all(cwd.join(".cargo")).unwrap();
+        let mut cargo_env = BTreeMap::from([(
+            "CARGO_HOME".to_string(),
+            cargo_home.to_string_lossy().to_string(),
+        )]);
+        let default_company = "[registry]\ndefault = \"company\"\n";
+
+        // no configuration, one that keeps crates.io, and the working
+        // directory's, which `cargo install` does not read
+        assert!(!cargo_config_names_other_registry(&cargo_env, &cwd));
+        fs::write(
+            cargo_home.join("config.toml"),
+            "[net]\nretry = 3\n[registry]\ndefault = \"crates-io\"\n",
+        )
+        .unwrap();
+        fs::write(cwd.join(".cargo/config.toml"), default_company).unwrap();
+        assert!(!cargo_config_names_other_registry(&cargo_env, &cwd));
+        fs::remove_file(cargo_home.join("config.toml")).unwrap();
+
+        for config in [
+            default_company,
+            "[registry]\nindex = \"https://acme.example/index\"\n",
+            "[source.crates-io]\nreplace-with = \"mirror\"\n",
+            "include = [\"other.toml\"]\n",
+            "[registry",
+        ] {
+            for path in [
+                cargo_home.join("config.toml"),
+                cargo_home.join("config"),
+                root.path().join("up/.cargo/config.toml"),
+            ] {
+                fs::create_dir_all(path.parent().unwrap()).unwrap();
+                fs::write(&path, config).unwrap();
+                assert!(
+                    cargo_config_names_other_registry(&cargo_env, &cwd),
+                    "{config:?} in {}",
+                    path.display()
+                );
+                fs::remove_file(&path).unwrap();
+            }
+        }
+
+        cargo_env.insert("CARGO_REGISTRY_DEFAULT".into(), "crates-io".into());
+        assert!(!cargo_config_names_other_registry(&cargo_env, &cwd));
+        cargo_env.insert("CARGO_REGISTRY_DEFAULT".into(), "company".into());
+        assert!(cargo_config_names_other_registry(&cargo_env, &cwd));
+        cargo_env.remove("CARGO_REGISTRY_DEFAULT");
+        cargo_env.insert(
+            "CARGO_REGISTRY_INDEX".into(),
+            "https://acme.example/index".into(),
+        );
+        assert!(cargo_config_names_other_registry(&cargo_env, &cwd));
+
+        // without CARGO_HOME, cargo's home is `.cargo` in the home directory
+        let home_var = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
+        let cargo_env = BTreeMap::from([(
+            home_var.to_string(),
+            root.path().to_string_lossy().to_string(),
+        )]);
+        assert!(!cargo_config_names_other_registry(&cargo_env, &cwd));
+        fs::create_dir_all(root.path().join(".cargo")).unwrap();
+        fs::write(root.path().join(".cargo/config.toml"), default_company).unwrap();
+        assert!(cargo_config_names_other_registry(&cargo_env, &cwd));
     }
 }

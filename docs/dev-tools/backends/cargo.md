@@ -81,6 +81,10 @@ mise uses the first method that applies:
 4. If cargo-binstall is not installed and
    [`cargo.binstall_native = true`](/dev-tools/backends/cargo.html#cargo.binstall_native), mise tries its own
    prebuilt-binary installer and runs `cargo install` when it finds no binary.
+   That installer only reads crates.io, so mise skips it when
+   [`cargo.registry_name`](/dev-tools/backends/cargo.html#cargo.registry_name) is set, or when your Cargo
+   configuration sets `registry.default` (or `CARGO_REGISTRY_DEFAULT`) or
+   replaces the crates.io source.
 5. Otherwise mise runs `cargo install`.
 
 Set [`cargo.binstall_only = true`](/dev-tools/backends/cargo.html#cargo.binstall_only) to fail instead of
