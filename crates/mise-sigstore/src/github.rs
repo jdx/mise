@@ -4,6 +4,10 @@ pub struct GithubAttestationRequest<'a> {
     pub artifact_path: &'a Path,
     pub owner: &'a str,
     pub repo: &'a str,
+    /// The tags the release being verified may have (`v1.2.3`, not
+    /// `refs/tags/v1.2.3`). An attestation that names another tag does not
+    /// count. Empty skips the check.
+    pub tags: &'a [String],
     pub token: Option<&'a str>,
     pub signer_workflow: Option<&'a str>,
     pub base_url: Option<&'a str>,
@@ -23,6 +27,7 @@ pub async fn verify_github_attestation(
         artifact_path,
         owner,
         repo,
+        tags: &[],
         token,
         signer_workflow,
         base_url: None,
@@ -45,6 +50,7 @@ pub async fn verify_github_attestation_with_base_url(
         artifact_path,
         owner,
         repo,
+        tags: &[],
         token,
         signer_workflow,
         base_url: Some(base_url),
@@ -61,12 +67,14 @@ pub async fn verify_github_attestation_with_base_url_and_digest(
 }
 
 /// Verify attestations fetched for `owner/repo`; one of them must verify and
-/// name that repository (see [`AttestationError::RepositoryMismatch`]).
+/// name that repository (see [`AttestationError::RepositoryMismatch`]), and
+/// none of the tags but `tags` (see [`GithubAttestationRequest::tags`]).
 pub async fn verify_github_attestation_with_attestations(
     artifact_path: &Path,
     attestations: &[Attestation],
     owner: &str,
     repo: &str,
+    tags: &[String],
     signer_workflow: Option<&str>,
 ) -> Result<bool> {
     if attestations.is_empty() {
@@ -79,6 +87,7 @@ pub async fn verify_github_attestation_with_attestations(
         attestations,
         &artifact,
         &format!("{owner}/{repo}"),
+        tags,
         signer_workflow,
         &mut trust_roots,
     )
@@ -92,10 +101,13 @@ pub async fn verify_github_attestation_with_attestations(
 /// `/repos/{owner}/{repo}/attestations` only lists attestations made in that
 /// repository. Held attestations carry no such guarantee — any repository can
 /// attest any digest — so the caller must check the returned repositories.
-/// An attestation that verifies but names no repository is not returned.
+/// An attestation that verifies but names no repository is not returned, nor
+/// is one that names a tag other than `tags` (see
+/// [`GithubAttestationRequest::tags`]).
 pub async fn verify_github_attestation_sources(
     artifact_path: &Path,
     attestations: &[Attestation],
+    tags: &[String],
     signer_workflow: Option<&str>,
 ) -> Result<Vec<String>> {
     if attestations.is_empty() {
@@ -106,6 +118,7 @@ pub async fn verify_github_attestation_sources(
     verify_github_attestation_sources_for_artifact(
         Artifact::from(artifact.as_slice()),
         attestations,
+        tags,
         signer_workflow,
     )
     .await
@@ -144,6 +157,7 @@ pub(crate) async fn verify_github_attestation_sources_for_sha512_with_trust_root
     verify_github_attestation_sources_with_trust_roots(
         Artifact::from_digest(digest),
         attestations,
+        &[],
         signer_workflow,
         trust_roots,
     )
@@ -168,6 +182,7 @@ pub async fn verify_forge_attestation_sources_for_sha512(
     verify_sources(
         Artifact::from_digest(digest),
         attestations,
+        &[],
         None,
         &mut TrustRoots::default(),
         bundle_forge_source_repository,
@@ -178,11 +193,13 @@ pub async fn verify_forge_attestation_sources_for_sha512(
 pub(crate) async fn verify_github_attestation_sources_for_artifact(
     artifact: Artifact<'_>,
     attestations: &[Attestation],
+    tags: &[String],
     signer_workflow: Option<&str>,
 ) -> Result<Vec<String>> {
     verify_github_attestation_sources_with_trust_roots(
         artifact,
         attestations,
+        tags,
         signer_workflow,
         &mut TrustRoots::default(),
     )
@@ -192,12 +209,14 @@ pub(crate) async fn verify_github_attestation_sources_for_artifact(
 async fn verify_github_attestation_sources_with_trust_roots(
     artifact: Artifact<'_>,
     attestations: &[Attestation],
+    tags: &[String],
     signer_workflow: Option<&str>,
     trust_roots: &mut TrustRoots,
 ) -> Result<Vec<String>> {
     verify_sources(
         artifact,
         attestations,
+        tags,
         signer_workflow,
         trust_roots,
         bundle_source_repository,
@@ -214,6 +233,7 @@ pub(crate) const MAX_HELD_ATTESTATIONS: usize = 30;
 async fn verify_sources(
     artifact: Artifact<'_>,
     attestations: &[Attestation],
+    tags: &[String],
     signer_workflow: Option<&str>,
     trust_roots: &mut TrustRoots,
     source_of: fn(&Bundle) -> Option<String>,
@@ -241,14 +261,19 @@ async fn verify_sources(
                 continue;
             }
         };
-        match verify_bundle_with_trust_roots(
-            artifact.clone(),
-            &bundle,
-            signer_workflow,
-            trust_roots,
-        )
-        .await
+        let verified =
+            verify_bundle_with_trust_roots(artifact.clone(), &bundle, signer_workflow, trust_roots)
+                .await;
+        if verified.is_ok()
+            && let Some(error) = bundle_tag_mismatch(&bundle, tags)
         {
+            log::debug!(
+                "GitHub attestation verification method failed; continuing with other attestations: {error}"
+            );
+            errors.push(error);
+            continue;
+        }
+        match verified {
             Ok(()) => match source_of(&bundle) {
                 Some(repository) => sources.push(repository),
                 None => {
@@ -341,6 +366,7 @@ pub(crate) async fn verify_github_attestation_inner(
         &attestations,
         &artifact,
         &format!("{}/{}", request.owner, request.repo),
+        request.tags,
         request.signer_workflow,
         &mut trust_roots,
     )

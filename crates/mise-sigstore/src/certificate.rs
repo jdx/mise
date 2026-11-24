@@ -59,6 +59,45 @@ pub(crate) fn bundle_source_repository(bundle: &Bundle) -> Option<String> {
     release_statement_repository(envelope.payload.as_bytes())
 }
 
+/// The release tag a bundle's signature names: the tag a GitHub Actions run
+/// was started for, or the tag of the release GitHub attested. `None` when it
+/// names none (a run on a branch, say). Like [`bundle_source_repository`],
+/// only meaningful for a bundle that already verified, and only for one that
+/// function returns a repository for: any other is rejected for naming none.
+pub(crate) fn bundle_source_tag(bundle: &Bundle) -> Option<String> {
+    use x509_cert::Certificate;
+    use x509_cert::der::Decode;
+    let cert = Certificate::from_der(bundle.signing_certificate()?.as_bytes()).ok()?;
+    if certificate_source_repository(&cert).is_some() {
+        return certificate_source_ref(&cert)?
+            .strip_prefix("refs/tags/")
+            .map(str::to_string);
+    }
+    let sigstore_verify::types::SignatureContent::DsseEnvelope(envelope) = &bundle.content else {
+        return None;
+    };
+    let statement: serde_json::Value = serde_json::from_slice(envelope.payload.as_bytes()).ok()?;
+    let tag = statement.get("predicate")?.get("tag")?.as_str()?;
+    Some(tag.to_string())
+}
+
+/// Why a verified bundle does not count for a release tagged one of `tags`
+/// (`v1.2.3`, not `refs/tags/v1.2.3`): it names another tag. Every release of
+/// a repository is attested under the same repository name, so without this
+/// an older release's genuine attestation and artifact would pass as a newer
+/// version's. A bundle that names no tag counts, and no `tags` skips the
+/// check.
+pub(crate) fn bundle_tag_mismatch(bundle: &Bundle, tags: &[String]) -> Option<String> {
+    if tags.is_empty() {
+        return None;
+    }
+    let named = bundle_source_tag(bundle).filter(|named| !tags.contains(named))?;
+    Some(format!(
+        "attestation was made for tag {named}, not {}",
+        tags.join(" or ")
+    ))
+}
+
 fn certificate_extension<'c>(cert: &'c x509_cert::Certificate, oid: &str) -> Option<&'c [u8]> {
     cert.tbs_certificate()
         .extensions()?

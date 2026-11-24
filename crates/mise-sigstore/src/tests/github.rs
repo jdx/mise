@@ -100,6 +100,7 @@ async fn github_attestation_sources_succeeds_when_one_method_fails() {
                 "../../tests/fixtures/github_release_attestation_jdx_mise.json"
             )),
         ],
+        &[],
         None,
     )
     .await
@@ -190,6 +191,7 @@ async fn github_attestation_sources_fails_when_all_methods_fail() {
     let error = crate::github::verify_github_attestation_sources_for_artifact(
         Artifact::from(&digest),
         &[invalid_attestation()],
+        &[],
         None,
     )
     .await
@@ -219,6 +221,7 @@ async fn github_attestation_sources_checks_no_more_than_an_api_answer_holds() {
         crate::github::verify_github_attestation_sources_for_artifact(
             Artifact::from(&digest),
             &attestations,
+            &[],
             None,
         )
         .await
@@ -250,6 +253,7 @@ async fn github_attestation_made_by_another_repository_is_rejected() {
             Artifact::from(&digest),
             &attestations,
             repository,
+            &[],
             None,
             &mut TrustRoots::default(),
         )
@@ -267,6 +271,78 @@ async fn github_attestation_made_by_another_repository_is_rejected() {
         ),
         "{error}"
     );
+}
+
+#[tokio::test]
+async fn github_attestation_made_for_another_tag_is_rejected() {
+    // Every release is attested under the same repository name, so a genuine
+    // v2026.9.12 attestation must not pass for another version's asset.
+    let digest = fixture_digest();
+    let attestations = [fixture_attestation(include_str!(
+        "../../tests/fixtures/github_release_attestation_jdx_mise.json"
+    ))];
+    let verify = async |repository, tags: &[&str]| {
+        let tags: Vec<String> = tags.iter().map(|tag| tag.to_string()).collect();
+        crate::bundle::verify_attestation_bundles_for_artifact(
+            Artifact::from(&digest),
+            &attestations,
+            repository,
+            &tags,
+            None,
+            &mut TrustRoots::default(),
+        )
+        .await
+    };
+
+    let old = ["2026.9.12", "v2026.9.12"];
+    let new = ["2026.11.6", "v2026.11.6"];
+
+    assert!(verify("jdx/mise", &[]).await.unwrap());
+    assert!(verify("jdx/mise", &old).await.unwrap());
+    let error = verify("jdx/mise", &new).await.unwrap_err();
+    assert!(
+        error.to_string().contains("made for tag v2026.9.12"),
+        "{error}"
+    );
+    // Nor is it left for the caller to accept as a renamed repository's.
+    let error = verify("erlang/rebar3", &new).await.unwrap_err();
+    assert!(
+        matches!(&error, AttestationError::Verification(_)),
+        "{error}"
+    );
+}
+
+#[tokio::test]
+async fn github_attestation_sources_leave_out_another_tag() {
+    let digest = fixture_digest();
+    let attestations = [fixture_attestation(include_str!(
+        "../../tests/fixtures/github_release_attestation_jdx_mise.json"
+    ))];
+    let sources = async |tag: &str| {
+        crate::github::verify_github_attestation_sources_for_artifact(
+            Artifact::from(&digest),
+            &attestations,
+            &[tag.to_string()],
+            None,
+        )
+        .await
+    };
+
+    assert_eq!(sources("v2026.9.12").await.unwrap(), ["jdx/mise"]);
+    let error = sources("v2026.11.6").await.unwrap_err();
+    assert!(
+        error.to_string().contains("made for tag v2026.9.12"),
+        "{error}"
+    );
+}
+
+#[test]
+fn build_provenance_names_the_tag_its_run_was_started_for() {
+    let bundle: Bundle = serde_json::from_str(include_str!(
+        "../../tests/fixtures/github_build_provenance_jdx_mise.json"
+    ))
+    .unwrap();
+    assert_eq!(bundle_source_tag(&bundle).as_deref(), Some("v2026.9.12"));
 }
 
 #[test]
@@ -338,6 +414,7 @@ async fn unreachable_tuf_repository_is_a_trust_root_error_not_a_signature_failur
             )),
         ],
         "jdx/mise",
+        &[],
         None,
         &mut TrustRoots::default(),
     )

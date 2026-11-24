@@ -167,11 +167,16 @@ fn attestation_client(api_url: &str) -> AttestationResult<AttestationClient> {
 /// Verify a GitHub artifact attestation for a file on disk.
 ///
 /// Applies configured URL replacements to the API base URL before dispatching to
-/// [`mise_sigstore::verify_github_attestation_with_base_url`].
+/// [`mise_sigstore::verify_github_attestation_with_base_url_and_digest`].
+///
+/// `tags` are the tags the release that `artifact_path` was downloaded for may
+/// have; an attestation that names another tag does not count. Empty skips
+/// that check.
 pub async fn verify_attestation(
     artifact_path: &Path,
     owner: &str,
     repo: &str,
+    tags: &[String],
     expected_workflow: Option<&str>,
     api_url: Option<&str>,
     use_versions_host: bool,
@@ -181,6 +186,7 @@ pub async fn verify_attestation(
             artifact_path,
             owner,
             repo,
+            tags,
             expected_workflow,
             api_url,
             use_versions_host,
@@ -189,7 +195,7 @@ pub async fn verify_attestation(
     }
     let digest = mise_sigstore::calculate_file_digest(artifact_path).await?;
     let key = format!(
-        "github:{owner}/{repo}:{digest}:{expected_workflow:?}:{api_url:?}:{use_versions_host}"
+        "github:{owner}/{repo}:{tags:?}:{digest}:{expected_workflow:?}:{api_url:?}:{use_versions_host}"
     );
     shared_verification(
         key,
@@ -197,6 +203,7 @@ pub async fn verify_attestation(
             artifact_path,
             owner,
             repo,
+            tags,
             expected_workflow,
             api_url,
             use_versions_host,
@@ -209,6 +216,7 @@ async fn verify_attestation_uncached(
     artifact_path: &Path,
     owner: &str,
     repo: &str,
+    tags: &[String],
     expected_workflow: Option<&str>,
     api_url: Option<&str>,
     use_versions_host: bool,
@@ -222,6 +230,7 @@ async fn verify_attestation_uncached(
             artifact_path,
             owner,
             repo,
+            tags,
             expected_workflow,
             None,
             &artifact_digest,
@@ -239,32 +248,20 @@ async fn verify_attestation_uncached(
         api_url.unwrap_or(crate::github::API_URL),
         resolve_token_for_wrapper(api_url),
     )?;
-    let result = if let Some(digest) = digest {
-        mise_sigstore::verify_github_attestation_with_base_url_and_digest(
-            mise_sigstore::GithubAttestationRequest {
-                artifact_path,
-                owner,
-                repo,
-                token: token.as_deref(),
-                signer_workflow: expected_workflow,
-                base_url: Some(&base_url),
-                digest: Some(&digest),
-                retry_config: mise_retry_config(),
-            },
-        )
-        .await
-    } else {
-        mise_sigstore::verify_github_attestation_with_base_url(
+    let result = mise_sigstore::verify_github_attestation_with_base_url_and_digest(
+        mise_sigstore::GithubAttestationRequest {
             artifact_path,
             owner,
             repo,
-            token.as_deref(),
-            expected_workflow,
-            &base_url,
-            mise_retry_config(),
-        )
-        .await
-    };
+            tags,
+            token: token.as_deref(),
+            signer_workflow: expected_workflow,
+            base_url: Some(&base_url),
+            digest: digest.as_deref(),
+            retry_config: mise_retry_config(),
+        },
+    )
+    .await;
     accept_renamed_repository(owner, repo, api_url, result)
         .await
         .map_err(|err| after_mirror_failure(err, owner, repo, mirror_err.as_ref()))
@@ -293,25 +290,43 @@ async fn accept_renamed_repository(
     }
 }
 
+/// What [`verify_attestation_with_predicate_type`] verifies: the arguments of
+/// [`verify_attestation`], and the predicate type to keep.
+pub struct PredicateAttestationRequest<'a> {
+    pub artifact_path: &'a Path,
+    pub owner: &'a str,
+    pub repo: &'a str,
+    pub tags: &'a [String],
+    pub expected_workflow: Option<&'a str>,
+    pub predicate_type: Option<&'a str>,
+    pub api_url: Option<&'a str>,
+    pub use_versions_host: bool,
+}
+
 /// Verify a GitHub artifact attestation filtered by predicate type.
 ///
 /// mise-versions serves every attestation for a digest, so the filter is
 /// applied here, the way GitHub's `predicate_type` parameter applies it.
 pub async fn verify_attestation_with_predicate_type(
-    artifact_path: &Path,
-    owner: &str,
-    repo: &str,
-    expected_workflow: Option<&str>,
-    predicate_type: Option<&str>,
-    api_url: Option<&str>,
-    use_versions_host: bool,
+    request: PredicateAttestationRequest<'_>,
 ) -> AttestationResult<bool> {
+    let PredicateAttestationRequest {
+        artifact_path,
+        owner,
+        repo,
+        tags,
+        expected_workflow,
+        predicate_type,
+        api_url,
+        use_versions_host,
+    } = request;
     mise_sigstore::set_tuf_url(routed_tuf_url());
     let Some(predicate_type) = predicate_type else {
         return verify_attestation(
             artifact_path,
             owner,
             repo,
+            tags,
             expected_workflow,
             api_url,
             use_versions_host,
@@ -326,6 +341,7 @@ pub async fn verify_attestation_with_predicate_type(
             artifact_path,
             owner,
             repo,
+            tags,
             expected_workflow,
             Some(predicate_type),
             &artifact_digest,
@@ -353,6 +369,7 @@ pub async fn verify_attestation_with_predicate_type(
         &attestations,
         owner,
         repo,
+        tags,
         expected_workflow,
     )
     .await;
@@ -681,6 +698,7 @@ async fn verify_with_mirror(
     artifact_path: &Path,
     owner: &str,
     repo: &str,
+    tags: &[String],
     expected_workflow: Option<&str>,
     predicate_type: Option<&str>,
     artifact_digest: &str,
@@ -748,6 +766,7 @@ async fn verify_with_mirror(
             mise_sigstore::verify_github_attestation_sources(
                 artifact_path,
                 &selected,
+                tags,
                 expected_workflow,
             )
             .await,

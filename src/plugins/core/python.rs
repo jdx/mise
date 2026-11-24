@@ -611,7 +611,7 @@ impl PythonPlugin {
         if has_lockfile_integrity && !settings.force_provenance_verify() {
             Self::ensure_precompiled_provenance_setting_enabled(tv, &platform_key)?;
         } else {
-            self.verify_precompiled_provenance(ctx, tv, &platform_key, &tarball_path)
+            self.verify_precompiled_provenance(ctx, tv, &platform_key, &tarball_path, &url)
                 .await?;
         }
 
@@ -908,6 +908,7 @@ impl PythonPlugin {
         tv: &mut ToolVersion,
         platform_key: &str,
         tarball_path: &std::path::Path,
+        url: &str,
     ) -> Result<()> {
         // Check lockfile provenance expectation before verification
         let locked_provenance = tv
@@ -918,7 +919,7 @@ impl PythonPlugin {
         // Verify GitHub artifact attestations for precompiled binaries
         // Returns Ok(true) if verified, Ok(false) if skipped, Err if failed
         let verified = self
-            .verify_github_artifact_attestations(ctx.pr.as_ref(), tarball_path, &tv.version)
+            .verify_github_artifact_attestations(ctx.pr.as_ref(), tarball_path, &tv.version, url)
             .await?;
 
         // Record provenance only if verification actually succeeded (not skipped)
@@ -956,11 +957,18 @@ impl PythonPlugin {
         pr: &dyn SingleReport,
         tarball_path: &std::path::Path,
         version: &str,
+        url: &str,
     ) -> Result<bool> {
         if !Self::github_attestations_enabled() {
             debug!("GitHub artifact attestations verification disabled for Python");
             return Ok(false);
         }
+
+        // The python-build-standalone release `url` downloads from
+        let tag = url
+            .strip_prefix(PBS_RELEASE_DOWNLOAD_URL)
+            .and_then(|path| path.split_once('/'))
+            .map(|(tag, _)| tag.to_string());
 
         pr.set_message("verify GitHub artifact attestations".to_string());
 
@@ -968,6 +976,7 @@ impl PythonPlugin {
             tarball_path,
             "astral-sh",
             "python-build-standalone",
+            tag.as_slice(),
             None, // Accept any workflow from repo
             None,
             true,
@@ -1275,6 +1284,7 @@ impl Backend for PythonPlugin {
                     &crate::ui::progress_report::QuietReport::new(),
                     &artifact.path().join("artifact"),
                     version,
+                    &url,
                 )
                 .await?
             {
