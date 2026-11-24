@@ -1135,19 +1135,17 @@ impl Backend for AquaBackend {
             );
         }
         if let Some(e) = checksum_file_error {
-            // An install refuses an artifact the declared checksum file does not vouch for.
-            // `generate` would complete this entry by hashing whatever the download host
-            // serves, and an install that finds a checksum in the lockfile does not read the
-            // checksum file, so only provenance verified above may stand in for it. In merge
-            // mode the entry stays without a checksum and the install checks the file itself.
-            if (!verified_at_lock_time || provenance.is_none())
-                && Settings::get().generate_lockfiles()
-            {
-                bail!(
+            match checksum_file_fallback(
+                verified_at_lock_time && provenance.is_some(),
+                Settings::get().generate_lockfiles(),
+            ) {
+                ChecksumFileFallback::Refuse => bail!(
                     "could not read the checksum file the aqua registry declares for {} on {}: {e:#}",
                     self.ba(),
                     target.to_key()
-                );
+                ),
+                ChecksumFileFallback::DropChecksum => checksum = None,
+                ChecksumFileFallback::KeepChecksum => {}
             }
             warn!(
                 "[{}] failed to get checksum from checksum file: {e:#}",
@@ -4664,6 +4662,31 @@ fn github_release_tag_from_url(url: &str) -> Option<String> {
     urlencoding::decode(tag).ok().map(Cow::into_owned)
 }
 
+/// What a lock entry does when the checksum file the registry declares could not vouch for the
+/// artifact.
+#[derive(Debug, PartialEq, Eq)]
+enum ChecksumFileFallback {
+    /// Fail the platform.
+    Refuse,
+    /// Record the entry without a checksum, so the install reads the checksum file itself.
+    DropChecksum,
+    /// Keep the checksum of the artifact that verified provenance covers.
+    KeepChecksum,
+}
+
+/// An install refuses an artifact the declared checksum file does not vouch for, and an install
+/// that finds a checksum in the lockfile does not read the checksum file. Without the file, the
+/// only checksum a lock entry can hold is the hash of whatever the download host served, so only
+/// provenance verified at lock time may stand in for the file. Without it, `generate` mode fails
+/// the platform, and merge mode records the entry without that hash.
+fn checksum_file_fallback(provenance_verified: bool, generate: bool) -> ChecksumFileFallback {
+    match (provenance_verified, generate) {
+        (true, _) => ChecksumFileFallback::KeepChecksum,
+        (false, true) => ChecksumFileFallback::Refuse,
+        (false, false) => ChecksumFileFallback::DropChecksum,
+    }
+}
+
 /// The release tag of a locked URL, when it names the locked version. A listed tag was mapped to
 /// the version when it was listed; a locked URL's tag could name another release, whose override
 /// declares that release's checks, so the recipe is then selected from the version instead.
@@ -5873,6 +5896,23 @@ version_overrides:
         );
         for tag in ["v0", "v0.41.0", "v1.49.0"] {
             assert_eq!(locked_release_tag(&pkg, &url(tag), "1.50.0"), None, "{tag}");
+        }
+    }
+
+    #[test]
+    fn test_checksum_file_fallback_keeps_only_a_verified_checksum() {
+        use ChecksumFileFallback::*;
+        for (provenance_verified, generate, expected) in [
+            (true, true, KeepChecksum),
+            (true, false, KeepChecksum),
+            (false, true, Refuse),
+            (false, false, DropChecksum),
+        ] {
+            assert_eq!(
+                checksum_file_fallback(provenance_verified, generate),
+                expected,
+                "provenance verified: {provenance_verified}, generate: {generate}"
+            );
         }
     }
 
