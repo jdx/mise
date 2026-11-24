@@ -1306,6 +1306,12 @@ impl Asset {
     }
 }
 
+/// A release asset whose checksum files mise could not download or read,
+/// with none of the others listing it
+#[derive(Debug, thiserror::Error)]
+#[error("{0}")]
+pub(crate) struct UnverifiableAsset(String);
+
 /// Result of a checksum lookup
 #[derive(Debug, Clone)]
 pub(crate) struct ChecksumResult {
@@ -1386,15 +1392,17 @@ impl<'a> ChecksumFetcher<'a> {
         if weak.is_some() || unreadable.is_empty() {
             return Ok(weak);
         }
-        // Text only: a 404 from the checksum file must not read as a missing
-        // release to callers that inspect the error chain.
-        Err(eyre::eyre!(
+        // Its own type, not the download's error: a 404 from the checksum file
+        // must not read as a missing release, which would move on to another
+        // tag of the version.
+        Err(UnverifiableAsset(format!(
             "cannot verify {asset_name}: the release publishes checksum files mise could not \
              download or read, and no other checksum file lists it:\n  {}\n\
              For a download error, check the network and the forge token, then retry. To \
              install anyway, pin the asset with the tool's `checksum` option.",
             unreadable.join("\n  ")
         ))
+        .into())
     }
 
     /// Fetch a checksum file and parse it for the target asset
@@ -1449,7 +1457,9 @@ fn is_checksum_file_of(checksum_filename: &str, asset_name: &str) -> bool {
 /// release may list only some of its assets. A list that names the file but
 /// gives no hash mise can use for it, or a checksum file of the asset alone
 /// (`is_sidecar`) that holds no usable hash, is an error, so that a spelling
-/// or algorithm mise does not read never turns the check off.
+/// or algorithm mise does not read never turns the check off. A checksum file
+/// of the asset alone whose lines name no file mise can match is read for its
+/// one standalone hash ([`lone_hash`]) before that error.
 fn parse_checksum_content(
     content: &str,
     target_file: &str,
@@ -1501,6 +1511,9 @@ fn parse_checksum_content(
             }
         }
         if is_sidecar {
+            if let Some((hash, algorithm)) = lone_hash(trimmed, algorithm) {
+                return found(&hash, algorithm);
+            }
             bail!("holds no checksum mise can read");
         }
         return Ok(None);
@@ -1519,6 +1532,9 @@ fn parse_checksum_content(
     let mentions = if exact.mentioned { exact } else { by_path };
     if !mentions.mentioned {
         if is_sidecar {
+            if let Some((hash, algorithm)) = lone_hash(trimmed, algorithm) {
+                return found(&hash, algorithm);
+            }
             bail!("does not list {target_file}");
         }
         return Ok(None);
@@ -1619,6 +1635,42 @@ fn parse_checksum_line(line: &str) -> Option<ChecksumLine<'_>> {
         hash,
         algorithm: LineAlgorithm::Unstated,
     })
+}
+
+/// The one hash a checksum file of a single asset holds when its lines are in
+/// no list format, such as `certutil -hashfile` or PowerShell `Get-FileHash`
+/// output: the only distinct run of hex digits in `text` whose length is a
+/// digest's. A run counts only when whitespace, the start or end of the text,
+/// or one of `:`, `=`, `"`, `'` and `,` surrounds it, so a hex-looking piece
+/// of a file name or path (`tool-<hex>.zip`, `C:\<hex>\`) never counts. None
+/// when there is no such run, or more than one distinct one. The hash is
+/// returned in lower case.
+fn lone_hash<'a>(text: &str, guess: &'a str) -> Option<(String, &'a str)> {
+    let separates = |c: Option<char>| {
+        c.is_none_or(|c| c.is_whitespace() || matches!(c, ':' | '=' | '"' | '\'' | ','))
+    };
+    let mut lone: Option<&str> = None;
+    let mut offset = 0;
+    while let Some(found) = text[offset..].find(|c: char| c.is_ascii_hexdigit()) {
+        let start = offset + found;
+        // Hex digits are ASCII, so every run starts and ends on a char boundary.
+        let end = text[start..]
+            .find(|c: char| !c.is_ascii_hexdigit())
+            .map_or(text.len(), |len| start + len);
+        let run = &text[start..end];
+        let before = text[..start].chars().next_back();
+        let after = text[end..].chars().next();
+        if matches!(run.len(), 32 | 40 | 64 | 128) && separates(before) && separates(after) {
+            match lone {
+                Some(seen) if !seen.eq_ignore_ascii_case(run) => return None,
+                _ => lone = Some(run),
+            }
+        }
+        offset = end;
+    }
+    let hash = lone?.to_ascii_lowercase();
+    let algorithm = algorithm_by_length(&hash, guess);
+    is_valid_hash(&hash, algorithm).then_some((hash, algorithm))
 }
 
 /// The guessed algorithm if the digest fits it, else the one its length names
@@ -4236,14 +4288,99 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-darwin.ta
                 ),
             ),
             ("tool-linux.tar.gz.sha256", "not a hash".to_string()),
-            (
-                "tool-linux.tar.gz.sha256",
-                format!("{LINUX_SHA256}  tool-darwin.tar.gz"),
-            ),
         ] {
             let result = parse_for_linux(&content, source_file);
             assert!(result.is_err(), "{source_file} {content:?}: {result:?}");
         }
+    }
+
+    /// `certutil -hashfile <file> SHA256` output, as ripgrep publishes it
+    const CERTUTIL_SIDECAR: &str = "SHA256 hash of ripgrep-14.1.1-x86_64-pc-windows-msvc.zip:\r\n\
+        d0f534024c42afd6cb4d38907c25cd2b249b79bbe6cc1dbee8e3e37c2b6e25a1\r\n\
+        CertUtil: -hashfile command completed successfully.\r\n";
+    /// PowerShell `Get-FileHash <file> | Format-List` output, as deno publishes it
+    const GET_FILE_HASH_SIDECAR: &str = "\r\nAlgorithm : SHA256\r\n\
+        Hash      : 06E13003A1E66CF8BC8DAA68DFA4E22A735F0E339CC99E3DFF585FAC32B06999\r\n\
+        Path      : C:\\a\\deno\\deno\\target\\release\\deno-x86_64-pc-windows-msvc.zip\r\n\r\n";
+
+    #[test]
+    fn test_sidecar_written_by_windows_hash_tools_gives_its_one_hash() {
+        assert_eq!(CERTUTIL_SIDECAR.len(), 178);
+        assert_eq!(GET_FILE_HASH_SIDECAR.len(), 177);
+        for (asset, extension, content, hash) in [
+            (
+                "ripgrep-14.1.1-x86_64-pc-windows-msvc.zip",
+                ".sha256",
+                CERTUTIL_SIDECAR,
+                "d0f534024c42afd6cb4d38907c25cd2b249b79bbe6cc1dbee8e3e37c2b6e25a1",
+            ),
+            (
+                "deno-x86_64-pc-windows-msvc.zip",
+                ".sha256sum",
+                GET_FILE_HASH_SIDECAR,
+                "06e13003a1e66cf8bc8daa68dfa4e22a735f0e339cc99e3dff585fac32b06999",
+            ),
+        ] {
+            let sidecar = format!("{asset}{extension}");
+            let result = parse_checksum_content(
+                content,
+                asset,
+                &detect_checksum_algorithm(&sidecar),
+                &sidecar,
+                is_checksum_file_of(&sidecar, asset),
+            )
+            .unwrap_or_else(|e| panic!("{asset}: {e:#}"))
+            .unwrap_or_else(|| panic!("{asset}: no checksum"));
+            assert_eq!(
+                (result.algorithm.as_str(), result.hash.as_str()),
+                ("sha256", hash)
+            );
+        }
+        // The algorithm comes from the length of the hash, not the file name
+        let content = format!("Algorithm : SHA512\r\nHash      : {LINUX_SHA512}\r\n");
+        let result = parse_for_linux(&content, "tool-linux.tar.gz.sha256")
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            (result.algorithm.as_str(), result.hash.as_str()),
+            ("sha512", LINUX_SHA512)
+        );
+        // A one-line sidecar naming another file (an asset renamed on upload)
+        // gives its hash; the download check catches a file it does not match.
+        let content = format!("{LINUX_SHA256}  tool-darwin.tar.gz");
+        let result = parse_for_linux(&content, "tool-linux.tar.gz.sha256")
+            .unwrap()
+            .unwrap();
+        assert_eq!(result.hash, LINUX_SHA256);
+        // A list of several assets is never read this way
+        let result = parse_for_linux(GET_FILE_HASH_SIDECAR, "checksums.txt").unwrap();
+        assert!(result.is_none(), "{result:?}");
+    }
+
+    #[test]
+    fn test_sidecar_without_exactly_one_standalone_hash_is_an_error() {
+        let upper = LINUX_SHA256.to_ascii_uppercase();
+        for content in [
+            // two different hashes
+            format!("Hash : {LINUX_SHA256}\r\nHash : {DARWIN_SHA256}\r\n"),
+            // no hash at all
+            "CertUtil: -hashfile command completed successfully.\r\n".to_string(),
+            // a digest-length piece of a longer hex run
+            format!("Hash : {LINUX_SHA256}00\r\n"),
+            format!("Hash : 0{LINUX_SHA512}\r\n"),
+            // a digest-length piece of a file name or path
+            format!("Path : C:\\out\\tool-{LINUX_SHA256}.zip\r\n"),
+            format!("Path : C:\\{LINUX_SHA256}\\tool.zip\r\n"),
+        ] {
+            let result = parse_for_linux(&content, "tool-linux.tar.gz.sha256");
+            assert!(result.is_err(), "{content:?}: {result:?}");
+        }
+        // The same hash twice, in either case, is one hash
+        let content = format!("Hash : {LINUX_SHA256}\r\nHash : {upper}\r\n");
+        let result = parse_for_linux(&content, "tool-linux.tar.gz.sha256")
+            .unwrap()
+            .unwrap();
+        assert_eq!(result.hash, LINUX_SHA256);
     }
 
     #[test]

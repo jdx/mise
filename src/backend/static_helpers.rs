@@ -305,6 +305,14 @@ pub(crate) trait VerifiableError: Sized + Send + Sync + 'static {
 
 impl VerifiableError for eyre::Report {
     fn is_not_found(&self) -> bool {
+        // The release was found; its checksum could not be read, and the
+        // message may quote that download's 404.
+        if self
+            .chain()
+            .any(|cause| cause.is::<super::asset_matcher::UnverifiableAsset>())
+        {
+            return false;
+        }
         if self.to_string().contains("404") {
             return true;
         }

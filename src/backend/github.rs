@@ -4350,6 +4350,121 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn test_pinned_checksum_installs_when_the_release_checksum_file_cannot_be_read() {
+        let pin = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+        let target = PlatformTarget::new(crate::platform::Platform::parse("linux-x64").unwrap());
+        for forge in ["gitlab", "forgejo"] {
+            let mut server = mockito::Server::new_async().await;
+            let asset = "tool-linux-x64.tar.gz";
+            let sidecar = format!("{asset}.sha256");
+            let server_url = server.url();
+            let file_url = |name: &str| format!("{server_url}/files/{forge}/{name}");
+            let release = if forge == "gitlab" {
+                serde_json::json!({
+                    "tag_name": "v1.0.0",
+                    "description": null,
+                    "created_at": "2024-01-01T00:00:00Z",
+                    "released_at": "2024-01-01T00:00:00Z",
+                    "assets": { "sources": [], "links": ([asset, sidecar.as_str()].map(|name| serde_json::json!({
+                        "id": 1,
+                        "name": name,
+                        "url": file_url(name),
+                        "direct_asset_url": file_url(name),
+                        "link_type": "package",
+                    }))) },
+                })
+            } else {
+                serde_json::json!({
+                    "id": 1,
+                    "tag_name": "v1.0.0",
+                    "draft": false,
+                    "prerelease": false,
+                    "created_at": "2024-01-01T00:00:00Z",
+                    "assets": ([(asset, "a"), (sidecar.as_str(), "s")].map(|(name, uuid)| serde_json::json!({
+                        "id": 1,
+                        "name": name,
+                        "uuid": uuid,
+                        "browser_download_url": file_url(name),
+                    }))),
+                })
+            };
+            let path = if forge == "gitlab" {
+                r"^/projects/.+/releases/v1\.0\.0$"
+            } else {
+                r"^/repos/.+/releases/tags/v1\.0\.0$"
+            };
+            server
+                .mock("GET", mockito::Matcher::Regex(path.into()))
+                .with_header("content-type", "application/json")
+                .with_body(release.to_string())
+                .create_async()
+                .await;
+            server
+                .mock("GET", mockito::Matcher::Regex(path.replace(r"/v1", "/1")))
+                .with_status(404)
+                .create_async()
+                .await;
+            // Every download of the checksum file fails, however it is asked for.
+            server
+                .mock(
+                    "GET",
+                    mockito::Matcher::Regex(r"\.sha256$|/attachments/s$".into()),
+                )
+                .with_status(404)
+                .create_async()
+                .await;
+            let backend = if forge == "gitlab" {
+                create_test_gitlab_backend()
+            } else {
+                create_test_forgejo_backend()
+            };
+            let repo = format!("test/unreadable-checksum-file-{forge}");
+            let resolve = async |checksum_option: Option<&str>, lock_pin: Option<&str>| {
+                let mut raw = ToolVersionOptions::default();
+                raw.opts
+                    .insert("api_url".into(), toml::Value::String(server.url()));
+                if let Some(checksum) = checksum_option {
+                    raw.opts
+                        .insert("checksum".into(), toml::Value::String(checksum.into()));
+                }
+                let opts = backend.options(&raw);
+                let request = ToolRequest::new(
+                    backend.ba.clone(),
+                    "1.0.0",
+                    crate::toolset::ToolSource::Argument,
+                )
+                .unwrap();
+                let mut tv = ToolVersion::new(request, "1.0.0".to_string());
+                if let Some(checksum) = lock_pin {
+                    tv.lock_platforms.insert(
+                        target.to_key(),
+                        crate::lockfile::PlatformInfo {
+                            checksum: Some(checksum.to_string()),
+                            ..Default::default()
+                        },
+                    );
+                }
+                backend
+                    .resolve_asset_url_for_target(&tv, &opts, &repo, &target)
+                    .await
+            };
+
+            let err = resolve(None, None).await.unwrap_err();
+            assert!(
+                format!("{err:#}").contains("cannot verify tool-linux-x64.tar.gz"),
+                "{forge}: {err:#}"
+            );
+            for (option, lock) in [(Some(pin), None), (None, Some(pin))] {
+                let asset = resolve(option, lock)
+                    .await
+                    .unwrap_or_else(|e| panic!("{forge} {option:?} {lock:?}: {e:#}"));
+                assert_eq!(asset.url, file_url("tool-linux-x64.tar.gz"), "{forge}");
+                assert_eq!(asset.digest, None, "{forge}");
+            }
+        }
+    }
+
     #[test]
     fn test_release_tag_from_download_url() {
         let repo = "https://github.com/kubernetes-sigs/kustomize";
