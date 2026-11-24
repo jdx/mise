@@ -1213,7 +1213,7 @@ mod tests {
         // A shebang picks the shell first, then the task's `shell`, then `mise run --shell`,
         // then the default inline shell setting.
         // (task shell, `mise run --shell`, script prefix, expected)
-        let cases: [(Option<&str>, Option<&Vec<String>>, &str, &str); 4] = [
+        let cases = [
             (None, None, "", posix_quoted),
             (None, Some(&fish), "", fish_quoted),
             (Some("bash -c"), Some(&fish), "", posix_quoted),
