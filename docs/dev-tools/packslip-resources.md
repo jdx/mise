@@ -198,7 +198,10 @@ trigger it. Reload skills in your agent if it does not notice the change.
 A skill can come from the artifact, a separate signed asset, or the source
 repository at the release commit, and fetching it does not run the tool. A
 separate asset must match its signed digest, and a mismatch is a verification
-failure. A skill offered only as an `exec` command is generated during
+failure. A skill directory in the source repository may hold at most 1024
+entries, files and subdirectories together, counting the symlinks and
+submodules mise leaves out; a larger one is not fetched. A skill offered only
+as an `exec` command is generated during
 installation when `packslip.exec` is on; that command runs the newly installed
 executable and must print `SKILL.md` content.
 

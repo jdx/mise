@@ -690,7 +690,9 @@ fn into_place(staging: &Path, dir: &Path, built: Result<()>) -> Result<()> {
 ///
 /// The listings decide how deep the tree goes, so it is walked from a list
 /// of directories still to fetch rather than by recursion, whose nested
-/// futures would all be polled on one stack.
+/// futures would all be polled on one stack. They do not decide how long
+/// the walk runs: it fails once they name more than
+/// [`MAX_REPO_DIR_ENTRIES`] entries.
 async fn fetch_repo_dir(
     repo: &str,
     commit: &str,
@@ -699,14 +701,23 @@ async fn fetch_repo_dir(
     pr: &dyn SingleReport,
 ) -> Result<()> {
     let mut dirs = vec![(rel.to_string(), dest.to_path_buf())];
+    let mut listed = 0;
     while let Some((rel, dest)) = dirs.pop() {
-        fetch_repo_dir_entries(repo, commit, &rel, &dest, pr, &mut dirs).await?;
+        fetch_repo_dir_entries(repo, commit, &rel, &dest, pr, &mut dirs, &mut listed).await?;
     }
     Ok(())
 }
 
+/// Most entries, files and directories together, the listings of one
+/// [`fetch_repo_dir`] may name. The commit pins the files, not the listings:
+/// a directory one of them invents is never looked up anywhere else, so
+/// without a limit mise-versions could keep the walk going for as long as it
+/// keeps answering. A genuine skill is a handful of files.
+const MAX_REPO_DIR_ENTRIES: usize = 1024;
+
 /// One directory of [`fetch_repo_dir`]: its files are downloaded into
-/// `dest`, and its subdirectories added to `dirs`.
+/// `dest`, and its subdirectories added to `dirs`. `listed` counts the
+/// entries of every directory listed so far.
 async fn fetch_repo_dir_entries(
     repo: &str,
     commit: &str,
@@ -714,8 +725,13 @@ async fn fetch_repo_dir_entries(
     dest: &Path,
     pr: &dyn SingleReport,
     dirs: &mut Vec<(String, PathBuf)>,
+    listed: &mut usize,
 ) -> Result<()> {
     let listing = github::list_repo_dir(repo, commit, rel).await?;
+    *listed += listing.entries.len();
+    if *listed > MAX_REPO_DIR_ENTRIES {
+        bail!("the listings of {repo} name more than {MAX_REPO_DIR_ENTRIES} files and directories");
+    }
     file::create_dir_all(dest)?;
     for entry in listing.entries {
         let name = entry.name;
@@ -2287,6 +2303,46 @@ mod tests {
             .unwrap();
         let notes = dir.path().join(rel).join("notes.md");
         assert_eq!(file::read_to_string(notes).unwrap(), "notes");
+    }
+
+    #[tokio::test]
+    async fn test_fetch_repo_dir_stops_when_the_listings_never_end() {
+        use crate::config::SettingsExt;
+        use crate::config::settings::SettingsPartial;
+        use confique::Layer;
+        let _config = crate::config::Config::get().await.unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let _settings = crate::test::SettingsGuard::lock();
+        let mut settings = SettingsPartial::empty();
+        settings.url_replacements = Some(indexmap::indexmap! {
+            "https://api.github.com".to_string() => server.url(),
+        });
+        Settings::reset(Some(settings));
+        // Every directory holds more directories and never a file, which is
+        // the one thing the commit could contradict.
+        const WIDTH: usize = 32;
+        let body = (0..WIDTH)
+            .map(|i| format!(r#"{{"name":"d{i}","type":"dir"}}"#))
+            .join(",");
+        let listings = server
+            .mock(
+                "GET",
+                mockito::Matcher::Regex("^/repos/o/r/contents/skill".into()),
+            )
+            .with_body(format!("[{body}]"))
+            .expect(MAX_REPO_DIR_ENTRIES / WIDTH + 1)
+            .create_async()
+            .await;
+        let dir = tempfile::tempdir().unwrap();
+        let pr = crate::ui::progress_report::QuietReport::new();
+        let err = fetch_repo_dir("o/r", "c", "skill", &dir.path().join("skill"), &pr)
+            .await
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("files and directories"),
+            "expected the entry limit, got {err:#}"
+        );
+        listings.assert_async().await;
     }
 
     #[test]
