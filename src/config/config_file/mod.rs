@@ -1436,8 +1436,8 @@ pub fn trust_check_before_write(path: &Path) -> Result<()> {
 /// would choose which file `mise use` or `mise set` replaces: a file elsewhere in the user's
 /// home, or a trust record in mise's state directory. A link that stays in the config root is
 /// followed. One that leaves it is followed only for global or system config, which the user
-/// links into place themselves (a dotfiles checkout), or for a trusted project outside safe
-/// mode. Nothing is ever written into the state directory through a link, and a link out of
+/// links into place themselves (a dotfiles checkout), or for a project outside safe mode that
+/// was trusted before this command started. Nothing is ever written into the state directory through a link, and a link out of
 /// the root whose target does not exist is not followed either, so a write never creates a
 /// file outside the project.
 pub fn symlink_check_before_write(path: &Path) -> Result<()> {
@@ -1474,12 +1474,23 @@ pub fn symlink_check_before_write(path: &Path) -> Result<()> {
     if !target.exists() {
         return refuse("the link leaves the config's directory and its target does not exist");
     }
-    if !Settings::safe_mode() && is_path_trusted(path) {
+    if Settings::safe_mode() {
+        return refuse(
+            "a link out of the config's directory is only followed for global config, or for a trusted project outside safe mode",
+        );
+    }
+    // Trust this command granted on its own, because it was typed in the project, came before
+    // anyone looked at where the project's links lead, so it does not cover them.
+    let project = config_trust_root(path);
+    if is_path_trusted(path) && !typed_consent::trusted_by_this_command(&project) {
         return Ok(());
     }
-    refuse(
-        "a link out of the config's directory is only followed for global config, or for a trusted project outside safe mode",
-    )
+    Err(eyre!(
+        "refusing to write {} through its symlink to {}: the link leaves the project, and mise follows such a link only for a project that was trusted before this command. Check where the link leads, run `mise trust` in {} and run the command again, or replace the link with a regular file",
+        display_path(path),
+        display_path(&target),
+        display_path(&project)
+    ))
 }
 
 /// Whether a config file, as it is on disk, loads only once trusted.

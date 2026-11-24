@@ -103,6 +103,24 @@ fn owned_by_user(_path: &Path) -> bool {
     true
 }
 
+/// The config roots this process trusted because the command was typed, resolved.
+static TRUSTED_HERE: Mutex<Option<HashSet<PathBuf>>> = Mutex::new(None);
+
+fn resolved(path: &Path) -> PathBuf {
+    path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
+}
+
+/// Whether this process trusted `config_root` because the command was typed, rather than
+/// finding trust that existed before it started. Nobody looked at the project before that
+/// trust, so it does not vouch for where the project's links lead.
+pub(super) fn trusted_by_this_command(config_root: &Path) -> bool {
+    TRUSTED_HERE
+        .lock()
+        .unwrap()
+        .as_ref()
+        .is_some_and(|roots| roots.contains(&resolved(config_root)))
+}
+
 /// Trusts `config_root` when the command consents for the user, and says so once per root.
 /// `Ok(false)` leaves the decision to the prompt.
 pub(super) fn trust_typed_command(path: &Path, config_root: &Path) -> eyre::Result<bool> {
@@ -110,12 +128,11 @@ pub(super) fn trust_typed_command(path: &Path, config_root: &Path) -> eyre::Resu
         return Ok(false);
     }
     super::trust_and_reload_settings(config_root)?;
-    static NOTIFIED: Mutex<Option<HashSet<PathBuf>>> = Mutex::new(None);
-    if NOTIFIED
+    if TRUSTED_HERE
         .lock()
         .unwrap()
         .get_or_insert_with(HashSet::new)
-        .insert(config_root.to_path_buf())
+        .insert(resolved(config_root))
     {
         info!(
             "trusted {} because you ran a mise command there. Undo with `mise untrust`.",
