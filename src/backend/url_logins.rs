@@ -33,13 +33,11 @@ pub fn tool_key_login_url(tool: &str) -> Option<String> {
     let tool = tool.trim();
     let url = if let Some(name) = tool.strip_prefix("npm:") {
         super::npm::fetched_url(name)?
-    } else if let Some(name) = tool
-        .strip_prefix("pipx:")
-        .or_else(|| tool.strip_prefix("pypi:"))
-    {
-        super::pipx::fetched_url(name)?
     } else {
-        return None;
+        let name = tool
+            .strip_prefix("pipx:")
+            .or_else(|| tool.strip_prefix("pypi:"))?;
+        super::pipx::fetched_url(name)?
     };
     url_takes_user_logins(&url).then_some(url)
 }
