@@ -2243,8 +2243,12 @@ pub fn tera_exec(
                             + &command),
                     )[..8]
                         .to_string();
+                    // The output may be a secret, such as a token a credential helper prints.
+                    // Whether it is redacted is up to the entry the template is in, which this
+                    // function cannot see.
                     let mut cacheman =
-                        CacheManagerBuilder::new(dirs::CACHE.join("exec").join(cachehash));
+                        CacheManagerBuilder::new(dirs::CACHE.join("exec").join(cachehash))
+                            .private();
                     if let Some(cache) = cache {
                         cacheman = cacheman.with_cache_key(cache);
                     }

@@ -28,3 +28,7 @@ sleep 1
 assert "mise env --json | jq -r '.NOW'" "$now"
 sleep 1
 assert_not_contains "mise env --json | jq -r '.NOW'" "$now"
+
+# cached output can be a secret, so only the user can read it
+assert "ls -ld $MISE_CACHE_DIR/exec | cut -c1-10" "drwx------"
+assert "ls -lR $MISE_CACHE_DIR/exec | grep '^-' | cut -c1-10 | sort -u" "-rw-------"

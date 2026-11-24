@@ -67,6 +67,7 @@ pub struct CacheManagerBuilder {
     cache_keys: Vec<String>,
     fresh_duration: Option<Duration>,
     fresh_files: Vec<PathBuf>,
+    private: bool,
 }
 
 static BASE_CACHE_KEYS: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
@@ -96,6 +97,7 @@ impl CacheManagerBuilder {
             cache_keys,
             fresh_files: vec![],
             fresh_duration: None,
+            private: false,
         }
     }
 
@@ -111,6 +113,14 @@ impl CacheManagerBuilder {
 
     pub fn with_cache_key(mut self, key: String) -> Self {
         self.cache_keys.push(key);
+        self
+    }
+
+    /// Keep the cached value from other users, for a value that may be a secret. On Unix the
+    /// cache file is created owner-only and its directory is made owner-only too, so that
+    /// directory has to hold private caches only.
+    pub fn private(mut self) -> Self {
+        self.private = true;
         self
     }
 
@@ -134,6 +144,7 @@ impl CacheManagerBuilder {
             adopted_at: None,
             fresh_files: self.fresh_files,
             fresh_duration: self.fresh_duration,
+            private: self.private,
         }
     }
 }
@@ -146,6 +157,8 @@ where
     cache_file_path: PathBuf,
     fresh_duration: Option<Duration>,
     fresh_files: Vec<PathBuf>,
+    /// Whether the file and its directory are kept owner-only.
+    private: bool,
     cache: Box<OnceCell<T>>,
     cache_async: Box<tokio::sync::OnceCell<T>>,
     /// Held while fetching, so concurrent callers of one cache wait for the
@@ -408,6 +421,16 @@ where
     fn parse(&self) -> Result<T> {
         let path = &self.cache_file_path;
         trace!("reading {}", display_path(path));
+        if self.private
+            && let Some(parent) = path.parent()
+        {
+            // An earlier mise wrote this file with the default mode, and it is reused until it
+            // expires. Closing the directory covers it; a cache that cannot be changed, such as
+            // one another account owns, is still read.
+            if let Err(err) = restrict_dir(parent) {
+                debug!("{err:#}");
+            }
+        }
         let mut zlib = ZlibDecoder::new(File::open(path)?);
         let mut bytes = Vec::new();
         zlib.read_to_end(&mut bytes)?;
@@ -418,11 +441,20 @@ where
         trace!("writing {}", display_path(&self.cache_file_path));
         if let Some(parent) = self.cache_file_path.parent() {
             file::create_dir_all(parent)?;
+            if self.private {
+                restrict_dir(parent)?;
+            }
         }
         let partial_path = self
             .cache_file_path
             .with_extension(format!("part-{}", random_string(8)));
-        let mut zlib = ZlibEncoder::new(File::create(&partial_path)?, Compression::fast());
+        // The rename below keeps the mode the partial file was created with.
+        let partial = if self.private {
+            create_private(&partial_path)?
+        } else {
+            File::create(&partial_path)?
+        };
+        let mut zlib = ZlibEncoder::new(partial, Compression::fast());
         zlib.write_all(&rmp_serde::to_vec_named(&val)?[..])?;
         // Finish compression and close the file before publishing it to readers.
         drop(zlib.finish()?);
@@ -471,6 +503,39 @@ where
         }
         freshest
     }
+}
+
+/// Take a private cache's directory away from everyone but its owner.
+#[cfg(unix)]
+fn restrict_dir(dir: &Path) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    if dir.metadata()?.permissions().mode() & 0o077 != 0 {
+        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))
+            .wrap_err_with(|| format!("failed to make {} private", display_path(dir)))?;
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn restrict_dir(_dir: &Path) -> Result<()> {
+    Ok(())
+}
+
+/// Create a file that is owner-only from the start, so that its contents are never readable by
+/// others, even briefly.
+#[cfg(unix)]
+fn create_private(path: &Path) -> std::io::Result<File> {
+    use std::os::unix::fs::OpenOptionsExt;
+    File::options()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(path)
+}
+
+#[cfg(not(unix))]
+fn create_private(path: &Path) -> std::io::Result<File> {
+    File::create(path)
 }
 
 pub struct PruneResults {
@@ -921,6 +986,37 @@ mod tests {
                 .unwrap(),
             "fetched"
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_private_cache_is_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = |path: &Path| path.metadata().unwrap().permissions().mode() & 0o777;
+        let dir = tempfile::tempdir().unwrap();
+        let exec = dir.path().join("exec");
+        let builder = || CacheManagerBuilder::new(exec.join("value"));
+
+        // A directory an earlier mise left readable is closed when read.
+        builder().build().write(&"earlier".to_string()).unwrap();
+        fs::set_permissions(&exec, fs::Permissions::from_mode(0o755)).unwrap();
+        let cache = builder().private().build::<String>();
+        assert_eq!(
+            cache.get_or_try_init(|| Ok("fetched".to_string())).unwrap(),
+            "earlier"
+        );
+        assert_eq!(mode(&exec), 0o700);
+
+        fs::remove_dir_all(&exec).unwrap();
+        let cache = builder().private().build::<String>();
+        cache.write(&"secret".to_string()).unwrap();
+        assert_eq!(mode(&exec), 0o700);
+        let files = fs::read_dir(&exec).unwrap().collect::<Vec<_>>();
+        assert_eq!(files.len(), 1);
+        for file in files {
+            assert_eq!(mode(&file.unwrap().path()), 0o600);
+        }
+        assert_eq!(cache.get_cached().unwrap(), "secret");
     }
 
     fn environment(values: &[(&str, &str)]) -> impl Fn(&str) -> Option<String> {
