@@ -222,13 +222,25 @@ impl HostState {
             .collect()
     }
 
-    /// The highest sequence accepted for `project` under any of its spellings.
-    fn highest_sequence(&self, project: &str) -> Option<u64> {
+    /// The highest sequence accepted for `project` under any of its spellings,
+    /// with the spelling it was accepted under.
+    fn highest_sequence(&self, project: &str) -> Option<(&str, u64)> {
         self.sequences
             .iter()
             .filter(|(key, _)| forge::same_project(key, project))
-            .map(|(_, last)| *last)
-            .max()
+            .map(|(key, last)| (key.as_str(), *last))
+            .max_by_key(|(_, last)| *last)
+    }
+}
+
+/// How a refusal names the spelling a list was accepted under, when it is not
+/// the one asked for: a stamper serves its list at the spelling it published,
+/// so the user learns which name finds it.
+fn accepted_as(key: &str, project: &str) -> String {
+    if key == project {
+        String::new()
+    } else {
+        format!(" under {key}, the same repository in other letter case")
     }
 }
 
@@ -296,9 +308,10 @@ fn missing_list(host: &str, project: &str, url: &str) -> Result<()> {
 
 fn missing_list_in(dir: &Path, host: &str, project: &str, url: &str) -> Result<()> {
     let state = read_state(dir, host)?;
-    if let Some(last) = state.highest_sequence(project) {
+    if let Some((key, last)) = state.highest_sequence(project) {
         bail!(
-            "{host} published a stamp list for {project} before (sequence {last}) but now answers 404 at {url}; refusing to treat that as no list, since it would drop the yanks that list carried"
+            "{host} published a stamp list for {project} before (sequence {last}{}) but now answers 404 at {url}; refusing to treat that as no list, since it would drop the yanks that list carried",
+            accepted_as(key, project)
         );
     }
     Ok(())
@@ -312,11 +325,12 @@ fn check_sequence_in(
 ) -> Result<()> {
     let mut state = read_state(dir, host)?;
     let sequence = list.predicate.sequence;
-    if let Some(last) = state.highest_sequence(project)
+    if let Some((key, last)) = state.highest_sequence(project)
         && sequence < last
     {
         bail!(
-            "the stamp list from {host} for {project} has sequence {sequence}, below the {last} already accepted; refusing what may be a rollback"
+            "the stamp list from {host} for {project} has sequence {sequence}, below the {last} already accepted{}; refusing what may be a rollback",
+            accepted_as(key, project)
         );
     }
     // `sequence` is at least every entry of the project, so it replaces them
@@ -590,10 +604,17 @@ mod tests {
             &list("github.com/O/R", 4, &entries),
         )
         .unwrap_err();
+        let accepted = "under github.com/o/r, the same repository in other letter case";
         assert!(err.to_string().contains("rollback"), "{err}");
+        assert!(err.to_string().contains(accepted), "{err}");
         let err = missing_list_in(d, host, "github.com/O/R", "https://case.example.com/x.json")
             .unwrap_err();
         assert!(err.to_string().contains("sequence 6"), "{err}");
+        assert!(err.to_string().contains(accepted), "{err}");
+        // Under the spelling it was accepted as, the refusal names no other.
+        let err = missing_list_in(d, host, "github.com/o/r", "https://case.example.com/y.json")
+            .unwrap_err();
+        assert!(!err.to_string().contains("other letter case"), "{err}");
     }
 
     #[test]
