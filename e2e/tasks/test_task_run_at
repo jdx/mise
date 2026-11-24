@@ -159,11 +159,28 @@ assert_fail "mise run --at with-dep hi" "is not trusted"
 assert_fail "git config --get submodule.dep.url"
 assert_fail "mise run --at with-dep-file-task hi" "are not initialized"
 assert_fail "git config --get submodule.dep.url"
+# Nor through a directory that is a symlink at REV to a project the user trusted:
+# that project's trust is not REV's.
+mkdir ../trusted-outside
+printf '[tasks.hi]\nrun = "echo outside"\n' >../trusted-outside/mise.toml
+mise trust ../trusted-outside/mise.toml
+link=$(printf %s "$(dirname "$PWD")/trusted-outside" | git hash-object -w --stdin)
+export GIT_INDEX_FILE="$PWD/../escape-to-trusted.index"
+git read-tree with-dep-file-task
+git rm --cached -rq escape
+git update-index --add --cacheinfo "120000,$link,escape"
+git branch escape-to-trusted "$(git commit-tree "$(git write-tree)" -p with-dep-file-task -m five)"
+unset GIT_INDEX_FILE
+assert_fail "mise -C escape run --at escape-to-trusted hi" "not a directory inside the worktree"
+assert_fail "git config --get submodule.dep.url"
 assert "git worktree list --porcelain | grep -c '^worktree '" "1"
 assert_empty "ls -A $MISE_STATE_DIR/run-at"
 mise trust
 assert "mise run --at HEAD~1 hi" "version-one"
 assert_contains "mise run --at with-dep --at-setup 'cat dep/version.txt' hi" "sub-v2"
+# The trusted root config gives its tasks to a directory with no config of its own,
+# and its trust lets the submodules be initialized for them too.
+assert_contains "mise -C pkg run --at with-dep --at-setup 'cat ../dep/version.txt' hi" "sub-v2"
 
 # Paranoid mode binds trust to a path and its contents, so config in the
 # worktree, a new path on every run, is never trusted.
