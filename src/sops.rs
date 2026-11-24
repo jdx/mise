@@ -200,38 +200,44 @@ where
         return Some(ResolvedAgeKey::Direct(age_key.clone()));
     }
 
-    // 2. Check mise-specific MISE_SOPS_AGE_KEY_FILE setting
-    if let Some(key_file) = &Settings::get().sops.age_key_file
-        && let Some(key) = read_age_key_file(
-            key_file.to_string_lossy().to_string(),
-            parse_template,
-            "MISE_SOPS_AGE_KEY_FILE",
-        )
-    {
-        return Some(key);
+    // 2. Check mise-specific MISE_SOPS_AGE_KEY_FILE setting. Only a value written in a config
+    // file is a template. One from the environment is a path: it was rendered by `[env]` if it
+    // was declared there, and otherwise it may be text from an env file.
+    if let Some(key_file) = &Settings::get().sops.age_key_file {
+        let key_file = key_file.to_string_lossy().to_string();
+        let key_file = if env::var_os("MISE_SOPS_AGE_KEY_FILE").is_some() {
+            Some(key_file)
+        } else {
+            parse_template(key_file)
+                .inspect_err(|e| warn!("failed to parse sops.age_key_file: {e}"))
+                .ok()
+        };
+        if let Some(key) = key_file.and_then(read_age_key_file) {
+            return Some(key);
+        }
     }
 
-    // 3. Check ordered env directives that have already been resolved
+    // 3. Check ordered env directives that have already been resolved. Rendering these values
+    // again would run a template that came from an env file or from a directory name.
     if let Some(age_key) = env.get("MISE_SOPS_AGE_KEY").filter(|key| !key.is_empty()) {
         return Some(ResolvedAgeKey::Direct(age_key.clone()));
     }
 
     if let Some(key_file) = env.get("MISE_SOPS_AGE_KEY_FILE")
-        && let Some(key) =
-            read_age_key_file(key_file.clone(), parse_template, "MISE_SOPS_AGE_KEY_FILE")
+        && let Some(key) = read_age_key_file(key_file)
     {
         return Some(key);
     }
 
     if let Some(key_file) = env.get("SOPS_AGE_KEY_FILE")
-        && let Some(key) = read_age_key_file(key_file.clone(), parse_template, "SOPS_AGE_KEY_FILE")
+        && let Some(key) = read_age_key_file(key_file)
     {
         return Some(key);
     }
 
     // 4. Check standard SOPS environment variables
     if let Ok(key_file_path) = env::var("SOPS_AGE_KEY_FILE")
-        && let Some(key) = read_age_key_file(key_file_path, parse_template, "SOPS_AGE_KEY_FILE")
+        && let Some(key) = read_age_key_file(key_file_path)
     {
         return Some(key);
     }
@@ -247,32 +253,15 @@ where
     }
 
     // 5. Fall back to default path ~/.config/mise/age.txt
-    if let Some(key) = read_age_key_file(
-        dirs::CONFIG.join("age.txt").to_string_lossy().to_string(),
-        parse_template,
-        "default sops age key file",
-    ) {
+    if let Some(key) = read_age_key_file(dirs::CONFIG.join("age.txt")) {
         return Some(key);
     }
 
     None
 }
 
-fn read_age_key_file<PT>(
-    key_file_path: String,
-    parse_template: &mut PT,
-    source: &str,
-) -> Option<ResolvedAgeKey>
-where
-    PT: FnMut(String) -> result::Result<String>,
-{
-    let p = replace_path(match parse_template(key_file_path) {
-        Ok(p) => p,
-        Err(e) => {
-            warn!("failed to parse {source}: {e}");
-            return None;
-        }
-    });
+fn read_age_key_file(key_file_path: impl AsRef<Path>) -> Option<ResolvedAgeKey> {
+    let p = replace_path(key_file_path);
     if p.exists()
         && let Ok(raw) = file::read_to_string(&p)
     {
@@ -302,7 +291,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let path = tmp.path().join("keys.txt");
         file::write(&path, contents).unwrap();
-        read_age_key_file(path.to_string_lossy().to_string(), &mut Ok, "test key file")
+        read_age_key_file(path)
     }
 
     #[test]

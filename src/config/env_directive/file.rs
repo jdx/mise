@@ -567,6 +567,62 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn resolved_age_key_file_is_not_rendered_as_a_template() {
+        fn not_a_template(s: String) -> Result<String> {
+            bail!("age key file was rendered as a template: {s}")
+        }
+
+        let _settings = crate::test::SettingsGuard::lock();
+        let _lock = ENV_MUTEX.lock().await;
+        let prev_age_key = crate::env::var("MISE_SOPS_AGE_KEY").ok();
+        let prev_age_key_file = crate::env::var("MISE_SOPS_AGE_KEY_FILE").ok();
+        let prev_sops_age_key_file = crate::env::var("SOPS_AGE_KEY_FILE").ok();
+        let prev_rops = crate::env::var("MISE_SOPS_ROPS").ok();
+        crate::env::remove_var("MISE_SOPS_AGE_KEY");
+        crate::env::remove_var("MISE_SOPS_AGE_KEY_FILE");
+        crate::env::remove_var("SOPS_AGE_KEY_FILE");
+        crate::env::remove_var("MISE_SOPS_ROPS");
+        Settings::reset(None);
+        let config = Config::reset().await.unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let p = tmp.path().join(".env.toml");
+        // A resolved value is a path, whatever it looks like: it can come from an env file or
+        // hold a directory name.
+        let key_file = tmp.path().join("{{ exec(command='false') }}.txt");
+        file::write(&p, encrypted_toml()).unwrap();
+        file::write(&key_file, AGE_PRIVATE_KEY).unwrap();
+        let key_file = key_file.to_string_lossy().to_string();
+
+        // Set by an earlier env directive.
+        for var in ["MISE_SOPS_AGE_KEY_FILE", "SOPS_AGE_KEY_FILE"] {
+            let mut exec_env = TeraEnvMap::new();
+            exec_env.insert(var.into(), key_file.clone());
+            let env = EnvResults::toml(&config, &exec_env, &p, not_a_template, &mut false)
+                .await
+                .unwrap();
+            assert_eq!(env.get("SECRET").unwrap(), "mysecret", "{var}");
+        }
+
+        // Set in the process environment, which for MISE_SOPS_AGE_KEY_FILE is the
+        // sops.age_key_file setting.
+        for var in ["MISE_SOPS_AGE_KEY_FILE", "SOPS_AGE_KEY_FILE"] {
+            crate::env::set_var(var, &key_file);
+            Settings::reset(None);
+            let exec_env = TeraEnvMap::new();
+            let env = EnvResults::toml(&config, &exec_env, &p, not_a_template, &mut false)
+                .await
+                .unwrap();
+            assert_eq!(env.get("SECRET").unwrap(), "mysecret", "{var}");
+            crate::env::remove_var(var);
+        }
+
+        restore_env_var("MISE_SOPS_AGE_KEY", prev_age_key);
+        restore_env_var("MISE_SOPS_AGE_KEY_FILE", prev_age_key_file);
+        restore_env_var("SOPS_AGE_KEY_FILE", prev_sops_age_key_file);
+        restore_env_var("MISE_SOPS_ROPS", prev_rops);
+    }
+
+    #[tokio::test]
     async fn decrypts_sops_toml_file_with_multiple_age_keys() {
         let _settings = crate::test::SettingsGuard::lock();
         let _lock = ENV_MUTEX.lock().await;
