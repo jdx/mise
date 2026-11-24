@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# A directory in an archive may have the PATH separator in its name. Its bin
+# directory cannot be a PATH entry, so it is left out with a warning instead of
+# failing hook-env (and with it every other tool and env var) on each prompt.
+
+set -euo pipefail
+
+mkdir -p "src/linux:x64/bin" src/extras/bin
+printf '#!/bin/sh\necho hello-from-archive\n' >"src/linux:x64/bin/my-tool"
+printf '#!/bin/sh\necho hello-from-extras\n' >src/extras/bin/my-tool-extras
+chmod +x "src/linux:x64/bin/my-tool" src/extras/bin/my-tool-extras
+# two top-level directories: a single one is stripped on extraction, name and all
+tar -C src -czf my-tool-1.0.0.tar.gz "linux:x64" extras
+ARCHIVE="$PWD/my-tool-1.0.0.tar.gz"
+
+cat >mise.toml <<EOF
+[tools]
+"http:my-tool" = { version = "1.0.0", url = "file://$ARCHIVE" }
+
+[env]
+MY_VAR = "my-value"
+EOF
+
+assert_succeed "MISE_OFFLINE=1 mise install http:my-tool"
+assert_directory_exists "$MISE_DATA_DIR/installs/http-my-tool/1.0.0/linux:x64/bin"
+
+assert_contains "mise hook-env -s bash --force 2>&1" "export MY_VAR=my-value"
+assert_contains "mise hook-env -s bash --force 2>&1" "installs/http-my-tool/1.0.0/extras/bin:"
+assert_contains "mise hook-env -s bash --force 2>&1" "ignoring bin path"
+
+assert_contains "mise bin-paths 2>/dev/null" "installs/http-my-tool/1.0.0/extras/bin"
+assert_not_contains "mise bin-paths 2>/dev/null" "x64/bin"
+assert "mise x -- my-tool-extras 2>/dev/null" "hello-from-extras"

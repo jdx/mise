@@ -444,6 +444,23 @@ fn listing_option_digest(opts: &ToolVersionOptions, version_listing_opt_keys: &[
     hash::hash_to_str(&values)
 }
 
+/// Drops the bin paths of `tv` that cannot be an entry of PATH, with a warning.
+///
+/// Backends discover bin paths from what is on disk in the install directory,
+/// and a directory shipped in a tool's archive may have the PATH separator in
+/// its name (`linux:x64/bin`). Such a path cannot go on PATH: joining it fails
+/// for the whole list, and splitting it yields directories the tool never
+/// listed, one of them relative.
+pub(crate) fn retain_path_entries(tv: &ToolVersion, paths: &mut Vec<PathBuf>) {
+    paths.retain(|path| match env::join_paths([path]) {
+        Ok(_) => true,
+        Err(err) => {
+            warn!("ignoring bin path {} of {tv}: {err}", display_path(path));
+            false
+        }
+    });
+}
+
 /// Remaps a backend-discovered path from the concrete install dir to the
 /// runtime path users put on PATH.
 ///
@@ -2407,6 +2424,27 @@ mod tests {
         assert_eq!(tool("packslip:jdx/fnox", true), None);
         // The registry entry itself inherits that option, so it keeps its list.
         assert_eq!(tool("fnox", true), Some("fnox"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_retain_path_entries_drops_path_with_separator() {
+        let backend = BackendArg::new_raw(
+            "path-entries".into(),
+            None,
+            "path-entries".into(),
+            None,
+            BackendResolution::new(false),
+        );
+        let request = ToolRequest::new(Arc::new(backend), "1.0.0", ToolSource::Argument).unwrap();
+        let tv = ToolVersion::new(request, "1.0.0".into());
+
+        // `linux:x64` is one directory of the archive, not two PATH entries
+        let with_separator = PathBuf::from("/installs/path-entries/1.0.0/linux:x64/bin");
+        let plain = PathBuf::from("/installs/path-entries/1.0.0/extras/bin");
+        let mut paths = vec![with_separator, plain.clone()];
+        retain_path_entries(&tv, &mut paths);
+        assert_eq!(paths, vec![plain]);
     }
 
     #[test]
@@ -6166,7 +6204,8 @@ pub trait Backend: Debug + Send + Sync {
         // Use the backend's list_bin_paths to get the correct binary directories
         // instead of hardcoding install_path/bin, which may not match the actual
         // binary location for backends like aqua.
-        let bin_paths = self.list_bin_paths(&ctx.config, &tv_exact).await?;
+        let mut bin_paths = self.list_bin_paths(&ctx.config, &tv_exact).await?;
+        retain_path_entries(&tv_exact, &mut bin_paths);
         let mut path_env = PathEnv::new();
         for p in bin_paths {
             path_env.add(p);
