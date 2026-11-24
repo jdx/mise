@@ -37,3 +37,20 @@ left:"
     assert_fail "ls project/marker2"
   fi
 done
+
+# fish evaluates no subscript in these names, but refuses each one with an error at every
+# prompt; they are left out for fish too, so it prints nothing but the environment.
+if command -v fish >/dev/null 2>&1; then
+  cat >visit.fish <<'FISH'
+cd project; or exit 1
+mise hook-env -s fish | source
+printf '%s\n' "$GOOD"
+cd ..; or exit 1
+mise hook-env -s fish | source
+printf 'left:%s\n' "$GOOD"
+FISH
+  assert "fish --no-config visit.fish 2>&1" "kept
+left:"
+  assert_fail "ls marker2"
+  assert_fail "ls project/marker2"
+fi
