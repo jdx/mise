@@ -7075,6 +7075,18 @@ pub trait Backend: Debug + Send + Sync {
             } else {
                 bail!("Invalid checksum: {checksum}");
             }
+            // An md5 or sha1 hash from the release, not from mise.lock, has
+            // checked the download; the lockfile pins it by blake3 instead.
+            if lockfile_enabled
+                && !tv.resolved_from_lockfile()
+                && static_helpers::is_weak_checksum(checksum)
+            {
+                let hash = hash::file_hash_blake3(file, Some(ctx.pr.as_ref()))?;
+                tv.lock_platforms
+                    .entry(platform_key.clone())
+                    .or_default()
+                    .checksum = Some(format!("blake3:{hash}"));
+            }
         } else if lockfile_enabled {
             ctx.pr.set_message(format!("generate checksum {filename}"));
             let hash = hash::file_hash_blake3(file, Some(ctx.pr.as_ref()))?;

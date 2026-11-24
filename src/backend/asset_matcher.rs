@@ -21,7 +21,7 @@ use std::sync::LazyLock;
 
 use super::platform_target::PlatformTarget;
 use super::platform_tokens::is_platform_or_version_token;
-use super::static_helpers::get_filename_from_url;
+use super::static_helpers::{get_filename_from_url, is_weak_checksum_algorithm};
 use crate::file::ExtractionFormat;
 
 // ========== Platform Detection Types (from asset_detector) ==========
@@ -1360,6 +1360,9 @@ impl<'a> ChecksumFetcher<'a> {
     ) -> Result<Option<ChecksumResult>> {
         let asset_names: Vec<String> = self.assets.iter().map(|a| a.name.clone()).collect();
         let mut unreadable: Vec<String> = Vec::new();
+        // An md5 or sha1 hash is used only when no list gives a stronger one,
+        // so a `.md5` file next to a `SHA256SUMS` does not decide the pin.
+        let mut weak: Option<ChecksumResult> = None;
         for checksum_filename in AssetMatcher::new().checksum_files_for(asset_name, &asset_names) {
             let Some(checksum_asset) = self.assets.iter().find(|a| a.name == checksum_filename)
             else {
@@ -1369,6 +1372,9 @@ impl<'a> ChecksumFetcher<'a> {
                 .fetch_and_parse_checksum(checksum_asset, &checksum_filename, asset_name, source)
                 .await
             {
+                Ok(Some(result)) if is_weak_checksum_algorithm(&result.algorithm) => {
+                    weak.get_or_insert(result);
+                }
                 Ok(Some(result)) => return Ok(Some(result)),
                 Ok(None) => {}
                 Err(e) => {
@@ -1377,8 +1383,8 @@ impl<'a> ChecksumFetcher<'a> {
                 }
             }
         }
-        if unreadable.is_empty() {
-            return Ok(None);
+        if weak.is_some() || unreadable.is_empty() {
+            return Ok(weak);
         }
         // Text only: a 404 from the checksum file must not read as a missing
         // release to callers that inspect the error chain.
@@ -3961,6 +3967,43 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-darwin.ta
             .expect("the linux list holds the asset's checksum");
         assert_eq!(result.hash, LINUX_SHA256);
         assert_eq!(result.source_file, "checksums-linux.txt");
+    }
+
+    #[tokio::test]
+    async fn test_md5_file_is_used_only_when_no_list_gives_a_stronger_hash() {
+        const LINUX_MD5: &str = "3cc4e5e035a7858cab1da34de1a6ab30";
+        let assets = release_files(&["tool-linux.tar.gz", "tool-linux.tar.gz.md5", "SHA256SUMS"]);
+        let md5_file = || {
+            (
+                "tool-linux.tar.gz.md5",
+                Ok(format!("{LINUX_MD5}  tool-linux.tar.gz\n")),
+            )
+        };
+        let source = FilesSource(vec![
+            md5_file(),
+            (
+                "SHA256SUMS",
+                Ok(list(&[(LINUX_SHA256, "tool-linux.tar.gz")])),
+            ),
+        ]);
+        let result = ChecksumFetcher::new(&assets)
+            .fetch_checksum_for("tool-linux.tar.gz", &source)
+            .await
+            .unwrap()
+            .expect("SHA256SUMS lists the asset");
+        assert_eq!(
+            result.to_string_formatted(),
+            format!("sha256:{LINUX_SHA256}")
+        );
+
+        // A release whose only checksum is md5 is still checked against it.
+        let assets = release_files(&["tool-linux.tar.gz", "tool-linux.tar.gz.md5"]);
+        let result = ChecksumFetcher::new(&assets)
+            .fetch_checksum_for("tool-linux.tar.gz", &FilesSource(vec![md5_file()]))
+            .await
+            .unwrap()
+            .expect("the md5 file lists the asset");
+        assert_eq!(result.to_string_formatted(), format!("md5:{LINUX_MD5}"));
     }
 
     #[tokio::test]

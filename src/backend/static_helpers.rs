@@ -284,6 +284,20 @@ fn is_checksum_hex(s: &str, algo: &str) -> bool {
     s.len() == expected_len && s.chars().all(|c| c.is_ascii_hexdigit())
 }
 
+/// Whether `algorithm` is md5 or sha1. Whoever publishes a file can make a
+/// second one with the same such hash, so it still checks a download but is
+/// never what pins a file in `mise.lock`.
+pub(crate) fn is_weak_checksum_algorithm(algorithm: &str) -> bool {
+    algorithm.eq_ignore_ascii_case("md5") || algorithm.eq_ignore_ascii_case("sha1")
+}
+
+/// [`is_weak_checksum_algorithm`] for a checksum written `algorithm:hash`.
+pub(crate) fn is_weak_checksum(checksum: &str) -> bool {
+    checksum
+        .split_once(':')
+        .is_some_and(|(algorithm, _)| is_weak_checksum_algorithm(algorithm.trim()))
+}
+
 pub(crate) trait VerifiableError: Sized + Send + Sync + 'static {
     fn is_not_found(&self) -> bool;
     fn into_eyre(self) -> eyre::Report;

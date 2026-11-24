@@ -1,7 +1,9 @@
 //! Generate selected scope from requests with an immutable previous lockfile.
 use super::*;
+use crate::backend::static_helpers::is_weak_checksum;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::{QuietReport, SingleReport};
+use eyre::WrapErr;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 static INSTALL_FAILED: AtomicBool = AtomicBool::new(false);
@@ -390,15 +392,22 @@ pub fn is_current(
 
 /// An entry whose URL names another release was left behind when its `version`
 /// was rewritten (Renovate does this), so it is refreshed, not reused.
+///
+/// An entry pinned by md5 or sha1 is refreshed too, so it gets a stronger pin.
 fn can_reuse(info: &PlatformInfo, version: &str) -> bool {
-    info.checksum.is_some()
+    info.checksum
+        .as_deref()
+        .is_some_and(|c| !is_weak_checksum(c))
         && info
             .url
             .as_deref()
             .is_some_and(|url| super::url_contradicts_version(version, url).is_none())
         && info.signer.is_none()
         && info.additional_artifacts.iter().all(|artifact| {
-            artifact.checksum.is_some()
+            artifact
+                .checksum
+                .as_deref()
+                .is_some_and(|c| !is_weak_checksum(c))
                 && super::url_contradicts_version(version, &artifact.url).is_none()
         })
         && !Settings::get().force_provenance_verify()
@@ -1194,30 +1203,58 @@ impl Drop for ProgressGuard<'_> {
     }
 }
 
+/// Gives every artifact a sha256, blake3 or sha512 checksum. One with none is
+/// downloaded and hashed. One with an md5 or sha1 checksum, which the release
+/// publisher chose and could make a second file match, is downloaded, checked
+/// against it, and pinned by its sha256 instead.
 async fn complete_artifact_checksums(info: &mut PlatformInfo) -> Result<()> {
-    if info.checksum.is_none()
+    if info.checksum.as_deref().is_none_or(is_weak_checksum)
         && let Some(url) = &info.url
     {
         info.checksum = Some(
-            artifact_checksum(url, info.url_api.as_deref(), info.download_headers.as_ref()).await?,
+            artifact_checksum(
+                url,
+                info.url_api.as_deref(),
+                info.download_headers.as_ref(),
+                info.checksum.as_deref(),
+            )
+            .await?,
         );
     }
     for artifact in &mut info.additional_artifacts {
-        if artifact.checksum.is_none() {
-            artifact.checksum =
-                Some(artifact_checksum(&artifact.url, artifact.url_api.as_deref(), None).await?);
+        if artifact.checksum.as_deref().is_none_or(is_weak_checksum) {
+            artifact.checksum = Some(
+                artifact_checksum(
+                    &artifact.url,
+                    artifact.url_api.as_deref(),
+                    None,
+                    artifact.checksum.as_deref(),
+                )
+                .await?,
+            );
         }
     }
     Ok(())
 }
 
+/// The sha256 of the artifact at `url`, after checking it against `expected`
+/// (`algorithm:hash`) when given.
 async fn artifact_checksum(
     url: &str,
     api_url: Option<&str>,
     headers: Option<&reqwest::header::HeaderMap>,
+    expected: Option<&str>,
 ) -> Result<String> {
+    let check = |path: &std::path::Path| -> Result<()> {
+        if let Some((algorithm, hash)) = expected.and_then(|c| c.split_once(':')) {
+            crate::hash::ensure_checksum(path, hash, None, algorithm)
+                .wrap_err_with(|| format!("{url} does not match the checksum its release lists"))?;
+        }
+        Ok(())
+    };
     // A `file://` artifact is hashed in place, as the http backend installs it.
     if let Some(local) = crate::backend::http::local_artifact_path(url)? {
+        check(&local)?;
         return Ok(format!(
             "sha256:{}",
             crate::hash::file_hash_sha256(&local, None)?
@@ -1239,6 +1276,7 @@ async fn artifact_checksum(
         }
         None => crate::http::HTTP.download_file(&url, &path, None).await?,
     }
+    check(&path)?;
     Ok(format!(
         "sha256:{}",
         crate::hash::file_hash_sha256(&path, None)?
@@ -1638,6 +1676,75 @@ mod tests {
             });
         assert!(can_reuse(&info, "2.1.17"));
         assert!(!can_reuse(&info, "2.2.2"));
+    }
+
+    #[test]
+    fn entry_pinned_by_md5_or_sha1_is_not_reusable() {
+        let url = "https://example.invalid/tool.tar.gz";
+        let entry = |checksum: &str| PlatformInfo {
+            url: Some(url.into()),
+            checksum: Some(checksum.into()),
+            ..Default::default()
+        };
+        assert!(can_reuse(&entry("sha256:old"), "1.0.0"));
+        assert!(can_reuse(&entry("blake3:old"), "1.0.0"));
+        assert!(!can_reuse(&entry("md5:old"), "1.0.0"));
+        assert!(!can_reuse(&entry("sha1:old"), "1.0.0"));
+        let mut info = entry("sha256:old");
+        info.additional_artifacts
+            .push(crate::lockfile::ArtifactInfo {
+                checksum: Some("md5:old".into()),
+                url: "https://example.invalid/tool.sig".into(),
+                ..Default::default()
+            });
+        assert!(!can_reuse(&info, "1.0.0"));
+    }
+
+    #[tokio::test]
+    async fn md5_checksum_is_checked_and_replaced_by_sha256() {
+        let tmp = tempfile::tempdir().unwrap();
+        let artifact = tmp.path().join("probe");
+        std::fs::write(&artifact, b"artifact").unwrap();
+        let url = url::Url::from_file_path(&artifact).unwrap().to_string();
+        let sha256 = format!(
+            "sha256:{}",
+            crate::hash::file_hash_sha256(&artifact, None).unwrap()
+        );
+        let with_checksum = |checksum: &str| PlatformInfo {
+            url: Some(url.clone()),
+            checksum: Some(checksum.into()),
+            additional_artifacts: vec![crate::lockfile::ArtifactInfo {
+                url: url.clone(),
+                checksum: Some(checksum.into()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+
+        let mut info = with_checksum("md5:8e5b948a454515dbabfc7eb718daa52f");
+        complete_artifact_checksums(&mut info).await.unwrap();
+        assert_eq!(info.checksum.as_deref(), Some(sha256.as_str()));
+        assert_eq!(
+            info.additional_artifacts[0].checksum.as_deref(),
+            Some(sha256.as_str())
+        );
+
+        // The md5 the release lists still has to match.
+        let mut info = with_checksum("md5:00000000000000000000000000000000");
+        let err = complete_artifact_checksums(&mut info).await.unwrap_err();
+        assert!(
+            format!("{err:#}").contains("does not match the checksum its release lists"),
+            "{err:#}"
+        );
+
+        // A strong checksum is kept as it is.
+        let blake3 = format!(
+            "blake3:{}",
+            crate::hash::file_hash_blake3(&artifact, None).unwrap()
+        );
+        let mut info = with_checksum(&blake3);
+        complete_artifact_checksums(&mut info).await.unwrap();
+        assert_eq!(info.checksum.as_deref(), Some(blake3.as_str()));
     }
 
     #[tokio::test]
@@ -2320,7 +2427,7 @@ mod tests {
         headers.insert("authorization", "Bearer secret".parse().unwrap());
         let browser_url = format!("{}/browser", server.url());
         let api_url = format!("{}/api/asset", server.url());
-        let checksum = artifact_checksum(&browser_url, Some(&api_url), Some(&headers))
+        let checksum = artifact_checksum(&browser_url, Some(&api_url), Some(&headers), None)
             .await
             .unwrap();
         head.assert_async().await;
@@ -2346,7 +2453,7 @@ mod tests {
         headers.insert("authorization", "Bearer secret".parse().unwrap());
         let browser_url = format!("{}/browser", server.url());
         let api_url = format!("{}/api/asset", server.url());
-        let checksum = artifact_checksum(&browser_url, Some(&api_url), Some(&headers))
+        let checksum = artifact_checksum(&browser_url, Some(&api_url), Some(&headers), None)
             .await
             .unwrap();
         head.assert_async().await;
