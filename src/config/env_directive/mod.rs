@@ -181,46 +181,72 @@ enum Piece {
 
 /// Splits `input` into the [`Piece`]s it is made of, in order. An opener with no closer makes
 /// the rest of `input` one substitution.
+///
+/// A piece spans exactly what the renderer replaces, so that markers put around it in
+/// [`SubstitutionMarks::wrap_substitutions`] never split a token:
+///
+/// - A template tag runs to its closer, and also covers the whitespace its `-` trims: before
+///   `{{-`, `{%-` or `{#-`, and after `-}}`, `-%}` or `-#}`.
+/// - The `$` syntax is read as [`shell_expand_env`] reads it: `$$` is a written `$`, `${…}` runs
+///   to the brace that closes it, nested fallbacks included, and `$NAME` to the end of the name.
+///   A `$` before anything else is written text, and so is a `$` before a template tag, which
+///   renders first.
 fn template_pieces(input: &str) -> Vec<(Piece, std::ops::Range<usize>)> {
     let bytes = input.as_bytes();
+    let is_tag_open = |at: usize| {
+        bytes.get(at) == Some(&b'{') && matches!(bytes.get(at + 1), Some(b'{' | b'%' | b'#'))
+    };
     let mut pieces = Vec::new();
     let mut text_start = 0;
     let mut i = 0;
     while i < bytes.len() {
-        let end = match bytes[i] {
-            b'{' if matches!(bytes.get(i + 1), Some(b'{' | b'%' | b'#')) => {
+        let found = match bytes[i] {
+            b'{' if is_tag_open(i) => {
                 let (piece, close) = match bytes[i + 1] {
                     b'{' => (Piece::Substituted, "}}"),
                     b'%' => (Piece::Tag, "%}"),
                     _ => (Piece::Tag, "#}"),
                 };
-                let end = input[i + 2..]
+                let mut end = input[i + 2..]
                     .find(close)
                     .map_or(input.len(), |end| i + 2 + end + 2);
-                Some((piece, end))
-            }
-            b'$' if bytes.get(i + 1) == Some(&b'{') => {
-                let end = input[i..].find('}').map_or(input.len(), |end| i + end + 1);
-                Some((Piece::Substituted, end))
-            }
-            b'$' => {
-                let mut end = i + 1;
-                while bytes
-                    .get(end)
-                    .is_some_and(|b| b.is_ascii_alphanumeric() || *b == b'_')
-                {
-                    end += 1;
+                let tag = &input[i..end];
+                let mut start = i;
+                if bytes.get(i + 2) == Some(&b'-') {
+                    start = text_start + input[text_start..i].trim_end().len();
                 }
-                Some((Piece::Substituted, end))
+                if tag.len() >= 6 && tag.ends_with(close) && tag[..tag.len() - 2].ends_with('-') {
+                    end = input.len() - input[end..].trim_start().len();
+                }
+                Some((piece, start, end))
             }
+            b'$' => match bytes.get(i + 1) {
+                Some(b'$') => {
+                    i += 2;
+                    continue;
+                }
+                Some(b'{') if !is_tag_open(i + 1) => {
+                    let end =
+                        read_braced_expr(input, i + 2).map_or(input.len(), |(end, _)| end + 1);
+                    Some((Piece::Substituted, i, end))
+                }
+                Some(&b) if is_var_start(b.into()) => {
+                    let mut end = i + 1;
+                    while bytes.get(end).is_some_and(|&b| is_var_char(b.into())) {
+                        end += 1;
+                    }
+                    Some((Piece::Substituted, i, end))
+                }
+                _ => None,
+            },
             _ => None,
         };
-        match end {
-            Some((piece, end)) => {
-                if text_start < i {
-                    pieces.push((Piece::Written, text_start..i));
+        match found {
+            Some((piece, start, end)) => {
+                if text_start < start {
+                    pieces.push((Piece::Written, text_start..start));
                 }
-                pieces.push((piece, i..end));
+                pieces.push((piece, start..end));
                 i = end;
                 text_start = end;
             }
@@ -1633,6 +1659,46 @@ mod tests {
         );
         // a template that drops a substitution's closing marker leaves no pattern
         assert_eq!(marks.to_glob(&format!("{}*", marks.open)), None);
+    }
+
+    /// Marking the substitutions of a pattern leaves what the template render and the `$`
+    /// expansion make of it as it was: `$$` is still a `$`, a nested fallback still expands, and
+    /// a `-` still trims the whitespace next to its tag.
+    #[test]
+    fn test_marking_a_pattern_keeps_its_rendering() {
+        let env = BTreeMap::from([("P".to_string(), "dev".to_string())]);
+        let mut ctx = tera::Context::new();
+        ctx.insert("env", &env);
+        let marks = SubstitutionMarks::new();
+        for mut engine in [
+            TeraEngine::V2(Box::default()),
+            TeraEngine::V1(Box::default()),
+        ] {
+            let mut glob = |pattern: &str| {
+                let marked = marks.wrap_substitutions(pattern);
+                let rendered = mise_util::tera::render_str_with_env(&mut engine, &marked, &ctx)
+                    .unwrap_or_else(|err| panic!("{pattern}: {err}"));
+                marks.to_glob(&shell_expand_env(&rendered, &env, &mut vec![]))
+            };
+            for (pattern, expected) in [
+                ("$P*.env", "dev*.env"),
+                ("${P}*.env", "dev*.env"),
+                ("$$P*.env", "$P*.env"),
+                ("$$*.env", "$*.env"),
+                ("$*.env", "$*.env"),
+                ("${A:-${P}}*.env", "dev*.env"),
+                ("${P:-${A}}*.env", "dev*.env"),
+                ("${A:-${B:-x}}-$P*", "x-dev*"),
+                ("${{ env.P }}*", "$dev*"),
+                (".env. {{- env.P }}*", ".env.dev*"),
+                ("{{ env.P -}}  .e*", "dev.e*"),
+                ("{{ env.P -}} {{- env.P }}*", "devdev*"),
+                ("a {%- if true %}{{ env.P }}{% endif -%} *", "adev*"),
+                (" {#- c #}*", "*"),
+            ] {
+                assert_eq!(glob(pattern).as_deref(), Some(expected), "{pattern}");
+            }
+        }
     }
 
     /// An escaped substitution matches the file it names, and not the files its `*` would.
