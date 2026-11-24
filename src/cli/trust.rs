@@ -508,7 +508,7 @@ impl Trust {
                 break;
             }
             for path in pending {
-                config_file::trust(&path)?;
+                config_file::trust_env_file(&path)?;
                 info!("trusted {}", display_path(&path.canonicalize()?));
                 trusted += 1;
             }
