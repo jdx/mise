@@ -559,15 +559,37 @@ fn record_release_asset(
 }
 
 /// Whether the tool's options or lockfile pin the checksum of the asset being
-/// resolved for `target`. Only the primary asset (`asset_pattern` is None) is
-/// pinned that way; an additional artifact has its own lockfile entry.
-fn pins_primary_asset(
+/// resolved for `target`. The primary asset (`asset_pattern` is None) is pinned
+/// by the tool's checksum; an additional artifact by the checksum mise.lock
+/// keeps at its pattern's position, which is all an untrusted lockfile keeps
+/// of it (see `Lockfile::drop_what_needs_trust`). Download verification then
+/// checks the asset against that checksum.
+fn pins_asset(
     tv: &ToolVersion,
     opts: &GitBackendOptions<'_>,
     target: &PlatformTarget,
     asset_pattern: Option<&str>,
 ) -> bool {
-    asset_pattern.is_none() && pinned_checksum(tv, &target.to_key(), opts.raw()).is_some()
+    let platform_key = target.to_key();
+    let Some(asset_pattern) = asset_pattern else {
+        return pinned_checksum(tv, &platform_key, opts.raw()).is_some();
+    };
+    let patterns = opts.additional_asset_patterns_for_target(target);
+    let Some(artifacts) = tv
+        .lock_platforms
+        .get(&platform_key)
+        .map(|platform| &platform.additional_artifacts)
+        .filter(|artifacts| artifacts.len() == patterns.len())
+    else {
+        return false;
+    };
+    patterns
+        .iter()
+        .zip(artifacts)
+        .find(|(pattern, _)| *pattern == asset_pattern)
+        .is_some_and(|(_, artifact)| {
+            artifact.checksum.is_some() && artifact.checksum_source.is_none()
+        })
 }
 
 /// Whether `url` is under one of the public forges' API base URLs. Compared on
@@ -2735,7 +2757,7 @@ impl UnifiedGitBackend {
                     opts,
                     &assets_with_urls,
                     &asset.name,
-                    pins_primary_asset(tv, opts, target, asset_pattern),
+                    pins_asset(tv, opts, target, asset_pattern),
                 )
                 .await?
             };
@@ -2776,7 +2798,7 @@ impl UnifiedGitBackend {
                 opts,
                 &assets_with_urls,
                 &asset.name,
-                pins_primary_asset(tv, opts, target, asset_pattern),
+                pins_asset(tv, opts, target, asset_pattern),
             )
             .await?
         };
@@ -2851,7 +2873,7 @@ impl UnifiedGitBackend {
                     opts,
                     &assets_with_urls,
                     &asset.name,
-                    pins_primary_asset(tv, opts, target, asset_pattern),
+                    pins_asset(tv, opts, target, asset_pattern),
                 )
                 .await?;
 
@@ -2889,7 +2911,7 @@ impl UnifiedGitBackend {
                 opts,
                 &assets_with_urls,
                 &asset.name,
-                pins_primary_asset(tv, opts, target, asset_pattern),
+                pins_asset(tv, opts, target, asset_pattern),
             )
             .await?;
 
@@ -2968,7 +2990,7 @@ impl UnifiedGitBackend {
                     opts,
                     &assets_with_urls,
                     &asset.name,
-                    pins_primary_asset(tv, opts, target, asset_pattern),
+                    pins_asset(tv, opts, target, asset_pattern),
                 )
                 .await?;
 
@@ -3006,7 +3028,7 @@ impl UnifiedGitBackend {
                 opts,
                 &assets_with_urls,
                 &asset.name,
-                pins_primary_asset(tv, opts, target, asset_pattern),
+                pins_asset(tv, opts, target, asset_pattern),
             )
             .await?;
 
@@ -4574,6 +4596,55 @@ mod tests {
                 assert_eq!(asset.url, file_url("tool-linux-x64.tar.gz"), "{forge}");
                 assert_eq!(asset.digest, None, "{forge}");
             }
+
+            // An additional asset is pinned by the checksum mise.lock keeps at
+            // its pattern's position, with no URL as in an untrusted lockfile.
+            let resolve_additional = async |lock_pin: Option<&str>| {
+                let mut raw = ToolVersionOptions::default();
+                raw.opts
+                    .insert("api_url".into(), toml::Value::String(server.url()));
+                raw.opts.insert(
+                    "additional_asset_patterns".into(),
+                    toml::Value::String(asset.into()),
+                );
+                let opts = backend.options(&raw);
+                let request = ToolRequest::new(
+                    backend.ba.clone(),
+                    "1.0.0",
+                    crate::toolset::ToolSource::Argument,
+                )
+                .unwrap();
+                let mut tv = ToolVersion::new(request, "1.0.0".to_string());
+                tv.lock_platforms.insert(
+                    target.to_key(),
+                    crate::lockfile::PlatformInfo {
+                        additional_artifacts: vec![crate::lockfile::ArtifactInfo {
+                            checksum: lock_pin.map(str::to_string),
+                            ..Default::default()
+                        }],
+                        ..Default::default()
+                    },
+                );
+                backend
+                    .resolve_asset_url_for_target_with_pattern(
+                        &tv,
+                        &opts,
+                        &repo,
+                        &target,
+                        Some(asset),
+                    )
+                    .await
+            };
+            let err = resolve_additional(None).await.unwrap_err();
+            assert!(
+                format!("{err:#}").contains("cannot verify tool-linux-x64.tar.gz"),
+                "{forge}: {err:#}"
+            );
+            let additional = resolve_additional(Some(pin))
+                .await
+                .unwrap_or_else(|e| panic!("{forge} additional: {e:#}"));
+            assert_eq!(additional.url, file_url(asset), "{forge}");
+            assert_eq!(additional.digest, None, "{forge}");
         }
     }
 
