@@ -251,16 +251,16 @@ writes a Homebrew-compatible receipt, and links the keg into the prefix.
 Keg-only formulae get only the `opt` link. mise never runs `brew`. A bottle may
 contain symlinks within its keg and into the prefix, such as
 `../../../opt/<dependency>/lib`; mise refuses to install a bottle with a symlink
-that points outside the prefix, or whose target steps back with `..` after a
-path that does not exist yet, since where that lands depends on what is
-installed there later.
+that points outside the prefix, or whose target has a `..` after a name (such
+as `dep/x/../..`), since where that lands can change when another formula is
+installed or upgraded.
 
 Like `brew install`, mise copies the `etc` and `var` files a bottle ships into
 the prefix. A file you already have there is never overwritten: the bottle's
 copy is written beside it as `<file>.default`. mise does not copy files through
 a symlink below `etc` or `var`, and does not install a symlink from there that
-would point outside the prefix, or that steps back with `..` after a path that
-does not exist yet; it skips each with a warning. It then runs the
+would point outside the prefix or whose target has a `..` after a name; it
+skips each with a warning. It then runs the
 formula's declarative `post_install_steps` from the Homebrew API, which is how
 `ca-certificates` builds `etc/ca-certificates/cert.pem` and `openssl@4` links
 its `cert.pem` to it. mise implements the generic step types (`symlink`,

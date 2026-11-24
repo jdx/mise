@@ -111,8 +111,7 @@ fn copy_tree(
         }
         if ft.is_symlink() {
             let link = fs::read_link(entry.path())?;
-            let lands = super::pour::resolve_symlinks(&dest.parent().unwrap().join(&link), None);
-            if !super::pour::lands_in(lands.as_deref(), roots) {
+            if !super::pour::link_stays_in(dest.parent().unwrap(), &link, None, roots) {
                 warn!(
                     "brew: not installing {}: it is a symlink to {}, which points outside the \
                      Homebrew prefix",

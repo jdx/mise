@@ -593,8 +593,7 @@ fn check_unpacked_keg(
         let target = std::fs::read_link(entry.path())?;
         let link_dir = final_keg.join(rel);
         let link_dir = link_dir.parent().unwrap_or(&final_keg);
-        let lands = resolve_symlinks(&link_dir.join(&target), Some((&final_keg, staged_keg)));
-        if !lands_in(lands.as_deref(), &roots) {
+        if !link_stays_in(link_dir, &target, Some((&final_keg, staged_keg)), &roots) {
             bail!(
                 "refusing to install the bottle for {name}: {name}/{pkg_version}/{} is a symlink \
                  to {}, which points outside the Homebrew prefix {}. Remove {name} from \
@@ -625,9 +624,37 @@ pub(super) fn link_roots() -> Vec<PathBuf> {
         .collect()
 }
 
+/// Does a symlink to `target` in `link_dir` lead below one of `roots`, now
+/// and however the prefix changes later? A target that steps back with `..`
+/// after a name (`dep/x/../..`) is refused: where it lands depends on what
+/// that name is when it is followed, and a later install or upgrade can turn
+/// a directory there into a link. Without such steps, each `..` leaves the
+/// directory a link sits in, which its own check covers. Bottles ship
+/// targets such as `../../../opt/<dep>/lib`, with `..` only at the start.
+pub(super) fn link_stays_in(
+    link_dir: &Path,
+    target: &Path,
+    keg: Option<(&Path, &Path)>,
+    roots: &[PathBuf],
+) -> bool {
+    use std::path::Component;
+    let mut named = false;
+    for part in target.components() {
+        match part {
+            Component::ParentDir if named => return false,
+            Component::Normal(_) => named = true,
+            _ => {}
+        }
+    }
+    lands_in(
+        resolve_symlinks(&link_dir.join(target), keg).as_deref(),
+        roots,
+    )
+}
+
 /// Is a path from `resolve_symlinks` below one of `roots`? A loop is not, and
 /// neither is a path whose answer could change as the prefix fills in.
-pub(super) fn lands_in(resolved: Option<&Path>, roots: &[PathBuf]) -> bool {
+fn lands_in(resolved: Option<&Path>, roots: &[PathBuf]) -> bool {
     resolved.is_some_and(|p| roots.iter().any(|root| p.starts_with(root)))
 }
 
@@ -640,7 +667,7 @@ pub(super) fn lands_in(resolved: Option<&Path>, roots: &[PathBuf]) -> bool {
 /// and None for a `..` after a missing component: where that lands depends on
 /// what is created there later (a directory or a link elsewhere), so no answer
 /// given now holds once the prefix changes.
-pub(super) fn resolve_symlinks(path: &Path, keg: Option<(&Path, &Path)>) -> Option<PathBuf> {
+fn resolve_symlinks(path: &Path, keg: Option<(&Path, &Path)>) -> Option<PathBuf> {
     use std::path::Component;
     const MAX_LINK_HOPS: usize = 40;
     fn pending(path: &Path) -> impl Iterator<Item = PathBuf> + '_ {
@@ -1453,6 +1480,7 @@ mod tests {
         // an existing link of the prefix that leads out
         mise_util::file::create_dir_all(prefix.join("opt"))?;
         symlink(&outside, prefix.join("opt/away"))?;
+        mise_util::file::create_dir_all(prefix.join("opt/real/x"))?;
         let outside_abs = outside.join("victim");
         let cases: &[&[(&str, &str)]] = &[
             &[("INSTALL_RECEIPT.json", outside_abs.to_str().unwrap())],
@@ -1465,6 +1493,9 @@ mod tests {
             // `..` after a path that does not exist yet: once opt/later is
             // installed, the steps back can lead anywhere it points
             &[("lib/later", "../../../../opt/later/x/../../bin")],
+            // steps back through a directory another formula owns, which an
+            // upgrade of that formula can turn into a link
+            &[("lib/dep", "../../../../opt/real/x/../../bin")],
         ];
         for links in cases {
             let err = check_bottle_links(&prefix, links).unwrap_err().to_string();
