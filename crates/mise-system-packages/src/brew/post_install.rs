@@ -808,6 +808,29 @@ mod tests {
         Ok(())
     }
 
+    /// links are checked one at a time, so a `..` through a link the bottle
+    /// installs later is refused: `a` is checked while `b` does not exist yet,
+    /// and once `b` points at the prefix, `a` would point above it
+    #[cfg(unix)]
+    #[test]
+    fn copy_tree_refuses_a_parent_step_through_a_link_not_yet_installed() -> Result<()> {
+        use std::os::unix::fs::symlink;
+        let tmp = tempfile::tempdir()?;
+        let root = tmp.path().canonicalize()?;
+        let prefix = root.join("prefix");
+        let src = root.join("src");
+        let dst = prefix.join("etc");
+        fs::create_dir_all(&src)?;
+        fs::create_dir_all(&dst)?;
+        symlink("b/../..", src.join("a"))?;
+        symlink("..", src.join("b"))?;
+        let mut created = Vec::new();
+        copy_tree(&src, &dst, true, &mut created, &[prefix])?;
+        assert!(dst.join("a").symlink_metadata().is_err());
+        assert!(dst.join("b").is_symlink());
+        Ok(())
+    }
+
     #[test]
     fn modes() {
         assert_eq!(apply_mode("0700", 0o644, false).unwrap(), 0o700);

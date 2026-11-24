@@ -619,7 +619,8 @@ pub(super) fn link_roots() -> Vec<PathBuf> {
         .collect()
 }
 
-/// Is a path from `resolve_symlinks` below one of `roots`? A loop is not.
+/// Is a path from `resolve_symlinks` below one of `roots`? A loop is not, and
+/// neither is a path whose answer could change as the prefix fills in.
 pub(super) fn lands_in(resolved: Option<&Path>, roots: &[PathBuf]) -> bool {
     resolved.is_some_and(|p| roots.iter().any(|root| p.starts_with(root)))
 }
@@ -628,7 +629,11 @@ pub(super) fn lands_in(resolved: Option<&Path>, roots: &[PathBuf]) -> bool {
 /// reading each component from the filesystem. With `keg` = (final, staged),
 /// components below the final keg path are read from the staged copy, which
 /// is where that keg is before it moves into the Cellar. A missing component
-/// is taken as written, as are the ones after it. None for a symlink loop.
+/// is taken as written, as are the ones after it, so a link to something that
+/// is installed later resolves to where it will be. None for a symlink loop,
+/// and None for a `..` after a missing component: where that lands depends on
+/// what is created there later (a directory or a link elsewhere), so no answer
+/// given now holds once the prefix changes.
 pub(super) fn resolve_symlinks(path: &Path, keg: Option<(&Path, &Path)>) -> Option<PathBuf> {
     use std::path::Component;
     const MAX_LINK_HOPS: usize = 40;
@@ -640,14 +645,22 @@ pub(super) fn resolve_symlinks(path: &Path, keg: Option<(&Path, &Path)>) -> Opti
     let mut todo: Vec<PathBuf> = pending(path).collect();
     let mut resolved = PathBuf::from("/");
     let mut hops = 0;
+    let mut missing = false;
     while let Some(part) = todo.pop() {
         match part.components().next() {
-            Some(Component::RootDir | Component::Prefix(_)) => resolved = PathBuf::from("/"),
+            Some(Component::RootDir | Component::Prefix(_)) => {
+                resolved = PathBuf::from("/");
+                missing = false;
+            }
+            Some(Component::ParentDir) if missing => return None,
             Some(Component::ParentDir) => {
                 resolved.pop();
             }
             Some(Component::Normal(name)) => {
                 resolved.push(name);
+                if missing {
+                    continue;
+                }
                 let on_disk = match keg {
                     Some((final_keg, staged_keg)) => match resolved.strip_prefix(final_keg) {
                         Ok(rel) => staged_keg.join(rel),
@@ -662,6 +675,8 @@ pub(super) fn resolve_symlinks(path: &Path, keg: Option<(&Path, &Path)>) -> Opti
                     }
                     resolved.pop();
                     todo.extend(pending(&target));
+                } else if on_disk.symlink_metadata().is_err() {
+                    missing = true;
                 }
             }
             Some(Component::CurDir) | None => {}
@@ -1441,6 +1456,9 @@ mod tests {
             &[("b", "../../.."), ("a", "b/../outside/victim")],
             &[("etc/x", "../../../../opt/away/victim")],
             &[("loop", "loop")],
+            // `..` after a path that does not exist yet: once opt/later is
+            // installed, the steps back can lead anywhere it points
+            &[("lib/later", "../../../../opt/later/x/../../bin")],
         ];
         for links in cases {
             let err = check_bottle_links(&prefix, links).unwrap_err().to_string();
