@@ -958,7 +958,11 @@ fn is_trusted_without_config_paths(
     if !content_bound && let Some(parent) = canonicalized_path.parent() {
         let mut current = parent;
         while let Some(dir) = current.parent() {
-            let monorepo_marker = with_appended_extension(&trust_path(dir), "monorepo");
+            // `dir` is an ancestor of a canonical path, so it is canonical.
+            let monorepo_marker = with_appended_extension(
+                &dirs::TRUSTED_CONFIGS.join(canonical_path_filename(dir)),
+                "monorepo",
+            );
             if monorepo_marker.exists() && is_trusted_with(dir, content_bound) {
                 add_trusted(canonicalized_path.to_path_buf());
                 return true;
@@ -1375,6 +1379,14 @@ fn hashed_path_filename(path: &Path) -> String {
         .canonicalize()
         .or_else(|_| std::path::absolute(path))
         .unwrap_or_else(|_| path.to_path_buf());
+    canonical_path_filename(&canonicalized_path)
+}
+
+/// [`hashed_path_filename`] of a path that is already canonical, such as an
+/// ancestor of a canonical path. Canonicalizing walks every component, so
+/// checking each ancestor of a deep path that way costs the square of its
+/// depth.
+fn canonical_path_filename(canonicalized_path: &Path) -> String {
     let hash = hash_to_str(&canonicalized_path);
     let trunc_str = |s: &OsStr| {
         let mut s = s.to_string_lossy().to_string();
