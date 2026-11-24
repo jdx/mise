@@ -350,9 +350,11 @@ impl ConfigFile for ToolVersions {
 /// when a tag (`{% ... %}`, `{# ... #}`), a value or a `{{ ... }}` spans lines, or
 /// when a `{{- ... }}` that starts a line or a `{{ ... -}}` that ends one removes a
 /// line break; a value that adds a line break next to one of those can leave the
-/// count unchanged. A `{{- ... }}` inside a line removes only spaces.
+/// count unchanged. A `{{- ... }}` inside a line removes only spaces. The count
+/// includes a last line with no line break, which can render to nothing, and a
+/// `}}` in a quoted string does not close a `{{`.
 fn lines_map(raw: &str, rendered: &str) -> bool {
-    raw.lines().count() == rendered.lines().count()
+    raw.split('\n').count() == rendered.split('\n').count()
         && !raw.contains("{%")
         && !raw.contains("{#")
         && raw.lines().all(|line| {
@@ -360,15 +362,34 @@ fn lines_map(raw: &str, rendered: &str) -> bool {
             let closes = line.trim_end().ends_with("-}}") && line.contains("{{");
             !line.trim_start().starts_with("{{-") && !closes
         })
-        && raw.lines().all(|mut line| {
-            while let Some(open) = line.find("{{") {
-                match line[open + 2..].find("}}") {
-                    Some(close) => line = &line[open + 2 + close + 2..],
-                    None => return false,
+        && raw.lines().all(expressions_close)
+}
+
+/// Whether every `{{` on a line has its `}}` on the same line, outside quotes.
+fn expressions_close(line: &str) -> bool {
+    let mut rest = line;
+    while let Some(open) = rest.find("{{") {
+        rest = &rest[open + 2..];
+        let mut quote = None;
+        let mut close = None;
+        for (i, c) in rest.char_indices() {
+            match quote {
+                Some(q) if c == q => quote = None,
+                Some(_) => {}
+                None if matches!(c, '"' | '\'' | '`') => quote = Some(c),
+                None if rest[i..].starts_with("}}") => {
+                    close = Some(i);
+                    break;
                 }
+                None => {}
             }
-            true
-        })
+        }
+        match close {
+            Some(i) => rest = &rest[i + 2..],
+            None => return false,
+        }
+    }
+    true
 }
 
 /// The whitespace-separated words of a line as written, where a `{{ ... }}`
@@ -563,6 +584,22 @@ mod tests {
             ("node 2 {{- env.NV }}\n", "node 20.0.0\n", true),
             // written text that only looks like the end of a template
             ("node 20 # see -}}\n", "node 20 # see -}}\n", true),
+            // a last line with no line break that renders to nothing, next to a value
+            // that adds a line
+            (
+                "node {{ env.NV }}\n{{ env.EMPTY }}",
+                "node 20\npython 3\n",
+                false,
+            ),
+            ("node {{ env.NV }}", "node 20", true),
+            // a `}}` in a string closes nothing
+            (
+                "node {{ \"}}\" |\n upper }}\npython {{ env.PV }}\n",
+                "node }}\npython 3.12\nruby 3\n",
+                false,
+            ),
+            ("node {{ \"}}\" }}\n", "node }}\n", true),
+            ("node {{ '}}' ~ `x` }}\n", "node }}x\n", true),
         ] {
             assert_eq!(lines_map(raw, rendered), maps, "{raw:?}");
         }
