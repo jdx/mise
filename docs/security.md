@@ -464,6 +464,11 @@ The cutoff applies when mise has to choose a version, for a prefix such as
   versions mise downloads; it does not deactivate one you have. `mise lock` with
   a configured cutoff, rather than the default, re-checks installed matches.
 
+Two release tags can spell one version, such as `2.0.0` and `v2.0.0`. For
+`github:`, `gitlab:` and `forgejo:` tools, a version the cutoff chose is
+installed from a release of it that is older than the cutoff. If the only
+release mise finds for it is newer, the install fails instead.
+
 For `packslip:` tools, mise compares the cutoff with the release's verified
 transparency-log time; see
 [packslip verification](/dev-tools/packslip-verification.html#minimum-release-age).

@@ -44,6 +44,44 @@ struct ReleaseAsset {
     release_tag: Option<String>,
 }
 
+/// A candidate tag whose release is newer than the release-age cutoff its
+/// version was chosen under.
+#[derive(Debug, Clone, thiserror::Error)]
+#[error("release {tag} was published {published}, after the minimum_release_age cutoff {before}")]
+struct HiddenByCutoff {
+    tag: String,
+    published: String,
+    before: jiff::Timestamp,
+}
+
+/// Why a candidate tag gave no asset. A release the cutoff hides counts as a
+/// tag that is not there, so the version's other spellings are tried.
+struct TagError(eyre::Report);
+
+impl From<eyre::Report> for TagError {
+    fn from(err: eyre::Report) -> Self {
+        Self(err)
+    }
+}
+
+impl VerifiableError for TagError {
+    fn is_not_found(&self) -> bool {
+        self.0.is::<HiddenByCutoff>() || self.0.is_not_found()
+    }
+
+    fn into_eyre(self) -> eyre::Report {
+        self.0
+    }
+}
+
+/// The release-age cutoff that chose `tv`'s version, if one did. A lockfile
+/// entry and a request naming the version exactly are installed whatever
+/// their age, as `minimum_release_age` documents.
+fn selection_cutoff(tv: &ToolVersion) -> Option<jiff::Timestamp> {
+    let chosen = tv.resolved_from_lockfile() || tv.request_pinned_this_version();
+    tv.before_date.filter(|_| !chosen)
+}
+
 #[derive(Debug, Clone, Copy)]
 struct AssetVerification {
     explicit_pattern: bool,
@@ -2482,7 +2520,13 @@ impl UnifiedGitBackend {
         let version_prefix = opts.version_prefix();
         let tags = opts.tag_filter()?;
         let allowed = |tag: &str| tags.allows(tag);
-        if self.is_gitlab() {
+        // Two tags can spell one version (`2.0.0` and `v2.0.0`), each its own
+        // release with its own date, and the cutoff chose the version by the
+        // date of one that passed it. A candidate whose release the cutoff
+        // hides is passed over for the version's other spellings.
+        let cutoff = selection_cutoff(tv);
+        let hidden = &std::sync::Mutex::new(None);
+        let resolved = if self.is_gitlab() {
             try_allowed_release_tags(
                 version,
                 version_prefix,
@@ -2491,15 +2535,18 @@ impl UnifiedGitBackend {
                 None,
                 allowed,
                 |candidate| async move {
-                    self.resolve_gitlab_asset_url_for_target(
-                        tv,
-                        opts,
-                        repo,
-                        &candidate,
-                        target,
-                        asset_pattern,
-                    )
-                    .await
+                    let asset = self
+                        .resolve_gitlab_asset_url_for_target(
+                            tv,
+                            opts,
+                            repo,
+                            &candidate,
+                            target,
+                            asset_pattern,
+                        )
+                        .await?;
+                    self.unless_hidden_by_cutoff(opts, repo, &candidate, cutoff, asset, hidden)
+                        .await
                 },
             )
             .await
@@ -2512,15 +2559,18 @@ impl UnifiedGitBackend {
                 None,
                 allowed,
                 |candidate| async move {
-                    self.resolve_forgejo_asset_url_for_target(
-                        tv,
-                        opts,
-                        repo,
-                        &candidate,
-                        target,
-                        asset_pattern,
-                    )
-                    .await
+                    let asset = self
+                        .resolve_forgejo_asset_url_for_target(
+                            tv,
+                            opts,
+                            repo,
+                            &candidate,
+                            target,
+                            asset_pattern,
+                        )
+                        .await?;
+                    self.unless_hidden_by_cutoff(opts, repo, &candidate, cutoff, asset, hidden)
+                        .await
                 },
             )
             .await
@@ -2536,19 +2586,93 @@ impl UnifiedGitBackend {
                 listed_tag.as_deref(),
                 allowed,
                 |candidate| async move {
-                    self.resolve_github_asset_url_for_target(
-                        tv,
-                        opts,
-                        repo,
-                        &candidate,
-                        target,
-                        asset_pattern,
-                    )
-                    .await
+                    let asset = self
+                        .resolve_github_asset_url_for_target(
+                            tv,
+                            opts,
+                            repo,
+                            &candidate,
+                            target,
+                            asset_pattern,
+                        )
+                        .await?;
+                    self.unless_hidden_by_cutoff(opts, repo, &candidate, cutoff, asset, hidden)
+                        .await
                 },
             )
             .await
+        };
+        match resolved {
+            Err(err) if err.is_not_found() || err.is::<HiddenByCutoff>() => {
+                let Some(hidden) = hidden.lock().unwrap().take() else {
+                    return Err(err);
+                };
+                eyre::bail!(
+                    "refusing to install {}@{version}: minimum_release_age chose {version} by a release older than the cutoff, but the only release of it mise found is newer: {hidden}. \
+                     Install it by naming the version exactly ({}@{version}), or wait until the release is older than minimum_release_age.",
+                    self.ba(),
+                    self.ba(),
+                )
+            }
+            resolved => resolved,
         }
+    }
+
+    /// `asset`, unless the release it was picked from, tagged `tag`, was
+    /// published after `cutoff`. Such a tag is recorded in `hidden` and
+    /// counts as not found, so the version's other spellings are tried.
+    async fn unless_hidden_by_cutoff(
+        &self,
+        opts: &GitBackendOptions<'_>,
+        repo: &str,
+        tag: &str,
+        cutoff: Option<jiff::Timestamp>,
+        asset: ReleaseAsset,
+        hidden: &std::sync::Mutex<Option<HiddenByCutoff>>,
+    ) -> std::result::Result<ReleaseAsset, TagError> {
+        let Some(before) = cutoff else {
+            return Ok(asset);
+        };
+        let published = self.release_published_at(opts, repo, tag).await?;
+        let release = VersionInfo {
+            created_at: published.clone(),
+            ..Default::default()
+        };
+        if !release.hidden_by_date(before) {
+            return Ok(asset);
+        }
+        let found = HiddenByCutoff {
+            tag: tag.to_string(),
+            published: published.unwrap_or_default(),
+            before,
+        };
+        debug!("{repo}: {found}; trying the version's other tags");
+        hidden.lock().unwrap().get_or_insert_with(|| found.clone());
+        Err(TagError(eyre::Report::new(found)))
+    }
+
+    /// The date the version list gives the release tagged `tag`. The release
+    /// was just fetched to pick an asset from, so this reads the cache.
+    async fn release_published_at(
+        &self,
+        opts: &GitBackendOptions<'_>,
+        repo: &str,
+        tag: &str,
+    ) -> Result<Option<String>> {
+        let api_url = opts.api_url();
+        Ok(if self.is_gitlab() {
+            let release = gitlab::get_release_for_url(&api_url, repo, tag).await?;
+            release.published_at().map(str::to_string)
+        } else if self.is_forgejo() {
+            Some(
+                forgejo::get_release_for_url(&api_url, repo, tag)
+                    .await?
+                    .created_at,
+            )
+        } else {
+            let release = self.get_github_release_for_url(&api_url, repo, tag).await?;
+            Some(release.released_at().to_string())
+        })
     }
 
     /// Resolves GitHub asset URL for a specific target platform
@@ -4100,6 +4224,130 @@ mod tests {
         }
         v_tag.assert_async().await;
         bare_tag.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_version_chosen_under_the_release_age_cutoff_is_not_installed_from_a_newer_twin_tag()
+     {
+        // `2.0.0` is years old and `v2.0.0` was published after the cutoff.
+        // Both list as version 2.0.0, and `v2.0.0` is the spelling tried first.
+        // `v3.0.0` is the only release of 3.0.0 and is also too new.
+        let asset_url = |tag: &str| format!("https://example.com/{tag}/tool-linux-x64.tar.gz");
+        let gitlab_release = |tag: &str, date: &str| {
+            serde_json::json!({
+                "tag_name": tag,
+                "description": null,
+                "created_at": date,
+                "released_at": date,
+                "assets": { "sources": [], "links": [{
+                    "id": 1,
+                    "name": "tool-linux-x64.tar.gz",
+                    "url": asset_url(tag),
+                    "direct_asset_url": asset_url(tag),
+                    "link_type": "package",
+                }] },
+            })
+        };
+        let forgejo_release = |tag: &str, date: &str| {
+            serde_json::json!({
+                "id": 1,
+                "tag_name": tag,
+                "draft": false,
+                "prerelease": false,
+                "created_at": date,
+                "assets": [{
+                    "id": 1,
+                    "name": "tool-linux-x64.tar.gz",
+                    "uuid": "0",
+                    "browser_download_url": asset_url(tag),
+                }],
+            })
+        };
+        let releases = [
+            ("2.0.0", Some("2021-01-10T00:00:00Z")),
+            ("v2.0.0", Some("2025-06-02T00:00:00Z")),
+            ("v3.0.0", Some("2025-06-02T00:00:00Z")),
+            ("3.0.0", None),
+        ];
+        let before = crate::duration::parse_into_timestamp("2025-06-01").unwrap();
+        let target = PlatformTarget::new(crate::platform::Platform::parse("linux-x64").unwrap());
+
+        for forge in ["gitlab", "forgejo"] {
+            let mut server = mockito::Server::new_async().await;
+            for (tag, date) in releases {
+                let path = if forge == "gitlab" {
+                    format!(r"^/projects/.+/releases/{}$", regex::escape(tag))
+                } else {
+                    format!(r"^/repos/.+/releases/tags/{}$", regex::escape(tag))
+                };
+                let mock = server.mock("GET", mockito::Matcher::Regex(path));
+                match date {
+                    Some(date) => {
+                        let body = if forge == "gitlab" {
+                            gitlab_release(tag, date)
+                        } else {
+                            forgejo_release(tag, date)
+                        };
+                        mock.with_header("content-type", "application/json")
+                            .with_body(body.to_string())
+                    }
+                    None => mock.with_status(404),
+                }
+                .create_async()
+                .await;
+            }
+            let backend = if forge == "gitlab" {
+                create_test_gitlab_backend()
+            } else {
+                create_test_forgejo_backend()
+            };
+            let mut raw = ToolVersionOptions::default();
+            raw.opts
+                .insert("api_url".into(), toml::Value::String(server.url()));
+            let opts = backend.options(&raw);
+            let repo = format!("test/twin-tags-under-cutoff-{forge}");
+            let installed_from = async |requested: &str, version: &str| {
+                let request = ToolRequest::new(
+                    backend.ba.clone(),
+                    requested,
+                    crate::toolset::ToolSource::Argument,
+                )
+                .unwrap();
+                let mut tv = ToolVersion::new(request, version.to_string());
+                tv.before_date = Some(before);
+                backend
+                    .resolve_asset_url_for_target(&tv, &opts, &repo, &target)
+                    .await
+                    .map(|asset| asset.url)
+            };
+
+            // The cutoff chose 2.0.0 by the old release, so that one is installed.
+            for requested in ["latest", "2"] {
+                assert_eq!(
+                    installed_from(requested, "2.0.0").await.unwrap(),
+                    asset_url("2.0.0"),
+                    "{forge} {requested}"
+                );
+            }
+            // A request that names the version is not subject to the cutoff.
+            assert_eq!(
+                installed_from("2.0.0", "2.0.0").await.unwrap(),
+                asset_url("v2.0.0"),
+                "{forge} exact"
+            );
+            assert_eq!(
+                installed_from("3.0.0", "3.0.0").await.unwrap(),
+                asset_url("v3.0.0"),
+                "{forge} exact"
+            );
+            // A version whose only release is too new is refused, not installed.
+            let err = installed_from("latest", "3.0.0").await.unwrap_err();
+            assert!(
+                err.to_string().contains("refusing to install")
+                    && err.to_string().contains("release v3.0.0 was published"),
+                "{forge}: {err}"
+            );
+        }
     }
 
     #[test]
