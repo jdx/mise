@@ -4,7 +4,9 @@ use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
 use crate::backend::options::{BackendOptions, is_falsey, is_truthy};
 use crate::backend::platform_target::PlatformTarget;
-use crate::backend::static_helpers::{ensure_plain_asset_name, ensure_plain_bin_name};
+use crate::backend::static_helpers::{
+    ensure_plain_asset_name, ensure_plain_bin_name, read_archive_metadata,
+};
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings, SettingsExt};
 use crate::git::{CloneOptions, Git};
@@ -1256,7 +1258,7 @@ fn artifactbundle_binaries(
     let mut binaries = vec![];
     let root = extract_dir.canonicalize()?;
     for bundle in artifactbundle_dirs(extract_dir)? {
-        let info = file::read_to_string(bundle.join("info.json"))?;
+        let info = read_archive_metadata(&bundle.join("info.json"))?;
         let manifest = serde_json::from_str::<ArtifactBundleInfo>(&info)
             .wrap_err("Failed to parse artifact bundle info.json")?;
         for (name, artifact) in manifest.artifacts {
@@ -1321,7 +1323,7 @@ fn artifactbundle_supports_target(
     );
     let musl = target.libc() == Some("musl");
     for bundle in artifactbundle_dirs(extract_dir)? {
-        let info = file::read_to_string(bundle.join("info.json"))?;
+        let info = read_archive_metadata(&bundle.join("info.json"))?;
         let manifest = serde_json::from_str::<ArtifactBundleInfo>(&info)
             .wrap_err("Failed to parse artifact bundle info.json")?;
         let supported = manifest
@@ -2532,6 +2534,40 @@ mod tests {
         let binaries =
             artifactbundle_binaries(tmp.path(), &["x86_64-unknown-linux-gnu".to_string()]).unwrap();
         assert!(binaries.is_empty());
+    }
+
+    #[test]
+    fn artifactbundle_info_json_is_read_up_to_a_limit() {
+        let tmp = tempfile::tempdir().unwrap();
+        let bundle = tmp.path().join("tool.artifactbundle");
+        file::create_dir_all(bundle.join("bin")).unwrap();
+        file::write(bundle.join("bin/tool"), "").unwrap();
+        let info = r#"{"schemaVersion": "1.0", "artifacts": {"tool": {"version": "1.0.0",
+            "type": "executable", "variants": [{"path": "bin/tool",
+            "supportedTriples": ["arm64-apple-macosx"]}]}}}"#;
+        let limit = crate::backend::static_helpers::ARCHIVE_METADATA_LIMIT as usize;
+        let triples = ["arm64-apple-macosx".to_string()];
+
+        file::write(
+            bundle.join("info.json"),
+            format!("{info}{}", " ".repeat(limit - info.len())),
+        )
+        .unwrap();
+        assert_eq!(
+            artifactbundle_binaries(tmp.path(), &triples).unwrap().len(),
+            1
+        );
+
+        file::write(
+            bundle.join("info.json"),
+            format!("{info}{}", " ".repeat(limit + 1 - info.len())),
+        )
+        .unwrap();
+        let err = artifactbundle_binaries(tmp.path(), &triples).unwrap_err();
+        assert!(
+            format!("{err:#}").contains("larger than 1 MiB"),
+            "unexpected error: {err:#}"
+        );
     }
 
     fn executable_bundle_info(name: &str, path: &str) -> String {

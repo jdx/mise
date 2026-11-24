@@ -8,7 +8,7 @@ use url::Url;
 use crate::Result;
 use crate::backend::cargo::CargoOptions;
 use crate::backend::platform_target::PlatformTarget;
-use crate::backend::static_helpers::get_filename_from_url;
+use crate::backend::static_helpers::{get_filename_from_url, read_archive_metadata};
 use crate::config::Settings;
 use crate::file::{self, ExtractOptions, ExtractionFormat};
 use crate::hash;
@@ -772,12 +772,14 @@ fn read_crate_manifest(
             preserve_mtime: true,
         },
     )?;
+    // The manifest is read by path, so a link shipped in the crate (as the
+    // file or as its directory) would make it read a file outside the crate.
+    file::ensure_symlinks_stay_within(temp_dir.path())?;
 
     let manifest_path = temp_dir
         .path()
         .join(format!("{}-{}/Cargo.toml", package.name, package.num));
-    let manifest = fs::read_to_string(&manifest_path)
-        .wrap_err_with(|| format!("failed to read {}", file::display_path(&manifest_path)))?;
+    let manifest = read_archive_metadata(&manifest_path)?;
     Ok(toml::from_str(&manifest)?)
 }
 
@@ -1668,6 +1670,64 @@ mod tests {
             "unexpected error: {err:#}"
         );
         assert!(read_crate_manifest(&crate_path, &demo_package(String::new()), None).is_err());
+    }
+
+    fn read_demo_manifest(crate_path: &Path) -> Result<toml::Value> {
+        let published = hash::file_hash_sha256(crate_path, None).unwrap();
+        read_crate_manifest(crate_path, &demo_package(published), None)
+    }
+
+    #[test]
+    fn crate_manifest_is_read_up_to_a_limit() {
+        let limit = crate::backend::static_helpers::ARCHIVE_METADATA_LIMIT as usize;
+        let dir = tempfile::tempdir().unwrap();
+
+        let manifest = format!("{DEMO_MANIFEST}{}", "#".repeat(limit - DEMO_MANIFEST.len()));
+        let crate_path = crate_file(dir.path(), &[("demo-1.0.0/Cargo.toml", &manifest)]);
+        assert!(read_demo_manifest(&crate_path).is_ok());
+
+        let manifest = format!("{manifest}#");
+        let crate_path = crate_file(dir.path(), &[("demo-1.0.0/Cargo.toml", &manifest)]);
+        let err = read_demo_manifest(&crate_path).unwrap_err();
+        assert!(
+            format!("{err:#}").contains("larger than 1 MiB"),
+            "unexpected error: {err:#}"
+        );
+    }
+
+    #[test]
+    fn crate_manifest_is_not_read_through_a_shipped_link() {
+        let dir = tempfile::tempdir().unwrap();
+        let outside = dir.path().join("outside");
+        fs::create_dir_all(&outside).unwrap();
+        fs::write(outside.join("Cargo.toml"), DEMO_MANIFEST).unwrap();
+
+        for (name, target) in [
+            (
+                "demo-1.0.0/Cargo.toml",
+                outside.join("Cargo.toml").as_path(),
+            ),
+            ("demo-1.0.0", outside.as_path()),
+            ("demo-1.0.0/Cargo.toml", Path::new("/dev/zero")),
+        ] {
+            let crate_path = dir.path().join("demo-1.0.0.crate");
+            let encoder = flate2::write::GzEncoder::new(
+                fs::File::create(&crate_path).unwrap(),
+                flate2::Compression::default(),
+            );
+            let mut archive = jdx_tar::Builder::new(encoder);
+            let mut header = jdx_tar::Header::new_gnu(jdx_tar::EntryType::Symlink);
+            header.set_size(0);
+            header.set_mode(0o777);
+            archive.append_link(&mut header, name, target).unwrap();
+            archive.into_inner().unwrap().finish().unwrap();
+
+            assert!(
+                read_demo_manifest(&crate_path).is_err(),
+                "{name} -> {} was read",
+                target.display()
+            );
+        }
     }
 
     #[test]
