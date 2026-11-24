@@ -3018,7 +3018,8 @@ paranoid = ["env_files"]
 - `plugins`: mise refuses to install an unregistered community plugin by short
   name.
 - `provenance`: [`locked_verify_provenance`](#locked_verify_provenance) is turned
-  on, and a "no attestations" answer from mise-versions is confirmed with GitHub.
+  on, and a "no attestations" or "no release list" answer from mise-versions is
+  confirmed with GitHub.
 
 From the environment, `MISE_PARANOID=1` selects every category and
 `MISE_PARANOID=config,env_files` selects those listed. An unknown category is an

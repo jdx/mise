@@ -59,6 +59,11 @@ repository, as for a private one, or when
 list or its absence reaches mise within about ten minutes of a change on the
 default branch; the list is verified either way.
 
+Nothing signs mise-versions' answer that a repository has no list. Normal mode
+accepts it. The `provenance` category of
+[paranoid mode](/paranoid.html#release-lists-from-mise-versions) asks GitHub
+instead and fails the command when GitHub cannot be read.
+
 Versions the list omits can still come from GitHub releases; omission does not
 withdraw them. For a domain project, the signed list is the entire release
 index. A vendor withdrawal excludes a version even if a trusted stamper approved

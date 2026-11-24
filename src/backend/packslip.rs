@@ -232,6 +232,13 @@ async fn mirrored_policy_text(url: &str, repo: &str, sub: Option<&str>) -> Optio
     }
     match crate::versions_host::github_packslip_list(repo, sub).await {
         Ok(Some(crate::versions_host::PackslipList::Present(text))) => Some(Some(text)),
+        // Nothing signs "no list", and a list is what withdraws a release, so
+        // paranoid mode has GitHub answer that, failing when it cannot.
+        Ok(Some(crate::versions_host::PackslipList::Absent))
+            if Settings::get().paranoid.provenance() =>
+        {
+            None
+        }
         Ok(Some(crate::versions_host::PackslipList::Absent)) => Some(None),
         Ok(None) => None,
         Err(err) => {
@@ -3486,6 +3493,63 @@ mod tests {
             );
             mirror.assert_async().await;
             list.assert_async().await;
+        }
+    }
+
+    /// Nothing signs the mirror's "no list", so the `provenance` category has
+    /// GitHub answer it: a list there counts, and a GitHub that cannot be
+    /// read fails the fetch.
+    #[tokio::test]
+    async fn paranoid_provenance_has_github_confirm_there_is_no_list() {
+        let _settings = crate::test::SettingsGuard::lock();
+        let _config = Config::get().await.unwrap();
+        let mut server = mockito::Server::new_async().await;
+        {
+            use confique::Layer;
+            let mut replacements = indexmap::IndexMap::new();
+            replacements.insert("https://mise-versions.jdx.dev".to_string(), server.url());
+            let mut settings = mise_settings::SettingsPartial::empty();
+            settings.url_replacements = Some(replacements);
+            settings.http_retries = Some(0);
+            settings.paranoid = Some(mise_settings::Paranoid::only([
+                mise_settings::ParanoidCategory::Provenance,
+            ]));
+            Settings::reset(Some(settings));
+        }
+        let base = server.url();
+        let raw = |name: &str| format!("{base}/{name}/HEAD/.well-known/packslip.json");
+        for (name, status, expected) in [
+            ("paranoid-denied", 200, Some(Some("{}"))),
+            ("paranoid-absent", 404, Some(None)),
+            ("paranoid-limited", 429, None),
+        ] {
+            let mirror = server
+                .mock(
+                    "GET",
+                    format!("/api/github/repos/o/{name}/packslip-list").as_str(),
+                )
+                .with_body(r#"{"present":false,"fetched_at":"2026-10-26T12:00:00Z"}"#)
+                .expect(1)
+                .create_async()
+                .await;
+            let github = server
+                .mock(
+                    "GET",
+                    format!("/{name}/HEAD/.well-known/packslip.json").as_str(),
+                )
+                .with_status(status)
+                .with_body("{}")
+                .expect(1)
+                .create_async()
+                .await;
+            let fetched = fetch_github_policy_text(&format!("o/{name}"), None, &raw(name)).await;
+            assert_eq!(
+                fetched.ok(),
+                expected.map(|text| text.map(str::to_string)),
+                "{name}"
+            );
+            mirror.assert_async().await;
+            github.assert_async().await;
         }
     }
 
