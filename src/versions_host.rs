@@ -237,9 +237,11 @@ async fn track_install_async(tool: &str, full: &str, version: &str) -> eyre::Res
     Ok(())
 }
 /// The static install beacon. Every value is a query parameter. `full` has
-/// any URL credentials, query, and fragment removed first because request URLs
-/// are logged, and is left out when it cannot be cleaned.
+/// its inline options, which can hold secrets, and any URL credentials, query,
+/// and fragment removed first because request URLs are logged, and is left out
+/// when it cannot be cleaned.
 fn track_install_url(tool: &str, full: &str, version: &str, os: &str, arch: &str) -> String {
+    let full = crate::args::split_bracketed_opts(full).map_or(full, |(name, _)| name);
     let full = sanitize_full(full)
         .map(|full| format!("&full={}", urlencoding::encode(&full)))
         .unwrap_or_default();
@@ -328,6 +330,19 @@ mod tests {
         assert_eq!(
             track_install_url("a&b=c", "ubi:owner/repo", "1.0 rc+1", "linux", "x64"),
             "https://mise-versions.jdx.dev/t?tool=a%26b%3Dc&full=ubi%3Aowner%2Frepo&version=1.0%20rc%2B1&os=linux&arch=x64"
+        );
+    }
+    #[test]
+    fn test_track_install_url_drops_inline_options_from_full() {
+        assert_eq!(
+            track_install_url(
+                "foo",
+                r#"github:acme/foo[install_env={GITHUB_TOKEN="secret"}]"#,
+                "1.0.0",
+                "linux",
+                "x64"
+            ),
+            "https://mise-versions.jdx.dev/t?tool=foo&full=github%3Aacme%2Ffoo&version=1.0.0&os=linux&arch=x64"
         );
     }
     #[test]

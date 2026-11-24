@@ -5933,7 +5933,9 @@ pub trait Backend: Debug + Send + Sync {
 
         // Track the installation asynchronously (fire-and-forget)
         // Do this before install so the request has time to complete during installation
-        versions_host::track_install(tv.short(), &tv.ba().full(), &tv.version);
+        // Without its inline options, which can hold secrets (install_env,
+        // postinstall, index credentials).
+        versions_host::track_install(tv.short(), &tv.ba().full_without_opts(), &tv.version);
 
         ctx.pr.set_message("install".into());
 
