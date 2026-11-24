@@ -921,8 +921,23 @@ fn parse_task_script_usage_with_env(
 /// the message naming it, the offending span and the spec text itself all live in the
 /// diagnostic, which neither eyre nor a derived `Debug` asks for. Going through the reporter
 /// is what turns a spec error back into something that names a line.
-pub(crate) fn render_usage_err(err: usage::error::UsageErr) -> String {
-    format!("{:?}", usage::miette::Error::from(err))
+///
+/// The KDL parser recovers from an error and carries on, so it reports every error it finds,
+/// and each is rendered with the whole line it is on. Specs are parsed from config that is not
+/// trusted yet to list and complete tasks, and one long line of errors would render to the
+/// square of its size, so only the first few errors are rendered and the rest are counted.
+pub(crate) fn render_usage_err(mut err: usage::error::UsageErr) -> String {
+    const SHOWN: usize = 5;
+    let mut more = 0;
+    if let usage::error::UsageErr::KdlError(kdl) = &mut err {
+        more = kdl.diagnostics.len().saturating_sub(SHOWN);
+        kdl.diagnostics.truncate(SHOWN);
+    }
+    let mut rendered = format!("{:?}", usage::miette::Error::from(err));
+    if more > 0 {
+        rendered.push_str(&format!("\n\n  ... and {more} more errors"));
+    }
+    rendered
 }
 
 /// Parse a task's `usage` field, naming the task and what was wrong with its spec.
@@ -5168,6 +5183,26 @@ exec shapeme "$@"
             .unwrap();
         let err = super::parse_task_script_usage(tmp.path()).unwrap_err();
         assert!(err.to_string().contains("larger than 16 MiB"), "{err}");
+    }
+
+    /// Each error the parser recovers from quotes its whole line, so a spec that is one line
+    /// of errors renders only the first few of them.
+    #[test]
+    fn test_usage_spec_error_renders_only_the_first_few() {
+        let spec = "a=;".repeat(1000);
+        let err = super::parse_task_usage_field("build", &spec).unwrap_err();
+        let rendered = err.to_string();
+        assert!(rendered.contains("invalid usage spec for task 'build'"));
+        assert_eq!(rendered.matches(&spec).count(), 5, "{}", rendered.len());
+        assert!(
+            rendered.contains("and 1995 more errors"),
+            "{}",
+            rendered.len()
+        );
+
+        // A spec with a single error is reported as before.
+        let err = super::parse_task_usage_field("build", "a=").unwrap_err();
+        assert!(!err.to_string().contains("more errors"), "{err}");
     }
 
     #[test]
