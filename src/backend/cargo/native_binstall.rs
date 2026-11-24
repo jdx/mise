@@ -889,7 +889,7 @@ async fn verify_native_binstall_signature(
         .await
         .wrap_err_with(|| format!("failed to download signature {}", signature.url))?;
     let sig = file::read_to_string(&sig_path)?;
-    minisign::verify(signature.pubkey, &file::read(path)?, &sig)
+    minisign::verify_file(signature.pubkey, path, &sig)
         .wrap_err("minisign signature verification failed")
 }
 
