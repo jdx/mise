@@ -194,6 +194,12 @@ fn release_url_tag(url: &str) -> Option<String> {
     (!tag.is_empty()).then(|| tag.into_owned())
 }
 
+/// Most bytes a signed release list may hold. Like a manifest (see
+/// [`crate::packslip::MAX_MANIFEST_BYTES`]) it is read whole into memory and
+/// parsed before anything has verified it; a release takes a few hundred bytes
+/// of it.
+const MAX_RELEASE_LIST_BYTES: usize = 4 * 1024 * 1024;
+
 /// The text of a signed release list at `url` (a vendor's or a stamper's), or
 /// `None` when there is none. A resolution reads the list for every release it
 /// looks at, so one command would otherwise fetch the same file over and over,
@@ -231,6 +237,13 @@ async fn mirrored_policy_text(url: &str, repo: &str, sub: Option<&str>) -> Optio
         return None;
     }
     match crate::versions_host::github_packslip_list(repo, sub).await {
+        Ok(Some(crate::versions_host::PackslipList::Present(text)))
+            if text.len() > MAX_RELEASE_LIST_BYTES =>
+        {
+            // GitHub is asked, and the same limit refuses it there.
+            debug!("mise-versions answered with an oversized release list of {repo}");
+            None
+        }
         Ok(Some(crate::versions_host::PackslipList::Present(text))) => Some(Some(text)),
         // Nothing signs "no list", and a list is what withdraws a release, so
         // paranoid mode has GitHub answer that, failing when it cannot.
@@ -302,7 +315,12 @@ async fn request_policy_text(url: &str) -> Result<Option<String>> {
     if resp.status() == reqwest::StatusCode::NOT_MODIFIED {
         bail!("{url} answered 304 Not Modified to an unconditional request");
     }
-    Ok(Some(crate::http::buffer_body(resp).await?.text().await?))
+    Ok(Some(
+        crate::http::buffer_body_with_limit(resp, MAX_RELEASE_LIST_BYTES)
+            .await?
+            .text()
+            .await?,
+    ))
 }
 
 /// The signed release list of a project on its own domain.
@@ -3702,6 +3720,59 @@ mod tests {
             .await;
         assert_eq!(request_policy_text(&url).await.unwrap(), None);
         gone.assert_async().await;
+    }
+
+    /// The list is parsed before its signature is checked, so its size is
+    /// bounded where it is read: from its host and from the mirror.
+    #[tokio::test]
+    async fn an_oversized_release_list_is_refused() {
+        let _settings = crate::test::SettingsGuard::lock();
+        let _config = Config::get().await.unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let oversized = " ".repeat(MAX_RELEASE_LIST_BYTES + 1);
+        let path = "/oversized/HEAD/.well-known/packslip.json";
+        let url = format!("{}{path}", server.url());
+        let list = server
+            .mock("GET", path)
+            .with_body(&oversized)
+            .expect(1)
+            .create_async()
+            .await;
+        let err = request_policy_text(&url).await.unwrap_err();
+        assert!(
+            err.to_string().contains("is larger than 4.0 MiB"),
+            "{err:#}"
+        );
+        list.assert_async().await;
+
+        // The mirror's copy is no answer: GitHub is asked.
+        mirror_at(&server);
+        let answer = serde_json::json!({"present": true, "text": oversized});
+        let mirror = server
+            .mock("GET", "/api/github/repos/o/mirror-oversized/packslip-list")
+            .with_body(answer.to_string())
+            .expect(1)
+            .create_async()
+            .await;
+        let raw = server
+            .mock("GET", "/mirror-oversized/HEAD/.well-known/packslip.json")
+            .with_body("{}")
+            .expect(1)
+            .create_async()
+            .await;
+        let url = format!(
+            "{}/mirror-oversized/HEAD/.well-known/packslip.json",
+            server.url()
+        );
+        assert_eq!(
+            fetch_github_policy_text("o/mirror-oversized", None, &url)
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("{}")
+        );
+        mirror.assert_async().await;
+        raw.assert_async().await;
     }
 
     /// A verification is reused only for the same signer options, stamp, and

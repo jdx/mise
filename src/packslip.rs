@@ -289,11 +289,13 @@ pub(crate) async fn download_file(
 }
 
 /// Fetch a document a packslip names — a manifest or a signed release list —
-/// with the same fallback [`download_file`] uses.
+/// with the same fallback [`download_file`] uses. It fails once more than
+/// [`MAX_MANIFEST_BYTES`] has arrived.
 pub(crate) async fn fetch_text(url: &str) -> Result<String> {
     let reason = match HTTP_FETCH
         .get_text_request(url)
         .headers(&headers_for(url)?)
+        .max_bytes(MAX_MANIFEST_BYTES as usize)
         .send()
         .await
     {
@@ -307,6 +309,7 @@ pub(crate) async fn fetch_text(url: &str) -> Result<String> {
     HTTP_FETCH
         .get_text_request(&api_url)
         .headers(&headers_for(&api_url)?)
+        .max_bytes(MAX_MANIFEST_BYTES as usize)
         .send()
         .await
 }
@@ -2236,6 +2239,25 @@ mod tests {
             .await;
         let url = format!("{}/packslip.sigstore.json", server.url());
         assert_eq!(fetch_text(&url).await.unwrap(), "{}");
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_fetch_text_refuses_a_document_larger_than_a_manifest() {
+        let _config = crate::config::Config::get().await.unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/packslip.sigstore.json")
+            .with_status(200)
+            .with_body(" ".repeat(MAX_MANIFEST_BYTES as usize + 1))
+            .create_async()
+            .await;
+        let url = format!("{}/packslip.sigstore.json", server.url());
+        let err = fetch_text(&url).await.unwrap_err();
+        assert!(
+            err.to_string().contains("is larger than 4.0 MiB"),
+            "{err:#}"
+        );
         mock.assert_async().await;
     }
 
