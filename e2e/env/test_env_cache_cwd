@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# env_cache must not share an entry between directories that load the same
+# config files: `env_file` names are searched upwards from the working
+# directory and templates read `cwd`, so each directory below has an
+# environment of its own even with only the global config loaded.
+
+# Enable env caching with a fixed encryption key, as `mise activate` would set.
+export MISE_ENV_CACHE=1
+export __MISE_ENV_CACHE_KEY="dGVzdGtleXRlc3RrZXl0ZXN0a2V5dGVzdGtleXRlc3Q="
+
+cat >"$MISE_CONFIG_DIR/config.toml" <<EOF
+[settings]
+env_file = ".env"
+
+[env]
+CACHE_CWD = "{{ cwd }}"
+EOF
+
+base="$PWD"
+mkdir -p clone work
+echo "ONLY_CLONE=clone" >clone/.env
+echo "ONLY_WORK=work" >work/.env
+
+# The clone computes first and caches its env.
+cd "$base/clone"
+assert_contains "mise env -s bash" "ONLY_CLONE=clone"
+assert_contains "mise env -s bash" "CACHE_CWD=$PWD"
+
+# The other directory gets its own dotenv and `cwd`, not the clone's.
+cd "$base/work"
+assert_contains "mise env -s bash" "ONLY_WORK=work"
+assert_not_contains "mise env -s bash" "ONLY_CLONE"
+assert_contains "mise env -s bash" "CACHE_CWD=$PWD"
+
+# And the other way round.
+cd "$base/clone"
+assert_contains "mise env -s bash" "ONLY_CLONE=clone"
+assert_not_contains "mise env -s bash" "ONLY_WORK"
+assert_contains "mise env -s bash" "CACHE_CWD=$PWD"
+
+# Within one directory the entry is still reused.
+assert_contains "MISE_TRACE=1 mise env -s bash 2>&1" "env_cache: using cached environment"
