@@ -1017,6 +1017,8 @@ fn is_signature_file(name: &str) -> bool {
     let name = name.to_lowercase();
     [
         ".asc",
+        ".gpg",
+        ".p7s",
         ".sig",
         ".sign",
         ".minisig",
@@ -1033,6 +1035,28 @@ fn is_signature_file(name: &str) -> bool {
     ]
     .iter()
     .any(|suffix| name.ends_with(suffix))
+}
+
+/// An archive, installer or program by its name, so never a checksum list
+fn is_package_file(name: &str) -> bool {
+    let name = name.to_lowercase();
+    extraction_suffix_len(&name).is_some()
+        || [
+            ".exe",
+            ".msi",
+            ".dmg",
+            ".pkg",
+            ".deb",
+            ".rpm",
+            ".apk",
+            ".appimage",
+            ".jar",
+            ".phar",
+            ".pyz",
+            ".whl",
+        ]
+        .iter()
+        .any(|suffix| name.ends_with(suffix))
 }
 
 /// Validate a `matching_regex` option string, returning a hard error that names
@@ -1198,9 +1222,14 @@ impl AssetMatcher {
                 .filter(|a| a.eq_ignore_ascii_case(global))
                 .for_each(&mut add);
         }
+        // The asset itself, or another archive or program, can have
+        // "checksum" in its name (`checksum-tool-linux.tar.gz`); only a file
+        // that is not one is taken for a list.
         assets
             .iter()
-            .filter(|a| a.to_lowercase().contains("checksum"))
+            .filter(|a| {
+                *a != asset_name && a.to_lowercase().contains("checksum") && !is_package_file(a)
+            })
             .for_each(&mut add);
         found
     }
@@ -1374,8 +1403,9 @@ impl<'a> ChecksumFetcher<'a> {
             else {
                 continue;
             };
+            let is_sidecar = is_checksum_file_of(&checksum_filename, asset_name, &asset_names);
             match self
-                .fetch_and_parse_checksum(checksum_asset, &checksum_filename, asset_name, source)
+                .fetch_and_parse_checksum(checksum_asset, asset_name, is_sidecar, source)
                 .await
             {
                 Ok(Some(result)) if is_weak_checksum_algorithm(&result.algorithm) => {
@@ -1409,21 +1439,21 @@ impl<'a> ChecksumFetcher<'a> {
     async fn fetch_and_parse_checksum(
         &self,
         checksum_asset: &Asset,
-        checksum_filename: &str,
         target_asset: &str,
+        is_sidecar: bool,
         source: &impl ChecksumSource,
     ) -> Result<Option<ChecksumResult>> {
         let content = source.fetch_text(checksum_asset).await?;
 
         // Detect algorithm from filename
-        let algorithm = detect_checksum_algorithm(checksum_filename);
+        let algorithm = detect_checksum_algorithm(&checksum_asset.name);
 
         parse_checksum_content(
             &content,
             target_asset,
             &algorithm,
-            checksum_filename,
-            is_checksum_file_of(checksum_filename, target_asset),
+            &checksum_asset.name,
+            is_sidecar,
         )
     }
 }
@@ -1443,12 +1473,30 @@ pub(crate) fn detect_checksum_algorithm(filename: &str) -> String {
     }
 }
 
-/// Whether `checksum_filename` is the checksum file of `asset_name` alone
-/// (`tool.tar.gz.sha256`), as opposed to a list for several assets.
-fn is_checksum_file_of(checksum_filename: &str, asset_name: &str) -> bool {
-    checksum_filename
-        .strip_prefix(asset_name)
-        .is_some_and(|ext| CHECKSUM_EXTENSIONS.contains(&ext))
+/// Whether `checksum_filename` is the checksum file of `asset_name` alone, as
+/// opposed to a list for several assets: `tool.tar.gz.sha256`, or
+/// `tool.sha256` when no other release file `assets` lists is named `tool`
+/// before its archive suffix. When several are (`tool.tar.gz`, `tool.zip`),
+/// `tool.sha256` is read as a list that has to name the file.
+fn is_checksum_file_of(checksum_filename: &str, asset_name: &str, assets: &[String]) -> bool {
+    let is_sidecar_of = |name: &str| {
+        checksum_filename
+            .strip_prefix(name)
+            .is_some_and(|ext| CHECKSUM_EXTENSIONS.contains(&ext))
+    };
+    if is_sidecar_of(asset_name) {
+        return true;
+    }
+    let stem = |name: &str| -> String {
+        let suffix_len = extraction_suffix_len(name).unwrap_or(0);
+        name[..name.len() - suffix_len].to_string()
+    };
+    let base_name = stem(asset_name);
+    base_name != asset_name
+        && is_sidecar_of(&base_name)
+        && assets
+            .iter()
+            .all(|a| a == asset_name || stem(a) != base_name)
 }
 
 /// Parse checksum content and extract the hash for a specific file
@@ -1494,10 +1542,16 @@ fn parse_checksum_content(
         };
         // An exact name wins. A list written from another directory names the
         // file by path ("./file", "dist/file"); release assets have no
-        // directories, so the last component is the asset name.
+        // directories, so the last component is the asset name. A directory
+        // with whitespace in it is not a path but other text, such as
+        // `Path : C:\dist\file` in PowerShell output.
         if line.name == target_file {
             exact.add(line.hash, line_algorithm);
-        } else if line.name.rsplit(['/', '\\']).next() == Some(target_file) {
+        } else if line
+            .name
+            .rsplit_once(['/', '\\'])
+            .is_some_and(|(dir, name)| name == target_file && !dir.contains(char::is_whitespace))
+        {
             by_path.add(line.hash, line_algorithm);
         }
     }
@@ -1540,13 +1594,13 @@ fn parse_checksum_content(
         return Ok(None);
     }
 
-    // A list can hold a line per algorithm for each file (`rhash --bsd`): take
-    // the one the checksum file's name suggests, and md5 or sha1 only when
-    // there is no other.
+    // A list can hold a line per algorithm for each file (`rhash --bsd`): md5
+    // or sha1 only when there is no other, and among the rest the one the
+    // checksum file's name suggests.
     let Some(&(chosen, hash, conflict)) = mentions
         .usable
         .iter()
-        .min_by_key(|(algo, ..)| (*algo != algorithm, matches!(*algo, "md5" | "sha1")))
+        .min_by_key(|(algo, ..)| (is_weak_checksum_algorithm(algo), *algo != algorithm))
     else {
         bail!("lists {target_file}, but with no sha256, sha512, blake3, sha1 or md5 hash");
     };
@@ -1612,14 +1666,22 @@ fn parse_checksum_line(line: &str) -> Option<ChecksumLine<'_>> {
         && !tag.trim().is_empty()
         && !tag.trim().contains(char::is_whitespace)
     {
-        let algorithm = match tag.trim().to_ascii_lowercase().as_str() {
-            "sha256" | "sha2-256" => LineAlgorithm::Stated("sha256"),
-            "sha512" | "sha2-512" => LineAlgorithm::Stated("sha512"),
-            "sha1" => LineAlgorithm::Stated("sha1"),
-            "md5" => LineAlgorithm::Stated("md5"),
-            "blake3" => LineAlgorithm::Stated("blake3"),
-            _ => LineAlgorithm::Unknown,
-        };
+        const TAGS: [(&str, &str); 7] = [
+            ("sha256", "sha256"),
+            ("sha2-256", "sha256"),
+            ("sha512", "sha512"),
+            ("sha2-512", "sha512"),
+            ("sha1", "sha1"),
+            ("md5", "md5"),
+            ("blake3", "blake3"),
+        ];
+        let tag = tag.trim();
+        let algorithm = TAGS
+            .iter()
+            .find(|(name, _)| name.eq_ignore_ascii_case(tag))
+            .map_or(LineAlgorithm::Unknown, |(_, algorithm)| {
+                LineAlgorithm::Stated(algorithm)
+            });
         return Some(ChecksumLine {
             name,
             hash: hash.trim(),
@@ -1627,11 +1689,17 @@ fn parse_checksum_line(line: &str) -> Option<ChecksumLine<'_>> {
         });
     }
 
-    let mut parts = line.split_whitespace();
-    let (hash, name) = (parts.next()?, parts.next()?);
+    // The file name is the rest of the line after the hash, so a name with
+    // spaces in it is read whole.
+    let (hash, name) = line.trim().split_once(char::is_whitespace)?;
+    let name = name.trim_start();
+    // Strip the coreutils binary-mode marker ("<hash> *<file>")
+    let name = name.strip_prefix('*').unwrap_or(name);
+    if name.is_empty() {
+        return None;
+    }
     Some(ChecksumLine {
-        // Strip the coreutils binary-mode marker ("<hash> *<file>")
-        name: name.strip_prefix('*').unwrap_or(name),
+        name,
         hash,
         algorithm: LineAlgorithm::Unstated,
     })
@@ -1759,11 +1827,32 @@ mod tests {
             "SHASUMS.txt.asc",
             "SHASUMS.txt",
             "checksums.txt.pem",
+            "SHASUMS256.txt.gpg",
+            "checksums.txt.p7s",
         ]
         .map(String::from);
         assert_eq!(
             AssetMatcher::new().checksum_files_for("tool-linux.tar.gz", &assets),
             ["SHASUMS.txt", "checksums-darwin.txt", "checksums-linux.txt"]
+        );
+    }
+
+    #[test]
+    fn test_archives_named_like_a_checksum_list_are_not_read_as_one() {
+        let assets = [
+            "checksum-tool-linux.tar.gz",
+            "checksum-tool-darwin.zip",
+            "checksum-tool-windows.exe",
+            "checksum-tool-linux.tar.gz.sha256",
+            "checksum-tool_1.0_checksums",
+        ]
+        .map(String::from);
+        assert_eq!(
+            AssetMatcher::new().checksum_files_for("checksum-tool-linux.tar.gz", &assets),
+            [
+                "checksum-tool-linux.tar.gz.sha256",
+                "checksum-tool_1.0_checksums"
+            ]
         );
     }
 
@@ -4169,6 +4258,120 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-darwin.ta
         }
     }
 
+    #[test]
+    fn test_tagged_checksum_list_parsing_does_not_allocate_per_line() {
+        let entries = format!("SHA256 (tool-darwin.tar.gz) = {DARWIN_SHA256}\n").repeat(1 << 16)
+            + &format!("sha256 (tool-linux.tar.gz) = {LINUX_SHA256}\n");
+        let mut result = None;
+        let allocated = bytes_allocated_by(|| {
+            result = Some(parse_for_linux(&entries, "checksums.txt"));
+        });
+        assert!(
+            allocated < 64 << 10,
+            "parsing a {} byte list allocated {allocated} bytes",
+            entries.len()
+        );
+        let result = result.unwrap().unwrap().unwrap();
+        assert_eq!(
+            (result.algorithm.as_str(), result.hash.as_str()),
+            ("sha256", LINUX_SHA256)
+        );
+    }
+
+    #[test]
+    fn test_strong_hash_wins_over_weak_one_whatever_the_list_is_named() {
+        let md5 = "d41d8cd98f00b204e9800998ecf8427e";
+        for source_file in ["checksums-md5.txt", "MD5SUMS", "checksums.txt"] {
+            let content = format!(
+                "MD5 (tool-linux.tar.gz) = {md5}\nSHA256 (tool-linux.tar.gz) = {LINUX_SHA256}\n"
+            );
+            let result = parse_for_linux(&content, source_file).unwrap().unwrap();
+            assert_eq!(
+                (result.algorithm.as_str(), result.hash.as_str()),
+                ("sha256", LINUX_SHA256),
+                "{source_file}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_file_names_with_spaces_are_read_whole() {
+        let asset = "tool linux.zip";
+        for content in [
+            format!("{DARWIN_SHA256}  tool\n{LINUX_SHA256}  tool linux.zip\n"),
+            format!("{DARWIN_SHA256} *tool\n{LINUX_SHA256} *tool linux.zip \r\n"),
+        ] {
+            let result = parse_checksum_content(&content, asset, "sha256", "SHA256SUMS", false)
+                .unwrap()
+                .unwrap();
+            assert_eq!(result.hash, LINUX_SHA256, "{content:?}");
+        }
+        let content = format!("{LINUX_SHA256}  dist/tool linux.zip\n");
+        let result = parse_checksum_content(&content, asset, "sha256", "SHA256SUMS", false)
+            .unwrap()
+            .unwrap();
+        assert_eq!(result.hash, LINUX_SHA256);
+        let content = format!("{LINUX_SHA256}  tool linux.zip\n");
+        assert!(
+            parse_checksum_content(&content, "tool", "sha256", "SHA256SUMS", false)
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn test_checksum_file_named_after_the_stem_is_the_assets_own() {
+        let assets = |names: &[&str]| names.iter().map(|n| n.to_string()).collect::<Vec<_>>();
+        for (asset, sidecar, files, own) in [
+            (
+                "tool.tar.gz",
+                "tool.tar.gz.sha256",
+                &["tool.tar.gz"][..],
+                true,
+            ),
+            (
+                "tool.tar.gz",
+                "tool.sha256",
+                &["tool.tar.gz", "tool.sha256"][..],
+                true,
+            ),
+            (
+                "tool.tar.gz",
+                "tool.sha256",
+                &["tool.tar.gz", "tool.zip", "tool.sha256"][..],
+                false,
+            ),
+            (
+                "tool.tar.gz",
+                "tool.sha256",
+                &["tool.tar.gz", "tool"][..],
+                false,
+            ),
+            ("tool", "tool.sha256", &["tool", "tool.tar.gz"][..], true),
+            ("tool.tar.gz", "SHA256SUMS", &["tool.tar.gz"][..], false),
+        ] {
+            assert_eq!(
+                is_checksum_file_of(sidecar, asset, &assets(files)),
+                own,
+                "{sidecar} for {asset} among {files:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_empty_checksum_file_named_after_the_stem_fails_the_lookup() {
+        let assets = release_files(&["tool.tar.gz", "tool.sha256"]);
+        let source = FilesSource(vec![("tool.sha256", Ok(String::new()))]);
+        let err = ChecksumFetcher::new(&assets)
+            .fetch_checksum_for("tool.tar.gz", &source)
+            .await
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("cannot verify tool.tar.gz"),
+            "{err}"
+        );
+    }
+
     const LINUX_SHA512: &str = "cf83e1357eefb8bdf1542850d66d8007d620e4050b5715dc83f4a921d36ce9ce47d0d13c5d85f2b0ff8318d2877eec2f63b931bd47417a81a538327af927da3e";
 
     /// Parse `content` as checksum file `source_file` for `tool-linux.tar.gz`
@@ -4179,7 +4382,7 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-darwin.ta
             asset,
             &detect_checksum_algorithm(source_file),
             source_file,
-            is_checksum_file_of(source_file, asset),
+            is_checksum_file_of(source_file, asset, &[asset.to_string()]),
         )
     }
 
@@ -4327,7 +4530,7 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-darwin.ta
                 asset,
                 &detect_checksum_algorithm(&sidecar),
                 &sidecar,
-                is_checksum_file_of(&sidecar, asset),
+                is_checksum_file_of(&sidecar, asset, &[asset.to_string()]),
             )
             .unwrap_or_else(|e| panic!("{asset}: {e:#}"))
             .unwrap_or_else(|| panic!("{asset}: no checksum"));
