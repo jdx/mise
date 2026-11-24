@@ -19,6 +19,7 @@ use std::path::{Path, PathBuf};
 
 use eyre::{Result, WrapErr, bail, eyre};
 use itertools::Itertools;
+use packslip::forge;
 use packslip::model::{ReleaseListStatement, ReleaseRef};
 use packslip::sigstore::Policy;
 use serde::{Deserialize, Serialize};
@@ -102,7 +103,9 @@ pub(crate) fn trusts_vendor(opts: &ToolVersionOptions) -> bool {
 /// exemption from there only: the options of a request can be what an
 /// untrusted project wrote, in its `[tools]`, a `[tool_alias]`, a task or a
 /// monorepo subproject, and they lift that policy no more than the project's
-/// `[settings]` do. The entry has to set the option itself.
+/// `[settings]` do. The entry has to set the option itself. It names the
+/// project as the forge resolves it ([`forge::same_project`]), so a github.com
+/// or gitlab.com repository matches in any letter case.
 async fn global_config_trusts_vendor(project: &str) -> Result<bool> {
     let config = Config::get().await?;
     for cf in config.config_files.values() {
@@ -117,7 +120,8 @@ async fn global_config_trusts_vendor(project: &str) -> Result<bool> {
             if set_by_entry
                 && trusts_vendor(&tr.options())
                 && tr.ba().backend_type() == BackendType::Packslip
-                && project_name(&tr.ba().tool_name()).is_ok_and(|p| p == project)
+                && project_name(&tr.ba().tool_name())
+                    .is_ok_and(|p| forge::same_project(&p, project))
             {
                 return Ok(true);
             }

@@ -122,6 +122,18 @@ assert "test -f '$install/metadata.lua'"
 mise uninstall "$tool@$version"
 assert_directory_not_exists "$install"
 
+echo "=== whatever letter case the global entry spells the repository in ==="
+operator_settings >"$MISE_CONFIG_DIR/config.toml"
+cat <<EOF >>"$MISE_CONFIG_DIR/config.toml"
+
+[tools]
+"packslip:mise-plugins/VFOX-BFS" = { version = "$version", trust = "vendor" }
+EOF
+assert_succeed "MISE_SAFE=1 mise install '${tool}[trust=vendor]@$version'"
+assert "test -f '$install/metadata.lua'"
+mise uninstall "$tool@$version"
+assert_directory_not_exists "$install"
+
 echo "=== without safe mode a trusted project's option is honoured ==="
 operator_settings >"$MISE_CONFIG_DIR/config.toml"
 cat <<EOF >mise.toml
