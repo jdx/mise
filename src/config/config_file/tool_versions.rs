@@ -26,7 +26,7 @@ use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource};
 pub(crate) struct ToolVersions {
     context: Context,
     path: PathBuf,
-    pre: String,
+    pre: Mutex<String>,
     plugins: Mutex<IndexMap<BackendArg, ToolVersionPlugin>>,
     tools: Mutex<ToolRequestSet>,
     /// Skipped because it links to a file of another name; never written back.
@@ -110,7 +110,7 @@ impl ToolVersions {
         cf.unmapped_templates = !mapped;
         let raw = if mapped { raw } else { s.as_str() };
         let (pre, plugins) = Self::parse_lines(s.lines().zip(raw.lines()));
-        cf.pre = pre;
+        cf.pre = Mutex::new(pre);
         cf.plugins = Mutex::new(plugins);
         cf.populate_toolset()?;
         trace!("{cf}");
@@ -206,8 +206,27 @@ impl ConfigFile for ToolVersions {
         self.path.as_path()
     }
 
+    /// The template lines kept after the tool stay in the file, after the tool
+    /// before it: they are not part of the tool, and can declare another tool in
+    /// another environment. The comments after the tool go with it.
     fn remove_tool(&self, fa: &BackendArg) -> Result<()> {
-        self.plugins.lock().unwrap().shift_remove(fa);
+        let mut plugins = self.plugins.lock().unwrap();
+        let Some(index) = plugins.get_index_of(fa) else {
+            return Ok(());
+        };
+        let (_, removed) = plugins.shift_remove_index(index).unwrap();
+        // The first line of `post` ends the tool's own line; a later line that
+        // holds `{{` was kept for its template.
+        let templates: String = removed
+            .post
+            .split_inclusive('\n')
+            .skip(1)
+            .filter(|line| line.contains("{{"))
+            .collect();
+        match index.checked_sub(1) {
+            Some(prev) => plugins[prev].post.push_str(&templates),
+            None => self.pre.lock().unwrap().push_str(&templates),
+        }
         Ok(())
     }
 
@@ -222,8 +241,11 @@ impl ConfigFile for ToolVersions {
             )
         };
         // A version the line keeps is written as the line has it. That needs each word
-        // of the line to render to one version; otherwise a kept version could come from
-        // a template, and the edit is refused rather than writing what it rendered to.
+        // of the line to render to one version, which holds when the line has as many
+        // words as versions and at most one of them is a template: with two, one could
+        // render to nothing and the other to two versions. Otherwise a kept version
+        // could come from a template, and the edit is refused rather than writing what
+        // it rendered to.
         let mut as_written: Vec<(String, String)> = vec![];
         if let Some(raw) = &plugin.raw {
             let words = words_as_written(raw);
@@ -231,7 +253,8 @@ impl ConfigFile for ToolVersions {
             if words.first() != Some(&plugin.orig_name.as_str()) {
                 return Err(refuse("the name"));
             }
-            if words.len() - 1 == plugin.versions.len() {
+            let templates = words[1..].iter().filter(|w| w.contains("{{")).count();
+            if words.len() - 1 == plugin.versions.len() && templates <= 1 {
                 as_written = plugin
                     .versions
                     .iter()
@@ -283,7 +306,7 @@ impl ConfigFile for ToolVersions {
     }
 
     fn dump(&self) -> eyre::Result<String> {
-        let mut s = self.pre.clone();
+        let mut s = self.pre.lock().unwrap().clone();
 
         let plugins = self.plugins.lock().unwrap();
         let max_plugin_len = plugins
@@ -363,7 +386,7 @@ impl Clone for ToolVersions {
         Self {
             context: self.context.clone(),
             path: self.path.clone(),
-            pre: self.pre.clone(),
+            pre: Mutex::new(self.pre.lock().unwrap().clone()),
             plugins: Mutex::new(self.plugins.lock().unwrap().clone()),
             tools: Mutex::new(self.tools.lock().unwrap().clone()),
             unread: self.unread,
@@ -483,7 +506,7 @@ mod tests {
     fn parsed(raw: &str, rendered: &str) -> ToolVersions {
         let (pre, plugins) = ToolVersions::parse_lines(rendered.lines().zip(raw.lines()));
         ToolVersions {
-            pre,
+            pre: Mutex::new(pre),
             plugins: Mutex::new(plugins),
             ..ToolVersions::init(Path::new("/tmp/.tool-versions"))
         }
@@ -524,6 +547,14 @@ mod tests {
         assert!(!err.to_string().contains("20.0.0"), "{err}");
         assert_eq!(tv.dump().unwrap(), "node {{ env.NV }}\n");
 
+        // with two templates, either could have rendered to both versions
+        let tv = parsed("node {{ env.A }} {{ env.B }}\n", "node 20.0.0 18.0.0\n");
+        let err = tv
+            .replace_versions(&node, vec![node_version("18.0.0")])
+            .unwrap_err();
+        assert!(err.to_string().contains("Edit the file by hand"), "{err}");
+        assert_eq!(tv.dump().unwrap(), "node {{ env.A }} {{ env.B }}\n");
+
         // a new version replaces the templates
         let tv = parsed("node {{ env.NV }}\n", "node 20.0.0 18.0.0\n");
         tv.replace_versions(&node, vec![node_version("22.0.0")])
@@ -553,6 +584,20 @@ mod tests {
             tv.dump().unwrap(),
             "{{ env.HEADER }}\n{{ env.FIRST }}\nnodejs 20.0.0\n{{ env.EXTRA }}\npython 3.12\n"
         );
+
+        // removing the tool before such a line keeps the line, and drops its comment
+        let tv = parsed(
+            "node 18.0.0 # lts\n# pinned\n{{ env.EXTRA }}\npython 3.12\n",
+            "node 18.0.0 # lts\n# pinned\n\npython 3.12\n",
+        );
+        tv.remove_tool(&node).unwrap();
+        assert_eq!(tv.dump().unwrap(), "{{ env.EXTRA }}\npython 3.12\n");
+        let tv = parsed(
+            "python 3.12\nnode 18.0.0\n{{ env.EXTRA }}\n",
+            "python 3.12\nnode 18.0.0\n\n",
+        );
+        tv.remove_tool(&node).unwrap();
+        assert_eq!(tv.dump().unwrap(), "python 3.12\n{{ env.EXTRA }}\n");
     }
 
     /// `dump` relies on `post` to terminate each line, and `trim_end` only ever
