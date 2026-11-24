@@ -601,6 +601,13 @@ async fn run_staged(
         }
     }
     argv.push(format!("MISE_TRUSTED_CONFIG_PATHS={project}"));
+    if repository.is_none() || preview_setup {
+        // The staging directory sits in the target's shared /tmp, so config
+        // search stops there: a mise.toml another user left above it is never
+        // loaded. A real repository bootstrap runs in the target's own global
+        // config directory and keeps the target's own ceiling.
+        argv.push(format!("MISE_CEILING_PATHS={staging}"));
+    }
     if let Some(mise_env) = &session.host.mise_env {
         // An explicit empty list selects no environments; the empty value masks the aliases.
         argv.push(format!("MISE_ENV={}", mise_env.join(",")));
