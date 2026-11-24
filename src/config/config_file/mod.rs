@@ -874,6 +874,29 @@ pub fn trust_check(path: &Path) -> eyre::Result<()> {
     Err(UntrustedConfig(path.into(), Untrusted::NotTrusted))?
 }
 
+/// Trusts the project of `path`, a file that defines a task, where [`trust_check`] would have
+/// trusted it because the command was typed on a terminal, and returns whether it did. A task's
+/// config can load without that check, as a `[tasks]`-only `mise.toml` does, and what the task
+/// names is then used only once the project is trusted (`Task::is_trusted`). There is no prompt
+/// here: everything that would have prompted leaves the project untrusted.
+pub(crate) fn trust_typed_task_source(path: &Path) -> eyre::Result<bool> {
+    let hook_env = !*env::IS_RUNNING_AS_SHIM
+        && env::ARGS.read().unwrap().get(1).map(String::as_str) == Some("hook-env");
+    if Settings::safe_mode()
+        || *REQUIRE_EXPLICIT_TRUST
+        || STRICT_TRUST.load(Ordering::Relaxed)
+        || hook_env
+        || mise_util::testing::in_tests()
+    {
+        return Ok(false);
+    }
+    let config_root = config_trust_root(path);
+    if !implicit_trust_may_record(path, &config_root) {
+        return Ok(false);
+    }
+    typed_consent::trust_typed_command(path, &config_root)
+}
+
 /// Fails with [`Untrusted::LinkedInProject`] for a config that paranoid mode reaches through a
 /// symlink inside a project. Paranoid mode approves a file by its content, and a link inside a
 /// project is that project's to change, so no trust record can approve such a config: loading it

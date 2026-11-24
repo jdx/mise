@@ -1317,8 +1317,33 @@ impl Task {
     ///
     /// The script a TOML task names with `file` is one of those files: its `#USAGE` lines are
     /// the task's usage spec. See [`Self::file_is_trusted`].
+    ///
+    /// A command typed on a terminal trusts the project it runs in, as it does when loading
+    /// config that needs trust (see `trust_check`), so here it trusts the project of every
+    /// source that is not trusted yet. A command that does not count as typed there leaves the
+    /// task untrusted.
     pub async fn is_trusted(&self, config: &Arc<Config>) -> bool {
-        self.sources_are_trusted(config) && self.file_is_trusted(config).await
+        (self.sources_are_trusted(config) || self.trust_typed_sources(config))
+            && self.file_is_trusted(config).await
+    }
+
+    fn trust_typed_sources(&self, config: &Config) -> bool {
+        let untrusted = self.config_sources().into_iter().filter(|path| {
+            !config::is_global_config(path)
+                && !config::is_global_task_include_path(path)
+                && !config::config_file::is_path_trusted(path)
+        });
+        for path in untrusted {
+            match config::config_file::trust_typed_task_source(path) {
+                Ok(true) => {}
+                Ok(false) => return false,
+                Err(err) => {
+                    warn!("could not trust {}: {err:#}", display_path(path));
+                    return false;
+                }
+            }
+        }
+        self.sources_are_trusted(config)
     }
 
     fn sources_are_trusted(&self, config: &Config) -> bool {

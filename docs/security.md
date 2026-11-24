@@ -203,6 +203,11 @@ once per directory, which `--quiet` hides. A directory on the ignore list or
 under `ignored_config_paths` stays ignored, and shell activation still skips
 untrusted config. Only paranoid mode turns this off.
 
+The same holds for a project whose config loads without trust, such as a
+`[tasks]`-only `mise.toml`, when the command needs a task's trust: typing
+`mise tasks info <task>` there trusts the project and reads the files the
+task's usage spec includes, where a script or editor running it does not.
+
 ### CI and `--yes`
 
 When mise detects CI, for example because `CI` is set, it treats every config as
