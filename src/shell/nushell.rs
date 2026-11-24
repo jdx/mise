@@ -5,7 +5,7 @@ use indoc::formatdoc;
 
 use crate::{
     env,
-    shell::{self, ActivateOptions, ActivatePrelude, Shell},
+    shell::{ActivateOptions, ActivatePrelude, Shell},
 };
 use itertools::Itertools;
 
@@ -27,6 +27,20 @@ impl Display for EnvOp<'_> {
 }
 
 impl Nushell {
+    /// `s` as a Nushell raw string. A raw string has no escapes and ends at the first `'`
+    /// followed by as many `#` as opened it, so it opens with one `#` more than the longest run
+    /// of `#` in `s`: nothing in `s` can end it early.
+    fn raw_string(s: &str) -> String {
+        let longest_run = s.split(|c| c != '#').map(str::len).max().unwrap_or(0);
+        let hashes = "#".repeat(longest_run + 1);
+        format!("r{hashes}'{s}'{hashes}")
+    }
+
+    /// `s` as a Nushell double-quoted string, where `\` and `"` are the characters to escape.
+    fn double_quoted(s: &str) -> String {
+        format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
+    }
+
     fn escape_csv_value(s: &str) -> String {
         if s.contains(['\r', '\n', '"', ',']) {
             format!("\"{}\"", s.replace('"', "\"\""))
@@ -40,19 +54,21 @@ impl Nushell {
             .iter()
             .map(|p| match p {
                 ActivatePrelude::Set(k, v) if env::is_path_key(k) => {
-                    format!("$env.{k} = (r#'{v}'# | split row (char esep))\n")
+                    let v = Self::raw_string(v);
+                    format!("$env.{k} = ({v} | split row (char esep))\n")
                 }
-                ActivatePrelude::Set(k, v) => format!("$env.{k} = r#'{v}'#\n"),
+                // `mise activate nu` is saved to a file that outlives the session, and this key
+                // decrypts the env cache. The module makes one when it is loaded instead, and
+                // keeps one it inherits, as `CachedEnv::ensure_encryption_key` does.
+                ActivatePrelude::Set(k, _) if k == "__MISE_ENV_CACHE_KEY" => formatdoc! {r#"
+                    if "{k}" not-in $env {{ $env.{k} = (random binary 32 | encode base64) }}
+                "#},
+                ActivatePrelude::Set(k, v) => format!("$env.{k} = {}\n", Self::raw_string(v)),
                 ActivatePrelude::Prepend(k, v) | ActivatePrelude::MovePrepend(k, v) => {
                     self.prepend_env(k, v)
                 }
             })
             .join("")
-    }
-
-    fn build_deactivation_script(&self) -> String {
-        let deactivation_ops = shell::build_deactivation_script(self);
-        deactivation_ops.trim_end_matches('\n').to_owned()
     }
 }
 
@@ -60,7 +76,7 @@ impl Shell for Nushell {
     fn activate(&self, opts: ActivateOptions) -> String {
         let exe = opts.exe;
         let flags = opts.flags;
-        let exe = exe.to_string_lossy().replace('\\', r#"\\"#);
+        let exe = Self::double_quoted(&exe.to_string_lossy());
 
         let mut out = String::new();
 
@@ -84,12 +100,22 @@ impl Shell for Nushell {
           }}
         "#});
 
-        let deactivation_ops_csv = self.build_deactivation_script();
+        // Undoing an inherited activation restores the value every variable had before mise
+        // changed it, secrets included. The module is saved to a file, so it asks mise for those
+        // operations when it is loaded rather than carrying them. `mise deactivate` also hides
+        // `__MISE_ORIG_PATH`, which activation keeps.
         let inline_prelude = self.format_activate_prelude_inline(&opts.prelude);
         out.push_str(&formatdoc! {r#"
           export-env {{
+            let deactivation_ops = if "__MISE_DIFF" in $env {{
+              with-env {{ MISE_SHELL: "nu" }} {{ ^{exe} deactivate }}
+              | parse vars
+              | where name != "__MISE_ORIG_PATH"
+            }} else {{
+              []
+            }}
             {inline_prelude}
-            '{deactivation_ops_csv}' | parse vars | update-env
+            $deactivation_ops | update-env
             $env.MISE_SHELL = "nu"
             let mise_hook = {{
               condition: {{ "MISE_SHELL" in $env }}
@@ -109,7 +135,7 @@ impl Shell for Nushell {
           # `main` is a Nushell command, so the external completer that `mise completion nu`
           # installs never sees `mise <Tab>`. Ask mise for the candidates instead.
           def "nu-complete mise" [context: string] {{
-            let out = (try {{ ^"{exe}" __complete_word__ --shell nu --line $context | complete }} catch {{ null }})
+            let out = (try {{ ^{exe} __complete_word__ --shell nu --line $context | complete }} catch {{ null }})
             if $out == null or $out.exit_code != 0 {{ return null }}
             let marker = "\u{{1}}"
             let lines = ($out.stdout | lines | where {{|l| $l != "" }})
@@ -132,20 +158,20 @@ impl Shell for Nushell {
             let commands = ["deactivate", "shell", "sh"]
 
             if ($command == null) {{
-              ^"{exe}"
+              ^{exe}
             }} else if ($command == "activate") {{
               $env.MISE_SHELL = "nu"
             }} else if ($command in $commands) {{
-              ^"{exe}" $command ...$rest
+              ^{exe} $command ...$rest
               | parse vars
               | update-env
             }} else {{
-              ^"{exe}" $command ...$rest
+              ^{exe} $command ...$rest
             }}
           }}
 
           def --env mise_hook [] {{
-            ^"{exe}" hook-env{flags} -s nu
+            ^{exe} hook-env{flags} -s nu
               | parse vars
               | update-env
           }}
@@ -171,7 +197,8 @@ impl Shell for Nushell {
     }
 
     fn prepend_env(&self, k: &str, v: &str) -> String {
-        format!("$env.{k} = ($env.{k} | prepend r#'{v}'#)\n")
+        let v = Self::raw_string(v);
+        format!("$env.{k} = ($env.{k} | prepend {v})\n")
     }
 
     fn unset_env(&self, k: &str) -> String {
@@ -227,6 +254,44 @@ mod tests {
             nushell.format_activate_prelude_inline(&prelude),
             format!("$env.{path_key} = (r#'/one:/two'# | split row (char esep))\n")
         );
+    }
+
+    #[test]
+    fn raw_string_cannot_be_ended_by_its_contents() {
+        assert_eq!(Nushell::raw_string("a'b"), "r#'a'b'#");
+        assert_eq!(Nushell::raw_string("x'#; y"), "r##'x'#; y'##");
+        assert_eq!(Nushell::raw_string("#a##'###"), "r####'#a##'###'####");
+        assert_eq!(Nushell::raw_string(""), "r#''#");
+    }
+
+    #[test]
+    fn activation_does_not_carry_the_env_cache_key() {
+        let nushell = Nushell::default();
+        let opts = ActivateOptions {
+            exe: Path::new("/some/dir/mise").to_path_buf(),
+            flags: "".into(),
+            no_hook_env: false,
+            prelude: vec![ActivatePrelude::Set(
+                "__MISE_ENV_CACHE_KEY".into(),
+                "c2VjcmV0LWtleQ==".into(),
+            )],
+        };
+        let out = nushell.activate(opts);
+        assert!(!out.contains("c2VjcmV0LWtleQ=="), "{out}");
+        assert!(out.contains("random binary 32 | encode base64"), "{out}");
+    }
+
+    #[test]
+    fn exe_path_is_quoted_for_nushell() {
+        let nushell = Nushell::default();
+        let opts = ActivateOptions {
+            exe: Path::new(r#"/a "b"\c/mise"#).to_path_buf(),
+            flags: "".into(),
+            no_hook_env: false,
+            prelude: vec![],
+        };
+        let out = nushell.activate(opts);
+        assert!(out.contains(r#"^"/a \"b\"\\c/mise" hook-env"#), "{out}");
     }
 
     #[test]
