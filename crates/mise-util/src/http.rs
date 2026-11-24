@@ -3620,11 +3620,23 @@ fn github_relay_socket(url: &Url) -> Option<std::ffi::OsString> {
 /// Splits a `url_replacements` replacement into the scheme it starts with, if
 /// it has one, the authority (`user:password@host:port`) after that, and the
 /// rest. A replacement need not be a whole URL: `mirror.example.com/github`
-/// starts with its authority.
+/// starts with its authority. The URL parser reads the authority of an `http`,
+/// `https`, `ws`, `wss` or `ftp` URL after any run of `/` and `\` that follows
+/// the colon, so `https:////user:password@host/` and `https:\user:password@host/`
+/// both name `host`; other schemes need `//`.
 fn split_replacement(replacement: &str) -> (Option<&str>, &str, &str) {
     const AUTHORITY_END: [char; 4] = ['/', '\\', '?', '#'];
-    let (scheme, rest) = match replacement.split_once("//") {
-        Some((scheme, rest)) if !scheme.contains(AUTHORITY_END) && !scheme.contains('@') => {
+    let special = replacement.split_once(':').filter(|(scheme, rest)| {
+        matches!(
+            scheme.to_ascii_lowercase().as_str(),
+            "http" | "https" | "ws" | "wss" | "ftp"
+        ) && rest.starts_with(['/', '\\'])
+    });
+    let (scheme, rest) = match (special, replacement.split_once("//")) {
+        (Some((scheme, rest)), _) => (Some(scheme), rest.trim_start_matches(['/', '\\'])),
+        (None, Some((scheme, rest)))
+            if !scheme.contains(AUTHORITY_END) && !scheme.contains('@') =>
+        {
             (scheme.strip_suffix(':').filter(|s| !s.is_empty()), rest)
         }
         _ => (None, replacement),

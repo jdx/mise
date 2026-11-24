@@ -332,6 +332,35 @@ fn test_replacement_credentials_only_reach_the_replacement_host() {
     );
 }
 
+/// The URL parser reads the server of an `http(s)` URL after any run of `/` and
+/// `\` that follows the colon, so every such spelling of a replacement with a
+/// login names the same server, and the login reaches only that server.
+#[test]
+fn test_replacement_credentials_are_found_in_every_spelling_of_the_server() {
+    for replacement in [
+        "https://user:secret@mirror.example.com/",
+        "https:////user:secret@mirror.example.com/",
+        "https:/user:secret@mirror.example.com/",
+        r"https:\\user:secret@mirror.example.com/",
+        r"https:/\user:secret@mirror.example.com/",
+        "HTTPS:///user:secret@mirror.example.com/",
+    ] {
+        let mut rules = IndexMap::new();
+        rules.insert("https://github.com/".to_string(), replacement.to_string());
+        assert_eq!(
+            rewritten(&rules, "https://github.com/owner/repo"),
+            "https://user:secret@mirror.example.com/owner/repo",
+            "{replacement}"
+        );
+        for elsewhere in [
+            "https://evil.example/?u=https://github.com/",
+            "https://evil.example/x/https://github.com/tool",
+        ] {
+            assert_eq!(rewritten(&rules, elsewhere), elsewhere, "{replacement}");
+        }
+    }
+}
+
 #[test]
 fn test_rules_never_move_a_url_login_into_the_rewritten_url() {
     // The documented subdomain-to-path rule: `[^./]+` would also match
