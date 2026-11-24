@@ -1474,10 +1474,11 @@ fn persistent_opts(ba: &BackendArg) -> BTreeMap<String, toml::Value> {
     // up, synced between machines and left group-readable, so a live credential
     // must not reach them. It can: a registry URL authenticates as basic-auth
     // userinfo (mise's gem `source` option, for one), the http backend's
-    // `headers` carry a bearer token, and templating the token in from the
-    // environment does not help, because rendering happens before the value is
-    // stored. The rest of a URL is kept, since it is genuine identity: which
-    // registry a tool came from is worth recording.
+    // `headers` carry a bearer token, `npm_args` can set a registry's
+    // `_authToken`, and templating the token in from the environment does not
+    // help, because rendering happens before the value is stored. The rest of
+    // a URL is kept, since it is genuine identity: which registry a tool came
+    // from is worth recording.
     match ba.opts.as_ref() {
         Some(o) => strip_options_credentials(
             o.opts
@@ -2385,7 +2386,7 @@ explicit_backend = true
 
 #[cfg(test)]
 mod credential_tests {
-    use super::{credential_named_dir, persistent_opts};
+    use super::{BTreeMap, credential_named_dir, persistent_opts, strip_options_credentials};
     use crate::args::BackendArg;
     use crate::toolset::ToolVersionOptions;
     use crate::toolset::tool_version_options::strip_option_credentials as strip_url_credentials;
@@ -2646,6 +2647,46 @@ mod credential_tests {
         assert_eq!(
             strip_url_credentials(&toml::Value::Integer(7)),
             toml::Value::Integer(7)
+        );
+    }
+
+    /// An npm credential setting is not part of a URL, so it is masked as a
+    /// lockfile masks it; the other arguments are kept.
+    #[test]
+    fn npm_credential_settings_are_masked_before_a_manifest_is_written() {
+        let mut ba = BackendArg::from("npm:mytool");
+        ba.set_opts(Some(ToolVersionOptions {
+            opts: toml::from_str(
+                r#"
+                npm_args = "--//npm.example.com/:_authToken=s3cret --registry=https://ci:s3cret@npm.example.com/"
+                pnpm_args = "--_auth s3cret --save-exact"
+                bun_args = "--_password=\"s3cret second\" --verbose"
+                aube_args = "--verbose"
+                "#,
+            )
+            .unwrap(),
+            ..Default::default()
+        }));
+
+        let opts = persistent_opts(&ba);
+        let words = |key: &str| shell_words::split(opts[key].as_str().unwrap()).unwrap();
+        assert_eq!(
+            words("npm_args"),
+            [
+                "--//npm.example.com/:_authToken=[redacted]",
+                "--registry=https://npm.example.com/",
+            ]
+        );
+        assert_eq!(
+            words("pnpm_args"),
+            ["--_auth", "[redacted]", "--save-exact"]
+        );
+        assert_eq!(words("bun_args"), ["--_password=[redacted]", "--verbose"]);
+        assert_eq!(opts["aube_args"].as_str(), Some("--verbose"));
+        // Masking again changes nothing, so a stored entry is not rewritten.
+        assert_eq!(
+            strip_options_credentials(&opts).collect::<BTreeMap<_, _>>(),
+            opts
         );
     }
 

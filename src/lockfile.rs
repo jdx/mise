@@ -6779,7 +6779,9 @@ pub(crate) fn credential_query_param(text: &str) -> Option<String> {
         .find(|name| mise_util::redactions::is_credential_query_param(name))
 }
 
-fn strip_lock_option_credentials(value: &str) -> String {
+/// One option value without credentials, as `mise.lock` records it. Install
+/// manifests and install identities record options through this too.
+pub(crate) fn strip_lock_option_credentials(value: &str) -> String {
     let value = mise_util::redactions::strip_url_credentials_in_value(value);
     // An npm credential setting is masked as the installer reads it: split into
     // shell words the way `npm_args` is, so a value made of quoted and unquoted
