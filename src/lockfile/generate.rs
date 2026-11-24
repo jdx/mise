@@ -546,11 +546,22 @@ pub async fn generate(
             })
             .and_then(|actual| {
                 let backend = actual.backend().ok()?;
-                (platform.to_key() == backend.get_platform_key())
-                    .then(|| actual.lock_platforms.get(&platform.to_key()).cloned())
-                    .flatten()
+                let key = platform.to_key();
+                if key != backend.get_platform_key() {
+                    return None;
+                }
+                let info = actual.lock_platforms.get(&key)?.clone();
+                // The dependency packages the install verified, so the entry's
+                // `conda_deps` names rows this lockfile holds.
+                let conda = actual
+                    .conda_packages
+                    .iter()
+                    .filter(|((package_platform, _), _)| *package_platform == key)
+                    .map(|((_, basename), package)| (basename.clone(), package.clone()))
+                    .collect::<BTreeMap<_, _>>();
+                Some((info, conda))
             })
-            .filter(|info| {
+            .filter(|(info, _)| {
                 info.url.is_some() || info.install.is_some() || info.conda_deps.is_some()
             });
         let previous_info = previous.tools_for(&ba.short).and_then(|entries| {
@@ -597,7 +608,7 @@ pub async fn generate(
         let semaphore = semaphore.clone();
         tasks.spawn(async move {
             let _permit = semaphore.acquire().await?;
-            let mut resolution = if let Some(info) = actual {
+            let mut resolution = if let Some((info, conda)) = actual {
                 (
                     crate::toolset::install_state::state_short(&ba.short).into_owned(),
                     tv.version.clone(),
@@ -605,7 +616,7 @@ pub async fn generate(
                     platform,
                     Ok(info),
                     options,
-                    BTreeMap::new(),
+                    conda,
                     LockResolutionStatus::Optional,
                 )
             } else {
@@ -1414,6 +1425,47 @@ mod tests {
         assert_eq!(info.install.as_deref(), Some("source"));
         assert!(info.url.is_none());
         assert!(info.provenance_verified.is_none());
+    }
+
+    #[tokio::test]
+    async fn installed_conda_tool_records_its_dependency_packages() {
+        crate::backend::load_tools().await.unwrap();
+        let ba = BackendArg::new("conda:fixture".into(), None);
+        let request = ToolRequest::new(Arc::new(ba.clone()), "1.0", ToolSource::Argument).unwrap();
+        let mut actual = ToolVersion::new(request, "1.0".into());
+        let platform = Platform::current();
+        let key = platform.to_key();
+        let dep = "zlib-1.3.1-h_2@0123456789abcdef0123456789abcdef".to_string();
+        actual.lock_platforms.insert(
+            key.clone(),
+            PlatformInfo {
+                url: Some("https://example.invalid/fixture-1.0-0.conda".into()),
+                checksum: Some(format!("sha256:{}", "a".repeat(64))),
+                conda_deps: Some(vec![dep.clone()]),
+                ..Default::default()
+            },
+        );
+        let row = crate::backend::conda::CondaPackageInfo {
+            url: "https://example.invalid/zlib-1.3.1-h_2.conda".into(),
+            checksum: Some(format!("sha256:{}", "b".repeat(64))),
+        };
+        actual
+            .conda_packages
+            .insert((key.clone(), dep.clone()), row.clone());
+        let generated = generate(
+            &Lockfile::default(),
+            &[(ba, actual.clone())],
+            std::slice::from_ref(&platform),
+            false,
+            PlatformSelection::Default,
+            1,
+            &[actual],
+        )
+        .await
+        .unwrap();
+        let recorded = generated.get_conda_package(&key, &dep).unwrap();
+        assert_eq!(recorded.url, row.url);
+        assert_eq!(recorded.checksum, row.checksum);
     }
 
     #[tokio::test]

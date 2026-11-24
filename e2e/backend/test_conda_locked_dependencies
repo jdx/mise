@@ -1,0 +1,91 @@
+#!/usr/bin/env bash
+
+# The lockfile a conda install writes records the tool's dependency packages,
+# so a locked install can verify and install them.
+
+CHANNEL_ROOT="$TMPDIR/conda-channel"
+mkdir -p "$CHANNEL_ROOT/channel/noarch"
+
+start_http_server --dir "$CHANNEL_ROOT" --handler - <<'PY'
+import hashlib
+import io
+import json
+import tarfile
+from pathlib import Path
+
+subdir = Path("channel") / "noarch"
+version = "1.0.0"
+fixtures = {
+    "locked-deps-lib": ([], {"share/locked-deps-lib/data": b"lib-data\n"}),
+    "locked-deps-tool": (
+        ["locked-deps-lib"],
+        {"bin/locked-deps-tool": b"#!/bin/sh\nprintf 'tool-ok\\n'\n"},
+    ),
+}
+
+packages = {}
+for name, (depends, files) in fixtures.items():
+    archive_name = f"{name}-{version}-0.tar.bz2"
+    index = {
+        "name": name,
+        "version": version,
+        "build": "0",
+        "build_number": 0,
+        "depends": depends,
+        "subdir": "noarch",
+    }
+    paths = [{
+        "_path": path,
+        "path_type": "hardlink",
+        "sha256": hashlib.sha256(content).hexdigest(),
+        "size_in_bytes": len(content),
+    } for path, content in files.items()]
+    metadata = {
+        "info/index.json": json.dumps(index).encode(),
+        "info/paths.json": json.dumps({"paths_version": 1, "paths": paths}).encode(),
+        "info/files": ("\n".join(files) + "\n").encode(),
+    }
+    archive_path = subdir / archive_name
+    with tarfile.open(archive_path, "w:bz2") as archive:
+        for path, content in {**files, **metadata}.items():
+            info = tarfile.TarInfo(path)
+            info.size = len(content)
+            info.mode = 0o755 if path.startswith("bin/") else 0o644
+            archive.addfile(info, io.BytesIO(content))
+    archive_data = archive_path.read_bytes()
+    packages[archive_name] = {
+        **index,
+        "sha256": hashlib.sha256(archive_data).hexdigest(),
+        "size": len(archive_data),
+    }
+
+(subdir / "repodata.json").write_text(json.dumps({
+    "info": {"subdir": "noarch"},
+    "packages": packages,
+    "packages.conda": {},
+    "removed": [],
+    "repodata_version": 1,
+}))
+
+
+class Handler(TestHandler):
+    pass
+PY
+CHANNEL="http://127.0.0.1:$HTTP_PORT/channel"
+
+cat >mise.toml <<EOF
+[settings]
+lockfile = true
+
+[tools]
+"conda:locked-deps-tool" = { version = "1.0.0", channel = "$CHANNEL" }
+EOF
+
+mise install
+assert "mise exec -- locked-deps-tool" "tool-ok"
+assert_contains "cat mise.lock" "locked-deps-lib-1.0.0-0@"
+assert_contains "cat mise.lock" "noarch/locked-deps-lib-1.0.0-0.tar.bz2"
+
+mise uninstall -a conda:locked-deps-tool
+assert_succeed "MISE_LOCKED=1 mise install"
+assert "mise exec -- locked-deps-tool" "tool-ok"
