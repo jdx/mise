@@ -7,7 +7,7 @@
 
 pub mod completions;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -1717,6 +1717,39 @@ pub(crate) fn resources_by_bin<'a>(
     by_bin
 }
 
+/// The executables of a release that have a completion for `shell`: the names
+/// `artifact` puts on PATH, or every artifact's when none is selected. What is
+/// selected, and which executable each entry describes, does not depend on
+/// the executable, so both are worked out once for the release, and each name
+/// is asked about once however many entries put it on PATH. The prompt hook
+/// asks this for every installed release on every directory change.
+pub(crate) fn completed_commands<'a>(
+    statement: &'a Statement,
+    install_path: &Path,
+    shell: &str,
+    artifact: Option<&Artifact>,
+) -> BTreeSet<&'a str> {
+    let selected = selected_resources(statement, artifact);
+    let by_bin = resources_by_bin(statement, &selected);
+    statement
+        .predicate
+        .artifacts
+        .iter()
+        .filter(|candidate| artifact.is_none_or(|selected| candidate.name == selected.name))
+        .flat_map(|a| &a.bin)
+        .map(|bin| bin.name.as_str())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        // The name is one of the statement's own, so the entries that
+        // describe it are the ones listed under it.
+        .filter(|name| {
+            by_bin.get(name).is_some_and(|described| {
+                !completion_sources_among(described, install_path, shell, artifact).is_empty()
+            })
+        })
+        .collect()
+}
+
 /// [`completion_sources`] given the resources that describe the executable
 /// asked about, as [`resources_by_bin`] lists them.
 pub(crate) fn completion_sources_among(
@@ -2631,19 +2664,8 @@ mod tests {
         let artifact = &s.predicate.artifacts[0];
         let root = Path::new("/unused");
         let started = std::time::Instant::now();
-        let selected = selected_resources(&s, Some(artifact));
-        let by_bin = resources_by_bin(&s, &selected);
-        let completed: Vec<&str> = artifact
-            .bin
-            .iter()
-            .map(|bin| bin.name.as_str())
-            .filter(|name| {
-                by_bin.get(name).is_some_and(|described| {
-                    !completion_sources_among(described, root, "zsh", Some(artifact)).is_empty()
-                })
-            })
-            .collect();
-        assert_eq!(completed, ["u"]);
+        let completed = completed_commands(&s, root, "zsh", Some(artifact));
+        assert_eq!(completed.into_iter().collect::<Vec<_>>(), ["u"]);
         assert!(
             started.elapsed() < std::time::Duration::from_secs(30),
             "asking about {} executables took {:?}",
