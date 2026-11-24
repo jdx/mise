@@ -851,12 +851,20 @@ pub fn is_shim_file(path: &Path) -> bool {
 
 /// Whether `path` is the native launcher of a `mise generate task-stubs` stub. The launcher is a
 /// copy of `mise-shim.exe`, which tells its two jobs apart by the stub beside it, named as the
-/// launcher is without its extension. This reads the same file.
+/// launcher is without its extension. This reads the same file, and only for an `.exe`: no other
+/// shim is a launcher, and a `file`-mode `.cmd` shim has its shell script under that name.
 fn is_task_stub_launcher(path: &Path) -> bool {
-    let stub = path.with_extension("");
-    stub != path
-        && !path.is_symlink()
-        && fs::read_to_string(stub).is_ok_and(|contents| is_generated_task_stub(&contents))
+    let is_native = path
+        .extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("exe"));
+    if !is_native || path.is_symlink() {
+        return false;
+    }
+    // A stub is three short lines, so a file that fills the limit is not one.
+    read_file_prefix(&path.with_extension("")).is_ok_and(|contents| {
+        (contents.len() as u64) < SHIM_SCRIPT_INSPECTION_LIMIT
+            && std::str::from_utf8(&contents).is_ok_and(is_generated_task_stub)
+    })
 }
 
 /// Whether `contents` is a stub `mise generate task-stubs` wrote.
@@ -3766,6 +3774,28 @@ mod tests {
         let other = dir.path().join("test.exe");
         fs::write(&other, &shim).unwrap();
         assert!(is_shim_file(&other));
+
+        // Only an `.exe` is a launcher. A `file`-mode shim keeps its shell script under the name
+        // a stub would have.
+        let cmd = dir.path().join("build.cmd");
+        fs::write(&cmd, &shim).unwrap();
+        assert!(is_shim_file(&cmd));
+
+        // Only the start of the file is read, and no stub is that long.
+        let limit = SHIM_SCRIPT_INSPECTION_LIMIT as usize;
+        let long = "m".repeat(limit);
+        let too_long = generated.replace("exec mise", &format!("exec {long}"));
+        assert!(is_generated_task_stub(&too_long));
+        fs::write(&stub, too_long).unwrap();
+        assert!(is_shim_file(&launcher));
+
+        // A file that reads as a stub only because the read stopped there is not one.
+        let fill = "m".repeat(limit - generated.len());
+        let cut_short = generated.replace("exec mise", &format!("exec mise{fill}"));
+        assert_eq!(cut_short.len(), limit);
+        assert!(is_generated_task_stub(&cut_short));
+        fs::write(&stub, format!("{cut_short}more\n")).unwrap();
+        assert!(is_shim_file(&launcher));
     }
 
     #[cfg(unix)]
