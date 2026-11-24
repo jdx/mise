@@ -291,7 +291,7 @@ zipsign-api = { version = "0.2", optional = true }
 
 [target.'cfg(unix)'.dependencies]
 exec = "0.3"
-nix = { version = "0.31", features = [
+nix = { version = "0.32", features = [
   "dir",
   "feature",
   "fs",

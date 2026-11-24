@@ -129,7 +129,7 @@ zip = { version = "9", default-features = false, features = ["deflate"] }
 zstd = "0.14"
 
 [target.'cfg(unix)'.dependencies]
-nix = { version = "0.31", features = ["dir", "fs", "signal", "term", "user"] }
+nix = { version = "0.32", features = ["dir", "fs", "signal", "term", "user"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 landlock = "0.4"
