@@ -391,15 +391,59 @@ fn git_credential_fill_ignores_the_repository_it_is_run_in() {
     let _cwd = RestoreCwd(std::env::current_dir().unwrap());
     std::env::set_current_dir(&repo).unwrap();
     // Each call is cached per provider and host, so use names no other test asks for.
-    crate::tokens::get_git_credential_token("cwd-test", "cwd.example.invalid");
+    crate::tokens::get_git_credential_token("cwd-test", "cwd.example.invalid", None);
     assert!(
         !marker.exists(),
         "ran the credential.helper of the current directory"
     );
 
     env.set("GIT_DIR", &repo);
-    crate::tokens::get_git_credential_token("git-dir-test", "git-dir.example.invalid");
+    crate::tokens::get_git_credential_token("git-dir-test", "git-dir.example.invalid", None);
     assert!(!marker.exists(), "ran the credential.helper of $GIT_DIR");
+}
+
+/// Git keeps a credential for each protocol and host:port, and sends the one
+/// for `https://host` nowhere else; mise asks it about the server the request
+/// goes to.
+#[cfg(unix)]
+#[test]
+fn git_credential_fill_asks_about_the_scheme_and_port_of_the_request() {
+    let tmp = tempfile::tempdir().unwrap();
+    let store = tmp.path().join("git-credentials");
+    std::fs::write(
+        &store,
+        "https://alice:for-https@scope.example.invalid\n\
+         http://alice:for-3000@scope.example.invalid:3000\n",
+    )
+    .unwrap();
+    let global = tmp.path().join("gitconfig");
+    std::fs::write(
+        &global,
+        format!(
+            "[credential]\n\thelper = store --file='{}'\n",
+            store.display()
+        ),
+    )
+    .unwrap();
+    let mut env = crate::testing::EnvVarGuard::new();
+    env.set("GIT_CONFIG_GLOBAL", &global);
+    env.set("GIT_CONFIG_NOSYSTEM", "1");
+
+    let fill = |url: Option<&str>| {
+        let url = url.map(|url| url::Url::parse(url).unwrap());
+        crate::tokens::get_git_credential_token("scope-test", "scope.example.invalid", url.as_ref())
+    };
+    assert_eq!(fill(None).as_deref(), Some("for-https"));
+    let https = "https://scope.example.invalid/api/v1";
+    assert_eq!(fill(Some(https)).as_deref(), Some("for-https"));
+    let port = "http://scope.example.invalid:3000/api/v1";
+    assert_eq!(fill(Some(port)).as_deref(), Some("for-3000"));
+    // Git sends neither credential to these servers, so mise gets none for them.
+    assert_eq!(fill(Some("http://scope.example.invalid/api/v1")), None);
+    assert_eq!(
+        fill(Some("https://scope.example.invalid:8443/api/v1")),
+        None
+    );
 }
 
 mod worktree;

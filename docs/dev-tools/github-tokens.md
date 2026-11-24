@@ -325,7 +325,7 @@ and Windows.
 ### Git credential helpers
 
 With `use_git_credentials` on, mise runs `git credential fill` as the last
-source and caches the answer per host for the rest of the command. Use it in
+source and caches the answer per server for the rest of the command. Use it in
 devcontainers and other environments where Git already has credentials, such as
 a keyring helper:
 
@@ -339,6 +339,11 @@ use_git_credentials = true
 [settings.forgejo]
 use_git_credentials = true
 ```
+
+mise asks Git about the server the request goes to, as Git itself would: the
+scheme and any port of the API URL are part of the question, so the credential
+stored for `https://git.example.com` is not sent to
+`http://git.example.com:3000`, which gets the credential stored for it.
 
 mise runs Git with `GIT_TERMINAL_PROMPT=0`, so Git does not stop to ask for a
 password in the terminal.

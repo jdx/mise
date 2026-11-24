@@ -2357,7 +2357,7 @@ fn resolve_token_inner(
     // 7. git credential fill
     if use_git_credentials && settings.github.use_git_credentials {
         for lookup_host in &lookup_hosts {
-            if let Some(token) = tokens::get_git_credential_token("github", lookup_host) {
+            if let Some(token) = tokens::get_git_credential_token("github", lookup_host, url) {
                 return Some((token, TokenSource::GitCredential));
             }
         }

@@ -20,7 +20,8 @@ static CREDENTIAL_COMMAND_CACHE: Lazy<std::sync::Mutex<HashMap<String, Option<St
     Lazy::new(Default::default);
 
 /// Cache for tokens obtained from `git credential fill`.
-/// Key format is `{provider}:{host}` to avoid cross-provider collisions.
+/// Key format is `{provider}:{protocol}://{host}`, so providers do not collide
+/// and the origins Git tells apart stay apart.
 static GIT_CREDENTIAL_CACHE: Lazy<std::sync::Mutex<HashMap<String, Option<String>>>> =
     Lazy::new(Default::default);
 
@@ -220,9 +221,26 @@ fn credential_command_uses_legacy_host_arg(cmd: &str) -> bool {
 
 /// Get a token by running `git credential fill`.
 ///
-/// Results are cached per provider+host so the subprocess is only spawned once.
-pub fn get_git_credential_token(provider: &str, host: &str) -> Option<String> {
-    let cache_key = format!("{provider}:{host}");
+/// Git identifies a credential by protocol and by host including any port, so
+/// `url`, the request the token is for, supplies both: the credential stored
+/// for `https://host` is not the one for `http://host:3000`, and Git would not
+/// send it there. `host` is the name to ask about, which a caller may have
+/// mapped from the URL's own (`api.github.com` to `github.com`). Without a
+/// `url` the question is about `https://<host>`.
+///
+/// Results are cached per provider and origin so the subprocess is only
+/// spawned once.
+pub fn get_git_credential_token(
+    provider: &str,
+    host: &str,
+    url: Option<&url::Url>,
+) -> Option<String> {
+    let protocol = url.map_or("https", |url| url.scheme());
+    let host = match url.and_then(|url| url.port()) {
+        Some(port) => format!("{host}:{port}"),
+        None => host.to_string(),
+    };
+    let cache_key = format!("{provider}:{protocol}://{host}");
     let mut cache = GIT_CREDENTIAL_CACHE
         .lock()
         .expect("GIT_CREDENTIAL_CACHE mutex poisoned");
@@ -231,7 +249,7 @@ pub fn get_git_credential_token(provider: &str, host: &str) -> Option<String> {
     }
 
     let path_without_shims = path_env_without_shims();
-    let input = format!("protocol=https\nhost={host}\n\n");
+    let input = format!("protocol={protocol}\nhost={host}\n\n");
     let mut command = std::process::Command::new("git");
     command
         .args(["credential", "fill"])
@@ -261,7 +279,7 @@ pub fn get_git_credential_token(provider: &str, host: &str) -> Option<String> {
     });
 
     trace!(
-        "{provider} git credential fill for {host}: {}",
+        "{provider} git credential fill for {protocol}://{host}: {}",
         if result.is_some() {
             "found"
         } else {

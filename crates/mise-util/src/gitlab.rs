@@ -498,7 +498,7 @@ fn resolve_token_inner(host: &str, url: Option<&url::Url>) -> Option<(String, To
 
     // 6. git credential fill
     if settings.gitlab.use_git_credentials
-        && let Some(token) = tokens::get_git_credential_token("gitlab", host)
+        && let Some(token) = tokens::get_git_credential_token("gitlab", host, url)
     {
         return Some((token, TokenSource::GitCredential));
     }
