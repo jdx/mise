@@ -482,6 +482,15 @@ const GO_LIST_VERSION_METADATA_LIMIT: usize = 10;
 /// fetched 20 at a time, and the date out of each is kept until the whole
 /// listing is dated.
 const GO_PROXY_VERSION_INFO_MAX_BYTES: usize = 64 * 1024;
+/// Most versions accepted in one module's version list.
+///
+/// The HTTP client caps the size of a proxy's `@v/list` response, not the
+/// number of lines in it, and each line becomes an owned string, a parsed sort
+/// key and a `VersionInfo`: hundreds of bytes for a line that can be two.
+/// The most heavily tagged modules have a few thousand versions, so a longer
+/// list is refused rather than truncated: `@v/list` is unordered, and cutting
+/// it short could drop the newest versions.
+const GO_MODULE_VERSIONS_LIMIT: usize = 100_000;
 
 impl GoBackend {
     pub(crate) fn from_arg(ba: BackendArg) -> Self {
@@ -654,6 +663,10 @@ impl GoBackend {
 
         if mod_info.versions.is_empty() {
             return self.fetch_go_module_latest_info(config, mod_path).await;
+        }
+        // `go` relays whatever the proxy or the repository listed.
+        if mod_info.versions.len() > GO_MODULE_VERSIONS_LIMIT {
+            eyre::bail!("{mod_path} lists more than {GO_MODULE_VERSIONS_LIMIT} versions");
         }
 
         let versions = self
@@ -962,17 +975,36 @@ struct GoProxy {
     fall_through: FallThrough,
 }
 
+/// Read a proxy's `@v/list` response, one version per line. Returns `None`
+/// when it lists more than [`GO_MODULE_VERSIONS_LIMIT`] versions.
+fn parse_proxy_version_list(body: &str) -> Option<Vec<String>> {
+    let versions: Vec<String> = body
+        .lines()
+        .filter(|l| !l.is_empty())
+        // One past the limit is enough to tell, without allocating the rest.
+        .take(GO_MODULE_VERSIONS_LIMIT + 1)
+        .map(|s| s.to_string())
+        .collect();
+    (versions.len() <= GO_MODULE_VERSIONS_LIMIT).then_some(versions)
+}
+
 async fn query_proxy_list(proxies: &[GoProxy], encoded_path: &str) -> ProxyListResult {
     for proxy in proxies {
         let url = format!("{}/{}/@v/list", proxy.url, encoded_path);
         match HTTP_FETCH.get_text(&url).await {
             Ok(body) => {
-                let versions: Vec<String> = body
-                    .lines()
-                    .filter(|l| !l.is_empty())
-                    .map(|s| s.to_string())
-                    .collect();
-                return ProxyListResult::Versions(versions);
+                if let Some(versions) = parse_proxy_version_list(&body) {
+                    return ProxyListResult::Versions(versions);
+                }
+                // Not a usable answer, so treat it like any other proxy error.
+                // The URL stays out of the message: GOPROXY can hold credentials.
+                warn!(
+                    "ignoring Go module proxy version list for {encoded_path}: more than {GO_MODULE_VERSIONS_LIMIT} versions"
+                );
+                if proxy.fall_through == FallThrough::OnAnyError {
+                    continue;
+                }
+                return ProxyListResult::Error;
             }
             Err(e) => {
                 let is_not_found_or_gone = e
@@ -1425,6 +1457,60 @@ mod tests {
         assert_eq!(newest.len(), 10);
         assert_eq!(undated.first().unwrap(), "v1.0.0");
         assert_eq!(newest.last().unwrap(), versions.last().unwrap());
+    }
+
+    #[test]
+    fn proxy_version_lists_skip_blank_lines() {
+        assert_eq!(
+            parse_proxy_version_list("v1.0.0\n\nv1.1.0\n"),
+            Some(vec!["v1.0.0".to_string(), "v1.1.0".to_string()])
+        );
+        assert_eq!(parse_proxy_version_list(""), Some(vec![]));
+    }
+
+    #[test]
+    fn proxy_version_lists_past_the_limit_are_refused() {
+        // Blank lines are not versions and do not count towards the limit.
+        let at_limit = "1\n\n".repeat(GO_MODULE_VERSIONS_LIMIT);
+        assert_eq!(
+            parse_proxy_version_list(&at_limit).map(|versions| versions.len()),
+            Some(GO_MODULE_VERSIONS_LIMIT)
+        );
+        assert_eq!(parse_proxy_version_list(&format!("{at_limit}1\n")), None);
+    }
+
+    #[tokio::test]
+    async fn proxy_version_lists_past_the_limit_are_a_proxy_error() {
+        let oversized = "v1.0.0\n".repeat(GO_MODULE_VERSIONS_LIMIT + 1);
+        let mut hostile = mockito::Server::new_async().await;
+        let listed = hostile
+            .mock("GET", "/example.com/tool/@v/list")
+            .with_status(200)
+            .with_body(oversized)
+            .expect(2)
+            .create_async()
+            .await;
+        let mut fallback = mockito::Server::new_async().await;
+        let fallback_list = fallback
+            .mock("GET", "/example.com/tool/@v/list")
+            .with_status(200)
+            .with_body("v1.0.0\nv1.1.0\n")
+            .create_async()
+            .await;
+
+        let only = parse_goproxy_value(&hostile.url());
+        assert!(matches!(
+            query_proxy_list(&only, "example.com/tool").await,
+            ProxyListResult::Error
+        ));
+        // `|` moves on to the next proxy after any error, this one included.
+        let chained = parse_goproxy_value(&format!("{}|{}", hostile.url(), fallback.url()));
+        assert!(matches!(
+            query_proxy_list(&chained, "example.com/tool").await,
+            ProxyListResult::Versions(versions) if versions == ["v1.0.0", "v1.1.0"]
+        ));
+        listed.assert_async().await;
+        fallback_list.assert_async().await;
     }
 
     #[test]
