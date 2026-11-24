@@ -1,10 +1,20 @@
 #!/usr/bin/env bash
 
 # Exercise the failing command path without depending on a Go module or proxy.
+# The fake `go` fails the way Go does for a version that does not exist, or,
+# once $HOME/go-checksum-mismatch exists, for a download the checksum database
+# does not match.
 cat >"$HOME/bin/go" <<'GO'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >>"$HOME/go-invocations"
-echo "go install failed for ${*: -1}" >&2
+target="${*: -1}"
+if [ -e "$HOME/go-checksum-mismatch" ]; then
+  echo "go: $target: $target: verifying module: checksum mismatch" >&2
+  echo "SECURITY ERROR" >&2
+  echo "This download does NOT match the one reported by the checksum server." >&2
+else
+  echo "go: $target: $target: invalid version: unknown revision ${target##*@}" >&2
+fi
 exit 1
 GO
 chmod +x "$HOME/bin/go"
@@ -21,7 +31,7 @@ if mise install 'go:example.com/tool@v1.2.3' >"$HOME/prefixed-error" 2>&1; then
 fi
 assert "awk 'END {print NR}' '$HOME/go-invocations'" "1"
 assert_contains "cat '$HOME/go-invocations'" 'example.com/tool@v1.2.3'
-assert_contains "cat '$HOME/prefixed-error'" 'go install failed for example.com/tool@v1.2.3'
+assert_contains "cat '$HOME/prefixed-error'" 'unknown revision v1.2.3'
 assert_not_contains "cat '$HOME/prefixed-error'" "Retry without the 'v' prefix"
 
 if mise install 'go:example.com/other@1.2.3' >"$HOME/unprefixed-error" 2>&1; then
@@ -31,6 +41,19 @@ fi
 assert "awk 'END {print NR}' '$HOME/go-invocations'" "3"
 assert "sed -n '2p' '$HOME/go-invocations'" 'install -mod=mod -- example.com/other@v1.2.3'
 assert "sed -n '3p' '$HOME/go-invocations'" 'install -mod=mod -- example.com/other@1.2.3'
-assert_contains "cat '$HOME/unprefixed-error'" 'go install failed for example.com/other@v1.2.3'
+assert_contains "cat '$HOME/unprefixed-error'" 'unknown revision v1.2.3'
 assert_contains "cat '$HOME/unprefixed-error'" "Retry without the 'v' prefix also failed"
-assert_contains "cat '$HOME/unprefixed-error'" 'go install failed for example.com/other@1.2.3'
+assert_contains "cat '$HOME/unprefixed-error'" 'unknown revision 1.2.3'
+
+# Go found v1.2.3 and refused it. Without the `v` the request is for any tag,
+# branch or commit named 1.2.3, so it is not tried.
+touch "$HOME/go-checksum-mismatch"
+if mise install 'go:example.com/replaced@1.2.3' >"$HOME/checksum-error" 2>&1; then
+  echo 'expected Go install with a checksum mismatch to fail' >&2
+  exit 1
+fi
+assert "awk 'END {print NR}' '$HOME/go-invocations'" "4"
+assert "sed -n '4p' '$HOME/go-invocations'" 'install -mod=mod -- example.com/replaced@v1.2.3'
+assert_contains "cat '$HOME/checksum-error'" 'checksum mismatch'
+assert_not_contains "cat '$HOME/checksum-error'" "without added 'v' prefix"
+assert_not_contains "cat '$HOME/checksum-error'" "Retry without the 'v' prefix"

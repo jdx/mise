@@ -356,7 +356,8 @@ impl Backend for GoBackend {
 
         // `go` downloads modules itself, so `http_retries` does not reach it.
         // Retry the same version on a transient transport failure with the same
-        // setting and backoff; a failure that is not transient is returned as is.
+        // setting and backoff; a failure that is not transient is returned as is,
+        // along with whether it says that the version does not exist.
         let install = async |v: String| {
             let mut backoff =
                 mise_util::http::default_backoff_strategy(Settings::get().http_retries);
@@ -367,10 +368,10 @@ impl Backend for GoBackend {
                     return Ok(());
                 };
                 if !is_transient_go_network_failure(&stderr) {
-                    return Err((err, false));
+                    return Err((err, is_missing_go_version(&stderr)));
                 }
                 let Some(delay) = backoff.next() else {
-                    return Err((err, true));
+                    return Err((err, false));
                 };
                 warn!(
                     "go install {}@{v} attempt {attempt} failed (transient): {err:#}; retrying in {delay:?}",
@@ -382,10 +383,14 @@ impl Backend for GoBackend {
         };
 
         let (version, fallback) = go_install_versions(&install_version, &tv.request.version());
-        if let Err((first_error, transient)) = install(version).await {
+        if let Err((first_error, missing_version)) = install(version).await {
             // The unprefixed version can only fix a version lookup failure. After
-            // a network failure it would hide the cause behind `unknown revision`.
-            if let Some(fallback) = fallback.filter(|_| !transient) {
+            // a network failure it would hide the cause behind `unknown revision`,
+            // and after any other failure it is a different request: without the
+            // `v`, Go looks for a tag, branch or commit of that name. Retrying
+            // after Go rejected a download that does not match the checksum
+            // database would install whatever such a ref holds instead.
+            if let Some(fallback) = fallback.filter(|_| missing_version) {
                 warn!("Failed to install, trying again without added 'v' prefix");
                 if let Err((retry_error, _)) = install(fallback).await {
                     return Err(go_install_retry_error(first_error, retry_error));
@@ -443,6 +448,22 @@ fn is_transient_go_network_failure(stderr: &str) -> bool {
     // network failure.
     !stderr.contains("no such host")
         && !stderr.contains("syntax error")
+        && MARKERS.iter().any(|m| stderr.contains(m))
+}
+
+/// Whether `go install` stderr says that the requested version does not exist,
+/// which is the one failure the unprefixed version can fix. Version control
+/// reports it as `unknown revision`, and a module proxy answers 404 or 410 for
+/// the version's `.info`; only the status code is matched, since not every
+/// proxy sends a reason phrase.
+///
+/// A failed verification is never that, whatever else the output quotes: Go
+/// found the version and refused what it downloaded.
+fn is_missing_go_version(stderr: &str) -> bool {
+    const MARKERS: &[&str] = &["unknown revision", ".info: 404", ".info: 410"];
+    const VERIFICATION_MARKERS: &[&str] = &["verifying ", "checksum mismatch", "security error"];
+    let stderr = stderr.to_lowercase();
+    !VERIFICATION_MARKERS.iter().any(|m| stderr.contains(m))
         && MARKERS.iter().any(|m| stderr.contains(m))
 }
 
@@ -1289,6 +1310,37 @@ mod tests {
             "dial tcp: lookup proxy.golang.org: no such host, connection refused"
         ));
         assert!(!is_transient_go_network_failure(""));
+    }
+
+    #[test]
+    fn only_a_missing_go_version_allows_the_unprefixed_retry() {
+        assert!(is_missing_go_version(
+            "go: example.com/tool@v1.2.3: example.com/tool@v1.2.3: invalid version: unknown revision v1.2.3"
+        ));
+        assert!(is_missing_go_version(
+            "go: example.com/tool@v1.2.3: reading https://proxy.golang.org/example.com/tool/@v/v1.2.3.info: 404 Not Found\n\tserver response: not found: example.com/tool@v1.2.3: invalid version: unknown revision v1.2.3"
+        ));
+        assert!(is_missing_go_version(
+            "go: example.com/tool@v1.2.3: reading https://goproxy.example.com/example.com/tool/@v/v1.2.3.info: 410 Gone"
+        ));
+        assert!(is_missing_go_version(
+            "go: example.com/tool@v1.2.3: reading https://goproxy.example.com/example.com/tool/@v/v1.2.3.info: 404 "
+        ));
+        // Go found the version and refused the download.
+        assert!(!is_missing_go_version(
+            "go: example.com/tool@v1.2.3: example.com/tool@v1.2.3: verifying module: checksum mismatch\n\tdownloaded: h1:aaaa\n\tsum.golang.org: h1:bbbb\n\nSECURITY ERROR\nThis download does NOT match the one reported by the checksum server."
+        ));
+        assert!(!is_missing_go_version(
+            "go: example.com/tool@v1.2.3: verifying module: example.com/tool@v1.2.3: reading https://sum.golang.org/lookup/example.com/tool@v1.2.3: 404 Not Found\n\tserver response: not found: example.com/tool@v1.2.3: invalid version: unknown revision v1.2.3"
+        ));
+        // Neither a build failure nor a missing package is a missing version.
+        assert!(!is_missing_go_version(
+            "./main.go:9:1: syntax error: unexpected EOF, expected }"
+        ));
+        assert!(!is_missing_go_version(
+            "go: example.com/tool/cmd/x@v1.2.3: module example.com/tool@v1.2.3 found, but does not contain package example.com/tool/cmd/x"
+        ));
+        assert!(!is_missing_go_version(""));
     }
 
     #[test]
