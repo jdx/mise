@@ -6104,3 +6104,35 @@ backend = "conda:jq"
             .is_some()
     );
 }
+
+/// Telling whether a lock entry's backend is usable constructs that backend,
+/// and a tool can have an entry for every version it locks.
+#[test]
+fn usable_lock_entries_asks_once_per_distinct_backend() {
+    let mut project = Lockfile::default();
+    let entries = (0..300)
+        .map(|i| {
+            let backend = if i % 2 == 0 { "aqua:a/b" } else { "core:gone" };
+            basic_tool(&format!("1.0.{i}"), backend)
+        })
+        .collect();
+    project.tools.insert("tool".to_string(), entries);
+    let lockfiles = [Arc::new(Lockfile::default()), Arc::new(project)];
+
+    let mut asked = vec![];
+    let found = usable_lock_entries(&lockfiles, "tool", |full| {
+        asked.push(full.to_string());
+        full == "aqua:a/b"
+    })
+    .unwrap();
+    assert_eq!(asked, ["aqua:a/b", "core:gone"]);
+    assert_eq!(found.len(), 150);
+    assert!(
+        found
+            .iter()
+            .all(|t| t.backend.as_deref() == Some("aqua:a/b"))
+    );
+    assert_eq!(found[0].version, "1.0.0");
+
+    assert!(usable_lock_entries(&lockfiles, "tool", |_| false).is_none());
+}
