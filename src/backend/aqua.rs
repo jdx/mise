@@ -1199,12 +1199,12 @@ impl AquaBackend {
             .get(&platform_key)
             .and_then(|asset| asset.url_api.clone());
 
+        let pkg = AQUA_REGISTRY.package(&self.id).await?;
         // Skip get_version_tags() API call if the lockfile URL contains the release tag.
         // Keep the tag for selecting Aqua version overrides, which may be scoped by prefix.
         let locked_tag = existing_platform
             .as_deref()
-            .and_then(github_release_tag_from_url);
-        let tag_is_locked = locked_tag.is_some();
+            .and_then(|url| locked_release_tag(&pkg, url, &tv.version));
         let tag = if let Some(tag) = locked_tag {
             Some(tag)
         } else if existing_platform.is_some() {
@@ -1238,18 +1238,6 @@ impl AquaBackend {
         let mut v = tag.clone().unwrap_or_else(|| tv.version.clone());
         let mut v_prefixed =
             (tag.is_none() && !tv.version.starts_with('v')).then(|| format!("v{v}"));
-        let pkg = AQUA_REGISTRY.package(&self.id).await?;
-        // A listed tag was mapped to the version when it was listed; a locked
-        // URL's tag has to be mapped here, or it could name another release.
-        let current = PlatformTarget::from_current();
-        let tag_names_version = !tag_is_locked
-            || tag.as_deref().is_some_and(|tag| {
-                let (target_os, target_arch) = Self::to_aqua_platform(&current);
-                versioned_package_from_tag(&pkg, tag, target_os, target_arch, None)
-                    .ok()
-                    .flatten()
-                    .is_some_and(|(version, _)| version == tv.version)
-            });
         let pkg = Self::package_for_release(tv, pkg, tag.as_deref())?;
         if let Some(prefix) = &pkg.version_prefix
             && !v.starts_with(prefix)
@@ -1265,7 +1253,7 @@ impl AquaBackend {
             });
         }
         let release_tag = match tag {
-            Some(_) => tag_names_version.then(|| v.clone()),
+            Some(_) => Some(v.clone()),
             None => pkg.version_prefix.is_some().then(|| v.clone()),
         };
 
@@ -4663,6 +4651,20 @@ fn github_release_tag_from_url(url: &str) -> Option<String> {
     urlencoding::decode(tag).ok().map(Cow::into_owned)
 }
 
+/// The release tag of a locked URL, when it names the locked version. A listed tag was mapped to
+/// the version when it was listed; a locked URL's tag could name another release, whose override
+/// declares that release's checks, so the recipe is then selected from the version instead.
+fn locked_release_tag(pkg: &AquaPackage, url: &str, version: &str) -> Option<String> {
+    let tag = github_release_tag_from_url(url)?;
+    let current = PlatformTarget::from_current();
+    let (target_os, target_arch) = AquaBackend::to_aqua_platform(&current);
+    versioned_package_from_tag(pkg, &tag, target_os, target_arch, None)
+        .ok()
+        .flatten()
+        .is_some_and(|(tag_version, _)| tag_version == version)
+        .then_some(tag)
+}
+
 fn starts_with_v(s: &str) -> bool {
     s.starts_with('v') || s.starts_with('V')
 }
@@ -5764,10 +5766,47 @@ version_overrides:
         );
         let url = "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-macos-arm64";
         let tag = github_release_tag_from_url(url).unwrap();
-        let versioned = pkg.with_version(&[&tag], "darwin", "arm64");
+        let versioned = pkg.clone().with_version(&[&tag], "darwin", "arm64");
 
         assert_eq!(tag, "jq-1.8.1");
         assert_eq!(versioned.asset, "jq-{{.OS}}-{{.Arch}}");
+        assert_eq!(
+            locked_release_tag(&pkg, url, "1.8.1").as_deref(),
+            Some("jq-1.8.1")
+        );
+    }
+
+    #[test]
+    fn test_locked_release_tag_must_name_the_locked_version() {
+        let pkg = pkg_from_yaml(
+            r#"
+type: github_release
+repo_owner: bufbuild
+repo_name: buf
+version_constraint: "false"
+version_overrides:
+  - version_constraint: semver("<= 0.41.0")
+    asset: buf-{{.OS}}-{{.Arch}}.tar.gz
+  - version_constraint: "true"
+    asset: buf-{{.OS}}-{{.Arch}}.tar.gz
+    checksum:
+      type: github_release
+      asset: sha256.txt
+      algorithm: sha256
+"#,
+        );
+        let url = |tag: &str| {
+            format!(
+                "https://github.com/evil/payload/releases/download/{tag}/buf-Linux-x86_64.tar.gz"
+            )
+        };
+        assert_eq!(
+            locked_release_tag(&pkg, &url("v1.50.0"), "1.50.0").as_deref(),
+            Some("v1.50.0")
+        );
+        for tag in ["v0", "v0.41.0", "v1.49.0"] {
+            assert_eq!(locked_release_tag(&pkg, &url(tag), "1.50.0"), None, "{tag}");
+        }
     }
 
     #[test]
