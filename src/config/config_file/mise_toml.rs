@@ -2124,6 +2124,15 @@ impl ConfigFile for MiseToml {
     }
 
     fn save(&self) -> eyre::Result<()> {
+        // never write a file that would then fail to load
+        let count: usize = self
+            .tools
+            .lock()
+            .unwrap()
+            .values()
+            .map(|tvp| tvp.0.len())
+            .sum();
+        ensure_tool_request_count(&self.path, count)?;
         let contents = self.dump()?;
         trust_check_before_write(&self.path)?;
         if let Some(parent) = self.path.parent() {
@@ -5426,6 +5435,19 @@ run = "cargo build"
 
         let err = parse(tools(limit + 1)).to_tool_request_set().unwrap_err();
         assert!(err.to_string().contains("tool versions"), "{err}");
+    }
+
+    /// An edit that takes a file over the bound is refused before anything is written, so the
+    /// file stays one that loads.
+    #[test]
+    fn test_save_refuses_a_file_that_would_not_load() {
+        let limit = super::super::MAX_TOOL_REQUESTS;
+        let cfg = parse(format!("[tools]\nnode = [{}]\n", "\"1\",".repeat(limit)));
+        let python: Arc<BackendArg> = Arc::new("python".into());
+        let request = ToolRequest::new_version_for_test(python.clone(), "3", ToolSource::Unknown);
+        cfg.replace_versions(&python, vec![request]).unwrap();
+        let err = cfg.save().unwrap_err();
+        assert!(err.to_string().contains("1001 tool versions"), "{err}");
     }
 
     fn parse(s: String) -> MiseToml {

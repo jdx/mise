@@ -216,6 +216,15 @@ impl ConfigFile for ToolVersions {
                 display_path(&self.path)
             );
         }
+        // never write a file that would then fail to load
+        let count: usize = self
+            .plugins
+            .lock()
+            .unwrap()
+            .values()
+            .map(|tvp| tvp.versions.len())
+            .sum();
+        ensure_tool_request_count(&self.path, count)?;
         let s = self.dump()?;
         file::write_atomic(&self.path, s)
     }
@@ -355,6 +364,24 @@ mod tests {
             let err = ToolVersions::parse_str(&body, path.clone()).unwrap_err();
             assert!(err.to_string().contains("tool versions"), "{err}");
         }
+    }
+
+    /// An edit that takes the file over the bound is refused before anything is written, so the
+    /// file stays one that loads.
+    #[test]
+    fn save_refuses_a_file_that_would_not_load() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(".tool-versions");
+        let body = format!("node{}\n", " 1".repeat(super::super::MAX_TOOL_REQUESTS));
+        file::write(&path, &body).unwrap();
+        let tv = ToolVersions::parse_str(&body, path.clone()).unwrap();
+        let python: Arc<BackendArg> = Arc::new("python".into());
+        let request = ToolRequest::new_version_for_test(python.clone(), "3", ToolSource::Unknown);
+        tv.replace_versions(&python, vec![request]).unwrap();
+
+        let err = tv.save().unwrap_err();
+        assert!(err.to_string().contains("1001 tool versions"), "{err}");
+        assert_eq!(file::read_to_string(&path).unwrap(), body);
     }
 
     /// `dump` relies on `post` to terminate each line, and `trim_end` only ever
