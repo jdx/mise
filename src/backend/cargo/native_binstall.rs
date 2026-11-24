@@ -1010,7 +1010,7 @@ fn native_package_format(pkg_fmt: &str) -> Result<NativePackageFormat<'_>> {
 /// `repository`), was read over https. This is the URL before
 /// `url_replacements`, which still apply to it.
 fn native_binstall_artifact_url(pkg_url: &str, vars: &BinstallTemplateVars<'_>) -> Result<String> {
-    let url = expand_binstall_template(pkg_url, vars);
+    let url = expand_binstall_template(pkg_url, vars)?;
     let parsed = Url::parse(&url)
         .wrap_err_with(|| format!("native cargo binary artifact URL is not valid: {url}"))?;
     if parsed.scheme() != "https" {
@@ -1019,7 +1019,16 @@ fn native_binstall_artifact_url(pkg_url: &str, vars: &BinstallTemplateVars<'_>) 
     Ok(url)
 }
 
-fn expand_binstall_template(template: &str, vars: &BinstallTemplateVars<'_>) -> String {
+/// The longest a `pkg-url` or `bin-dir` template may expand to. A URL or a
+/// path inside an archive needs a few hundred bytes.
+const MAX_EXPANDED_TEMPLATE_LEN: usize = 8 * 1024;
+
+/// Expand the `{ key }` and `{key}` placeholders of a `pkg-url` or `bin-dir`
+/// template in one pass: a substituted value is copied as it is, never
+/// searched for placeholders itself. An expansion longer than
+/// `MAX_EXPANDED_TEMPLATE_LEN` is refused when it gets there, so the crate
+/// metadata cannot make mise build a string any longer.
+fn expand_binstall_template(template: &str, vars: &BinstallTemplateVars<'_>) -> Result<String> {
     let replacements = [
         ("repo", vars.repo),
         ("name", vars.name),
@@ -1030,12 +1039,35 @@ fn expand_binstall_template(template: &str, vars: &BinstallTemplateVars<'_>) -> 
         ("bin", vars.bin),
         ("binary-ext", vars.binary_ext),
     ];
-    let mut out = template.to_string();
-    for (key, value) in replacements {
-        out = out.replace(&format!("{{ {key} }}"), value);
-        out = out.replace(&format!("{{{key}}}"), value);
+    let mut out = String::new();
+    let mut rest = template;
+    while !rest.is_empty() {
+        let (piece, consumed) = rest
+            .strip_prefix('{')
+            .and_then(|after| {
+                let (inner, _) = after.split_once('}')?;
+                let key = inner
+                    .strip_prefix(' ')
+                    .and_then(|key| key.strip_suffix(' '))
+                    .unwrap_or(inner);
+                let (_, value) = replacements.iter().find(|(name, _)| *name == key)?;
+                Some((*value, inner.len() + 2))
+            })
+            .unwrap_or_else(|| {
+                // up to the next `{` after this one, which is a single byte
+                let skip = usize::from(rest.starts_with('{'));
+                let literal = rest[skip..].find('{').map_or(rest.len(), |at| at + skip);
+                (&rest[..literal], literal)
+            });
+        if out.len() + piece.len() > MAX_EXPANDED_TEMPLATE_LEN {
+            bail!(
+                "native cargo binary template expands to more than {MAX_EXPANDED_TEMPLATE_LEN} bytes"
+            );
+        }
+        out.push_str(piece);
+        rest = &rest[consumed..];
     }
-    out
+    Ok(out)
 }
 
 fn template_contains_var(template: &str, key: &str) -> bool {
@@ -1077,7 +1109,7 @@ fn find_native_bin(
     let bin_dir = bin_dir
         .map(str::to_string)
         .unwrap_or_else(|| infer_native_bin_dir_template(extract_dir, vars));
-    let rendered = expand_binstall_template(&bin_dir, vars);
+    let rendered = expand_binstall_template(&bin_dir, vars)?;
     let relative_path = validate_native_bin_relative_path(&rendered)?;
     let candidate = extract_dir.join(relative_path);
     if explicit_bin_dir && !template_contains_var(&bin_dir, "bin") {
@@ -1395,12 +1427,59 @@ mod tests {
                 bin: "demo",
                 binary_ext: "",
             },
-        );
+        )
+        .unwrap();
 
         assert_eq!(
             rendered,
             "https://example.com/demo-1.2.3-x86_64-unknown-linux-gnu.tar.gz"
         );
+    }
+
+    #[test]
+    fn expand_binstall_template_is_bounded_and_single_pass() {
+        let long_bin = "b".repeat(1024);
+        let vars = |repo, bin| BinstallTemplateVars {
+            repo,
+            name: "demo",
+            version: "1.2.3",
+            target: "x86_64-unknown-linux-gnu",
+            archive_format: "tgz",
+            archive_suffix: ".tgz",
+            bin,
+            binary_ext: "",
+        };
+
+        // a value is not searched for placeholders, so `{bin}` in the
+        // crate's `repository` stays as it is
+        assert_eq!(
+            expand_binstall_template("{ repo }/{bin}", &vars("{bin}{ bin }", "demo")).unwrap(),
+            "{bin}{ bin }/demo"
+        );
+        // unknown, unclosed and unbalanced braces are copied, and so is text
+        // that is not ASCII
+        assert_eq!(
+            expand_binstall_template("é{ x }{bin{{bin}}{ name", &vars("", "demo")).unwrap(),
+            "é{ x }{bin{demo}{ name"
+        );
+
+        // exactly at the bound, in either spelling
+        let at_bound = format!("{}{}", "{bin}".repeat(4), "{ bin }".repeat(4));
+        assert_eq!(
+            expand_binstall_template(&at_bound, &vars("", &long_bin))
+                .unwrap()
+                .len(),
+            MAX_EXPANDED_TEMPLATE_LEN
+        );
+        // and one byte past it
+        for template in [
+            format!("{at_bound}x"),
+            "{bin}".repeat(60_000),
+            "x".repeat(MAX_EXPANDED_TEMPLATE_LEN + 1),
+        ] {
+            let err = expand_binstall_template(&template, &vars("", &long_bin)).unwrap_err();
+            assert!(err.to_string().contains("more than"), "{err}");
+        }
     }
 
     #[test]
@@ -1417,7 +1496,8 @@ mod tests {
                 bin: "demo-cli",
                 binary_ext: ".exe",
             },
-        );
+        )
+        .unwrap();
 
         assert_eq!(rendered, "demo-1.2.3/demo-cli.exe");
     }
