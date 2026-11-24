@@ -155,12 +155,17 @@ mod tests {
         let path = Path::new("/repo/site\r\x1b[2K\x1b]11;#000000\x07Press y/conf");
         let shown = display_path_escaped(path);
         assert!(!shown.chars().any(char::is_control), "{shown:?}");
+        // the path is shown with the platform's separator
+        let sep = std::path::MAIN_SEPARATOR_STR;
         assert_eq!(
             shown,
-            "/repo/site\\r\\u{1b}[2K\\u{1b}]11;#000000\\u{7}Press y/conf"
+            "/repo/site\\r\\u{1b}[2K\\u{1b}]11;#000000\\u{7}Press y/conf".replace('/', sep)
         );
         assert!(!epath(path).to_string().contains('\x07'));
-        assert_eq!(display_path_escaped(Path::new("/repo/ü")), "/repo/ü");
+        assert_eq!(
+            display_path_escaped(Path::new("/repo/ü")),
+            "/repo/ü".replace('/', sep)
+        );
     }
 
     #[test]

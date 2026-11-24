@@ -22,6 +22,15 @@ assert_fail_contains "$lock 2>&1" "reached through a symlink inside"
 assert_fail_contains "MISE_SAFE=1 $lock 2>&1" "refusing to write lockfile"
 assert_succeed "test ! -e api/mise.lock"
 
+# The lockfile behind that link may itself be a link to a file beside it.
+mkdir -p web clone-web
+cp api/mise.toml web/mise.toml
+echo "# keep" >web/real.lock
+ln -s real.lock web/mise.lock
+ln -s ../web clone-web/.config
+assert_fail_contains "mise -C clone-web lock --platform linux-x64 2>&1" "reached through a symlink inside"
+assert "cat web/real.lock" "# keep"
+
 # A link that stays inside the checkout needs no trust.
 mkdir -p inside/config
 cp api/mise.toml inside/config/mise.toml

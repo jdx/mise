@@ -94,8 +94,24 @@ fn read_signals(path: &Path, config_root: &Path) -> Signals {
         // `mise x` with `__MISE_SHIM_PATH` naming itself: the user typed the tool's name.
         shim: *env::IS_RUNNING_AS_SHIM || env::MISE_SHIM_PATH.read().unwrap().is_some(),
         run_by_shell: run_by_shell(),
-        owned_by_user: owned_by_user(path) && owned_by_user(config_root),
+        owned_by_user: root_owned_by_user(path, config_root),
     }
+}
+
+/// Whether the user owns `path`, its trust root, and every other config file this command loads
+/// from that root. The trust record names the root, so it admits all of those files, including
+/// ones loaded after `path`: a `.config/mise.toml` another account left beside the user's own
+/// `mise.toml` must keep the prompt.
+fn root_owned_by_user(path: &Path, config_root: &Path) -> bool {
+    let loaded = crate::config::load_config_paths(&crate::config::DEFAULT_CONFIG_FILENAMES, false);
+    let covered = loaded
+        .iter()
+        .filter(|other| super::config_trust_root(other) == config_root)
+        .map(PathBuf::as_path);
+    [path, config_root]
+        .into_iter()
+        .chain(covered)
+        .all(owned_by_user)
 }
 
 /// Whether `path` and, when it is a symlink, what it points at both belong to the effective user.
@@ -115,43 +131,43 @@ fn owned_by_user(_path: &Path) -> bool {
     true
 }
 
-/// The config roots this process trusted because the command was typed, resolved.
-static TRUSTED_HERE: Mutex<Option<HashSet<PathBuf>>> = Mutex::new(None);
-
-fn resolved(path: &Path) -> PathBuf {
-    path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
-}
-
-/// Whether this process trusted `config_root` because the command was typed, rather than
-/// finding trust that existed before it started. Nobody looked at the project before that
-/// trust, so it does not vouch for where the project's links lead.
-pub(super) fn trusted_by_this_command(config_root: &Path) -> bool {
-    TRUSTED_HERE
-        .lock()
-        .unwrap()
-        .as_ref()
-        .is_some_and(|roots| roots.contains(&resolved(config_root)))
-}
-
 /// Trusts `config_root` when the command consents for the user, and says so once per root.
 /// `Ok(false)` leaves the decision to the prompt.
+///
+/// The notice is printed once the record is saved, before the settings reload: a project whose
+/// `[settings]` then fail to load still has the record, and the user is told about it.
 pub(super) fn trust_typed_command(path: &Path, config_root: &Path) -> eyre::Result<bool> {
     if !consents(read_signals(path, config_root)) {
         return Ok(false);
     }
-    super::trust_and_reload_settings(config_root)?;
-    if TRUSTED_HERE
-        .lock()
-        .unwrap()
-        .get_or_insert_with(HashSet::new)
-        .insert(resolved(config_root))
-    {
-        info!(
-            "trusted {} because you ran a mise command there. Undo with `mise untrust`.",
-            style::epath(config_root)
-        );
-    }
+    static NOTIFIED: Mutex<Option<HashSet<PathBuf>>> = Mutex::new(None);
+    super::trust_then_reload_settings(config_root, || {
+        if NOTIFIED
+            .lock()
+            .unwrap()
+            .get_or_insert_with(HashSet::new)
+            .insert(config_root.to_path_buf())
+        {
+            info!(
+                "trusted {} because you ran a mise command there. Undo with `mise untrust {}`.",
+                style::epath(config_root),
+                untrust_argument(path)
+            );
+        }
+    })?;
     Ok(true)
+}
+
+/// `path` as the argument of the `mise untrust` that undoes this trust, quoted for a shell.
+/// `mise untrust` with no argument acts on the nearest config only, and one command can trust a
+/// parent project too, so the hint names the file whose root was trusted.
+fn untrust_argument(path: &Path) -> String {
+    let shown = mise_util::file::display_path(path);
+    match shown.strip_prefix("~/") {
+        // `~` expands only when it is not quoted.
+        Some(rest) => format!("~/{}", shell_words::quote(rest)),
+        None => shell_words::quote(&shown).into_owned(),
+    }
 }
 
 #[cfg(test)]

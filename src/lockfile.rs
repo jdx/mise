@@ -2029,6 +2029,21 @@ impl Lockfile {
 
     pub fn prepare_write(&self, path: &Path) -> Result<Option<PreparedWrite>> {
         self.ensure_no_credential_queries()?;
+        // Checked before the lockfile's own link is followed: below a directory link that leaves
+        // the project, a lockfile that is itself a link to a file beside it stays in its own
+        // directory and would pass the check on that link.
+        if let Some(project) =
+            crate::config::config_file::config_root::linked_lockfile_project(path)
+            && leads_out_of(path, &project)
+            && !owner_vouches_for_lockfile(path)
+        {
+            bail!(
+                "refusing to write lockfile {}: it is reached through a symlink inside {}, which leads out of that project, and a link out is only followed for global config, or for trusted config outside safe mode. Run `mise trust` in {} if the link is yours",
+                display_path(path),
+                display_path(&project),
+                display_path(&project)
+            );
+        }
         // Resolve the lockfile target before choosing sidecar locations and pointers.
         let mut source_symlink = None;
         let target = if path.is_symlink() {
@@ -2070,18 +2085,6 @@ impl Lockfile {
                 }
             }
         } else {
-            if let Some(project) =
-                crate::config::config_file::config_root::linked_lockfile_project(path)
-                && leads_out_of(path, &project)
-                && !owner_vouches_for_lockfile(path)
-            {
-                bail!(
-                    "refusing to write lockfile {}: it is reached through a symlink inside {}, which leads out of that project, and a link out is only followed for global config, or for trusted config outside safe mode. Run `mise trust` in {} if the link is yours",
-                    display_path(path),
-                    display_path(&project),
-                    display_path(&project)
-                );
-            }
             path.to_path_buf()
         };
         let path = target.as_path();

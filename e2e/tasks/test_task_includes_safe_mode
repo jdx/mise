@@ -113,7 +113,44 @@ backend = "asdf:dummy"
 EOF
 MISE_SAFE=1 mise -C repo/sub lock >/dev/null 2>&1 || true
 assert_contains "cat repo/sub/mise.lock" "1.0.0"
+
+echo "=== and the version it pins when the config locks another one ==="
+cat <<'EOF' >outside/tasks.toml
+[outside]
+run = "echo outside"
+tools = { "github:mvdan/sh" = "3.9.0" }
+EOF
+cat <<'EOF' >repo/sub/mise.toml
+[tools]
+"github:mvdan/sh" = "3.10.0"
+
+[task_config]
+includes = ["../../outside/tasks.toml"]
+EOF
+cat <<'EOF' >repo/sub/mise.lock
+[[tools."github:mvdan/sh"]]
+version = "3.9.0"
+backend = "github:mvdan/sh"
+EOF
+assert_succeed "MISE_SAFE=1 mise -C repo/sub lock --platform linux-x64"
+assert_contains "cat repo/sub/mise.lock" "3.10.0"
+assert_contains "cat repo/sub/mise.lock" "3.9.0"
 rm -r repo outside
+
+echo "=== mise lock keeps the entries of a remote task include it skipped ==="
+mkdir -p repo/sub
+cat <<'EOF' >repo/sub/mise.toml
+[task_config]
+includes = ["git::https://example.invalid/tasks.git//tasks.toml?ref=v1"]
+EOF
+cat <<'EOF' >repo/sub/mise.lock
+[[tools.dummy]]
+version = "1.0.0"
+backend = "asdf:dummy"
+EOF
+MISE_EXPERIMENTAL=1 MISE_SAFE=1 mise -C repo/sub lock >/dev/null 2>&1 || true
+assert_contains "cat repo/sub/mise.lock" "1.0.0"
+rm -r repo
 
 echo "=== and task files a monorepo's projects share ==="
 mkdir -p shared packages/foo

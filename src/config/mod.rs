@@ -3060,7 +3060,7 @@ pub fn config_files_in_dir(dir: &Path) -> IndexSet<PathBuf> {
 /// [`config_files_in_dir`] plus the files of every `MISE_ENV`, not only the selected ones:
 /// trust recorded for `dir` covers `mise.staging.toml` too, and it loads as soon as that
 /// environment is selected.
-pub(crate) fn config_files_in_dir_for_any_env(dir: &Path) -> IndexSet<PathBuf> {
+pub fn config_files_in_dir_for_any_env(dir: &Path) -> IndexSet<PathBuf> {
     let mut files = config_files_in_dir(dir);
     if env::MISE_OVERRIDE_CONFIG_FILENAMES.is_empty() {
         for prefix in [".config/mise", "mise", ".mise"] {
@@ -5553,10 +5553,13 @@ fn expand_task_inputs(
     Ok(expanded)
 }
 
+/// Renders the templated `entries` a config declared. With `keep_failed`, an entry that does
+/// not render stays as written instead of failing the load.
 fn render_task_input_entries(
     entries: &[String],
     config_root: &Path,
     tera_ctx: &tera::Context,
+    keep_failed: bool,
 ) -> Result<Vec<String>> {
     let mut tera_ctx = tera_ctx.clone();
     tera_ctx.insert("config_root", &config_root.to_string_lossy());
@@ -5564,10 +5567,13 @@ fn render_task_input_entries(
     entries
         .iter()
         .map(|entry| {
-            if contains_template_syntax(entry) {
-                Ok(render_str(&mut tera, entry, &tera_ctx)?)
-            } else {
-                Ok(entry.clone())
+            if !contains_template_syntax(entry) {
+                return Ok(entry.clone());
+            }
+            match render_str(&mut tera, entry, &tera_ctx) {
+                Ok(rendered) => Ok(rendered),
+                Err(_) if keep_failed => Ok(entry.clone()),
+                Err(err) => Err(err.into()),
             }
         })
         .collect()
@@ -5588,18 +5594,23 @@ async fn apply_task_config_inputs(
     Settings::get().ensure_experimental(mise_config::experimental::TASK_INPUT_GROUPS.what)?;
 
     // Only the entries a config declares are rendered here, never the task's own
-    // `sources`. The task's context resolves its `vars`, and `vars._.source` runs a
-    // script, so like `Task::render` this builds it only when there is a template to
-    // render: a task from a tasks-only config nobody trusted stays inert until it is
-    // run, and naming a group in its `sources` does not change that.
-    let tera_ctx = if task_inputs.has_templates() {
+    // `sources`. The task's context resolves its `vars` and `env`, and `vars._.source`
+    // runs a script, so this builds it only for a task the user vouches for: a task from
+    // a tasks-only config nobody trusted stays inert until it is run, even when a trusted
+    // ancestor cascades templated entries to it. Such a task renders them without its own
+    // `vars` and `env`, and an entry that needs them stays as written.
+    let trusted = task.is_trusted(config).await;
+    let tera_ctx = if !task_inputs.has_templates() {
+        tera::Context::new()
+    } else if trusted {
         task.tera_ctx(config).await?
     } else {
-        tera::Context::new()
+        task.tera_ctx_for_usage_preflight(config)
     };
+    let keep_failed = !trusted;
     let global_inputs = match &task_inputs.global_inputs {
         Some((entries, root)) => Some((
-            render_task_input_entries(entries, root, &tera_ctx)?,
+            render_task_input_entries(entries, root, &tera_ctx, keep_failed)?,
             root.clone(),
         )),
         None => None,
@@ -5611,7 +5622,7 @@ async fn apply_task_config_inputs(
             Ok((
                 name.clone(),
                 (
-                    render_task_input_entries(entries, root, &tera_ctx)?,
+                    render_task_input_entries(entries, root, &tera_ctx, keep_failed)?,
                     root.clone(),
                 ),
             ))
@@ -5849,13 +5860,51 @@ fn path_is_spelled_in_dir(path: &Path, dir: &Path) -> bool {
     let Ok(dir) = dir.absolutize() else {
         return false;
     };
-    path.starts_with(&dir)
-        || dir.ancestors().any(|ancestor| {
-            let rest = dir.strip_prefix(ancestor).unwrap_or(Path::new(""));
-            ancestor
-                .canonicalize()
-                .is_ok_and(|resolved| path.starts_with(dunce::simplified(&resolved).join(rest)))
-        })
+    dir_spellings(&dir)
+        .iter()
+        .any(|spelling| path.starts_with(spelling))
+}
+
+/// The ways of writing `dir`: as given, with any set of the links on the way to it followed,
+/// and fully resolved. Following only some of them matters as much as following all: on macOS
+/// every temporary directory is below the `/var` -> `/private/var` link, so a linked home in one
+/// is written `/var/.../real-home` as often as `/private/var/.../real-home`.
+fn dir_spellings(dir: &Path) -> Vec<PathBuf> {
+    // Bounds the walk for links that lead to each other.
+    const MAX_SPELLINGS: usize = 64;
+    let mut spellings = vec![dir.to_path_buf()];
+    let mut next = 0;
+    while next < spellings.len() && spellings.len() < MAX_SPELLINGS {
+        let spelling = spellings[next].clone();
+        next += 1;
+        for ancestor in spelling.ancestors() {
+            let is_link = ancestor
+                .symlink_metadata()
+                .is_ok_and(|m| m.file_type().is_symlink());
+            let Some(target) = is_link.then(|| std::fs::read_link(ancestor).ok()).flatten() else {
+                continue;
+            };
+            let target = match ancestor.parent() {
+                Some(parent) if target.is_relative() => parent.join(target),
+                _ => target,
+            };
+            let Ok(target) = target.absolutize() else {
+                continue;
+            };
+            let rest = spelling.strip_prefix(ancestor).unwrap_or(Path::new(""));
+            let followed = target.join(rest);
+            if !spellings.contains(&followed) {
+                spellings.push(followed);
+            }
+        }
+    }
+    if let Ok(resolved) = dir.canonicalize() {
+        let resolved = dunce::simplified(&resolved).to_path_buf();
+        if !spellings.contains(&resolved) {
+            spellings.push(resolved);
+        }
+    }
+    spellings
 }
 
 #[async_backtrace::framed]
@@ -7725,9 +7774,10 @@ fn expand_task_include(dir: &Path, pattern: &str) -> Vec<PathBuf> {
 
 static SAFE_MODE_SKIPPED_TASK_FILE: AtomicBool = AtomicBool::new(false);
 
-/// Whether safe mode has kept this process from reading a task file outside its
-/// project (see [`skip_task_file_outside`]). The tasks of that file, and the tools
-/// they name, are then missing from what this process saw.
+/// Whether safe mode has kept this process from reading a task file a config includes:
+/// one outside its project (see [`skip_task_file_outside`]) or a remote one. The tasks
+/// of that file, and the tools and versions they name, are then missing from what this
+/// process saw.
 pub fn safe_mode_skipped_task_file() -> bool {
     SAFE_MODE_SKIPPED_TASK_FILE.load(Ordering::Relaxed)
 }
@@ -8521,6 +8571,7 @@ async fn load_task_sources_from_configs(
             continue;
         }
         if skip_remote_includes && is_remote_task_include(include) {
+            SAFE_MODE_SKIPPED_TASK_FILE.store(true, Ordering::Relaxed);
             debug!("ignoring task include `{include}`: safe mode (MISE_SAFE=1)");
             continue;
         }

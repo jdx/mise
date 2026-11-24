@@ -53,3 +53,14 @@ fn load_dotenv_keeps_existing_underscore_entry_and_undoes() {
         "Undo should remove only the loaded file: {output}"
     );
 }
+
+#[test]
+fn save_writes_nothing_when_the_check_before_it_fails() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("mise.toml");
+    let mut editor =
+        InteractiveConfig::new(path.clone()).before_save(|_| Err(io::Error::other("refused")));
+    let err = editor.save().unwrap_err();
+    assert_eq!(err.to_string(), "refused");
+    assert!(!path.exists());
+}

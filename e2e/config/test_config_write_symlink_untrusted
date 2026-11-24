@@ -45,6 +45,34 @@ assert "mise set FOO=bar"
 assert_contains "cat config/real.toml" 'FOO = "bar"'
 assert "test -L mise.toml"
 
+echo "=== trust that yes grants in a fresh clone does not cover a link out ==="
+mkdir -p ../clone
+cat <<'TOML' >../outside/clone.toml
+[env]
+LINKED = "1"
+[tools]
+tiny = "1"
+TOML
+cd ../clone || exit 1
+ln -s ../outside/clone.toml mise.toml
+assert_fail_contains "MISE_YES=1 mise use --rm tiny 2>&1" "trusted before this command"
+assert_contains "cat ../outside/clone.toml" 'tiny = "1"'
+cd ../proj || exit 1
+
+echo "=== a linked directory out of the project is not followed ==="
+mkdir -p ../dir-link ../outside/conf
+cat <<'TOML' >../outside/conf/mise.toml
+[tools]
+TOML
+cd ../dir-link || exit 1
+ln -s ../outside/conf .config
+assert_fail_contains "mise set --file .config/mise.toml FOO=bar 2>&1" "through a linked directory"
+assert_fail_contains "MISE_SAFE=1 mise set --file .config/mise.toml FOO=bar 2>&1" "refusing to write"
+assert_not_contains "cat ../outside/conf/mise.toml" "FOO"
+assert_fail_contains "mise set --file .config/mise.local.toml FOO=bar 2>&1" "refusing to write"
+assert_fail "test -e ../outside/conf/mise.local.toml"
+cd ../proj || exit 1
+
 echo "=== a trusted project may link out ==="
 rm mise.toml
 ln -s ../outside/victim.toml mise.toml
@@ -52,3 +80,45 @@ assert "mise trust mise.toml"
 assert "mise set FOO=bar"
 assert_contains "cat ../outside/victim.toml" 'FOO = "bar"'
 assert_fail_contains "MISE_SAFE=1 mise set BAR=baz 2>&1" "refusing to write"
+
+echo "=== a project's link to global config is not followed, trusted or not ==="
+mkdir -p ../to-global "$HOME/.config/mise"
+cat <<'TOML' >"$HOME/.config/mise/config.toml"
+[env]
+GLOBAL = "1"
+TOML
+cd ../to-global || exit 1
+ln -s "$HOME/.config/mise/config.toml" mise.toml
+assert_fail_contains "mise set FOO=bar 2>&1" "refusing to write"
+assert_not_contains "cat $HOME/.config/mise/config.toml" "FOO"
+assert "mise trust ."
+assert_fail_contains "mise set FOO=bar 2>&1" "Write global config with"
+assert_not_contains "cat $HOME/.config/mise/config.toml" "FOO"
+assert "mise set -g FOO=bar"
+assert_contains "cat $HOME/.config/mise/config.toml" 'FOO = "bar"'
+
+echo "=== tasks rm removes nothing when one file links out ==="
+mkdir -p ../rm-two
+cat <<'TOML' >../outside/rm.toml
+[tasks.b]
+run = "echo b"
+TOML
+cd ../rm-two || exit 1
+cat <<'TOML' >mise.toml
+[tasks.a]
+run = "echo a"
+TOML
+ln -s ../outside/rm.toml mise.local.toml
+assert_fail_contains "MISE_YES=1 mise tasks rm a b 2>&1" "refusing to write"
+assert_contains "cat mise.toml" "[tasks.a]"
+assert_contains "cat ../outside/rm.toml" "[tasks.b]"
+
+echo "=== a dry run previews a dangling link's import without writing ==="
+mkdir -p ../preview
+cd ../preview || exit 1
+echo "tiny 1.0.0" >.tool-versions
+ln -s ../outside/preview.toml mise.toml
+assert_contains "mise edit --dry-run --tool-versions .tool-versions 2>&1" 'tiny = "1.0.0"'
+assert_fail "test -e ../outside/preview.toml"
+assert_fail_contains "mise edit --tool-versions .tool-versions 2>&1" "refusing to write"
+assert_fail "test -e ../outside/preview.toml"
