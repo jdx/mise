@@ -848,9 +848,11 @@ mod shell_name_tests {
         crate::env::remove_var("NoDefaultCurrentDirectoryInExePath");
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("probe.kdl");
+        // A builtin `echo` that `sh -c` and `cmd /c` both run, each expanding its own form:
+        // `cmd` prints `seen-1-$…`, `sh` prints `seen-%…%-1`.
         std::fs::write(
             &path,
-            "name \"probe\"\narg \"<x>\"\ncomplete \"x\" run=\"printenv NoDefaultCurrentDirectoryInExePath | sed s/^/seen-/\"\n",
+            "name \"probe\"\narg \"<x>\"\ncomplete \"x\" run=\"echo seen-%NoDefaultCurrentDirectoryInExePath%-$NoDefaultCurrentDirectoryInExePath\"\n",
         )
         .unwrap();
         let encoded = crate::packslip::completions::encode_spec_path(&path);
@@ -858,7 +860,7 @@ mod shell_name_tests {
             "__usage_complete_word",
             &encoded,
             "--shell",
-            "bash",
+            "nu",
             "--line",
             "probe ",
         ]
@@ -866,7 +868,10 @@ mod shell_name_tests {
         .map(OsString::from)
         .collect();
         let answer = usage_spec_request(&argv).unwrap().unwrap();
-        assert!(answer.contains("seen-1"), "{answer}");
+        assert!(
+            answer.contains("seen-1-") || answer.contains("%-1'"),
+            "{answer}"
+        );
     }
 
     #[test]
