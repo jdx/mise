@@ -84,7 +84,9 @@ mise uses the first method that applies:
    That installer only reads crates.io, so mise skips it when
    [`cargo.registry_name`](/dev-tools/backends/cargo.html#cargo.registry_name) is set, or when your Cargo
    configuration sets `registry.default` (or `CARGO_REGISTRY_DEFAULT`) or
-   replaces the crates.io source.
+   replaces the crates.io source. It downloads a binary only from an `https`
+   URL: a crate whose `pkg-url` gives another scheme is built with
+   `cargo install`.
 5. Otherwise mise runs `cargo install`.
 
 Set [`cargo.binstall_only = true`](/dev-tools/backends/cargo.html#cargo.binstall_only) to fail instead of

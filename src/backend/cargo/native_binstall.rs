@@ -104,7 +104,8 @@ pub(super) async fn install(
         }
         if matches!(action, NativeBinstallAction::WarnOnly) {
             for bin in &bins {
-                let archive_url = expand_binstall_template(pkg_url, &template_ctx.vars(&bin.name));
+                let archive_url =
+                    native_binstall_artifact_url(pkg_url, &template_ctx.vars(&bin.name))?;
                 if !native_binstall_file_available(&archive_url).await {
                     return Ok(false);
                 }
@@ -119,7 +120,7 @@ pub(super) async fn install(
         let mut pending = vec![];
         for bin in &bins {
             let vars = template_ctx.vars(&bin.name);
-            let archive_url = expand_binstall_template(pkg_url, &vars);
+            let archive_url = native_binstall_artifact_url(pkg_url, &vars)?;
             let src = download_dir
                 .path()
                 .join(format!("{}{}", bin.name, binary_ext));
@@ -146,17 +147,17 @@ pub(super) async fn install(
     if matches!(action, NativeBinstallAction::WarnOnly) {
         let archive_urls = if template_contains_var(pkg_url, "bin") {
             bins.iter()
-                .map(|bin| expand_binstall_template(pkg_url, &template_ctx.vars(&bin.name)))
-                .collect()
+                .map(|bin| native_binstall_artifact_url(pkg_url, &template_ctx.vars(&bin.name)))
+                .collect::<Result<Vec<_>>>()?
         } else {
-            vec![expand_binstall_template(
+            vec![native_binstall_artifact_url(
                 pkg_url,
                 &template_ctx.vars(
                     bins.first()
                         .map(|bin| bin.name.as_str())
                         .unwrap_or(&crate_name),
                 ),
-            )]
+            )?]
         };
         if !native_binstall_files_available(&archive_urls).await {
             return Ok(false);
@@ -174,7 +175,7 @@ pub(super) async fn install(
         let mut pending = vec![];
         for bin in &bins {
             let vars = template_ctx.vars(&bin.name);
-            let archive_url = expand_binstall_template(pkg_url, &vars);
+            let archive_url = native_binstall_artifact_url(pkg_url, &vars)?;
             let archive_path = download_dir.path().join(format!(
                 "{}-{}",
                 bin.name,
@@ -235,14 +236,14 @@ pub(super) async fn install(
         return Ok(true);
     }
 
-    let archive_url = expand_binstall_template(
+    let archive_url = native_binstall_artifact_url(
         pkg_url,
         &template_ctx.vars(
             bins.first()
                 .map(|bin| bin.name.as_str())
                 .unwrap_or(&crate_name),
         ),
-    );
+    )?;
 
     let archive_path = tv.download_path().join(get_filename_from_url(&archive_url));
     ctx.pr.set_message(format!(
@@ -999,6 +1000,23 @@ fn native_package_format(pkg_fmt: &str) -> Result<NativePackageFormat<'_>> {
             "unsupported native cargo binary package format: {other}"
         )),
     }
+}
+
+/// Expand `pkg-url` into the URL of the artifact to download.
+///
+/// The artifact is installed as an executable with no checksum, so TLS is all
+/// that authenticates it, and a URL that is not `https` is refused. The crate
+/// metadata the URL is made from, usually `{ repo }` (the crate's
+/// `repository`), was read over https. This is the URL before
+/// `url_replacements`, which still apply to it.
+fn native_binstall_artifact_url(pkg_url: &str, vars: &BinstallTemplateVars<'_>) -> Result<String> {
+    let url = expand_binstall_template(pkg_url, vars);
+    let parsed = Url::parse(&url)
+        .wrap_err_with(|| format!("native cargo binary artifact URL is not valid: {url}"))?;
+    if parsed.scheme() != "https" {
+        bail!("native cargo binary artifact must be downloaded over https: {url}");
+    }
+    Ok(url)
 }
 
 fn expand_binstall_template(template: &str, vars: &BinstallTemplateVars<'_>) -> String {
@@ -1813,5 +1831,44 @@ mod tests {
         fs::create_dir_all(root.path().join(".cargo")).unwrap();
         fs::write(root.path().join(".cargo/config.toml"), default_company).unwrap();
         assert!(cargo_config_names_other_registry(&cargo_env, &cwd));
+    }
+
+    #[test]
+    fn native_binstall_artifact_url_must_be_https() {
+        let pkg_url = "{ repo }/releases/download/v{ version }/{ name }-{ target }";
+        let vars = |repo| BinstallTemplateVars {
+            repo,
+            name: "demo",
+            version: "1.2.3",
+            target: "x86_64-unknown-linux-gnu",
+            archive_format: "bin",
+            archive_suffix: "",
+            bin: "demo",
+            binary_ext: "",
+        };
+
+        assert_eq!(
+            native_binstall_artifact_url(pkg_url, &vars("https://github.com/acme/demo")).unwrap(),
+            "https://github.com/acme/demo/releases/download/v1.2.3/demo-x86_64-unknown-linux-gnu"
+        );
+        // a crate's `repository` is a link for people, and can be an http one
+        let err = native_binstall_artifact_url(pkg_url, &vars("http://github.com/acme/demo"))
+            .unwrap_err();
+        assert!(err.to_string().contains("over https"), "{err}");
+        // `pkg-url` can also name the scheme itself
+        for pkg_url in [
+            "http://example.com/{ name }-{ target }",
+            "HTTP://example.com/{ name }-{ target }",
+            "ftp://example.com/{ name }-{ target }",
+            "file:///tmp/{ name }-{ target }",
+        ] {
+            assert!(
+                native_binstall_artifact_url(pkg_url, &vars("https://github.com/acme/demo"))
+                    .is_err(),
+                "{pkg_url}"
+            );
+        }
+        // with no `repository`, the URL has no scheme or host
+        assert!(native_binstall_artifact_url(pkg_url, &vars("")).is_err());
     }
 }
