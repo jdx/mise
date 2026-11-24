@@ -719,41 +719,62 @@ impl SPMBackend {
         )
         .await?;
 
-        let platform_key = self.get_platform_key();
-        // A bundle with no binary for this target is not what gets installed, so its
-        // URL and checksum must not end up in the lock entry of a source build.
-        let previous_lock_entry = tv.lock_platforms.get(&platform_key).cloned();
-        let platform_info = tv.lock_platforms.entry(platform_key.clone()).or_default();
-        platform_info.url = Some(asset.url.clone());
-        platform_info.url_api = asset.url_api.clone();
-        if platform_info.checksum.is_none() {
-            platform_info.checksum = asset.digest.clone();
-        }
-        self.verify_checksum(ctx, tv, &download_path)?;
-
-        ctx.pr.set_message(format!("extract {}", asset.name));
-        file::unzip(&download_path, &bundle_dir, &Default::default())?;
-
         let triples = swift_target_triples(ctx, self, tv).await?;
-        let binaries = artifactbundle_binaries(&bundle_dir, &triples)?;
-        let binaries = if binaries.is_empty() {
-            binaries
-        } else {
-            filter_artifactbundle_binaries(opts, binaries)?
-        };
-        if binaries.is_empty() {
-            file::remove_all(tv.cache_path())?;
-            match previous_lock_entry {
-                Some(entry) => tv.lock_platforms.insert(platform_key, entry),
-                None => tv.lock_platforms.remove(&platform_key),
-            };
-            return Ok(false);
-        }
+        let platform_key = self.get_platform_key();
+        let installed = with_artifactbundle_lock_entry(tv, &platform_key, &asset, |tv| {
+            self.verify_checksum(ctx, tv, &download_path)?;
 
-        install_artifactbundle_binaries(&tv.install_path(), binaries)?;
+            ctx.pr.set_message(format!("extract {}", asset.name));
+            file::unzip(&download_path, &bundle_dir, &Default::default())?;
+
+            let binaries = artifactbundle_binaries(&bundle_dir, &triples)?;
+            let binaries = if binaries.is_empty() {
+                binaries
+            } else {
+                filter_artifactbundle_binaries(opts, binaries)?
+            };
+            if binaries.is_empty() {
+                return Ok(false);
+            }
+            install_artifactbundle_binaries(&tv.install_path(), binaries)?;
+            Ok(true)
+        })?;
         file::remove_all(tv.cache_path())?;
-        Ok(true)
+        Ok(installed)
     }
+}
+
+/// Records `asset` as the lock entry of `platform_key` while `install` runs,
+/// so the checksum check sees the bundle's URL and digest.
+///
+/// The entry stays only when `install` returns `Ok(true)`. On `Ok(false)` or an
+/// error the bundle is not what gets installed, and the caller builds from
+/// source or refuses. The entry from before, or no entry, is put back, so
+/// mise.lock never pins a bundle mise did not install.
+fn with_artifactbundle_lock_entry(
+    tv: &mut ToolVersion,
+    platform_key: &str,
+    asset: &ArtifactBundleReleaseAsset,
+    install: impl FnOnce(&mut ToolVersion) -> Result<bool>,
+) -> Result<bool> {
+    let previous_lock_entry = tv.lock_platforms.get(platform_key).cloned();
+    let platform_info = tv
+        .lock_platforms
+        .entry(platform_key.to_string())
+        .or_default();
+    platform_info.url = Some(asset.url.clone());
+    platform_info.url_api = asset.url_api.clone();
+    if platform_info.checksum.is_none() {
+        platform_info.checksum = asset.digest.clone();
+    }
+    let installed = install(tv);
+    if !matches!(installed, Ok(true)) {
+        match previous_lock_entry {
+            Some(entry) => tv.lock_platforms.insert(platform_key.to_string(), entry),
+            None => tv.lock_platforms.remove(platform_key),
+        };
+    }
+    installed
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -2645,6 +2666,75 @@ mod tests {
             format!("{err:#}").contains("larger than 1 MiB"),
             "unexpected error: {err:#}"
         );
+    }
+
+    #[test]
+    fn artifactbundle_lock_entry_stays_only_for_an_installed_bundle() {
+        let asset = ArtifactBundleReleaseAsset {
+            name: "tool.artifactbundle.zip".to_string(),
+            url: "https://example.com/tool.artifactbundle.zip".to_string(),
+            url_api: None,
+            digest: Some("sha256:bundle".to_string()),
+        };
+        let earlier = PlatformInfo {
+            url: Some("https://example.com/earlier.artifactbundle.zip".to_string()),
+            checksum: Some("sha256:earlier".to_string()),
+            ..Default::default()
+        };
+        // An info.json over the metadata limit is one of the errors the caller
+        // answers with a source build.
+        let tmp = tempfile::tempdir().unwrap();
+        let bundle = tmp.path().join("tool.artifactbundle");
+        file::create_dir_all(&bundle).unwrap();
+        let limit = crate::backend::static_helpers::ARCHIVE_METADATA_LIMIT as usize;
+        file::write(bundle.join("info.json"), " ".repeat(limit + 1)).unwrap();
+        let oversized =
+            || artifactbundle_binaries(tmp.path(), &["x86_64-unknown-linux-gnu".to_string()]);
+
+        type Outcome<'a> = Box<dyn Fn() -> Result<bool> + 'a>;
+        let cases: Vec<(
+            &str,
+            Option<PlatformInfo>,
+            Outcome<'_>,
+            Option<PlatformInfo>,
+        )> = vec![
+            (
+                "error keeps the earlier entry",
+                Some(earlier.clone()),
+                Box::new(|| oversized().map(|_| true)),
+                Some(earlier.clone()),
+            ),
+            (
+                "error leaves no entry",
+                None,
+                Box::new(|| oversized().map(|_| true)),
+                None,
+            ),
+            (
+                "no binary keeps the earlier entry",
+                Some(earlier.clone()),
+                Box::new(|| Ok(false)),
+                Some(earlier.clone()),
+            ),
+            (
+                "installed bundle is recorded",
+                None,
+                Box::new(|| Ok(true)),
+                Some(PlatformInfo {
+                    url: Some(asset.url.clone()),
+                    checksum: asset.digest.clone(),
+                    ..Default::default()
+                }),
+            ),
+        ];
+        for (name, before, outcome, after) in cases {
+            let mut tv = tool_version("1.2.3");
+            if let Some(before) = before {
+                tv.lock_platforms.insert("linux-x64".to_string(), before);
+            }
+            let _ = with_artifactbundle_lock_entry(&mut tv, "linux-x64", &asset, |_| outcome());
+            assert_eq!(tv.lock_platforms.get("linux-x64"), after.as_ref(), "{name}");
+        }
     }
 
     fn executable_bundle_info(name: &str, path: &str) -> String {
