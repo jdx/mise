@@ -8231,6 +8231,9 @@ async fn load_task_sources_from_configs(
             );
             continue;
         }
+        if remote_source.is_some() && !is_global {
+            ensure_remote_task_source_pinned(include)?;
+        }
         let artifacts = if include.starts_with("git::") {
             vec![resolve_git_url_to_path(include).await?]
         } else if include.starts_with(OCI_INCLUDE_PREFIX) || include.starts_with(ZIP_INCLUDE_PREFIX)
@@ -8297,6 +8300,23 @@ fn trust_check_task_include(path: &Path, require_trust: bool) -> Result<()> {
     }
     if require_trust && !is_global_task_include_path(path) && task_include_requires_trust(path) {
         trust_check(path)?;
+    }
+    Ok(())
+}
+
+/// Paranoid mode binds a project config's trust to its content, so a remote task file or task
+/// include it names must be pinned the way a remote config include must be: the config's hash
+/// then covers what is fetched. A source that can move is refused before anything is fetched.
+/// Safe mode, where trust is not asked for, keeps its own rules.
+pub(crate) fn ensure_remote_task_source_pinned(source: &str) -> Result<()> {
+    if Settings::try_get().is_ok_and(|settings| settings.paranoid.config())
+        && !Settings::safe_mode()
+        && !remote_include::is_pinned(source)
+    {
+        bail!(
+            "paranoid mode binds trust to content, so a remote task source must be a git:: URL \
+             pinned to a commit sha or an oci:: reference pinned to a digest: {source}"
+        );
     }
     Ok(())
 }
