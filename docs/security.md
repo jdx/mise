@@ -437,9 +437,11 @@ Backends other than `conda:`, `npm:` and `pypi:` can hold back the tool's own
 version, but not the dependencies its installer or compiler fetches. See the
 [npm](/dev-tools/backends/npm.html) and [PyPI](/dev-tools/backends/pypi.html)
 backend pages for how they pass the cutoff to their package managers. `conda:`
-solves the environment only from packages the channel listed before the cutoff,
-so a new build of an older version of the tool or of a dependency is held back
-too.
+solves the environment without the packages released after the cutoff, so a new
+build of an older version of the tool or of a dependency is held back too. A
+package's release date is when the channel indexed it, or, when the channel does
+not record that, the build time its builder recorded. A package with neither is
+kept.
 
 ### What the cutoff applies to
 
