@@ -543,6 +543,21 @@ impl ToolRequest {
             }
     }
 
+    /// Whether global or system config makes this request, for a tool that no project
+    /// config declares or aliases, so that its options are the operator's own.
+    ///
+    /// Safe mode asks this where it must not act on anything else. A request with no
+    /// config file behind it does not pass: a task's tools arrive as
+    /// [`ToolSource::Argument`], as a CLI argument does, and
+    /// [`crate::config::is_safe_mode_project_tool`] does not know them.
+    pub(crate) fn is_global_config_tool(&self) -> bool {
+        let Some(path) = self.source().path() else {
+            return false;
+        };
+        crate::config::is_global_config(path)
+            && !crate::config::is_safe_mode_project_tool(self.ba())
+    }
+
     /// In safe mode, records the hosts this request's options name; see
     /// [`record_safe_mode_credential_hosts`].
     pub(crate) fn record_safe_mode_credential_hosts(&self) {
@@ -1252,6 +1267,19 @@ mod tests {
     use pretty_assertions::assert_str_eq;
     use std::sync::Arc;
     use test_log::test;
+
+    #[test]
+    fn only_a_global_config_request_is_a_global_config_tool() {
+        let ba = Arc::new(BackendArg::from("http:tool"));
+        let global = ToolSource::MiseToml(crate::config::global_config_path());
+        let project = ToolSource::MiseToml("/project/mise.toml".into());
+        // A task's tools have this source too.
+        let argument = ToolSource::Argument;
+        for (source, expected) in [(global, true), (project, false), (argument, false)] {
+            let request = ToolRequest::new(ba.clone(), "1.0.0", source).unwrap();
+            assert_eq!(request.is_global_config_tool(), expected, "{request}");
+        }
+    }
 
     #[test]
     fn netrc_scope_reads_platform_url_options() {

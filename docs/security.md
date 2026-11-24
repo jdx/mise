@@ -263,6 +263,11 @@ These fail with `<operation> is disabled in safe mode (MISE_SAFE=1)`:
   versions.
 - Requests to S3, which are signed with your AWS credentials, so tools from the
   `s3:` backend cannot list or install versions.
+- Reading the local file that the `file://` `url` of an `http:` tool names, so
+  such a tool cannot be installed or locked, unless global or system config
+  requests the tool and no project config declares it. The checksum that
+  `mise lock` records would otherwise tell what a file outside the project
+  holds.
 - Installing plugins. vfox plugins that are already installed or built in still
   run, because the operator chose them.
 - mise secrets: `[secrets]` sources, `mise secrets ls`, tasks that list

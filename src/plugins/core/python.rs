@@ -1268,8 +1268,12 @@ impl Backend for PythonPlugin {
         // Detect provenance for precompiled binaries
         let mut provenance = self.detect_precompiled_provenance();
         if provenance.is_some() {
-            let artifact =
-                crate::lockfile::generate::download_for_verification(&url, &mut checksum).await?;
+            let artifact = crate::lockfile::generate::download_for_verification(
+                &tv.request,
+                &url,
+                &mut checksum,
+            )
+            .await?;
             if !self
                 .verify_github_artifact_attestations(
                     &crate::ui::progress_report::QuietReport::new(),

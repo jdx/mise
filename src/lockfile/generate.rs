@@ -250,9 +250,10 @@ async fn resolve(
     Ok(cell
         .get_or_init(|| async {
             let backend = tv.backend().ok();
+            let tr = tv.request.clone();
             let mut resolution = resolve_tool_lock_info(ba, tv, platform, backend).await;
             if let Ok(info) = &mut resolution.4
-                && let Err(error) = complete_artifact_checksums(info).await
+                && let Err(error) = complete_artifact_checksums(&tr, info).await
             {
                 resolution.4 = Err(error.to_string());
             }
@@ -591,7 +592,7 @@ pub async fn generate(
                 resolve(ba, tv.clone(), platform).await?
             };
             if let Ok(info) = &mut resolution.4 {
-                complete_artifact_checksums(info).await?;
+                complete_artifact_checksums(&tv.request, info).await?;
                 if let Some(old) = previous_info {
                     preserve_legacy_metadata(&old, info);
                 }
@@ -1199,30 +1200,41 @@ impl Drop for ProgressGuard<'_> {
     }
 }
 
-async fn complete_artifact_checksums(info: &mut PlatformInfo) -> Result<()> {
+async fn complete_artifact_checksums(
+    tr: &crate::toolset::ToolRequest,
+    info: &mut PlatformInfo,
+) -> Result<()> {
     if info.checksum.is_none()
         && let Some(url) = &info.url
     {
         info.checksum = Some(
-            artifact_checksum(url, info.url_api.as_deref(), info.download_headers.as_ref()).await?,
+            artifact_checksum(
+                tr,
+                url,
+                info.url_api.as_deref(),
+                info.download_headers.as_ref(),
+            )
+            .await?,
         );
     }
     for artifact in &mut info.additional_artifacts {
         if artifact.checksum.is_none() {
-            artifact.checksum =
-                Some(artifact_checksum(&artifact.url, artifact.url_api.as_deref(), None).await?);
+            artifact.checksum = Some(
+                artifact_checksum(tr, &artifact.url, artifact.url_api.as_deref(), None).await?,
+            );
         }
     }
     Ok(())
 }
 
 async fn artifact_checksum(
+    tr: &crate::toolset::ToolRequest,
     url: &str,
     api_url: Option<&str>,
     headers: Option<&reqwest::header::HeaderMap>,
 ) -> Result<String> {
     // A `file://` artifact is hashed in place, as the http backend installs it.
-    if let Some(local) = crate::backend::http::local_artifact_path(url)? {
+    if let Some(local) = crate::backend::http::local_artifact_path(tr, url)? {
         return Ok(format!(
             "sha256:{}",
             crate::hash::file_hash_sha256(&local, None)?
@@ -1251,12 +1263,13 @@ async fn artifact_checksum(
 }
 
 pub(crate) async fn download_for_verification(
+    tr: &crate::toolset::ToolRequest,
     url: &str,
     checksum: &mut Option<String>,
 ) -> Result<tempfile::TempDir> {
     let directory = tempfile::tempdir()?;
     let path = directory.path().join("artifact");
-    match crate::backend::http::local_artifact_path(url)? {
+    match crate::backend::http::local_artifact_path(tr, url)? {
         Some(local) => crate::file::copy(&local, &path)?,
         None => crate::http::HTTP.download_file(url, &path, None).await?,
     }
@@ -2266,7 +2279,10 @@ mod tests {
             url: Some(url.clone()),
             ..Default::default()
         };
-        complete_artifact_checksums(&mut info).await.unwrap();
+        let (_, tv) = tool();
+        complete_artifact_checksums(&tv.request, &mut info)
+            .await
+            .unwrap();
         let expected = format!(
             "sha256:{}",
             crate::hash::file_hash_sha256(&artifact, None).unwrap()
@@ -2276,10 +2292,41 @@ mod tests {
         assert_eq!(info.url.as_deref(), Some(url.as_str()));
 
         let mut checksum = None;
-        download_for_verification(&url, &mut checksum)
+        download_for_verification(&tv.request, &url, &mut checksum)
             .await
             .unwrap();
         assert_eq!(checksum.as_deref(), Some(expected.as_str()));
+    }
+
+    #[tokio::test]
+    async fn artifact_checksum_reads_no_local_file_for_other_backends() {
+        // Only the http backend installs a `file://` artifact. The URL of a
+        // forge tool can be a release API's answer and goes to the HTTP client.
+        let tmp = tempfile::tempdir().unwrap();
+        let artifact = tmp.path().join("probe");
+        std::fs::write(&artifact, b"artifact").unwrap();
+        let url = url::Url::from_file_path(&artifact).unwrap().to_string();
+        for forge in ["github:o/r", "gitlab:o/r", "forgejo:o/r"] {
+            let tr = ToolRequest::new(Arc::new(forge.into()), "1", ToolSource::Argument).unwrap();
+            let mut info = PlatformInfo {
+                url: Some(url.clone()),
+                additional_artifacts: vec![ArtifactInfo {
+                    url: url.clone(),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            };
+            assert!(complete_artifact_checksums(&tr, &mut info).await.is_err());
+            assert_eq!(info.checksum, None, "{forge}");
+
+            let mut checksum = None;
+            assert!(
+                download_for_verification(&tr, &url, &mut checksum)
+                    .await
+                    .is_err()
+            );
+            assert_eq!(checksum, None, "{forge}");
+        }
     }
 
     #[tokio::test]
@@ -2298,7 +2345,10 @@ mod tests {
             download_headers: Some(headers),
             ..Default::default()
         };
-        complete_artifact_checksums(&mut info).await.unwrap();
+        let (_, tv) = tool();
+        complete_artifact_checksums(&tv.request, &mut info)
+            .await
+            .unwrap();
         mock.assert_async().await;
         let checksum = info.checksum.clone().unwrap();
         assert!(checksum.starts_with("sha256:"));
@@ -2325,7 +2375,8 @@ mod tests {
         headers.insert("authorization", "Bearer secret".parse().unwrap());
         let browser_url = format!("{}/browser", server.url());
         let api_url = format!("{}/api/asset", server.url());
-        let checksum = artifact_checksum(&browser_url, Some(&api_url), Some(&headers))
+        let (_, tv) = tool();
+        let checksum = artifact_checksum(&tv.request, &browser_url, Some(&api_url), Some(&headers))
             .await
             .unwrap();
         head.assert_async().await;
@@ -2351,7 +2402,8 @@ mod tests {
         headers.insert("authorization", "Bearer secret".parse().unwrap());
         let browser_url = format!("{}/browser", server.url());
         let api_url = format!("{}/api/asset", server.url());
-        let checksum = artifact_checksum(&browser_url, Some(&api_url), Some(&headers))
+        let (_, tv) = tool();
+        let checksum = artifact_checksum(&tv.request, &browser_url, Some(&api_url), Some(&headers))
             .await
             .unwrap();
         head.assert_async().await;

@@ -14,7 +14,7 @@ use crate::backend::static_helpers::{
 use crate::backend::version_list;
 use crate::backend::{MISE_BINS_DIR, runtime_path_for_install_path};
 use crate::config::Config;
-use crate::config::Settings;
+use crate::config::{Settings, SettingsExt};
 use crate::http::{DownloadFileMetadata, HTTP};
 use crate::install_context::InstallContext;
 use crate::lockfile::PlatformInfo;
@@ -1540,7 +1540,8 @@ impl Backend for HttpBackend {
         if checksum.is_none() && lock_url != url && Settings::get().generate_lockfiles() {
             // `generate` would otherwise hash what the recorded URL serves,
             // which without the credentials is an authentication error.
-            crate::lockfile::generate::download_for_verification(&url, &mut checksum).await?;
+            crate::lockfile::generate::download_for_verification(&tv.request, &url, &mut checksum)
+                .await?;
         }
 
         Ok(PlatformInfo {
@@ -1632,7 +1633,7 @@ impl Backend for HttpBackend {
             pinned = Some(published);
         }
 
-        let download = match local_artifact_path(&url)? {
+        let download = match local_artifact_path(&tv.request, &url)? {
             Some(src) => {
                 ctx.pr.set_message(format!("copy {filename}"));
                 if let Some(parent) = file_path.parent() {
@@ -1989,12 +1990,26 @@ fn without_verbatim_prefix(path: &Path) -> PathBuf {
 /// The local file a `file://` artifact URL names, so an archive fetched by hand
 /// (or from a mirror mise cannot reach) installs exactly like a downloaded one.
 /// Any other scheme is left to the HTTP client.
-pub(crate) fn local_artifact_path(url: &str) -> Result<Option<PathBuf>> {
+///
+/// So is the URL of a request `tr` for any other backend. None of them installs a
+/// local file, and their URLs can come from a release API's answer, which must
+/// not choose a file for `mise lock` to hash.
+///
+/// Safe mode loads config nobody reviewed, so it reads a local file only for a
+/// tool that global or system config requests. Any other is refused before the
+/// path is looked at: the checksum in `mise.lock` would tell what a file outside
+/// the project holds, and the error below whether it exists.
+pub(crate) fn local_artifact_path(tr: &ToolRequest, url: &str) -> Result<Option<PathBuf>> {
     let Ok(parsed) = url::Url::parse(url) else {
         return Ok(None);
     };
-    if parsed.scheme() != "file" {
+    if parsed.scheme() != "file" || tr.ba().backend_type() != BackendType::Http {
         return Ok(None);
+    }
+    if !tr.is_global_config_tool() {
+        Settings::ensure_not_safe(
+            "reading a local file:// artifact for a tool that global config does not request",
+        )?;
     }
     let path = parsed
         .to_file_path()
@@ -2034,14 +2049,30 @@ mod tests {
         std::fs::write(&archive, b"").unwrap();
         let url = url::Url::from_file_path(&archive).unwrap().to_string();
 
-        assert_eq!(local_artifact_path(&url).unwrap(), Some(archive.clone()));
+        let request = |tool: &str| {
+            ToolRequest::new(Arc::new(tool.into()), "1.0.0", ToolSource::Argument).unwrap()
+        };
+        let http = request("http:my-tool");
+
         assert_eq!(
-            local_artifact_path("https://example.com/tool.tar.gz").unwrap(),
+            local_artifact_path(&http, &url).unwrap(),
+            Some(archive.clone())
+        );
+        assert_eq!(
+            local_artifact_path(&http, "https://example.com/tool.tar.gz").unwrap(),
             None
         );
+        // A release API's answer does not name a file on this machine.
+        for forge in ["github:o/r", "gitlab:o/r", "forgejo:o/r", "aqua:o/r"] {
+            assert_eq!(
+                local_artifact_path(&request(forge), &url).unwrap(),
+                None,
+                "{forge}"
+            );
+        }
 
         let missing = url::Url::from_file_path(tmp.path().join("missing.tar.gz")).unwrap();
-        let err = local_artifact_path(missing.as_str()).unwrap_err();
+        let err = local_artifact_path(&http, missing.as_str()).unwrap_err();
         assert!(
             err.to_string().contains("local artifact not found"),
             "{err}"
