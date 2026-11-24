@@ -393,14 +393,16 @@ mod tests {
     }
 
     /// What `main` prints for the parse error in `source`, read as a file with
-    /// one setting, a list of strings.
+    /// one setting, a list of strings. A plain report is formatted with `{:#}`,
+    /// its message and causes: `{:?}` also prints the backtrace eyre captures
+    /// when `RUST_BACKTRACE` is set, which the file has no part in.
     fn rendered(source: &str) -> String {
         let err =
             toml::from_str::<std::collections::HashMap<String, Vec<String>>>(source).unwrap_err();
         let report = toml_parse_error(&err, source, Path::new("/project/.miserc.toml"));
         match report.downcast_ref::<MiseDiagnostic>() {
             Some(diagnostic) => diagnostic.render().to_string(),
-            None => format!("{report:?}"),
+            None => format!("{report:#}"),
         }
     }
 
