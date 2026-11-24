@@ -3544,12 +3544,7 @@ fn write_private(path: &Path, content: &str) -> Result<()> {
     #[cfg(unix)]
     {
         use std::io::Write as _;
-        use std::os::unix::fs::OpenOptionsExt as _;
-        let mut file = std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .mode(FNOX_PERMISSIONS)
-            .open(path)
+        let mut file = create_private(path)
             .wrap_err_with(|| format!("failed to create {}", path.display_user()))?;
         file.write_all(content.as_bytes())
             .wrap_err_with(|| format!("failed to write {}", path.display_user()))?;
@@ -3559,6 +3554,19 @@ fn write_private(path: &Path, content: &str) -> Result<()> {
     {
         file::write(path, content)
     }
+}
+
+/// Create a new file at `path` that only its owner can open; the caller
+/// gives it its final mode once its content is in place.
+fn create_private(path: &Path) -> std::io::Result<std::fs::File> {
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt as _;
+        options.mode(FNOX_PERMISSIONS);
+    }
+    options.open(path)
 }
 
 /// Render every configured dotfile template before a full bootstrap can
@@ -7684,9 +7692,9 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>, written: &mut Vec<PathBu
                         let mut from = CopySource::open(&source, &target)?;
                         file::remove_file(&target)?;
                         written.push(target.clone());
-                        let to = std::fs::File::create(&target)
+                        let to = create_private(&target)
                             .wrap_err_with(copy_failure(&source, &target))?;
-                        from.copy_into(to)?;
+                        from.copy_into(to, from.source_mode())?;
                     } else if target.is_file() {
                         // a file that already matches in content and mode is
                         // left alone, as the plan shows: rewriting it would
@@ -7717,9 +7725,7 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>, written: &mut Vec<PathBu
                     }
                 }
             } else {
-                replace_recorded(&req.target, written, || {
-                    file::copy(&req.source, &req.target)
-                })?;
+                replace_recorded(&req.target, written, || write_target(req, rendered))?;
                 save_copy_state(req);
                 // the copy took the source's permissions; an explicit
                 // `permissions` overrides them
@@ -7730,8 +7736,8 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>, written: &mut Vec<PathBu
             }
         }
         FileMode::Template => {
+            replace_recorded(&req.target, written, || write_target(req, rendered))?;
             let rendered = rendered.expect("rendered template content");
-            replace_recorded(&req.target, written, || file::write(&req.target, rendered))?;
             #[cfg(unix)]
             match req.permissions {
                 Some(permissions) => set_mode(&req.target, permissions)?,
@@ -7744,15 +7750,12 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>, written: &mut Vec<PathBu
         FileMode::Track => unreachable!("tracked files are never written"),
         FileMode::Absent => unreachable!("absent targets are removed above"),
         FileMode::Content => {
-            replace_recorded(&req.target, written, || {
-                file::write(&req.target, req.content.as_deref().expect("inline content"))
-            })?;
+            replace_recorded(&req.target, written, || write_target(req, rendered))?;
             #[cfg(unix)]
             set_mode(&req.target, req.permissions.unwrap_or(0o600))?;
         }
         FileMode::Fnox => {
-            let content = rendered.expect("content fnox stores");
-            replace_recorded(&req.target, written, || write_private(&req.target, content))?;
+            replace_recorded(&req.target, written, || write_target(req, rendered))?;
             #[cfg(unix)]
             if let Some(permissions) = req.permissions {
                 set_mode(&req.target, permissions)?;
@@ -7775,6 +7778,43 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>, written: &mut Vec<PathBu
     }
     record_created_dirs(req, &created_dirs);
     Ok(())
+}
+
+/// Create the single file `req` writes at its cleared target. It is
+/// readable only by its owner while its content is written, whatever the
+/// umask, and never more open than the mode it ends with: a target meant to
+/// be private is never briefly open to others.
+fn write_target(req: &FileRequest, rendered: Option<&str>) -> Result<()> {
+    match req.mode {
+        FileMode::Copy => {
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt as _;
+                let mut from = CopySource::open(&req.source, &req.target)?;
+                let to = create_private(&req.target)
+                    .wrap_err_with(copy_failure(&req.source, &req.target))?;
+                // an explicit `permissions` replaces the source's, so the
+                // source's mode must never be applied first
+                let mode = req
+                    .permissions
+                    .map(std::fs::Permissions::from_mode)
+                    .unwrap_or_else(|| from.source_mode());
+                from.copy_into(to, mode)
+            }
+            #[cfg(not(unix))]
+            {
+                file::copy(&req.source, &req.target)
+            }
+        }
+        FileMode::Template => {
+            write_private(&req.target, rendered.expect("rendered template content"))
+        }
+        FileMode::Content => {
+            write_private(&req.target, req.content.as_deref().expect("inline content"))
+        }
+        FileMode::Fnox => write_private(&req.target, rendered.expect("content fnox stores")),
+        mode => unreachable!("{} entries do not write one file", mode.name()),
+    }
 }
 
 #[cfg(unix)]
@@ -7960,14 +8000,25 @@ impl<'a> CopySource<'a> {
         })
     }
 
-    /// Write the source's content and permission bits into the open `to`,
-    /// as `fs::copy` would.
-    fn copy_into(&mut self, mut to: std::fs::File) -> Result<()> {
+    /// Write the source's content into the open `to`, then give it `mode`.
+    /// `to` is made private to its owner first, so a file being overwritten
+    /// in place does not show new content under its old, wider mode.
+    fn copy_into(&mut self, mut to: std::fs::File, mode: std::fs::Permissions) -> Result<()> {
         let failed = copy_failure(self.source, self.target);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            to.set_permissions(std::fs::Permissions::from_mode(FNOX_PERMISSIONS))
+                .wrap_err_with(&failed)?;
+        }
         std::io::copy(&mut self.file, &mut to).wrap_err_with(&failed)?;
-        to.set_permissions(self.metadata.permissions())
-            .wrap_err_with(&failed)?;
+        to.set_permissions(mode).wrap_err_with(&failed)?;
         Ok(())
+    }
+
+    /// The source's permission bits, which a copy takes as `fs::copy` would.
+    fn source_mode(&self) -> std::fs::Permissions {
+        self.metadata.permissions()
     }
 }
 
@@ -7996,7 +8047,7 @@ fn overwrite_recorded(source: &Path, target: &Path, written: &mut Vec<PathBuf>) 
         .open(target)
         .wrap_err_with(copy_failure(source, target))?;
     written.push(target.to_path_buf());
-    from.copy_into(to)
+    from.copy_into(to, from.source_mode())
 }
 
 /// Run `write` against a `target` that does not exist yet, recording the
@@ -10850,6 +10901,51 @@ source = "oldrc""#,
         file::create_dir_all(&directory)?;
         chmod_no_follow(&directory, 0o700)?;
         assert_eq!(mode_of(&directory)?, 0o700);
+        Ok(())
+    }
+
+    /// A file whose mode is set after it is written must not be readable by
+    /// others while it is being written: an `0600` secret copied from an
+    /// `0644` source, or rendered from a template, would otherwise exist for a
+    /// moment with the umask's mode, long enough for another user to open it.
+    #[cfg(unix)]
+    #[test]
+    fn targets_that_get_a_mode_later_are_created_owner_only() -> Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("source");
+        file::write(&source, "secret")?;
+        std::fs::set_permissions(&source, std::fs::Permissions::from_mode(0o644))?;
+        for mode in [
+            FileMode::Copy,
+            FileMode::Template,
+            FileMode::Content,
+            FileMode::Fnox,
+        ] {
+            let target = dir.path().join(mode.name());
+            let mut req = link_req(&source, &target, mode);
+            req.permissions = Some(0o640);
+            req.content = (mode == FileMode::Content).then(|| "secret".into());
+            let rendered = matches!(mode, FileMode::Template | FileMode::Fnox).then_some("secret");
+
+            write_target(&req, rendered)?;
+            assert_eq!(
+                permission_bits(&std::fs::metadata(&target)?) & !0o640,
+                0,
+                "{} is more open than its mode before that mode is set",
+                mode.name()
+            );
+            assert_eq!(std::fs::read_to_string(&target)?, "secret");
+
+            std::fs::remove_file(&target)?;
+            apply_one(&req, rendered, &mut vec![])?;
+            assert_eq!(
+                permission_bits(&std::fs::metadata(&target)?),
+                0o640,
+                "{}",
+                mode.name()
+            );
+        }
         Ok(())
     }
 
