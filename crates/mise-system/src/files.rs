@@ -7787,24 +7787,18 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>, written: &mut Vec<PathBu
 fn write_target(req: &FileRequest, rendered: Option<&str>) -> Result<()> {
     match req.mode {
         FileMode::Copy => {
+            // an explicit `permissions` replaces the source's mode, so that
+            // mode must never be applied first; without one, `fs::copy`
+            // creates the target with the source's mode, which is its final one
             #[cfg(unix)]
-            {
+            if let Some(permissions) = req.permissions {
                 use std::os::unix::fs::PermissionsExt as _;
                 let mut from = CopySource::open(&req.source, &req.target)?;
                 let to = create_private(&req.target)
                     .wrap_err_with(copy_failure(&req.source, &req.target))?;
-                // an explicit `permissions` replaces the source's, so the
-                // source's mode must never be applied first
-                let mode = req
-                    .permissions
-                    .map(std::fs::Permissions::from_mode)
-                    .unwrap_or_else(|| from.source_mode());
-                from.copy_into(to, mode)
+                return from.copy_into(to, std::fs::Permissions::from_mode(permissions));
             }
-            #[cfg(not(unix))]
-            {
-                file::copy(&req.source, &req.target)
-            }
+            file::copy(&req.source, &req.target)
         }
         FileMode::Template => {
             write_private(&req.target, rendered.expect("rendered template content"))
