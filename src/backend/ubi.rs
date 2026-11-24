@@ -186,23 +186,27 @@ impl Backend for UbiBackend {
 
             let tag_regex_cell = OnceLock::new();
 
-            // Build release URL base based on forge type and api_url
+            // Build release URL base based on forge type and api_url. A login in
+            // `api_url` authenticates the API requests and is not part of the
+            // web URL, which is printed as `release_url` and stored in the
+            // version cache.
+            let web_api_url = mise_util::redactions::strip_credentials_in_value(&api_url);
             let release_url_base = match forge {
                 ForgeType::GitHub => {
-                    if api_url == github::API_URL {
+                    if web_api_url == github::API_URL {
                         format!("https://github.com/{}", self.tool_name())
                     } else {
                         // Enterprise GitHub - derive web URL from API URL
-                        let web_url = api_url.replace("/api/v3", "").replace("api.", "");
+                        let web_url = web_api_url.replace("/api/v3", "").replace("api.", "");
                         format!("{}/{}", web_url, self.tool_name())
                     }
                 }
                 ForgeType::GitLab => {
-                    if api_url == gitlab::API_URL {
+                    if web_api_url == gitlab::API_URL {
                         format!("https://gitlab.com/{}", self.tool_name())
                     } else {
                         // Enterprise GitLab - derive web URL from API URL
-                        let web_url = api_url.replace("/api/v4", "");
+                        let web_url = web_api_url.replace("/api/v4", "");
                         format!("{}/{}", web_url, self.tool_name())
                     }
                 }

@@ -1987,7 +1987,13 @@ impl UnifiedGitBackend {
     /// Shared by the version listing and the stable-latest shortcut, which have
     /// to agree: a release reached through one and then described by the other
     /// would otherwise be handed two different URLs.
+    ///
+    /// A login in `api_url` (`https://user:token@host/api/v3`) authenticates
+    /// the API requests and is not part of the web URL, which is printed as
+    /// `release_url` and stored in the version cache.
     fn web_url_base(&self, api_url: &str, repo: &str) -> String {
+        let api_url = mise_util::redactions::strip_credentials_in_value(api_url);
+        let api_url = api_url.as_ref();
         if self.is_gitlab() {
             if api_url == DEFAULT_GITLAB_API_BASE_URL {
                 format!("https://gitlab.com/{repo}")
@@ -4049,6 +4055,39 @@ mod tests {
                 None,
                 "{url}"
             );
+        }
+    }
+
+    #[test]
+    fn test_web_url_base_drops_api_url_credentials() {
+        for (backend, api_url, expected) in [
+            (
+                create_test_backend(),
+                "https://ci:s3cret@ghe.example.com/api/v3",
+                "https://ghe.example.com/test/repo",
+            ),
+            (
+                create_test_backend(),
+                "https://ci:s3cret@api.github.com",
+                "https://github.com/test/repo",
+            ),
+            (
+                create_test_gitlab_backend(),
+                "https://ci:s3cret@gitlab.example.com/api/v4",
+                "https://gitlab.example.com/test/repo",
+            ),
+            (
+                create_test_forgejo_backend(),
+                "https://ci:s3cret@forgejo.example.com/api/v1",
+                "https://forgejo.example.com/test/repo",
+            ),
+            (
+                create_test_backend(),
+                "https://ghe.example.com/api/v3",
+                "https://ghe.example.com/test/repo",
+            ),
+        ] {
+            assert_eq!(backend.web_url_base(api_url, "test/repo"), expected);
         }
     }
 
