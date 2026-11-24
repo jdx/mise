@@ -869,12 +869,18 @@ impl GoBackend {
 /// Run a `go list` query with `env` as its whole environment, in
 /// `CACHE/go-meta` rather than the directory mise was started in.
 ///
-/// `go` takes the `go.mod` of its working directory or a parent as the main
-/// module, and a project's module would filter what the query returns. mise
-/// owns the cache directory, so no project file takes part.
+/// `go` takes the `go.mod` of its working directory or the nearest parent as
+/// the main module, and a project's module would filter what the query
+/// returns. The cache directory can sit inside a project, so it holds an empty
+/// module of its own, which ends that search before it reaches a project file.
 async fn go_list(go: &OsStr, args: &[&str], env: &BTreeMap<String, String>) -> Result<String> {
+    const GO_META_MOD: &str = "module mise.invalid/go-meta\n";
     let dir = crate::dirs::CACHE.join("go-meta");
     crate::file::create_dir_all(&dir)?;
+    let go_mod = dir.join("go.mod");
+    if std::fs::read_to_string(&go_mod).ok().as_deref() != Some(GO_META_MOD) {
+        crate::file::write_atomic(&go_mod, GO_META_MOD)?;
+    }
     let mut cmd = tokio::process::Command::new(go);
     cmd.env_clear().envs(env).current_dir(&dir);
     crate::cmd::cmd_read_async_command(cmd, &go.to_string_lossy(), args).await

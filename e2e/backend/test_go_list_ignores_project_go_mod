@@ -2,14 +2,28 @@
 
 # `go list` takes the go.mod or go.work of its working directory as the main
 # module, and that module's `exclude` lines would filter the version list that
-# mise caches for every directory. mise runs `go list` in a directory of its
-# own, with GOWORK=off.
+# mise caches for every directory. mise runs `go list` in a module of its own,
+# with GOWORK=off, even when its cache directory is inside the project.
 
 cat >"$HOME/bin/go" <<'GO'
 #!/usr/bin/env bash
 printf '%s|%s|%s\n' "$PWD" "${GOWORK-unset}" "$*" >>"$HOME/go-invocations"
+# Like go, take the nearest go.mod at or above the working directory as the
+# main module and apply its exclude lines.
+dir=$PWD
+while [ ! -f "$dir/go.mod" ] && [ "$dir" != / ]; do dir=$(dirname "$dir"); done
+excluded=
+if [ -f "$dir/go.mod" ] && grep -q '^exclude example.com/tool v1.1.0$' "$dir/go.mod"; then
+  excluded=1
+fi
 case "$1" in
-list) echo '{"Path":"example.com/tool","Versions":["v1.0.0","v1.1.0"]}' ;;
+list)
+  if [ -n "$excluded" ]; then
+    echo '{"Path":"example.com/tool","Versions":["v1.0.0"]}'
+  else
+    echo '{"Path":"example.com/tool","Versions":["v1.0.0","v1.1.0"]}'
+  fi
+  ;;
 esac
 GO
 chmod +x "$HOME/bin/go"
@@ -36,3 +50,11 @@ assert "mise ls-remote go:example.com/tool" "1.0.0
 assert_contains "cat '$HOME/go-invocations'" "|off|list -mod=readonly -m -versions -json -- example.com/tool"
 assert_not_contains "cut -d'|' -f1 '$HOME/go-invocations'" "$project"
 assert_fail "cut -d'|' -f2 '$HOME/go-invocations' | grep -vx off"
+
+# A cache directory inside the project must not bring the project's go.mod
+# back as the main module.
+export MISE_CACHE_DIR="$project/.cache/mise"
+: >"$HOME/go-invocations"
+assert "mise ls-remote go:example.com/tool" "1.0.0
+1.1.0"
+assert_contains "cat '$HOME/go-invocations'" "$project/.cache/mise/go-meta|off|list"
