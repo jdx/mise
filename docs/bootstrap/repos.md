@@ -129,6 +129,17 @@ does not match `url`. An empty directory is treated as missing and cloned into.
 Pass `--skip-dirty` to skip repositories with local changes, with a warning,
 and update the rest. Conflicts still stop the run before anything changes.
 
+### Checkouts owned by another user
+
+mise leaves Git's [`safe.directory`](https://git-scm.com/docs/git-config#Documentation/git-config.txt-safedirectory)
+check on, so a checkout that another user owns is a conflict: its
+`.git/config` can name commands that Git runs, such as `core.fsmonitor`. If
+you trust such a checkout, tell Git so once:
+
+```sh
+git config --global --add safe.directory /srv/app
+```
+
 ### How origins are matched
 
 These forms count as the same repository, with host names compared

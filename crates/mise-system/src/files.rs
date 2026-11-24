@@ -5082,7 +5082,7 @@ fn git_tracked_paths(source: &Path) -> Result<Vec<GitTrackedPath>> {
     root_command
         .arg("-C")
         .arg(source)
-        .args(["-c", "safe.directory=*", "rev-parse", "--show-toplevel"])
+        .args(["rev-parse", "--show-toplevel"])
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
     mise_util::git::sanitize_git_command(&mut root_command);
@@ -5106,18 +5106,10 @@ fn git_tracked_paths(source: &Path) -> Result<Vec<GitTrackedPath>> {
             }
         );
     }
-    let root = root_output
-        .stdout
-        .strip_suffix(b"\n")
-        .unwrap_or(&root_output.stdout);
-    let root = root.strip_suffix(b"\r").unwrap_or(root);
-    let safe = format!("safe.directory={}", path_buf_from_git_bytes(root).display());
     let mut command = Command::new("git");
     command
         .arg("-C")
         .arg(source)
-        .arg("-c")
-        .arg(safe)
         .arg("-c")
         .arg("core.autocrlf=false")
         .args(["ls-files", "-z", "--cached", "--stage", "--", "."])

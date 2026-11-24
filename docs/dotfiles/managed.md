@@ -573,6 +573,9 @@ are left alone, and removing a file from the index removes its `symlink-each`
 link on the next apply. `exclude` filters the Git file list further. A Git
 manifest requires a directory source and `symlink-each` or `copy` mode.
 
+Git's `safe.directory` check stays on, so a source repository that another
+user owns is an error until you add it to `safe.directory` in your Git config.
+
 ### Visible source names {#dot-prefix}
 
 Set `dot_prefix = true` on a `symlink-each` or directory `copy` entry to keep

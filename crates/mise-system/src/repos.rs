@@ -298,6 +298,13 @@ fn status_one(request: &RepoRequest) -> Result<RepoStatus> {
         ));
     }
     if !is_git_repo(&request.path) {
+        if git_refuses_owner(&request.path) {
+            return Ok(conflict_status(
+                request,
+                "git refuses a repository that another user owns; see git's safe.directory setting"
+                    .to_string(),
+            ));
+        }
         if is_dir_empty(&request.path)? {
             return Ok(missing_status(request));
         }
@@ -679,6 +686,20 @@ fn is_git_repo(path: &Path) -> bool {
     paths_equal(path, Path::new(&top_level))
 }
 
+/// git's ownership check refuses a repository another user owns, so mise does
+/// not run git there: that repository's `.git/config` can name commands git runs.
+fn git_refuses_owner(path: &Path) -> bool {
+    Command::new("git")
+        .arg("-C")
+        .arg(path)
+        .args(["rev-parse", "--show-toplevel"])
+        .output()
+        .is_ok_and(|output| {
+            !output.status.success()
+                && String::from_utf8_lossy(&output.stderr).contains("safe.directory")
+        })
+}
+
 fn paths_equal(left: &Path, right: &Path) -> bool {
     let left = std::fs::canonicalize(left).unwrap_or_else(|_| left.to_path_buf());
     let right = std::fs::canonicalize(right).unwrap_or_else(|_| right.to_path_buf());
@@ -772,12 +793,9 @@ fn pull_ref_for(git_ref: &str) -> &str {
 }
 
 fn git_output(path: &Path, args: &[&str]) -> Result<String> {
-    let safe = format!("safe.directory={}", path.display());
     let output = Command::new("git")
         .arg("-C")
         .arg(path)
-        .arg("-c")
-        .arg(safe)
         .args(args)
         .output()
         .map_err(|err| eyre!("git failed: {err:#}"))?;
@@ -793,12 +811,9 @@ fn git_output(path: &Path, args: &[&str]) -> Result<String> {
 }
 
 fn git_success(path: &Path, args: &[&str]) -> Result<bool> {
-    let safe = format!("safe.directory={}", path.display());
     let status = Command::new("git")
         .arg("-C")
         .arg(path)
-        .arg("-c")
-        .arg(safe)
         .args(args)
         .status()
         .map_err(|err| eyre!("git failed: {err:#}"))?;
@@ -806,15 +821,7 @@ fn git_success(path: &Path, args: &[&str]) -> Result<bool> {
 }
 
 fn git_run(path: &Path, args: &[&str]) -> Result<()> {
-    let safe = format!("safe.directory={}", path.display());
-    run_command(
-        Command::new("git")
-            .arg("-C")
-            .arg(path)
-            .arg("-c")
-            .arg(safe)
-            .args(args),
-    )
+    run_command(Command::new("git").arg("-C").arg(path).args(args))
 }
 
 fn run_command(cmd: &mut Command) -> Result<()> {
@@ -831,8 +838,6 @@ fn print_git_command(path: &Path, args: &[&str]) -> Result<()> {
         "git".to_string(),
         "-C".to_string(),
         path.display().to_string(),
-        "-c".to_string(),
-        format!("safe.directory={}", path.display()),
     ];
     parts.extend(args.iter().map(|arg| arg.to_string()));
     miseprintln!("{}", shell_words::join(parts));
