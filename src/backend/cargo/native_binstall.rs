@@ -11,6 +11,7 @@ use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::get_filename_from_url;
 use crate::config::Settings;
 use crate::file::{self, ExtractOptions, ExtractionFormat};
+use crate::hash;
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::toolset::ToolVersion;
@@ -315,6 +316,9 @@ struct CratesIoPackageVersion {
     name: String,
     num: String,
     dl_path: String,
+    /// sha256 of the `.crate` file, the value cargo checks as `cksum` from the
+    /// index. Required, so a reply without one cannot skip the check.
+    checksum: String,
     repository: Option<String>,
     #[serde(default)]
     bin_names: Vec<String>,
@@ -325,6 +329,7 @@ struct CratesIoPackage {
     name: String,
     num: String,
     dl_path: String,
+    checksum: String,
     repository: Option<String>,
     bin_names: Vec<String>,
 }
@@ -346,6 +351,7 @@ impl CratesIoPackage {
             name,
             num: response.version.num,
             dl_path: response.version.dl_path,
+            checksum: response.version.checksum,
             repository,
             bin_names: response.version.bin_names,
         })
@@ -663,17 +669,30 @@ async fn download_crate_manifest(
     ));
     HTTP.download_file(package.download_url(), &crate_path, Some(ctx.pr.as_ref()))
         .await?;
+    read_crate_manifest(&crate_path, package, Some(ctx.pr.as_ref()))
+}
+
+/// Verifies a downloaded `.crate`, unpacks it and parses its `Cargo.toml`.
+fn read_crate_manifest(
+    crate_path: &Path,
+    package: &CratesIoPackage,
+    pr: Option<&dyn SingleReport>,
+) -> Result<toml::Value> {
+    // crates.io redirects the download to another host, and the manifest in
+    // the file chooses the binary that gets installed, so like cargo only the
+    // file whose sha256 crates.io published is read.
+    hash::ensure_checksum(crate_path, &package.checksum, pr, "sha256")?;
 
     let temp_dir = tempfile::Builder::new()
         .prefix("mise-cargo-crate-")
         .tempdir()?;
     file::extract_archive(
-        &crate_path,
+        crate_path,
         temp_dir.path(),
         ExtractionFormat::TarGz,
         &ExtractOptions {
             strip_components: 0,
-            pr: Some(ctx.pr.as_ref()),
+            pr,
             preserve_mtime: true,
         },
     )?;
@@ -1439,6 +1458,7 @@ mod tests {
             name: "demo".to_string(),
             num: "1.0.0".to_string(),
             dl_path: "/api/v1/crates/demo/1.0.0/download".to_string(),
+            checksum: String::new(),
             repository: None,
             bin_names: vec!["../../home/user/.bashrc".to_string()],
         };
@@ -1479,6 +1499,7 @@ mod tests {
                 "crate": "demo",
                 "num": "1.2.3",
                 "dl_path": "/api/v1/crates/demo/1.2.3/download",
+                "checksum": "0000000000000000000000000000000000000000000000000000000000000000",
                 "repository": null,
                 "bin_names": ["demo"]
             }
@@ -1489,6 +1510,7 @@ mod tests {
                 "crate": { "name": "demo" },
                 "num": "1.2.3",
                 "dl_path": "/api/v1/crates/demo/1.2.3/download",
+                "checksum": "0000000000000000000000000000000000000000000000000000000000000000",
                 "repository": null,
                 "bin_names": ["demo"]
             }
@@ -1510,6 +1532,7 @@ mod tests {
                 "crate": "demo",
                 "num": "1.2.3",
                 "dl_path": "/api/v1/crates/demo/1.2.3/download",
+                "checksum": "0000000000000000000000000000000000000000000000000000000000000000",
                 "repository": null,
                 "bin_names": ["demo"]
             }
@@ -1519,5 +1542,69 @@ mod tests {
         let repository = response.krate.and_then(|krate| krate.repository);
 
         assert_eq!(repository.as_deref(), Some("https://example.com/demo"));
+    }
+
+    fn crate_file(dir: &Path, entries: &[(&str, &str)]) -> PathBuf {
+        let path = dir.join("demo-1.0.0.crate");
+        let encoder = flate2::write::GzEncoder::new(
+            fs::File::create(&path).unwrap(),
+            flate2::Compression::default(),
+        );
+        let mut archive = jdx_tar::Builder::new(encoder);
+        for (name, contents) in entries {
+            let mut header = jdx_tar::Header::new_gnu(jdx_tar::EntryType::File);
+            header.set_size(contents.len() as u64);
+            header.set_mode(0o644);
+            archive
+                .append_data(&mut header, name, std::io::Cursor::new(contents.as_bytes()))
+                .unwrap();
+        }
+        archive.into_inner().unwrap().finish().unwrap();
+        path
+    }
+
+    fn demo_package(checksum: String) -> CratesIoPackage {
+        CratesIoPackage {
+            name: "demo".to_string(),
+            num: "1.0.0".to_string(),
+            dl_path: "/api/v1/crates/demo/1.0.0/download".to_string(),
+            checksum,
+            repository: None,
+            bin_names: vec![],
+        }
+    }
+
+    const DEMO_MANIFEST: &str = "[package]\nname = \"demo\"\nversion = \"1.0.0\"\n";
+
+    #[test]
+    fn crate_manifest_is_read_only_from_the_published_crate() {
+        let dir = tempfile::tempdir().unwrap();
+        let crate_path = crate_file(dir.path(), &[("demo-1.0.0/Cargo.toml", DEMO_MANIFEST)]);
+        let published = hash::file_hash_sha256(&crate_path, None).unwrap();
+
+        let manifest = read_crate_manifest(&crate_path, &demo_package(published), None).unwrap();
+        assert_eq!(manifest["package"]["name"].as_str(), Some("demo"));
+
+        let err =
+            read_crate_manifest(&crate_path, &demo_package("0".repeat(64)), None).unwrap_err();
+        assert!(
+            format!("{err:#}").contains("Checksum mismatch"),
+            "unexpected error: {err:#}"
+        );
+        assert!(read_crate_manifest(&crate_path, &demo_package(String::new()), None).is_err());
+    }
+
+    #[test]
+    fn crates_io_package_requires_a_checksum() {
+        let response = serde_json::from_value::<CratesIoPackageResponse>(serde_json::json!({
+            "version": {
+                "crate": "demo",
+                "num": "1.2.3",
+                "dl_path": "/api/v1/crates/demo/1.2.3/download",
+                "repository": null
+            }
+        }));
+
+        assert!(response.is_err());
     }
 }
