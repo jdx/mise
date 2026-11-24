@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+
+# The arguments of an inline task are appended to its command, quoted for the task's shell.
+# fish does not quote like a POSIX shell: inside single quotes it reads `\'` as a quote and `\\`
+# as a backslash, so an argument holding `\'` must not end its own string there.
+
+if ! command -v fish >/dev/null; then
+  echo "fish not installed, skipping"
+  exit 0
+fi
+
+cat <<'EOF' >mise.toml
+[tasks.say]
+shell = "fish -c"
+run = 'printf "[%s]\n"'
+
+[tasks.say_sh]
+run = 'printf "[%s]\n"'
+
+[tasks.say_arg]
+shell = "fish -c"
+run = 'printf "[%s]\n" {{arg(name="word")}}'
+
+[tasks.say_args]
+shell = "fish -c"
+run = 'printf "[%s]\n" {{arg(name="words", var=true)}}'
+EOF
+
+# the default shell reads the argument below as data
+assert "mise run say -- \"it's; touch injected #\"" "[it's; touch injected #]"
+assert "mise run say_sh -- \"\\\\'; touch injected #\"" "[\\'; touch injected #]"
+
+assert "mise run say -- \"\\\\'; touch injected #\"" "[\\'; touch injected #]"
+assert "mise run say -- 'ends in a backslash\\' second" '[ends in a backslash\]
+[second]'
+assert "mise run say -- 'C:\\dir\\file' '\$HOME' ''" '[C:\dir\file]
+[$HOME]
+[]'
+
+# the `arg()` template function quotes its value for the task's shell too, one value or many
+assert "mise run say_arg -- \"\\\\'; touch injected #\"" "[\\'; touch injected #]"
+assert "mise run say_args -- \"\\\\'; touch injected #\" \"it's\"" "[\\'; touch injected #]
+[it's]"
+
+assert_fail "test -e injected"

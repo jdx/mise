@@ -173,7 +173,8 @@ forwards extra arguments according to the task's form:
 
 - If `run` is an array, the arguments go only to its last entry.
 - For an inline command, mise appends the arguments to the command, quoted for
-  the shell.
+  the shell. A `fish` shell gets fish's quoting; any other program on Unix gets
+  POSIX shell quoting.
 - A [shebang script](/tasks/toml-tasks.html#shell-shebang) or a file task
   receives them as script arguments, such as `$1` and `$@` in Bash.
 

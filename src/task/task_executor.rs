@@ -302,6 +302,11 @@ fn display_first_command(script: &str) -> String {
 #[cfg_attr(not(windows), allow(dead_code))]
 enum InlineArgsStyle {
     PosixCommandText,
+    /// fish takes its arguments in the command text as the POSIX shells do, but not their
+    /// quoting: inside `'...'` it reads `\'` as a quote and `\\` as a backslash. POSIX quoting
+    /// writes a `'` as `'\''` and copies a backslash through, so an argument holding `\'` would
+    /// end its own string there and the rest of it would run as commands.
+    FishCommandText,
     CmdCommandText,
     SeparateArgv,
 }
@@ -342,6 +347,9 @@ fn unc_working_dir_error(dir: &Path) -> String {
 }
 
 fn inline_args_style(program: &str, shell_args: &[String]) -> InlineArgsStyle {
+    if crate::path::program_stem(Path::new(program)).as_deref() == Some("fish") {
+        return InlineArgsStyle::FishCommandText;
+    }
     #[cfg(windows)]
     {
         let runs_command = shell_args
@@ -355,13 +363,17 @@ fn inline_args_style(program: &str, shell_args: &[String]) -> InlineArgsStyle {
         }
     }
     #[cfg(not(windows))]
-    let _ = (program, shell_args);
+    let _ = shell_args;
     InlineArgsStyle::PosixCommandText
 }
 
 fn append_inline_args(script: &str, args: &[String], style: InlineArgsStyle) -> String {
     let args = match style {
         InlineArgsStyle::PosixCommandText => shell_words::join(args),
+        InlineArgsStyle::FishCommandText => args
+            .iter()
+            .map(|arg| crate::shell::fish_escape(arg.into()))
+            .join(" "),
         InlineArgsStyle::CmdCommandText => args
             .iter()
             .map(|arg| crate::path::quote_arg_for_cmd_body(arg))
@@ -1990,9 +2002,10 @@ impl TaskExecutor {
         args: &[String],
     ) -> Result<(String, Vec<String>, bool)> {
         let shell = task.shell()?.unwrap_or(self.clone_default_inline_shell()?);
-        let (program, _shell_args) = task_shell_parts(&shell, "inline shell")?;
+        let (program, shell_args) = task_shell_parts(&shell, "inline shell")?;
         trace!("using shell: {}", shell.join(" "));
         let mut full_args = shell.clone();
+        let style = inline_args_style(program, shell_args);
 
         #[cfg(windows)]
         {
@@ -2005,9 +2018,9 @@ impl TaskExecutor {
             // in a single outer quote pair, and use `/s` so cmd strips exactly
             // that pair and runs the rest — inner quotes included — verbatim.
             // See discussion #9355.
-            match inline_args_style(program, _shell_args) {
+            match style {
                 InlineArgsStyle::CmdCommandText => {
-                    let cmd_args = crate::path::cmd_verbatim_args(_shell_args, script, args);
+                    let cmd_args = crate::path::cmd_verbatim_args(shell_args, script, args);
                     return Ok((program.to_string(), cmd_args, true));
                 }
                 InlineArgsStyle::SeparateArgv => {
@@ -2018,7 +2031,7 @@ impl TaskExecutor {
                     full_args.extend(args.iter().cloned());
                     return Ok((program.to_string(), full_args[1..].to_vec(), false));
                 }
-                InlineArgsStyle::PosixCommandText => {}
+                InlineArgsStyle::PosixCommandText | InlineArgsStyle::FishCommandText => {}
             }
         }
 
@@ -2027,12 +2040,9 @@ impl TaskExecutor {
         // as part of the command — the documented behavior for inline TOML
         // scripts — rather than as positional parameters. Passing them as separate
         // argv to `bash -c` on Windows shifted the user's first arg into `$0`.
-        // See #9355.
-        let mut script = script.to_string();
-        if !args.is_empty() {
-            script = format!("{script} {}", shell_words::join(args));
-        }
-        full_args.push(script);
+        // See #9355. The args are quoted for the shell that reads them, by the same
+        // code that builds the command mise shows.
+        full_args.push(append_inline_args(script, args, style));
         Ok((program.to_string(), full_args[1..].to_vec(), false))
     }
 
@@ -4041,6 +4051,39 @@ mod tests {
             ),
             "echo first\necho last 'a with space' second"
         );
+    }
+
+    #[test]
+    fn test_append_inline_args_uses_fish_quoting() {
+        // POSIX quoting would write the first of these as `'\'\''; touch injected #'`, which
+        // fish reads as the string `''` followed by the command `touch injected`.
+        let args = [
+            r"\'; touch injected #".to_string(),
+            "it's".to_string(),
+            r"C:\dir\".to_string(),
+            "plain".to_string(),
+        ];
+        assert_eq!(
+            append_inline_args("echo", &args, InlineArgsStyle::FishCommandText),
+            r"echo '\\\'; touch injected #' 'it\'s' 'C:\dir\\' plain"
+        );
+    }
+
+    #[test]
+    fn test_inline_args_style_knows_fish_from_the_posix_shells() {
+        let flags = ["-c".to_string()];
+        for fish in ["fish", "/usr/bin/fish", "/opt/homebrew/bin/fish"] {
+            assert_eq!(
+                inline_args_style(fish, &flags),
+                InlineArgsStyle::FishCommandText
+            );
+        }
+        for posix in ["sh", "bash", "/bin/zsh"] {
+            assert_eq!(
+                inline_args_style(posix, &flags),
+                InlineArgsStyle::PosixCommandText
+            );
+        }
     }
 
     #[test]

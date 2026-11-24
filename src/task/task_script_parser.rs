@@ -905,13 +905,26 @@ impl TaskScriptParser {
                 .ok();
             let escape = {
                 move |v: &usage::parse::ParseValue| match v {
+                    // fish reads `\'` and `\\` inside single quotes as escapes, so POSIX quoting,
+                    // which is also how usage joins these, would let a value end its own string
+                    usage::parse::ParseValue::MultiString(values)
+                        if shell_type == Some(ShellType::Fish) =>
+                    {
+                        values
+                            .iter()
+                            .map(|value| crate::shell::fish_escape(value.into()))
+                            .join(" ")
+                    }
                     usage::parse::ParseValue::MultiString(_) => {
                         // these are already escaped
                         v.to_string()
                     }
                     _ => match shell_type {
-                        Some(ShellType::Zsh | ShellType::Bash | ShellType::Fish) => {
+                        Some(ShellType::Zsh | ShellType::Bash) => {
                             shell_words::quote(&v.to_string()).to_string()
+                        }
+                        Some(ShellType::Fish) => {
+                            crate::shell::fish_escape(v.to_string().into()).to_string()
                         }
                         _ => v.to_string(),
                     },
