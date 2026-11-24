@@ -111,8 +111,10 @@ would follow that repository's git config. Pass the `cwd` option of `cmd.exec`
 or `cmd.stream` to run a command in a directory of your choice.
 
 Environment hooks such as `EnvKeys` run commands in the current directory only
-when you have trusted it, with `mise trust <dir>` or by trusting a config file
-there; a trusted config in a parent directory does not count. Elsewhere, and
+when you have trusted it: with `mise trust <dir>`, or because it is at or below
+the root of a trusted project config file. A directory with a `.git` entry below
+that root starts another repository, so the project's trust does not reach it or
+the directories under it. Elsewhere, and
 always in [safe mode](/security.html#safe-mode), their commands run in your home
 directory, the hook sees no `PWD`, and `MISE_PROJECT_ROOT` is removed unless it
 names a trusted directory. A hook that finds a project from the current

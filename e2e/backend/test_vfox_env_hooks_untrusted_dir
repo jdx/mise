@@ -69,12 +69,25 @@ assert_contains "cd poetry-repo && mise env" "POETRY_HOME="
 assert_not_contains "cd poetry-repo && mise env" "/poetry-repo/.venv"
 assert_not_contains "MISE_PROJECT_ROOT=$PWD/poetry-repo mise env" "/poetry-repo/.venv"
 
-# a trusted config in a parent directory does not vouch for a project below it
-printf '[env]\nFOO = "bar"\n' >mise.toml
-mise trust
-assert_contains "cd pipenv-repo && mise env" "FOO=bar"
-assert_not_contains "cd pipenv-repo && mise env" "/pipenv-repo/.venv"
-assert_not_contains "cd poetry-repo && mise env" "/poetry-repo/.venv"
+# a trusted project vouches for the directories below its root, but not for a
+# repository cloned somewhere inside it
+mkdir -p project/.git
+printf '[env]\nFOO = "bar"\n[tools]\npipenv = "2024.4.1"\n' >project/mise.toml
+make_repo project/sub Pipfile
+make_repo project/sub/clone Pipfile
+mkdir project/sub/clone/.git
+make_repo project/sub/clone/inner Pipfile
+make_repo project/sub/worktree Pipfile
+echo "gitdir: $PWD/elsewhere" >project/sub/worktree/.git
+mise trust project/mise.toml
+assert_contains "cd project/sub && mise env" "FOO=bar"
+assert_contains "cd project/sub && mise env" "VIRTUAL_ENV=$PWD/project/sub/.venv"
+assert_contains "cd project/sub && mise hook-env -s bash" "/project/sub/.venv/bin"
+assert_not_contains "cd project/sub && MISE_SAFE=1 mise env" "/project/sub/.venv"
+assert_contains "cd project/sub/clone && mise env" "/pipenv/2024.4.1/wrapper_bin"
+assert_not_contains "cd project/sub/clone && mise env" "/clone/.venv"
+assert_not_contains "cd project/sub/clone/inner && mise env" "/inner/.venv"
+assert_not_contains "cd project/sub/worktree && mise env" "/worktree/.venv"
 
 # once trusted, the virtualenv is activated as before, except in safe mode
 mise trust pipenv-repo

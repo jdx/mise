@@ -235,18 +235,39 @@ fn is_tool_option_env_key(key: &str) -> bool {
     }
 }
 
-/// Whether the user has trusted `dir`, by `mise trust` on it or on a project
-/// config file rooted there. Global config does not vouch for a directory, and
-/// safe mode trusts none.
+/// Whether the user has trusted `dir`: by `mise trust` on it, or because it is
+/// at or below the root of a trusted project config file and no directory
+/// below that root, down to `dir` itself, holds a `.git`. A repository cloned
+/// inside a trusted project is someone else's code, so the project's trust stops
+/// there. Global config does not vouch for a directory, and safe mode trusts
+/// none.
 fn dir_is_trusted(config: &Config, dir: &Path) -> bool {
     use crate::config::config_file::{is_path_trusted, is_trusted};
-    !Settings::safe_mode()
-        && (is_trusted(dir)
-            || config.config_files.values().any(|cf| {
-                cf.config_root() == dir
-                    && !crate::config::is_global_config(cf.get_path())
-                    && is_path_trusted(cf.get_path())
-            }))
+    if Settings::safe_mode() {
+        return false;
+    }
+    if is_trusted(dir) {
+        return true;
+    }
+    let Ok(dir) = dir.canonicalize() else {
+        return false;
+    };
+    config.config_files.values().any(|cf| {
+        if crate::config::is_global_config(cf.get_path()) || !is_path_trusted(cf.get_path()) {
+            return false;
+        }
+        let Ok(root) = cf.config_root().canonicalize() else {
+            return false;
+        };
+        let Ok(below) = dir.strip_prefix(&root) else {
+            return false;
+        };
+        let mut step = root;
+        below.components().all(|component| {
+            step.push(component);
+            step.join(".git").symlink_metadata().is_err()
+        })
+    })
 }
 
 /// Removes the variables naming a project directory the user has not trusted
