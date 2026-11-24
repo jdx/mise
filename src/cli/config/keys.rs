@@ -105,15 +105,39 @@ fn furthest(
 
 /// A key as it is written in a path: as is, unless its name would not split back into itself,
 /// such as the task `build.sh`, which TOML quotes.
+///
+/// No control character is left in it: the path is printed by `config explain` and offered as
+/// a completion, and its names come from a file that need not be trusted.
 pub(super) fn quote_key(name: &str) -> String {
     let plain = !name.is_empty()
         && !name.contains(['.', '"', '\'', '\\'])
         && !name.contains(|c: char| c.is_whitespace() || c.is_control());
     if plain {
-        name.to_string()
-    } else {
-        toml_edit::Key::new(name).display_repr().into_owned()
+        return name.to_string();
     }
+    let quoted = toml_edit::Key::new(name).display_repr().into_owned();
+    // TOML only asks for U+0000 to U+001F and U+007F to be escaped, and a literal string has
+    // no escapes. That leaves U+0080 to U+009F as they are, of which U+009B is `ESC [` in one
+    // character, and a tab wherever a `"` in the name made the string a literal one.
+    if quoted.contains(char::is_control) {
+        escape_key(name)
+    } else {
+        quoted
+    }
+}
+
+/// `name` as a TOML basic string, with every control character written as `\uXXXX`.
+fn escape_key(name: &str) -> String {
+    let mut quoted = String::from('"');
+    for c in name.chars() {
+        match c {
+            '"' | '\\' => quoted.extend(['\\', c]),
+            c if c.is_control() => quoted.push_str(&format!("\\u{:04X}", c as u32)),
+            c => quoted.push(c),
+        }
+    }
+    quoted.push('"');
+    quoted
 }
 
 /// Candidates for a dotted key being typed as `prefix`, against the TOML at `file`.
@@ -361,6 +385,32 @@ mod tests {
         }
         assert_eq!(quote_key("build"), "build");
         assert_eq!(quote_key("build.sh"), r#""build.sh""#);
+    }
+
+    #[test]
+    fn a_quoted_key_has_no_control_character() {
+        // TOML quoting alone leaves the C1 controls and, in a literal string, a tab.
+        for name in [
+            "a\u{1}b",
+            "a\tb",
+            "a\t\"b",
+            "a\u{7f}b",
+            "a\u{85}b",
+            "a\u{9b}2J\u{9b}8m",
+            "a\u{9b}\"b",
+            "a\u{9b}'b\\",
+        ] {
+            let quoted = quote_key(name);
+            assert!(!quoted.contains(char::is_control), "{quoted:?}");
+            let path = format!("tasks.{quoted}");
+            assert_eq!(split_path(&path), ["tasks", name], "{path:?}");
+        }
+        assert_eq!(quote_key("a\u{9b}2J"), r#""a\u009B2J""#);
+
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("mise.toml");
+        std::fs::write(&file, "[tasks.\"a\\u009b2J\"]\nrun = \"true\"\n").unwrap();
+        assert_eq!(values("tasks.", Some(&file)), [r#"tasks."a\u009B2J""#]);
     }
 
     #[test]
