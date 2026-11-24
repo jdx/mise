@@ -209,6 +209,29 @@ struct HostState {
     sequences: BTreeMap<String, u64>,
 }
 
+impl HostState {
+    /// The names whose sequences speak for `project`: every spelling of it the
+    /// forge resolves to the same repository ([`forge::same_project`]), so a
+    /// github.com or gitlab.com repository is one project in any letter case,
+    /// and a subpath or a name on another host compares exactly.
+    fn keys_of(&self, project: &str) -> Vec<String> {
+        self.sequences
+            .keys()
+            .filter(|key| forge::same_project(key, project))
+            .cloned()
+            .collect()
+    }
+
+    /// The highest sequence accepted for `project` under any of its spellings.
+    fn highest_sequence(&self, project: &str) -> Option<u64> {
+        self.sequences
+            .iter()
+            .filter(|(key, _)| forge::same_project(key, project))
+            .map(|(_, last)| *last)
+            .max()
+    }
+}
+
 fn state_dir() -> PathBuf {
     dirs::STATE.join("packslip").join("stampers")
 }
@@ -273,7 +296,7 @@ fn missing_list(host: &str, project: &str, url: &str) -> Result<()> {
 
 fn missing_list_in(dir: &Path, host: &str, project: &str, url: &str) -> Result<()> {
     let state = read_state(dir, host)?;
-    if let Some(last) = state.sequences.get(project) {
+    if let Some(last) = state.highest_sequence(project) {
         bail!(
             "{host} published a stamp list for {project} before (sequence {last}) but now answers 404 at {url}; refusing to treat that as no list, since it would drop the yanks that list carried"
         );
@@ -289,14 +312,25 @@ fn check_sequence_in(
 ) -> Result<()> {
     let mut state = read_state(dir, host)?;
     let sequence = list.predicate.sequence;
-    if let Some(&last) = state.sequences.get(project)
+    if let Some(last) = state.highest_sequence(project)
         && sequence < last
     {
         bail!(
             "the stamp list from {host} for {project} has sequence {sequence}, below the {last} already accepted; refusing what may be a rollback"
         );
     }
-    if state.sequences.get(project) != Some(&sequence) {
+    // `sequence` is at least every entry of the project, so it replaces them
+    // all under this spelling.
+    let others = state
+        .keys_of(project)
+        .into_iter()
+        .filter(|key| key != project)
+        .collect_vec();
+    let mut changed = state.sequences.get(project) != Some(&sequence);
+    for key in others {
+        changed |= state.sequences.remove(&key).is_some();
+    }
+    if changed {
         state.sequences.insert(project.to_string(), sequence);
         write_state(dir, host, &state)?;
     }
@@ -534,6 +568,86 @@ mod tests {
         std::fs::write(d.join("seq.example.com.json"), b"{not json").unwrap();
         let err = check_sequence_in(d, host, project, &list(project, 9, &entries)).unwrap_err();
         assert!(err.to_string().contains("remove it"), "{err}");
+    }
+
+    #[test]
+    fn a_repository_in_other_letter_case_keeps_its_sequence() {
+        let dir = tempfile::tempdir().unwrap();
+        let d = dir.path();
+        let host = "case.example.com";
+        let entries = [("1.0.0", "https://x/p.json", false)];
+        check_sequence_in(
+            d,
+            host,
+            "github.com/o/r",
+            &list("github.com/o/r", 6, &entries),
+        )
+        .unwrap();
+        let err = check_sequence_in(
+            d,
+            host,
+            "github.com/O/R",
+            &list("github.com/O/R", 4, &entries),
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("rollback"), "{err}");
+        let err = missing_list_in(d, host, "github.com/O/R", "https://case.example.com/x.json")
+            .unwrap_err();
+        assert!(err.to_string().contains("sequence 6"), "{err}");
+    }
+
+    #[test]
+    fn a_subpath_or_another_host_compares_exactly() {
+        let dir = tempfile::tempdir().unwrap();
+        let d = dir.path();
+        let host = "exact.example.com";
+        let entries = [("1.0.0", "https://x/p.json", false)];
+        for (project, other) in [
+            ("example.com/o/r", "example.com/O/R"),
+            ("github.com/o/r/tools/a", "github.com/O/R/Tools/A"),
+        ] {
+            check_sequence_in(d, host, project, &list(project, 6, &entries)).unwrap();
+            missing_list_in(d, host, other, "https://exact.example.com/y.json").unwrap();
+            check_sequence_in(d, host, other, &list(other, 1, &entries)).unwrap();
+        }
+        let state = read_state(d, host).unwrap();
+        assert_eq!(state.sequences.len(), 4, "{:?}", state.sequences);
+    }
+
+    #[test]
+    fn spellings_of_one_repository_collapse_to_the_highest_sequence() {
+        let dir = tempfile::tempdir().unwrap();
+        let d = dir.path();
+        let host = "collapse.example.com";
+        let mut state = HostState::default();
+        state.sequences.insert("github.com/o/r".into(), 5);
+        state.sequences.insert("github.com/O/R".into(), 8);
+        state.sequences.insert("github.com/o/other".into(), 2);
+        write_state(d, host, &state).unwrap();
+        let entries = [("1.0.0", "https://x/p.json", false)];
+        let err = check_sequence_in(
+            d,
+            host,
+            "github.com/o/r",
+            &list("github.com/o/r", 7, &entries),
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("below the 8"), "{err}");
+        check_sequence_in(
+            d,
+            host,
+            "github.com/o/R",
+            &list("github.com/o/R", 8, &entries),
+        )
+        .unwrap();
+        let state = read_state(d, host).unwrap();
+        assert_eq!(
+            state.sequences,
+            BTreeMap::from([
+                ("github.com/o/R".to_string(), 8),
+                ("github.com/o/other".to_string(), 2),
+            ])
+        );
     }
 
     #[test]
