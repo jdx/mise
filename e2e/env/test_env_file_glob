@@ -51,3 +51,16 @@ _.file = { path = "{{cwd}}/.env", find_up = true }
 EOS
 assert_contains "mise env -s bash" "OWN=1"
 assert_not_contains "mise env -s bash" "SIBLING"
+cd .. || exit 1
+
+# a `*` that a template or `$VAR` renders inside the pattern matches only itself
+mkdir -p profiles
+echo "STAR_PROFILE=1" >'profiles/*.env'
+echo "DEV_PROFILE=1" >profiles/dev.env
+cat <<'EOS' >.mise.toml
+[env]
+_.file = ["profiles/{{ env.PROFILE }}.e*", "profiles/$PROFILE.e*"]
+EOS
+assert_contains "PROFILE='*' mise env -s bash" "STAR_PROFILE=1"
+assert_not_contains "PROFILE='*' mise env -s bash" "DEV_PROFILE"
+assert_contains "PROFILE=dev mise env -s bash" "DEV_PROFILE=1"

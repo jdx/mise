@@ -25,3 +25,12 @@ mkdir -p source.d/nested
 echo "export SOURCE3=3" >source.d/nested/3.sh
 assert_contains "mise env -s bash" "SOURCE2=2"
 assert_not_contains "mise env -s bash" "SOURCE3=3"
+
+# a `*` that a template renders inside the pattern matches only itself
+cat >.mise.toml <<EOF
+[env]
+_.source = "source.d/{{ env.SCRIPT }}.s*"
+EOF
+assert_contains "SCRIPT=1 mise env -s bash" "SOURCE1=1"
+assert_not_contains "SCRIPT='*' mise env -s bash" "SOURCE1=1"
+assert_not_contains "SCRIPT='*' mise env -s bash" "SOURCE2=2"

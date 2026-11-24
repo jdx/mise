@@ -268,12 +268,12 @@ _.file = ".env"
 - YAML values are read as written: `VERSION: 1.10` sets `1.10`, and
   `ZIP: 02134` keeps its leading zero.
 - The path can be a glob pattern such as `.env.*`; every matching file is
-  loaded, in name order. As in a shell, `*` matches within one directory and
-  `**` matches directories at any depth, so `.env.*` loads the files next to
-  the config and `**/.env.*` also those in every directory below it. Only a
-  wildcard written in the entry makes a pattern: a `*` that a template such as
-  <span v-pre>`{{cwd}}`</span> puts into the path is part of a directory's
-  name.
+  loaded, in name order, including the files of each `{a,b}` alternative. As
+  in a shell, `*` matches within one directory and `**` matches directories at
+  any depth, so `.env.*` loads the files next to the config and `**/.env.*`
+  also those in every directory below it. Only a wildcard written in the entry
+  makes a pattern: a `*` that a template such as <span v-pre>`{{cwd}}`</span>
+  or a `$VAR` puts anywhere in the path matches only a `*` in a name.
 - A path that matches no file is skipped without an error, so `_.file` can
   point at an optional, untracked `.env`.
 - Values from the file replace variables already in the environment.

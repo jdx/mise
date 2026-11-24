@@ -101,23 +101,33 @@ impl EnvDirectiveContext<'_> {
     }
 
     /// Renders a `_.file` or `_.source` path and splits it where the glob the entry writes
-    /// begins. A `*` only makes a pattern when the entry itself writes it: what a template or
-    /// `$VAR` puts into the path, such as a directory named `src*` that `{{cwd}}` names, is part
-    /// of a name.
+    /// begins. Only glob syntax the entry itself writes makes a pattern: what a template or
+    /// `$VAR` puts into the path, before the pattern or inside it, is matched as written. With
+    /// `{{cwd}}` naming a directory `src*`, `{{cwd}}/.env.*` reads that directory and not
+    /// `srcfoo`, and with `PROFILE=*`, `env.d/$PROFILE.*.env` matches only a file named
+    /// `*.<x>.env`.
     fn parse_path_template(&mut self, origin: &str, input: &str) -> eyre::Result<EnvPath> {
         let Some(start) = written_pattern_start(input) else {
             let path = self.parse_template(origin, input)?;
             return Ok(EnvPath::literal(path));
         };
-        let marked = format!("{}{PATTERN_MARK}{}", &input[..start], &input[start..]);
+        let marks = SubstitutionMarks::new();
+        let marked = format!(
+            "{}{PATTERN_MARK}{}",
+            &input[..start],
+            marks.wrap_substitutions(&input[start..])
+        );
         let rendered = self.parse_template(origin, &marked)?;
-        Ok(match rendered.split_once(PATTERN_MARK) {
-            Some((dir, pattern)) if !pattern.contains(PATTERN_MARK) => EnvPath {
+        let pattern = rendered
+            .split_once(PATTERN_MARK)
+            .and_then(|(dir, pattern)| Some((dir, marks.to_glob(pattern)?)));
+        Ok(match pattern {
+            Some((dir, pattern)) => EnvPath {
                 path: format!("{dir}{pattern}").into(),
-                dir: Some((dir.into(), pattern.to_string())),
+                dir: Some((dir.into(), pattern)),
             },
-            // a template dropped or repeated the text that holds the pattern
-            _ => EnvPath::literal(rendered.replace(PATTERN_MARK, "")),
+            // a template dropped or repeated the text that holds the pattern, or rendered a NUL
+            None => EnvPath::literal(marks.strip(&rendered)),
         })
     }
 
@@ -158,72 +168,198 @@ impl EnvPath {
     }
 }
 
+/// What a stretch of a `_.file` or `_.source` entry is to the path it renders.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Piece {
+    /// Text the entry writes, copied to the path.
+    Written,
+    /// A `{{ }}` expression or a `$VAR`: replaced by data.
+    Substituted,
+    /// A `{% %}` or `{# #}` tag, which outputs nothing itself.
+    Tag,
+}
+
+/// Splits `input` into the [`Piece`]s it is made of, in order. An opener with no closer makes
+/// the rest of `input` one substitution.
+fn template_pieces(input: &str) -> Vec<(Piece, std::ops::Range<usize>)> {
+    let bytes = input.as_bytes();
+    let mut pieces = Vec::new();
+    let mut text_start = 0;
+    let mut i = 0;
+    while i < bytes.len() {
+        let end = match bytes[i] {
+            b'{' if matches!(bytes.get(i + 1), Some(b'{' | b'%' | b'#')) => {
+                let (piece, close) = match bytes[i + 1] {
+                    b'{' => (Piece::Substituted, "}}"),
+                    b'%' => (Piece::Tag, "%}"),
+                    _ => (Piece::Tag, "#}"),
+                };
+                let end = input[i + 2..]
+                    .find(close)
+                    .map_or(input.len(), |end| i + 2 + end + 2);
+                Some((piece, end))
+            }
+            b'$' if bytes.get(i + 1) == Some(&b'{') => {
+                let end = input[i..].find('}').map_or(input.len(), |end| i + end + 1);
+                Some((Piece::Substituted, end))
+            }
+            b'$' => {
+                let mut end = i + 1;
+                while bytes
+                    .get(end)
+                    .is_some_and(|b| b.is_ascii_alphanumeric() || *b == b'_')
+                {
+                    end += 1;
+                }
+                Some((Piece::Substituted, end))
+            }
+            _ => None,
+        };
+        match end {
+            Some((piece, end)) => {
+                if text_start < i {
+                    pieces.push((Piece::Written, text_start..i));
+                }
+                pieces.push((piece, i..end));
+                i = end;
+                text_start = end;
+            }
+            None => i += 1,
+        }
+    }
+    if text_start < input.len() {
+        pieces.push((Piece::Written, text_start..input.len()));
+    }
+    pieces
+}
+
 /// Where the path component that holds the first glob metacharacter the entry writes begins,
 /// when the entry writes a `*`. Template tags and `$VAR`s are skipped: what they render is data.
 fn written_pattern_start(input: &str) -> Option<usize> {
-    let bytes = input.as_bytes();
-    let mut i = 0;
     let mut component = 0;
     let mut first_meta = None;
     let mut has_star = false;
-    while i < bytes.len() {
-        match bytes[i] {
-            b'{' if matches!(bytes.get(i + 1), Some(b'{' | b'%' | b'#')) => {
-                let close = match bytes[i + 1] {
-                    b'{' => "}}",
-                    b'%' => "%}",
-                    _ => "#}",
-                };
-                match input[i + 2..].find(close) {
-                    Some(end) => i += 2 + end + 2,
-                    None => break,
-                }
-                continue;
-            }
-            b'$' if bytes.get(i + 1) == Some(&b'{') => {
-                match input[i..].find('}') {
-                    Some(end) => i += end + 1,
-                    None => break,
-                }
-                continue;
-            }
-            b'$' => {
-                i += 1;
-                while bytes
-                    .get(i)
-                    .is_some_and(|b| b.is_ascii_alphanumeric() || *b == b'_')
-                {
-                    i += 1;
-                }
-                continue;
-            }
-            b'/' => {
-                if first_meta.is_none() {
-                    component = i + 1;
-                }
-            }
-            b'\\' if cfg!(windows) => {
-                if first_meta.is_none() {
-                    component = i + 1;
-                }
-            }
-            b'*' => {
-                has_star = true;
-                first_meta.get_or_insert(component);
-            }
-            b'?' | b'[' | b'{' => {
-                first_meta.get_or_insert(component);
-            }
-            _ => {}
+    for (piece, range) in template_pieces(input) {
+        if piece != Piece::Written {
+            continue;
         }
-        i += 1;
+        for (i, b) in input.as_bytes()[range.clone()].iter().enumerate() {
+            match b {
+                b'/' => {
+                    if first_meta.is_none() {
+                        component = range.start + i + 1;
+                    }
+                }
+                b'\\' if cfg!(windows) => {
+                    if first_meta.is_none() {
+                        component = range.start + i + 1;
+                    }
+                }
+                b'*' => {
+                    has_star = true;
+                    first_meta.get_or_insert(component);
+                }
+                b'?' | b'[' | b'{' => {
+                    first_meta.get_or_insert(component);
+                }
+                _ => {}
+            }
+        }
     }
     if has_star { first_meta } else { None }
 }
 
+/// Markers that keep track, through rendering, of the text each substitution in a pattern put
+/// there. They hold a random number, so substituted data cannot forge them, and a NUL, which no
+/// path holds.
+struct SubstitutionMarks {
+    open: String,
+    close: String,
+}
+
+impl SubstitutionMarks {
+    fn new() -> Self {
+        let nonce = ::rand::random::<u64>();
+        Self {
+            open: format!("{PATTERN_MARK}{nonce}<"),
+            close: format!("{PATTERN_MARK}{nonce}>"),
+        }
+    }
+
+    /// `pattern` with each substitution wrapped in the markers.
+    fn wrap_substitutions(&self, pattern: &str) -> String {
+        let mut out = String::with_capacity(pattern.len());
+        for (piece, range) in template_pieces(pattern) {
+            match piece {
+                Piece::Substituted => {
+                    out.push_str(&self.open);
+                    out.push_str(&pattern[range]);
+                    out.push_str(&self.close);
+                }
+                Piece::Written | Piece::Tag => out.push_str(&pattern[range]),
+            }
+        }
+        out
+    }
+
+    /// The glob a rendered, marked pattern stands for: written text as it is, and substituted
+    /// text escaped so it matches only itself. `None` when the markers do not pair up or a NUL
+    /// is left over.
+    fn to_glob(&self, rendered: &str) -> Option<String> {
+        let mut glob = String::with_capacity(rendered.len());
+        let mut rest = rendered;
+        while let Some(open) = rest.find(&self.open) {
+            let written = &rest[..open];
+            let after = &rest[open + self.open.len()..];
+            let close = after.find(&self.close)?;
+            let data = &after[..close];
+            if written.contains(PATTERN_MARK) || data.contains(PATTERN_MARK) {
+                return None;
+            }
+            glob.push_str(written);
+            glob.push_str(&escape_glob(data));
+            rest = &after[close + self.close.len()..];
+        }
+        if rest.contains(PATTERN_MARK) {
+            return None;
+        }
+        glob.push_str(rest);
+        Some(glob)
+    }
+
+    /// `rendered` without the markers or a NUL.
+    fn strip(&self, rendered: &str) -> String {
+        rendered
+            .replace(&self.open, "")
+            .replace(&self.close, "")
+            .replace(PATTERN_MARK, "")
+    }
+}
+
+/// Glob syntax that matches `text` and nothing else. Each metacharacter goes in a character
+/// class of its own, which the brace expansion, the walker and the matcher all read the same
+/// way on every platform; a `\` outside Windows, where it is an escape, is escaped too. A path
+/// separator stays one.
+fn escape_glob(text: &str) -> String {
+    let mut glob = String::with_capacity(text.len());
+    for c in text.chars() {
+        match c {
+            '*' | '?' | '[' | ']' | '{' | '}' | ',' => {
+                glob.push('[');
+                glob.push(c);
+                glob.push(']');
+            }
+            '\\' if !cfg!(windows) => glob.push_str("\\\\"),
+            _ => glob.push(c),
+        }
+    }
+    glob
+}
+
 /// The files `pattern` matches below `dir`, in name order. As in a shell, `*` stays within one
 /// directory and only `**` descends, so `.env.*` does not reach into a repository cloned below
-/// the config. `dir` is taken as it is named.
+/// the config. `dir` is taken as it is named. The alternatives of a `{a,b}` group are matched
+/// together, so their files are in name order too, not in the order the group lists them.
 fn glob_files_in(dir: &Path, pattern: &str) -> Vec<PathBuf> {
     let alternatives = crate::task::task_source_checker::expand_enumeration_patterns(pattern)
         .unwrap_or_else(|_| vec![pattern.to_string()]);
@@ -232,12 +368,15 @@ fn glob_files_in(dir: &Path, pattern: &str) -> Vec<PathBuf> {
         let Ok(walker) = crate::task::task_source_checker::glob_walk_in(dir, &alternative) else {
             continue;
         };
-        for entry in walker.filter_map(|entry| entry.ok()) {
-            if entry.file_type().is_file() && !files.iter().any(|f| f == entry.path()) {
-                files.push(entry.into_path());
-            }
-        }
+        files.extend(
+            walker
+                .filter_map(|entry| entry.ok())
+                .filter(|entry| entry.file_type().is_file())
+                .map(|entry| entry.into_path()),
+        );
     }
+    files.sort();
+    files.dedup();
     files
 }
 
@@ -1386,9 +1525,10 @@ mod tests {
         assert_eq!(glob(".env.*"), files(&[".env.local", ".env.test"]));
         assert_eq!(glob("env.d/*.env"), files(&["env.d/a.env"]));
         assert_eq!(glob("*/.env.*"), files(&["cloned/.env.example"]));
+        // the alternatives of a group load in name order, each file once
         assert_eq!(
-            glob("{env.d,cloned}/*"),
-            files(&["env.d/a.env", "cloned/.env.example"])
+            glob("{env.d,cloned,env.d}/*"),
+            files(&["cloned/.env.example", "env.d/a.env"])
         );
         // `**` asks for the tree
         assert_eq!(
@@ -1415,8 +1555,10 @@ mod tests {
         }
     }
 
-    /// A directory is taken as it is named, even when its name holds a `*`.
+    /// A directory is taken as it is named, even when its name holds a `*`. Windows does not
+    /// allow such a name.
     #[test]
+    #[cfg(unix)]
     fn test_glob_files_in_takes_the_directory_literally() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
@@ -1450,6 +1592,72 @@ mod tests {
         assert_eq!(written_pattern_start("$PWD/env.d/*.env"), Some(11));
         assert_eq!(written_pattern_start("conf/[ab]/*.env"), Some(5));
         assert_eq!(written_pattern_start("conf/*/{{name}}/x.env"), Some(5));
+    }
+
+    /// In a pattern, what a substitution renders is matched as written, and the glob syntax the
+    /// entry writes stays syntax. `render` stands in for the template render.
+    #[test]
+    fn test_substitutions_in_a_pattern_match_themselves() {
+        let marks = SubstitutionMarks::new();
+        let glob = |pattern: &str, render: &dyn Fn(&str) -> String| {
+            marks.to_glob(&render(&marks.wrap_substitutions(pattern)))
+        };
+        let x = |value: &'static str| move |s: &str| s.replace("{{ x }}", value);
+        let var = |value: &'static str| move |s: &str| s.replace("$X", value);
+        for (pattern, rendered, expected) in [
+            (
+                "{{ x }}*.env",
+                &x("*") as &dyn Fn(&str) -> String,
+                "[*]*.env",
+            ),
+            ("{a,b}-{{ x }}.e*", &x("{c,d}"), "{a,b}-[{]c[,]d[}].e*"),
+            ("$X/*.env", &var("**"), "[*][*]/*.env"),
+            (
+                "[ab]{% if 1 %}*{% endif %}",
+                &x(""),
+                "[ab]{% if 1 %}*{% endif %}",
+            ),
+            ("{{ x }}/*", &x("a?[b]"), "a[?][[]b[]]/*"),
+        ] {
+            assert_eq!(
+                glob(pattern, rendered).as_deref(),
+                Some(expected),
+                "{pattern}"
+            );
+        }
+        // data cannot end a substitution early
+        let forged = format!("*{PATTERN_MARK}0>*");
+        assert_eq!(
+            glob("{{ x }}*", &|s: &str| s.replace("{{ x }}", &forged)),
+            None
+        );
+        // a template that drops a substitution's closing marker leaves no pattern
+        assert_eq!(marks.to_glob(&format!("{}*", marks.open)), None);
+    }
+
+    /// An escaped substitution matches the file it names, and not the files its `*` would.
+    #[test]
+    #[cfg(unix)]
+    fn test_escaped_substitution_matches_only_its_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        for file in [
+            "*.env",
+            "dev.env",
+            "a?b[1].env",
+            "axb1.env",
+            "{p,q}.env",
+            "p.env",
+        ] {
+            std::fs::write(root.join(file), "").unwrap();
+        }
+        for name in ["*", "a?b[1]", "{p,q}"] {
+            assert_eq!(
+                glob_files_in(root, &format!("{}.e*", escape_glob(name))),
+                vec![root.join(format!("{name}.env"))],
+                "{name}"
+            );
+        }
     }
 
     /// `ToolsFilter::ToolsOnlyVals` must select only `tools = true` `Val`
