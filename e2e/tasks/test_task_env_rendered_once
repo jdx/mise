@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+
+# Env that one task hands to another was rendered where it was written. The task that
+# receives it uses the text as it is: a working directory or an argument that looks like
+# a template is data, not a template to render a second time.
+
+cat <<'TOML' >mise.toml
+[tasks.show]
+run = 'echo "WORKDIR=$WORKDIR"'
+
+[tasks.inherited]
+env = { WORKDIR = "{{ cwd }}" }
+run = [{ task = "show" }]
+
+[tasks.nested]
+env = { WORKDIR = "{{ cwd }}" }
+run = [{ task = "inherited-from-parent" }]
+
+[tasks.inherited-from-parent]
+run = [{ task = "show" }]
+
+[tasks.entry]
+run = [{ task = "show", env = { WORKDIR = "{{ cwd }}" } }]
+
+[tasks.dep]
+depends = [{ task = "show", env = { WORKDIR = "{{ cwd }}" } }]
+run = "true"
+
+[tasks.dep-post]
+depends_post = [{ task = "show", env = { WORKDIR = "{{ cwd }}" } }]
+run = "true"
+
+[tasks.dep-string]
+depends = ['WORKDIR="{{ cwd }}" show']
+run = "true"
+
+[tasks.arg]
+usage = 'arg "<target>"'
+depends = [{ task = "show", env = { WORKDIR = "{{ usage.target }}" } }]
+run = "true"
+
+[tasks.dollar]
+env = { WORKDIR = "a$$HOME" }
+run = [{ task = "show" }]
+
+[tasks.entry-dollar]
+run = [{ task = "show", env = { WORKDIR = "$HOME/w" } }]
+TOML
+
+dir="{{ exec(command='touch rendered-twice') }}"
+mkdir "$dir"
+cd "$dir" || exit 1
+
+for task in inherited nested entry dep dep-post dep-string; do
+  assert_contains "mise run $task" "WORKDIR=$PWD"
+done
+assert_fail "test -e rendered-twice"
+assert_fail "test -e ../rendered-twice"
+
+assert_contains "mise run arg '{{ 1 + 1 }}'" "WORKDIR={{ 1 + 1 }}"
+
+# `$VAR` is expanded once as well: by the task that resolved the value, or for the env of
+# a `run` entry by the task that receives it
+assert_contains "mise run dollar" 'WORKDIR=a$HOME'
+assert_contains "mise run entry-dollar" "WORKDIR=$HOME/w"

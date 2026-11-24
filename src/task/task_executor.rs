@@ -1,6 +1,7 @@
 use crate::args::ToolArg;
 use crate::cmd::CmdLineRunner;
-use crate::config::{Config, Settings, SettingsExt, env_directive::EnvDirective};
+use crate::config::env_directive::{EnvDirective, Rendered};
+use crate::config::{Config, Settings, SettingsExt};
 use crate::duration;
 use crate::env_diff::EnvDiff;
 use crate::file::{can_execute_directly, display_path, replace_path, strip_utf8_bom};
@@ -1636,11 +1637,12 @@ impl TaskExecutor {
         for mut t in resolve_injected_tasks(config, specs, override_args, self.skip_deps).await? {
             // Apply entry-level env via with_dependency_env (high priority,
             // consistent with depends/depends_post) so it overrides the
-            // sub-task's own declared env.
+            // sub-task's own declared env. The parent rendered the entry's templates, so the
+            // sub-task does not render the result again.
             if let Some(env) = override_env {
                 let env_directives: Vec<EnvDirective> = env
                     .iter()
-                    .map(|(k, v)| EnvDirective::Val(k.clone(), v.clone(), Default::default()))
+                    .map(|(k, v)| EnvDirective::rendered(k.clone(), v.clone(), Rendered::Templates))
                     .collect();
                 t = t.with_dependency_env(&env_directives);
                 if let Some(config_root) = t.config_root.clone() {
@@ -1722,8 +1724,11 @@ impl TaskExecutor {
 
         // Pump subgraph into scheduler and signal completion via oneshot when done
         let (done_tx, mut done_rx) = oneshot::channel::<()>();
-        let task_env_directives: Vec<EnvDirective> =
-            task_env.iter().cloned().map(Into::into).collect();
+        // The parent's env is resolved: its values are final text, whatever they look like.
+        let task_env_directives: Vec<EnvDirective> = task_env
+            .iter()
+            .map(|(k, v)| EnvDirective::rendered(k.clone(), v.clone(), Rendered::Final))
+            .collect();
         {
             let sub_deps_clone = sub_deps.clone();
             let sched_tx = sched_tx.clone();

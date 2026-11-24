@@ -1,6 +1,8 @@
 use crate::args::{BackendArg, ToolArg};
 use crate::config::config_file::mise_toml::EnvList;
-use crate::config::env_directive::{EnvDirective, EnvResolveOptions, EnvResults, ToolsFilter};
+use crate::config::env_directive::{
+    EnvDirective, EnvResolveOptions, EnvResults, Rendered, ToolsFilter,
+};
 use crate::config::{self, Config, SettingsExt};
 use crate::path_env::PathEnv;
 use crate::task::task_script_parser::TaskScriptParser;
@@ -3586,12 +3588,14 @@ fn match_tasks_with_context(
         .map(|t| {
             let mut t = t.clone();
             t.args = td.args.clone();
-            // Apply env vars from dependency - these affect task identity/deduplication
+            // Apply env vars from dependency - these affect task identity/deduplication.
+            // The declaring task rendered their templates (`TaskDep::render`), so the
+            // dependency does not render the result again.
             if !td.env.is_empty() {
                 let env_directives: Vec<EnvDirective> = td
                     .env
                     .iter()
-                    .map(|(k, v)| EnvDirective::Val(k.clone(), v.clone(), Default::default()))
+                    .map(|(k, v)| EnvDirective::rendered(k.clone(), v.clone(), Rendered::Templates))
                     .collect();
                 t = t.with_dependency_env(&env_directives);
                 if let Some(config_root) = &t.config_root {

@@ -30,7 +30,7 @@ mod source;
 pub(crate) mod venv;
 
 pub use mise_config::env::{
-    AgeFormat, EnvDirective, EnvDirectiveOptions, PathPosition, RequiredValue,
+    AgeFormat, EnvDirective, EnvDirectiveOptions, PathPosition, Rendered, RequiredValue,
 };
 
 /// Show env directive paths the way the rest of mise does.
@@ -328,7 +328,7 @@ impl EnvResults {
             }
             // trace!("resolve: ctx.get('env'): {:#?}", &ctx.get("env"));
             match directive {
-                EnvDirective::Val(k, v, _opts) => {
+                EnvDirective::Val(k, v, opts) => {
                     // `[vars]` are template variables rather than environment variables, so the
                     // PATH rule does not apply to them.
                     let k = if resolve_opts.vars {
@@ -337,7 +337,16 @@ impl EnvResults {
                         crate::env::normalize_path_key(k)
                     };
                     r.track_redaction_override(&k, redact);
-                    let v = r.parse_template(&ctx, &mut tera, &source, &env_vars, &k, &v)?;
+                    // A value another task handed down is data: its templates were rendered
+                    // where it was written, and rendering it again would evaluate the text that
+                    // pass substituted.
+                    let v = match opts.rendered {
+                        Rendered::No => {
+                            r.parse_template(&ctx, &mut tera, &source, &env_vars, &k, &v)?
+                        }
+                        Rendered::Templates => Self::shell_expand(&ctx, &source, &k, v),
+                        Rendered::Final => v,
+                    };
 
                     if resolve_opts.vars {
                         if redact.unwrap_or(false) {
@@ -936,6 +945,11 @@ impl EnvResults {
         }
 
         // Step 2: Shell-style $VAR expansion
+        Ok(Self::shell_expand(ctx, path, origin, output))
+    }
+
+    /// The `$VAR` step of [`Self::parse_template`], for a value whose templates are rendered.
+    fn shell_expand(ctx: &tera::Context, path: &Path, origin: &str, mut output: String) -> String {
         if output.contains('$') && Settings::get().env_shell_expand {
             let env_vars: BTreeMap<String, String> = ctx
                 .get("env")
@@ -945,8 +959,7 @@ impl EnvResults {
             output = shell_expand_env(&output, &env_vars, &mut missing_vars);
             warn_unexpanded_vars(missing_vars, origin, path);
         }
-
-        Ok(output)
+        output
     }
 
     /// Puts each config file's `paths` ahead of `target`, so the config file that sorts last
@@ -1286,6 +1299,24 @@ mod tests {
         )
         .await
         .unwrap()
+    }
+
+    #[tokio::test]
+    async fn test_rendered_value_is_not_rendered_again() {
+        // what a parent task's `{{ cwd }}` renders to in a directory named like a template
+        let text = "/repo/{{ exec(command='echo ran') }}/$$HOST";
+        let results = resolve_for_cache_test(vec![
+            EnvDirective::Val("HOST".into(), "h".into(), Default::default()),
+            EnvDirective::rendered("FINAL".into(), text.into(), Rendered::Final),
+            EnvDirective::rendered("ENTRY".into(), text.into(), Rendered::Templates),
+        ])
+        .await;
+        assert_eq!(results.env["FINAL"].0, text);
+        // the env of a `depends` or `run` entry still gets its one `$VAR` pass
+        assert_eq!(
+            results.env["ENTRY"].0,
+            "/repo/{{ exec(command='echo ran') }}/$HOST"
+        );
     }
 
     #[tokio::test]

@@ -413,6 +413,13 @@ depends = [
 run = "npm test"
 ```
 
+This task renders the templates in those values, and the dependency gets the
+result as text: a value such as <code v-pre>"{{ cwd }}"</code> stays the
+directory name even when the name looks like a template. The same holds for
+the `env` of a `run` entry and for the env a task passes to the tasks its
+`run` entries start. `$VAR` references in a `VAR=value` prefix or an entry's
+`env` table are expanded once, in the task that receives them.
+
 #### Passing parent task arguments to dependencies
 
 Forward this task's arguments to a dependency with
