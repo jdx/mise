@@ -136,9 +136,9 @@ url = "https://github.com/jdx/ruby/releases/download/3.3.11-1/ruby-3.3.11.x86_64
 ```
 
 mise downloads that URL as it is; it does not compile Ruby instead when the
-release can no longer be found. `mise lock` also writes a `checksum` to the
-entry, and the download must match it. An entry without one is checked against
-the digest the release lists for that archive, when it lists one.
+release can no longer be found. When the entry has a `checksum`, the download
+must match it. An entry without one is checked against the digest the release
+lists for that archive, when it lists one.
 
 To move to the newest build of the same version, delete the Ruby entry from
 `mise.lock`, or every Ruby platform `url`, then run:
