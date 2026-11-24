@@ -368,7 +368,8 @@ impl Backend for GoBackend {
                     return Ok(());
                 };
                 if !is_transient_go_network_failure(&stderr) {
-                    return Err((err, is_missing_go_version(&stderr)));
+                    let missing = is_missing_go_version(&stderr, &self.tool_name(), &v);
+                    return Err((err, missing));
                 }
                 let Some(delay) = backoff.next() else {
                     return Err((err, false));
@@ -451,20 +452,43 @@ fn is_transient_go_network_failure(stderr: &str) -> bool {
         && MARKERS.iter().any(|m| stderr.contains(m))
 }
 
-/// Whether `go install` stderr says that the requested version does not exist,
-/// which is the one failure the unprefixed version can fix. Version control
-/// reports it as `unknown revision`, and a module proxy answers 404 or 410 for
-/// the version's `.info`; only the status code is matched, since not every
-/// proxy sends a reason phrase.
+/// Whether `go install package@version` stderr says that `version` of the
+/// package's own module does not exist, which is the one failure the
+/// unprefixed version can fix. Version control reports it as
+/// `module@version: invalid version: unknown revision version`, and a module
+/// proxy answers 404 or 410 for `module/@v/version.info`; only the status code
+/// is matched, since not every proxy sends a reason phrase.
 ///
-/// A failed verification is never that, whatever else the output quotes: Go
-/// found the version and refused what it downloaded.
-fn is_missing_go_version(stderr: &str) -> bool {
-    const MARKERS: &[&str] = &["unknown revision", ".info: 404", ".info: 410"];
+/// The module is some leading part of the package path, and the message has
+/// to name it and the version: the same words about a dependency say nothing
+/// about the version that was asked for. A failed verification is never a
+/// missing version, whatever else the output quotes: Go found the version and
+/// refused what it downloaded.
+fn is_missing_go_version(stderr: &str, package: &str, version: &str) -> bool {
     const VERIFICATION_MARKERS: &[&str] = &["verifying ", "checksum mismatch", "security error"];
     let stderr = stderr.to_lowercase();
-    !VERIFICATION_MARKERS.iter().any(|m| stderr.contains(m))
-        && MARKERS.iter().any(|m| stderr.contains(m))
+    if VERIFICATION_MARKERS.iter().any(|m| stderr.contains(m)) {
+        return false;
+    }
+    let version = version.to_lowercase();
+    package
+        .match_indices('/')
+        .map(|(i, _)| &package[..i])
+        .chain([package])
+        .any(|module| {
+            let unknown_revision = format!(
+                "{}@{version}: invalid version: unknown revision {version}",
+                module.to_lowercase()
+            );
+            let info = format!(
+                "/{}/@v/{version}.info: ",
+                encode_module_path(module).to_lowercase()
+            );
+            stderr.contains(&unknown_revision)
+                || [404, 410]
+                    .iter()
+                    .any(|status| stderr.contains(&format!("{info}{status}")))
+        })
 }
 
 fn go_install_retry_error(first_error: eyre::Report, retry_error: eyre::Report) -> eyre::Report {
@@ -1333,33 +1357,122 @@ mod tests {
 
     #[test]
     fn only_a_missing_go_version_allows_the_unprefixed_retry() {
-        assert!(is_missing_go_version(
-            "go: example.com/tool@v1.2.3: example.com/tool@v1.2.3: invalid version: unknown revision v1.2.3"
-        ));
-        assert!(is_missing_go_version(
-            "go: example.com/tool@v1.2.3: reading https://proxy.golang.org/example.com/tool/@v/v1.2.3.info: 404 Not Found\n\tserver response: not found: example.com/tool@v1.2.3: invalid version: unknown revision v1.2.3"
-        ));
-        assert!(is_missing_go_version(
-            "go: example.com/tool@v1.2.3: reading https://goproxy.example.com/example.com/tool/@v/v1.2.3.info: 410 Gone"
-        ));
-        assert!(is_missing_go_version(
-            "go: example.com/tool@v1.2.3: reading https://goproxy.example.com/example.com/tool/@v/v1.2.3.info: 404 "
-        ));
-        // Go found the version and refused the download.
-        assert!(!is_missing_go_version(
-            "go: example.com/tool@v1.2.3: example.com/tool@v1.2.3: verifying module: checksum mismatch\n\tdownloaded: h1:aaaa\n\tsum.golang.org: h1:bbbb\n\nSECURITY ERROR\nThis download does NOT match the one reported by the checksum server."
-        ));
-        assert!(!is_missing_go_version(
-            "go: example.com/tool@v1.2.3: verifying module: example.com/tool@v1.2.3: reading https://sum.golang.org/lookup/example.com/tool@v1.2.3: 404 Not Found\n\tserver response: not found: example.com/tool@v1.2.3: invalid version: unknown revision v1.2.3"
-        ));
-        // Neither a build failure nor a missing package is a missing version.
-        assert!(!is_missing_go_version(
-            "./main.go:9:1: syntax error: unexpected EOF, expected }"
-        ));
-        assert!(!is_missing_go_version(
-            "go: example.com/tool/cmd/x@v1.2.3: module example.com/tool@v1.2.3 found, but does not contain package example.com/tool/cmd/x"
-        ));
-        assert!(!is_missing_go_version(""));
+        const TOOL: &str = "example.com/tool";
+        // (stderr, package, version asked for, whether that version is missing)
+        let cases: &[(&str, &str, &str, bool)] = &[
+            (
+                "go: example.com/tool@v1.2.3: example.com/tool@v1.2.3: invalid version: unknown revision v1.2.3",
+                TOOL,
+                "v1.2.3",
+                true,
+            ),
+            (
+                "go: example.com/tool@v1.2.3: reading https://proxy.golang.org/example.com/tool/@v/v1.2.3.info: 404 Not Found\n\tserver response: not found: example.com/tool@v1.2.3: invalid version: unknown revision v1.2.3",
+                TOOL,
+                "v1.2.3",
+                true,
+            ),
+            (
+                "go: example.com/tool@v1.2.3: reading https://goproxy.example.com/example.com/tool/@v/v1.2.3.info: 410 Gone",
+                TOOL,
+                "v1.2.3",
+                true,
+            ),
+            (
+                "go: example.com/tool@v1.2.3: reading https://goproxy.example.com/example.com/tool/@v/v1.2.3.info: 404 ",
+                TOOL,
+                "v1.2.3",
+                true,
+            ),
+            // The module is a leading part of the package path.
+            (
+                "go: example.com/tool/cmd/x@v1.2.3: reading https://proxy.golang.org/example.com/tool/@v/v1.2.3.info: 404 Not Found",
+                "example.com/tool/cmd/x",
+                "v1.2.3",
+                true,
+            ),
+            // Module proxies spell an upper-case letter as `!` and the letter.
+            (
+                "go: github.com/Example/tool@v1.2.3: reading https://proxy.golang.org/github.com/!example/tool/@v/v1.2.3.info: 404 Not Found",
+                "github.com/Example/tool",
+                "v1.2.3",
+                true,
+            ),
+            // The unprefixed version can be missing as well.
+            (
+                "go: example.com/tool@1.2.3: example.com/tool@1.2.3: invalid version: unknown revision 1.2.3",
+                TOOL,
+                "1.2.3",
+                true,
+            ),
+            // Go found the version and refused the download.
+            (
+                "go: example.com/tool@v1.2.3: example.com/tool@v1.2.3: verifying module: checksum mismatch\n\tdownloaded: h1:aaaa\n\tsum.golang.org: h1:bbbb\n\nSECURITY ERROR\nThis download does NOT match the one reported by the checksum server.",
+                TOOL,
+                "v1.2.3",
+                false,
+            ),
+            (
+                "go: example.com/tool@v1.2.3: verifying module: example.com/tool@v1.2.3: reading https://sum.golang.org/lookup/example.com/tool@v1.2.3: 404 Not Found\n\tserver response: not found: example.com/tool@v1.2.3: invalid version: unknown revision v1.2.3",
+                TOOL,
+                "v1.2.3",
+                false,
+            ),
+            // A dependency that is missing, even at the same version number,
+            // says nothing about the version asked for.
+            (
+                "go: example.com/tool@v1.2.3 requires\n\texample.com/dep@v0.4.0: invalid version: unknown revision v0.4.0",
+                TOOL,
+                "v1.2.3",
+                false,
+            ),
+            (
+                "go: example.com/tool@v1.2.3 requires\n\texample.com/dep@v1.2.3: invalid version: unknown revision v1.2.3",
+                TOOL,
+                "v1.2.3",
+                false,
+            ),
+            (
+                "go: example.com/tool@v1.2.3 requires\n\texample.com/dep@v1.2.3: reading https://proxy.golang.org/example.com/dep/@v/v1.2.3.info: 404 Not Found",
+                TOOL,
+                "v1.2.3",
+                false,
+            ),
+            (
+                "go: example.com/tool@v1.2.3 requires\n\texample.com/tool-extras@v1.2.3: reading https://proxy.golang.org/example.com/tool-extras/@v/v1.2.3.info: 404 Not Found",
+                TOOL,
+                "v1.2.3",
+                false,
+            ),
+            // Another version of the module, such as the one a retry asked for.
+            (
+                "go: example.com/tool@v1.2.3: example.com/tool@v1.2.4: invalid version: unknown revision v1.2.4",
+                TOOL,
+                "v1.2.3",
+                false,
+            ),
+            // Neither a build failure nor a missing package is a missing version.
+            (
+                "./main.go:9:1: syntax error: unexpected EOF, expected }",
+                TOOL,
+                "v1.2.3",
+                false,
+            ),
+            (
+                "go: example.com/tool/cmd/x@v1.2.3: module example.com/tool@v1.2.3 found, but does not contain package example.com/tool/cmd/x",
+                "example.com/tool/cmd/x",
+                "v1.2.3",
+                false,
+            ),
+            ("", TOOL, "v1.2.3", false),
+        ];
+        for (stderr, package, version, missing) in cases {
+            assert_eq!(
+                is_missing_go_version(stderr, package, version),
+                *missing,
+                "{package}@{version}: {stderr}"
+            );
+        }
     }
 
     #[test]
