@@ -1006,6 +1006,7 @@ impl Backend for AquaBackend {
                 .is_some_and(crate::versions_host::is_mirrored_asset_api_url);
 
         // Try to get checksum from checksum file if not available from GitHub API
+        let mut checksum_file_error = None;
         let mut checksum = match checksum {
             Some(c) => Some(c),
             None => match self
@@ -1014,10 +1015,7 @@ impl Backend for AquaBackend {
             {
                 Ok(checksum) => checksum,
                 Err(e) => {
-                    warn!(
-                        "[{}] failed to get checksum from checksum file: {e}",
-                        self.ba()
-                    );
+                    checksum_file_error = Some(e);
                     None
                 }
             },
@@ -1134,6 +1132,26 @@ impl Backend for AquaBackend {
                  This may indicate a downgrade attack.",
                 self.ba(),
                 tv.version
+            );
+        }
+        if let Some(e) = checksum_file_error {
+            // An install refuses an artifact the declared checksum file does not vouch for.
+            // `generate` would complete this entry by hashing whatever the download host
+            // serves, and an install that finds a checksum in the lockfile does not read the
+            // checksum file, so only provenance verified above may stand in for it. In merge
+            // mode the entry stays without a checksum and the install checks the file itself.
+            if (!verified_at_lock_time || provenance.is_none())
+                && Settings::get().generate_lockfiles()
+            {
+                bail!(
+                    "could not read the checksum file the aqua registry declares for {} on {}: {e:#}",
+                    self.ba(),
+                    target.to_key()
+                );
+            }
+            warn!(
+                "[{}] failed to get checksum from checksum file: {e:#}",
+                self.ba()
             );
         }
         Ok(PlatformInfo {
@@ -3115,6 +3133,10 @@ impl AquaBackend {
 
     /// Fetch checksum from a checksum file without downloading the actual tarball.
     /// This is used for cross-platform lockfile generation.
+    ///
+    /// `Ok(None)` means the registry declares no checksum for the artifact. A declared
+    /// checksum file that cannot be found, downloaded or that has no row for the artifact
+    /// is an error, as it is for an install.
     async fn fetch_checksum_from_file(
         &self,
         pkg: &AquaPackage,
@@ -3140,16 +3162,10 @@ impl AquaBackend {
                 let asset_strs = checksum_config.asset_strs(pkg, v, target_os, target_arch)?;
                 // No filename derivation is needed here, so the transport URL is all that
                 // is needed.
-                match self
-                    .github_release_asset_urls_for_target(pkg, v, asset_strs, target)
+                self.github_release_asset_urls_for_target(pkg, v, asset_strs, target)
                     .await
-                {
-                    Ok((_, download_url)) => download_url,
-                    Err(e) => {
-                        debug!("Failed to get checksum file asset: {}", e);
-                        return Ok(None);
-                    }
-                }
+                    .wrap_err("could not find the checksum file in the release")?
+                    .1
             }
             AquaChecksumType::Http => checksum_config.url(pkg, v, target_os, target_arch)?,
         };
@@ -3158,13 +3174,10 @@ impl AquaBackend {
         // `text_with_charset` -> `encoding_rs::Encoding::decode`), so a UTF-16 checksum file is
         // handled here without help — unlike the install path above, which reads from disk. It
         // also detects an HTML body and retries over https, which reading bytes would skip.
-        let checksum_content = match HTTP.get_text(&url).await {
-            Ok(content) => content,
-            Err(e) => {
-                debug!("Failed to download checksum file {}: {}", url, e);
-                return Ok(None);
-            }
-        };
+        let checksum_content = HTTP
+            .get_text(&url)
+            .await
+            .wrap_err_with(|| format!("could not download {url}"))?;
 
         // Parse checksum from file content
         let checksum_str =
@@ -5617,6 +5630,60 @@ mod lock_candidate_tests {
 
         mock.assert_async().await;
         assert_eq!(checksum, Some(format!("sha256:{DIGEST}")));
+    }
+
+    /// `Ok(None)` is kept for a registry that declares no checksum. A declared checksum file
+    /// that does not answer is an error, so `mise lock` cannot take it for "no checksum".
+    #[tokio::test]
+    async fn test_fetch_checksum_from_file_fails_when_the_declared_file_is_missing() {
+        const ARTIFACT: &str = "tool-1.0.0-linux-amd64.tar.gz";
+
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/hashes.sha256")
+            .with_status(404)
+            .create_async()
+            .await;
+
+        let checksum: AquaChecksum = serde_json::from_str(&format!(
+            r#"{{"type":"http","algorithm":"sha256","url":"{}/hashes.sha256"}}"#,
+            server.url()
+        ))
+        .unwrap();
+        let backend = AquaBackend::from_arg(BackendArg::new(
+            "tool".to_string(),
+            Some("aqua:owner/repo".to_string()),
+        ));
+        let target = PlatformTarget::new(crate::platform::Platform::parse("linux-x64").unwrap());
+
+        let mut pkg = AquaPackage::default();
+        pkg.checksum = Some(checksum);
+        let err = backend
+            .fetch_checksum_from_file(&pkg, "1.0.0", "linux", "amd64", Some(ARTIFACT), &target)
+            .await
+            .unwrap_err();
+        mock.assert_async().await;
+        assert!(format!("{err:#}").contains("/hashes.sha256"), "{err:#}");
+
+        let disabled: AquaChecksum = serde_json::from_str(&format!(
+            r#"{{"type":"http","algorithm":"sha256","enabled":false,"url":"{}/hashes.sha256"}}"#,
+            server.url()
+        ))
+        .unwrap();
+        assert!(!disabled.enabled());
+        pkg.checksum = Some(disabled);
+        let none = backend
+            .fetch_checksum_from_file(&pkg, "1.0.0", "linux", "amd64", Some(ARTIFACT), &target)
+            .await
+            .unwrap();
+        assert_eq!(none, None);
+
+        pkg.checksum = None;
+        let none = backend
+            .fetch_checksum_from_file(&pkg, "1.0.0", "linux", "amd64", Some(ARTIFACT), &target)
+            .await
+            .unwrap();
+        assert_eq!(none, None);
     }
 
     #[test]

@@ -331,8 +331,11 @@ tools in a format version 2 or newer lockfile also need their
 
 Each of those URLs also needs a checksum, or mise fails before downloading,
 naming the tool, platform and URL. `mise lock` records the missing checksums,
-downloading and hashing an artifact when its release publishes none. A
-hand-written entry, or one from
+downloading and hashing an artifact when its release publishes none. When the
+release declares a checksum file, such as one an `aqua:` recipe names, and that
+file cannot be downloaded or does not list the artifact, `mise lock` fails for
+that platform instead of hashing the download, as `mise install` would refuse
+it. A hand-written entry, or one from
 [`lockfile_mode = "merge"`](/configuration/settings.html#lockfile_mode), can
 lack one; merge mode does not require it. Set
 [`locked_require_checksum`](/configuration/settings.html#locked_require_checksum)

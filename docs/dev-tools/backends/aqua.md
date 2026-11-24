@@ -125,6 +125,14 @@ A Minisign signature whose trusted comment names a file (`file:<name>`, which
 download host cannot pass off another release's file and signature as the
 requested version.
 
+When a recipe declares a checksum file, `mise install` refuses an artifact when
+that file cannot be downloaded or does not list the artifact. `mise lock`
+does the same for each platform it locks, unless a signature or attestation it
+verified covers that artifact. With
+[`lockfile_mode = "merge"`](/configuration/settings.html#lockfile_mode) it warns
+and records the entry without a checksum, and the install checks the file
+itself.
+
 The `aqua.*` verification [settings](#settings) are on by default. Some checks
 also have a global setting, such as
 [`github_attestations`](/configuration/settings.html#github_attestations) or
