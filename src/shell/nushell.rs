@@ -104,7 +104,9 @@ impl Shell for Nushell {
         // changed it, secrets included. The module is saved to a file, so it asks mise for those
         // operations when it is loaded rather than carrying them. `mise deactivate` also hides
         // `__MISE_ORIG_PATH`, which activation keeps. When mise fails or is gone, the module still
-        // loads, with nothing undone, so the rest of the config that uses it still runs.
+        // loads, with nothing undone, so the rest of the config that uses it still runs. The
+        // operations apply before the prelude, as in the other shells, so the `PATH` they restore
+        // does not take back the directories the prelude adds.
         let inline_prelude = self.format_activate_prelude_inline(&opts.prelude);
         out.push_str(&formatdoc! {r#"
           export-env {{
@@ -119,8 +121,8 @@ impl Shell for Nushell {
             }} else {{
               []
             }}
-            {inline_prelude}
             $deactivation_ops | update-env
+            {inline_prelude}
             $env.MISE_SHELL = "nu"
             let mise_hook = {{
               condition: {{ "MISE_SHELL" in $env }}

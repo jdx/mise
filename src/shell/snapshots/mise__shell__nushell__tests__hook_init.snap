@@ -31,8 +31,8 @@ export-env {
   } else {
     []
   }
-  
   $deactivation_ops | update-env
+  
   $env.MISE_SHELL = "nu"
   let mise_hook = {
     condition: { "MISE_SHELL" in $env }
