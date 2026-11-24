@@ -316,6 +316,12 @@ impl Edit {
         editor = editor
             .title(&title)
             .dry_run(self.dry_run)
+            // The file can become a link while the editor is open, so where it leads is
+            // checked again when it is saved.
+            .before_save(|path| {
+                config_file::symlink_check_before_write(path)
+                    .map_err(|e| std::io::Error::other(e.to_string()))
+            })
             .with_tool_provider(Box::new(MiseToolProvider))
             .with_version_provider(Box::new(MiseVersionProvider {
                 path: env::current_dir().unwrap_or_default().join(path),
