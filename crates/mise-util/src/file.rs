@@ -3520,10 +3520,22 @@ pub fn same_file(a: &Path, b: &Path) -> bool {
     a == b || desymlink_path(a) == desymlink_path(b)
 }
 
+/// Whether `path`, as written, is `dir` or a path below it. `Path::starts_with`
+/// alone compares components, so it also accepts `dir/../elsewhere`: a `..`
+/// behind the prefix can lead anywhere, and such a path is not within `dir`.
+pub fn path_stays_within(path: &Path, dir: &Path) -> bool {
+    path.strip_prefix(dir).is_ok_and(|rest| {
+        !rest
+            .components()
+            .any(|c| c == std::path::Component::ParentDir)
+    })
+}
+
 /// Returns whether `path` starts with `prefix` either lexically or after
-/// resolving symlinks and the existing path prefix.
+/// resolving symlinks and the existing path prefix. A path with a `..` behind
+/// the prefix is only compared resolved, see [`path_stays_within`].
 pub fn path_starts_with_resolved(path: &Path, prefix: &Path) -> bool {
-    path.starts_with(prefix) || desymlink_path(path).starts_with(desymlink_path(prefix))
+    path_stays_within(path, prefix) || desymlink_path(path).starts_with(desymlink_path(prefix))
 }
 
 fn resolve_path_with_existing_prefix(path: &Path) -> PathBuf {

@@ -802,6 +802,32 @@ fn test_ensure_symlinks_stay_within_rebases_chained_absolute_links() {
     assert_eq!(fs::read_to_string(root.join("tool")).unwrap(), "tool");
 }
 
+#[cfg(unix)]
+#[test]
+fn path_starts_with_resolved_does_not_take_a_parent_dir_behind_the_prefix_as_written() {
+    let root = tempfile::tempdir().unwrap();
+    let root = root.path().canonicalize().unwrap();
+    let (inside, outside) = (root.join("config/tasks"), root.join("project"));
+    fs::create_dir_all(&inside).unwrap();
+    fs::create_dir_all(&outside).unwrap();
+    fs::write(inside.join("own.toml"), "").unwrap();
+    fs::write(outside.join("theirs.toml"), "").unwrap();
+
+    assert!(path_stays_within(&inside, &inside));
+    assert!(path_stays_within(&inside.join("own.toml"), &inside));
+    assert!(path_starts_with_resolved(&inside.join("own.toml"), &inside));
+
+    let leaving = inside.join("../../project/theirs.toml");
+    assert!(leaving.starts_with(&inside) && leaving.exists());
+    assert!(!path_stays_within(&leaving, &inside));
+    assert!(!path_starts_with_resolved(&leaving, &inside));
+
+    // A `..` that comes back is inside once resolved.
+    let returning = inside.join("../tasks/own.toml");
+    assert!(!path_stays_within(&returning, &inside));
+    assert!(path_starts_with_resolved(&returning, &inside));
+}
+
 /// Resolving a path also resolves its ancestors: they are the ancestors of the
 /// resolved path, which are canonical, not those of the path given, which may
 /// pass through a link. A walk up from a deep directory then resolves one path.

@@ -1,7 +1,7 @@
 #![allow(unused_assignments)] // Fields are read by miette's derive macros at runtime
 
 use crate::dirs;
-use crate::file::display_path;
+use crate::file::{self, display_path};
 use miette::{Diagnostic, NamedSource, SourceSpan};
 use std::fmt;
 use std::path::{Path, PathBuf};
@@ -107,7 +107,9 @@ impl MiseDiagnostic {
 /// often a job log the project's author can read. Links inside the global and
 /// system config directories are the user's own; those are told apart by
 /// directory because the trust lookups need settings, which are still loading
-/// while `.miserc.toml` is parsed.
+/// while `.miserc.toml` is parsed. A path that names one of those directories
+/// and leaves it again through `..`, as a project's task include can, is not in
+/// it.
 pub(crate) fn may_quote(path: &Path) -> bool {
     may_quote_below(path, path.parent().unwrap_or(path))
 }
@@ -123,8 +125,8 @@ pub(crate) fn may_quote(path: &Path) -> bool {
 /// directory. The working directory comes from the OS already resolved, so the
 /// directories it shares hold no link the project put there.
 pub(crate) fn may_quote_below(path: &Path, root: &Path) -> bool {
-    path.starts_with(*dirs::CONFIG)
-        || path.starts_with(*dirs::SYSTEM_CONFIG)
+    file::path_stays_within(path, *dirs::CONFIG)
+        || file::path_stays_within(path, *dirs::SYSTEM_CONFIG)
         || !reached_through_link(path, &discovery_root(path, root))
 }
 
@@ -379,6 +381,36 @@ mod tests {
         // reaches back to the directory the file shares with the working one.
         assert!(!may_quote_below(&custom, &project.join("custom")));
         assert!(!may_quote(&custom));
+    }
+
+    /// The config directories are exempt by prefix, and a prefix says nothing
+    /// about a path that climbs back out of it.
+    #[test]
+    fn a_path_that_leaves_the_config_dir_through_dot_dot_is_not_the_users_own() {
+        let tmp = tempfile::tempdir().unwrap();
+        let tmp = tmp.path().canonicalize().unwrap();
+        let (home, project) = (tmp.join("home"), tmp.join("project"));
+        std::fs::create_dir_all(&home).unwrap();
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::write(home.join("private.toml"), BODY).unwrap();
+        let linked = project.join("tasks.toml");
+        symlink(home.join("private.toml"), &linked).unwrap();
+
+        // Enough `..` to reach the root from the config directory, wherever
+        // it really is: `..` at the root stays there.
+        let to_root: PathBuf = (0..dirs::CONFIG.components().count() + 16)
+            .map(|_| "..")
+            .collect();
+        let path = dirs::CONFIG
+            .join(to_root)
+            .join(linked.strip_prefix("/").unwrap());
+        assert!(path.starts_with(*dirs::CONFIG) && path.is_symlink());
+
+        assert!(may_quote(&dirs::CONFIG.join("tasks.toml")));
+        assert!(!may_quote(&path));
+        assert!(!may_quote_below(&path, &project));
+        let report = reports(&path);
+        assert!(!report.contains("s3cr3t"), "{report}");
     }
 
     #[test]
