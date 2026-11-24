@@ -781,7 +781,10 @@ fn forward_rules_still_carry_a_header_the_request_kept() {
 /// `without_host_auth` is for a URL a third party chose, and sends none.
 #[tokio::test(flavor = "multi_thread")]
 async fn text_request_without_host_auth_sends_no_forge_token() {
-    struct TokenOverride;
+    /// Holds the lock the token override needs and clears the override in `Drop`.
+    struct TokenOverride {
+        _lock: std::sync::MutexGuard<'static, ()>,
+    }
     impl Drop for TokenOverride {
         fn drop(&mut self) {
             *crate::github::test_support::TOKENS_FILE_OVERRIDE
@@ -792,7 +795,7 @@ async fn text_request_without_host_auth_sends_no_forge_token() {
 
     let (port, _, requests) = spawn_recording_server(vec![ok_response(), ok_response()]).await;
     let settings_lock = crate::testing::lock_ignoring_poison(&crate::testing::SETTINGS_LOCK);
-    let _github_env_lock = crate::testing::lock_ignoring_poison(&crate::github::TEST_ENV_LOCK);
+    let github_env_lock = crate::testing::lock_ignoring_poison(&crate::github::TEST_ENV_LOCK);
     // The loopback server stands in for an Enterprise Server the user listed,
     // whose `/api/v3` URLs get the token from any caller.
     let mut settings = mise_settings::SettingsPartial::empty();
@@ -806,7 +809,9 @@ async fn text_request_without_host_auth_sends_no_forge_token() {
     *crate::github::test_support::TOKENS_FILE_OVERRIDE
         .write()
         .unwrap() = Some(tokens);
-    let _token = TokenOverride;
+    let _token = TokenOverride {
+        _lock: github_env_lock,
+    };
 
     let url = format!("http://127.0.0.1:{port}/api/v3/repos/owner/private/contents/key");
     let client = Client::new(Duration::from_secs(3), ClientKind::Http).unwrap();
