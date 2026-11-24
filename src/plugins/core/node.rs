@@ -1221,7 +1221,7 @@ impl BuildOpts {
         Ok(Self {
             version: v.clone(),
             path: ctx.ts.list_paths(&ctx.config).await,
-            build_dir: source_build_dir(&tv.download_path(), v),
+            build_dir: source_build_dir(&tv.download_path(), &source_tarball_name, v),
             configure_cmd: settings.node.configure_cmd(&install_path),
             make_cmd: settings.node.make_cmd(),
             make_install_cmd: settings.node.make_install_cmd(),
@@ -1327,10 +1327,16 @@ fn slug(v: &str) -> String {
 /// Where a source build of `v` is extracted and compiled: under the version's download
 /// directory, which only this user writes to, in a subdirectory of its own. `MISE_TMP_DIR`
 /// defaults to a fixed name in the system temporary directory, where whoever created it first
-/// can swap the tree between build steps, and the download directory itself holds the source
-/// tarball, whose name comes from its URL and can be the build tree's.
-fn source_build_dir(download_path: &Path, v: &str) -> PathBuf {
-    download_path.join("build").join(format!("node-v{v}"))
+/// can swap the tree between build steps.
+///
+/// The download directory also holds the source tarball, saved under `tarball_name`, the last
+/// segment of its URL, which a locked URL can make anything, and `SHASUMS256.txt` with its
+/// `.asc` signature. The subdirectory is `tarball_name` with `.build` appended, so it never has
+/// the name of any of those files and removing it before extraction removes none of them.
+fn source_build_dir(download_path: &Path, tarball_name: &str, v: &str) -> PathBuf {
+    download_path
+        .join(format!("{tarball_name}.build"))
+        .join(format!("node-v{v}"))
 }
 
 fn source_tarball_name(v: &str) -> String {
@@ -1593,18 +1599,28 @@ mod tests {
     }
 
     /// The source tarball is saved in the download directory under the last segment of its URL,
-    /// which a locked URL can make `node-v22.0.0`. Removing the build tree before extracting
-    /// must not remove the tarball.
+    /// which a locked URL can make anything, next to `SHASUMS256.txt` and its signature.
+    /// Removing the build tree before extracting must remove none of them.
     #[test]
     fn test_source_build_dir_is_apart_from_downloaded_files() {
         let download_path = Path::new("/data/downloads/node/22.0.0");
-        let build_dir = source_build_dir(download_path, "22.0.0");
-        assert!(build_dir.ends_with("node-v22.0.0"));
-        assert!(build_dir.starts_with(download_path));
-        for tarball_name in ["node-v22.0.0", "node-v22.0.0.tar.gz"] {
-            let tarball = download_path.join(tarball_name);
-            assert!(!tarball.starts_with(&build_dir), "{tarball_name}");
-            assert!(!build_dir.starts_with(&tarball), "{tarball_name}");
+        for tarball_name in [
+            "node-v22.0.0.tar.gz",
+            "node-v22.0.0",
+            "build",
+            "node-v22.0.0.tar.gz.build",
+            "SHASUMS256",
+            "SHASUMS256.txt",
+        ] {
+            let build_dir = source_build_dir(download_path, tarball_name, "22.0.0");
+            assert!(build_dir.ends_with("node-v22.0.0"), "{tarball_name}");
+            let staging = build_dir.parent().unwrap();
+            assert_eq!(staging.parent(), Some(download_path), "{tarball_name}");
+            for file in [tarball_name, "SHASUMS256.txt", "SHASUMS256.asc"] {
+                let file = download_path.join(file);
+                assert!(!file.starts_with(staging), "{tarball_name}: {file:?}");
+                assert!(!staging.starts_with(&file), "{tarball_name}: {file:?}");
+            }
         }
     }
 

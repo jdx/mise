@@ -4,9 +4,12 @@
 # version's download directory. With always_keep_download the source tarball
 # stays there, but the build tree made from it does not.
 
+detect_platform
+
 UPSTREAM="$PWD/upstream"
 STAGE="$PWD/stage"
 SRC="$STAGE/node-v24.16.0"
+BUILT_IN="$PWD/built-in.txt"
 mkdir -p "$UPSTREAM/v24.16.0" "$SRC"
 
 cat >"$SRC/configure" <<'SH'
@@ -14,35 +17,66 @@ cat >"$SRC/configure" <<'SH'
 set -eu
 echo "${1#--prefix=}" >prefix.txt
 SH
-cat >"$SRC/fake-make" <<'SH'
+cat >"$SRC/fake-make" <<SH
 #!/bin/sh
 set -eu
-if [ "${1:-}" = install ]; then
-  prefix=$(cat prefix.txt)
-  mkdir -p "$prefix/bin"
-  printf '#!/bin/sh\necho v24.16.0\n' >"$prefix/bin/node"
-  printf '#!/bin/sh\necho 10.0.0\n' >"$prefix/bin/npm"
-  chmod +x "$prefix/bin/node" "$prefix/bin/npm"
+if [ "\${1:-}" = install ]; then
+  prefix=\$(cat prefix.txt)
+  mkdir -p "\$prefix/bin"
+  printf '#!/bin/sh\necho v24.16.0\n' >"\$prefix/bin/node"
+  printf '#!/bin/sh\necho 10.0.0\n' >"\$prefix/bin/npm"
+  chmod +x "\$prefix/bin/node" "\$prefix/bin/npm"
 else
-  pwd >built-in.txt
+  pwd >"$BUILT_IN"
 fi
 SH
 chmod +x "$SRC/configure"
 tar -C "$STAGE" -czf "$UPSTREAM/v24.16.0/node-v24.16.0.tar.gz" node-v24.16.0
 echo '[{"version":"v24.16.0","files":[]}]' >"$UPSTREAM/index.json"
+if command -v sha256sum >/dev/null 2>&1; then
+  SOURCE_SHA=$(sha256sum "$UPSTREAM/v24.16.0/node-v24.16.0.tar.gz" | cut -d' ' -f1)
+else
+  SOURCE_SHA=$(shasum -a 256 "$UPSTREAM/v24.16.0/node-v24.16.0.tar.gz" | cut -d' ' -f1)
+fi
+echo "$SOURCE_SHA  node-v24.16.0.tar.gz" >"$UPSTREAM/v24.16.0/SHASUMS256.txt"
+# The same tarball under a URL whose last segment is "build"
+cp "$UPSTREAM/v24.16.0/node-v24.16.0.tar.gz" "$UPSTREAM/v24.16.0/build"
 
 start_http_server --dir "$UPSTREAM"
 
 export MISE_NODE_MIRROR_URL="http://127.0.0.1:$HTTP_PORT/"
 export MISE_NODE_COMPILE=1
 export MISE_NODE_VERIFY=0
+export MISE_NODE_GPG_VERIFY=false
 export MISE_NODE_MAKE="sh fake-make"
 export MISE_NODE_COREPACK=0
 export MISE_ALWAYS_KEEP_DOWNLOAD=1
+export MISE_USE_VERSIONS_HOST=0
+
+DOWNLOADS="${MISE_DOWNLOADS_DIR:-$MISE_DATA_DIR/downloads}/node/24.16.0"
 
 assert_succeed "mise install node@24.16.0"
 assert "mise exec node@24.16.0 -- node" "v24.16.0"
-DOWNLOADS="${MISE_DOWNLOADS_DIR:-$MISE_DATA_DIR/downloads}/node/24.16.0"
+assert "cat '$BUILT_IN'" "$DOWNLOADS/node-v24.16.0.tar.gz.build/node-v24.16.0"
 assert_succeed "test -f '$DOWNLOADS/node-v24.16.0.tar.gz'"
-assert_directory_not_exists "$DOWNLOADS/build"
+assert_directory_not_exists "$DOWNLOADS/node-v24.16.0.tar.gz.build"
 assert_directory_not_exists "$DOWNLOADS/node-v24.16.0"
+
+echo "=== a locked source URL whose file name is build ==="
+assert_succeed "mise uninstall node@24.16.0"
+rm -rf "$DOWNLOADS" "$BUILT_IN"
+export MISE_LOCKFILE=1
+cat <<EOF >mise.toml
+[tools]
+node = "24.16.0"
+EOF
+assert_succeed "mise lock --platform $MISE_PLATFORM"
+assert_contains "cat mise.lock" 'install = "source"'
+sed -i.bak 's|v24.16.0/node-v24.16.0.tar.gz"|v24.16.0/build"|' mise.lock
+assert_contains "cat mise.lock" 'v24.16.0/build"'
+
+assert_succeed "mise install --locked"
+assert "mise exec -- node" "v24.16.0"
+assert "cat '$BUILT_IN'" "$DOWNLOADS/build.build/node-v24.16.0"
+assert_succeed "test -f '$DOWNLOADS/build'"
+assert_directory_not_exists "$DOWNLOADS/build.build"
