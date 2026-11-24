@@ -33,6 +33,12 @@ run = ["command -v cargo", "command -v task-tool"]
 
 [tasks.task-path.env]
 _.path = "./task-bin"
+
+[tasks.task-dummy]
+run = "dummy"
+
+[tasks.task-dummy.env]
+_.path = "./task-bin"
 EOF
 
 mkdir -p task-bin
@@ -44,7 +50,11 @@ cat >task-bin/task-tool <<'EOF'
 #!/usr/bin/env bash
 echo task-tool
 EOF
-chmod +x task-bin/cargo task-bin/task-tool
+cat >task-bin/dummy <<'EOF'
+#!/usr/bin/env bash
+echo task-path-dummy
+EOF
+chmod +x task-bin/cargo task-bin/task-tool task-bin/dummy
 
 mise reshim
 wrapper="$MISE_DATA_DIR/command-wrappers/bin/cargo"
@@ -92,7 +102,8 @@ chmod +x "$fake_bin/dummy"
 assert "mise x -- sh -c dummy" "inherited-dummy"
 
 # Every project shares the wrapper directory. A shim another project left there for a command
-# this project does not wrap must not hand that command to mise's tool instead.
+# this project does not wrap passes the command on: it runs what the PATH holds behind the wrapper
+# directory, whether the caller ran it by name or by the path a lookup returned.
 mkdir -p "$HOME/other-project"
 cat >"$HOME/other-project/mise.toml" <<'EOF'
 [wrappers.dummy]
@@ -105,13 +116,17 @@ mise reshim
 assert_succeed "test -e '$MISE_DATA_DIR/command-wrappers/bin/dummy'"
 assert "mise x -- sh -c 'command -v dummy'" "$MISE_DATA_DIR/command-wrappers/bin/dummy"
 assert "mise x -- sh -c dummy" "inherited-dummy"
-# `mise x -- dummy` looks mise's tools up first, with or without that shim.
+assert "mise x -- sh -c '\"\$(command -v dummy)\"'" "inherited-dummy"
+# `mise x -- dummy` looks mise's tools up first, as it does without that shim.
 mise_dummy="$(mise x -- dummy)"
 assert_not_contains "echo '$mise_dummy'" "inherited-dummy"
-# With no inherited `dummy` ahead of the shims, the leftover shim runs mise's tool.
+# Where the PATH lists mise's tools first, the shim passes the command on to mise's tool.
+assert "MISE_ACTIVATE_AGGRESSIVE=1 mise x -- sh -c dummy" "$mise_dummy"
 mv "$fake_bin/dummy" "$fake_bin/dummy.off"
 assert "mise x -- sh -c dummy" "$mise_dummy"
 mv "$fake_bin/dummy.off" "$fake_bin/dummy"
+# A task's `_.path` comes next when the inherited PATH has no shims directory.
+assert "PATH='$path_without_shims' mise run -q task-dummy" "task-path-dummy"
 
 # A tool's postinstall hook runs with the tool's own directories, then the inherited PATH. A
 # wrapper directory inherited from the shell keeps its place there instead of taking the lead.
@@ -128,7 +143,16 @@ assert "cat '$HOME/postinstall-cargo'" "$fake_bin/cargo"
 cat >mise.toml <<'EOF'
 [tools]
 dummy = "1.0.0"
+
+[tasks.task-dummy]
+run = "dummy"
+
+[tasks.task-dummy.env]
+_.path = "./task-bin"
 EOF
 mise reshim
 assert_not_contains "mise env -s bash" "command-wrappers"
 assert "mise x -- sh -c 'cargo check'" "system-cargo"
+# A wrapper directory that is only inherited keeps its place, ahead of a task's `_.path` when it
+# leads the PATH. The other project's shim in it still passes the command on to the task's.
+assert "PATH='$MISE_DATA_DIR/command-wrappers/bin:$path_without_shims' mise run -q task-dummy" "task-path-dummy"

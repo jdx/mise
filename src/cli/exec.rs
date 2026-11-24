@@ -601,6 +601,9 @@ impl Exec {
             args.insert(0, "-C".into());
         }
 
+        // The shim of a wrapper this config does not have is another project's. Looking the
+        // program up without it finds what `mise x` runs when that shim was never written.
+        let skip_wrapper_dirs = !config_wraps_command(&config, &ts, &program)?;
         time!("exec");
         // shell_body_mode: true only for the `-c`/`--command` path, where
         // parse_command synthesized `shell + [flags.., body]`. A positional
@@ -615,6 +618,7 @@ impl Exec {
             &ExecExtras {
                 scrub_on_failure: &scrub_on_failure,
                 configured_paths: &configured_paths,
+                skip_wrapper_dirs,
             },
         )
         .await
@@ -720,18 +724,11 @@ async fn warn_if_command_falls_back(
     // A command wrapper configured for this command runs in place of any tool's binary. Its
     // shim may not exist yet, so read the configuration. The wrapper of a command that is
     // already running does not apply: that command runs the real tool.
-    let name = crate::shims::command_name_without_exe_suffix(program);
-    if !crate::shims::is_active_command_wrapper(name) {
-        let wrappers = crate::config::load_command_wrappers(
-            &config.config_files,
-            ts.versions.values().flat_map(|versions| &versions.requests),
-        )?;
-        if wrappers
-            .keys()
-            .any(|wrapper| crate::shims::command_names_eq(wrapper, name))
-        {
-            return Ok(vec![]);
-        }
+    if !crate::shims::is_active_command_wrapper(crate::shims::command_name_without_exe_suffix(
+        program,
+    )) && config_wraps_command(config, ts, program)?
+    {
+        return Ok(vec![]);
     }
     // A `_.path` entry is searched ahead of every tool path, even when the inherited PATH already
     // has it, so it supplies the command whether or not the tool is installed. Entries declared
@@ -780,6 +777,18 @@ async fn warn_if_command_falls_back(
 /// Removes `keys` from mise's own environment. `exec_program` writes the whole child
 /// environment into the process before it execs, and mise keeps running when that fails
 /// (it builds a toolset for the error hint, which can spawn processes).
+/// Whether the config has a command wrapper for `program`.
+fn config_wraps_command(config: &Config, ts: &Toolset, program: &str) -> Result<bool> {
+    let name = crate::shims::command_name_without_exe_suffix(program);
+    let wrappers = crate::config::load_command_wrappers(
+        &config.config_files,
+        ts.versions.values().flat_map(|versions| &versions.requests),
+    )?;
+    Ok(wrappers
+        .keys()
+        .any(|wrapper| crate::shims::command_names_eq(wrapper, name)))
+}
+
 fn scrub_env(keys: &[String]) {
     for key in keys {
         env::remove_var(key);
@@ -806,6 +815,9 @@ pub(crate) struct ExecExtras<'a> {
     /// tool-added paths and tool bins. The caller's PATH may already hold them, but they still
     /// rank as mise-added when the program is resolved.
     pub configured_paths: &'a [std::path::PathBuf],
+    /// Leave the command-wrapper directories out of the program lookup: the config has no
+    /// wrapper for the program, so a shim there was left by another project.
+    pub skip_wrapper_dirs: bool,
 }
 
 #[cfg(all(not(test), unix))]
@@ -826,6 +838,7 @@ where
     let ExecExtras {
         scrub_on_failure,
         configured_paths,
+        skip_wrapper_dirs,
     } = *extras;
     // Capture the marker before deny-env removes variables from the process.
     // The lazy state must retain the dispatching shim for candidate filtering.
@@ -883,7 +896,7 @@ where
             let all_paths: Vec<_> = std::env::split_paths(&OsString::from(path_val)).collect();
             let wrappers: Vec<_> = all_paths
                 .iter()
-                .filter(|p| crate::file::is_command_wrapper_dir(p))
+                .filter(|p| !skip_wrapper_dirs && crate::file::is_command_wrapper_dir(p))
                 .cloned()
                 .collect();
             // Mise-added paths first (preserving relative order)
@@ -1029,6 +1042,7 @@ where
     let ExecExtras {
         scrub_on_failure,
         configured_paths,
+        skip_wrapper_dirs,
     } = *extras;
     // Capture the marker before deny-env removes variables from the process.
     // The lazy state must retain the dispatching shim for candidate filtering.
@@ -1080,7 +1094,7 @@ where
         let all_paths: Vec<_> = std::env::split_paths(&OsString::from(path_val)).collect();
         let wrappers: Vec<_> = all_paths
             .iter()
-            .filter(|p| crate::file::is_command_wrapper_dir(p))
+            .filter(|p| !skip_wrapper_dirs && crate::file::is_command_wrapper_dir(p))
             .cloned()
             .collect();
         let mise_added: Vec<_> = all_paths
@@ -1255,8 +1269,11 @@ where
     let ExecExtras {
         scrub_on_failure,
         configured_paths,
+        skip_wrapper_dirs,
     } = *extras;
-    trace!("exec extras: scrub {scrub_on_failure:?}, configured paths {configured_paths:?}");
+    trace!(
+        "exec extras: scrub {scrub_on_failure:?}, configured paths {configured_paths:?}, skip wrapper dirs {skip_wrapper_dirs}"
+    );
     let mut cmd = cmd::cmd(program, args);
     for (k, v) in env.iter() {
         cmd = cmd.env(k, v);
