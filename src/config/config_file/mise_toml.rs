@@ -5504,6 +5504,24 @@ run = "cargo build"
         "spm:https://gitlab.com/o/r.git" = "latest"
         "spm:o/r" = "latest"
         "#}));
+        // a URL key off a public forge picks the host that gets the user's
+        // netrc and git credential-helper logins
+        for tool in [
+            "npm:git+https://git.example.test/o/r.git",
+            "npm:https://pkg.example.test/tool.tgz",
+            "pipx:git+https://git.example.test/o/r.git",
+        ] {
+            assert!(
+                !is_safe_config_body(&format!("[tools]\n\"{tool}\" = \"latest\"\n")),
+                "{tool}"
+            );
+        }
+        assert!(is_safe_config_body(indoc! {r#"
+        [tools]
+        "npm:github:o/r" = "latest"
+        "npm:git+https://github.com/o/r.git" = "latest"
+        "pipx:git+https://github.com/psf/black.git" = "latest"
+        "#}));
         // tasks with templates render (and can exec) while loading
         assert!(!is_safe_config_body(indoc! {r#"
         [tasks.build]

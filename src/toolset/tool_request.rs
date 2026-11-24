@@ -569,6 +569,30 @@ impl ToolRequest {
         };
         let project = !crate::config::is_global_config(path);
         record_safe_mode_credential_hosts(&self.options().opts, project);
+        // A tool key can be the URL itself (an `npm:` tarball, a `pipx:` git source).
+        if project
+            && let Some(url) = crate::backend::url_logins::tool_key_login_url(&self.ba().full())
+        {
+            mise_util::untrusted_hosts::deny_netrc_for_url(&url);
+        }
+    }
+
+    /// In safe mode, rejects a tool key that is a URL fetching which sends the user's
+    /// netrc or git credential-helper logins to a host the key chooses (see
+    /// [`crate::backend::url_logins::tool_key_login_url`]), unless global or system config
+    /// makes the request for a tool that no project config declares. git takes those logins
+    /// from the user's own setup, so mise cannot withhold them as it does for its HTTP client.
+    pub(crate) fn ensure_safe_url_tool_key(&self) -> Result<()> {
+        if !Settings::safe_mode() || self.is_global_config_tool() {
+            return Ok(());
+        }
+        if crate::backend::url_logins::tool_key_login_url(&self.ba().full()).is_some() {
+            Settings::ensure_not_safe(&format!(
+                "fetching `{}`, a tool URL that global config does not request,",
+                crate::install_layout::resolver::redact_credentials(&self.ba().short)
+            ))?;
+        }
+        Ok(())
     }
 
     /// Rejects install options that can execute configuration-provided code in safe mode.
@@ -576,6 +600,7 @@ impl ToolRequest {
         if !Settings::safe_mode() {
             return Ok(());
         }
+        self.ensure_safe_url_tool_key()?;
         let options = self.options();
         if options.postinstall().is_some() {
             Settings::ensure_not_safe(&format!(

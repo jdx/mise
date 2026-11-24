@@ -85,6 +85,12 @@ fails if they differ, until `mise up`), and installs that file, so a push betwee
 the check and the install cannot change what is installed. The package keeps
 the name in its own `package.json`.
 
+A tarball URL in a project's config, other than one on github.com, gitlab.com
+or bitbucket.org, needs [trust](/security.html#what-needs-trust): mise sends
+your `~/.netrc` login for the URL's host when it downloads the tarball. So does
+a Git URL over `http(s)` on another host, which git fetches with your
+credential helper and `~/.netrc` logins.
+
 `http://` URLs and the `checksum` option are not supported. `mise.lock` records
 the version but no dependency graph for a tarball URL, because aube would
 resolve it without the tarball's `optionalDependencies`. With embedded aube or `aube_cli`, a tarball's own

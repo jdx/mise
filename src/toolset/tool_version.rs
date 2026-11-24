@@ -237,6 +237,7 @@ impl ToolVersion {
         request: ToolRequest,
         opts: &ResolveOptions,
     ) -> Result<Self> {
+        request.ensure_safe_url_tool_key()?;
         let install_env = request.options().core.install_env;
         let ba = request.ba().clone();
         let resolve =
@@ -406,6 +407,7 @@ impl ToolVersion {
         request: &ToolRequest,
         target: &PlatformTarget,
     ) -> Result<Option<Self>> {
+        request.ensure_safe_url_tool_key()?;
         let version = request.version();
         let (query, boundary, alias_resolved) = match request {
             ToolRequest::Prefix { prefix, .. } => (prefix.clone(), true, false),

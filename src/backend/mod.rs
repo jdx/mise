@@ -86,6 +86,7 @@ pub(crate) mod spinel;
 pub(crate) mod spm;
 pub mod static_helpers;
 pub(crate) mod ubi;
+pub mod url_logins;
 pub(crate) mod version_list;
 pub(crate) mod vfox;
 

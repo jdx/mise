@@ -1221,6 +1221,7 @@ pub(crate) fn install_time_option_keys() -> Vec<String> {
 impl PIPXBackend {
     /// Resolves a Git remote's default-branch HEAD to a concrete commit SHA.
     async fn git_head(remote: &str) -> Result<String> {
+        super::url_logins::ensure_safe_mode_git_remote(remote)?;
         timeout::run_with_timeout_async(
             async || {
                 let output = crate::git::ls_remote(&[], remote, &["HEAD"]).await?;
@@ -1270,6 +1271,7 @@ impl PIPXBackend {
 
     /// Lists tags from a Git remote while preserving Git's source ordering.
     async fn versions_from_git_tags(remote: &str) -> Result<Vec<VersionInfo>> {
+        super::url_logins::ensure_safe_mode_git_remote(remote)?;
         timeout::run_with_timeout_async(
             async || {
                 let output = crate::git::ls_remote(&["--tags", "--refs"], remote, &[]).await?;
@@ -1794,6 +1796,14 @@ fn uv_args_select_python(args: &[String]) -> bool {
             || a.starts_with("--python=")
             || (a.starts_with("-p") && !a.starts_with("--") && a.len() > 2)
     })
+}
+
+/// The remote git queries for a tool name that is a git source.
+pub(super) fn fetched_url(name: &str) -> Option<String> {
+    match name.parse() {
+        Ok(PipxRequest::Git(source)) => Some(source.remote()),
+        _ => None,
+    }
 }
 
 /// A Git source split into its repository and any pip/uv URL fragment

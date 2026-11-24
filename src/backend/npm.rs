@@ -216,6 +216,7 @@ fn git_ls_remote_args(remote: &str) -> Vec<&str> {
 
 /// Resolve a git remote's default-branch HEAD to a concrete commit.
 async fn git_head(remote: &str) -> eyre::Result<String> {
+    super::url_logins::ensure_safe_mode_git_remote(remote)?;
     let display_remote = display_git_remote(remote);
     timeout::run_with_timeout_async(
         async || {
@@ -286,6 +287,18 @@ fn validate_git_alias(name: &str) -> Result<()> {
 /// a registry package. `http://` is recognised only to be refused.
 pub(crate) fn is_tarball_spec(name: &str) -> bool {
     name.starts_with("https://") || name.starts_with("http://")
+}
+
+/// The URL fetched for a tool name that is a tarball or a git source: the
+/// tarball itself, or the remote git queries, without its `#ref`.
+pub(super) fn fetched_url(name: &str) -> Option<String> {
+    if is_tarball_spec(name) {
+        Some(name.to_string())
+    } else if is_git_spec(name) {
+        Some(git_remote(name))
+    } else {
+        None
+    }
 }
 
 /// Whether a source has no version list and `latest` follows whatever it

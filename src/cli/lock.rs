@@ -3400,6 +3400,11 @@ impl Lock {
                 if tool.ba.explicit_opts().is_some_and(|opts| !opts.is_empty()) {
                     trust_check(&config_path)?;
                 }
+                // So does a tool key that is a URL off a public forge, which
+                // gets the user's logins for its host when it is fetched.
+                if crate::backend::url_logins::tool_key_login_url(&tool.ba.full()).is_some() {
+                    trust_check(&config_path)?;
+                }
                 let request = ToolRequest::new_with_options(
                     tool.ba.clone(),
                     &request.version(),

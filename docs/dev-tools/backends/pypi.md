@@ -71,6 +71,11 @@ repository. Their releases and installation requirements can differ.
 
 Other forms, including direct HTTPS archive URLs, are not supported.
 
+A Git URL over `http(s)` on a host other than github.com, gitlab.com or
+bitbucket.org needs [trust](/security.html#what-needs-trust) in a project's
+config, because git fetches it with your credential helper and `~/.netrc`
+logins for that host.
+
 For GitHub sources, `latest` selects the newest GitHub release, and installs
 from the default branch only when the repository has no releases. For other Git
 URLs, `latest` resolves the default branch's HEAD to a commit. You can request

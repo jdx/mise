@@ -577,9 +577,13 @@ pub(crate) fn version_requires_trust(version: &str) -> bool {
 /// Inline options (`tool[postinstall=...]`) can run code or redirect a backend.
 /// An `spm:` package named by the URL of a self-hosted forge makes mise derive
 /// that host's API from the name and send it the user's forge token, as an
-/// `api_url` option would.
+/// `api_url` option would. An `npm:` tarball or `npm:`/`pipx:` git source on a
+/// host other than a public forge gets the user's netrc and git
+/// credential-helper logins for that host when mise or git fetches it.
 fn tool_key_requires_trust(tool: &str) -> bool {
-    tool.contains('[') || crate::backend::spm::tool_key_selects_api_host(tool)
+    tool.contains('[')
+        || crate::backend::spm::tool_key_selects_api_host(tool)
+        || crate::backend::url_logins::tool_key_login_url(tool).is_some()
 }
 
 /// Whether a detected config requires trust before tracked loading may parse it.

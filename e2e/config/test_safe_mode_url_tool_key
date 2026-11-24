@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+
+# A tool name can be the URL mise or git fetches: an npm tarball or a git
+# source. git sends the user's credential-helper and ~/.netrc logins to that
+# URL's host, so safe mode does not fetch one that project config chooses, and
+# refuses before contacting the host.
+
+refused="a tool URL that global config does not request, is disabled in safe mode (MISE_SAFE=1)"
+
+for tool in \
+  "npm:git+https://git.example.invalid/o/r.git" \
+  "npm:https://pkg.example.invalid/tool.tgz" \
+  "pipx:git+https://git.example.invalid/o/r.git"; do
+  cat <<EOF >mise.toml
+[tools]
+"$tool" = "latest"
+EOF
+  rm -f mise.lock
+  assert_fail "MISE_SAFE=1 mise lock --platform linux-x64" "$refused"
+  assert_fail "MISE_SAFE=1 mise install" "$refused"
+done
+
+# A tool that only a task declares is a project tool too.
+cat <<EOF >mise.toml
+[tasks.build]
+run = "true"
+tools = { "npm:git+https://git.example.invalid/o/r.git" = "latest" }
+EOF
+rm -f mise.lock
+assert_fail "MISE_SAFE=1 mise lock --platform linux-x64" "$refused"
+assert_fail "MISE_SAFE=1 mise install --include-task-tools" "$refused"

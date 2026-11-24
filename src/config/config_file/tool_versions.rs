@@ -311,6 +311,18 @@ mod tests {
         assert!(!body_requires_trust(
             "spm:https://github.com/o/r.git latest\n"
         ));
+        assert!(body_requires_trust(
+            "npm:git+https://git.example.test/o/r.git latest\n"
+        ));
+        assert!(body_requires_trust(
+            "npm:https://pkg.example.test/tool.tgz latest\n"
+        ));
+        assert!(body_requires_trust(
+            "pipx:git+https://git.example.test/o/r.git latest\n"
+        ));
+        assert!(!body_requires_trust(
+            "pipx:git+https://github.com/psf/black.git latest\n"
+        ));
         assert!(body_requires_trust("node path:./local\n"));
         assert!(body_requires_trust("node 20 path:./local # x\n"));
         assert!(!body_requires_trust("node 20 # path:./local\n"));
