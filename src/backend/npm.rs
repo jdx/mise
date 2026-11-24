@@ -91,13 +91,19 @@ fn git_requirement(name: &str, version: &str) -> String {
 /// and `#ref`. A credential in the query string stays: the lockfile refuses to
 /// record such a graph.
 fn git_url_with_and_without_credentials(name: &str) -> Option<(String, String)> {
+    let url = git_source_url(name)?;
+    let stored = mise_util::redactions::strip_url_credentials_in_arg(url);
+    (stored != url).then(|| (url.to_string(), stored.into_owned()))
+}
+
+/// A git source's URL as the request spells it, the way aube writes it into a
+/// dependency graph: without `git+` and `#ref`.
+fn git_source_url(name: &str) -> Option<&str> {
     if !is_git_spec(name) {
         return None;
     }
     let url = name.split('#').next().unwrap_or(name).trim_end_matches('/');
-    let url = url.strip_prefix("git+").unwrap_or(url);
-    let stored = mise_util::redactions::strip_url_credentials_in_arg(url);
-    (stored != url).then(|| (url.to_string(), stored.into_owned()))
+    Some(url.strip_prefix("git+").unwrap_or(url))
 }
 
 /// A dependency graph with every key and string passed through `f`.
@@ -1499,6 +1505,13 @@ impl Backend for NPMBackend {
         // A tarball URL has no dependency graph (see `resolve_aube_lock`); its
         // version, the digest, is all the lockfile holds.
         let graph_wanted = !is_tarball_spec(&self.tool_name());
+        if let Some(lock) = &tv.aube_lock
+            && lock
+                .load()
+                .is_ok_and(|lock| !self.installs_stored_aube_lock(lock, ctx.locked))
+        {
+            tv.aube_lock = None;
+        }
         if package_manager == NpmPackageManager::Aube
             && graph_wanted
             && tv.aube_lock.is_none()
@@ -2121,13 +2134,36 @@ impl NPMBackend {
         }
     }
 
-    /// Whether a dependency graph names the git source with the credentials of
-    /// its URL.
+    /// Whether a dependency graph names the git source with credentials in its
+    /// URL: any credentials, not only the ones the request has now, so a graph
+    /// stored before a token was rotated, or before the user moved it to a
+    /// credential helper, counts too.
     pub(crate) fn aube_lock_holds_credentials(&self, lock: &crate::lockfile::AubeLock) -> bool {
-        git_url_with_and_without_credentials(&self.tool_name()).is_some_and(|(url, stored)| {
-            aube_graph_map(&lock.graph, &|value| value.replace(&url, &stored)) != lock.graph
-                || lock.project.as_deref().is_some_and(|p| p.contains(&url))
-        })
+        let name = self.tool_name();
+        let Some(url) = git_source_url(&name) else {
+            return false;
+        };
+        let stored = mise_util::redactions::strip_url_credentials_in_arg(url);
+        let holds = |text: &str| {
+            let stripped = mise_util::redactions::strip_url_credentials(text);
+            stripped != text && stripped.contains(stored.as_ref())
+        };
+        let found = std::cell::Cell::new(false);
+        aube_graph_map(&lock.graph, &|value| {
+            if holds(value) {
+                found.set(true);
+            }
+            value.to_string()
+        });
+        found.get() || lock.project.as_deref().is_some_and(holds)
+    }
+
+    /// Whether an install can use a stored dependency graph as it is. One that
+    /// holds the credentials of its git source's URL is resolved again, which
+    /// stores it without them, unless the install is `--locked` and so must
+    /// install what the lockfile names.
+    fn installs_stored_aube_lock(&self, lock: &crate::lockfile::AubeLock, locked: bool) -> bool {
+        locked || !self.aube_lock_holds_credentials(lock)
     }
 
     /// The dependency graph as an install needs it: with the credentials of
@@ -4202,6 +4238,39 @@ packages:
         assert!(stored.contains("repo: https://git.example.test/o/r.git, type: git"));
         let stored_lock = crate::lockfile::AubeLock::from_yaml(&stored).unwrap();
         assert!(!backend.aube_lock_holds_credentials(&stored_lock));
+
+        // A graph stored with credentials is resolved again, whatever the
+        // request's credentials are now, unless the install is `--locked`.
+        for request in [
+            "git+https://ci:glpat-token@git.example.test/o/r.git",
+            "git+https://ci:rotated-token@git.example.test/o/r.git",
+            "git+https://git.example.test/o/r.git",
+        ] {
+            let backend = create_npm_git_backend(request);
+            assert!(
+                backend.aube_lock_holds_credentials(&written_lock),
+                "{request}"
+            );
+            assert!(
+                !backend.installs_stored_aube_lock(&written_lock, false),
+                "{request}"
+            );
+            assert!(
+                backend.installs_stored_aube_lock(&written_lock, true),
+                "{request}"
+            );
+            assert!(
+                !backend.aube_lock_holds_credentials(&stored_lock),
+                "{request}"
+            );
+            assert!(
+                backend.installs_stored_aube_lock(&stored_lock, false),
+                "{request}"
+            );
+        }
+        // Another source's credentials are not this graph's to judge.
+        let other = create_npm_git_backend("git+https://git.example.test/o/other.git");
+        assert!(!other.aube_lock_holds_credentials(&written_lock));
 
         // Either one matches the request, and is installed with the credentials.
         for lock in [&stored_lock, &written_lock] {
