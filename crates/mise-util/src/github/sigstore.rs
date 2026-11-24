@@ -553,13 +553,18 @@ fn keep_mirrored_attestations(attestations: &MirroredAttestations) -> bool {
 /// mise-versions' attestations for `repo` at `digest`, asked for again past
 /// the copy [`mirrored_attestations`] keeps, which may predate one GitHub
 /// added since. A complete answer replaces that copy, on disk and for the
-/// rest of this command, so later checks don't ask again.
+/// rest of this command, so later checks don't ask again. Any other answer
+/// drops it: the copy has just failed its caller, and left in place it would
+/// go on telling probes of attestations mise-versions no longer has.
 async fn refreshed_mirrored_attestations(
     repo: &str,
     digest: &str,
 ) -> eyre::Result<MirroredAttestations> {
     let fresh = crate::versions_host::github_attestations(repo, digest).await?;
-    if keep_mirrored_attestations(&fresh) && !mise_settings::Settings::get().paranoid.provenance() {
+    if mise_settings::Settings::get().paranoid.provenance() {
+        return Ok(fresh);
+    }
+    if keep_mirrored_attestations(&fresh) {
         let key = mirrored_attestations_key(repo, digest);
         if let Err(err) = mirrored_attestations_cache(&key).write(&fresh) {
             debug!("failed to keep refreshed attestations for {repo}: {err:#}");
@@ -568,8 +573,50 @@ async fn refreshed_mirrored_attestations(
             key,
             std::sync::Arc::new(tokio::sync::OnceCell::new_with(Some(fresh.clone()))),
         );
+    } else {
+        forget_mirrored_attestations(repo, digest);
     }
     Ok(fresh)
+}
+
+/// Drop the copy [`mirrored_attestations`] keeps for `repo` at `digest`, on
+/// disk and for the rest of this command, so that neither a probe nor a later
+/// command answers from it.
+fn forget_mirrored_attestations(repo: &str, digest: &str) {
+    let key = mirrored_attestations_key(repo, digest);
+    if let Err(err) = mirrored_attestations_cache(&key).clear() {
+        debug!("failed to drop kept attestations for {repo}: {err:#}");
+    }
+    MIRRORED_ATTESTATIONS.lock().unwrap().remove(&key);
+}
+
+/// The verdict on attestations from mise-versions for `full` that verify but
+/// were made by `made_by`, or `None` to ask mise-versions again. A kept set
+/// is dropped and asked for again, since one wrong answer would otherwise
+/// fail the artifact for as long as it is kept, with nobody asked; a fresh
+/// one is refused. Paranoid mode has GitHub answer instead.
+fn foreign_attestations_verdict(
+    full: &str,
+    digest: &str,
+    made_by: &str,
+    fresh: bool,
+) -> Option<MirrorVerdict> {
+    if !mirror_may_answer_none() {
+        warn!(
+            "mise-versions returned attestations for {full} made by {made_by}; verifying with GitHub instead"
+        );
+        return Some(MirrorVerdict::AskGithub);
+    }
+    forget_mirrored_attestations(full, digest);
+    if !fresh {
+        debug!(
+            "GitHub attestations kept for {full} were made by {made_by}; asking mise-versions again"
+        );
+        return None;
+    }
+    Some(MirrorVerdict::Done(Err(AttestationError::Verification(
+        format!("the attestations mise-versions has for {full} were made by {made_by}"),
+    ))))
 }
 
 /// What mise-versions settled about an artifact's attestations: `T` is a
@@ -628,7 +675,8 @@ fn after_mirror_failure(
 /// ([`MirrorVerdict::RetryGithub`]). A set kept from an earlier command may
 /// predate an attestation GitHub added since, so one that doesn't verify is
 /// asked for again before the failure stands; mise-versions refreshes its own
-/// copy within half an hour of a release.
+/// copy within half an hour of a release. So is one that verifies but was
+/// made by another repository ([`foreign_attestations_verdict`]).
 async fn verify_with_mirror(
     artifact_path: &Path,
     owner: &str,
@@ -714,15 +762,10 @@ async fn verify_with_mirror(
             }
             CachedAttestationVerification::Verified(sources) => {
                 let made_by = sources.join(", ");
-                if !mirror_may_answer_none() {
-                    warn!(
-                        "mise-versions returned attestations for {full} made by {made_by}; verifying with GitHub instead"
-                    );
-                    return MirrorVerdict::AskGithub;
+                if let Some(verdict) = foreign_attestations_verdict(&full, &digest, &made_by, fresh)
+                {
+                    return verdict;
                 }
-                return MirrorVerdict::Done(Err(AttestationError::Verification(format!(
-                    "the attestations mise-versions has for {full} were made by {made_by}"
-                ))));
             }
             CachedAttestationVerification::Retry(err) if fresh => {
                 if !mirror_may_answer_none() {
@@ -1880,6 +1923,96 @@ mod tests {
                 => "https://github-proxy.example.com/repos/acme/attested-tool/".to_string(),
         }));
         assert!(mirrored_attestations(repo, digest).await.unwrap().is_none());
+    }
+
+    /// Keep `attestations` for `repo` at `digest` as [`mirrored_attestations`]
+    /// does, on disk and for this command.
+    fn keep_for_test(repo: &str, digest: &str, attestations: MirroredAttestations) {
+        let key = mirrored_attestations_key(repo, digest);
+        mirrored_attestations_cache(&key)
+            .write(&attestations)
+            .unwrap();
+        let cell = MirroredAttestationsCell::default();
+        cell.set(attestations).unwrap();
+        MIRRORED_ATTESTATIONS.lock().unwrap().insert(key, cell);
+    }
+
+    fn kept_on_disk(repo: &str, digest: &str) -> bool {
+        mirrored_attestations_cache(&mirrored_attestations_key(repo, digest)).has_fresh_value()
+    }
+
+    fn kept_in_this_command(repo: &str, digest: &str) -> bool {
+        MIRRORED_ATTESTATIONS
+            .lock()
+            .unwrap()
+            .contains_key(&mirrored_attestations_key(repo, digest))
+    }
+
+    #[test]
+    fn test_kept_attestations_of_another_repository_are_dropped_and_asked_again() {
+        let _settings = SettingsGuard::new(None);
+        let repo = "acme/kept-by-another";
+        let digest = "sha256:1";
+        let attestation: mise_sigstore::Attestation =
+            serde_json::from_value(serde_json::json!({"bundle": {}, "bundle_url": null})).unwrap();
+        keep_for_test(repo, digest, Some(vec![attestation]));
+        assert!(kept_on_disk(repo, digest));
+
+        // the set kept from an earlier command: asked for again, and gone
+        assert!(foreign_attestations_verdict(repo, digest, "evil/tool", false).is_none());
+        assert!(
+            !kept_on_disk(repo, digest),
+            "the foreign set stayed on disk"
+        );
+        assert!(!kept_in_this_command(repo, digest));
+
+        // the answer mise-versions gives now is refused
+        let verdict = foreign_attestations_verdict(repo, digest, "evil/tool", true);
+        assert!(
+            matches!(
+                verdict,
+                Some(MirrorVerdict::Done(Err(AttestationError::Verification(ref msg))))
+                    if msg.contains("made by evil/tool")
+            ),
+            "a fresh set made by another repository must fail"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_refresh_that_keeps_nothing_drops_the_kept_set() {
+        // a mise-versions stand-in that now has no attestations for the digest
+        let server = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}", server.local_addr().unwrap());
+        std::thread::spawn(move || {
+            use std::io::{Read, Write};
+            for mut stream in server.incoming().flatten() {
+                let mut request = [0; 4096];
+                let _ = stream.read(&mut request);
+                let body = r#"{"attestations":[]}"#;
+                let _ = write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+            }
+        });
+        let _settings = SettingsGuard::new(Some(indexmap::indexmap! {
+            "https://mise-versions.jdx.dev".to_string() => url,
+        }));
+        let repo = "acme/refreshed-empty";
+        let digest = "sha256:2";
+        let attestation: mise_sigstore::Attestation =
+            serde_json::from_value(serde_json::json!({"bundle": {}, "bundle_url": null})).unwrap();
+        keep_for_test(repo, digest, Some(vec![attestation]));
+        assert!(kept_on_disk(repo, digest));
+
+        let fresh = refreshed_mirrored_attestations(repo, digest).await.unwrap();
+        assert_eq!(fresh.map(|a| a.len()), Some(0));
+        assert!(
+            !kept_on_disk(repo, digest),
+            "the superseded set stayed on disk"
+        );
+        assert!(!kept_in_this_command(repo, digest));
     }
 
     #[test]
