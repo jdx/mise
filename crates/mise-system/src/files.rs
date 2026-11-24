@@ -2918,6 +2918,10 @@ pub fn check(config: &Config, req: &FileRequest, secrets: &SecretValues) -> Resu
     if req.mode == FileMode::Track {
         return Ok(FileState::Tracked);
     }
+    // apply refuses this entry as root, whatever lies behind the link
+    if let Some(reason) = crate::managed_files::untrusted_parent_as_root(&req.target)? {
+        bail!("{reason}");
+    }
     if req.mode.has_source() && !req.source.exists() && !keeps_existing(req) {
         return Ok(FileState::SourceMissing);
     }
@@ -5893,6 +5897,7 @@ fn execute_layer(
     }
     for link in &plan.reconciliation.stale_links {
         if link_points_to(&link.source, &link.target) {
+            crate::managed_files::refuse_untrusted_parent_as_root(&link.target)?;
             let item = link.target.display_user().to_string();
             // parents up to the entry target may be pruned once empty
             let root = plan
@@ -5924,6 +5929,7 @@ fn execute_layer(
         for (req, rendered) in &plan.todo {
             current = Some((*req, written.len()));
             recheck_removal(req, rendered.as_deref(), opts.force)?;
+            refuse_untrusted_parents(req)?;
             if req.mode == FileMode::SymlinkEach {
                 unfold_source_links(req, written)?;
             }
@@ -6089,6 +6095,14 @@ fn plan_apply_after<'a>(
         if req.mode == FileMode::Track {
             continue;
         }
+        // as root, a link another user made in a parent directory would send
+        // the write wherever that user likes, so it is never followed
+        if let Some(reason) = crate::managed_files::untrusted_parent_as_root(&req.target)
+            .unwrap_or_else(|err| Some(err.to_string()))
+        {
+            broken.push(format!("  [dotfiles].\"{}\": {reason}", req.target_raw));
+            continue;
+        }
         // report every problem in one pass instead of fix-and-retry — a
         // render or check failure on one entry must not hide the rest
         if opts.dry_run
@@ -6248,6 +6262,24 @@ fn plan_apply_after<'a>(
 
 /// The plan classified a removal's target before the confirmation prompt; an
 /// edit made since then must not be removed without `--force`.
+/// The plan vetted the target's parents before the confirmation prompt and
+/// any template ran; root looks again before it writes, and before the journal
+/// opens, so a refusal leaves nothing to recover. The files a walked directory
+/// places are vetted here too: a link at the target, or beneath it, is a
+/// parent of theirs. See [`crate::managed_files::untrusted_parent_as_root`].
+fn refuse_untrusted_parents(req: &FileRequest) -> Result<()> {
+    use crate::managed_files::refuse_untrusted_parent_as_root;
+    refuse_untrusted_parent_as_root(&req.target)?;
+    if crate::managed_files::checks_parents_as_root()
+        && (req.mode == FileMode::SymlinkEach || req.mode == FileMode::Copy && req.source.is_dir())
+    {
+        for (_, target) in walk_source_files(req)? {
+            refuse_untrusted_parent_as_root(&target)?;
+        }
+    }
+    Ok(())
+}
+
 fn recheck_removal(req: &FileRequest, rendered: Option<&str>, force: bool) -> Result<()> {
     if !force
         && removes_target(req, rendered)
@@ -6492,6 +6524,11 @@ pub fn execute_unapply(
         HashSet::new()
     };
     for plan in todo {
+        // every path, not only the target: a link beneath a walked directory
+        // is a parent of the files in it
+        for path in &plan.paths {
+            crate::managed_files::refuse_untrusted_parent_as_root(path)?;
+        }
         let mut paths: Vec<(PathBuf, Capture)> = plan
             .paths
             .iter()
@@ -6544,6 +6581,10 @@ fn plan_unapply_one<'a>(
     let mut cleanup_empty_dirs = false;
     let mut conditional = false;
     let mut clear_symlink_each_state = false;
+    // as root, a parent link another user made is never followed
+    if let Some(reason) = crate::managed_files::untrusted_parent_as_root(&req.target)? {
+        bail!("{reason}");
+    }
     if records_created_dirs(req) && !req.target.exists() && !req.target.is_symlink() {
         // Nothing to remove, but a record left by an earlier removal (a
         // `remove_empty` apply, or the user deleting the file) still claims

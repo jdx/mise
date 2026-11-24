@@ -825,6 +825,15 @@ file or keep [one block](/bootstrap/files.html#blocks) of it. A `[dotfiles]`
 block or line edit has no such retry, so on a root-owned file it still requires
 running mise as root.
 
+When mise runs as root, it follows a symlinked parent directory of a target
+only inside a directory that root owns and no other user can write, as
+[`[bootstrap.files]`](/bootstrap/files.html) does. Any other symlinked parent
+is refused, because the user who controls it could redirect root's write,
+edit, or removal to a file of their choosing. `mise dot status` and apply
+report the symlink such a target crosses, and apply and unapply fail for that
+entry. Declare the resolved path instead. As any other user, mise follows
+symlinked parents like any other path, so `~/.config` can still be a link.
+
 ## Manage the mise config itself {#self-managing-mise-config}
 
 The global mise config and `dotfiles.root` can be dotfiles too:

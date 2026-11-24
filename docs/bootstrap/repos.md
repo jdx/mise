@@ -140,6 +140,11 @@ you trust such a checkout, tell Git so once:
 git config --global --add safe.directory /srv/app
 ```
 
+When mise runs as root, a checkout path that crosses a symlink in a directory
+another user can write is a conflict too, as it is for
+[`[bootstrap.files]`](/bootstrap/files.html): that user could point the clone
+or update at a directory of their choosing. Declare the resolved path instead.
+
 ### How origins are matched
 
 These forms count as the same repository, with host names compared

@@ -288,6 +288,11 @@ pub async fn exec(
 }
 
 fn status_one(request: &RepoRequest) -> Result<RepoStatus> {
+    // `.git` is the first thing a clone creates, so its parent walk covers
+    // every component of the checkout path, the last one included
+    if let Some(reason) = untrusted_checkout_path(request)? {
+        return Ok(conflict_status(request, reason));
+    }
     if !request.path.exists() {
         return Ok(missing_status(request));
     }
@@ -395,6 +400,7 @@ fn clone_repo(request: &RepoRequest, dry_run: bool) -> Result<()> {
         return Ok(());
     }
 
+    refuse_untrusted_checkout_path(request)?;
     if let Some(parent) = request.path.parent() {
         std::fs::create_dir_all(parent)?;
     }
@@ -441,6 +447,7 @@ fn update_repo(request: &RepoRequest, dry_run: bool) -> Result<()> {
         }
         return Ok(());
     }
+    refuse_untrusted_checkout_path(request)?;
     if !is_clean(&request.path)? {
         bail!(
             "repos: {} has local changes; commit, stash, or clean them before bootstrap",
@@ -459,6 +466,9 @@ fn update_repo(request: &RepoRequest, dry_run: bool) -> Result<()> {
 }
 
 fn update_unpinned_repo(request: &RepoRequest, dry_run: bool) -> Result<()> {
+    if !dry_run {
+        refuse_untrusted_checkout_path(request)?;
+    }
     if !is_clean(&request.path)? {
         bail!(
             "repos: {} has local changes; commit, stash, or clean them before bootstrap",
@@ -684,6 +694,21 @@ fn is_git_repo(path: &Path) -> bool {
         return false;
     };
     paths_equal(path, Path::new(&top_level))
+}
+
+/// Why root must not clone into or update the checkout, if its path crosses
+/// a symlink another user could have planted. Status, apply and update all
+/// ask this first; the prompt runs between that and the change, so the
+/// change asks again.
+fn untrusted_checkout_path(request: &RepoRequest) -> Result<Option<String>> {
+    crate::managed_files::untrusted_parent_as_root(&request.path.join(".git"))
+}
+
+fn refuse_untrusted_checkout_path(request: &RepoRequest) -> Result<()> {
+    if let Some(reason) = untrusted_checkout_path(request)? {
+        bail!("repos: refusing to change {request}: {reason}");
+    }
+    Ok(())
 }
 
 /// git's ownership check refuses a repository another user owns, so mise does
