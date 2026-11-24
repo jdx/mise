@@ -54,10 +54,12 @@ use crate::ui::progress_report::SingleReport;
 use async_trait::async_trait;
 use aws_config::BehaviorVersion;
 use aws_sdk_s3::Client as S3Client;
+use aws_sdk_s3::primitives::ByteStream;
 use eyre::{Result, bail, eyre};
 use regex::Regex;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use tokio::io::AsyncWriteExt;
 use tokio::sync::OnceCell;
 use url::Url;
 
@@ -230,11 +232,15 @@ impl S3Backend {
     }
 
     /// Download an S3 object to a local file
+    ///
+    /// The body goes to disk as it arrives, so memory use does not grow with the object.
+    /// `max_bytes` refuses a larger object, for a caller that reads the file back into memory.
     async fn download_object(
         &self,
         client: &S3Client,
         s3_url: &S3Url,
         dest: &Path,
+        max_bytes: Option<u64>,
         pr: Option<&dyn SingleReport>,
     ) -> Result<()> {
         debug!(
@@ -254,26 +260,22 @@ impl S3Backend {
 
         // Get content length for progress reporting
         let content_length = resp.content_length().unwrap_or(0) as u64;
+        if let Some(max) = max_bytes
+            && content_length > max
+        {
+            return Err(too_large(s3_url, max));
+        }
         if let Some(pr) = pr {
             pr.set_length(content_length);
         }
 
-        // Stream the body to the file
-        let body = resp
-            .body
-            .collect()
-            .await
-            .map_err(|e| eyre!("Failed to read S3 response body: {e}"))?;
-        let bytes = body.into_bytes();
-
-        // Write to temp file then rename for atomic operation
+        // Stream the body to a temp file then rename for atomic operation
         let tmp_path = dest.with_extension("tmp");
-        file::write(&tmp_path, &bytes)?;
-        std::fs::rename(&tmp_path, dest)?;
-
-        if let Some(pr) = pr {
-            pr.set_position(content_length);
+        if let Err(err) = write_body(resp.body, s3_url, &tmp_path, max_bytes, pr).await {
+            let _ = file::remove_file(&tmp_path);
+            return Err(err);
         }
+        std::fs::rename(&tmp_path, dest)?;
 
         Ok(())
     }
@@ -290,7 +292,10 @@ impl S3Backend {
         // Download manifest to temp location
         let tmp_dir = tempfile::tempdir()?;
         let tmp_path = tmp_dir.path().join("versions_manifest");
-        self.download_object(client, &s3_url, &tmp_path, None)
+        // The manifest is parsed in memory, so it gets the limit the HTTP client puts on a
+        // version list it parses.
+        let max_bytes = crate::http::MAX_BODY_BYTES as u64;
+        self.download_object(client, &s3_url, &tmp_path, Some(max_bytes), None)
             .await?;
 
         // Read and parse the manifest
@@ -482,6 +487,47 @@ async fn create_s3_client(region: Option<&str>, endpoint: Option<&str>) -> Resul
     Ok(S3Client::from_conf(s3_config.build()))
 }
 
+/// Write an S3 object body to `path` chunk by chunk, failing once it passes `max_bytes`.
+/// Counted as the bytes arrive, because a response need not announce its length.
+async fn write_body(
+    mut body: ByteStream,
+    s3_url: &S3Url,
+    path: &Path,
+    max_bytes: Option<u64>,
+    pr: Option<&dyn SingleReport>,
+) -> Result<()> {
+    let mut file = tokio::fs::File::create(path).await?;
+    let mut written = 0u64;
+    while let Some(chunk) = body
+        .try_next()
+        .await
+        .map_err(|e| eyre!("Failed to read S3 response body: {e}"))?
+    {
+        written += chunk.len() as u64;
+        if let Some(max) = max_bytes
+            && written > max
+        {
+            return Err(too_large(s3_url, max));
+        }
+        file.write_all(&chunk).await?;
+        if let Some(pr) = pr {
+            pr.inc(chunk.len() as u64);
+        }
+    }
+    // `tokio::fs::File` buffers writes and dropping one does not flush
+    file.flush().await?;
+    Ok(())
+}
+
+fn too_large(s3_url: &S3Url, max_bytes: u64) -> eyre::Report {
+    eyre!(
+        "s3://{}/{} is larger than {}",
+        s3_url.bucket,
+        s3_url.key,
+        bytesize::ByteSize::b(max_bytes).display().iec()
+    )
+}
+
 /// Convert S3 SDK errors to user-friendly error messages
 fn handle_s3_error<E: std::fmt::Debug>(err: E, bucket: &str, key: &str) -> eyre::Report {
     let err_str = format!("{err:?}");
@@ -658,7 +704,7 @@ impl Backend for S3Backend {
         // Download from S3
         ctx.pr.set_message(format!("download {filename}"));
         file::create_dir_all(tv.download_path())?;
-        self.download_object(client, &s3_url, &file_path, Some(ctx.pr.as_ref()))
+        self.download_object(client, &s3_url, &file_path, None, Some(ctx.pr.as_ref()))
             .await?;
 
         // Verify artifact (checksum/size from options)
@@ -935,6 +981,97 @@ checksum = "sha256:abc123"
     fn test_s3_url_missing_bucket() {
         let result = S3Url::parse("s3:///path/to/file");
         assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_write_body_stops_at_max_bytes() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("versions_manifest");
+        let s3_url = S3Url::parse("s3://bucket/tools/versions.txt").unwrap();
+        let body = || ByteStream::from_static(b"1.0.0\n1.1.0\n");
+
+        // at the limit, and with none
+        for max_bytes in [Some(12), None] {
+            write_body(body(), &s3_url, &path, max_bytes, None)
+                .await
+                .unwrap();
+            assert_eq!(std::fs::read(&path).unwrap(), b"1.0.0\n1.1.0\n");
+        }
+
+        let err = write_body(body(), &s3_url, &path, Some(11), None)
+            .await
+            .unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "s3://bucket/tools/versions.txt is larger than 11 B"
+        );
+    }
+
+    /// A client for a local S3-compatible endpoint, with fixed credentials so no
+    /// credential provider runs.
+    fn s3_test_client(endpoint: &str) -> S3Client {
+        let config = aws_sdk_s3::Config::builder()
+            .behavior_version(BehaviorVersion::latest())
+            .region(aws_sdk_s3::config::Region::new("us-east-1"))
+            .credentials_provider(aws_sdk_s3::config::Credentials::new(
+                "test", "test", None, None, "test",
+            ))
+            .retry_config(aws_sdk_s3::config::retry::RetryConfig::disabled())
+            .endpoint_url(endpoint)
+            .force_path_style(true)
+            .build();
+        S3Client::from_conf(config)
+    }
+
+    #[tokio::test]
+    async fn test_download_object_refuses_an_object_over_max_bytes() {
+        let body = "1.0.0\n1.1.0\n";
+        let mut server = mockito::Server::new_async().await;
+        // One reply announces its length, the other is chunked and does not.
+        let sized = server
+            .mock("GET", "/bucket/sized.txt")
+            .match_query(mockito::Matcher::Any)
+            .with_status(200)
+            .with_body(body)
+            .expect(3)
+            .create_async()
+            .await;
+        let chunked = server
+            .mock("GET", "/bucket/chunked.txt")
+            .match_query(mockito::Matcher::Any)
+            .with_status(200)
+            .with_chunked_body(move |w| w.write_all(body.as_bytes()))
+            .expect(3)
+            .create_async()
+            .await;
+        let client = s3_test_client(&server.url());
+        let backend = s3_test_backend();
+        let tmp = tempfile::tempdir().unwrap();
+
+        for key in ["sized.txt", "chunked.txt"] {
+            let s3_url = S3Url::parse(&format!("s3://bucket/{key}")).unwrap();
+            let dest = tmp.path().join(key);
+            for max_bytes in [Some(12), None] {
+                backend
+                    .download_object(&client, &s3_url, &dest, max_bytes, None)
+                    .await
+                    .unwrap();
+                assert_eq!(std::fs::read_to_string(&dest).unwrap(), body);
+            }
+            std::fs::remove_file(&dest).unwrap();
+            let err = backend
+                .download_object(&client, &s3_url, &dest, Some(11), None)
+                .await
+                .unwrap_err();
+            assert_eq!(
+                err.to_string(),
+                format!("s3://bucket/{key} is larger than 11 B")
+            );
+            assert!(!dest.exists());
+            assert!(!dest.with_extension("tmp").exists());
+        }
+        sized.assert_async().await;
+        chunked.assert_async().await;
     }
 
     // The message `--dry-run` now produces before claiming it would install. Built by
