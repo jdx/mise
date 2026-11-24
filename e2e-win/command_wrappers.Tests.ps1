@@ -81,11 +81,9 @@ env = { WRAP_TEST = "1" }
         $output | Should -Contain 'REAL_TOOL:--fixed check'
     }
 
-    It 'passes a wrapper shim another project left on to a task launcher' {
-        # A native task launcher is a copy of mise-shim.exe, the file an exe-mode shim is. It runs
-        # its task, so a leftover wrapper shim for that name must run it like any other command
-        # and not look for a tool.
+    It 'passes a wrapper shim another project left on to the next command' {
         $config = Get-Content $env:MISE_CONFIG_FILE -Raw
+        $nextGreet = Join-Path $toolDir 'greet.cmd'
         try {
             $env:MISE_WINDOWS_SHIM_MODE = 'hardlink'
             $binDir = Join-Path $env:MISE_DATA_DIR 'bin'
@@ -102,10 +100,21 @@ env = { WRAP_TEST = "1" }
             $leftover = Join-Path $wrapperDir 'greet.exe'
             (Get-Item -Path $leftover).LinkType | Should -Be 'HardLink'
 
-            # The config wraps another command again. A project has a task of that name, with its
-            # launcher in a directory only mise adds to PATH. Stubs are for a project's own tasks,
-            # so the task is not in the global config.
+            # The config wraps another command again, so the shim passes `greet` on. Run by its
+            # path the shim is `greet.exe`, and the next `greet` is a batch file.
             $config | Out-File -FilePath $env:MISE_CONFIG_FILE -Encoding utf8NoBOM -NoNewline
+            "@echo off`r`necho NEXT_GREET:%*`r`n" |
+                Out-File -FilePath $nextGreet -Encoding ascii -NoNewline
+            $output = & $leftover hello 2>&1
+            $LASTEXITCODE | Should -Be 0 -Because "shim output: $($output | Out-String)"
+            $output | Should -Contain 'NEXT_GREET:hello'
+            Remove-Item $nextGreet
+
+            # A project has a task of that name, with its launcher in a directory only mise adds
+            # to PATH. A native task launcher is a copy of mise-shim.exe, the file an exe-mode
+            # shim is. It runs its task, so the leftover shim must run it like any other command
+            # and not look for a tool. Stubs are for a project's own tasks, so the task is not in
+            # the global config.
             $project = Join-Path $TestDrive 'project'
             New-Item -ItemType Directory -Path $project -Force | Out-Null
             @'
@@ -126,6 +135,7 @@ run = "echo TASK_GREET"
             $output | Should -Contain 'TASK_GREET'
         } finally {
             Set-Location TestDrive:
+            Remove-Item $nextGreet -ErrorAction SilentlyContinue
             $config | Out-File -FilePath $env:MISE_CONFIG_FILE -Encoding utf8NoBOM -NoNewline
         }
     }

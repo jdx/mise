@@ -237,13 +237,16 @@ fn first_on_path<'a>(bin_name: &str, dirs: impl Iterator<Item = &'a PathBuf>) ->
 /// command on to whatever comes next: a directory the user lists before the shims, a task's
 /// `_.path`, a tool's own directory.
 ///
+/// The lookup is for the command the shim stands in front of, not for the shim's file name. A
+/// shim run by its path is `cargo.exe` on Windows, and the next `cargo` may be `cargo.cmd`.
+///
 /// None when that is one of mise's shims, or nothing: the command then resolves as it does
 /// through mise's ordinary shim.
 fn bin_behind_wrapper_dirs(bin_name: &str) -> Option<PathBuf> {
     // `env::PATH` is this `PATH` without what a parent mise added, the wrapper directory and
     // the tool directories included, so it is not what the lookup ran on.
     let bin = first_on_path(
-        bin_name,
+        command_name_without_exe_suffix(bin_name),
         env::PATH_NON_PRISTINE
             .iter()
             .filter(|dir| !file::is_command_wrapper_dir(dir)),
