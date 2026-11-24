@@ -35,7 +35,6 @@ use crate::backend::{
 };
 use crate::cache::CacheManagerBuilder;
 use crate::config::{Config, Settings, SettingsExt};
-use crate::dirs;
 use crate::file;
 use crate::github;
 use crate::http::HTTP_FETCH;
@@ -202,10 +201,8 @@ fn release_url_tag(url: &str) -> Option<String> {
 /// covers a command and no more: a long-running process (`mise mcp`, `mise
 /// watch`) reads the list again, so a withdrawal is still noticed.
 ///
-/// Every command still asks the host. What it saves across commands is the
-/// body: the last copy is kept with its validator, and a `304 Not Modified`
-/// answer reuses it. The text is verified by the caller either way, exactly
-/// as a fresh download would be.
+/// Every command asks the host and reads the whole answer: nothing is kept
+/// across commands, see [`request_policy_text`].
 pub(crate) async fn fetch_policy_text(url: &str) -> Result<Option<String>> {
     fetch_policy_text_via(url, None).await
 }
@@ -273,10 +270,7 @@ async fn fetch_policy_text_via(
             };
             let text = match mirrored {
                 Some(text) => text,
-                None => {
-                    let store = dirs::CACHE.join("packslip").join("policy");
-                    revalidate_policy_text(url, &store).await?
-                }
+                None => request_policy_text(url).await?,
             };
             Ok::<_, eyre::Report>((std::time::Instant::now(), text))
         })
@@ -284,85 +278,24 @@ async fn fetch_policy_text_via(
     Ok(text.clone())
 }
 
-/// The last copy of a policy file and the validator its host sent with it.
-#[derive(Debug, Serialize, Deserialize)]
-struct StoredPolicy {
-    url: String,
-    etag: Option<String>,
-    last_modified: Option<String>,
-    text: String,
-}
-
-fn stored_policy_path(store: &Path, url: &str) -> PathBuf {
-    use sha2::{Digest, Sha256};
-    store.join(format!(
-        "{}.json",
-        hex::encode(Sha256::digest(url.as_bytes()))
-    ))
-}
-
-/// One conditional request for the policy file at `url`, with no reuse
-/// within the process.
-async fn revalidate_policy_text(url: &str, store: &Path) -> Result<Option<String>> {
-    use reqwest::StatusCode;
-    use reqwest::header::{ETAG, HeaderValue, IF_MODIFIED_SINCE, IF_NONE_MATCH, LAST_MODIFIED};
-
-    let path = stored_policy_path(store, url);
-    let stored = file::read_to_string(&path)
-        .ok()
-        .and_then(|text| serde_json::from_str::<StoredPolicy>(&text).ok())
-        .filter(|stored| stored.url == url);
-    let mut headers = crate::http::host_auth_headers(&url.parse()?)?;
-    if let Some(stored) = &stored {
-        if let Some(etag) = stored.etag.as_deref() {
-            headers.insert(IF_NONE_MATCH, HeaderValue::from_str(etag)?);
-        } else if let Some(last_modified) = stored.last_modified.as_deref() {
-            headers.insert(IF_MODIFIED_SINCE, HeaderValue::from_str(last_modified)?);
-        }
-    }
+/// One request for the policy file at `url`, with no reuse within the
+/// process. It is never conditional, and no copy is kept to make it so: a
+/// `304 Not Modified` confirms a validator, and which text a validator belongs
+/// to is only what one earlier answer said. An older list of the vendor's,
+/// answered once under the current list's `ETag`, would be confirmed by the
+/// vendor's own host from then on, and signature, expiry and sequence hold for
+/// it as they did when it was current, so a withdrawal would stay unseen.
+async fn request_policy_text(url: &str) -> Result<Option<String>> {
+    let headers = crate::http::host_auth_headers(&url.parse()?)?;
     let resp = match HTTP_FETCH.get_async_with_headers(url, &headers).await {
         Ok(resp) => resp,
-        Err(err) if crate::http::error_code(&err) == Some(404) => {
-            // Nothing to revalidate next time.
-            let _ = std::fs::remove_file(&path);
-            return Ok(None);
-        }
+        Err(err) if crate::http::error_code(&err) == Some(404) => return Ok(None),
         Err(err) => return Err(err),
     };
-    if resp.status() == StatusCode::NOT_MODIFIED {
-        // A host only says this to the validator sent, which came with this text.
-        return match stored {
-            Some(stored) => Ok(Some(stored.text)),
-            None => bail!("{url} answered 304 Not Modified to an unconditional request"),
-        };
+    if resp.status() == reqwest::StatusCode::NOT_MODIFIED {
+        bail!("{url} answered 304 Not Modified to an unconditional request");
     }
-    let header = |name| {
-        resp.headers()
-            .get(name)
-            .and_then(|value: &HeaderValue| value.to_str().ok())
-            .map(str::to_string)
-    };
-    // A weak ETag is enough: reused text is verified again, signature,
-    // expiry and sequence, before anything trusts it.
-    let etag = header(ETAG);
-    let last_modified = header(LAST_MODIFIED);
-    let text = crate::http::buffer_body(resp).await?.text().await?;
-    if etag.is_some() || last_modified.is_some() {
-        let stored = StoredPolicy {
-            url: url.to_string(),
-            etag,
-            last_modified,
-            text: text.clone(),
-        };
-        let written = file::create_dir_all(store)
-            .and_then(|()| file::write_atomic(&path, serde_json::to_vec(&stored)?));
-        if let Err(err) = written {
-            debug!("could not keep {url} for revalidation: {err:#}");
-        }
-    } else {
-        let _ = std::fs::remove_file(&path);
-    }
-    Ok(Some(text))
+    Ok(Some(crate::http::buffer_body(resp).await?.text().await?))
 }
 
 /// The signed release list of a project on its own domain.
@@ -3637,100 +3570,74 @@ mod tests {
         );
     }
 
-    /// Each command asks again, but a list the host says is unchanged is
-    /// not downloaded again.
+    /// Each command downloads the list again, whatever validator came with
+    /// the last one: an answer that pairs an older list with the current
+    /// list's `ETag` must not have the host confirm the older list afterwards.
     #[tokio::test]
-    async fn an_unchanged_release_list_is_revalidated_not_downloaded() {
+    async fn a_release_list_is_never_revalidated() {
         let _config = Config::get().await.unwrap();
-        let store = tempfile::tempdir().unwrap();
         let mut server = mockito::Server::new_async().await;
-        let path = "/revalidated/HEAD/.well-known/packslip.json";
+        let path = "/replayed/HEAD/.well-known/packslip.json";
         let url = format!("{}{path}", server.url());
-        let first = server
+        let replayed = server
             .mock("GET", path)
-            .match_header("if-none-match", mockito::Matcher::Missing)
-            .with_header("etag", "\"v1\"")
+            .with_header("etag", "\"v2\"")
+            .with_header("last-modified", "Thu, 12 Nov 2026 00:00:00 GMT")
             .with_body("{\"v\":1}")
             .expect(1)
             .create_async()
             .await;
         assert_eq!(
-            revalidate_policy_text(&url, store.path()).await.unwrap(),
+            request_policy_text(&url).await.unwrap(),
             Some("{\"v\":1}".to_string())
         );
-        first.assert_async().await;
+        replayed.assert_async().await;
+        replayed.remove_async().await;
 
-        let unchanged = server
+        // The host now: it would confirm its own validators.
+        let confirmed_by_etag = server
             .mock("GET", path)
-            .match_header("if-none-match", "\"v1\"")
+            .match_header("if-none-match", mockito::Matcher::Any)
             .with_status(304)
-            .expect(1)
+            .expect(0)
             .create_async()
             .await;
-        assert_eq!(
-            revalidate_policy_text(&url, store.path()).await.unwrap(),
-            Some("{\"v\":1}".to_string())
-        );
-        unchanged.assert_async().await;
-        unchanged.remove_async().await;
-
-        // A changed list replaces the copy and its validator.
-        let changed = server
+        let confirmed_by_date = server
             .mock("GET", path)
-            .match_header("if-none-match", "\"v1\"")
+            .match_header("if-modified-since", mockito::Matcher::Any)
+            .with_status(304)
+            .expect(0)
+            .create_async()
+            .await;
+        let current = server
+            .mock("GET", path)
+            .match_header("if-none-match", mockito::Matcher::Missing)
+            .match_header("if-modified-since", mockito::Matcher::Missing)
             .with_header("etag", "\"v2\"")
             .with_body("{\"v\":2}")
-            .expect(1)
+            .expect(2)
             .create_async()
             .await;
-        assert_eq!(
-            revalidate_policy_text(&url, store.path()).await.unwrap(),
-            Some("{\"v\":2}".to_string())
-        );
-        changed.assert_async().await;
-        changed.remove_async().await;
+        for _ in 0..2 {
+            assert_eq!(
+                request_policy_text(&url).await.unwrap(),
+                Some("{\"v\":2}".to_string())
+            );
+        }
+        current.assert_async().await;
+        confirmed_by_etag.assert_async().await;
+        confirmed_by_date.assert_async().await;
 
-        // A list that is gone is gone: nothing is served from the copy, and
-        // the next request is unconditional.
+        // A list that is gone is gone.
+        current.remove_async().await;
         let gone = server
             .mock("GET", path)
             .with_status(404)
             .expect(1)
             .create_async()
             .await;
-        assert_eq!(
-            revalidate_policy_text(&url, store.path()).await.unwrap(),
-            None
-        );
+        assert_eq!(request_policy_text(&url).await.unwrap(), None);
         gone.assert_async().await;
-        assert!(!stored_policy_path(store.path(), &url).exists());
-    }
-
-    /// Without a validator there is nothing to revalidate against, so nothing
-    /// is kept.
-    #[tokio::test]
-    async fn a_release_list_without_a_validator_is_not_kept() {
-        let _config = Config::get().await.unwrap();
-        let store = tempfile::tempdir().unwrap();
-        let mut server = mockito::Server::new_async().await;
-        let path = "/unvalidated/HEAD/.well-known/packslip.json";
-        let url = format!("{}{path}", server.url());
-        let list = server
-            .mock("GET", path)
-            .match_header("if-none-match", mockito::Matcher::Missing)
-            .match_header("if-modified-since", mockito::Matcher::Missing)
-            .with_body("{}")
-            .expect(2)
-            .create_async()
-            .await;
-        for _ in 0..2 {
-            assert_eq!(
-                revalidate_policy_text(&url, store.path()).await.unwrap(),
-                Some("{}".to_string())
-            );
-        }
-        list.assert_async().await;
-        assert!(!stored_policy_path(store.path(), &url).exists());
     }
 
     /// A verification is reused only for the same signer options, stamp, and
