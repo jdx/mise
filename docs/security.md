@@ -446,7 +446,9 @@ too.
 The cutoff applies when mise has to choose a version, for a prefix such as
 `node@24` or for `latest`. These are not filtered:
 
-- An exact version such as `node@24.0.0`.
+- An exact version such as `node@24.0.0`. `conda:` is the exception: an exact
+  version names no build, so its solve still leaves out builds and dependencies
+  released after the cutoff, and fails when nothing older solves.
 - A version recorded in [`mise.lock`](/dev-tools/mise-lock.html), so a reviewed
   selection stays reproducible while the release is inside the window. `npm:`
   and `pypi:` still apply the cutoff to transitive dependencies that the lockfile

@@ -691,12 +691,15 @@ impl CondaBackend {
         ctx.pr.set_message("fetching repodata".to_string());
         let raw_opts = tv.request.options();
         let opts = CondaOptions::new(&raw_opts);
+        // The tool's cutoff, not `ctx.before_date`, which an exact pin clears: an exact
+        // version names no build, so its builds are held back like any other package,
+        // and the install solves the same packages as `mise lock`.
         let records = self
             .solve_packages(
                 vec![match_spec],
                 Self::current_conda_platform()?,
                 opts,
-                ctx.before_date,
+                tv.before_date,
             )
             .await?;
 
