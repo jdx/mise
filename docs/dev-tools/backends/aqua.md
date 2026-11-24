@@ -121,9 +121,11 @@ run depends on what each package's recipe declares.
 | Minisign                     | A signature and the expected public key.                                                                                  |
 
 A Minisign signature whose trusted comment names a file (`file:<name>`, which
-`minisign -S` writes by default) must name the file mise downloaded, so a
+`minisign -S` writes by default) must name the file mise downloaded. When each
+release names its files after its version, as `tool-2.0.0.tar.gz` does, a
 download host cannot pass off another release's file and signature as the
-requested version.
+requested version. The check does not tell apart releases that publish a file
+under the same name, and a signature without a `file:` field is accepted.
 
 When a recipe declares a checksum file, `mise install` refuses an artifact when
 that file cannot be downloaded or does not list the artifact. `mise lock`
