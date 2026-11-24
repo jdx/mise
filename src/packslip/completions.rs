@@ -99,10 +99,13 @@ pub fn activate(config: &Arc<Config>, ts: &Toolset, shell: &str) -> String {
             &install,
             tv.request.options().get_string("variant").as_deref(),
         );
-        // What is selected does not depend on the executable: select once
-        // per release, not once per executable it lists.
+        // What is selected, and which executable each entry describes, does
+        // not depend on the executable: work both out once per release, not
+        // once per executable it lists.
         let selected = super::selected_resources(&statement, artifact.as_ref());
-        for bin in statement
+        let by_bin = super::resources_by_bin(&statement, &selected);
+        // A name is asked about once, however many entries put it on PATH.
+        let names: BTreeSet<&String> = statement
             .predicate
             .artifacts
             .iter()
@@ -112,18 +115,21 @@ pub fn activate(config: &Arc<Config>, ts: &Toolset, shell: &str) -> String {
                     .is_none_or(|selected| candidate.name == selected.name)
             })
             .flat_map(|a| &a.bin)
-        {
-            let name = &bin.name;
+            .map(|bin| &bin.name)
+            .collect();
+        for name in names {
+            // The name is one of the statement's own, so the entries that
+            // describe it are the ones listed under it.
             if safe_command(name)
-                && !super::completion_sources_among(
-                    &selected,
-                    &statement,
-                    &install,
-                    completion_shell.as_str(),
-                    artifact.as_ref(),
-                    Some(name),
-                )
-                .is_empty()
+                && by_bin.get(name.as_str()).is_some_and(|described| {
+                    !super::completion_sources_among(
+                        described,
+                        &install,
+                        completion_shell.as_str(),
+                        artifact.as_ref(),
+                    )
+                    .is_empty()
+                })
             {
                 commands.insert(name.clone());
             }

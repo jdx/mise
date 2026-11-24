@@ -1686,35 +1686,55 @@ pub(crate) fn completion_sources(
     // Select per identity before considering source order. A completion
     // for one executable must never hide or complete another executable.
     let selected = selected_resources(statement, artifact);
-    completion_sources_among(&selected, statement, install_path, shell, artifact, tool)
+    let by_bin = resources_by_bin(statement, &selected);
+    let described = completion_bin(statement, tool).and_then(|bin| by_bin.get(bin));
+    completion_sources_among(
+        described.map_or(&[], Vec::as_slice),
+        install_path,
+        shell,
+        artifact,
+    )
 }
 
-/// [`completion_sources`] given the statement's [`selected_resources`].
-/// What is selected does not depend on the executable asked about, so a
+/// The statement's [`selected_resources`] under the executable each
+/// describes: the one an entry names or, where it names none, the release's
+/// only one. An entry that describes no executable is left out. Neither the
+/// selection nor the grouping depends on the executable asked about, and the
+/// vendor decides how long the lists of executables and resources are, so a
 /// caller asking about every executable of a release, as the prompt hook
-/// does, selects once rather than once for each.
+/// does, reads them here once rather than once for each.
+pub(crate) fn resources_by_bin<'a>(
+    statement: &'a Statement,
+    selected: &[&'a Resource],
+) -> BTreeMap<&'a str, Vec<&'a Resource>> {
+    let sole_bin = statement.sole_bin();
+    let mut by_bin: BTreeMap<_, Vec<_>> = BTreeMap::new();
+    for r in selected {
+        if let Some(bin) = r.bin.as_deref().or(sole_bin) {
+            by_bin.entry(bin).or_default().push(*r);
+        }
+    }
+    by_bin
+}
+
+/// [`completion_sources`] given the resources that describe the executable
+/// asked about, as [`resources_by_bin`] lists them.
 pub(crate) fn completion_sources_among(
-    selected: &[&Resource],
-    statement: &Statement,
+    described: &[&Resource],
     install_path: &Path,
     shell: &str,
     artifact: Option<&Artifact>,
-    tool: Option<&str>,
 ) -> Vec<CompletionSource> {
-    let bin = completion_bin(statement, tool);
-    let describes =
-        |r: &&Resource| r.bin.as_deref().or_else(|| statement.sole_bin()) == bin && bin.is_some();
     let completion_entries = applicable(
-        selected.iter().copied().filter(describes).filter(|r| {
+        described.iter().copied().filter(|r| {
             r.kind == "completion"
                 && (r.shell.as_deref() == Some(shell) || r.shells.iter().any(|s| s == shell))
         }),
         artifact,
     );
-    let mut spec_entries: Vec<_> = selected
+    let mut spec_entries: Vec<_> = described
         .iter()
         .copied()
-        .filter(describes)
         .filter(|r| r.kind == "cli-spec")
         .collect();
     // The specification ranks the static sources of a spec as it ranks a
@@ -2530,6 +2550,104 @@ mod tests {
             started.elapsed() < std::time::Duration::from_secs(5),
             "selecting {} resources took {:?}",
             entries.len(),
+            started.elapsed()
+        );
+    }
+
+    #[test]
+    fn an_entry_without_bin_is_not_matched_by_walking_the_executables_again() {
+        // Which executable an entry with no `bin` describes is the same for
+        // every entry, so an answer about one executable reads the list of
+        // executables a fixed number of times, not once per such entry.
+        const ICONS: usize = 2_000;
+        const BINS: usize = 300;
+        let mut entries: Vec<String> = (0..ICONS)
+            .map(|i| format!(r#"{{"kind":"icon","archive":"icons/{i}.png"}}"#))
+            .collect();
+        entries.push(
+            r#"{"kind":"completion","bin":"u","shells":["zsh"],"exec":["u","{shell}"]}"#.into(),
+        );
+        let mut s = statement_with(&format!("[{}]", entries.join(",")));
+        let bins = (0..BINS).map(|i| packslip::model::Bin::new(format!("bin/b{i}")));
+        s.predicate.artifacts[0].bin.extend(bins);
+        s.validate().unwrap();
+        let artifact = &s.predicate.artifacts[0];
+        let root = Path::new("/unused");
+        let started = std::time::Instant::now();
+        let completed: Vec<&str> = artifact
+            .bin
+            .iter()
+            .map(|bin| bin.name.as_str())
+            .filter(|name| {
+                !completion_sources(&s, root, "zsh", Some(artifact), Some(name)).is_empty()
+            })
+            .collect();
+        assert_eq!(completed, ["u"]);
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(30),
+            "asking about {} executables took {:?}",
+            artifact.bin.len(),
+            started.elapsed()
+        );
+    }
+
+    #[test]
+    fn resources_are_listed_under_the_executable_they_describe() {
+        // With several executables an entry without `bin` describes none.
+        let two = statement_with(
+            r#"[{"kind":"icon","archive":"i.png"},{"kind":"completion","bin":"t","shells":["zsh"],"exec":["t","{shell}"]}]"#,
+        );
+        let selected = selected_resources(&two, Some(&two.predicate.artifacts[0]));
+        let by_bin = resources_by_bin(&two, &selected);
+        assert_eq!(by_bin.keys().copied().collect::<Vec<_>>(), ["t"]);
+        assert_eq!(by_bin["t"].len(), 1);
+        assert_eq!(by_bin["t"][0].kind, "completion");
+
+        // With one, it describes that one.
+        let mut one = two.clone();
+        one.predicate.artifacts[0].bin.retain(|bin| bin.name == "t");
+        let selected = selected_resources(&one, Some(&one.predicate.artifacts[0]));
+        let by_bin = resources_by_bin(&one, &selected);
+        assert_eq!(by_bin.keys().copied().collect::<Vec<_>>(), ["t"]);
+        assert_eq!(by_bin["t"].len(), 2);
+    }
+
+    #[test]
+    fn asking_about_every_executable_reads_the_lists_once() {
+        // The vendor decides how many executables and resources a release
+        // lists, and the prompt hook asks about each executable on every
+        // directory change: no answer may cost a scan of either list.
+        const LISTED: usize = 20_000;
+        let mut entries: Vec<String> = (0..LISTED)
+            .map(|i| format!(r#"{{"kind":"icon","archive":"icons/{i}.png"}}"#))
+            .collect();
+        entries.push(
+            r#"{"kind":"completion","bin":"u","shells":["zsh"],"exec":["u","{shell}"]}"#.into(),
+        );
+        let mut s = statement_with(&format!("[{}]", entries.join(",")));
+        let bins = (0..LISTED).map(|i| packslip::model::Bin::new(format!("bin/b{i}")));
+        s.predicate.artifacts[0].bin.extend(bins);
+        s.validate().unwrap();
+        let artifact = &s.predicate.artifacts[0];
+        let root = Path::new("/unused");
+        let started = std::time::Instant::now();
+        let selected = selected_resources(&s, Some(artifact));
+        let by_bin = resources_by_bin(&s, &selected);
+        let completed: Vec<&str> = artifact
+            .bin
+            .iter()
+            .map(|bin| bin.name.as_str())
+            .filter(|name| {
+                by_bin.get(name).is_some_and(|described| {
+                    !completion_sources_among(described, root, "zsh", Some(artifact)).is_empty()
+                })
+            })
+            .collect();
+        assert_eq!(completed, ["u"]);
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(30),
+            "asking about {} executables took {:?}",
+            artifact.bin.len(),
             started.elapsed()
         );
     }
