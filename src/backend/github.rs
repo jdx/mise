@@ -2933,9 +2933,11 @@ impl UnifiedGitBackend {
     /// came from (the one in its URL, when that is all there is) if it spells
     /// that version too. As for [`Self::slsa_source_tag`], a tag only the API
     /// or a lockfile vouches for does not count: one that names another
-    /// version would let that version's attestation pass. With a `url` option
-    /// for `target` the user says where the version is, so its tag counts as
-    /// written. Empty, which skips the check, for `latest`.
+    /// version would let that version's attestation pass. The tag in the
+    /// `url` option for `target`, rendered for `tv`, counts as written: the
+    /// user says there where the version is. Only the option's own URL gives
+    /// that tag; a locked URL or another asset's URL is held to the version
+    /// check. Empty, which skips the check, for `latest`.
     fn attestation_tags(
         &self,
         tv: &ToolVersion,
@@ -2948,19 +2950,21 @@ impl UnifiedGitBackend {
             return vec![];
         }
         let repo = self.repo();
+        let web_url = self.web_url_base(api_url, &repo);
         let mut tags = tag_candidates(&tv.version, opts.version_prefix(), Some(&repo));
-        let found = asset.release_tag.clone().or_else(|| {
-            crate::backend::release_tag_from_download_url(
-                &asset.url,
-                &self.web_url_base(api_url, &repo),
-            )
+        let found = asset
+            .release_tag
+            .clone()
+            .or_else(|| crate::backend::release_tag_from_download_url(&asset.url, &web_url))
+            .filter(|tag| self.strip_version_prefix(tag, opts) == tv.version);
+        let configured = opts.direct_url_for_target(target).and_then(|url| {
+            let url = template_string_for_target(&url, tv, target);
+            crate::backend::release_tag_from_download_url(&url, &web_url)
         });
-        if let Some(tag) = found
-            && (opts.direct_url_for_target(target).is_some()
-                || self.strip_version_prefix(&tag, opts) == tv.version)
-            && !tags.contains(&tag)
-        {
-            tags.push(tag);
+        for tag in found.into_iter().chain(configured) {
+            if !tags.contains(&tag) {
+                tags.push(tag);
+            }
         }
         tags
     }
@@ -5077,6 +5081,16 @@ platforms.macos-arm64.url = 'https://example.com/{{ version }}/tool-darwin-arm64
         let url = asset("build-42").url;
         let with_url = tags(&[("platform_linux_x64_url", &url)], "1.0.0", "build-42");
         assert_eq!(with_url.last().unwrap(), "build-42");
+        // That option vouches for its own URL only: an asset URL from a
+        // lockfile or a release listing that names another tag adds nothing.
+        let elsewhere = tags(&[("platform_linux_x64_url", &url)], "1.0.0", "v0.9.0");
+        assert!(!elsewhere.contains(&"v0.9.0".to_string()), "{elsewhere:?}");
+        assert_eq!(elsewhere.last().unwrap(), "build-42");
+        // The option's tag is read after rendering it for the version.
+        let templated =
+            "https://github.com/test/repo/releases/download/nightly-{{ version }}/tool.tar.gz";
+        let rendered = tags(&[("platform_linux_x64_url", templated)], "1.0.0", "v0.9.0");
+        assert_eq!(rendered.last().unwrap(), "nightly-1.0.0");
         // Nothing spells `latest`.
         assert!(tags(&[], "latest", "v1.0.0").is_empty());
     }
