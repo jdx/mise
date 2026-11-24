@@ -28,9 +28,10 @@ the lines it does not change are written back with their templates, including a 
 renders to a comment or to nothing, which stays when the tool above it is removed. On the line it
 changes, a version it keeps stays as written and a new version replaces the templated ones. mise
 asks you to edit the file by hand instead when the line's tool name is a template, or when a kept
-version may come from a template: a template renders to several versions, or the line has more
-than one template. A `.tool-versions` with a template tag (`{% ... %}`,
-`{# ... #}`) or a value that spans lines is not written at all.
+version may come from a template: a template renders to several versions or joins a version
+written next to it (`2 {{- ... }}`), or the line has more than one template. A `.tool-versions`
+with a template tag (`{% ... %}`, `{# ... #}`), or with a `{{ ... }}` or a value that spans lines,
+is not written at all.
 
 ## Example
 

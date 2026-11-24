@@ -32,7 +32,8 @@ pub(crate) struct ToolVersions {
     /// Skipped because it links to a file of another name; never written back.
     unread: bool,
     /// Rendered from templates whose lines cannot be told apart in the result
-    /// (`{% ... %}` or `{# ... #}`, or a value that spans lines); never written back.
+    /// (`{% ... %}` or `{# ... #}`, or a `{{ ... }}` or a value that spans lines); never
+    /// written back.
     unmapped_templates: bool,
 }
 
@@ -102,11 +103,9 @@ impl ToolVersions {
         } else {
             s.to_string()
         };
-        // Each line of the file renders to the line of the same number, unless a tag or a
-        // value spans lines. Comments and the lines of tools a command does not change are
-        // then written back from the file as written, so saving keeps their templates.
-        let mapped =
-            raw.lines().count() == s.lines().count() && !raw.contains("{%") && !raw.contains("{#");
+        // Comments and the lines of tools a command does not change are written back from
+        // the file as written, so saving keeps their templates.
+        let mapped = lines_map(raw, &s);
         cf.unmapped_templates = !mapped;
         let raw = if mapped { raw } else { s.as_str() };
         let (pre, plugins) = Self::parse_lines(s.lines().zip(raw.lines()));
@@ -242,8 +241,10 @@ impl ConfigFile for ToolVersions {
         };
         // A version the line keeps is written as the line has it. That needs each word
         // of the line to render to one version, which holds when the line has as many
-        // words as versions and at most one of them is a template: with two, one could
-        // render to nothing and the other to two versions. Otherwise a kept version
+        // words as versions, at most one of them is a template, and every other word is
+        // its version: with two templates, one could render to nothing and the other to
+        // two versions, and a word that is not its version was joined with a template
+        // (`2 {{- ... }}`). Otherwise a kept version
         // could come from a template, and the edit is refused rather than writing what
         // it rendered to.
         let mut as_written: Vec<(String, String)> = vec![];
@@ -254,7 +255,11 @@ impl ConfigFile for ToolVersions {
                 return Err(refuse("the name"));
             }
             let templates = words[1..].iter().filter(|w| w.contains("{{")).count();
-            if words.len() - 1 == plugin.versions.len() && templates <= 1 {
+            let literals_are_versions = words[1..]
+                .iter()
+                .zip(&plugin.versions)
+                .all(|(word, version)| word.contains("{{") || word == version);
+            if words.len() - 1 == plugin.versions.len() && templates <= 1 && literals_are_versions {
                 as_written = plugin
                     .versions
                     .iter()
@@ -297,7 +302,7 @@ impl ConfigFile for ToolVersions {
         }
         if self.unmapped_templates {
             eyre::bail!(
-                "not writing {}: it has a template tag or a value that spans lines, so mise cannot tell which line a template renders to and would replace every template with its value. Edit the file by hand",
+                "not writing {}: it has a template tag, or a template or a value that spans lines, so mise cannot tell which line a template renders to and would replace every template with its value. Edit the file by hand",
                 display_path(&self.path)
             );
         }
@@ -339,6 +344,24 @@ impl ConfigFile for ToolVersions {
     fn to_tool_request_set(&self) -> eyre::Result<ToolRequestSet> {
         Ok(self.tools.lock().unwrap().clone())
     }
+}
+
+/// Whether each line of a file renders to the line of the same number. That fails
+/// when a tag (`{% ... %}`, `{# ... #}`), a value or a `{{ ... }}` spans lines; a
+/// value and an expression that both span lines can leave the count unchanged.
+fn lines_map(raw: &str, rendered: &str) -> bool {
+    raw.lines().count() == rendered.lines().count()
+        && !raw.contains("{%")
+        && !raw.contains("{#")
+        && raw.lines().all(|mut line| {
+            while let Some(open) = line.find("{{") {
+                match line[open + 2..].find("}}") {
+                    Some(close) => line = &line[open + 2 + close + 2..],
+                    None => return false,
+                }
+            }
+            true
+        })
 }
 
 /// The whitespace-separated words of a line as written, where a `{{ ... }}`
@@ -502,6 +525,27 @@ mod tests {
         assert!(err.to_string().contains("Edit the file by hand"), "{err}");
     }
 
+    #[test]
+    fn lines_map_only_when_no_template_spans_lines() {
+        for (raw, rendered, maps) in [
+            (
+                "node {{ env.NV }}\npython 3.12\n",
+                "node 20\npython 3.12\n",
+                true,
+            ),
+            ("node {{ env.NV }}\n", "node 20\nruby 3\n", false),
+            ("{% if x %}node 20{% endif %}\n", "node 20\n", false),
+            ("{# note #}\nnode 20\n", "\nnode 20\n", false),
+            (
+                "node {{\n env.NV }}\npython {{ env.PV }}\n",
+                "node 20\npython 3.12\nruby 3\n",
+                false,
+            ),
+        ] {
+            assert_eq!(lines_map(raw, rendered), maps, "{raw:?}");
+        }
+    }
+
     /// A file parsed from its text as written and the text it rendered to.
     fn parsed(raw: &str, rendered: &str) -> ToolVersions {
         let (pre, plugins) = ToolVersions::parse_lines(rendered.lines().zip(raw.lines()));
@@ -554,6 +598,14 @@ mod tests {
             .unwrap_err();
         assert!(err.to_string().contains("Edit the file by hand"), "{err}");
         assert_eq!(tv.dump().unwrap(), "node {{ env.A }} {{ env.B }}\n");
+
+        // a word as written that is not its version was joined with a template
+        let tv = parsed("node 2 {{- env.NV }}\n", "node 20.0.0 18.0.0\n");
+        let err = tv
+            .replace_versions(&node, vec![node_version("20.0.0")])
+            .unwrap_err();
+        assert!(err.to_string().contains("Edit the file by hand"), "{err}");
+        assert_eq!(tv.dump().unwrap(), "node 2 {{- env.NV }}\n");
 
         // a new version replaces the templates
         let tv = parsed("node {{ env.NV }}\n", "node 20.0.0 18.0.0\n");
