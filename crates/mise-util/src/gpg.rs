@@ -478,12 +478,38 @@ mod tests {
     }
 
     #[test]
+    fn issuers_are_matched_against_the_identifiers_listed_once() {
+        // Matching a signature's issuer must compare it with the identifiers `trusted_keys`
+        // computed, never compute them again: a signature naming an issuer that is not trusted
+        // uses up no verification attempt, so the download host chooses how often that matching
+        // runs. Give a trusted key a stand-in key id that rPGP would never compute for it: only a
+        // comparison with the listed id can match a signature naming the stand-in, and only a
+        // recomputed id can match one naming the key's real id.
+        let keys = parse_public_keys(include_str!("assets/gpg/node.asc")).unwrap();
+        let mut trusted = trusted_keys(&keys);
+        let real = trusted[0].key_id;
+        let stand_in = KeyId::from([0xaa; 8]);
+        assert_ne!(real, stand_in);
+        trusted[0].key_id = stand_in;
+        let reads_for = |issuer: KeyId| {
+            let unhashed = [&[9, 16], issuer.as_ref()].concat();
+            let sig = &parse_signatures(&bogus_signature(&unhashed)).unwrap()[0];
+            let reads = Cell::new(0);
+            let open_data = || {
+                reads.set(reads.get() + 1);
+                Ok(Cursor::new(b"data"))
+            };
+            assert!(!verify_against_keys(sig, &trusted, &open_data, true).unwrap());
+            reads.get()
+        };
+        assert_eq!(reads_for(stand_in), 1, "the listed key id was not used");
+        assert_eq!(reads_for(real), 0, "the key id was computed again");
+    }
+
+    #[test]
     fn signatures_naming_an_unknown_issuer_are_skipped_without_reading() {
         // An issuer key id subpacket (type 16) for a key that is in no keyring. Such signatures
-        // never use up a verification attempt, so any number of them must stay cheap: matching
-        // them against the keyring may not cost more than comparing identifiers. Hashing every
-        // node key and subkey per packet takes seconds for these 2,000 in a debug build, past
-        // the time limit nextest gives a unit test.
+        // never use up a verification attempt, so none of them may read the signed content.
         let packet = bogus_signature(&[9, 16, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa]);
         let reads = Cell::new(0);
         let open_data = || {
