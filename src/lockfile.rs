@@ -5517,20 +5517,16 @@ where
 
     // Merge with existing tools to preserve platform info
     if let Some(existing) = existing_tools {
-        for existing_tool in existing {
-            // The repository an npm package was built from does not depend on
-            // its install options, so a pin follows the same release into an
-            // entry written for changed options.
-            if let Some(provenance) = &existing_tool.provenance {
-                for ((version, _), entry) in by_key.iter_mut() {
-                    if *version == existing_tool.version
-                        && entry.backend == existing_tool.backend
-                        && entry.provenance.is_none()
-                    {
-                        entry.provenance = Some(provenance.clone());
-                    }
-                }
+        // The repository an npm package was built from does not depend on its
+        // install options or its version, so a pin follows the package into an
+        // entry written for changed options or for a release not locked before.
+        for entry in by_key.values_mut() {
+            if entry.provenance.is_none() {
+                entry.provenance =
+                    pinned_package_provenance(existing, &entry.version, entry.backend.as_deref());
             }
+        }
+        for existing_tool in existing {
             let key = (existing_tool.version.clone(), existing_tool.options.clone());
             if let Some(entry) = by_key.get_mut(&key) {
                 entry.specifiers.extend(existing_tool.specifiers.clone());
@@ -7077,8 +7073,9 @@ pub(crate) fn ensure_locked_url_matches_version(
 /// The backend `short`'s lock entries record for `version`; see
 /// [`locked_backend`].
 /// The repository `mise.lock` pins the package to, whatever install options
-/// the entry was written with: the repository belongs to the package, so
-/// changing an option must not drop the pin before the install is verified.
+/// the entry was written with, and whatever version when `version` has no
+/// entry yet: the repository belongs to the package, so changing an option or
+/// upgrading must not drop the pin before the install is verified.
 pub(crate) fn get_locked_npm_provenance(
     config: &Config,
     request: &ToolRequest,
@@ -7098,12 +7095,35 @@ pub(crate) fn get_locked_npm_provenance(
         }
         _ => read_all_lockfiles(config),
     };
-    lockfile
-        .tools_for(short)
-        .into_iter()
-        .flatten()
-        .filter(|tool| tool.version == version && tool.backend.as_deref() == Some(backend))
-        .find_map(|tool| tool.provenance.clone())
+    pinned_package_provenance(lockfile.tools_for(short)?, version, Some(backend))
+}
+
+/// The repository `entries` pin `backend`'s package to for `version`. A
+/// version with an entry keeps its own pin, or its lack of one, so a release
+/// from before the package published provenance can stay locked beside a
+/// pinned one. A version with no entry yet, such as the one an upgrade moves
+/// to, takes the repository the package's pinned entries name, so a release
+/// built anywhere else is refused and its new entry keeps the pin. When those
+/// entries name more than one repository, the package's repository is not
+/// known and a version with no entry gets no pin.
+pub(crate) fn pinned_package_provenance(
+    entries: &[LockfileTool],
+    version: &str,
+    backend: Option<&str>,
+) -> Option<PackageProvenance> {
+    let package = || {
+        entries
+            .iter()
+            .filter(move |tool| tool.backend.as_deref() == backend)
+    };
+    if package().any(|tool| tool.version == version) {
+        return package()
+            .filter(|tool| tool.version == version)
+            .find_map(|tool| tool.provenance.clone());
+    }
+    let mut pins = package().filter_map(|tool| tool.provenance.as_ref());
+    let pin = pins.next()?;
+    pins.all(|other| other == pin).then(|| pin.clone())
 }
 
 pub(crate) fn get_locked_backend_for_version(

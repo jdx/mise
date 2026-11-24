@@ -1541,9 +1541,10 @@ impl Backend for NPMBackend {
         let request_options = tv.request.options();
         let options = NpmOptions::new(&request_options);
         // Lock lookup needs matching install options, but the repository a
-        // package was built from does not depend on them: load the pin by
-        // package and version, so an option change cannot swap the repository
-        // before the install is verified.
+        // package was built from does not depend on them, nor on the version:
+        // load the pin by package, of this version or, when it is not locked
+        // yet, of the package, so an option change or an upgrade cannot swap
+        // the repository before the install is verified.
         //
         // The pin is loaded even with verification off, so the lock entry
         // written for the new options keeps it for when it is turned back on.

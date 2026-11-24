@@ -2343,6 +2343,83 @@ fn merge_keeps_a_provenance_pin_when_install_options_change() {
 }
 
 #[test]
+fn merge_keeps_a_provenance_pin_when_the_version_changes() {
+    let mut existing = basic_tool("3.1.0", "npm:@sigstore/bundle");
+    existing.provenance = Some(PackageProvenance {
+        repository: "github.com/sigstore/sigstore-js".to_string(),
+    });
+    let fresh = basic_tool("3.2.0", "npm:@sigstore/bundle");
+
+    let (merged, _) = merge_tool_entries(vec![fresh], Some(&vec![existing]), |_, _| None);
+
+    assert_eq!(merged.len(), 1);
+    assert_eq!(merged[0].version, "3.2.0");
+    assert_eq!(
+        merged[0].provenance.as_ref().map(|p| p.repository.as_str()),
+        Some("github.com/sigstore/sigstore-js")
+    );
+}
+
+#[test]
+fn merge_leaves_a_locked_version_without_a_provenance_pin_as_it_is() {
+    // 0.9.0 predates the package's provenance and is locked beside 1.0.0.
+    let mut pinned = basic_tool("1.0.0", "npm:example");
+    pinned.provenance = Some(PackageProvenance {
+        repository: "github.com/example/tool".to_string(),
+    });
+    let existing = vec![basic_tool("0.9.0", "npm:example"), pinned.clone()];
+    let fresh = vec![basic_tool("0.9.0", "npm:example"), pinned];
+
+    let (merged, _) = merge_tool_entries(fresh, Some(&existing), |_, _| None);
+
+    let pins = merged
+        .iter()
+        .map(|tool| (tool.version.as_str(), tool.provenance.is_some()))
+        .collect_vec();
+    assert_eq!(pins, [("0.9.0", false), ("1.0.0", true)]);
+}
+
+#[test]
+fn a_provenance_pin_covers_the_unlocked_versions_of_its_package() {
+    let pinned = |version: &str, backend: &str, repository: &str| {
+        let mut tool = basic_tool(version, backend);
+        tool.provenance = Some(PackageProvenance {
+            repository: repository.to_string(),
+        });
+        tool
+    };
+    let entries = vec![
+        basic_tool("0.9.0", "npm:example"),
+        pinned("1.0.0", "npm:example", "github.com/example/one"),
+        pinned("1.1.0", "npm:example", "github.com/example/one"),
+        pinned("3.0.0", "npm:other", "github.com/other/other"),
+        pinned("1.0.0", "npm:moved", "github.com/moved/old"),
+        pinned("2.0.0", "npm:moved", "github.com/moved/new"),
+    ];
+    let pin = |version: &str, backend: &str| {
+        pinned_package_provenance(&entries, version, Some(backend)).map(|p| p.repository)
+    };
+
+    // A locked version has its own pin, or none.
+    assert_eq!(
+        pin("1.1.0", "npm:example").unwrap(),
+        "github.com/example/one"
+    );
+    assert_eq!(pin("0.9.0", "npm:example"), None);
+    // A version with no entry takes the package's pin.
+    assert_eq!(
+        pin("2.0.0", "npm:example").unwrap(),
+        "github.com/example/one"
+    );
+    // A pin never crosses to another package.
+    assert_eq!(pin("1.0.0", "npm:unpinned"), None);
+    assert_eq!(pin("1.0.0", "npm:other").unwrap(), "github.com/other/other");
+    // Entries that disagree name no repository for a new version.
+    assert_eq!(pin("2.0.0", "npm:moved").unwrap(), "github.com/moved/new");
+    assert_eq!(pin("3.0.0", "npm:moved"), None);
+}
+
+#[test]
 fn test_preserve_absent_tool_entries_for_monorepo_upsert() {
     let existing = vec![basic_tool("20.0.0", "core:node")];
     let (mut merged, consumed) = merge_tool_entries(
