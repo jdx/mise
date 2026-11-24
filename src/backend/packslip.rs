@@ -1224,7 +1224,7 @@ async fn verify_project_release_list_uncached(
 }
 
 fn check_list_current(list: &ReleaseListStatement) -> Result<()> {
-    if !list.is_current(jiff::Timestamp::now()) {
+    if !list.is_current(jiff_0_2::Timestamp::now()) {
         bail!(
             "the release list expired at {}; the vendor has not published a fresh one",
             list.predicate.expires_at

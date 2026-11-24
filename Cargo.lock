@@ -6947,6 +6947,7 @@ dependencies = [
  "insta",
  "itertools 0.15.0",
  "jdx-tar",
+ "jiff 0.2.46",
  "jiff 1.0.2",
  "jsonschema",
  "junction",
