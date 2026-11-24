@@ -1,4 +1,4 @@
-use super::keys::{quote_key, rejoin, split_keys};
+use super::keys::{json_text, quote_key, rejoin, split_keys};
 use crate::config::schema;
 use crate::file::display_path;
 use eyre::{Result, bail};
@@ -133,7 +133,7 @@ impl ConfigExplain {
         }
 
         if self.json {
-            miseprintln!("{}", serde_json::to_string_pretty(&keys)?);
+            miseprintln!("{}", json_text(&keys)?);
             return Ok(());
         }
         miseprintln!("{}", display_path(&file));

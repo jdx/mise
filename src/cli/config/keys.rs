@@ -126,6 +126,23 @@ pub(super) fn quote_key(name: &str) -> String {
     }
 }
 
+/// `value` as pretty JSON with no raw control character inside a string. serde_json escapes
+/// U+0000 to U+001F and leaves U+007F to U+009F as they are, of which U+009B is `ESC [`, so
+/// those are written as `\u00XX` here. They occur only inside strings, so the text decodes to
+/// the same value.
+pub(super) fn json_text<T: serde::Serialize>(value: &T) -> serde_json::Result<String> {
+    let json = serde_json::to_string_pretty(value)?;
+    let mut out = String::with_capacity(json.len());
+    for c in json.chars() {
+        if ('\u{7f}'..='\u{9f}').contains(&c) {
+            out.push_str(&format!("\\u{:04X}", c as u32));
+        } else {
+            out.push(c);
+        }
+    }
+    Ok(out)
+}
+
 /// `name` as a TOML basic string, with every control character written as `\uXXXX`.
 fn escape_key(name: &str) -> String {
     let mut quoted = String::from('"');
@@ -411,6 +428,23 @@ mod tests {
         let file = dir.path().join("mise.toml");
         std::fs::write(&file, "[tasks.\"a\\u009b2J\"]\nrun = \"true\"\n").unwrap();
         assert_eq!(values("tasks.", Some(&file)), [r#"tasks."a\u009B2J""#]);
+    }
+
+    #[test]
+    fn json_text_escapes_c1_controls_and_reads_back_the_same() {
+        let value = serde_json::json!({
+            "path": ["tasks", "a\u{9b}2J\u{85}\u{7f}\u{1b}b", "\u{a0}é"],
+        });
+        let text = json_text(&value).unwrap();
+        assert!(
+            !text.contains(|c: char| c.is_control() && c != '\n'),
+            "{text:?}"
+        );
+        assert!(text.contains(r#""a\u009B2J\u0085\u007F\u001bb""#), "{text}");
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&text).unwrap(),
+            value
+        );
     }
 
     #[test]
