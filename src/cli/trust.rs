@@ -381,6 +381,8 @@ impl Trust {
     }
     fn trust(&self) -> Result<()> {
         let path = match self.config_file()? {
+            // A directory is the project whichever file in it the names in effect pick.
+            Some(filename) if !self.named_file() => config_file::config_trust_root(&filename),
             Some(filename) => config_file::trust_root_for_cli(&filename),
             None => match self.get_next_untrusted() {
                 Some(path) => path,

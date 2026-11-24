@@ -144,7 +144,12 @@ mise trust
 
 `mise trust` with no path trusts the nearest untrusted config and every env file
 and script that config reads, and again after an edit. `mise trust .env` trusts
-only that file.
+only that file. With `env_files` on and `config` off, naming a file trusts its
+project when the file has one of mise's own config names, such as `mise.toml`,
+`.tool-versions` or `.mise/conf.d/*.toml`, or a name that the
+`MISE_OVERRIDE_CONFIG_FILENAMES` or `MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES`
+environment variable sets. A name that only a `.miserc.toml` adds does not
+count, because a project's `.miserc.toml` loads before anything is trusted.
 
 This applies to every `_.file` format, to `_.source` scripts, and to the files the
 [`env_file`](/configuration/settings.html#env_file) setting finds. It includes a

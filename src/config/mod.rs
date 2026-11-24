@@ -2658,28 +2658,81 @@ fn shared_config_filenames(
     if !override_config_filenames.is_empty() {
         paths.extend(override_config_filenames.iter().map(escape))
     } else {
-        paths.extend(
-            [
-                ".config/mise/conf.d/*.toml",
-                ".config/mise/conf.d/*/mise.toml",
-                ".config/mise/config.toml",
-                ".config/mise/mise.toml",
-                ".config/mise.toml",
-                ".mise/conf.d/*.toml",
-                ".mise/conf.d/*/mise.toml",
-                ".mise/config.toml",
-                "mise/conf.d/*.toml",
-                "mise/conf.d/*/mise.toml",
-                "mise/config.toml",
-                "mise.toml",
-                &escape(&env::MISE_DEFAULT_CONFIG_FILENAME), // mise.toml
-                ".mise.toml",
-            ]
-            .map(String::from),
-        );
+        let (before_default, after_default) = MISE_CONFIG_FILENAMES.split_at(12);
+        paths.extend(before_default.iter().map(|s| s.to_string()));
+        paths.insert(escape(&env::MISE_DEFAULT_CONFIG_FILENAME)); // mise.toml
+        paths.extend(after_default.iter().map(|s| s.to_string()));
     }
 
     paths
+}
+
+/// mise's own shared config filename patterns, lowest precedence first. The
+/// default config filename goes after the twelfth.
+const MISE_CONFIG_FILENAMES: [&str; 13] = [
+    ".config/mise/conf.d/*.toml",
+    ".config/mise/conf.d/*/mise.toml",
+    ".config/mise/config.toml",
+    ".config/mise/mise.toml",
+    ".config/mise.toml",
+    ".mise/conf.d/*.toml",
+    ".mise/conf.d/*/mise.toml",
+    ".mise/config.toml",
+    "mise/conf.d/*.toml",
+    "mise/conf.d/*/mise.toml",
+    "mise/config.toml",
+    "mise.toml",
+    ".mise.toml",
+];
+
+/// mise's own `.local` config filename patterns, lowest precedence first.
+const LOCAL_CONFIG_FILENAMES: [&str; 10] = [
+    ".config/mise/conf.d/*/mise.local.toml",
+    ".config/mise/config.local.toml",
+    ".config/mise/mise.local.toml",
+    ".config/mise.local.toml",
+    ".mise/conf.d/*/mise.local.toml",
+    ".mise/config.local.toml",
+    "mise/conf.d/*/mise.local.toml",
+    "mise/config.local.toml",
+    "mise.local.toml",
+    ".mise.local.toml",
+];
+
+/// Whether `path` is found under one of mise's own config filenames, or under a name that the
+/// `MISE_OVERRIDE_*_FILENAMES` and `MISE_DEFAULT_*_FILENAME` environment variables set. A name
+/// that only a `.miserc.toml` adds does not count: a project's `.miserc.toml` loads before
+/// anything is trusted, so it must not decide what an approval of a file covers.
+pub(crate) fn has_own_config_filename(path: &Path) -> bool {
+    let escape = |s: &str| glob::Pattern::escape(s);
+    let mut names: Vec<String> = [".tool-versions"]
+        .into_iter()
+        .chain(MISE_CONFIG_FILENAMES)
+        .chain(LOCAL_CONFIG_FILENAMES)
+        .map(String::from)
+        .collect();
+    for var in [
+        "MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES",
+        "MISE_OVERRIDE_CONFIG_FILENAMES",
+    ] {
+        if let Ok(value) = std::env::var(var) {
+            names.extend(value.split(':').filter(|s| !s.is_empty()).map(escape));
+        }
+    }
+    for var in [
+        "MISE_DEFAULT_TOOL_VERSIONS_FILENAME",
+        "MISE_DEFAULT_CONFIG_FILENAME",
+    ] {
+        if let Ok(value) = std::env::var(var) {
+            names.push(escape(&value));
+        }
+    }
+    let Ok(path) = path.absolutize() else {
+        return false;
+    };
+    load_config_paths(&names, true)
+        .iter()
+        .any(|config| config.absolutize().is_ok_and(|config| config == path))
 }
 /// `.local` override filenames for one directory, lowest precedence first. They
 /// outrank every shared and environment file in the same directory, except the
@@ -2689,18 +2742,7 @@ static LOCAL_OVERRIDE_CONFIG_FILENAMES: Lazy<Vec<&'static str>> = Lazy::new(|| {
     if !env::MISE_OVERRIDE_CONFIG_FILENAMES.is_empty() {
         return vec![];
     }
-    vec![
-        ".config/mise/conf.d/*/mise.local.toml",
-        ".config/mise/config.local.toml",
-        ".config/mise/mise.local.toml",
-        ".config/mise.local.toml",
-        ".mise/conf.d/*/mise.local.toml",
-        ".mise/config.local.toml",
-        "mise/conf.d/*/mise.local.toml",
-        "mise/config.local.toml",
-        "mise.local.toml",
-        ".mise.local.toml",
-    ]
+    LOCAL_CONFIG_FILENAMES.to_vec()
 });
 /// Config filename patterns for a single MISE_ENV environment, in precedence order
 /// (later wins). `local` selects the `mise.{env}.local.toml` family instead of

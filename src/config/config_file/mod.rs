@@ -621,8 +621,12 @@ pub fn trust_root_for_cli(path: &Path) -> PathBuf {
 }
 
 /// Whether a path the user names is a mise config file, as opposed to an env file or a script.
+///
+/// Only mise's own config names and the ones the user's environment sets count. The names in
+/// effect also hold the overrides a project `.miserc.toml` sets without trust, and one that
+/// lists `.env` would turn an approval of that file into trust of the whole project.
 fn looks_like_config_file(path: &Path) -> bool {
-    if path.is_dir() || detect_config_file_type_by_filename(path).is_some() {
+    if path.is_dir() {
         return true;
     }
     let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
@@ -630,9 +634,7 @@ fn looks_like_config_file(path: &Path) -> bool {
     };
     name.ends_with(".toml") && (name.contains("mise") || name == "config.toml")
         || name.contains("tool-versions")
-        || config::load_config_paths(&config::DEFAULT_CONFIG_FILENAMES, true)
-            .iter()
-            .any(|config| config == path)
+        || config::has_own_config_filename(path)
 }
 
 pub fn config_trust_root(path: &Path) -> PathBuf {
