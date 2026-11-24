@@ -130,6 +130,14 @@ impl EnvDirectiveContext<'_> {
     }
 }
 
+/// Whether [`EnvResults::parse_template`] can rewrite `input`: it holds a template or a `$VAR`.
+///
+/// The path such a `_.file` or `_.source` entry names is not fixed by the config that declares
+/// it. `{{cwd}}/.env` and `$PWD/.env` name a different file in every directory.
+fn is_templated(input: &str) -> bool {
+    contains_template_syntax(input) || input.contains('$')
+}
+
 /// Marks, through rendering, where the pattern an entry writes begins. No path holds a NUL.
 const PATTERN_MARK: char = '\0';
 
@@ -1387,6 +1395,24 @@ mod tests {
             glob("**/.env.example"),
             files(&["cloned/.env.example", "cloned/docs/.env.example"])
         );
+    }
+
+    /// A global `_.file` or `_.source` entry is exempt from paranoid env-file trust only when
+    /// it names a fixed path. These follow the working directory or the environment.
+    #[test]
+    fn test_is_templated() {
+        for input in [
+            "{{cwd}}/.env",
+            "{{ env.PWD }}/.env",
+            "{% if true %}.env{% endif %}",
+            "$PWD/.env",
+            "${PWD}/env.sh",
+        ] {
+            assert!(is_templated(input), "{input}");
+        }
+        for input in [".env", "~/.env", "/etc/mise/env.sh", "../shared/.env.json"] {
+            assert!(!is_templated(input), "{input}");
+        }
     }
 
     /// A directory is taken as it is named, even when its name holds a `*`.

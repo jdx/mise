@@ -134,6 +134,32 @@ assert "MISE_PARANOID=1 mise trust $HOME/globbed/repos/a/.env"
 assert_contains "MISE_PARANOID=1 mise env" "GLOB_SRC_TEST=ran"
 assert_contains "MISE_PARANOID=1 mise env" "GLOB_FILE_TEST=yes"
 
+# So can a template or `$VAR` in global config: `{{cwd}}/.env` names the file of whichever
+# repository you are in. A path written out in full is the operator's own and needs no approval.
+mkdir -p ~/templated/repo ~/templated/global
+echo 'TEMPLATED_FILE_TEST=yes' >~/templated/repo/.env
+echo 'export TEMPLATED_SRC_TEST=ran' >~/templated/repo/env.sh
+echo 'FIXED_FILE_TEST=yes' >~/templated/global/.env
+cat >~/templated/global/config.toml <<'EOS'
+[env]
+_.file = "{{cwd}}/.env"
+_.source = "$PWD/env.sh"
+EOS
+export MISE_GLOBAL_CONFIG_FILE="$HOME/templated/global/config.toml"
+cd ~/templated/repo || exit 1
+assert_contains "MISE_PARANOID=env_files mise hook-env -s bash 2>&1" ".env is not trusted"
+assert_not_contains "MISE_PARANOID=env_files mise hook-env -s bash 2>&1" "TEMPLATED_FILE_TEST"
+assert_not_contains "MISE_PARANOID=env_files mise hook-env -s bash 2>&1" "TEMPLATED_SRC_TEST"
+assert "MISE_PARANOID=1 mise trust .env"
+assert "MISE_PARANOID=1 mise trust env.sh"
+assert_contains "MISE_PARANOID=1 mise env" "TEMPLATED_FILE_TEST=yes"
+assert_contains "MISE_PARANOID=1 mise env" "TEMPLATED_SRC_TEST=ran"
+cat >~/templated/global/config.toml <<EOS
+[env]
+_.file = "$HOME/templated/global/.env"
+EOS
+assert_contains "MISE_PARANOID=1 mise env" "FIXED_FILE_TEST=yes"
+
 # A bare `mise trust` trusts the project's config and the env files and scripts it reads.
 unset MISE_GLOBAL_CONFIG_FILE
 mkdir -p ~/bare

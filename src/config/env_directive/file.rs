@@ -226,9 +226,12 @@ impl EnvResults {
                 .collect()
         };
         // A global entry that names its file outright is the operator's own choice. One that
-        // searches upward, or a glob, can find files in repositories, so those need approval like
-        // project config.
-        let operator_owned = !find_up && !has_glob && crate::config::is_global_config(ctx.source);
+        // searches upward, a glob, or a template or `$VAR` such as `{{cwd}}/.env`, can find files
+        // in repositories, so those need approval like project config.
+        let operator_owned = !find_up
+            && !has_glob
+            && !inputs.iter().any(|input| super::is_templated(input))
+            && crate::config::is_global_config(ctx.source);
         for p in paths {
             if !operator_owned
                 && !crate::config::config_file::env_file_trust_check_from(&p, Some(ctx.source))?
