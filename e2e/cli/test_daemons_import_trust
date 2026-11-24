@@ -64,3 +64,24 @@ rm "$platform/.node-version"
 echo "# no tools" >"$platform/.tool-versions"
 mise trust "$platform"
 assert_succeed "mise daemons start auth"
+
+# A project nested inside this one needs the same trust for the files this
+# project did not load itself.
+host="$HOME/src/host"
+nested="$host/vendor/auth"
+mkdir -p "$nested"
+cp "$platform/services/auth/mise.toml" "$nested/mise.toml"
+cat >"$host/mise.toml" <<'TOML'
+[tools]
+pitchfork = "system"
+[daemons.auth]
+project = "vendor/auth"
+TOML
+mise trust "$nested/mise.toml"
+echo "path:$HOME/no-such-node" >"$host/vendor/.node-version"
+cd "$host" || exit 1
+assert_fail_contains "mise daemons start auth 2>&1" "vendor/.node-version, which is not trusted"
+assert_not_contains "ls '$MISE_STATE_DIR/trusted-configs'" "src-host-vendor-"
+
+rm "$host/vendor/.node-version"
+assert_succeed "mise daemons start auth"

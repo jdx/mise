@@ -26,13 +26,15 @@ pub async fn config_for_root(config: &Arc<Config>, root: &Path) -> Result<Arc<Co
     Ok(config.with_config_files(files))
 }
 
-/// A root outside this project is one a `project =` reference named. The
-/// commands that load it trust their own config implicitly, and loading the
-/// other project's files through that branch would trust them too, with no
-/// prompt. Every file of its hierarchy that is not already part of this
-/// project's config has to be trusted beforehand: `.tool-versions` and
-/// idiomatic version files as much as `mise.toml`, since each can carry a
-/// template or a `path:` version.
+/// A root can be one a `project =` reference named, inside this project's
+/// directory or outside it. The commands that load it trust their own config
+/// implicitly, and loading the other project's files through that branch
+/// would trust them too, with no prompt. Every file of its hierarchy that is
+/// not already part of this project's loaded config has to be trusted
+/// beforehand: `.tool-versions` and idiomatic version files as much as
+/// `mise.toml`, since each can carry a template or a `path:` version. Being
+/// below this project's directory does not count: this project never loaded
+/// those files, and trust is given per config root, not per directory tree.
 fn ensure_foreign_root_trusted(config: &Config, root: &Path, paths: &[PathBuf]) -> Result<()> {
     use crate::config::config_file::{config_trust_root, is_path_trusted};
     use crate::config::{Settings, SettingsExt};
@@ -41,13 +43,6 @@ fn ensure_foreign_root_trusted(config: &Config, root: &Path, paths: &[PathBuf]) 
     }
     let canonical = |path: &Path| path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
     let root = canonical(root);
-    if config
-        .project_root
-        .as_deref()
-        .is_some_and(|project| root.starts_with(canonical(project)))
-    {
-        return Ok(());
-    }
     let active: std::collections::HashSet<PathBuf> =
         config.config_files.keys().map(|p| canonical(p)).collect();
     for path in paths {
