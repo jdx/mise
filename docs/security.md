@@ -164,8 +164,9 @@ without a record: writing `~/.config/mise/config.toml` does not trust a
 `mise.toml` in your home directory, and does not undo `mise trust --ignore` for
 it.
 
-When a project config file is a symlink, mise writes through it only if the link
-stays in the config's directory, or the project was trusted before the command
+When a project config file is a symlink, or sits in a linked directory of the
+project such as a `.config` or `.mise` that leads out of it, mise writes through
+the link only if it stays in the config's directory, or the project was trusted before the command
 started and safe mode is off. Trust that the same command grants does not
 count, however it grants it: because you typed it in the project (see
 [Typed in a terminal](#typed-in-a-terminal)), because you answered yes to the

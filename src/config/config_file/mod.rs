@@ -1486,6 +1486,9 @@ pub fn trust_check_before_write(path: &Path) -> Result<()> {
 
 /// Refuses to write config file `path` through a symlink to a file the user did not choose.
 ///
+/// The symlink is `path` itself, or a directory between the project and `path`, such as a
+/// linked `.config` or `.mise`: the lockfile writer checks the same directories.
+///
 /// A project's links come with its working tree, so in a checkout nobody reviewed their author
 /// would choose which file `mise use` or `mise set` replaces: a file elsewhere in the user's
 /// home, or a trust record in mise's state directory. A link that stays in the config root is
@@ -1495,13 +1498,23 @@ pub fn trust_check_before_write(path: &Path) -> Result<()> {
 /// state directory, and a link out of the root whose target does not exist are never followed,
 /// so a write never creates a file outside the project.
 pub fn symlink_check_before_write(path: &Path) -> Result<()> {
-    if !path.is_symlink() {
+    let dir_leads_out = config_root::linked_project(path).is_some_and(|project| {
+        let dir = path.parent().and_then(|dir| dir.canonicalize().ok());
+        let project = project.canonicalize().ok();
+        !matches!((dir, project), (Some(dir), Some(project)) if dir.starts_with(&project))
+    });
+    if !path.is_symlink() && !dir_leads_out {
         return Ok(());
     }
     let target = file::atomic_write_target(path)?;
+    let through = if path.is_symlink() {
+        "its symlink"
+    } else {
+        "a linked directory"
+    };
     let refuse = |why: &str| -> Result<()> {
         Err(eyre!(
-            "refusing to write {} through its symlink to {}: {why}. Write the file it links to directly, or replace the link with a regular file",
+            "refusing to write {} through {through} to {}: {why}. Write the file it links to directly, or replace the link with a regular file",
             display_path(path),
             display_path(&target)
         ))
@@ -1524,12 +1537,15 @@ pub fn symlink_check_before_write(path: &Path) -> Result<()> {
             "a project's link to global config is not followed. Write global config with `-g`",
         );
     }
+    // Below a directory link that leaves the project, the config root and the link's own
+    // directory resolve to wherever that link leads, so neither says the target stays.
     let root = config_root::config_root(path).canonicalize().ok();
-    let in_root = root.is_some_and(|root| target.starts_with(root))
-        || path
-            .parent()
-            .and_then(|dir| dir.canonicalize().ok())
-            .is_some_and(|dir| target.starts_with(dir));
+    let in_root = !dir_leads_out
+        && (root.is_some_and(|root| target.starts_with(root))
+            || path
+                .parent()
+                .and_then(|dir| dir.canonicalize().ok())
+                .is_some_and(|dir| target.starts_with(dir)));
     if in_root {
         return Ok(());
     }
@@ -1552,7 +1568,7 @@ pub fn symlink_check_before_write(path: &Path) -> Result<()> {
         return Ok(());
     }
     Err(eyre!(
-        "refusing to write {} through its symlink to {}: the link leaves the project, and mise follows such a link only for a project that was trusted before this command. Check where the link leads, run `mise trust` in {} and run the command again, or replace the link with a regular file",
+        "refusing to write {} through {through} to {}: the link leaves the project, and mise follows such a link only for a project that was trusted before this command. Check where the link leads, run `mise trust` in {} and run the command again, or replace the link with a regular file",
         display_path(path),
         display_path(&target),
         display_path(&project)

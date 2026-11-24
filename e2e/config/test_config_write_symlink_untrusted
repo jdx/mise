@@ -59,6 +59,20 @@ assert_fail_contains "MISE_YES=1 mise use --rm tiny 2>&1" "trusted before this c
 assert_contains "cat ../outside/clone.toml" 'tiny = "1"'
 cd ../proj || exit 1
 
+echo "=== a linked directory out of the project is not followed ==="
+mkdir -p ../dir-link ../outside/conf
+cat <<'TOML' >../outside/conf/mise.toml
+[tools]
+TOML
+cd ../dir-link || exit 1
+ln -s ../outside/conf .config
+assert_fail_contains "mise set --file .config/mise.toml FOO=bar 2>&1" "through a linked directory"
+assert_fail_contains "MISE_SAFE=1 mise set --file .config/mise.toml FOO=bar 2>&1" "refusing to write"
+assert_not_contains "cat ../outside/conf/mise.toml" "FOO"
+assert_fail_contains "mise set --file .config/mise.local.toml FOO=bar 2>&1" "refusing to write"
+assert_fail "test -e ../outside/conf/mise.local.toml"
+cd ../proj || exit 1
+
 echo "=== a trusted project may link out ==="
 rm mise.toml
 ln -s ../outside/victim.toml mise.toml
