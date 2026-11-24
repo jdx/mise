@@ -747,6 +747,7 @@ pub fn trust_active_config() -> Result<()> {
         }
         if !is_trusted(&config_root) {
             trust(&config_root)?;
+            granted_by_this_command(&config_root);
             newly_trusted = true;
         }
     }
@@ -769,11 +770,41 @@ fn trust_and_reload_settings(config_root: &Path) -> eyre::Result<()> {
 fn trust_then_reload_settings(config_root: &Path, on_trusted: impl FnOnce()) -> eyre::Result<()> {
     let was_trusted = is_trusted(config_root);
     trust(config_root)?;
+    if !was_trusted {
+        granted_by_this_command(config_root);
+    }
     on_trusted();
     if !was_trusted && settings::is_loaded() {
         Settings::reload()?;
     }
     Ok(())
+}
+
+/// The config roots this process trusted that were not trusted when it started, resolved.
+static GRANTED_BY_THIS_COMMAND: Mutex<Option<HashSet<PathBuf>>> = Mutex::new(None);
+
+fn resolved_root(path: &Path) -> PathBuf {
+    path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
+}
+
+/// Notes that this process trusted `config_root`. Every way a command grants trust on its own
+/// comes through here: a command that implies trust, one typed on a terminal, a yes to the
+/// prompt, and the `yes` setting.
+fn granted_by_this_command(config_root: &Path) {
+    GRANTED_BY_THIS_COMMAND
+        .lock()
+        .unwrap()
+        .get_or_insert_with(HashSet::new)
+        .insert(resolved_root(config_root));
+}
+
+/// Whether this process trusted `config_root`, rather than finding it trusted when it started.
+fn trusted_by_this_command(config_root: &Path) -> bool {
+    GRANTED_BY_THIS_COMMAND
+        .lock()
+        .unwrap()
+        .as_ref()
+        .is_some_and(|roots| roots.contains(&resolved_root(config_root)))
 }
 
 /// Whether a command that implies trust may record it for `path`. An ignore always wins: the user
@@ -1501,10 +1532,11 @@ pub fn symlink_check_before_write(path: &Path) -> Result<()> {
             "a link out of the config's directory is only followed for global config, or for a trusted project outside safe mode",
         );
     }
-    // Trust this command granted on its own, because it was typed in the project, came before
-    // anyone looked at where the project's links lead, so it does not cover them.
+    // Only trust from before the command started covers a link out of the project. Trust the
+    // command granted itself, however it was granted, came before anyone looked at where the
+    // project's links lead: the prompt names the directory, not the files its links reach.
     let project = config_trust_root(path);
-    if is_path_trusted(path) && !typed_consent::trusted_by_this_command(&project) {
+    if is_path_trusted(path) && !trusted_by_this_command(&project) {
         return Ok(());
     }
     Err(eyre!(

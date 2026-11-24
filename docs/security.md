@@ -166,10 +166,11 @@ it.
 
 When a project config file is a symlink, mise writes through it only if the link
 stays in the config's directory, or the project was trusted before the command
-started and safe mode is off. Trust that the command itself grants because you
-typed it in the project, as described in
-[Typed in a terminal](#typed-in-a-terminal), does not count: nobody had looked
-at where the link leads. Otherwise the write fails, names the link and its
+started and safe mode is off. Trust that the same command grants does not
+count, however it grants it: because you typed it in the project (see
+[Typed in a terminal](#typed-in-a-terminal)), because you answered yes to the
+prompt, or because `--yes` or `MISE_YES` is set. The prompt names the
+directory, not where its links lead. Otherwise the write fails, names the link and its
 target, and tells you to run `mise trust` there. A link into mise's
 state directory, or a dangling link that leads out of the directory, is never
 followed. A global config file that links into a dotfiles checkout is written
