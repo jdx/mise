@@ -284,12 +284,12 @@ impl NodePlugin {
         let settings = Settings::get();
         let platform_key = self.get_platform_key();
         let tarball_name = local.file_name().unwrap().to_string_lossy().to_string();
-        // Safe mode drops a project lockfile's URL and keeps its checksum. Locked mode
-        // then downloads from the mirror, and the kept checksum still pins the file.
-        let pinned_by_checksum = ctx.locked
-            && tv.lock_platforms.get(&platform_key).is_some_and(|info| {
-                info.is_pinned_without_url() && info.install.as_deref() == lockfile_install
-            });
+        // A lockfile that is not trusted, or one written without URLs, keeps a checksum
+        // without its URL. mise then downloads from the mirror, locked or not, and the
+        // kept checksum still pins the file.
+        let pinned_by_checksum = tv.lock_platforms.get(&platform_key).is_some_and(|info| {
+            info.is_pinned_without_url() && info.install.as_deref() == lockfile_install
+        });
         if local.exists() {
             ctx.pr.set_message(format!("cached {tarball_name}"));
         } else {

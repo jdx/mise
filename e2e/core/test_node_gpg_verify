@@ -84,6 +84,8 @@ assert_fail "mise install --locked" "signature does not match any trusted public
 # and a pin the archive does not match fails before the mirror's checksum can replace it
 sed -i 's|^checksum = "sha256:.*"|checksum = "sha256:0000000000000000000000000000000000000000000000000000000000000000"|' mise.lock
 assert_fail "mise install --locked" "Checksum mismatch"
+# an install that is not locked compares the pin too
+assert_fail "mise install" "Checksum mismatch"
 
 # A SHASUMS256.txt whose signature matches is locked
 mkdir -p "$MIRROR/v20.11.0"
