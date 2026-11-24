@@ -4,7 +4,9 @@ use eyre::{Result, eyre};
 
 use crate::args::{BackendArg, BackendResolution};
 use crate::backend::BackendList;
-use crate::config::config_file::{ConfigFile, trust_check, version_requires_trust};
+use crate::config::config_file::{
+    ConfigFile, ensure_tool_request_count, trust_check, version_requires_trust,
+};
 use crate::config::{Settings, is_global_config};
 use crate::file;
 use crate::plugins;
@@ -91,9 +93,12 @@ impl IdiomaticVersionFile {
             return Ok(Self { tools, path });
         }
 
+        let mut count = 0;
         for plugin in plugins {
             match plugin.parse_idiomatic_file_with_options(&path).await {
                 Ok(versions) => {
+                    count += versions.len();
+                    ensure_tool_request_count(&path, count)?;
                     for (version, mut options) in versions {
                         if version_requires_trust(&version) && !is_global_config(&path) {
                             trust_check(&path)?;

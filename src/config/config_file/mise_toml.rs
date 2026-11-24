@@ -53,7 +53,7 @@ use mise_config::task::TaskDecls;
 
 use super::diagnostic::toml_parse_error;
 use super::min_version::MinVersionSpec;
-use super::{tool_key_requires_trust, version_requires_trust};
+use super::{ensure_tool_request_count, tool_key_requires_trust, version_requires_trust};
 
 const LEGACY_ENV_KEYS_DEPRECATED_WARN_AT: &str = "2026.4.17";
 const LEGACY_ENV_KEYS_DEPRECATED_REMOVE_AT: &str = "2027.4.0";
@@ -1594,6 +1594,8 @@ impl MiseToml {
         let source = ToolSource::MiseToml(self.path.clone());
         let mut trs = ToolRequestSet::new();
         let tools = self.tools.lock().unwrap();
+        let count = tools.values().map(|tvp| tvp.0.len()).sum();
+        ensure_tool_request_count(&self.path, count)?;
         let context = self.tool_template_context();
         for (ba, tvp) in tools.iter() {
             for tool in &tvp.0 {
@@ -5410,6 +5412,20 @@ run = "cargo build"
         assert!(err.contains("deps provider \"setup\""), "{err}");
         assert!(err.contains("field \"sources[0]\""), "{err}");
         assert!(err.contains(".test.mise.toml"), "{err}");
+    }
+
+    /// Plain `[tools]` entries load without trust and each is resolved on every prompt, so
+    /// their number is bounded like the versions of a `.tool-versions`.
+    #[test]
+    fn test_too_many_tool_versions_are_refused() {
+        let limit = super::super::MAX_TOOL_REQUESTS;
+        let tools = |n: usize| format!("[tools]\nnode = [{}]\n", "\"1\",".repeat(n));
+
+        let trs = parse(tools(limit)).to_tool_request_set().unwrap();
+        assert_eq!(trs.tools.values().map(Vec::len).sum::<usize>(), limit);
+
+        let err = parse(tools(limit + 1)).to_tool_request_set().unwrap_err();
+        assert!(err.to_string().contains("tool versions"), "{err}");
     }
 
     fn parse(s: String) -> MiseToml {

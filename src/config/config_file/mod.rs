@@ -109,6 +109,38 @@ fn ensure_versions_are_not_templates(
     Ok(())
 }
 
+/// The most tool versions a config file, and the config files together, may request.
+///
+/// `.tool-versions`, idiomatic version files and plain `[tools]` entries load without trust, and
+/// every request is resolved whenever the toolset is built (on each prompt under `mise activate`),
+/// which costs far more time and memory than the few bytes it takes to write one. Real configs
+/// name tens of tools, mise's own about thirty; 1000 leaves room for far larger ones while
+/// keeping the cost of a hostile file to a fraction of a second.
+const MAX_TOOL_REQUESTS: usize = 1000;
+
+/// Refuse a config file that requests more than [`MAX_TOOL_REQUESTS`] tool versions, before any
+/// of the requests is built.
+fn ensure_tool_request_count(path: &Path, count: usize) -> Result<()> {
+    if count > MAX_TOOL_REQUESTS {
+        return Err(eyre!(
+            "{} requests {count} tool versions, a config file may request {MAX_TOOL_REQUESTS}",
+            display_path(path)
+        ));
+    }
+    Ok(())
+}
+
+/// The same bound on what the config files request together: each can stay below it and name
+/// other tools, and the toolset is what they add up to.
+pub(crate) fn ensure_total_tool_request_count(count: usize) -> Result<()> {
+    if count > MAX_TOOL_REQUESTS {
+        return Err(eyre!(
+            "the config files request {count} tool versions, mise allows {MAX_TOOL_REQUESTS}"
+        ));
+    }
+    Ok(())
+}
+
 /// A templated tool entry's options as written and as the config that declares them renders
 /// them, so a rewrite can put the template back in place of the value it rendered to.
 #[derive(Debug, Clone)]

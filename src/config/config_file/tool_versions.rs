@@ -11,7 +11,9 @@ use itertools::Itertools;
 use tera::Context;
 
 use crate::args::BackendArg;
-use crate::config::config_file::{ConfigFile, ensure_versions_are_not_templates, trust_check};
+use crate::config::config_file::{
+    ConfigFile, ensure_tool_request_count, ensure_versions_are_not_templates, trust_check,
+};
 use crate::file;
 use crate::file::display_path;
 use crate::tera::{BASE_CONTEXT, contains_template_syntax, get_tera, render_config_str};
@@ -153,7 +155,10 @@ impl ToolVersions {
 
     fn populate_toolset(&self) -> eyre::Result<()> {
         let source = ToolSource::ToolVersions(self.path.clone());
-        for (ba, tvp) in &*self.plugins.lock().unwrap() {
+        let plugins = self.plugins.lock().unwrap();
+        let count = plugins.values().map(|tvp| tvp.versions.len()).sum();
+        ensure_tool_request_count(&self.path, count)?;
+        for (ba, tvp) in &*plugins {
             for version in &tvp.versions {
                 let tvr = ToolRequest::new(Arc::new(ba.clone()), version, source.clone())?;
                 self.tools.lock().unwrap().add_version(tvr, &source)
@@ -330,6 +335,26 @@ mod tests {
         let err = tv.replace_versions(&ba, vec![tr]).unwrap_err();
         assert!(err.to_string().contains("template syntax"), "{err}");
         assert!(!tv.dump().unwrap().contains("{{"));
+    }
+
+    /// The file loads without trust and every version is resolved on each prompt, so the
+    /// number of them is bounded, whether they name one tool or many.
+    #[test]
+    fn too_many_versions_are_refused() {
+        let path = PathBuf::from("/tmp/.tool-versions");
+        let limit = super::super::MAX_TOOL_REQUESTS;
+        let one_tool = |n: usize| format!("node{}\n", " 1".repeat(n));
+        let many_tools = |n: usize| (0..n).map(|i| format!("tool{i} 1\n")).collect::<String>();
+
+        let tv = ToolVersions::parse_str(&one_tool(limit), path.clone()).unwrap();
+        let requests = tv.to_tool_request_set().unwrap();
+        assert_eq!(requests.tools.values().map(Vec::len).sum::<usize>(), limit);
+        ToolVersions::parse_str(&many_tools(limit), path.clone()).unwrap();
+
+        for body in [one_tool(limit + 1), many_tools(limit + 1)] {
+            let err = ToolVersions::parse_str(&body, path.clone()).unwrap_err();
+            assert!(err.to_string().contains("tool versions"), "{err}");
+        }
     }
 
     /// `dump` relies on `post` to terminate each line, and `trim_end` only ever

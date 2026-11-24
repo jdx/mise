@@ -7,6 +7,7 @@ use std::{
 
 use crate::args::{BackendArg, ToolArg};
 use crate::backend::backend_type::BackendType;
+use crate::config::config_file::ensure_total_tool_request_count;
 use crate::config::{Config, ConfigMap, Settings};
 use crate::env;
 use crate::env_diff::EnvMap;
@@ -231,6 +232,7 @@ impl ToolRequestSetBuilder {
         let config_files = self.config_files.as_ref().unwrap_or(&config.config_files);
         for cf in config_files.values().rev() {
             trs = merge(trs, cf.to_tool_request_set()?);
+            ensure_total_tool_request_count(trs.tools.values().map(Vec::len).sum())?;
         }
         if self.config_files.is_none() {
             config.daemons()?.add_tool_requests(&mut trs)?;

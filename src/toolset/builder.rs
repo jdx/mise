@@ -5,6 +5,7 @@ use eyre::Result;
 use itertools::Itertools;
 
 use crate::args::{BackendArg, ToolArg};
+use crate::config::config_file::ensure_total_tool_request_count;
 use crate::config::{Config, ConfigMap};
 use crate::env_diff::EnvMap;
 use crate::errors::Error;
@@ -187,6 +188,8 @@ impl ToolsetBuilder {
                 _ => {}
             }
             ts.merge(cf.to_toolset()?);
+            let count = ts.versions.values().map(|tvl| tvl.requests.len()).sum();
+            ensure_total_tool_request_count(count)?;
         }
         let scoped_files = config_files
             .iter()
