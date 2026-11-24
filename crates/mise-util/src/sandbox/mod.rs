@@ -621,6 +621,7 @@ impl SandboxConfig {
         if self.effective_deny_read()
             || self.effective_deny_write()
             || self.effective_deny_unix()
+            || self.effective_deny_net()
             || self.deny_process
         {
             landlock::apply_landlock(self, Some(std::path::Path::new(program)))?;

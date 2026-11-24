@@ -1,6 +1,6 @@
 use eyre::{Result, eyre};
 use landlock::{
-    ABI, AccessFs, BitFlags, Compatible, PathBeneath, PathFd, Ruleset, RulesetAttr,
+    ABI, AccessFs, AccessNet, BitFlags, Compatible, PathBeneath, PathFd, Ruleset, RulesetAttr,
     RulesetCreatedAttr, RulesetStatus, Scope,
 };
 
@@ -218,6 +218,9 @@ pub(super) fn apply_landlock(
 
     let handled_access = handled_access(config);
     if handled_access.is_empty() {
+        if config.effective_deny_net() {
+            return apply_network_domain();
+        }
         return Ok(());
     }
 
@@ -324,10 +327,79 @@ pub(super) fn apply_landlock(
     Ok(())
 }
 
+/// Put a network-only sandbox in a Landlock domain that refuses TCP bind and
+/// connect and grants or refuses nothing on the filesystem.
+///
+/// seccomp keeps the command from creating a network socket, but not from
+/// borrowing one: a process outside any domain lets a same-user process
+/// ptrace it or open its `/proc/<pid>/mem`, and so create a socket in it and
+/// copy the descriptor out. A process in a domain can do neither to a process
+/// outside it. TCP is what seccomp already refuses, so the domain adds no
+/// restriction a command could notice besides that scope (and `mount`, which
+/// every domain refuses).
+///
+/// Landlock handles network access from Linux 6.7. On an older kernel the
+/// domain is not created and the command runs under seccomp alone.
+fn apply_network_domain() -> Result<()> {
+    let status = Ruleset::default()
+        .set_compatibility(landlock::CompatLevel::BestEffort)
+        .handle_access(AccessNet::BindTcp | AccessNet::ConnectTcp)
+        .and_then(|r| r.create())
+        .and_then(|r| r.restrict_self())
+        .map_err(|e| eyre!("failed to apply landlock restrictions: {e}"))?;
+    if !status.no_new_privs {
+        eyre::bail!("failed to apply landlock restrictions: {status:?}");
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use landlock::Access;
+
+    /// A command under a network restriction alone cannot reach into a
+    /// process outside its sandbox, which it could otherwise make create a
+    /// socket for it.
+    #[test]
+    fn test_network_only_sandbox_cannot_reach_other_processes() {
+        if !Ruleset::default()
+            .set_compatibility(landlock::CompatLevel::HardRequirement)
+            .handle_access(AccessNet::BindTcp | AccessNet::ConnectTcp)
+            .is_ok_and(|r| r.create().is_ok())
+        {
+            eprintln!("skipping: Landlock on this kernel does not handle network access");
+            return;
+        }
+        // started outside the sandbox, by this process, so ptrace rules
+        // (Yama's included) allow reading its memory before the domain exists
+        let mut outside = std::process::Command::new("cat")
+            .stdin(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        let mem = format!("/proc/{}/mem", outside.id());
+        std::fs::File::open(&mem).unwrap();
+        let result = std::thread::spawn(move || {
+            // the domain binds to the calling thread
+            apply_landlock(
+                &SandboxConfig {
+                    deny_net: true,
+                    ..Default::default()
+                },
+                None,
+            )
+            .unwrap();
+            std::fs::File::open(&mem).map(drop)
+        })
+        .join()
+        .unwrap();
+        outside.kill().unwrap();
+        outside.wait().unwrap();
+        assert_eq!(
+            result.unwrap_err().kind(),
+            std::io::ErrorKind::PermissionDenied
+        );
+    }
 
     /// Before Linux 6.2 the kernel has no Truncate right, and best effort
     /// dropped it silently: `--deny-write` then left truncate(2) open. A write

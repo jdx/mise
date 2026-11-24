@@ -2547,6 +2547,7 @@ impl<'a> CmdLineRunner<'a> {
                     if sandbox.effective_deny_read()
                         || sandbox.effective_deny_write()
                         || sandbox.effective_deny_unix()
+                        || sandbox.effective_deny_net()
                         || sandbox.deny_process
                     {
                         crate::sandbox::landlock_apply(&sandbox, &initial_program)
