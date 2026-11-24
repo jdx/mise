@@ -910,6 +910,10 @@ async fn resolve_manifest(
             .get("digest")
             .and_then(|d| d.as_str())
             .ok_or_else(|| eyre::eyre!("manifest entry missing digest"))?;
+        // Fetched by digest, the manifest is checked against it; a tag here would be trusted
+        // as served, and a path could leave the repository.
+        crate::layout::validate_sha256_digest(digest)
+            .wrap_err_with(|| format!("manifest index for {} names {digest:?}", r.repository))?;
         let manifest_url = format!("{base_url}/v2/{}/manifests/{digest}", r.repository);
         let accept = [MEDIA_TYPE_OCI_MANIFEST, MEDIA_TYPE_DOCKER_MANIFEST];
         let (body, _content_type) = fetch_manifest_json(session, &manifest_url, &accept).await?;
@@ -2922,6 +2926,58 @@ mod tests {
         .await
         .unwrap_err();
         assert!(format!("{err:#}").contains("digest mismatch"), "{err:#}");
+    }
+
+    #[tokio::test]
+    async fn pull_artifact_rejects_an_index_entry_that_is_not_a_digest() {
+        // An index pinned by digest names its manifests by digest too. An entry that names a
+        // tag would let the registry serve whatever that tag points at under the pin.
+        let mut server = mockito::Server::new_async().await;
+        let index = serde_json::json!({
+            "schemaVersion": 2,
+            "mediaType": MEDIA_TYPE_OCI_INDEX,
+            "manifests": [{
+                "mediaType": MEDIA_TYPE_OCI_MANIFEST,
+                "digest": "stable",
+                "size": 2,
+                "platform": {
+                    "architecture": crate::normalize_arch(std::env::consts::ARCH),
+                    "os": crate::normalize_os(std::env::consts::OS),
+                }
+            }]
+        })
+        .to_string();
+        let pinned = sha256_digest(index.as_bytes());
+        server
+            .mock("GET", "/v2/")
+            .with_status(200)
+            .create_async()
+            .await;
+        server
+            .mock(
+                "GET",
+                format!("/v2/tasks/catalog/manifests/{pinned}").as_str(),
+            )
+            .with_header("content-type", MEDIA_TYPE_OCI_INDEX)
+            .with_body(index)
+            .create_async()
+            .await;
+        let by_tag = server
+            .mock("GET", "/v2/tasks/catalog/manifests/stable")
+            .with_header("content-type", MEDIA_TYPE_OCI_MANIFEST)
+            .with_body("{}")
+            .expect(0)
+            .create_async()
+            .await;
+        let dest = tempfile::tempdir().unwrap();
+        let err = pull_artifact(
+            &format!("{}/tasks/catalog@{pinned}", server.host_with_port()),
+            &dest.path().join("out"),
+        )
+        .await
+        .unwrap_err();
+        assert!(format!("{err:#}").contains("stable"), "{err:#}");
+        by_tag.assert_async().await;
     }
 
     #[cfg(unix)]
