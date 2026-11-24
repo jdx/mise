@@ -84,6 +84,8 @@ env = { WRAP_TEST = "1" }
     It 'passes a wrapper shim another project left on to the next command' {
         $config = Get-Content $env:MISE_CONFIG_FILE -Raw
         $nextGreet = Join-Path $toolDir 'greet.cmd'
+        $exeDir = Join-Path $TestDrive 'exebin'
+        $path = $env:PATH
         try {
             $env:MISE_WINDOWS_SHIM_MODE = 'hardlink'
             $binDir = Join-Path $env:MISE_DATA_DIR 'bin'
@@ -108,6 +110,16 @@ env = { WRAP_TEST = "1" }
             $output = & $leftover hello 2>&1
             $LASTEXITCODE | Should -Be 0 -Because "shim output: $($output | Out-String)"
             $output | Should -Contain 'NEXT_GREET:hello'
+
+            # A `greet.exe` later on PATH is the next file of the shim's own name. It runs, and
+            # the batch file ahead of it does not take its place.
+            New-Item -ItemType Directory -Path $exeDir -Force | Out-Null
+            Copy-Item $env:ComSpec (Join-Path $exeDir 'greet.exe')
+            $env:PATH = "$wrapperDir;$toolDir;$exeDir;$originalPath"
+            $output = & $leftover /d /c echo EXE_GREET 2>&1
+            $LASTEXITCODE | Should -Be 0 -Because "shim output: $($output | Out-String)"
+            $output | Should -Contain 'EXE_GREET'
+            $env:PATH = $path
             Remove-Item $nextGreet
 
             # A project has a task of that name, with its launcher in a directory only mise adds
@@ -135,6 +147,7 @@ run = "echo TASK_GREET"
             $output | Should -Contain 'TASK_GREET'
         } finally {
             Set-Location TestDrive:
+            $env:PATH = $path
             Remove-Item $nextGreet -ErrorAction SilentlyContinue
             $config | Out-File -FilePath $env:MISE_CONFIG_FILE -Encoding utf8NoBOM -NoNewline
         }

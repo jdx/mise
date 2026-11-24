@@ -237,20 +237,28 @@ fn first_on_path<'a>(bin_name: &str, dirs: impl Iterator<Item = &'a PathBuf>) ->
 /// command on to whatever comes next: a directory the user lists before the shims, a task's
 /// `_.path`, a tool's own directory.
 ///
-/// The lookup is for the command the shim stands in front of, not for the shim's file name. A
-/// shim run by its path is `cargo.exe` on Windows, and the next `cargo` may be `cargo.cmd`.
+/// On Windows a shim started as `cargo.exe` does not know which lookup reached it: PowerShell
+/// starts `cargo` by the path of the file it found. So the next file of the shim's own name
+/// comes first, which is what a caller that asked for `cargo.exe` must get, and a `cargo.cmd`
+/// ahead of it on `PATH` does not replace it. With no such file, the next `cargo` of any kind
+/// runs, as it does for a lookup of `cargo`.
 ///
 /// None when that is one of mise's shims, or nothing: the command then resolves as it does
 /// through mise's ordinary shim.
 fn bin_behind_wrapper_dirs(bin_name: &str) -> Option<PathBuf> {
     // `env::PATH` is this `PATH` without what a parent mise added, the wrapper directory and
     // the tool directories included, so it is not what the lookup ran on.
-    let bin = first_on_path(
-        command_name_without_exe_suffix(bin_name),
+    let dirs = || {
         env::PATH_NON_PRISTINE
             .iter()
-            .filter(|dir| !file::is_command_wrapper_dir(dir)),
-    )?;
+            .filter(|dir| !file::is_command_wrapper_dir(dir))
+    };
+    let bin = first_on_path(bin_name, dirs()).or_else(|| {
+        let command = command_name_without_exe_suffix(bin_name);
+        (command != bin_name)
+            .then(|| first_on_path(command, dirs()))
+            .flatten()
+    })?;
     let mise_bin = file::canonicalize_or_self(&env::MISE_BIN);
     let is_mise_shim = is_shim_file(&bin)
         || file::is_active_mise_shim(&bin)
