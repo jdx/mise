@@ -353,11 +353,13 @@ impl CondaBackend {
         package: &CondaPackageInfo,
         main_url: &str,
     ) -> Result<()> {
+        let redact = crate::install_layout::resolver::redact_credentials;
         let main_channel = Self::channel_root(main_url);
         if Self::channel_root(&package.url) != main_channel {
             eyre::bail!(
-                "refusing the conda package {key} in mise.lock: its url {} is not in the channel {main_channel} of the tool, which all its dependencies come from. Run `mise lock` to resolve the tool again",
-                package.url
+                "refusing the conda package {key} in mise.lock: its url {} is not in the channel {} of the tool, which all its dependencies come from. Run `mise lock` to resolve the tool again",
+                redact(&package.url),
+                redact(main_channel),
             );
         }
         match key.rsplit_once('@') {
@@ -365,7 +367,7 @@ impl CondaBackend {
                 if tag != Self::channel_tag(&package.url) {
                     eyre::bail!(
                         "refusing the conda package {key} in mise.lock: its key names another channel than its url {}. Run `mise lock` to resolve the tool again",
-                        package.url
+                        redact(&package.url)
                     );
                 }
             }
@@ -2366,6 +2368,33 @@ mod tests {
         assert!(err.contains("not in the channel"), "{err}");
         let err = check(&key(forge_noarch), forge).unwrap_err();
         assert!(err.contains("names another channel"), "{err}");
+
+        // the messages leave out credentials in either url
+        let private = "https://user:token@conda.example.com/team/linux-64/tool-1.0-h_0.conda";
+        let private_dep = "https://user:token@conda.example.com/team/noarch/zlib-1.3.1-h_2.conda";
+        let err =
+            CondaBackend::check_locked_dependency("zlib-1.3.1-h_2", &package(private_dep), main)
+                .unwrap_err()
+                .to_string();
+        assert!(
+            err.contains("not in the channel") && !err.contains("token"),
+            "{err}"
+        );
+        let err = CondaBackend::check_locked_dependency("zlib-1.3.1-h_2", &package(forge), private)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("not in the channel") && !err.contains("token"),
+            "{err}"
+        );
+        let err =
+            CondaBackend::check_locked_dependency(&key(forge), &package(private_dep), private)
+                .unwrap_err()
+                .to_string();
+        assert!(
+            err.contains("names another channel") && !err.contains("token"),
+            "{err}"
+        );
     }
 
     #[test]
