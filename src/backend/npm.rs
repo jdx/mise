@@ -4630,6 +4630,18 @@ packages:
     async fn latest_version_cache_is_not_shared_between_registries() {
         let _config = crate::config::Config::get().await.unwrap();
         let backend = NPMBackend::from_arg("npm:acme-latest-cache-registry".into());
+        let contexts = [None, Some("https://npm.example/")];
+        for context in contexts
+            .into_iter()
+            .chain([Some("https://npm.other.example/")])
+        {
+            backend
+                .latest_version_cache(context)
+                .lock()
+                .await
+                .clear()
+                .unwrap();
+        }
 
         // What one registry calls `latest` says nothing about another's.
         let latest = Some("1.0.0".to_string());
@@ -4638,7 +4650,7 @@ packages:
         other.write(&latest).unwrap();
         assert_eq!(other.get_cached().unwrap(), latest);
 
-        for context in [None, Some("https://npm.example/")] {
+        for context in contexts {
             let cache = backend.latest_version_cache(context);
             assert!(cache.lock().await.get_cached().is_err());
         }
