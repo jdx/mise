@@ -80,14 +80,7 @@ pub fn build_system_packages_layer(
     }
     validate_host_requirements(manager)?;
 
-    let td = TempDir::with_prefix(format!("mise-oci-{}-rootfs-", manager.name())).wrap_err_with(
-        || {
-            format!(
-                "creating temp rootfs for {} system packages",
-                manager.name()
-            )
-        },
-    )?;
+    let td = create_rootfs_tempdir(manager)?;
     let rootfs = td.path().join("rootfs");
     file::create_dir_all(&rootfs)?;
     unpack_base_layers(layout, base_layers, &rootfs)?;
@@ -125,6 +118,24 @@ pub fn build_system_packages_layer(
         blob: layer::build_layer_from_dir_preserve_metadata(&diff_dir, "")?,
         manager: manager.name(),
     }))
+}
+
+/// The directory that holds the temporary rootfs and the package diff. Root unpacks the base
+/// image below it with the image's modes, set-uid and set-gid bits included, so it is closed to
+/// other users whatever the umask. The mode is on this directory and not on `rootfs`, which is
+/// `/` for the package scripts that run chrooted into it.
+fn create_rootfs_tempdir(manager: OciPackageManager) -> Result<TempDir> {
+    let prefix = format!("mise-oci-{}-rootfs-", manager.name());
+    let mut builder = tempfile::Builder::new();
+    builder.prefix(&prefix);
+    #[cfg(unix)]
+    builder.permissions(fs::Permissions::from_mode(0o700));
+    builder.tempdir().wrap_err_with(|| {
+        format!(
+            "creating temp rootfs for {} system packages",
+            manager.name()
+        )
+    })
 }
 
 fn validate_host_requirements(manager: OciPackageManager) -> Result<()> {
@@ -987,6 +998,16 @@ mod tests {
         assert_eq!(apk_architecture("amd64").unwrap(), "x86_64");
         assert_eq!(apk_architecture("arm64").unwrap(), "aarch64");
         assert!(apk_architecture("riscv64").is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_rootfs_holder_is_closed_to_other_users() {
+        for manager in [OciPackageManager::Apk, OciPackageManager::Apt] {
+            let td = create_rootfs_tempdir(manager).unwrap();
+            let mode = fs::metadata(td.path()).unwrap().permissions().mode();
+            assert_eq!(mode & 0o7777, 0o700, "{}", td.path().display());
+        }
     }
 
     #[test]
