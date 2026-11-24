@@ -204,6 +204,10 @@ jobs:
 
       - name: Create source package for each distribution
         run: |
+          # resolute's default rustc (1.93) is too old for the locked deps
+          # (parking_lot_core 0.10 needs 1.95+); use a versioned toolchain.
+          RUST_VERSION=1.97
+
           # Create debian directory structure (native format - no orig tarball needed)
           mkdir -p debian/source
 
@@ -215,7 +219,7 @@ jobs:
           Section: utils
           Priority: optional
           Maintainer: ${MAINTAINER_NAME} <${MAINTAINER_EMAIL}>
-          Build-Depends: debhelper-compat (= 13), rustc-1.97, cargo-1.97, cmake, libssl-dev, pkgconf
+          Build-Depends: debhelper-compat (= 13), rustc-${RUST_VERSION}, cargo-${RUST_VERSION}, cmake, libssl-dev, pkgconf
           Standards-Version: 4.6.2
           Homepage: https://mise.jdx.dev
           Vcs-Git: https://github.com/jdx/mise.git
@@ -240,9 +244,7 @@ jobs:
           cat > debian/rules << EOF
           #!/usr/bin/make -f
 
-          # resolute's default rustc (1.93) is too old for the locked deps
-          # (parking_lot_core 0.10 needs 1.95+); use the versioned toolchain.
-          export PATH := /usr/lib/rust-1.97/bin:\$(PATH)
+          export PATH := /usr/lib/rust-${RUST_VERSION}/bin:\$(PATH)
 
           %:
           	dh \$@
