@@ -8,8 +8,11 @@ export MISE_TRUSTED_CONFIG_PATHS=""
 export MISE_YES=0
 
 cat <<'EOF2' >mise.toml
+[settings]
+jobs = 3
+
 [settings.age]
-key_file = "{{ throw(message='rendered-from-project') }}"
+key_file = "{{ throw(message='rendered-' ~ 'from-project') }}"
 EOF2
 cat <<'EOF2' >"$MISE_CONFIG_DIR/config.toml"
 [env]
@@ -23,6 +26,8 @@ assert_contains "mise hook-env -s bash --force 2>&1" "export FROM_GLOBAL=global"
 # render their templates either.
 assert_not_contains "MISE_SAFE=1 mise settings 2>&1" "rendered-from-project"
 assert_contains "MISE_SAFE=1 mise settings 2>&1" "safe mode does not render"
+# Only the templated setting goes unrendered; the file's others still show.
+assert_contains "MISE_SAFE=1 mise settings 2>/dev/null" "jobs          3"
 
 # A project the user trusted renders them as before.
 assert "mise trust"

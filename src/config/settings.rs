@@ -849,12 +849,14 @@ fn settings_path_resolver<'a>(
         let rendered = if crate::tera::contains_template_syntax(value) {
             // Safe mode never applies a project's [settings]; commands such as
             // `mise settings` that parse every discovered file do not render
-            // its templates either.
+            // its templates either. The template stays as written, so only
+            // this setting goes unresolved and the file's others still show.
             if Settings::safe_mode() && !crate::config::is_global_config(path) {
-                bail!(
+                warn_while_loading_settings(format!(
                     "not rendering {label} in {}: safe mode does not render templates from project config; run without MISE_SAFE to show it",
                     file::display_path(path)
-                );
+                ));
+                return Ok(());
             }
             crate::tera::render_config_str(&mut tera, value, &context, path).map_err(|err| {
                 eyre!(
