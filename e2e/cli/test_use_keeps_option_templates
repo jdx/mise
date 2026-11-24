@@ -59,3 +59,25 @@ assert "mise use dummy@2.0.0"
 assert_contains "cat mise.toml" 'url = "https://{{ env.DUMMY_TOKEN }}@example.com"'
 assert_contains "cat mise.toml" 'note = "/'
 assert_not_contains "cat mise.toml" "config_root"
+
+# safe mode loads project config without trust, so a template the project
+# declares stays in its own file: copied into another one, a later run without
+# safe mode would render it there
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[tools]
+dummy = { version = "1.0.0", url = "https://example.com/1" }
+TOML
+cat >mise.toml <<'TOML'
+[tools]
+dummy = { version = "1.0.0", url = "https://example.com/{{ 1 }}" }
+TOML
+assert "MISE_SAFE=1 mise use -g dummy@2.0.0"
+assert "cat $MISE_CONFIG_DIR/config.toml" '[tools]
+dummy = { version = "2.0.0", url = "https://example.com/1" }'
+mkdir other
+assert "MISE_SAFE=1 mise use --path other/mise.toml dummy@2.0.0"
+assert "cat other/mise.toml" '[tools]
+dummy = { version = "2.0.0", url = "https://example.com/1" }'
+assert "MISE_SAFE=1 mise use dummy@2.0.0"
+assert "cat mise.toml" '[tools]
+dummy = { version = "2.0.0", url = "https://example.com/{{ 1 }}" }'

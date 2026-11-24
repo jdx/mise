@@ -44,6 +44,24 @@ assert "mise run build" "zip build v1"
 assert "mise run greet" "hello from the zip"
 assert_contains "mise tasks ls" "build from the zip"
 
+# safe mode loads a project config without asking, so a remote include that
+# config names is neither fetched nor read from the cache
+assert_not_contains "MISE_SAFE=1 mise tasks ls" "build from the zip"
+cat >mise.toml <<TOML
+[task_config]
+includes = ["zip::http://127.0.0.1:$PORT/missing.zip"]
+TOML
+assert_fail "mise tasks ls"
+assert_succeed "MISE_SAFE=1 mise tasks ls"
+# a remote include that global config names is still fetched
+rm mise.toml
+cat >"$MISE_CONFIG_DIR/config.toml" <<TOML
+[task_config]
+includes = ["$URL"]
+TOML
+assert_contains "MISE_SAFE=1 mise tasks ls" "build from the zip"
+rm "$MISE_CONFIG_DIR/config.toml"
+
 # a zip config include merges the mise.toml at the archive root
 cat >mise.toml <<TOML
 include = ["$URL"]

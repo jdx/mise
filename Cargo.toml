@@ -26,7 +26,7 @@ members = [
 
 [package]
 name = "mise"
-version = "2026.11.13"
+version = "2026.11.14"
 edition = "2024"
 description = "Dev tools, env vars, and tasks in one CLI"
 authors = ["Jeff Dickey (@jdx)"]
@@ -116,7 +116,6 @@ chrono = { version = "0.4", default-features = false, features = [
   "std",
   "clock",
 ] }
-ci_info = "0.14"
 usage_rs = { package = "usage-rs", version = "7.0", features = [
   "completions",
   "config",

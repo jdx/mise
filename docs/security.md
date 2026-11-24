@@ -7,8 +7,8 @@ socialDescription: "Control config trust, verify downloads, delay new releases, 
 
 Each mise security control covers one stage, from loading a project's config to
 running the commands it starts. The one you meet first is
-[configuration trust](#configuration-trust): mise asks before it lets a
-repository's config run code.
+[configuration trust](#configuration-trust), which controls when a
+repository's config can run code.
 
 ## What mise protects against
 
@@ -22,14 +22,26 @@ repository's config run code.
 | A task or command reads, writes or reaches more than it needs            | [Sandboxing](/sandboxing.html)                  | Off; Linux and macOS only                                    |
 | A secret ends up in your shell, a log or a process that does not need it | [Secrets](#secrets)                             | Opt in                                                       |
 
-Each control has its own scope. Trusting a config does not verify an upstream
-release, and sandboxing a task does not sandbox mise while it evaluates config.
+## Threat model
 
-These controls do not review the software you choose to install. A tool, a
-package or an asdf or vfox plugin runs with your permissions once you install
-it. Global and system config, such as `~/.config/mise/config.toml`, belongs to
-you, so mise trusts it without asking. mise itself runs as your user with no
-sandbox.
+- **Project configuration.** mise assumes you or your administrator control
+  global and system config. [Configuration trust](#configuration-trust) limits
+  what project config can do without your approval. Treat trusting a project as
+  trusting its code: trusted config can run commands as you. Some commands
+  [imply trust](#implicit-trust), and CI trusts project config by default.
+  Use [safe mode](#safe-mode) when automation only needs to read project config
+  you have not reviewed.
+- **Tools and plugins.** Choose tools, packages, and asdf or vfox plugins from
+  sources you trust. Plugins and install scripts can run with your permissions
+  during installation, before you ever run the tool.
+  [Download verification](#download-verification) checks the artifact against
+  the evidence available from the backend and upstream publisher. It does not
+  tell you whether that publisher or its software is safe.
+- **Running commands.** mise runs as your user. Optional
+  [sandboxing](/sandboxing.html) limits supported operations of the commands you
+  run with it. It does not sandbox mise while it evaluates config, installs
+  tools, or runs hooks. Run untrusted projects or tools in an isolated
+  environment without access to your usual files or credentials.
 
 ## Configuration trust
 
@@ -108,7 +120,11 @@ trust.
 
 When a command needs a config that is not trusted:
 
-- In a terminal, mise asks
+- A command you type in a terminal trusts the config's directory without
+  asking, records it as `mise trust` would, and says
+  ``mise trusted <dir> because you ran a mise command there. Undo with `mise untrust`.``<!-- cli: skip -->
+  See [Typed in a terminal](#typed-in-a-terminal) for what counts.
+- Otherwise, when stdin and stderr are a terminal, mise asks
   `mise config files in <dir> are not trusted. Trust them?`<!-- cli: skip -->
   with Yes, No and All, where All answers yes to every prompt in that command.
   No adds the
@@ -117,6 +133,8 @@ When a command needs a config that is not trusted:
 - Without a terminal, such as in a script or an editor extension, mise cannot
   ask, so the command fails with
   [`Config files in <path> are not trusted`](/errors.html#untrusted-config).
+- Shell completion and the shell's command-not-found handler never ask. They
+  leave the config untrusted, as a command without a terminal does.
 - Shell activation never asks. It skips the untrusted config, warns
   `<path> is not trusted, run mise trust to enable it`, and still applies the
   trusted ones.
@@ -146,7 +164,44 @@ mise also trusts a config file when it writes one, for example with
 the file's whole config root, so if another config file there is not trusted
 yet, such as a `mise.local.toml` or a `mise.staging.toml`, mise asks about it
 first, the way it does when that file loads. In safe mode a write records no
-trust.
+trust, and neither does a write to global or system config, which is trusted
+without a record: writing `~/.config/mise/config.toml` does not trust a
+`mise.toml` in your home directory, and does not undo `mise trust --ignore` for
+it.
+
+When a project config file is a symlink, mise writes through it only if the link
+stays in the config's directory, or the project was trusted before the command
+started and safe mode is off. Trust that the command itself grants because you
+typed it in the project, as described in
+[Typed in a terminal](#typed-in-a-terminal), does not count: nobody had looked
+at where the link leads. Otherwise the write fails, names the link and its
+target, and tells you to run `mise trust` there. A link into mise's
+state directory, or a dangling link that leads out of the directory, is never
+followed. A global config file that links into a dotfiles checkout is written
+through.
+
+### Typed in a terminal
+
+Outside the commands that imply trust, typing any other mise command, such as `mise ls`
+or `mise env`, in an untrusted project trusts that project without the prompt
+when all of these hold:
+
+- stdin, stdout and stderr are all a terminal. A command whose output is
+  captured, such as `$(mise env)` in a prompt or `eval "$(mise env)"` in a
+  shell startup file, still asks.
+- Paranoid mode's `config` category is off.
+- mise is not running as a shim, as the `mise x` a shim runs, for shell
+  completion, or for the shell's command-not-found handler after you mistype a
+  command.
+- On Unix systems such as Linux and macOS, you own the config file and its directory, and the
+  target of either when it is a symlink. A `mise.toml` another account left in a
+  shared directory still asks. Windows does not check ownership.
+
+mise trusts the config's directory as `mise trust` would and prints
+``mise trusted <dir> because you ran a mise command there. Undo with `mise untrust`.``<!-- cli: skip -->
+once per directory, which `--quiet` hides. A directory on the ignore list or
+under `ignored_config_paths` stays ignored, and shell activation still skips
+untrusted config. Only paranoid mode turns this off.
 
 ### CI and `--yes`
 
@@ -156,8 +211,10 @@ trusted and records nothing. Configs on the ignore list or under
 do not load. `CI` also turns on [`yes`](/configuration/settings.html#yes).
 
 Outside CI, `--yes` or `MISE_YES=1` answers the trust prompt with yes, which
-records trust. Paranoid mode turns off both the CI exemption and `--yes` for
-trust.
+records trust. That applies to a command you entered: shell activation, shell
+completion and the shell's command-not-found handler run mise unasked, so they
+neither ask nor take `--yes` or `MISE_YES=1` for an answer. Paranoid mode turns off both the CI exemption and
+`--yes` for trust.
 
 ### Manage trust
 
@@ -179,9 +236,20 @@ that is a git repository of its own, such as a tracked `~/code/.config`.
 the [state directory](/directories.html). See [`mise trust`](/cli/trust.html)
 for every flag.
 
-Trust records use resolved paths. If a symlinked config, such as one installed
-with GNU Stow, still reports untrusted after `mise trust`, trust the real file
-path.
+A [conf.d folder](/configuration.html#conf-d-folders) and `.config/mise` are
+config roots of their own inside a project. `mise trust --untrust` and
+`mise trust --ignore` with a directory or no path act on the project and on
+every such root in it, and an ignored project's nested roots stay ignored,
+including ones added later. Name a file in a nested root to act on that root
+alone.
+
+A config that mise reaches through a symlink inside a project, such as a linked
+`mise.toml`, a linked `conf.d` folder or a linked `.mise` directory, belongs to
+that project: it is trusted when the project is, and trust in the file or
+directory the link leads to does not count. `mise trust` in the project trusts
+it. Paranoid mode approves a file by its content and refuses such a config with
+an error; replace the link with a copy, or add the project to
+`trusted_config_paths`. Links in global config are yours and are not affected.
 
 ### Trust by path
 
@@ -211,8 +279,10 @@ config file below its directory, so review the subprojects' config as part of
 the repository. They stay trusted only while the root is: after
 `mise trust --ignore` on the root, or once a `trusted_config_paths` entry that
 covered it is gone, they need trust of their own again. See
-[Monorepo tasks](/tasks/monorepo.html). In paranoid mode, trusting the root
-trusts only that file.
+[Monorepo tasks](/tasks/monorepo.html). A subproject you ignore with
+`mise trust --ignore` stays ignored under a trusted root: mise does not load
+its config or list its tasks, and a command that trusts the root does not
+remove the ignore. In paranoid mode, trusting the root trusts only that file.
 
 ### Git worktrees
 
@@ -291,6 +361,13 @@ These are skipped without an error, so resolution commands keep working:
   too. The options of a tool from global or system config, including a global
   `[tool_alias]`, keep `env` when a backend renders them later.
 - `_.source` in every config, including global config.
+- Env files that mise finds by searching: the files a relative
+  [`env_file`](/configuration/settings.html#env_file) name matches in the
+  working directory or a parent, and the files a global `_.file` entry with
+  `find_up = true` or a glob finds. This includes files outside a repository,
+  such as `~/.env`, and files you trusted. An absolute `env_file` entry or a
+  global `_.file` entry that names one file still loads, and paranoid mode still
+  needs it approved.
 - Project `[shell_alias]`.
 - The commands in a project task's usage spec that shell completion would run,
   and its `choices env=`, which completion would read from your environment.
@@ -299,7 +376,11 @@ These are skipped without an error, so resolution commands keep working:
   no GitHub, GitLab or Forgejo token (unless global config names the same host),
   and a tool that project config declares gets no `~/.netrc` credentials for
   the hosts its `url`, `checksum_url`, `version_list_url`, `version_date_url`
-  or `api_url` names. Tools from global and system config keep theirs. A
+  or `api_url` names. That includes a monorepo subproject's tools and a task's
+  `tools`. Only tools that global or system config declares or aliases, and no
+  project requests, keep theirs and keep `env` in their templates; a tool named
+  only on the command line, in a tool stub or by `MISE_<TOOL>_VERSION` does
+  not. A
   project that points at a private forge or file server therefore cannot list
   or download versions there.
 - A project `[tool_alias]` for a tool that global config declares, so a
@@ -311,6 +392,11 @@ These are skipped without an error, so resolution commands keep working:
 - Remote `include` entries in project config, which mise does not fetch.
 - Remote task files (`file = "https://…"` or `git::…`) in project config. Their
   tasks are listed from their TOML alone.
+- Remote `task_config.includes` entries (`git::…`, `oci::…` or `zip::…`) in
+  project config, which mise does not fetch. The tasks they hold are not listed.
+- Project task files that resolve outside the project, whether named by `~`,
+  an absolute path or `..`, or reached through a link. mise warns about each
+  one. Task files elsewhere in the same git checkout or monorepo still load.
 - Project `[deps]`, so `mise deps` and `mise exec` do not run a repository's
   dependency providers. Providers in global and system config still run.
 - Project daemon declarations. Daemons also do not start or stop when you change
@@ -338,8 +424,10 @@ its directory.
 
 Safe mode loads untrusted config without a prompt or an error, in paranoid mode
 too. It does not mark the config trusted for later runs without safe mode, not
-even when a command such as `mise use` or `mise set` edits it. Syntax errors and
-refused operations still fail.
+even when a command such as `mise use` or `mise set` edits it. A tool option
+that `mise use` writes to another config file, such as global config with `-g`,
+is written as its value and not as the template a project declares for it.
+Syntax errors and refused operations still fail.
 
 Safe mode limits what project config can do. It is not an operating-system
 sandbox for mise, its network requests or the plugins the operator installed.

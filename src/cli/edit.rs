@@ -19,7 +19,7 @@ use crate::config::{Config, Settings, global_config_path};
 use crate::file::display_path;
 use crate::plugins::PluginType;
 use crate::registry::REGISTRY;
-use crate::toolset::install_state;
+use crate::toolset::{install_state, validate_installable_version};
 use crate::ui::progress_report::{ProgressIcon, SingleReport};
 use crate::version::VERSION_PLAIN;
 use crate::{env, file};
@@ -41,11 +41,23 @@ impl ToolProvider for MiseToolProvider {
 }
 
 /// Version provider that fetches latest versions from backends
-struct MiseVersionProvider;
+struct MiseVersionProvider {
+    /// The file being edited. The editor reads it itself, not through the config loader, so
+    /// its `[tools]` keys arrive here without a trust check.
+    path: PathBuf,
+}
 
 #[async_trait]
 impl VersionProvider for MiseVersionProvider {
     async fn latest_version(&self, tool: &str) -> Option<String> {
+        // A key with inline options (`tool[api_url=...]`) can point the backend at another
+        // host, which then gets the user's forge token. The config loader applies such a key
+        // only from a trusted config, and so does the editor: without trust it looks nothing
+        // up and the version is typed in by hand.
+        if config_file::tool_key_requires_trust(tool) && !config_file::is_path_trusted(&self.path) {
+            return None;
+        }
+
         // Create BackendArg from tool name
         let ba = Arc::new(BackendArg::from(tool));
 
@@ -55,9 +67,38 @@ impl VersionProvider for MiseVersionProvider {
         // Get config
         let config = Config::get().await.ok()?;
 
-        // Get the latest version
-        backend.latest_version(&config, None, None).await.ok()?
+        let latest = backend.latest_version(&config, None, None).await.ok()??;
+        offerable_version(latest)
     }
+}
+
+/// Keeps a version a backend reported only if the editor can save it into `[tools]` as written.
+///
+/// The editor offers the version, and the prefixes it cuts from it, as choices and writes the
+/// chosen one with its own writer, which applies neither the check `ToolVersion::resolve` makes
+/// on a resolved version nor the one `mise use --pin` makes before it writes. The text comes
+/// from a version list or release API, not from the user: a template in it would render, and
+/// could run commands with exec(), every time the saved config loads, and control characters
+/// would reach the terminal the choices are drawn on. Without a version the editor asks for
+/// one in its text field.
+fn offerable_version(version: String) -> Option<String> {
+    if crate::tera::contains_template_syntax(&version) {
+        return None;
+    }
+    validate_installable_version(&version).ok()?;
+    Some(version)
+}
+
+/// Keeps a version read from a file such as `.nvmrc` only if it holds no template syntax or
+/// control characters. The file belongs to the project in the working directory, which may be
+/// one nobody reviewed, and the editor can save the version into global config, where it would
+/// render on every load. A range such as `>=20` is legitimate here, so this is looser than
+/// [`offerable_version`].
+fn detected_version(version: String) -> Option<String> {
+    if crate::tera::contains_template_syntax(&version) || version.chars().any(char::is_control) {
+        return None;
+    }
+    Some(version)
 }
 
 /// Backend provider that lists available backends
@@ -214,6 +255,9 @@ impl Edit {
         } else {
             PathBuf::from(&*env::MISE_DEFAULT_CONFIG_FILENAME)
         };
+        if !self.dry_run {
+            config_file::symlink_check_before_write(&path)?;
+        }
 
         if let Some(tool_versions) = &self.tool_versions {
             // Import from .tool-versions file
@@ -273,7 +317,9 @@ impl Edit {
             .title(&title)
             .dry_run(self.dry_run)
             .with_tool_provider(Box::new(MiseToolProvider))
-            .with_version_provider(Box::new(MiseVersionProvider))
+            .with_version_provider(Box::new(MiseVersionProvider {
+                path: env::current_dir().unwrap_or_default().join(path),
+            }))
             .with_backend_provider(Box::new(MiseBackendProvider));
 
         // Auto-detect tools and add them
@@ -449,7 +495,7 @@ fn detect_tools() -> Vec<DetectedTool> {
         for detect_file in tool.detect.iter() {
             let path = cwd.join(detect_file);
             if path.exists() && !seen_tools.contains(name) {
-                let version = extract_version(name, &path);
+                let version = extract_version(name, &path).and_then(detected_version);
                 detected.push(DetectedTool {
                     name: name.to_string(),
                     version,
@@ -510,6 +556,40 @@ fn extract_version(tool: &str, path: &Path) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn offerable_version_keeps_a_plain_version() {
+        for v in ["1.2.3", "2024.01.15", "1.2.3+build", "21.0.2-tem"] {
+            assert_eq!(offerable_version(v.to_string()).as_deref(), Some(v));
+        }
+    }
+
+    #[test]
+    fn offerable_version_drops_a_version_the_config_would_render_or_could_not_install() {
+        for v in [
+            "1.2.3{{exec(command='id')}}",
+            "1.2.3{{env.HOME}}",
+            "1.2.3{%if true%}{%endif%}",
+            "1.2.3{#\x1b[42D\x1b[K#}",
+            "1.2.3\x1b[2K",
+            "1.2.3$(id)",
+            "1.2.3 ; id",
+            "../1.2.3",
+            "",
+        ] {
+            assert_eq!(offerable_version(v.to_string()), None, "{v:?}");
+        }
+    }
+
+    #[test]
+    fn detected_version_keeps_ranges_and_drops_templates() {
+        for v in ["20", ">=3.11", "^1.2 || ^2", "lts/iron"] {
+            assert_eq!(detected_version(v.to_string()).as_deref(), Some(v));
+        }
+        for v in ["20{{exec(command='id')}}", "20{# x #}", "20\x1b[2K"] {
+            assert_eq!(detected_version(v.to_string()), None, "{v:?}");
+        }
+    }
 
     #[test]
     fn write_new_config_keeps_a_file_created_after_the_command_started() {

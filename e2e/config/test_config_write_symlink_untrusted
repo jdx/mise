@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+
+# A project's symlinks come with its working tree. Writing its config must not
+# follow a link to a file elsewhere, or into mise's state directory, unless the
+# project is trusted.
+export MISE_TRUSTED_CONFIG_PATHS=""
+export MISE_YES=0
+unset CI GITHUB_ACTIONS GITHUB_ACTION 2>/dev/null || true
+
+mkdir -p proj outside
+cat <<'TOML' >outside/victim.toml
+[tools]
+TOML
+cd proj || exit 1
+
+echo "=== a link out of the project is not followed ==="
+ln -s ../outside/victim.toml mise.toml
+assert_fail_contains "mise set FOO=bar 2>&1" "refusing to write"
+assert_not_contains "cat ../outside/victim.toml" "FOO"
+assert_fail "mise config set env.FOO bar"
+assert_not_contains "cat ../outside/victim.toml" "FOO"
+assert_fail "mise tasks add hi -- echo hi"
+assert_not_contains "cat ../outside/victim.toml" "hi"
+
+echo "=== a dangling link out of the project creates nothing ==="
+rm mise.toml
+ln -s ../outside/new.toml mise.toml
+assert_fail_contains "mise set FOO=bar 2>&1" "refusing to write"
+assert_fail "test -e ../outside/new.toml"
+
+echo "=== nothing is written into the state directory ==="
+rm mise.toml
+ln -s "$MISE_STATE_DIR/trusted-configs/planted" mise.toml
+assert_fail_contains "mise set FOO=bar 2>&1" "refusing to write"
+assert_fail "test -e $MISE_STATE_DIR/trusted-configs/planted"
+
+echo "=== a link inside the project is followed ==="
+rm mise.toml
+mkdir -p config
+cat <<'TOML' >config/real.toml
+[tools]
+TOML
+ln -s config/real.toml mise.toml
+assert "mise set FOO=bar"
+assert_contains "cat config/real.toml" 'FOO = "bar"'
+assert "test -L mise.toml"
+
+echo "=== a trusted project may link out ==="
+rm mise.toml
+ln -s ../outside/victim.toml mise.toml
+assert "mise trust mise.toml"
+assert "mise set FOO=bar"
+assert_contains "cat ../outside/victim.toml" 'FOO = "bar"'
+assert_fail_contains "MISE_SAFE=1 mise set BAR=baz 2>&1" "refusing to write"

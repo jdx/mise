@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+
+# A directory name in a repository can hold terminal control sequences. The notices and errors
+# about an untrusted config print the name with them escaped, so the name cannot rewrite what the
+# user reads or answer a prompt.
+
+export MISE_TRUSTED_CONFIG_PATHS=""
+export MISE_YES=0
+unset CI GITHUB_ACTIONS GITHUB_ACTION 2>/dev/null || true
+
+name=$(printf 'site\033[2K\033]11;#000000\007end')
+mkdir "$name"
+cat <<'EOS' >"$name/mise.toml"
+[env]
+SITE_TEST = "{{ exec(command='echo ran') }}"
+EOS
+cd "$name" || exit 1
+
+assert_contains "mise hook-env -s bash 2>&1" 'site\u{1b}[2K\u{1b}]11;#000000\u{7}end'
+assert_not_contains "mise hook-env -s bash 2>&1" "$(printf '\033[2K')"
+assert_contains "mise env 2>&1 || true" 'site\u{1b}[2K\u{1b}]11;#000000\u{7}end/mise.toml are not trusted'
+assert_not_contains "mise env 2>&1 || true" "$(printf '\007')"

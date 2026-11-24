@@ -291,6 +291,11 @@ impl Toolset {
                 .auto_install_disable_tools
                 .as_ref()
                 .is_none_or(|tools| !tools.contains(&tv.ba().short))
+            // A process that requires explicit trust (the `mise run` of a task hook, an MCP
+            // request) has no typed command behind it. A plain tool list loads without trust
+            // because it is inert until the user installs it, so nothing has consented to
+            // installing what an untrusted file lists.
+            && (!config::config_file::requires_explicit_trust() || requested_by_trusted_config(tv))
     }
 
     /// sets the options on incoming requests to install to whatever is already in the toolset
@@ -1264,6 +1269,24 @@ fn scope_installs_dir(tr: &ToolRequest) -> Option<PathBuf> {
                 .then(|| Settings::get().system_installs_dir().to_path_buf())
         })
         .filter(|dir| dir != *crate::dirs::INSTALLS)
+}
+
+/// Whether the config file that asked for `tv` is the user's own or one they trusted. A tool no
+/// config file asked for (an argument, an env var, a tool stub that was run) was named by
+/// whoever started the command.
+fn requested_by_trusted_config(tv: &ToolVersion) -> bool {
+    match tv.request.source() {
+        ToolSource::ToolVersions(path)
+        | ToolSource::MiseToml(path)
+        | ToolSource::MiseTomlDaemon(path)
+        | ToolSource::IdiomaticVersionFile(path) => {
+            config::is_global_config(path) || config::config_file::is_path_trusted(path)
+        }
+        ToolSource::ToolStub(_)
+        | ToolSource::Argument
+        | ToolSource::Environment(..)
+        | ToolSource::Unknown => true,
+    }
 }
 
 fn lazy_bin_names_eq(configured: &str, requested: &str) -> bool {

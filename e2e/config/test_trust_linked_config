@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+
+# A config reached through a symlink inside a project belongs to that project.
+# Trusting the file the link points at must not trust a checkout that links to it.
+
+export MISE_TRUSTED_CONFIG_PATHS=""
+export MISE_YES=0
+unset CI GITHUB_ACTIONS GITHUB_ACTION 2>/dev/null || true
+
+mkdir -p work/api clone/.mise/conf.d other
+cat >work/api/mise.toml <<'EOF'
+[env]
+LINKED_VALUE = "from-api"
+EOF
+mise trust work/api/mise.toml
+assert_contains "mise -C work/api env" "LINKED_VALUE=from-api"
+
+# A conf.d folder linked to the trusted project.
+ln -s "$PWD/work/api" clone/.mise/conf.d/shared
+assert_contains "mise -C clone trust --show" "untrusted"
+assert_fail_contains "mise -C clone env 2>&1" "not trusted"
+
+# conf.d itself as the link.
+rm clone/.mise/conf.d/shared
+rmdir clone/.mise/conf.d
+mkdir -p work/conf/shared
+cp work/api/mise.toml work/conf/shared/mise.toml
+mise trust work/conf/shared/mise.toml
+ln -s "$PWD/work/conf" clone/.mise/conf.d
+assert_fail_contains "mise -C clone env 2>&1" "not trusted"
+
+# A mise.toml that is a link to the trusted file.
+rm clone/.mise/conf.d
+ln -s "$PWD/work/api/mise.toml" other/mise.toml
+assert_contains "mise -C other trust --show" "untrusted"
+assert_fail_contains "mise -C other env 2>&1" "not trusted"
+
+# Trusting the checkout itself loads the linked config.
+mise trust other
+assert_contains "mise -C other env" "LINKED_VALUE=from-api"
+
+# Paranoid mode approves a file by its content and refuses a linked one.
+mise trust --untrust other
+assert_fail_contains "MISE_PARANOID=1 mise -C other env 2>&1" "reached through a symlink inside"

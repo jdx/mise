@@ -1,3 +1,5 @@
+use std::path::{Component, Path, PathBuf};
+
 use eyre::{Result, bail, eyre};
 use toml_edit::DocumentMut;
 
@@ -126,6 +128,11 @@ pub(super) fn set(
         SettingsType::BoolOrString => parse_bool(value).unwrap_or_else(|_| value.into()),
         SettingsType::BoolOrList => parse_bool_or_list(key, value)?,
     };
+    let value = if key == "trusted_config_paths" && entry.is_none() {
+        absolutize_paths(value)?
+    } else {
+        value
+    };
 
     let path = if override_file {
         config::override_config_path(None)?
@@ -216,6 +223,7 @@ pub(super) fn set(
         // validate
         let _: SettingsFile = toml::from_str(&config.to_string())?;
 
+        crate::config::config_file::symlink_check_before_write(&path)?;
         file::write(path, config.to_string())?;
     }
     Ok(())
@@ -248,6 +256,32 @@ fn parse_list_by_os_path_separator(value: &str) -> Result<toml_edit::Value> {
         .map(|p| p.to_string_lossy().trim().to_string())
         .filter(|s| !s.is_empty())
         .collect())
+}
+
+/// Writes each relative entry as the directory it was typed in, since mise ignores a relative
+/// `trusted_config_paths` entry. Entries starting with `~` are kept as written.
+fn absolutize_paths(value: toml_edit::Value) -> Result<toml_edit::Value> {
+    let Some(array) = value.as_array() else {
+        return Ok(value);
+    };
+    let cwd = std::env::current_dir()?;
+    Ok(array
+        .iter()
+        .filter_map(|v| v.as_str())
+        .map(|s| {
+            if file::replace_path(Path::new(s)).is_absolute() {
+                s.to_string()
+            } else {
+                cwd.join(s)
+                    .components()
+                    .filter(|c| !matches!(c, Component::CurDir))
+                    .collect::<PathBuf>()
+                    .to_string_lossy()
+                    .to_string()
+            }
+        })
+        .collect::<toml_edit::Array>()
+        .into())
 }
 
 fn parse_set_by_comma(value: &str) -> Result<toml_edit::Value> {

@@ -619,6 +619,7 @@ fn is_already_trusted(path: &Path) -> bool {
 /// write newly trusted that root.
 pub(super) fn write_config(path: &Path, content: &str) -> Result<bool> {
     let already_trusted = is_already_trusted(path);
+    config_file::symlink_check_before_write(path)?;
     config_file::trust_check_before_write(path)?;
     if let Some(parent) = path.parent() {
         file::create_dir_all(parent)?;

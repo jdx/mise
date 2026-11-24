@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+
+# Safe mode ignores what a repository supplies. A dotenv file that the operator's `env_file`
+# setting or a global `_.file` entry with `find_up` or a glob finds in a checkout is the
+# repository's, so safe mode does not load it, with or without paranoid mode. A file the
+# operator names by absolute path still loads, and paranoid mode still needs it approved.
+
+export MISE_TRUSTED_CONFIG_PATHS=""
+export MISE_YES=0
+unset CI GITHUB_ACTIONS GITHUB_ACTION 2>/dev/null || true
+
+mkdir -p ~/work/branch
+cd ~/work/branch || exit 1
+echo 'BRANCH_TEST=from-branch' >.env
+
+# The env_file setting searches for `.env` from the working directory.
+assert_contains "MISE_ENV_FILE=.env mise env" "BRANCH_TEST=from-branch"
+assert_not_contains "MISE_SAFE=1 MISE_ENV_FILE=.env mise env 2>&1" "BRANCH_TEST"
+assert_not_contains "MISE_SAFE=1 MISE_ENV_FILE=.env mise hook-env -s bash 2>&1" "BRANCH_TEST"
+assert_not_contains "MISE_SAFE=1 MISE_ENV_FILE=.env mise exec -- env 2>&1" "BRANCH_TEST"
+# Paranoid mode refuses the file, and adding safe mode does not load it.
+assert_fail_contains "MISE_PARANOID=env_files MISE_ENV_FILE=.env mise env 2>&1" "not trusted"
+assert_not_contains "MISE_SAFE=1 MISE_PARANOID=env_files MISE_ENV_FILE=.env mise env 2>&1" "BRANCH_TEST"
+# Approving the file does not bring it back in safe mode.
+assert "MISE_PARANOID=env_files mise trust .env"
+assert_contains "MISE_PARANOID=env_files MISE_ENV_FILE=.env mise env" "BRANCH_TEST=from-branch"
+assert_not_contains "MISE_SAFE=1 MISE_PARANOID=env_files MISE_ENV_FILE=.env mise env 2>&1" "BRANCH_TEST"
+assert "MISE_PARANOID=env_files mise untrust .env"
+
+# A global `_.file` entry that searches upward.
+mkdir -p ~/.config/mise
+cat <<'EOS' >~/.config/mise/config.toml
+[env]
+_.file = { path = "{{cwd}}/.env", find_up = true }
+EOS
+assert_contains "mise env" "BRANCH_TEST=from-branch"
+assert_not_contains "MISE_SAFE=1 mise env 2>&1" "BRANCH_TEST"
+assert_not_contains "MISE_SAFE=1 MISE_PARANOID=env_files mise env 2>&1" "BRANCH_TEST"
+
+# A global `_.file` glob.
+cat <<'EOS' >~/.config/mise/config.toml
+[env]
+_.file = "{{cwd}}/.e*"
+EOS
+assert_contains "mise env" "BRANCH_TEST=from-branch"
+assert_not_contains "MISE_SAFE=1 mise env 2>&1" "BRANCH_TEST"
+rm ~/.config/mise/config.toml
+
+# An absolute env_file entry is the operator's own file.
+echo 'OPERATOR_TEST=from-operator' >~/operator.env
+assert_contains "MISE_SAFE=1 MISE_ENV_FILE=$HOME/operator.env mise env" "OPERATOR_TEST=from-operator"
+assert_fail_contains "MISE_SAFE=1 MISE_PARANOID=env_files MISE_ENV_FILE=$HOME/operator.env mise env 2>&1" "not trusted"
+assert "MISE_PARANOID=env_files mise trust ~/operator.env"
+assert_contains "MISE_SAFE=1 MISE_PARANOID=env_files MISE_ENV_FILE=$HOME/operator.env mise env" "OPERATOR_TEST=from-operator"

@@ -89,8 +89,12 @@ pub(crate) fn auto_env_setting() -> Option<bool> {
 
 /// The tri-state env_conf_d setting: MISE_ENV_CONF_D env var > .miserc.toml > unset.
 pub(crate) fn env_conf_d_setting() -> Option<bool> {
-    var_bool("MISE_ENV_CONF_D").or_else(miserc::get_env_conf_d)
+    MISE_ENV_CONF_D.or_else(miserc::get_env_conf_d)
 }
+
+/// `MISE_ENV_CONF_D` as this process started with it. Config discovery asks
+/// for it once per `conf.d` pattern of every directory it walks.
+static MISE_ENV_CONF_D: Lazy<Option<bool>> = Lazy::new(|| var_bool("MISE_ENV_CONF_D"));
 
 /// Keep dotted conf.d fragments unconditional through the deprecation window.
 pub(crate) fn env_conf_d_default_for_version(v: &versions::Versioning) -> bool {
@@ -114,7 +118,7 @@ pub(crate) fn env_conf_d_default() -> bool {
 /// ignores project `.miserc.toml` files: those load without trust and must not
 /// change which global fragments load, such as one that turns `paranoid` on.
 pub(crate) fn global_env_conf_d_setting() -> Option<bool> {
-    var_bool("MISE_ENV_CONF_D").or_else(miserc::get_global_env_conf_d)
+    MISE_ENV_CONF_D.or_else(miserc::get_global_env_conf_d)
 }
 
 /// [`env_conf_d`] for the global and system config directories.
