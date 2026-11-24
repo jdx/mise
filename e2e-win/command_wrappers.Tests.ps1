@@ -50,6 +50,8 @@ env = { WRAP_TEST = "1" }
                 [Environment]::SetEnvironmentVariable($saved.Name, $saved.Value, 'Process')
             }
         }
+        . "$PSScriptRoot\fixture-executables.ps1"
+        Wait-MiseFixtureExecutables -Directory $TestDrive
     }
 
     It 'applies the wrapper through <mode>-mode shims' -ForEach @(
@@ -77,5 +79,54 @@ env = { WRAP_TEST = "1" }
         $LASTEXITCODE | Should -Be 0 -Because "shim output: $($output | Out-String)"
         $output | Should -Contain 'WRAPPED:1'
         $output | Should -Contain 'REAL_TOOL:--fixed check'
+    }
+
+    It 'passes a wrapper shim another project left on to a task launcher' {
+        # A native task launcher is a copy of mise-shim.exe, the file an exe-mode shim is. It runs
+        # its task, so a leftover wrapper shim for that name must run it like any other command
+        # and not look for a tool.
+        $config = Get-Content $env:MISE_CONFIG_FILE -Raw
+        try {
+            $env:MISE_WINDOWS_SHIM_MODE = 'hardlink'
+            $binDir = Join-Path $env:MISE_DATA_DIR 'bin'
+            $hardlinkMise = Join-Path $binDir 'mise.exe'
+            New-Item -ItemType Directory -Path $binDir -Force | Out-Null
+            $misePath = (Get-Command -Type Application mise -All | Select-Object -First 1).Source
+            Copy-Item $misePath $hardlinkMise
+
+            # Another project's wrapper leaves a shim for `greet`.
+            "[wrappers.greet]`ncommand = `"wrapcmd`"`n" |
+                Out-File -FilePath $env:MISE_CONFIG_FILE -Encoding utf8NoBOM
+            & $hardlinkMise reshim --force
+            $LASTEXITCODE | Should -Be 0
+            $leftover = Join-Path $wrapperDir 'greet.exe'
+            (Get-Item -Path $leftover).LinkType | Should -Be 'HardLink'
+
+            # The config wraps another command again. A project has a task of that name, with its
+            # launcher in a directory only mise adds to PATH. Stubs are for a project's own tasks,
+            # so the task is not in the global config.
+            $config | Out-File -FilePath $env:MISE_CONFIG_FILE -Encoding utf8NoBOM -NoNewline
+            $project = Join-Path $TestDrive 'project'
+            New-Item -ItemType Directory -Path $project -Force | Out-Null
+            @'
+[env]
+_.path = "taskbin"
+
+[tasks.greet]
+run = "echo TASK_GREET"
+'@ | Out-File -FilePath (Join-Path $project 'mise.toml') -Encoding utf8NoBOM
+            Set-Location $project
+            $output = mise generate task-stubs --dir taskbin --windows-launcher exe 2>&1
+            $LASTEXITCODE | Should -Be 0 -Because "generate output: $($output | Out-String)"
+            Test-Path 'taskbin\greet.exe' -PathType Leaf | Should -BeTrue
+            Test-Path $leftover -PathType Leaf | Should -BeTrue
+
+            $output = & $hardlinkMise x -- cmd /c greet 2>&1
+            $LASTEXITCODE | Should -Be 0 -Because "mise x output: $($output | Out-String)"
+            $output | Should -Contain 'TASK_GREET'
+        } finally {
+            Set-Location TestDrive:
+            $config | Out-File -FilePath $env:MISE_CONFIG_FILE -Encoding utf8NoBOM -NoNewline
+        }
     }
 }

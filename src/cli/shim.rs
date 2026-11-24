@@ -215,12 +215,17 @@ fn invoked_from_wrapper_dir(bin_name: &str, path: &[PathBuf]) -> bool {
     if let Some(dir) = argv0.parent().filter(|dir| !dir.as_os_str().is_empty()) {
         return file::is_command_wrapper_dir(dir);
     }
-    path.iter()
-        .find(|dir| {
-            let bin = dir.join(bin_name);
-            bin.is_file() && file::is_executable(&bin)
-        })
-        .is_some_and(|dir| file::is_command_wrapper_dir(dir))
+    first_on_path(bin_name, path.iter())
+        .is_some_and(|bin| bin.parent().is_some_and(file::is_command_wrapper_dir))
+}
+
+/// The first `bin_name` a lookup on `dirs` finds, looked up as the platform does it. On Windows
+/// that is with the `PATHEXT` extensions: a shim run as `cargo` is the file `cargo.exe`, and a
+/// file named `cargo` with no extension is not a command.
+fn first_on_path<'a>(bin_name: &str, dirs: impl Iterator<Item = &'a PathBuf>) -> Option<PathBuf> {
+    let path = std::env::join_paths(dirs).ok()?;
+    let cwd = crate::dirs::CWD.clone().unwrap_or_default();
+    which::which_in_all(bin_name, Some(path), cwd).ok()?.next()
 }
 
 /// The first `bin_name` on this process's `PATH` outside the command-wrappers directories: what a
@@ -237,16 +242,12 @@ fn invoked_from_wrapper_dir(bin_name: &str, path: &[PathBuf]) -> bool {
 fn bin_behind_wrapper_dirs(bin_name: &str) -> Option<PathBuf> {
     // `env::PATH` is this `PATH` without what a parent mise added, the wrapper directory and
     // the tool directories included, so it is not what the lookup ran on.
-    let path = std::env::join_paths(
+    let bin = first_on_path(
+        bin_name,
         env::PATH_NON_PRISTINE
             .iter()
             .filter(|dir| !file::is_command_wrapper_dir(dir)),
-    )
-    .ok()?;
-    let cwd = crate::dirs::CWD.clone().unwrap_or_default();
-    let bin = which::which_in_all(bin_name, Some(path), cwd)
-        .ok()?
-        .next()?;
+    )?;
     let mise_bin = file::canonicalize_or_self(&env::MISE_BIN);
     let is_mise_shim = is_shim_file(&bin)
         || file::is_active_mise_shim(&bin)
