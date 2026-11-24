@@ -86,7 +86,9 @@ mise uses the first method that applies:
    configuration sets `registry.default` (or `CARGO_REGISTRY_DEFAULT`) or
    replaces the crates.io source. It downloads a binary only from an `https`
    URL: a crate whose `pkg-url` gives another scheme is built with
-   `cargo install`.
+   `cargo install`. When the crate declares a minisign key in
+   `package.metadata.binstall.signing`, a binary whose signature does not
+   verify against that key is not installed, and mise runs `cargo install`.
 5. Otherwise mise runs `cargo install`.
 
 Set [`cargo.binstall_only = true`](/dev-tools/backends/cargo.html#cargo.binstall_only) to fail instead of

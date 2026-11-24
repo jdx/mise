@@ -14,6 +14,7 @@ use crate::file::{self, ExtractBudget, ExtractOptions, ExtractionFormat};
 use crate::hash;
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
+use crate::minisign;
 use crate::toolset::ToolVersion;
 use crate::ui::progress_report::SingleReport;
 use crate::{dirs, env};
@@ -121,13 +122,21 @@ pub(super) async fn install(
         for bin in &bins {
             let vars = template_ctx.vars(&bin.name);
             let archive_url = native_binstall_artifact_url(pkg_url, &vars)?;
+            let signature =
+                native_binstall_signature(binstall.signing.as_ref(), &archive_url, &vars)?;
             let src = download_dir
                 .path()
                 .join(format!("{}{}", bin.name, binary_ext));
             let dest = bin_root.join(format!("{}{}", bin.name, binary_ext));
             ctx.pr
                 .set_message(format!("download {}", get_filename_from_url(&archive_url)));
-            download_native_binstall_file(&archive_url, &src, Some(ctx.pr.as_ref())).await?;
+            download_native_binstall_file(
+                &archive_url,
+                &src,
+                signature.as_ref(),
+                Some(ctx.pr.as_ref()),
+            )
+            .await?;
             pending.push((src, dest));
         }
         for (src, dest) in pending {
@@ -179,6 +188,8 @@ pub(super) async fn install(
         for bin in &bins {
             let vars = template_ctx.vars(&bin.name);
             let archive_url = native_binstall_artifact_url(pkg_url, &vars)?;
+            let signature =
+                native_binstall_signature(binstall.signing.as_ref(), &archive_url, &vars)?;
             let archive_path = download_dir.path().join(format!(
                 "{}-{}",
                 bin.name,
@@ -187,8 +198,13 @@ pub(super) async fn install(
             let extract_dir = download_dir.path().join(format!("{}-extract", bin.name));
             ctx.pr
                 .set_message(format!("download {}", get_filename_from_url(&archive_url)));
-            download_native_binstall_file(&archive_url, &archive_path, Some(ctx.pr.as_ref()))
-                .await?;
+            download_native_binstall_file(
+                &archive_url,
+                &archive_path,
+                signature.as_ref(),
+                Some(ctx.pr.as_ref()),
+            )
+            .await?;
             file::create_dir_all(&extract_dir)?;
             file::extract_archive(
                 &archive_path,
@@ -240,21 +256,27 @@ pub(super) async fn install(
         return Ok(true);
     }
 
-    let archive_url = native_binstall_artifact_url(
-        pkg_url,
-        &template_ctx.vars(
-            bins.first()
-                .map(|bin| bin.name.as_str())
-                .unwrap_or(&crate_name),
-        ),
-    )?;
+    let archive_vars = template_ctx.vars(
+        bins.first()
+            .map(|bin| bin.name.as_str())
+            .unwrap_or(&crate_name),
+    );
+    let archive_url = native_binstall_artifact_url(pkg_url, &archive_vars)?;
+    let signature =
+        native_binstall_signature(binstall.signing.as_ref(), &archive_url, &archive_vars)?;
 
     let archive_path = tv.download_path().join(get_filename_from_url(&archive_url));
     ctx.pr.set_message(format!(
         "download {}",
         archive_path.file_name().unwrap().to_string_lossy()
     ));
-    download_native_binstall_file(&archive_url, &archive_path, Some(ctx.pr.as_ref())).await?;
+    download_native_binstall_file(
+        &archive_url,
+        &archive_path,
+        signature.as_ref(),
+        Some(ctx.pr.as_ref()),
+    )
+    .await?;
 
     let extract_dir = tempfile::Builder::new()
         .prefix("mise-cargo-binstall-")
@@ -400,6 +422,25 @@ struct NativeBinstallMetadata {
     bin_dir: Option<String>,
     pkg_fmt: Option<String>,
     disabled_strategies: BTreeSet<String>,
+    signing: Option<NativeBinstallSigning>,
+}
+
+/// `[package.metadata.binstall.signing]`: the minisign key the crate's author
+/// signs its prebuilt artifacts with. An artifact that does not verify against
+/// it is not installed.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+struct NativeBinstallSigning {
+    algorithm: String,
+    pubkey: String,
+    /// Template for the signature's URL, `{ url }.sig` when absent.
+    file: Option<String>,
+}
+
+/// Where an artifact's signature is and the key it has to verify against.
+#[derive(Debug)]
+struct NativeBinstallSignature<'a> {
+    url: String,
+    pubkey: &'a str,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -449,6 +490,26 @@ impl NativeBinstallMetadata {
             }
         }
 
+        // A declared key is honored or the artifact is not used: a table this
+        // installer cannot read is an error, never "unsigned".
+        let signing = merged
+            .get("signing")
+            .map(|signing| {
+                signing
+                    .clone()
+                    .try_into::<NativeBinstallSigning>()
+                    .wrap_err("invalid package.metadata.binstall.signing")
+            })
+            .transpose()?;
+        if let Some(signing) = &signing
+            && signing.algorithm != "minisign"
+        {
+            bail!(
+                "unsupported package.metadata.binstall.signing algorithm: {}",
+                signing.algorithm
+            );
+        }
+
         Ok(Self {
             pkg_url: merged
                 .get("pkg-url")
@@ -470,6 +531,7 @@ impl NativeBinstallMetadata {
                 .filter_map(toml::Value::as_str)
                 .map(str::to_string)
                 .collect(),
+            signing,
         })
     }
 }
@@ -788,13 +850,68 @@ fn read_crate_manifest(
     Ok(toml::from_str(&manifest)?)
 }
 
+/// The longest signature file mise downloads. A minisign signature is a few
+/// hundred bytes.
+const MAX_SIGNATURE_LEN: u64 = 64 * 1024;
+
+/// Downloads the artifact at `url` to `path`. With a `signature`, the artifact
+/// is checked against the crate's key before this returns, so nothing is
+/// extracted or copied from a file the key does not sign. The key comes from
+/// the crate on crates.io and the artifact from wherever `pkg-url` points.
 async fn download_native_binstall_file(
     url: &str,
-    path: &std::path::Path,
+    path: &Path,
+    signature: Option<&NativeBinstallSignature<'_>>,
     pr: Option<&dyn SingleReport>,
 ) -> Result<()> {
     let download_url = resolve_native_binstall_download_url(url).await;
-    HTTP.download_file(&download_url, path, pr).await
+    HTTP.download_file(&download_url, path, pr).await?;
+    if let Some(signature) = signature
+        && let Err(err) = verify_native_binstall_signature(path, signature).await
+    {
+        // The caller builds from source instead and logs its reason only at
+        // debug level, so the rejected artifact is named here.
+        warn!("not using native cargo binary artifact {url}: {err:#}");
+        return Err(err);
+    }
+    Ok(())
+}
+
+async fn verify_native_binstall_signature(
+    path: &Path,
+    signature: &NativeBinstallSignature<'_>,
+) -> Result<()> {
+    let download_url = resolve_native_binstall_download_url(&signature.url).await;
+    let mut sig_path = path.as_os_str().to_owned();
+    sig_path.push(".sig");
+    let sig_path = PathBuf::from(sig_path);
+    HTTP.download_file_limited(&download_url, &sig_path, MAX_SIGNATURE_LEN, None)
+        .await
+        .wrap_err_with(|| format!("failed to download signature {}", signature.url))?;
+    let sig = file::read_to_string(&sig_path)?;
+    minisign::verify(signature.pubkey, &file::read(path)?, &sig)
+        .wrap_err("minisign signature verification failed")
+}
+
+/// The signature `signing` requires for the artifact at `artifact_url`: its
+/// `file` template, `{ url }.sig` by default, expanded with the artifact's
+/// variables and `{ url }`, and held to https like the artifact.
+fn native_binstall_signature<'a>(
+    signing: Option<&'a NativeBinstallSigning>,
+    artifact_url: &str,
+    vars: &BinstallTemplateVars<'_>,
+) -> Result<Option<NativeBinstallSignature<'a>>> {
+    let Some(signing) = signing else {
+        return Ok(None);
+    };
+    let template = signing.file.as_deref().unwrap_or("{ url }.sig");
+    let mut replacements = binstall_template_replacements(vars).to_vec();
+    replacements.push(("url", artifact_url));
+    let url = expand_template(template, &replacements)?;
+    Ok(Some(NativeBinstallSignature {
+        url: require_https(url, "signature")?,
+        pubkey: &signing.pubkey,
+    }))
 }
 
 async fn native_binstall_file_available(url: &str) -> bool {
@@ -1014,11 +1131,14 @@ fn native_package_format(pkg_fmt: &str) -> Result<NativePackageFormat<'_>> {
 /// `repository`), was read over https. This is the URL before
 /// `url_replacements`, which still apply to it.
 fn native_binstall_artifact_url(pkg_url: &str, vars: &BinstallTemplateVars<'_>) -> Result<String> {
-    let url = expand_binstall_template(pkg_url, vars)?;
+    require_https(expand_binstall_template(pkg_url, vars)?, "artifact")
+}
+
+fn require_https(url: String, what: &str) -> Result<String> {
     let parsed = Url::parse(&url)
-        .wrap_err_with(|| format!("native cargo binary artifact URL is not valid: {url}"))?;
+        .wrap_err_with(|| format!("native cargo binary {what} URL is not valid: {url}"))?;
     if parsed.scheme() != "https" {
-        bail!("native cargo binary artifact must be downloaded over https: {url}");
+        bail!("native cargo binary {what} must be downloaded over https: {url}");
     }
     Ok(url)
 }
@@ -1033,7 +1153,13 @@ const MAX_EXPANDED_TEMPLATE_LEN: usize = 8 * 1024;
 /// `MAX_EXPANDED_TEMPLATE_LEN` is refused when it gets there, so the crate
 /// metadata cannot make mise build a string any longer.
 fn expand_binstall_template(template: &str, vars: &BinstallTemplateVars<'_>) -> Result<String> {
-    let replacements = [
+    expand_template(template, &binstall_template_replacements(vars))
+}
+
+fn binstall_template_replacements<'a>(
+    vars: &BinstallTemplateVars<'a>,
+) -> [(&'static str, &'a str); 8] {
+    [
         ("repo", vars.repo),
         ("name", vars.name),
         ("version", vars.version),
@@ -1042,7 +1168,10 @@ fn expand_binstall_template(template: &str, vars: &BinstallTemplateVars<'_>) -> 
         ("archive-suffix", vars.archive_suffix),
         ("bin", vars.bin),
         ("binary-ext", vars.binary_ext),
-    ];
+    ]
+}
+
+fn expand_template(template: &str, replacements: &[(&str, &str)]) -> Result<String> {
     let mut out = String::new();
     let mut rest = template;
     while !rest.is_empty() {
@@ -1293,6 +1422,156 @@ mod tests {
         .unwrap();
 
         assert_eq!(metadata.pkg_url, None);
+    }
+
+    #[test]
+    fn native_binstall_metadata_reads_signing() {
+        let platform = PlatformTarget::new(Platform::parse("linux-x64").unwrap());
+        let parse = |manifest: &str| {
+            NativeBinstallMetadata::from_manifest(
+                &toml::from_str(manifest).unwrap(),
+                "x86_64-unknown-linux-gnu",
+                &platform,
+            )
+        };
+
+        let metadata = parse(
+            r#"
+            [package.metadata.binstall]
+            pkg-url = "base"
+
+            [package.metadata.binstall.signing]
+            algorithm = "minisign"
+            pubkey = "base-key"
+
+            [package.metadata.binstall.overrides.x86_64-unknown-linux-gnu.signing]
+            algorithm = "minisign"
+            pubkey = "linux-key"
+            file = "{ url }.minisig"
+            "#,
+        )
+        .unwrap();
+        assert_eq!(
+            metadata.signing,
+            Some(NativeBinstallSigning {
+                algorithm: "minisign".to_string(),
+                pubkey: "linux-key".to_string(),
+                file: Some("{ url }.minisig".to_string()),
+            })
+        );
+        let unsigned = parse("[package.metadata.binstall]\npkg-url = \"base\"\n").unwrap();
+        assert_eq!(unsigned.signing, None);
+
+        // a key that can't be honored is an error, never "unsigned"
+        for signing in [
+            "signing = \"minisign\"",
+            "signing = { algorithm = \"minisign\" }",
+            "signing = { pubkey = \"key\" }",
+            "signing = { algorithm = \"gpg\", pubkey = \"key\" }",
+        ] {
+            let manifest = format!("[package.metadata.binstall]\npkg-url = \"base\"\n{signing}\n");
+            assert!(
+                parse(&manifest).is_err(),
+                "expected {signing} to be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn native_binstall_signature_follows_the_file_template() {
+        let vars = BinstallTemplateVars {
+            repo: "https://example.com/demo",
+            name: "demo",
+            version: "1.2.3",
+            target: "x86_64-unknown-linux-gnu",
+            archive_format: "tgz",
+            archive_suffix: ".tgz",
+            bin: "demo",
+            binary_ext: "",
+        };
+        let signing = |file: Option<&str>| NativeBinstallSigning {
+            algorithm: "minisign".to_string(),
+            pubkey: "key".to_string(),
+            file: file.map(str::to_string),
+        };
+        let url = "https://example.com/demo-1.2.3.tgz";
+        let signature_url = |file| {
+            native_binstall_signature(Some(&signing(file)), url, &vars)
+                .map(|signature| signature.unwrap().url)
+        };
+
+        assert_eq!(
+            signature_url(None).unwrap(),
+            "https://example.com/demo-1.2.3.tgz.sig"
+        );
+        assert_eq!(
+            signature_url(Some("{url}.minisig")).unwrap(),
+            "https://example.com/demo-1.2.3.tgz.minisig"
+        );
+        assert_eq!(
+            signature_url(Some("{ repo }/sigs/{ name }-{ version }.sig")).unwrap(),
+            "https://example.com/demo/sigs/demo-1.2.3.sig"
+        );
+        assert!(signature_url(Some("http://example.com/{ name }.sig")).is_err());
+        assert!(
+            native_binstall_signature(None, url, &vars)
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[tokio::test]
+    async fn signed_artifact_must_verify_against_the_declared_key() {
+        const PUBLISHED: &str =
+            "#!/bin/sh\necho \"foo 1.0.0, as built and signed by its author\"\n";
+        const SIGNATURE: &str = "untrusted comment: signature from minisign secret key\n\
+            RUTwDwDwDwDwARyVSE7SSrknx0xQT1OVt7qB4OUuP6yYJsFbFLXMjD5qK8Y5Z+KKZNUvUqM6iU50Xf0KIOthW7Zaos+CwuzLEwY=\n\
+            trusted comment: foo 1.0.0\n\
+            trpNvGXNiB3XysqMmEIg0xKNCHwRF3R5QcWruJwldwiBfJkkuoNlb8TOuj2m2y3oLMJwfHvGFOtci1/6bb4UDQ==\n";
+        const PUBKEY: &str = "RWTwDwDwDwDwAfkBh4MnQJnodUaPZgCBWQlrseqOePeaoIGoLkN1WGyE";
+
+        let mut server = mockito::Server::new_async().await;
+        for (path, body) in [
+            ("/published", PUBLISHED),
+            ("/published.sig", SIGNATURE),
+            ("/tampered", "#!/bin/sh\necho tampered\n"),
+            ("/tampered.sig", SIGNATURE),
+            ("/unsigned", PUBLISHED),
+        ] {
+            server
+                .mock("GET", path)
+                .with_status(200)
+                .with_body(body)
+                .create_async()
+                .await;
+        }
+        server
+            .mock("GET", "/unsigned.sig")
+            .with_status(404)
+            .create_async()
+            .await;
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let download = async |name: &str, signed: bool| {
+            let url = format!("{}/{name}", server.url());
+            let signature = NativeBinstallSignature {
+                url: format!("{url}.sig"),
+                pubkey: PUBKEY,
+            };
+            download_native_binstall_file(
+                &url,
+                &temp_dir.path().join(name),
+                signed.then_some(&signature),
+                None,
+            )
+            .await
+        };
+
+        download("published", true).await.unwrap();
+        assert!(download("tampered", true).await.is_err());
+        assert!(download("unsigned", true).await.is_err());
+        // a crate that declares no key has nothing to verify
+        download("tampered", false).await.unwrap();
     }
 
     #[test]
