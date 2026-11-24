@@ -474,7 +474,12 @@ fn print_device_instructions(device: &DeviceCodeResponse) {
         }
     }
     if Settings::get().github.oauth_open_browser {
-        let _ = open_browser(&device.verification_uri);
+        match browser_url(&device.verification_uri) {
+            Some(url) => {
+                let _ = open_browser(&url);
+            }
+            None => debug!("not opening a browser: the verification URI is not an https URL"),
+        }
     }
 }
 
@@ -575,15 +580,28 @@ fn feed_and_wait(child: &mut std::process::Child, cmd: &str, text: &str) -> std:
     }
 }
 
-fn open_browser(url: &str) -> std::io::Result<()> {
+/// The device flow's `verification_uri` as a page the system opener may be
+/// given. The value is whatever the OAuth server answered, and the opener also
+/// opens local files and other URL schemes and reads a leading `-` as an
+/// option, so only an https URL gets through, in its normalized form.
+fn browser_url(verification_uri: &str) -> Option<url::Url> {
+    url::Url::parse(verification_uri)
+        .ok()
+        .filter(|url| url.scheme() == "https")
+}
+
+fn open_browser(url: &url::Url) -> std::io::Result<()> {
+    let url = url.as_str();
     #[cfg(target_os = "macos")]
     {
         std::process::Command::new("open").arg(url).status()?;
     }
     #[cfg(target_os = "windows")]
     {
-        std::process::Command::new("cmd")
-            .args(["/C", "start", "", url])
+        // Not `cmd /C start`: cmd runs what follows an `&` in the URL and
+        // expands `%VAR%` in it.
+        std::process::Command::new("rundll32")
+            .args(["url.dll,FileProtocolHandler", url])
             .status()?;
     }
     #[cfg(all(unix, not(target_os = "macos")))]
@@ -1463,6 +1481,34 @@ refresh_expires_at = "2099-01-01T00:00:00Z"
             cache.tokens.get(&cache_key).unwrap().access_token,
             "ghu-stale"
         );
+    }
+
+    #[test]
+    fn browser_url_accepts_only_https_urls() {
+        let url = |uri| browser_url(uri).map(String::from);
+        assert_eq!(
+            url("https://github.com/login/device").as_deref(),
+            Some("https://github.com/login/device")
+        );
+        // Quotes and spaces, which would split a command line, are encoded.
+        assert_eq!(
+            url("https://github.com/login/device?a=\"b c\"&d").as_deref(),
+            Some("https://github.com/login/device?a=%22b%20c%22&d")
+        );
+        for uri in [
+            "http://ghe.example.com/login/device",
+            "file:///etc/passwd",
+            "/etc/passwd",
+            "device.desktop",
+            "-a Calculator",
+            "--help",
+            "ssh://example.com",
+            "javascript:alert(1)",
+            "C:\\Windows\\System32\\calc.exe",
+            "",
+        ] {
+            assert_eq!(url(uri), None, "{uri:?}");
+        }
     }
 
     #[test]
