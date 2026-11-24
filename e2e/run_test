@@ -470,6 +470,26 @@ run_in_docker() {
 if [[ ${MISE_E2E_DOCKER:-0} == 1 ]]; then
   as_group "E2E $TEST" run_in_docker
 elif [[ ${MISE_E2E_INSIDE_DOCKER:-0} == 1 ]]; then
+  # /tmp, /home and /root are host directories that the host user created (see
+  # run_in_docker), so in the container they belong to that uid. As root, mise
+  # refuses a Homebrew prefix below a directory another user owns, which is
+  # every prefix a test makes under them. Root owns them on a real system, so
+  # give them to root for the test and hand them back for the host's cleanup.
+  if [[ $(id -u) == 0 ]]; then
+    mount_dirs=(/tmp /home /root)
+    mount_owners=()
+    for dir in "${mount_dirs[@]}"; do
+      mount_owners+=("$(stat -c %u:%g "$dir")")
+    done
+    restore_mount_owners() {
+      local i
+      for i in "${!mount_dirs[@]}"; do
+        chown "${mount_owners[$i]}" "${mount_dirs[$i]}" || true
+      done
+    }
+    trap restore_mount_owners EXIT
+    chown 0:0 "${mount_dirs[@]}"
+  fi
   run_test
 else
   as_group "E2E $TEST" run_test
