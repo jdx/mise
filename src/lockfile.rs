@@ -2102,7 +2102,13 @@ impl Lockfile {
                 let mut platform_table = toml::Table::new();
                 for (basename, info) in packages {
                     let mut pkg_table = toml::Table::new();
-                    pkg_table.insert("url".to_string(), info.url.clone().into());
+                    // A locked conda install takes the login back from the
+                    // configured channel, so none is recorded, including in
+                    // an entry kept from an earlier lockfile.
+                    pkg_table.insert(
+                        "url".to_string(),
+                        crate::backend::static_helpers::lock_url(&info.url).into(),
+                    );
                     if let Some(checksum) = &info.checksum {
                         pkg_table.insert("checksum".to_string(), checksum.clone().into());
                     }

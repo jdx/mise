@@ -389,17 +389,19 @@ pub fn is_current(
 }
 
 /// An entry whose URL names another release was left behind when its `version`
-/// was rewritten (Renovate does this), so it is refreshed, not reused.
+/// was rewritten (Renovate does this), so it is refreshed, not reused. So is
+/// one whose URL holds a login, so that the backend records it without one.
 fn can_reuse(info: &PlatformInfo, version: &str) -> bool {
+    let has_login = |url: &str| crate::backend::static_helpers::lock_url(url) != url;
     info.checksum.is_some()
-        && info
-            .url
-            .as_deref()
-            .is_some_and(|url| super::url_contradicts_version(version, url).is_none())
+        && info.url.as_deref().is_some_and(|url| {
+            super::url_contradicts_version(version, url).is_none() && !has_login(url)
+        })
         && info.signer.is_none()
         && info.additional_artifacts.iter().all(|artifact| {
             artifact.checksum.is_some()
                 && super::url_contradicts_version(version, &artifact.url).is_none()
+                && !has_login(&artifact.url)
         })
         && !Settings::get().force_provenance_verify()
 }
@@ -1638,6 +1640,25 @@ mod tests {
             });
         assert!(can_reuse(&info, "2.1.17"));
         assert!(!can_reuse(&info, "2.2.2"));
+    }
+
+    #[test]
+    fn entry_whose_url_holds_a_login_is_not_reusable() {
+        let mut info = PlatformInfo {
+            url: Some("https://ci:token@mirror.example/v20.0.0/node-linux-x64.tar.gz".into()),
+            checksum: Some("sha256:old".into()),
+            ..Default::default()
+        };
+        assert!(!can_reuse(&info, "20.0.0"));
+        info.url = Some("https://mirror.example/v20.0.0/node-linux-x64.tar.gz".into());
+        assert!(can_reuse(&info, "20.0.0"));
+        info.additional_artifacts
+            .push(crate::lockfile::ArtifactInfo {
+                checksum: Some("sha256:old".into()),
+                url: "https://ci@mirror.example/v20.0.0/SHASUMS256.txt.sig".into(),
+                ..Default::default()
+            });
+        assert!(!can_reuse(&info, "20.0.0"));
     }
 
     #[tokio::test]

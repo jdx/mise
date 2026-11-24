@@ -1570,6 +1570,40 @@ fn empty_resolution_preserves_existing_conda_dependencies() {
 }
 
 #[test]
+fn conda_package_urls_are_written_without_a_login() {
+    let platform_key = "linux-x64";
+    let dependency = "libfoo-1.0-h123_0";
+    let mut lockfile = Lockfile::default();
+    lockfile.tools.insert(
+        "ffmpeg".to_string(),
+        vec![tool_with_conda_dep(
+            "7.1.1",
+            "conda:ffmpeg",
+            platform_key,
+            dependency,
+        )],
+    );
+    // As an earlier lockfile could hold it.
+    lockfile.set_conda_package(
+        platform_key,
+        dependency,
+        CondaPackageInfo {
+            url: format!("https://ci:token@conda.example/channel/{dependency}.conda"),
+            checksum: Some(format!("sha256:{dependency}")),
+        },
+    );
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("mise.lock");
+    lockfile.write(&path).unwrap();
+    let written = std::fs::read_to_string(&path).unwrap();
+    assert!(!written.contains("ci:token"), "{written}");
+    assert!(
+        written.contains(&format!("https://conda.example/channel/{dependency}.conda")),
+        "{written}"
+    );
+}
+
+#[test]
 fn empty_resolution_creates_new_tool_entry_without_platform_metadata() {
     let mut lockfile = Lockfile::default();
     let result = (
