@@ -26,7 +26,7 @@ use crate::manifest::{
     MEDIA_TYPE_DOCKER_MANIFEST_LIST, MEDIA_TYPE_OCI_INDEX, MEDIA_TYPE_OCI_MANIFEST,
 };
 use mise_ui::progress_report::SingleReport;
-use mise_util::http::{HTTP, HTTP_UPLOAD, buffer_body};
+use mise_util::http::{HTTP, HTTP_UPLOAD, buffer_body, check_status, redact_error_url};
 
 /// A parsed registry reference.
 #[derive(Debug, Clone)]
@@ -648,9 +648,16 @@ macro_rules! retry_transient {
 /// Request a bearer token, retrying transient failures. The registry chose the URL, and the
 /// token that comes back is sent to the registry, so the request carries the registry login the
 /// caller put in `headers` or nothing: it goes out with the plain client, which adds no netrc
-/// login and no token for the host the URL names.
+/// login and no token for the host the URL names. Retries wait out a `429`'s `Retry-After`, and
+/// what they log shows no query value of the URL or of a redirect it led to.
 async fn get_token(url: &url::Url, headers: &HeaderMap) -> Result<TokenResponse> {
-    retry_transient!("GET", url, get_token_once(url, headers).await)
+    mise_util::http::retry_async_with_retries(
+        "GET",
+        url,
+        network::http_retries(&mise_settings::Settings::get()),
+        || get_token_once(url, headers),
+    )
+    .await
 }
 
 async fn get_token_once(url: &url::Url, headers: &HeaderMap) -> Result<TokenResponse> {
@@ -659,9 +666,14 @@ async fn get_token_once(url: &url::Url, headers: &HeaderMap) -> Result<TokenResp
         .get(url.clone())
         .headers(headers.clone())
         .send()
+        .await
+        .map_err(redact_error_url)?;
+    check_status(&resp)?;
+    Ok(buffer_body(resp)
         .await?
-        .error_for_status()?;
-    Ok(buffer_body(resp).await?.json().await?)
+        .json()
+        .await
+        .map_err(redact_error_url)?)
 }
 
 /// Download a blob (config or layer) into memory, refreshing auth on `401`
@@ -2904,6 +2916,36 @@ mod tests {
         assert!(format!("{err:#}").contains("401"), "{err:#}");
         assert_eq!(session.authorization, None);
         token.assert_async().await;
+    }
+
+    /// A token service that redirects to a signed URL and is rate limited there: the error the
+    /// retry logs hides the signature and keeps the wait the service asked for.
+    #[tokio::test]
+    async fn a_token_error_hides_the_signed_url_and_keeps_retry_after() {
+        let mut server = mockito::Server::new_async().await;
+        server
+            .mock("GET", "/token")
+            .with_status(302)
+            .with_header(
+                "location",
+                &format!("{}/signed?X-Amz-Signature=sig-1234", server.url()),
+            )
+            .create_async()
+            .await;
+        server
+            .mock("GET", mockito::Matcher::Regex("^/signed".to_string()))
+            .with_status(429)
+            .with_header("retry-after", "10")
+            .create_async()
+            .await;
+        let url = url::Url::parse(&format!("{}/token", server.url())).unwrap();
+
+        let err = get_token_once(&url, &HeaderMap::new()).await.unwrap_err();
+
+        let shown = format!("{err:#}");
+        assert!(!shown.contains("sig-1234"), "{shown}");
+        assert!(shown.contains("retry-after: 10s"), "{shown}");
+        assert!(mise_util::http::is_transient(&err));
     }
 
     #[tokio::test]
