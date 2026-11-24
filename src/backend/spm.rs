@@ -22,7 +22,7 @@ use eyre::{Result, WrapErr, bail};
 use serde::Deserialize;
 use serde::Deserializer;
 use serde::de::{MapAccess, Visitor};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::{
     fmt::{self, Debug},
@@ -1407,7 +1407,11 @@ fn filter_artifactbundle_binaries(
     binaries: Vec<ArtifactBundleBinary>,
 ) -> eyre::Result<Vec<ArtifactBundleBinary>> {
     let names = binaries.iter().map(|b| b.name.clone()).collect::<Vec<_>>();
-    let filtered = filter_executables(opts, names)?;
+    // Without `filter_bins` this is every name the bundle lists, so each
+    // binary is looked up in a set, not in a scan of the list.
+    let filtered = filter_executables(opts, names)?
+        .into_iter()
+        .collect::<HashSet<_>>();
     Ok(binaries
         .into_iter()
         .filter(|b| filtered.contains(&b.name))
@@ -2902,6 +2906,21 @@ mod tests {
         let filtered = filter_artifactbundle_binaries(&opts, binaries).unwrap();
         assert_eq!(filtered.len(), 1);
         assert_eq!(filtered[0].name, "b");
+    }
+
+    #[test]
+    fn test_filter_artifactbundle_binaries_keeps_all_without_filter_bins() {
+        let binaries = ["b", "a", "b"]
+            .into_iter()
+            .map(|name| ArtifactBundleBinary {
+                name: name.to_string(),
+                path: PathBuf::from("/tmp").join(name),
+            })
+            .collect::<Vec<_>>();
+        let opts = ToolVersionOptions::default();
+        let opts = SpmOptions::new(&opts);
+        let filtered = filter_artifactbundle_binaries(&opts, binaries.clone()).unwrap();
+        assert_eq!(filtered, binaries);
     }
 
     #[test]
