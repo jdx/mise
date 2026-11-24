@@ -89,7 +89,7 @@ fn run_mise_as(script: &str, exe: &str) -> String {
         .into_owned()
 }
 
-/// `exe` as one word that both `sh -c` and, on Windows, `cmd /c` read back as the path, or
+/// `exe` as one word that `sh -c` and, on Windows, `cmd /c` read back as the path, or
 /// `None` when it is not absolute or cannot be written that way, which leaves `mise` bare.
 fn exe_word(exe: &std::path::Path) -> Option<String> {
     if !exe.is_absolute() {
@@ -103,12 +103,25 @@ fn exe_word(exe: &std::path::Path) -> Option<String> {
     }
 }
 
-/// A Windows path in double quotes, which `cmd` and `sh` both read as the characters between
-/// them so long as the path holds none that either expands there: `%` and `!` for `cmd`, `$`,
-/// a backtick and a `\` before `\` for `sh`. A Windows path cannot hold `"`.
+/// A Windows path written with forward slashes and no quotes, which `cmd /c` and `sh -c` both
+/// read as the path, or `None` unless it is a drive path holding only ASCII letters, digits and
+/// `_ . - :` between its separators. No quoted form works for both: usage passes the script to
+/// `cmd /c` as one argument, so Rust escapes every `"` in it as `\"`, which `cmd` does not undo.
+/// Where this is `None`, `mise` stays bare and `NoDefaultCurrentDirectoryInExePath` keeps `cmd`
+/// from finding it in the current directory.
 fn windows_exe_word(exe: &str) -> Option<String> {
-    let expands = exe.contains(['"', '%', '!', '$', '`', '\n']) || exe.contains(r"\\");
-    (!expands).then(|| format!("\"{exe}\""))
+    let mut chars = exe.chars();
+    let drive = matches!(
+        (chars.next(), chars.next(), chars.next()),
+        (Some(d), Some(':'), Some('\\' | '/')) if d.is_ascii_alphabetic()
+    );
+    // The first three characters are ASCII when `drive` holds, so `3..` is a char boundary.
+    let plain = || {
+        exe[3..]
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '-' | '\\' | '/'))
+    };
+    (drive && plain()).then(|| exe.replace('\\', "/"))
 }
 
 /// Pass the word being completed to the mounts that list tasks.
@@ -801,20 +814,27 @@ mod shell_name_tests {
     }
 
     #[test]
-    fn a_windows_path_is_one_word_for_sh_and_cmd() {
+    fn a_windows_path_is_one_unquoted_word_for_sh_and_cmd() {
         assert_eq!(
-            windows_exe_word(r"C:\Users\me\AppData\Local\mise\bin\mise.exe").as_deref(),
-            Some(r#""C:\Users\me\AppData\Local\mise\bin\mise.exe""#)
+            windows_exe_word(r"C:\Users\me\AppData\Local\mise-en.place\bin\mise.exe").as_deref(),
+            Some("C:/Users/me/AppData/Local/mise-en.place/bin/mise.exe")
         );
         assert_eq!(
-            windows_exe_word(r"C:\Program Files (x86)\a&b\mise.exe").as_deref(),
-            Some(r#""C:\Program Files (x86)\a&b\mise.exe""#)
+            windows_exe_word("d:/tools/mise_1/mise.exe").as_deref(),
+            Some("d:/tools/mise_1/mise.exe")
         );
         for path in [
+            r"C:\Program Files (x86)\a&b\mise.exe",
+            r"C:\Users\John Doe\mise.exe",
             r"C:\100%\mise.exe",
             r"C:\a!b\mise.exe",
             r"C:\$x\mise.exe",
+            r"C:\a:b\mise.exe",
+            r"C:\é\mise.exe",
             r"\\host\share\mise.exe",
+            r"\\?\C:\mise\mise.exe",
+            "C:",
+            "é",
         ] {
             assert_eq!(windows_exe_word(path), None, "{path}");
         }
