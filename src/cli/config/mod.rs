@@ -2,8 +2,10 @@ use crate::config::{
     ConfigPathOptions, override_config_path, resolve_target_config_path, system_config_path,
     top_toml_config,
 };
-use eyre::Result;
-use std::path::PathBuf;
+use crate::file::{CONFIG_FILE_LIMIT, display_path};
+use eyre::{Result, bail};
+use std::io::Read;
+use std::path::{Path, PathBuf};
 
 mod explain;
 mod get;
@@ -85,4 +87,25 @@ fn target_file(
         None if system => Some(system_config_path()),
         None => top_toml_config(),
     })
+}
+
+/// The text of the config file a config command reads, held to the same size limit as loading
+/// it. A regular file is read as loading reads it. Anything else, which only `--file` names,
+/// such as `/dev/stdin` or a process substitution, is read up to the limit and refused beyond it.
+fn read_target(file: &Path) -> Result<String> {
+    if file.metadata().is_ok_and(|m| m.is_file()) {
+        return crate::file::read_config_to_string(file);
+    }
+    let mut body = String::new();
+    std::fs::File::open(file)?
+        .take(CONFIG_FILE_LIMIT + 1)
+        .read_to_string(&mut body)?;
+    if body.len() as u64 > CONFIG_FILE_LIMIT {
+        bail!(
+            "not reading {}: it is larger than {} MiB, the most mise reads from a config file",
+            display_path(file),
+            CONFIG_FILE_LIMIT / 1024 / 1024
+        );
+    }
+    Ok(body)
 }

@@ -192,7 +192,7 @@ fn first_line(description: &str) -> String {
 
 /// The keys the table at `path` already has in `file`.
 fn file_keys(file: Option<&Path>, path: &[String]) -> Vec<String> {
-    let Some(content) = file.and_then(|file| std::fs::read_to_string(file).ok()) else {
+    let Some(content) = file.and_then(|file| crate::file::read_config_to_string(file).ok()) else {
         return vec![];
     };
     let Ok(mut value) = content.parse::<toml::Table>().map(toml::Value::Table) else {
@@ -306,6 +306,16 @@ mod tests {
             build.contains(&"tasks.build.depends".to_string()),
             "{build:?}"
         );
+    }
+
+    #[test]
+    fn a_file_over_the_config_limit_is_not_read() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("mise.toml");
+        let body = "[env]\nFOO = \"1\"\n";
+        let padding = crate::file::CONFIG_FILE_LIMIT as usize + 1 - body.len();
+        std::fs::write(&file, format!("{body}{}", "\n".repeat(padding))).unwrap();
+        assert_eq!(values("env.", Some(&file)), vec!["env._"]);
     }
 
     #[test]

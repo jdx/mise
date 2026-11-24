@@ -154,12 +154,10 @@ impl ConfigSet {
         if !file.exists() && !may_create {
             bail!("config file not found: {}", display_path(&file));
         }
-        let raw = match std::fs::read_to_string(&file) {
-            Ok(raw) => raw,
-            Err(error) if may_create && error.kind() == std::io::ErrorKind::NotFound => {
-                String::new()
-            }
-            Err(error) => return Err(error.into()),
+        let raw = match crate::file::read_config_to_string_if_exists(&file)? {
+            Some(raw) => raw,
+            None if may_create => String::new(),
+            None => bail!("config file not found: {}", display_path(&file)),
         };
         let mut config: toml_edit::DocumentMut = raw.parse()?;
         let parts = super::keys::rejoin(super::keys::split_keys(&full_key), |path| {
