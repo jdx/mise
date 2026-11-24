@@ -285,8 +285,23 @@ pub(super) fn patch(content: &mut Vec<u8>, opts: &LinkageOpts, path: &Path) -> R
         ),
         _ => None,
     };
+    // with DT_STRSZ, the rpath and its NUL lie inside the string table, so the
+    // in-place rewrite below never touches bytes past the table
+    let table_end = match (strtab_off, strsz) {
+        (Some(st), Some(sz)) => usize::try_from(sz)
+            .ok()
+            .and_then(|sz| st.checked_add(sz))
+            .map_or(content.len(), |end| end.min(content.len())),
+        _ => content.len(),
+    };
     let old_rpath = match rpath_off {
-        Some(off) => Some(read_cstr(content, off)?),
+        Some(off) => Some(read_cstr(&content[..table_end], off).map_err(|e| {
+            eyre::eyre!(
+                "cannot relocate {}: its rpath does not lie inside the dynamic string table \
+                 ({e})",
+                path.display()
+            )
+        })?),
         None => None,
     };
     let new_rpath_str = match &old_rpath {
@@ -415,6 +430,7 @@ pub(super) fn patch(content: &mut Vec<u8>, opts: &LinkageOpts, path: &Path) -> R
         );
     };
 
+    let orig_len = content.len();
     content.resize(new_off as usize + seg_len, 0);
 
     // relocated program header table: copy entries, then fix up the moved ones
@@ -498,15 +514,12 @@ pub(super) fn patch(content: &mut Vec<u8>, opts: &LinkageOpts, path: &Path) -> R
     // keep section headers consistent for readelf/strip (runtime ignores them)
     let e_shoff = rd_u64(content, 40)? as usize;
     let e_shnum = rd_u16(content, 60)? as usize;
-    if e_shoff != 0 && rd_u16(content, 58)? as usize == SHDR_SIZE {
+    // a table that does not lie wholly inside the original file is left alone,
+    // with none of its entries changed
+    let table_fits = table_entry(e_shoff, e_shnum, SHDR_SIZE).is_some_and(|end| end <= orig_len);
+    if e_shoff != 0 && table_fits && rd_u16(content, 58)? as usize == SHDR_SIZE {
         for i in 0..e_shnum {
-            // a table that does not fit in the file is left alone
-            let Some(off) = table_entry(e_shoff, i, SHDR_SIZE).filter(|off| {
-                off.checked_add(SHDR_SIZE)
-                    .is_some_and(|end| end <= content.len())
-            }) else {
-                break;
-            };
+            let off = e_shoff + i * SHDR_SIZE;
             let sh_offset = rd_u64(content, off + 24)?;
             if move_interp
                 && let Some(p) = &interp

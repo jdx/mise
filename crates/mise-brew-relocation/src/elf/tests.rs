@@ -229,6 +229,44 @@ fn test_patch_rejects_an_rpath_offset_that_wraps() {
 }
 
 #[test]
+fn test_patch_rejects_an_rpath_that_ends_past_the_string_table() {
+    // DT_STRSZ ends inside the rpath, so its NUL and the bytes before it lie
+    // past the table; an in-place rewrite would change them
+    for opts in [short_prefix_opts(), test_opts()] {
+        let mut elf = synthetic_elf("/lib64/ld-linux-x86-64.so.2", "@@HOMEBREW_PREFIX@@/lib");
+        let off = dyn_val_off(&elf, DT_STRSZ);
+        wr_u64(&mut elf, off, 5);
+        let before = elf.clone();
+        let err = patch(&mut elf, &opts, Path::new("test")).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("rpath does not lie inside the dynamic string table"),
+            "{err}"
+        );
+        assert_eq!(elf, before);
+    }
+}
+
+#[test]
+fn test_patch_leaves_a_truncated_section_table_unchanged() {
+    // two section headers, of which only the first is in the file; it
+    // describes the string table that moves
+    let mut elf = synthetic_elf("@@HOMEBREW_PREFIX@@/lib/ld.so", GROWING_RPATH);
+    let dynstr_off = rd_u64(&elf, dyn_val_off(&elf, DT_STRTAB)).unwrap();
+    let shoff = elf.len();
+    elf.resize(shoff + SHDR_SIZE, 0);
+    wr_u64(&mut elf, shoff + 24, dynstr_off);
+    wr_u64(&mut elf, 40, shoff as u64); // e_shoff
+    wr_u16(&mut elf, 58, SHDR_SIZE as u16); // e_shentsize
+    wr_u16(&mut elf, 60, 2); // e_shnum
+    let header = elf[shoff..shoff + SHDR_SIZE].to_vec();
+    assert!(patch(&mut elf, &test_opts(), Path::new("test")).unwrap());
+    assert_eq!(elf[shoff..shoff + SHDR_SIZE], header[..]);
+    let (_, rpath) = read_linkage(&elf);
+    assert_eq!(rpath, format!("{PREFIX}/Cellar/xz/5.8.3/lib:{PREFIX}/lib"));
+}
+
+#[test]
 fn test_patch_rejects_header_fields_that_overflow() {
     // e_phoff, then the PT_LOAD's p_vaddr, p_filesz and p_memsz, then the
     // PT_DYNAMIC's p_filesz
