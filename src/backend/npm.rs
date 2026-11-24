@@ -473,12 +473,14 @@ fn git_package_install_spec(name: &str, version: &str, has_checksum: bool) -> Re
     Ok(git_requirement(name, version))
 }
 
+/// One registry's `latest` version for a package.
+type LatestVersionCache = Arc<TokioMutex<CacheManager<Option<String>>>>;
+
 #[derive(Debug)]
 pub(crate) struct NPMBackend {
     ba: Arc<BackendArg>,
     // use a mutex to prevent deadlocks that occurs due to reentrant cache access
-    latest_version_caches:
-        Mutex<HashMap<Option<String>, Arc<TokioMutex<CacheManager<Option<String>>>>>>,
+    latest_version_caches: Mutex<HashMap<Option<String>, LatestVersionCache>>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -2167,10 +2169,7 @@ impl NPMBackend {
     /// `context` is `remote_version_cache_context`: a registry other than
     /// npmjs.org has its own `latest`, so it gets its own entry, as its
     /// version list does.
-    fn latest_version_cache(
-        &self,
-        context: Option<&str>,
-    ) -> Arc<TokioMutex<CacheManager<Option<String>>>> {
+    fn latest_version_cache(&self, context: Option<&str>) -> LatestVersionCache {
         self.latest_version_caches
             .lock()
             .unwrap()
