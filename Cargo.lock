@@ -6844,7 +6844,7 @@ dependencies = [
 
 [[package]]
 name = "mise"
-version = "2026.11.13"
+version = "2026.11.14"
 dependencies = [
  "age 0.12.1",
  "aqua-registry",
@@ -6864,7 +6864,6 @@ dependencies = [
  "cfg_aliases",
  "chacha20poly1305 0.11.0",
  "chrono",
- "ci_info",
  "clx",
  "color-eyre",
  "color-print",
