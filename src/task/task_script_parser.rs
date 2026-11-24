@@ -910,6 +910,10 @@ impl TaskScriptParser {
             }
             let shell = rendered_script_shell(script, task, self.run_shell.as_deref())?;
             let shell_type = shell.first().and_then(|program| program.parse().ok());
+            // `dash`, `ksh` and `ash` are no `ShellType`, but they read POSIX quoting too.
+            let posix = shell
+                .first()
+                .is_some_and(|program| crate::path::is_posix_shell_program(Path::new(program)));
             let escape = {
                 move |v: &usage::parse::ParseValue| match v {
                     // fish reads `\'` and `\\` inside single quotes as escapes, so POSIX quoting,
@@ -933,6 +937,7 @@ impl TaskScriptParser {
                         Some(ShellType::Fish) => {
                             crate::shell::fish_escape(v.to_string().into()).to_string()
                         }
+                        _ if posix => shell_words::quote(&v.to_string()).to_string(),
                         _ => v.to_string(),
                     },
                 }
@@ -1265,6 +1270,7 @@ mod tests {
             ),
             (Some("bash -e"), None, true, fish, posix_quoted),
             (Some("fish"), None, true, bash, fish_quoted),
+            (Some("dash"), None, true, bash, posix_quoted),
             (None, Some("fish -c"), true, bash, posix_quoted),
             // A `--shell` the script does not use is not read.
             (None, Some("'"), false, bash, posix_quoted),
