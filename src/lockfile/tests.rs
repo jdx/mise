@@ -424,6 +424,66 @@ fn lockfile_entries_name_their_cache_by_the_content() {
 }
 
 #[test]
+fn lockfiles_with_the_same_text_share_cached_entries_but_keep_their_own_sidecars() {
+    let temp = tempfile::tempdir().unwrap();
+    // A comment unique to this run names a cache entry no earlier run wrote.
+    let nonce = temp.path().file_name().unwrap().to_string_lossy();
+    let padding = "# padding\n".repeat(LOCKFILE_ENTRIES_CACHE_MIN_LEN / 10 + 1);
+    let content = format!(
+        "# {nonce}\n{padding}lockfile_version = 4\n\n[[tools.\"npm:prettier\"]]\nversion = \"3.6.2\"\nbackend = \"npm:prettier\"\naube = {{ path = \"mise.lock.d/npm-prettier\", digest = \"sha256:{}\" }}\n",
+        "0".repeat(64)
+    );
+    // The cache names its file by the content's hash and then this build.
+    let hash = blake3::hash(content.as_bytes()).to_hex().to_string();
+    let cache_file = || -> PathBuf {
+        let stored = std::fs::read_dir(crate::dirs::CACHE.join("lockfiles"))
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .filter(|path| {
+                path.file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .starts_with(&hash)
+            })
+            .collect::<Vec<_>>();
+        let [stored] = &stored[..] else {
+            panic!("expected one cache file for {hash}, found {stored:?}");
+        };
+        stored.clone()
+    };
+    let sidecar_of = |dir: &Path| -> PathBuf {
+        std::fs::create_dir_all(dir).unwrap();
+        let path = dir.join("mise.lock");
+        std::fs::write(&path, &content).unwrap();
+        let lockfile = Lockfile::read(&path).unwrap();
+        let [entry] = lockfile.tools()["npm:prettier"].as_slice() else {
+            panic!("expected one entry: {:?}", lockfile.tools());
+        };
+        let Some(GraphRef::Sidecar { dir, .. }) = &entry.aube else {
+            panic!("expected a sidecar graph: {:?}", entry.aube);
+        };
+        dir.clone()
+    };
+
+    let first = temp.path().join("first");
+    assert_eq!(
+        sidecar_of(&first),
+        graph::absolute(&first).join("mise.lock.d/npm-prettier")
+    );
+    let cache_file = cache_file();
+    let stored = std::fs::read(&cache_file).unwrap();
+
+    // The second read is answered from the first one's entry, which it leaves
+    // as it was, and still finds the sidecar beside its own lockfile.
+    let second = temp.path().join("second");
+    assert_eq!(
+        sidecar_of(&second),
+        graph::absolute(&second).join("mise.lock.d/npm-prettier")
+    );
+    assert_eq!(std::fs::read(&cache_file).unwrap(), stored);
+}
+
+#[test]
 fn a_tool_reads_both_spellings_of_its_platform_entries() {
     let tool: toml::Value = toml::from_str(
         r#"

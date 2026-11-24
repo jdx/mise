@@ -126,6 +126,12 @@ fn clear_lockfile_caches() {
 /// A shorter lockfile parses faster than a cache file is opened and read.
 const LOCKFILE_ENTRIES_CACHE_MIN_LEN: usize = 4096;
 
+/// Bump this when [`CachedEntries`] changes shape or [`LockfileEntries::parse`]
+/// changes what it returns. Each cache entry is also keyed by the build time,
+/// but Cargo does not rerun `build.rs` for an edit to this file alone, so a
+/// rebuilt dev binary can keep the build time of the one before it.
+const LOCKFILE_ENTRIES_CACHE_REVISION: u32 = 1;
+
 /// What a lockfile's text says on its own: its revision, each tool's entries,
 /// and the sections [`Lockfile::read`] reads after them. Nothing here depends
 /// on where the file is, on the settings, or on the registry, so two lockfiles
@@ -176,7 +182,10 @@ impl LockfileEntries {
         toml_err: impl FnOnce(toml::de::Error) -> Report,
     ) -> Result<Self> {
         let cache = crate::cache::CacheManagerBuilder::new(cache_file)
-            .with_cache_key(crate::build_time::built_info::BUILT_TIME_UTC.to_string())
+            .with_cache_key(format!(
+                "{LOCKFILE_ENTRIES_CACHE_REVISION}:{}",
+                crate::build_time::built_info::BUILT_TIME_UTC
+            ))
             .with_positional_fields()
             .build::<CachedEntries>();
         if cache.has_fresh_value() {
