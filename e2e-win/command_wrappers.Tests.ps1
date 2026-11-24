@@ -111,14 +111,32 @@ env = { WRAP_TEST = "1" }
             $LASTEXITCODE | Should -Be 0 -Because "shim output: $($output | Out-String)"
             $output | Should -Contain 'NEXT_GREET:hello'
 
-            # A `greet.exe` later on PATH is the next file of the shim's own name. It runs, and
-            # the batch file ahead of it does not take its place.
+            # With a `greet.exe` behind the batch file, `greet` and `greet.exe` are two lookups.
+            # `greet` runs the batch file, which comes first, and `greet.exe` runs the `.exe`.
+            # cmd starts the shim by the name it was given, so the shim repeats that lookup.
             New-Item -ItemType Directory -Path $exeDir -Force | Out-Null
             Copy-Item $env:ComSpec (Join-Path $exeDir 'greet.exe')
             $env:PATH = "$wrapperDir;$toolDir;$exeDir;$originalPath"
-            $output = & $leftover /d /c echo EXE_GREET 2>&1
+            $output = & $env:ComSpec /d /c 'greet /c echo EXE_GREET' 2>&1
+            $LASTEXITCODE | Should -Be 0 -Because "shim output: $($output | Out-String)"
+            $output | Should -Contain 'NEXT_GREET:/c echo EXE_GREET'
+            $output = & $env:ComSpec /d /c 'greet.exe /c echo EXE_GREET' 2>&1
             $LASTEXITCODE | Should -Be 0 -Because "shim output: $($output | Out-String)"
             $output | Should -Contain 'EXE_GREET'
+
+            # That `greet.exe` is a native child of the shim. It gets the PATH the shim was
+            # started with, as Windows wrote it: `set PATH` prints it with PATHEXT.
+            $output = & $env:ComSpec /d /c 'greet.exe /c set PATH' 2>&1
+            $LASTEXITCODE | Should -Be 0 -Because "shim output: $($output | Out-String)"
+            $childPath = @($output | Where-Object { $_ -match '^PATH=' })
+            $childPath | Should -HaveCount 1 -Because "shim output: $($output | Out-String)"
+            ($childPath[0] -replace '^PATH=', '') | Should -BeExactly $env:PATH
+
+            # PowerShell starts the shim by the path of the file it found for `greet`, so the
+            # shim takes that for a lookup of `greet`.
+            $output = greet /c echo EXE_GREET 2>&1
+            $LASTEXITCODE | Should -Be 0 -Because "shim output: $($output | Out-String)"
+            $output | Should -Contain 'NEXT_GREET:/c echo EXE_GREET'
             $env:PATH = $path
             Remove-Item $nextGreet
 

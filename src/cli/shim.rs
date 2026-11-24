@@ -237,33 +237,44 @@ fn first_on_path<'a>(bin_name: &str, dirs: impl Iterator<Item = &'a PathBuf>) ->
 /// command on to whatever comes next: a directory the user lists before the shims, a task's
 /// `_.path`, a tool's own directory.
 ///
-/// On Windows a shim started as `cargo.exe` does not know which lookup reached it: PowerShell
-/// starts `cargo` by the path of the file it found. So the next file of the shim's own name
-/// comes first, which is what a caller that asked for `cargo.exe` must get, and a `cargo.cmd`
-/// ahead of it on `PATH` does not replace it. With no such file, the next `cargo` of any kind
-/// runs, as it does for a lookup of `cargo`.
+/// The lookup repeats the one that reached the shim, see [`looked_up_name`].
 ///
 /// None when that is one of mise's shims, or nothing: the command then resolves as it does
 /// through mise's ordinary shim.
 fn bin_behind_wrapper_dirs(bin_name: &str) -> Option<PathBuf> {
     // `env::PATH` is this `PATH` without what a parent mise added, the wrapper directory and
     // the tool directories included, so it is not what the lookup ran on.
-    let dirs = || {
+    let bin = first_on_path(
+        looked_up_name(bin_name),
         env::PATH_NON_PRISTINE
             .iter()
-            .filter(|dir| !file::is_command_wrapper_dir(dir))
-    };
-    let bin = first_on_path(bin_name, dirs()).or_else(|| {
-        let command = command_name_without_exe_suffix(bin_name);
-        (command != bin_name)
-            .then(|| first_on_path(command, dirs()))
-            .flatten()
-    })?;
+            .filter(|dir| !file::is_command_wrapper_dir(dir)),
+    )?;
     let mise_bin = file::canonicalize_or_self(&env::MISE_BIN);
     let is_mise_shim = is_shim_file(&bin)
         || file::is_active_mise_shim(&bin)
         || file::canonicalize_cached(&bin).is_some_and(|bin| bin == mise_bin);
     (!is_mise_shim).then_some(bin)
+}
+
+/// The name the lookup that reached this shim was for, where `bin_name` is the shim's file name
+/// as it was started. It only differs from `bin_name` on Windows, where `cargo` and `cargo.exe`
+/// are two lookups: `cargo` runs the first `cargo.exe`, `cargo.cmd` and so on that `PATH` holds,
+/// directory by directory, and `cargo.exe` runs the first file of that name.
+///
+/// A shim started by a bare name was started by the name its caller looked up, which `cmd` and
+/// a program that spawns `cargo` pass on as they got it. A shim started by its path was not:
+/// PowerShell passes the path of the file it found for either name. That is taken for a lookup
+/// of `cargo`, the usual one, so a `cargo.exe` typed in PowerShell runs what `cargo` does.
+fn looked_up_name(bin_name: &str) -> &str {
+    let started_by_path = Path::new(&*env::ARGV0)
+        .parent()
+        .is_some_and(|dir| !dir.as_os_str().is_empty());
+    if started_by_path {
+        command_name_without_exe_suffix(bin_name)
+    } else {
+        bin_name
+    }
 }
 
 /// Apply the command wrapper for `mise x -- <name>` run by a native Windows shim.
