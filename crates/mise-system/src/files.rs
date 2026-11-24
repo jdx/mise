@@ -11058,7 +11058,7 @@ source = "oldrc""#,
         let target = dir.path().join("target");
         let elsewhere = dir.path().join("elsewhere");
         file::create_dir_all(&target)?;
-        // others may write here, so the link beneath counts as root's too
+        // the group may write here, so root does not take the link beneath for its own
         std::fs::set_permissions(&target, std::os::unix::fs::PermissionsExt::from_mode(0o770))?;
         file::create_dir_all(&elsewhere)?;
         std::os::unix::fs::symlink(&elsewhere, target.join("nested"))?;
