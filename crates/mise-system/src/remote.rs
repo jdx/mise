@@ -2284,15 +2284,57 @@ impl SshSession<'_> {
         args
     }
 
+    /// Run a remote command and return its stdout. Every caller expects a
+    /// short answer (a path, a version, a platform), so each stream is read
+    /// only up to [`Self::OUTPUT_LIMIT`]: a host that keeps writing ends the
+    /// command with an error instead of filling memory.
     async fn output_async(&self, remote_argv: &[&str]) -> Result<String> {
         let args = self.args(false, remote_argv);
         info!("$ {} {}", self.ssh.display(), shell_words::join(&args));
-        let output = tokio::process::Command::new(&self.ssh)
+        let mut child = tokio::process::Command::new(&self.ssh)
             .args(args)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
             .kill_on_drop(true)
-            .output()
-            .await?;
-        checked_output(output, &self.host.name)
+            .spawn()?;
+        let stdout = child.stdout.take().expect("piped stdout");
+        let stderr = child.stderr.take().expect("piped stderr");
+        let (stdout, stderr) = tokio::try_join!(
+            Self::read_limited(stdout, Self::OUTPUT_LIMIT),
+            Self::read_limited(stderr, Self::OUTPUT_LIMIT),
+        )?;
+        let (Some(stdout), Some(stderr)) = (stdout, stderr) else {
+            // dropping the child kills it
+            bail!(
+                "remote command on '{}' wrote more than {} bytes of output",
+                self.host.name,
+                Self::OUTPUT_LIMIT
+            );
+        };
+        let status = child.wait().await?;
+        checked_output(
+            Output {
+                status,
+                stdout,
+                stderr,
+            },
+            &self.host.name,
+        )
+    }
+
+    const OUTPUT_LIMIT: u64 = 1024 * 1024;
+
+    /// Read `reader` to its end, or `None` once it has given more than
+    /// `limit` bytes.
+    async fn read_limited(
+        reader: impl tokio::io::AsyncRead + Unpin,
+        limit: u64,
+    ) -> std::io::Result<Option<Vec<u8>>> {
+        use tokio::io::AsyncReadExt as _;
+        let mut buf = Vec::new();
+        reader.take(limit + 1).read_to_end(&mut buf).await?;
+        Ok((buf.len() as u64 <= limit).then_some(buf))
     }
 
     async fn status_with_stdin_async(&self, remote_argv: &[&str], input: File) -> Result<()> {
@@ -2534,6 +2576,40 @@ mod tests {
     fn source_host(source: &Path, excludes: &[&str]) -> Result<RemoteHost> {
         let excludes: Vec<String> = excludes.iter().map(|e| e.to_string()).collect();
         ad_hoc_host("example.test", source.to_path_buf(), &excludes)
+    }
+
+    /// A host that answers a short question with endless output must not
+    /// make mise hold all of it; a normal answer still comes through.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn remote_output_is_read_up_to_a_limit() -> Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+        let temp = tempfile::tempdir()?;
+        let host = source_host(temp.path(), &[])?;
+        let ssh = temp.path().join("ssh");
+        let session = SshSession {
+            relay: false,
+            ssh: ssh.clone(),
+            host: &host,
+            connect_timeout: 5,
+            control_path: None,
+        };
+        for (script, limit_hit) in [
+            ("head -c 3000000 /dev/zero", true),
+            ("head -c 3000000 /dev/zero >&2", true),
+            ("echo /home/me", false),
+        ] {
+            fs::write(&ssh, format!("#!/bin/sh\n{script}\n"))?;
+            fs::set_permissions(&ssh, fs::Permissions::from_mode(0o700))?;
+            let result = session.output_async(&["true"]).await;
+            if limit_hit {
+                let err = result.expect_err(script).to_string();
+                assert!(err.contains("more than 1048576 bytes"), "{script}: {err}");
+            } else {
+                assert_eq!(result?, "/home/me\n");
+            }
+        }
+        Ok(())
     }
 
     #[test]
