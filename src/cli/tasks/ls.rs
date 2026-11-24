@@ -311,9 +311,12 @@ impl TasksLs {
         for task in tasks {
             // Without experimental a `git::` file was not fetched, so its `#USAGE` header is
             // unknown; complete the task from its TOML metadata alone.
-            let mut task_spec = match TaskFetcher::toml_only(&task) {
-                Some(toml_only) => toml_only.parse_usage_spec_for_display(config).await?,
-                None => task.parse_usage_spec_for_display(config).await?,
+            let (mut task_spec, trusted) = match TaskFetcher::toml_only(&task) {
+                Some(toml_only) => (
+                    toml_only.parse_usage_spec_for_display(config).await?,
+                    task.is_trusted(config).await,
+                ),
+                None => task.parse_usage_spec_for_completion(config).await?,
             };
             for (name, complete) in task_spec.complete {
                 task_spec.cmd.complete.insert(name, complete);
@@ -321,7 +324,7 @@ impl TasksLs {
             // Completion runs the commands a spec names (`complete run=`, `mount`, ...) while
             // it parses the typed words. For a task nobody trusted, that is code from the
             // repository running before `mise run` was ever entered.
-            if !task.is_trusted(config).await {
+            if !trusted {
                 remove_spec_commands(&mut task_spec.cmd);
             }
             // Absorb words the caller forwards to the task beyond what it declares, so

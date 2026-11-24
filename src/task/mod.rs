@@ -1333,8 +1333,18 @@ impl Task {
     /// source that is not trusted yet. A command that does not count as typed there leaves the
     /// task untrusted.
     pub async fn is_trusted(&self, config: &Arc<Config>) -> bool {
-        (self.sources_are_trusted(config) || self.trust_typed_sources(config))
-            && self.file_is_trusted(config).await
+        self.definition_is_trusted(config) && self.file_is_trusted(config).await
+    }
+
+    /// [`Self::is_trusted`] for reading `file`, the script [`Self::file_path`] resolved for
+    /// that read. A `file` template can render another path each time, so the path that is
+    /// read is the path that is checked.
+    pub(crate) fn is_trusted_to_read(&self, config: &Config, file: &Path) -> bool {
+        self.definition_is_trusted(config) && self.resolved_file_is_trusted(file)
+    }
+
+    fn definition_is_trusted(&self, config: &Config) -> bool {
+        self.sources_are_trusted(config) || self.trust_typed_sources(config)
     }
 
     fn trust_typed_sources(&self, config: &Config) -> bool {
@@ -1384,26 +1394,33 @@ impl Task {
     /// config is trusted by path, and so are the scripts it names. A remote file is not a path
     /// `mise trust` can name, so it stays with the config that names it.
     async fn file_is_trusted(&self, config: &Arc<Config>) -> bool {
-        let is_global = |path: &Path| {
-            config::is_global_config(path) || config::is_global_task_include_path(path)
-        };
-        if self.file_from_discovery
+        if !self.file_needs_own_trust() {
+            return true;
+        }
+        // The path the usage spec is read from. A template that does not render names no file.
+        match self.file_path(config).await {
+            Ok(Some(file)) => self.resolved_file_is_trusted(&file),
+            Ok(None) => true,
+            Err(_) => false,
+        }
+    }
+
+    fn file_needs_own_trust(&self) -> bool {
+        !(self.file_from_discovery
             || self.remote_file_source.is_some()
             || task_fetcher::TaskFetcher::is_unfetched_remote_task(self)
             || !config::Settings::get().paranoid.config()
             || self
                 .config_sources()
                 .into_iter()
-                .all(|p| self.config_source_is_global(p))
-        {
-            return true;
-        }
-        // The path the usage spec is read from. A template that does not render names no file.
-        match self.file_path(config).await {
-            Ok(Some(file)) => is_global(&file) || config::config_file::is_path_trusted(&file),
-            Ok(None) => true,
-            Err(_) => false,
-        }
+                .all(|p| self.config_source_is_global(p)))
+    }
+
+    fn resolved_file_is_trusted(&self, file: &Path) -> bool {
+        !self.file_needs_own_trust()
+            || config::is_global_config(file)
+            || config::is_global_task_include_path(file)
+            || config::config_file::is_path_trusted(file)
     }
 
     pub fn tool_args(&self) -> Result<Vec<ToolArg>> {
@@ -2202,11 +2219,26 @@ impl Task {
         env: &EnvMap,
         extra_vars: Option<IndexMap<String, String>>,
     ) -> Result<(usage::Spec, Vec<String>)> {
+        let file = self.file_path(config).await?;
+        self.parse_usage_spec_with_file(config, cwd, env, extra_vars, file)
+            .await
+    }
+
+    /// [`Self::parse_usage_spec_with_vars`] with `file`, the script [`Self::file_path`]
+    /// resolved, for a caller that checked that path before the read.
+    async fn parse_usage_spec_with_file(
+        &self,
+        config: &Arc<Config>,
+        cwd: Option<PathBuf>,
+        env: &EnvMap,
+        extra_vars: Option<IndexMap<String, String>>,
+        file: Option<PathBuf>,
+    ) -> Result<(usage::Spec, Vec<String>)> {
         let mut env = env.clone();
         if !self.raw_args {
             clear_usage_env(&mut env);
         }
-        let (mut spec, scripts) = if let Some(file) = self.file_path(config).await? {
+        let (mut spec, scripts) = if let Some(file) = file {
             let include_env = self.usage_include_env(config, &file);
             let inherited = TaskScriptParser::new(match cwd.clone() {
                 Some(cwd) => Some(cwd),
@@ -2278,7 +2310,27 @@ impl Task {
 
     /// Parse usage spec for display purposes without expensive environment rendering
     pub async fn parse_usage_spec_for_display(&self, config: &Arc<Config>) -> Result<usage::Spec> {
-        self.parse_usage_spec_for_display_inner(config, false).await
+        Ok(self
+            .parse_usage_spec_for_display_inner(config, false)
+            .await?
+            .0)
+    }
+
+    /// [`Self::parse_usage_spec_for_display`], and whether the task is trusted to run the
+    /// commands its spec names (`complete run=`, `mount`), decided for the script the spec was
+    /// read from.
+    pub async fn parse_usage_spec_for_completion(
+        &self,
+        config: &Arc<Config>,
+    ) -> Result<(usage::Spec, bool)> {
+        let (spec, trusted) = self
+            .parse_usage_spec_for_display_inner(config, false)
+            .await?;
+        let trusted = match trusted {
+            Some(trusted) => trusted,
+            None => self.is_trusted(config).await,
+        };
+        Ok((spec, trusted))
     }
 
     /// Parse usage spec like [`Self::parse_usage_spec_for_display`], except that a file task
@@ -2288,17 +2340,22 @@ impl Task {
         &self,
         config: &Arc<Config>,
     ) -> Result<usage::Spec> {
-        self.parse_usage_spec_for_display_inner(config, true).await
+        Ok(self
+            .parse_usage_spec_for_display_inner(config, true)
+            .await?
+            .0)
     }
 
+    /// The spec, and for a task with a `file`, whether the task is trusted to read that script.
     async fn parse_usage_spec_for_display_inner(
         &self,
         config: &Arc<Config>,
         strict: bool,
-    ) -> Result<usage::Spec> {
+    ) -> Result<(usage::Spec, Option<bool>)> {
         // The directory only feeds script parsing here. A broken `dir` template is reported
         // by `mise tasks validate` and when the task runs, so it does not fail the spec.
         let dir = self.dir(config).await.unwrap_or(None);
+        let mut file_trusted = None;
         let mut spec = if let Some(file) = self.file_path(config).await? {
             let env = self.usage_include_env(config, &file);
             let inherited = TaskScriptParser::new(dir.clone())
@@ -2306,7 +2363,8 @@ impl Task {
                 .await?;
             // Listing, completing and validating a task are not consent to read the files
             // its spec names.
-            let trusted = self.is_trusted(config).await;
+            let trusted = self.is_trusted_to_read(config, &file);
+            file_trusted = Some(trusted);
             if strict {
                 parse_task_script_usage_checked(&file, Some(&env), &inherited, trusted)?
             } else {
@@ -2330,7 +2388,7 @@ impl Task {
         };
         self.populate_spec_metadata(&mut spec);
         self.populate_usage_about(&mut spec);
-        Ok(spec)
+        Ok((spec, file_trusted))
     }
 
     /// Parse usage metadata without resolving task- or subproject-specific
@@ -4502,8 +4560,18 @@ pub(crate) async fn parse_usage_values_for_inspection(
     config: &Arc<Config>,
     task: &Task,
 ) -> Result<IndexMap<String, tera::Value>> {
-    if task.is_trusted(config).await {
-        return parse_usage_values_from_task(config, task).await;
+    let file = task.file_path(config).await?;
+    let trusted = match &file {
+        Some(file) => task.is_trusted_to_read(config, file),
+        None => task.is_trusted(config).await,
+    };
+    if trusted {
+        let ts = config.get_toolset().await?;
+        let env = ts.full_env(config).await?;
+        let (spec, _) = task
+            .parse_usage_spec_with_file(config, None, &env, None, file)
+            .await?;
+        return Ok(usage_values_from_spec(task, &spec));
     }
     let spec = task.parse_usage_spec_for_display(config).await?;
     Ok(usage_values_from_spec(task, &spec))

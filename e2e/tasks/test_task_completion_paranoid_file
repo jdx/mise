@@ -55,3 +55,25 @@ assert_empty "ls $ran"
 unset MISE_PARANOID
 mise trust mise.toml
 assert_contains_text "$(press_tab 'mise run build ')" 'edited'
+
+# A file template that names another script each time it renders: the script whose spec
+# is read is the script that is checked, so the trusted one does not vouch for another.
+export MISE_PARANOID=config
+rm -f "$ran"/*
+write_script other from-other
+cat <<'SH' >pick.sh
+n=$(cat picks 2>/dev/null || echo 0)
+echo $((n + 1)) >picks
+if [ "$n" = 0 ]; then echo scripts/other.sh; else echo scripts/build.sh; fi
+SH
+cat <<'TOML' >mise.toml
+[tasks.build]
+file = "{{ exec(command='sh pick.sh') }}"
+TOML
+mise trust mise.toml
+mise trust scripts/build.sh
+rm -f picks
+assert_not_contains "mise tasks --usage" "touch $ran/other"
+rm -f picks
+assert_not_contains_text "$(press_tab 'mise run build ')" 'from-other'
+assert_empty "ls $ran"
