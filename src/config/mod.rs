@@ -5860,13 +5860,51 @@ fn path_is_spelled_in_dir(path: &Path, dir: &Path) -> bool {
     let Ok(dir) = dir.absolutize() else {
         return false;
     };
-    path.starts_with(&dir)
-        || dir.ancestors().any(|ancestor| {
-            let rest = dir.strip_prefix(ancestor).unwrap_or(Path::new(""));
-            ancestor
-                .canonicalize()
-                .is_ok_and(|resolved| path.starts_with(dunce::simplified(&resolved).join(rest)))
-        })
+    dir_spellings(&dir)
+        .iter()
+        .any(|spelling| path.starts_with(spelling))
+}
+
+/// The ways of writing `dir`: as given, with any set of the links on the way to it followed,
+/// and fully resolved. Following only some of them matters as much as following all: on macOS
+/// every temporary directory is below the `/var` -> `/private/var` link, so a linked home in one
+/// is written `/var/.../real-home` as often as `/private/var/.../real-home`.
+fn dir_spellings(dir: &Path) -> Vec<PathBuf> {
+    // Bounds the walk for links that lead to each other.
+    const MAX_SPELLINGS: usize = 64;
+    let mut spellings = vec![dir.to_path_buf()];
+    let mut next = 0;
+    while next < spellings.len() && spellings.len() < MAX_SPELLINGS {
+        let spelling = spellings[next].clone();
+        next += 1;
+        for ancestor in spelling.ancestors() {
+            let is_link = ancestor
+                .symlink_metadata()
+                .is_ok_and(|m| m.file_type().is_symlink());
+            let Some(target) = is_link.then(|| std::fs::read_link(ancestor).ok()).flatten() else {
+                continue;
+            };
+            let target = match ancestor.parent() {
+                Some(parent) if target.is_relative() => parent.join(target),
+                _ => target,
+            };
+            let Ok(target) = target.absolutize() else {
+                continue;
+            };
+            let rest = spelling.strip_prefix(ancestor).unwrap_or(Path::new(""));
+            let followed = target.join(rest);
+            if !spellings.contains(&followed) {
+                spellings.push(followed);
+            }
+        }
+    }
+    if let Ok(resolved) = dir.canonicalize() {
+        let resolved = dunce::simplified(&resolved).to_path_buf();
+        if !spellings.contains(&resolved) {
+            spellings.push(resolved);
+        }
+    }
+    spellings
 }
 
 #[async_backtrace::framed]
