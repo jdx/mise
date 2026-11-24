@@ -16,6 +16,9 @@ use std::{
 
 // use indexmap so source is after value for `mise env --json` output
 type EnvMap = IndexMap<String, String>;
+/// A name `find_up` looks for in each directory: a path relative to the directory, and the glob
+/// matched below that path, if any.
+type FindUpName = (PathBuf, Option<String>);
 
 #[derive(serde::Serialize, serde::Deserialize)]
 struct Env<V> {
@@ -169,7 +172,7 @@ impl EnvResults {
             // searches for its file name. Consecutive names with the same start are searched
             // together, directory by directory, and groups apply in the order written. A glob is
             // matched below each directory, from the directory it is written in.
-            let mut groups: Vec<(PathBuf, Vec<(PathBuf, Option<String>)>)> = Vec::new();
+            let mut groups: Vec<(PathBuf, Vec<FindUpName>)> = Vec::new();
             for pattern in &patterns {
                 let (start, name) = match &pattern.dir {
                     None => {
