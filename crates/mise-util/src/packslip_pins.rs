@@ -103,13 +103,28 @@ impl Pins {
     /// (`verified`), or, with none, the IDs recorded under `project`'s own
     /// name or for a release last signed as `project`. A name can only be
     /// added, never taken away, so what is found here is held to in full.
+    ///
+    /// A forge name is the same project in whatever letter case it is
+    /// spelled, as the forge resolves it ([`forge::same_project`]), so every
+    /// spelling of `project` recorded here is one of its own names.
     fn repository_keys(&self, project: &str, verified: Option<&ForgePin>) -> BTreeSet<String> {
         let mut keys = BTreeSet::from([project.to_string()]);
+        keys.extend(
+            self.pins
+                .keys()
+                .chain(self.sequences.keys())
+                .chain(self.list_forges.keys())
+                .filter(|key| forge::same_project(key, project))
+                .cloned(),
+        );
         let ids: Vec<&ForgePin> = match verified {
             Some(verified) => vec![verified],
             None => self
                 .forges()
-                .filter(|(key, forge)| *key == project || forge.project == project)
+                .filter(|(key, forge)| {
+                    forge::same_project(key, project)
+                        || forge::same_project(&forge.project, project)
+                })
                 .map(|(_, forge)| forge)
                 .collect(),
         };
@@ -133,8 +148,13 @@ impl Pins {
             self.pins
                 .iter()
                 .filter(|(_, pin)| {
-                    pin.forge.as_ref().is_some_and(|f| f.project == project)
-                        || pin.former_names.contains(project)
+                    pin.forge
+                        .as_ref()
+                        .is_some_and(|f| forge::same_project(&f.project, project))
+                        || pin
+                            .former_names
+                            .iter()
+                            .any(|name| forge::same_project(name, project))
                 })
                 .map(|(key, _)| key.clone()),
         );
@@ -142,7 +162,7 @@ impl Pins {
             .into_iter()
             .filter(|key| self.pins.contains_key(key))
             .collect();
-        keys.sort_by_key(|key| key.as_str() != project);
+        keys.sort_by_key(|key| (key.as_str() != project, !forge::same_project(key, project)));
         keys
     }
 
@@ -349,7 +369,7 @@ fn check_against(pin: &Pin, key: &str, project: &str, observed: Observed<'_>) ->
 
 /// Where a pin found under another name was recorded, for a refusal.
 fn pinned_as(key: &str, project: &str) -> String {
-    if key == project {
+    if forge::same_project(key, project) {
         String::new()
     } else {
         format!(" (mise pinned the repository as packslip:{key}, before it was renamed)")
@@ -418,7 +438,7 @@ pub fn record_at(path: &Path, project: &str, observed: Observed<'_>) -> Result<P
         former_names: keys
             .iter()
             .flat_map(|key| pins.pins[key].former_names.iter().chain([key]))
-            .filter(|name| name.as_str() != project)
+            .filter(|name| !forge::same_project(name, project))
             .cloned()
             .collect(),
         ..pin.clone()
@@ -483,7 +503,7 @@ pub fn check_sequence_at(
 
 /// Under which name a release list was accepted, for a refusal.
 fn accepted_as(key: &str, project: &str) -> String {
-    if key == project {
+    if forge::same_project(key, project) {
         String::new()
     } else {
         format!(" as packslip:{key}, the same repository before it was renamed")
@@ -1127,6 +1147,68 @@ pinned_at = "2026-09-01T00:00:00Z"
         let pin = record_at(&path, old, taken).unwrap();
         assert_eq!(pin.forge, Some(repo(old, "99")));
         assert!(pin.former_names.is_empty());
+    }
+
+    #[test]
+    fn a_forge_name_in_another_letter_case_is_held_to_the_same_pin() {
+        use packslip::sigstore::{GITHUB_ISSUER, SourceRepository};
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("pins.toml");
+        let (name, other_case) = ("github.com/o/r", "github.com/O/R");
+        let release = |id: &str| {
+            let key_id = oidc("v1");
+            let source = SourceRepository::new(format!("https://{name}")).with_id(id);
+            let check = forge::check(
+                &Expected::new(name),
+                name,
+                &key_id,
+                Some(GITHUB_ISSUER),
+                Some(&source),
+            )
+            .unwrap();
+            (key_id, check)
+        };
+        let (key_id, check) = release("42");
+        let first = Observed {
+            forge: Some(&check),
+            ..observed("sigstore-oidc", &key_id)
+        };
+        record_at(&path, name, first).unwrap();
+        check_sequence_at(&path, name, 5, None).unwrap();
+        assert_eq!(
+            forge_pin_at(&path, other_case).unwrap(),
+            Some(repo(name, "42"))
+        );
+        // A repository re-created under the name is refused in any spelling.
+        let (key_id, check) = release("99");
+        let taken = Observed {
+            forge: Some(&check),
+            ..observed("sigstore-oidc", &key_id)
+        };
+        assert!(check_at(&path, other_case, taken).is_err());
+        assert!(record_at(&path, other_case, taken).is_err());
+        assert!(check_sequence_at(&path, other_case, 4, None).is_err());
+        assert!(check_missing_list_at(&path, other_case, None).is_err());
+        // The same repository under the other spelling keeps one pin.
+        let pin = record_at(&path, other_case, first).unwrap();
+        assert!(pin.former_names.is_empty());
+        assert_eq!(
+            list_at(&path).unwrap().keys().collect::<Vec<_>>(),
+            [other_case]
+        );
+        assert!(check_at(&path, name, taken).is_err());
+        // Forgetting either spelling forgets the pin and the sequence.
+        assert!(forget_at(&path, name).unwrap());
+        assert!(list_at(&path).unwrap().is_empty());
+        check_sequence_at(&path, other_case, 1, None).unwrap();
+        // A monorepo subpath, and a name on any other host, compare exactly.
+        for (recorded, other) in [
+            ("github.com/o/r/tool", "github.com/o/r/Tool"),
+            ("t.example.com/tool", "t.example.com/Tool"),
+        ] {
+            check_sequence_at(&path, recorded, 5, None).unwrap();
+            check_sequence_at(&path, other, 1, None).unwrap();
+        }
     }
 
     #[test]
