@@ -382,6 +382,13 @@ pub struct Task {
     /// Boolean fields explicitly present in a structured TOML task definition.
     pub(crate) toml_bool_presence: TaskTomlBoolPresence,
     pub dir: Option<String>,
+    /// `dir` is the output of a template render, not a template.
+    ///
+    /// `dir` is rendered once, when the task loads. What that pass substitutes (`{{ cwd }}`, an
+    /// env value, `exec()` output) is data: a path that contains `{{ ... }}` is still a path, and
+    /// rendering it again would run an `exec()` that came in as a directory name. Unset while
+    /// `dir` is as written, which includes a template that failed to render.
+    pub(crate) dir_rendered: bool,
     pub hide: bool,
     pub global: bool,
     pub raw: bool,
@@ -2291,13 +2298,16 @@ impl Task {
     }
 
     pub async fn dir(&self, config: &Arc<Config>) -> Result<Option<PathBuf>> {
+        // A `dir` rendered at load is a path, never template source. A default taken from
+        // `task_config` below has not been rendered yet and is rendered here, once.
+        let rendered = self.dir.is_some() && self.dir_rendered;
         let dir = self.dir.clone().or_else(|| {
             self.cf(config)
                 .as_ref()
                 .and_then(|cf| cf.task_config().dir.clone())
         });
         if let Some(dir) = dir {
-            let dir = if contains_template_syntax(&dir) {
+            let dir = if !rendered && contains_template_syntax(&dir) {
                 let config_root = self.config_root.clone().unwrap_or_default();
                 let mut tera = get_tera(Some(&config_root));
                 let tera_ctx = self.tera_ctx(config).await?;
@@ -2753,6 +2763,7 @@ impl Task {
         }
         if other.dir.is_some() {
             self.dir = other.dir;
+            self.dir_rendered = other.dir_rendered;
         }
         merge_bool(&mut self.hide, other.hide, other.toml_bool_presence.hide);
         merge_bool(&mut self.raw, other.raw, other.toml_bool_presence.raw);
@@ -2948,10 +2959,12 @@ impl Task {
         // reported where the task is used (`Task::dir`) or by `mise tasks validate`,
         // instead of failing every task command.
         if let Some(dir) = &mut self.dir
+            && !self.dir_rendered
             && contains_template_syntax(dir)
             && let Ok(rendered) = render_str(&mut tera, dir, &tera_ctx)
         {
             *dir = rendered;
+            self.dir_rendered = true;
         }
         if let Some(shell) = &mut self.shell
             && contains_template_syntax(shell)
@@ -3678,6 +3691,7 @@ impl Task {
             env: decl.env,
             vars: decl.vars,
             dir: decl.dir,
+            dir_rendered: false,
             hide: decl.hide.unwrap_or(false),
             // Where the task was loaded from decides this, never the declaration: a
             // project task that says `global = true` would otherwise pass for a global
@@ -3752,6 +3766,7 @@ impl Default for Task {
             overlay_vars: vec![],
             toml_bool_presence: Default::default(),
             dir: None,
+            dir_rendered: false,
             hide: false,
             global: false,
             raw: false,
