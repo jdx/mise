@@ -1834,11 +1834,25 @@ impl Config {
                 .env_paths
                 .insert(0, dirs::COMMAND_WRAPPERS.clone());
         }
-        for env_file in Settings::get().env_files() {
+        let settings = Settings::get();
+        for env_file in settings.env_files() {
             if env_results.env_files.contains(&env_file) {
                 continue;
             }
-            if !config_file::env_file_trust_check(&env_file)? {
+            // An absolute entry names one file the operator chose, which safe mode keeps. A
+            // relative one is searched for upward from the working directory, so it can be a
+            // file a repository supplies.
+            let named = settings
+                .env_file
+                .iter()
+                .flatten()
+                .any(|name| name.is_absolute() && *name == env_file);
+            let allowed = if named {
+                config_file::named_env_file_trust_check(&env_file, None)?
+            } else {
+                config_file::env_file_trust_check(&env_file)?
+            };
+            if !allowed {
                 // Trusting the file later changes nothing the cache key sees. A file that is not
                 // there has nothing to trust.
                 if env_file.exists() {

@@ -112,7 +112,9 @@ approval:
 
 If [safe mode](/security.html#safe-mode) is also on, it takes precedence: project
 config loads without a trust prompt because it cannot run code, and nothing is
-marked trusted.
+marked trusted. Env files that mise finds by searching do not load in safe mode
+even when approved, and one that you name by absolute path still needs approval
+with `env_files` on.
 
 ### Remote includes
 

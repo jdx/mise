@@ -301,6 +301,13 @@ These are skipped without an error, so resolution commands keep working:
   too. The options of a tool from global or system config, including a global
   `[tool_alias]`, keep `env` when a backend renders them later.
 - `_.source` in every config, including global config.
+- Env files that mise finds by searching: the files a relative
+  [`env_file`](/configuration/settings.html#env_file) name matches in the
+  working directory or a parent, and the files a global `_.file` entry with
+  `find_up = true` or a glob finds. This includes files outside a repository,
+  such as `~/.env`, and files you trusted. An absolute `env_file` entry or a
+  global `_.file` entry that names one file still loads, and paranoid mode still
+  needs it approved.
 - Project `[shell_alias]`.
 - The commands in a project task's usage spec that shell completion would run.
 - Project `[wrappers]` and the `rust` tool's `mr_boxington` option.

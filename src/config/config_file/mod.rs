@@ -877,13 +877,30 @@ pub(crate) fn env_file_trust_check(path: &Path) -> eyre::Result<bool> {
 
 /// [`env_file_trust_check`] for a file that `declared_in` names, so a skipped file is recorded
 /// with the config that asked for it.
+///
+/// In safe mode it refuses every file. Safe mode drops the `_.file` and `_.source` entries of
+/// project config before they get here, and callers do not ask about a file the operator named
+/// outright, so what is left was found by searching (`env_file`, `find_up`, a glob) and can be a
+/// file a repository supplies. Trust does not bring it back, as it does not bring back a
+/// trusted project's `[env]`.
 pub(crate) fn env_file_trust_check_from(
     path: &Path,
     declared_in: Option<&Path>,
 ) -> eyre::Result<bool> {
-    if Settings::safe_mode()
-        || !Settings::try_get().is_ok_and(|settings| settings.paranoid.env_files())
-    {
+    if Settings::safe_mode() {
+        debug!("safe mode: not loading env file {}", display_path(path));
+        return Ok(false);
+    }
+    named_env_file_trust_check(path, declared_in)
+}
+
+/// [`env_file_trust_check_from`] for a file the operator named outright, which safe mode keeps.
+/// Paranoid mode still needs it approved.
+pub(crate) fn named_env_file_trust_check(
+    path: &Path,
+    declared_in: Option<&Path>,
+) -> eyre::Result<bool> {
+    if !Settings::try_get().is_ok_and(|settings| settings.paranoid.env_files()) {
         return Ok(true);
     }
     // A file that is not there is not loaded. Returning false rather than true means one that
