@@ -578,8 +578,12 @@ pub(crate) fn version_requires_trust(version: &str) -> bool {
 /// An `spm:` package named by the URL of a self-hosted forge makes mise derive
 /// that host's API from the name and send it the user's forge token, as an
 /// `api_url` option would.
+///
+/// The key is checked as `BackendArg` reads it, after `unalias_backend` drops
+/// leading `core:` prefixes, so `core:spm:<url>` is the same `spm:` key.
 fn tool_key_requires_trust(tool: &str) -> bool {
-    tool.contains('[') || crate::backend::spm::tool_key_selects_api_host(tool)
+    let tool = crate::backend::unalias_backend(tool.trim());
+    tool.contains('[') || crate::backend::spm::tool_key_selects_api_host(&tool)
 }
 
 /// Whether a detected config requires trust before tracked loading may parse it.
