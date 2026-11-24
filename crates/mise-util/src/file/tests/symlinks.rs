@@ -808,7 +808,8 @@ fn test_ensure_symlinks_stay_within_refuses_a_chain_of_more_than_40_links() {
     use std::os::unix::fs::symlink;
 
     let tmp = tempfile::tempdir().unwrap();
-    for hops in [40, 41, 100] {
+    // The link itself is the first of the links followed.
+    for hops in [39, 40, 100] {
         let root = tmp.path().join(format!("install-{hops}"));
         fs::create_dir_all(root.join("bin")).unwrap();
         fs::write(root.join("bin/tool"), "tool").unwrap();
@@ -821,7 +822,7 @@ fn test_ensure_symlinks_stay_within_refuses_a_chain_of_more_than_40_links() {
         )
         .unwrap();
         let err = ensure_symlinks_stay_within(&root).unwrap_err();
-        let expected = if hops > 40 {
+        let expected = if hops >= 40 {
             "more than 40 links"
         } else {
             "points outside of"
@@ -829,11 +830,20 @@ fn test_ensure_symlinks_stay_within_refuses_a_chain_of_more_than_40_links() {
         assert!(format!("{err:#}").contains(expected), "{hops}: {err:#}");
     }
 
-    // 40 links that end inside the tree are fine.
-    let root = tmp.path().join("install-40");
+    // 40 links in all that end inside the tree are fine, and open.
+    let root = tmp.path().join("install-39");
     fs::remove_file(root.join("escape")).unwrap();
-    symlink(format!("{}bin/tool", "d/".repeat(40)), root.join("inside")).unwrap();
+    symlink(format!("{}bin/tool", "d/".repeat(39)), root.join("inside")).unwrap();
     ensure_symlinks_stay_within(&root).unwrap();
+    #[cfg(target_os = "linux")]
+    assert_eq!(fs::read_to_string(root.join("inside")).unwrap(), "tool");
+
+    // One more is refused, as Linux refuses to open it.
+    symlink(format!("{}bin/tool", "d/".repeat(40)), root.join("too-far")).unwrap();
+    let err = ensure_symlinks_stay_within(&root).unwrap_err();
+    assert!(format!("{err:#}").contains("more than 40 links"), "{err:#}");
+    #[cfg(target_os = "linux")]
+    assert!(fs::read(root.join("too-far")).is_err());
 }
 
 #[cfg(unix)]

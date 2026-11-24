@@ -566,8 +566,10 @@ enum LinkCheck {
 /// A link met again with the same rest of the path still to walk is a loop: the walk
 /// would repeat forever, and the kernel refuses such a path. Its name is then taken as
 /// written and the rest of the path is still checked, because resolvers that look up one
-/// component at a time end up there. More than 40 different links is
-/// [`LinkCheck::TooManyLinks`]. The work is charged to `steps`.
+/// component at a time end up there. `target` is the target of a link, which counts as
+/// the first link followed: more than 40 different links in all is
+/// [`LinkCheck::TooManyLinks`], as the kernel refuses to open a path that follows more
+/// than 40. The work is charged to `steps`.
 fn link_target_stays_within(
     root: &Path,
     given_root: &Path,
@@ -636,7 +638,7 @@ fn link_target_stays_within(
                             .any(|(seen, rest)| *seen == candidate && *rest == pending)
                         {
                             current = candidate;
-                        } else if followed.len() == MAX_LINKS {
+                        } else if followed.len() + 1 == MAX_LINKS {
                             return LinkCheck::TooManyLinks;
                         } else {
                             let link_parts = link.components().count();
@@ -952,9 +954,10 @@ mod tests {
     fn checking_symlinks_refuses_a_chain_of_more_than_40_links() {
         // The kernel gives up after 40 links, so a resolver that keeps going can be led
         // to a path the check never saw.
+        // The link itself is the first of the links followed.
         for (hops, refused_as) in [
-            (40, "points outside of"),
-            (41, "more than 40 links"),
+            (39, "points outside of"),
+            (40, "more than 40 links"),
             (100, "more than 40 links"),
         ] {
             let temp = tempfile::tempdir().unwrap();
@@ -965,9 +968,15 @@ mod tests {
         }
 
         let temp = tempfile::tempdir().unwrap();
-        let through = format!("{}bin/tool", "d/".repeat(40));
+        let through = format!("{}bin/tool", "d/".repeat(39));
         let root = tree_with_links(temp.path(), &[("d", "."), ("tool", &through)]);
         ensure_symlinks_stay_within(&root).unwrap();
+
+        let temp = tempfile::tempdir().unwrap();
+        let through = format!("{}bin/tool", "d/".repeat(40));
+        let root = tree_with_links(temp.path(), &[("d", "."), ("tool", &through)]);
+        let err = ensure_symlinks_stay_within(&root).unwrap_err().to_string();
+        assert!(err.contains("more than 40 links"), "{err}");
     }
 
     #[cfg(unix)]
