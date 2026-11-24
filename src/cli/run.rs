@@ -1231,7 +1231,11 @@ impl Run {
                 crate::config::untrusted_task_reached(&config, task_list.clone(), self.skip_deps)
                     .await?
         {
-            return Err(crate::errors::Error::UntrustedConfig(task.config_source.clone()).into());
+            return Err(crate::errors::Error::UntrustedConfig(
+                task.config_source.clone(),
+                crate::errors::Untrusted::NotTrusted,
+            )
+            .into());
         }
         time!("run get_task_lists");
 

@@ -127,6 +127,9 @@ pub static MISE_TOOL_STUB: Lazy<bool> =
     Lazy::new(|| ARGS.read().unwrap().get(1).map(|s| s.as_str()) == Some("tool-stub"));
 
 pub static MISE_NO_CONFIG: Lazy<bool> = Lazy::new(|| var_is_true("MISE_NO_CONFIG"));
+/// Whether mise is running in CI. Decided once per process: the answer comes
+/// from about fifty variables, and several checks per command ask for it.
+pub static IS_CI: Lazy<bool> = Lazy::new(ci_info::is_ci);
 
 pub static MISE_NO_ENV: Lazy<bool> = Lazy::new(|| var_is_true("MISE_NO_ENV"));
 
@@ -878,6 +881,7 @@ pub fn is_activated() -> bool {
 pub fn set_var<K: AsRef<OsStr>, V: AsRef<OsStr>>(key: K, value: V) {
     static MUTEX: Mutex<()> = Mutex::new(());
     let _mutex = MUTEX.lock().unwrap();
+    let _overrides = BackendOverrideChange::of(key.as_ref());
     unsafe {
         std::env::set_var(key, value);
     }
@@ -886,8 +890,78 @@ pub fn set_var<K: AsRef<OsStr>, V: AsRef<OsStr>>(key: K, value: V) {
 pub fn remove_var<K: AsRef<OsStr>>(key: K) {
     static MUTEX: Mutex<()> = Mutex::new(());
     let _mutex = MUTEX.lock().unwrap();
+    let _overrides = BackendOverrideChange::of(key.as_ref());
     unsafe {
         std::env::remove_var(key);
+    }
+}
+
+/// Whether `key` names a `MISE_BACKENDS_*` override. Windows variable names
+/// are case-insensitive, so `mise_backends_node` counts there as it does for
+/// `env::var`.
+pub fn is_backend_override_key(key: &str) -> bool {
+    const PREFIX: &str = "MISE_BACKENDS_";
+    if cfg!(windows) {
+        key.get(..PREFIX.len())
+            .is_some_and(|start| start.eq_ignore_ascii_case(PREFIX))
+    } else {
+        key.starts_with(PREFIX)
+    }
+}
+
+const OVERRIDES_UNKNOWN: u8 = 0;
+const OVERRIDES_NONE: u8 = 1;
+const OVERRIDES_SOME: u8 = 2;
+static BACKEND_OVERRIDES: std::sync::atomic::AtomicU8 =
+    std::sync::atomic::AtomicU8::new(OVERRIDES_UNKNOWN);
+static BACKEND_OVERRIDES_SCAN: Mutex<()> = Mutex::new(());
+
+/// Whether the environment holds any `MISE_BACKENDS_*` variable.
+///
+/// Resolving a tool's backend asks for that tool's variable many times per
+/// command, and each lookup walks the whole environment. Most environments
+/// have none, so one walk answers every one of them. [`set_var`] and
+/// [`remove_var`] forget the answer when they touch such a variable, so one
+/// that mise sets on itself still takes effect.
+pub fn backend_override_vars_set() -> bool {
+    use std::sync::atomic::Ordering;
+    match BACKEND_OVERRIDES.load(Ordering::Acquire) {
+        OVERRIDES_NONE => return false,
+        OVERRIDES_SOME => return true,
+        _ => {}
+    }
+    let _scan = BACKEND_OVERRIDES_SCAN
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    let any = vars_os().any(|(key, _)| key.to_str().is_some_and(is_backend_override_key));
+    BACKEND_OVERRIDES.store(
+        if any { OVERRIDES_SOME } else { OVERRIDES_NONE },
+        Ordering::Release,
+    );
+    any
+}
+
+/// Held while a `MISE_BACKENDS_*` variable changes, so a scan cannot record
+/// the environment as it was before the change.
+struct BackendOverrideChange {
+    _scan: std::sync::MutexGuard<'static, ()>,
+}
+
+impl BackendOverrideChange {
+    fn of(key: &OsStr) -> Option<Self> {
+        key.to_str()
+            .is_some_and(is_backend_override_key)
+            .then(|| Self {
+                _scan: BACKEND_OVERRIDES_SCAN
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner()),
+            })
+    }
+}
+
+impl Drop for BackendOverrideChange {
+    fn drop(&mut self) {
+        BACKEND_OVERRIDES.store(OVERRIDES_UNKNOWN, std::sync::atomic::Ordering::Release);
     }
 }
 
@@ -1685,6 +1759,26 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn backend_override_vars_follow_set_var_and_remove_var() {
+        let key = "MISE_BACKENDS___MISE_TEST_OVERRIDE_VARS";
+        let others = || {
+            vars_os().any(|(k, _)| {
+                k.to_str()
+                    .is_some_and(|k| k != key && is_backend_override_key(k))
+            })
+        };
+        if others() {
+            // Another test holds an override; this one cannot see "none".
+            return;
+        }
+        assert!(!backend_override_vars_set());
+        set_var(key, "core:node");
+        assert!(backend_override_vars_set());
+        remove_var(key);
+        assert_eq!(backend_override_vars_set(), others());
+    }
 
     #[test]
     fn var_bool_reads_the_switch_spellings_and_nothing_else() {

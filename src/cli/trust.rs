@@ -14,8 +14,9 @@ use std::sync::Arc;
 /// Mark a config file as trusted
 ///
 /// Trust lets mise load the parts of a config file that can run code or change
-/// your environment. Without it, mise prompts, skips the file, or fails with an
-/// untrusted-config error when it cannot prompt.
+/// your environment. A mise command you type in a terminal trusts the project's
+/// config for you and says so. Otherwise mise prompts, skips the file, or fails
+/// with an untrusted-config error when it cannot prompt.
 ///
 /// A file with no template syntax that contains only `min_version`, `[tools]`
 /// entries with plain version strings (or arrays of them), and `[tasks]` in
@@ -95,14 +96,16 @@ impl Trust {
             return self.show();
         }
         if self.untrust {
-            untrust_config_file(self.config_file()?, &self.config_filenames)
+            untrust_config_file(
+                self.config_file()?,
+                self.named_file(),
+                &self.config_filenames,
+            )
         } else if self.ignore {
             self.ignore()
         } else if self.all {
-            while let Some(p) = self.get_next_untrusted() {
-                self.config_file = Some(p);
-                self.trust()?;
-            }
+            // Each is already a trust root, which `trust` would resolve again to a file in it.
+            while self.trust_next_config()? {}
             // Env files need trust whether or not their project's config was already trusted.
             let descendants = self.get_descendants();
             for p in self.get_untrusted_descendants() {
@@ -145,9 +148,10 @@ impl Trust {
     /// delete every entry.
     ///
     /// Not everything in the directory is an entry. `config_file::trust` writes a `.hash` beside
-    /// one in paranoid mode and `mark_as_monorepo_root` writes a `.monorepo` marker; those hold a
-    /// checksum and nothing at all, not a path, so they are skipped here and removed with the
-    /// entry they belong to — the way `config_file::untrust` already removes all three together.
+    /// one in paranoid mode, with an `.env-file` marker for an env file it approves, and
+    /// `mark_as_monorepo_root` writes a `.monorepo` marker; those hold a checksum or nothing at
+    /// all, not a path, so they are skipped here and removed with the
+    /// entry they belong to — the way `config_file::untrust` already removes them all together.
     fn clean_in(dir: &Path) -> Result<()> {
         if dir.is_dir() {
             for path in file::ls(dir)? {
@@ -181,7 +185,7 @@ impl Trust {
 }
 
 /// The suffixes `config_file` appends to a trust entry for the metadata that belongs to it.
-const TRUST_METADATA_EXTENSIONS: [&str; 2] = ["hash", "monorepo"];
+const TRUST_METADATA_EXTENSIONS: [&str; 3] = ["hash", "monorepo", config_file::ENV_FILE_APPROVAL];
 
 /// Whether a file in the trust directory is metadata for an entry rather than an entry itself.
 fn is_trust_metadata(path: &Path) -> bool {
@@ -206,8 +210,39 @@ fn nearest_local_config_file(filenames: &[String]) -> Option<PathBuf> {
         .find(|p| !is_global_config(p))
 }
 
+/// The trust roots `--ignore` and `--untrust` act on for `path`, whose own trust root is `cfr`.
+/// The project's root comes first.
+///
+/// Outside paranoid mode a project stands for the config roots nested in it, a conf.d folder or
+/// `.config/mise`, whichever of its files was picked: the project's root and each nested root
+/// it holds now. Otherwise a file the project ships in such a folder would take the refusal for
+/// itself and leave the project trusted. A file the user named inside a nested root stands only
+/// for that root, and in paranoid mode, where trust is per file, every file stands only for
+/// `cfr`.
+fn refused_roots(path: &Path, cfr: &Path, named_file: bool) -> Vec<PathBuf> {
+    if cfr == path || Settings::get().paranoid.config() {
+        return vec![cfr.to_path_buf()];
+    }
+    let nested = config_file::config_root::nested_root_project(path);
+    if named_file && nested.is_some() {
+        return vec![cfr.to_path_buf()];
+    }
+    let project = nested.unwrap_or_else(|| cfr.to_path_buf());
+    let mut roots = vec![project.clone(), cfr.to_path_buf()];
+    for file in config_files_in_dir(&project) {
+        if !is_global_config(&file) {
+            let root = config_trust_root(&file);
+            if root.starts_with(&project) {
+                roots.push(root);
+            }
+        }
+    }
+    roots.into_iter().unique().collect()
+}
+
 pub(super) fn untrust_config_file(
     config_file: Option<PathBuf>,
+    named_file: bool,
     filenames: &[String],
 ) -> Result<()> {
     let path = match config_file {
@@ -221,7 +256,10 @@ pub(super) fn untrust_config_file(
         },
     };
     let cfr = config_file::trust_root_for_cli(&path);
-    config_file::untrust(&cfr)?;
+    let roots = refused_roots(&path, &cfr, named_file);
+    for root in &roots {
+        config_file::untrust(root)?;
+    }
     // `mise trust` also approved the file itself when only `env_files` is on.
     if path.is_file()
         && path != cfr
@@ -230,8 +268,10 @@ pub(super) fn untrust_config_file(
     {
         config_file::untrust(&path)?;
     }
-    let cfr = cfr.canonicalize()?;
-    info!("untrusted {}", display_path(&cfr));
+    for root in &roots {
+        info!("untrusted {}", display_path(&root.canonicalize()?));
+    }
+    let cfr = roots[0].canonicalize()?;
 
     let trusted_via_settings = Settings::get()
         .trusted_config_paths()
@@ -312,7 +352,10 @@ impl Trust {
             );
         }
         let cfr = config_file::trust_root_for_cli(&path);
-        config_file::add_ignored(cfr.clone())?;
+        let roots = refused_roots(&path, &cfr, self.named_file());
+        for root in &roots {
+            config_file::add_ignored(root.clone())?;
+        }
         // `mise trust` also approved the file itself when only `env_files` is on.
         if path.is_file()
             && path != cfr
@@ -321,8 +364,10 @@ impl Trust {
         {
             config_file::add_ignored(path.clone())?;
         }
-        let cfr = cfr.canonicalize()?;
-        info!("ignored {}", display_path(&cfr));
+        for root in &roots {
+            info!("ignored {}", display_path(&root.canonicalize()?));
+        }
+        let cfr = roots[0].canonicalize()?;
 
         let trusted_via_settings = Settings::get()
             .trusted_config_paths()
@@ -337,6 +382,8 @@ impl Trust {
     }
     fn trust(&self) -> Result<()> {
         let path = match self.config_file()? {
+            // A directory is the project whichever file in it the names in effect pick.
+            Some(filename) if !self.named_file() => config_file::config_trust_root(&filename),
             Some(filename) => config_file::trust_root_for_cli(&filename),
             None => match self.get_next_untrusted() {
                 Some(path) => path,
@@ -346,6 +393,7 @@ impl Trust {
                 }
             },
         };
+        config_file::ensure_trust_can_approve(&path)?;
         config_file::trust(&path)?;
         // With only `env_files` on, a file named like a config may be an env file. Its content
         // hash is checked on its own, so approve it as well as its directory.
@@ -367,6 +415,7 @@ impl Trust {
         let Some(path) = self.get_next_untrusted() else {
             return Ok(false);
         };
+        config_file::ensure_trust_can_approve(&path)?;
         config_file::trust(&path)?;
         info!("trusted {}", display_path(&path.canonicalize()?));
         Ok(true)
@@ -472,6 +521,11 @@ impl Trust {
 
     fn config_file(&self) -> Result<Option<PathBuf>> {
         resolve_config_file(self.config_file.as_ref())
+    }
+
+    /// Whether the user named a config file, rather than a directory or nothing.
+    fn named_file(&self) -> bool {
+        self.config_file.as_ref().is_some_and(|p| p.is_file())
     }
 
     fn get_next_untrusted(&self) -> Option<PathBuf> {
@@ -739,7 +793,7 @@ mod tests {
     #[test]
     fn a_removed_entry_takes_its_metadata_with_it() {
         // The other side of the check above: skipping metadata must not turn it into litter that
-        // outlives the entry it describes. `config_file::untrust` removes all three together.
+        // outlives the entry it describes. `config_file::untrust` removes them all together.
         let tmp = tempfile::tempdir().unwrap();
         let store = tmp.path().join("trusted-configs");
         std::fs::create_dir_all(&store).unwrap();

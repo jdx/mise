@@ -224,9 +224,11 @@ impl Toolset {
         let tvls = parallel::parallel(
             versions,
             |(config, ba, mut tvl, opts, reporter)| async move {
+                // Boxed: the scope holds its future twice over, and resolving a
+                // tool is a large one.
                 let result = crate::ui::resolve_progress::scope(
                     reporter.as_ref().map(|p| p.reporter()),
-                    tvl.resolve(&config, &opts),
+                    Box::pin(tvl.resolve(&config, &opts)),
                 )
                 .await;
                 // A tool whose `os` excludes this host is never installed or

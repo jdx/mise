@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+
+# With only `env_files` on, `mise trust .env` approves that file. A project `.miserc.toml` loads
+# without trust, so listing the dotenv file as a config filename there must not turn the
+# approval into trust of the project.
+
+export MISE_TRUSTED_CONFIG_PATHS=""
+export MISE_PARANOID=env_files
+export MISE_ENV_FILE=.env
+export MISE_YES=0
+unset CI GITHUB_ACTIONS GITHUB_ACTION 2>/dev/null || true
+
+mkdir proj
+cd proj || exit 1
+echo 'GREETING="hello"' >.env
+cat <<'EOS' >mise.toml
+[env]
+PROJECT_TEST = "{{ exec(command='echo loaded') }}"
+EOS
+
+for names in \
+  'override_config_filenames = ["mise.toml", ".env"]' \
+  'override_tool_versions_filenames = [".env"]' \
+  'override_tool_versions_filenames = ["./.env"]'; do
+  echo "$names" >.miserc.toml
+  assert_contains "mise trust .env 2>&1" "trusted ~/workdir/proj/.env"
+  assert_contains "mise trust $PWD/.env 2>&1" "trusted ~/workdir/proj/.env"
+  assert_not_contains "mise hook-env -s bash 2>&1 || true" "PROJECT_TEST"
+  assert_not_contains "mise trust --show 2>&1" "proj: trusted"
+  assert "mise untrust .env"
+done
+
+# A config under a name the user's environment sets is still config.
+rm .miserc.toml
+mkdir ~/other
+cat <<'EOS' >~/other/project.toml
+[env]
+OTHER_TEST = "{{ exec(command='echo loaded') }}"
+EOS
+assert_contains "cd ~/other && MISE_OVERRIDE_CONFIG_FILENAMES=project.toml mise trust project.toml 2>&1" "trusted ~/other"
+assert_contains "cd ~/other && MISE_OVERRIDE_CONFIG_FILENAMES=project.toml mise env" "OTHER_TEST=loaded"
+
+# A directory is still the project under whatever names are in effect.
+echo 'override_config_filenames = ["mise.toml", ".env"]' >.miserc.toml
+assert_contains "mise trust . 2>&1" "trusted ~/workdir/proj"
+assert_contains "mise hook-env -s bash 2>&1" "PROJECT_TEST=loaded"

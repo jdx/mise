@@ -1,8 +1,8 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::args::BackendArg;
-use crate::file::display_path;
 use crate::toolset::{ToolRequest, ToolSource, ToolVersion};
+use crate::ui::style::display_path_escaped;
 use eyre::Report;
 use thiserror::Error;
 
@@ -36,15 +36,12 @@ pub enum Error {
     PluginNotInstalled(String),
     #[error("{0}@{1} not installed")]
     VersionNotInstalled(Box<BackendArg>, String),
-    #[error(
-        "Config files in {} are not trusted.\nTrust them with `mise trust`. See https://mise.jdx.dev/cli/trust.html for more information.",
-        display_path(.0)
-    )]
-    UntrustedConfig(PathBuf),
+    #[error("{}", .1.message(.0))]
+    UntrustedConfig(PathBuf, Untrusted),
     #[error(
         "The environment file or script {} is not trusted, and paranoid mode ties trust to a file's contents.\nReview it, then trust it with `mise trust` or `mise trust {}`. See https://mise.jdx.dev/paranoid.html#environment-files for more information.",
-        display_path(.0),
-        display_path(.0)
+        display_path_escaped(.0),
+        display_path_escaped(.0)
     )]
     UntrustedEnvFile(PathBuf),
     /// A parent stopped waiting for its nested tasks because another task failed.
@@ -55,6 +52,51 @@ pub enum Error {
         successful_installations: Vec<ToolVersion>,
         failed_installations: Vec<(ToolRequest, Report)>,
     },
+}
+
+/// Why a config file is refused, carried by [`Error::UntrustedConfig`] so the places that skip an
+/// untrusted config can say what to do about it.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum Untrusted {
+    /// Nobody has trusted it, and `mise trust` would.
+    #[default]
+    NotTrusted,
+    /// Paranoid mode reaches it through a symlink inside this project. Trust cannot help: paranoid
+    /// mode approves a file by its content, and a link inside a project is that project's to
+    /// change.
+    LinkedInProject(PathBuf),
+}
+
+impl Untrusted {
+    /// The error for the config at `path`.
+    pub fn message(&self, path: &Path) -> String {
+        match self {
+            Untrusted::NotTrusted => format!(
+                "Config files in {} are not trusted.\nTrust them with `mise trust`. See https://mise.jdx.dev/cli/trust.html for more information.",
+                display_path_escaped(path)
+            ),
+            Untrusted::LinkedInProject(project) => format!(
+                "{} is reached through a symlink inside {}, and paranoid mode cannot approve it: \
+                 it approves a file by its content, and a link inside a project is that project's \
+                 to change.\n{}",
+                display_path_escaped(path),
+                display_path_escaped(project),
+                self.remedy(path)
+            ),
+        }
+    }
+
+    /// What the user can do to load the config at `path`.
+    pub fn remedy(&self, path: &Path) -> String {
+        match self {
+            Untrusted::NotTrusted => "run `mise trust` to enable it".to_string(),
+            Untrusted::LinkedInProject(project) => format!(
+                "Replace the link {} with a copy of the file, or add {} to `trusted_config_paths`.",
+                display_path_escaped(path),
+                display_path_escaped(project)
+            ),
+        }
+    }
 }
 
 /// When the version list could not be fetched, the version being installed

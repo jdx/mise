@@ -18,6 +18,7 @@ use crate::config::settings::IdiomaticVersionFileSettings;
 use crate::config::{AliasMap, CommandWrapper, Settings, SettingsExt, settings};
 use crate::deps::DepsConfig;
 use crate::errors::Error::{UntrustedConfig, UntrustedEnvFile};
+use crate::errors::Untrusted;
 use crate::file::display_path;
 use crate::hash::hash_to_str;
 use crate::hooks::Hook;
@@ -49,6 +50,7 @@ pub mod idiomatic_version;
 pub(crate) mod min_version;
 pub mod mise_toml;
 pub(crate) mod tool_versions;
+mod typed_consent;
 mod unknown_key;
 
 #[derive(Debug, PartialEq)]
@@ -626,8 +628,12 @@ pub fn trust_root_for_cli(path: &Path) -> PathBuf {
 }
 
 /// Whether a path the user names is a mise config file, as opposed to an env file or a script.
+///
+/// Only mise's own config names and the ones the user's environment sets count. The names in
+/// effect also hold the overrides a project `.miserc.toml` sets without trust, and one that
+/// lists `.env` would turn an approval of that file into trust of the whole project.
 fn looks_like_config_file(path: &Path) -> bool {
-    if path.is_dir() || detect_config_file_type_by_filename(path).is_some() {
+    if path.is_dir() {
         return true;
     }
     let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
@@ -635,16 +641,14 @@ fn looks_like_config_file(path: &Path) -> bool {
     };
     name.ends_with(".toml") && (name.contains("mise") || name == "config.toml")
         || name.contains("tool-versions")
-        || config::load_config_paths(&config::DEFAULT_CONFIG_FILENAMES, true)
-            .iter()
-            .any(|config| config == path)
+        || config::has_own_config_filename(path)
 }
 
 pub fn config_trust_root(path: &Path) -> PathBuf {
     if settings::is_loaded() && Settings::get().paranoid.config() {
         path.to_path_buf()
     } else {
-        config_root::config_root(path)
+        config_root::linked_project(path).unwrap_or_else(|| config_root::config_root(path))
     }
 }
 
@@ -652,7 +656,14 @@ pub fn config_trust_root(path: &Path) -> PathBuf {
 ///
 /// Unlike a passing [`trust_check`], this is false for files that merely do
 /// not *need* trust (e.g. safe configs loaded without it).
+///
+/// A config reached through a symlink inside its project is judged by that project alone:
+/// trust in what the link leads to, another project or a file approved by content, is not trust
+/// in the project that holds the link.
 pub fn is_path_trusted(path: &Path) -> bool {
+    if let Some(project) = config_root::linked_project(path) {
+        return is_trusted(&project);
+    }
     is_trusted(&config_trust_root(path)) || is_trusted(path)
 }
 
@@ -731,7 +742,7 @@ pub fn trust_active_config() -> Result<()> {
             continue;
         }
         let config_root = config_trust_root(&path);
-        if is_ignored(&config_root) || is_ignored(&path) {
+        if !implicit_trust_may_record(&path, &config_root) {
             continue;
         }
         if !is_trusted(&config_root) {
@@ -758,6 +769,20 @@ fn trust_and_reload_settings(config_root: &Path) -> eyre::Result<()> {
     Ok(())
 }
 
+/// Whether a command that implies trust may record it for `path`. An ignore always wins: the user
+/// refused that config, and trust implied by a command neither overrides nor removes the refusal,
+/// even where something else (a trusted monorepo root, a file record) already trusts the file.
+fn implicit_trust_may_record(path: &Path, config_root: &Path) -> bool {
+    !is_ignored(config_root) && !is_ignored(path) && !project_is_ignored(path)
+}
+
+/// Whether `path` sits in a config root nested in a project (a conf.d folder, `.config/mise`)
+/// whose project is ignored. Ignoring a project ignores those roots too, including one that
+/// arrives after the ignore.
+pub(crate) fn project_is_ignored(path: &Path) -> bool {
+    config_root::nested_root_project(path).is_some_and(|project| is_ignored(&project))
+}
+
 /// Checks whether a config may load, prompting for trust when appropriate.
 /// Automatic yes decisions cannot grant trust in paranoid mode.
 pub fn trust_check(path: &Path) -> eyre::Result<()> {
@@ -776,11 +801,11 @@ pub fn trust_check(path: &Path) -> eyre::Result<()> {
     // so a record would trust a project in `~` and clear an ignore for it.
     if implicitly_trusts_active_config()
         && !config::is_global_config(path)
-        && !ci_info::is_ci()
+        && !*mise_util::env::IS_CI
         && Settings::try_get().is_ok_and(|settings| !settings.paranoid.config())
     {
         let config_root = config_trust_root(path);
-        if is_path_trusted(path) || (!is_ignored(&config_root) && !is_ignored(path)) {
+        if implicit_trust_may_record(path, &config_root) {
             trust_and_reload_settings(&config_root)?;
             return Ok(());
         }
@@ -803,9 +828,17 @@ pub fn trust_check(path: &Path) -> eyre::Result<()> {
         return Ok(());
     }
     if *REQUIRE_EXPLICIT_TRUST {
-        Err(UntrustedConfig(path.into()))?
+        Err(UntrustedConfig(path.into(), Untrusted::NotTrusted))?
     }
+    ensure_trust_can_approve(path)?;
     if cmd != "hook-env" && !strict && !is_ignored(&config_root) && !is_ignored(path) {
+        // A typed command implies trust like the commands above, so an ignored project's
+        // nested root is left to the prompt too.
+        if implicit_trust_may_record(path, &config_root)
+            && typed_consent::trust_typed_command(path, &config_root)?
+        {
+            return Ok(());
+        }
         let ans = if settings::is_loaded()
             && Settings::try_get().is_ok_and(|settings| settings.yes && !settings.paranoid.config())
         {
@@ -829,7 +862,23 @@ pub fn trust_check(path: &Path) -> eyre::Result<()> {
             Confirmation::Unanswered | Confirmation::Unavailable => {}
         }
     }
-    Err(UntrustedConfig(path.into()))?
+    Err(UntrustedConfig(path.into(), Untrusted::NotTrusted))?
+}
+
+/// Fails with [`Untrusted::LinkedInProject`] for a config that paranoid mode reaches through a
+/// symlink inside a project. Paranoid mode approves a file by its content, and a link inside a
+/// project is that project's to change, so no trust record can approve such a config: loading it
+/// and `mise trust` both refuse it.
+pub fn ensure_trust_can_approve(path: &Path) -> eyre::Result<()> {
+    if Settings::try_get().is_ok_and(|settings| settings.paranoid.config())
+        && let Some(project) = config_root::linked_project(path)
+    {
+        Err(UntrustedConfig(
+            path.into(),
+            Untrusted::LinkedInProject(project),
+        ))?
+    }
+    Ok(())
 }
 
 /// Whether paranoid mode lets a file named by `env._.file` load.
@@ -849,13 +898,30 @@ pub(crate) fn env_file_trust_check(path: &Path) -> eyre::Result<bool> {
 
 /// [`env_file_trust_check`] for a file that `declared_in` names, so a skipped file is recorded
 /// with the config that asked for it.
+///
+/// In safe mode it refuses every file. Safe mode drops the `_.file` and `_.source` entries of
+/// project config before they get here, and callers do not ask about a file the operator named
+/// outright, so what is left was found by searching (`env_file`, `find_up`, a glob) and can be a
+/// file a repository supplies. Trust does not bring it back, as it does not bring back a
+/// trusted project's `[env]`.
 pub(crate) fn env_file_trust_check_from(
     path: &Path,
     declared_in: Option<&Path>,
 ) -> eyre::Result<bool> {
-    if Settings::safe_mode()
-        || !Settings::try_get().is_ok_and(|settings| settings.paranoid.env_files())
-    {
+    if Settings::safe_mode() {
+        debug!("safe mode: not loading env file {}", display_path(path));
+        return Ok(false);
+    }
+    named_env_file_trust_check(path, declared_in)
+}
+
+/// [`env_file_trust_check_from`] for a file the operator named outright, which safe mode keeps.
+/// Paranoid mode still needs it approved.
+pub(crate) fn named_env_file_trust_check(
+    path: &Path,
+    declared_in: Option<&Path>,
+) -> eyre::Result<bool> {
+    if !Settings::try_get().is_ok_and(|settings| settings.paranoid.env_files()) {
         return Ok(true);
     }
     // A file that is not there is not loaded. Returning false rather than true means one that
@@ -871,12 +937,9 @@ pub(crate) fn env_file_trust_check_from(
             ));
         }
     };
-    // `is_trusted` memoizes by path, which would let a long-lived process (a reload after the
-    // file was edited) keep accepting changed contents. Forget the memo so the hash is checked.
-    IS_TRUSTED.lock().unwrap().remove(&canonical);
     // An env file is its own trust root, and its trust is always bound to its content, even
     // when the `config` category is off and project config is trusted the normal way.
-    if is_trusted_with(path, true) {
+    if check_trust(path, &canonical, true, TrustAs::EnvFile) {
         return Ok(true);
     }
     if config::skip_untrusted_path(path) {
@@ -896,47 +959,83 @@ pub fn is_trusted(path: &Path) -> bool {
 
 /// Whether an env file has content-bound trust, which a trusted project config does not give.
 pub fn is_env_file_trusted(path: &Path) -> bool {
-    is_trusted_with(path, true)
+    match path.canonicalize() {
+        Ok(canonical) => check_trust(path, &canonical, true, TrustAs::EnvFile),
+        Err(err) => {
+            debug!("trust canonicalize: {err}");
+            false
+        }
+    }
+}
+
+/// What a trust check approves the file for.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum TrustAs {
+    /// Config, which an approval of the file as an env file does not trust, and which the
+    /// process remembers once trusted.
+    Config,
+    /// An env file, whose trust is bound to its content and checked again on every call, so a
+    /// long-lived process (a reload after the file was edited) does not keep accepting changed
+    /// contents.
+    EnvFile,
 }
 
 /// [`is_trusted`] with the trust rules chosen by the caller: `content_bound` ties trust to the
 /// file's hash and turns off the shortcuts that trust by path, namely a monorepo marker, a
 /// sibling git worktree, and CI.
 fn is_trusted_with(path: &Path, content_bound: bool) -> bool {
-    let canonicalized_path = match path.canonicalize() {
-        Ok(p) => p,
+    match path.canonicalize() {
+        Ok(canonical) => check_trust(path, &canonical, content_bound, TrustAs::Config),
         Err(err) => {
             debug!("trust canonicalize: {err}");
-            return false;
+            false
         }
-    };
+    }
+}
+
+/// The trust check for `path`, whose canonical form the caller resolved once.
+fn check_trust(path: &Path, canonical: &Path, content_bound: bool, kind: TrustAs) -> bool {
     // The `ignored_config_paths` setting is an explicit "never load this
     // config" instruction and is a hard block that takes precedence over
     // everything, including `trusted_config_paths`.
     if is_config_ignored_via_setting(path) {
         return false;
     }
-    if IS_TRUSTED
-        .lock()
-        .unwrap()
-        .contains(canonicalized_path.as_path())
-    {
+    if kind == TrustAs::Config && IS_TRUSTED.lock().unwrap().contains(canonical) {
         return true;
     }
-    // `trusted_config_paths` is trusted by configuration and overrides the
-    // persisted ignore list (a dismissed trust prompt or `mise trust
-    // --ignore`), matching the "still trusted via settings" warnings emitted by
-    // `mise trust`. It only ever turns a "not trusted" answer into "trusted",
-    // so it is the fallback: matching it canonicalizes every entry, which is a
-    // real filesystem call each (slow on autofs/network mounts) and would
-    // otherwise be paid on every startup even for configs trusted by record.
-    if is_trusted_without_config_paths(path, &canonicalized_path, content_bound)
-        || trusted_config_path_matches(canonicalized_path.as_path())
-    {
-        add_trusted(canonicalized_path.to_path_buf());
-        return true;
+    let record = TrustRecord::find(canonical);
+    // An env file approved as one is approved for that, never as config: the same path can
+    // load as config through a link, a directory that replaced it or a filename setting.
+    // Only `trusted_config_paths`, which global config sets, trusts it as config. Such a file
+    // is never remembered as trusted, so the memo above cannot answer for it.
+    let env_file_approval = kind == TrustAs::Config && record.is_env_file_approval();
+    let trusted = if env_file_approval {
+        trusted_config_path_matches(canonical)
+    } else {
+        // `trusted_config_paths` is trusted by configuration and overrides the
+        // persisted ignore list (a dismissed trust prompt or `mise trust
+        // --ignore`), matching the "still trusted via settings" warnings emitted by
+        // `mise trust`. It only ever turns a "not trusted" answer into "trusted",
+        // so it is the fallback: matching it canonicalizes every entry, which is a
+        // real filesystem call each (slow on autofs/network mounts) and would
+        // otherwise be paid on every startup even for configs trusted by record.
+        is_trusted_without_config_paths(path, canonical, content_bound, &record)
+            || trusted_config_path_matches(canonical)
+    };
+    if trusted && kind == TrustAs::Config && !env_file_approval {
+        add_trusted(canonical.to_path_buf());
     }
-    false
+    trusted
+}
+
+/// Whether the trust root a file belongs to is on the ignore list. `mise trust --ignore` and a
+/// declined prompt record the root, so the files in it count as ignored too, ahead of every rule
+/// that trusts a file by where it lies (a trusted monorepo root, a sibling git worktree, CI).
+/// A directory is a trust root of its own and was looked up by itself.
+fn root_is_ignored(path: &Path, canonicalized_path: &Path) -> bool {
+    !canonicalized_path.is_dir()
+        && (is_persisted_ignored(&config_trust_root(path)) || project_is_ignored(path))
 }
 
 /// The trust rules that need no `trusted_config_paths` lookup.
@@ -944,62 +1043,65 @@ fn is_trusted_without_config_paths(
     path: &Path,
     canonicalized_path: &Path,
     content_bound: bool,
+    record: &TrustRecord,
 ) -> bool {
     // The persisted ignore list blocks trust only when the path is not trusted
     // via `trusted_config_paths`, which the caller checks afterwards.
-    if is_persisted_ignored(canonicalized_path) {
+    if is_canonical_path_persisted_ignored(canonicalized_path) {
         return false;
     }
     if config::is_global_config(path) {
-        add_trusted(canonicalized_path.to_path_buf());
         return true;
     }
-
-    // Check if this path is within a trusted monorepo root
-    // Monorepo roots are marked with a special marker file when trusted.
-    // The marker only extends the root's own trust to its descendants, so it
-    // counts for nothing unless the root is still trusted itself: trust that
-    // ended (`mise trust --ignore`, a `trusted_config_paths` entry removed, a CI
-    // run) must not live on in a marker.
+    if !content_bound && root_is_ignored(path, canonicalized_path) {
+        return false;
+    }
     // The marker trusts descendants by path, so paranoid mode, which binds
     // trust to file contents, ignores it and checks each file's hash below.
-    if !content_bound && let Some(parent) = canonicalized_path.parent() {
-        let mut current = parent;
-        while let Some(dir) = current.parent() {
-            let monorepo_marker = with_appended_extension(&trust_path(dir), "monorepo");
-            if monorepo_marker.exists() && is_trusted_with(dir, content_bound) {
-                add_trusted(canonicalized_path.to_path_buf());
-                return true;
-            }
-            current = dir;
-        }
+    if !content_bound && trusted_monorepo_ancestor(canonicalized_path) {
+        return true;
     }
     if content_bound {
-        let trusted = trust_file_hash(path).unwrap_or_else(|e| {
+        let trusted = record.matches_content(path).unwrap_or_else(|e| {
             warn!("trust_file_hash: {e}");
             false
         });
         if !trusted {
             return false;
         }
-    } else if mise_util::testing::in_tests() || ci_info::is_ci() {
+    } else if mise_util::testing::in_tests() || *mise_util::env::IS_CI {
         // in tests/CI we trust everything
         return true;
-    } else if !trust_path(path).exists() {
+    } else if !record.owned {
         // No direct trust record. A config inside a linked git worktree
         // shares trust with the equivalent path in the repo's main checkout.
         // Not applicable in paranoid mode (excluded above), where trust is
-        // tied to file contents that can differ between worktree branches.
-        if let Some(main_path) = crate::git::main_checkout_equivalent(canonicalized_path)
-            && is_trusted(&main_path)
-        {
-            add_trusted(canonicalized_path.to_path_buf());
-            return true;
-        }
+        // tied to file contents that can differ between worktree branches,
+        // nor to a main-checkout record with a hash, which approves the
+        // content of the file there and not the path.
+        return crate::git::main_checkout_equivalent(canonicalized_path)
+            .is_some_and(|main_path| !has_trust_hash(&main_path) && is_trusted(&main_path));
+    } else if record.has_hash() && !record.matches_content(path).unwrap_or(false) {
+        // A record with a hash approves the content of one file, so it stops counting once
+        // that content changes, also when the path is loaded as config.
         return false;
     }
-    add_trusted(canonicalized_path.to_path_buf());
     true
+}
+
+/// Whether a directory above `canonical` is a trusted monorepo root, which trusts the configs
+/// below it. A root is marked with a sidecar of its trust record when trusted. The marker only
+/// extends the root's own trust to its descendants, so it counts for nothing unless the root is
+/// still trusted itself: trust that ended (`mise trust --ignore`, a `trusted_config_paths` entry
+/// removed, a CI run) must not live on in a marker.
+///
+/// `canonical` has no symlinks, and so neither has any of its ancestors: each one's record name
+/// is derived from it as it is, and only a directory that has a marker is checked further.
+fn trusted_monorepo_ancestor(canonical: &Path) -> bool {
+    canonical.ancestors().skip(2).any(|dir| {
+        let record = dirs::TRUSTED_CONFIGS.join(record_name(dir));
+        with_appended_extension(&record, "monorepo").exists() && is_trusted_with(dir, false)
+    })
 }
 
 static IS_TRUSTED: Lazy<Mutex<HashSet<PathBuf>>> = Lazy::new(|| Mutex::new(HashSet::new()));
@@ -1017,8 +1119,7 @@ pub fn add_ignored(path: PathBuf) -> Result<()> {
 }
 pub(crate) fn rm_ignored(path: PathBuf) -> Result<()> {
     let path = path.canonicalize()?;
-    let ignore_path = ignore_path(&path);
-    if ignore_path.exists() {
+    for ignore_path in records_for(&dirs::IGNORED_CONFIGS, &path) {
         file::remove_file(&ignore_path)?;
     }
     IS_IGNORED.lock().unwrap().remove(&path);
@@ -1201,6 +1302,17 @@ fn ignored_entry_path(entry: &Path) -> Option<PathBuf> {
 /// a dismissed prompt, so it is overridden by `trusted_config_paths` (see
 /// [`is_trusted_via_config_paths`]).
 pub(crate) fn is_persisted_ignored(path: &Path) -> bool {
+    match file::canonicalize_cached(path) {
+        Some(path) => is_canonical_path_persisted_ignored(&path),
+        None => {
+            debug!("is_persisted_ignored: path canonicalize failed");
+            true
+        }
+    }
+}
+
+/// [`is_persisted_ignored`] for a path that is already canonical.
+fn is_canonical_path_persisted_ignored(path: &Path) -> bool {
     static ONCE: Once = Once::new();
     ONCE.call_once(|| {
         if !dirs::IGNORED_CONFIGS.exists() {
@@ -1213,13 +1325,7 @@ pub(crate) fn is_persisted_ignored(path: &Path) -> bool {
             }
         }
     });
-    match path.canonicalize() {
-        Ok(path) => IS_IGNORED.lock().unwrap().contains(&path),
-        Err(_) => {
-            debug!("is_persisted_ignored: path canonicalize failed");
-            true
-        }
-    }
+    IS_IGNORED.lock().unwrap().contains(path)
 }
 
 /// Whether `path` is ignored, by either the `ignored_config_paths` setting or
@@ -1232,20 +1338,50 @@ pub(crate) fn is_ignored(path: &Path) -> bool {
 pub fn trust(path: &Path) -> Result<()> {
     rm_ignored(path.to_path_buf())?;
     let hashed_path = trust_path(path);
-    if !hashed_path.exists() {
+    let canonicalized_path = path.canonicalize()?;
+    // What this writes decides the next check, which the memo would answer from the old state.
+    IS_TRUSTED.lock().unwrap().remove(&canonicalized_path);
+    if !record_points_at(&hashed_path, &canonicalized_path) {
         file::create_dir_all(hashed_path.parent().unwrap())?;
-        file::make_symlink_or_file(path.canonicalize()?.as_path(), &hashed_path)?;
+        file::make_symlink_or_file(&canonicalized_path, &hashed_path)?;
     }
     // The hash is only read for content-bound trust. Record it for an env file too, which is
     // bound to its content when only the `env_files` category is on. A trust root that is a
     // directory is a config trusted the normal way and has no content to hash.
     let paranoid = &Settings::get().paranoid;
+    let trust_hash_path = with_appended_extension(&hashed_path, "hash");
+    let env_file_path = with_appended_extension(&hashed_path, ENV_FILE_APPROVAL);
     if paranoid.config() || (paranoid.env_files() && path.is_file()) {
-        let trust_hash_path = with_appended_extension(&hashed_path, "hash");
         let hash = hash::file_hash_sha256(path, None)?;
         file::write(trust_hash_path, hash)?;
+    } else if trust_hash_path.exists() {
+        // This is trust by path. A hash left by an approval of a file that was at this path
+        // would keep the record bound to that file's content.
+        file::remove_file(&trust_hash_path)?;
+    }
+    // With only `env_files` on, a file that is not named like a config is approved as an env
+    // file, which `is_trusted` never takes as trust in it as config.
+    if paranoid.env_files() && !paranoid.config() && path.is_file() && !looks_like_config_file(path)
+    {
+        file::write(env_file_path, "")?;
+    } else if env_file_path.exists() {
+        file::remove_file(&env_file_path)?;
     }
     Ok(())
+}
+
+/// The sidecar of a trust record that approves an env file and not a config.
+pub const ENV_FILE_APPROVAL: &str = "env-file";
+
+/// Whether the trust record of `path` approves it as an env file only.
+#[cfg(test)]
+fn is_env_file_approval(path: &Path) -> bool {
+    TrustRecord::find(&record_identity(path)).is_env_file_approval()
+}
+
+/// Whether the trust record of `path` is bound to the content of a file.
+fn has_trust_hash(path: &Path) -> bool {
+    TrustRecord::find(&record_identity(path)).has_hash()
 }
 
 /// Records trust for the root of a config file mise has just written for the user, as
@@ -1367,12 +1503,14 @@ fn config_requires_trust(path: &Path) -> bool {
 /// nobody trusted. CI trusts everything and records nothing, so it leaves the
 /// marker alone.
 pub(crate) fn set_monorepo_root_marker(path: &Path, enabled: bool) -> Result<()> {
-    if ci_info::is_ci() {
+    if *mise_util::env::IS_CI {
         return Ok(());
     }
     let config_root = config_trust_root(path);
     let enabled = enabled && is_trusted(&config_root);
-    let hashed_path = trust_path(&config_root);
+    // The walk in `trusted_monorepo_ancestor` reads the marker under the current name only, also
+    // for a root whose record has an older one.
+    let hashed_path = dirs::TRUSTED_CONFIGS.join(hashed_path_filename(&config_root));
     let monorepo_marker = with_appended_extension(&hashed_path, "monorepo");
     if enabled && !monorepo_marker.exists() {
         file::create_dir_all(monorepo_marker.parent().unwrap())?;
@@ -1391,28 +1529,168 @@ pub(crate) fn set_monorepo_root_marker(path: &Path, enabled: bool) -> Result<()>
 
 pub fn untrust(path: &Path) -> eyre::Result<()> {
     rm_ignored(path.to_path_buf())?;
-    let hashed_path = trust_path(path);
-    if hashed_path.exists() {
-        file::remove_file(&hashed_path)?;
+    // The current name also covers sidecars left without a record, such as the monorepo marker
+    // of a root trusted through `trusted_config_paths`.
+    let current = dirs::TRUSTED_CONFIGS.join(hashed_path_filename(path));
+    let mut records = records_for(&dirs::TRUSTED_CONFIGS, path);
+    if !records.contains(&current) {
+        records.push(current);
     }
-    let hash_path = with_appended_extension(&hashed_path, "hash");
-    if hash_path.exists() {
-        file::remove_file(&hash_path)?;
-    }
-    let monorepo_path = with_appended_extension(&hashed_path, "monorepo");
-    if monorepo_path.exists() {
-        file::remove_file(&monorepo_path)?;
+    let identity = record_identity(path);
+    for hashed_path in records {
+        if record_points_at(&hashed_path, &identity) {
+            file::remove_file(&hashed_path)?;
+        }
+        for ext in ["hash", "monorepo", ENV_FILE_APPROVAL] {
+            let sidecar = with_appended_extension(&hashed_path, ext);
+            if sidecar.exists() {
+                file::remove_file(&sidecar)?;
+            }
+        }
     }
     Ok(())
 }
 
-/// generates a path like ~/.mise/trusted-configs/dir-file-3e8b8c44c3.toml
+/// The trust record for `path`, e.g. `~/.local/state/mise/trusted-configs/dir-file-<sha256>`.
 fn trust_path(path: &Path) -> PathBuf {
-    dirs::TRUSTED_CONFIGS.join(hashed_path_filename(path))
+    record_path(&dirs::TRUSTED_CONFIGS, path)
 }
 
 fn ignore_path(path: &Path) -> PathBuf {
-    dirs::IGNORED_CONFIGS.join(hashed_path_filename(path))
+    record_path(&dirs::IGNORED_CONFIGS, path)
+}
+
+/// Whether `path` has a trust record of its own: one whose stored target is `path`. A record
+/// name is derived from the path, so a file of that name proves nothing until its target is
+/// compared.
+#[cfg(test)]
+fn has_trust_record(path: &Path) -> bool {
+    TrustRecord::find(&record_identity(path)).owned
+}
+
+/// The file in `dir` that holds the record for `path`: the current name, or an older name whose
+/// record points at `path`. `.hash` and `.monorepo` sidecars sit beside the record it returns.
+fn record_path(dir: &Path, path: &Path) -> PathBuf {
+    RecordLookup::in_dir(dir, &record_identity(path)).path
+}
+
+/// Where the record for a path is and whether it is that path's own, looked up once.
+struct RecordLookup {
+    path: PathBuf,
+    /// Whether the record stores the path it is looked up for as its target. A record name is
+    /// derived from the path, so a file of that name proves nothing until its target is compared.
+    owned: bool,
+}
+
+impl RecordLookup {
+    /// The record in `dir` for `identity`, a path already resolved by [`record_identity`].
+    fn in_dir(dir: &Path, identity: &Path) -> Self {
+        let current = dir.join(record_name(identity));
+        if let Some(target) = record_target(&current) {
+            let owned = target == identity;
+            return Self {
+                path: current,
+                owned,
+            };
+        }
+        match legacy_records(dir, identity).into_iter().next() {
+            Some(path) => Self { path, owned: true },
+            None => Self {
+                path: current,
+                owned: false,
+            },
+        }
+    }
+}
+
+/// A path's trust record, with the sidecars a trust check reads.
+type TrustRecord = RecordLookup;
+
+impl TrustRecord {
+    /// The trust record of `identity`, a path already resolved by [`record_identity`].
+    fn find(identity: &Path) -> Self {
+        Self::in_dir(&dirs::TRUSTED_CONFIGS, identity)
+    }
+
+    fn sidecar(&self, ext: &str) -> PathBuf {
+        with_appended_extension(&self.path, ext)
+    }
+
+    /// Whether the record is bound to the content of a file.
+    fn has_hash(&self) -> bool {
+        self.owned && self.sidecar("hash").exists()
+    }
+
+    /// Whether the record approves its file as an env file only. [`trust`] writes that marker
+    /// only together with a hash, so a record without one is not looked at further.
+    fn is_env_file_approval(&self) -> bool {
+        self.has_hash() && self.sidecar(ENV_FILE_APPROVAL).exists()
+    }
+
+    /// Whether the record has a hash and `path` still has the content it approved.
+    fn matches_content(&self, path: &Path) -> eyre::Result<bool> {
+        if !self.owned {
+            return Ok(false);
+        }
+        let hash = match std::fs::read_to_string(self.sidecar("hash")) {
+            Ok(hash) => hash,
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+            Err(err) => Err(err)?,
+        };
+        Ok(hash == hash::file_hash_sha256(path, None)?)
+    }
+}
+
+/// Every record in `dir` that points at `path`, under its current name and under the older
+/// names.
+fn records_for(dir: &Path, path: &Path) -> Vec<PathBuf> {
+    let identity = record_identity(path);
+    let current = dir.join(hashed_path_filename(path));
+    let mut records = vec![];
+    if record_points_at(&current, &identity) {
+        records.push(current);
+    }
+    records.extend(legacy_records(dir, &identity));
+    records
+}
+
+remove_by!("2027.11.0", "legacy-trust-record-names");
+
+/// Records under the names that mise 2026.11.13 and earlier used, which hash the path with
+/// `Hash`. That hash skips separators, so different paths can share a name, and a record found
+/// under one counts only when it points at `identity`.
+fn legacy_records(dir: &Path, identity: &Path) -> Vec<PathBuf> {
+    let hash = hash_to_str(&identity);
+    [hash_to_str(&hash), prefixed_record_name(identity, hash)]
+        .into_iter()
+        .map(|name| dir.join(name))
+        .filter(|record| record_points_at(record, identity))
+        .collect()
+}
+
+/// Whether the record file `record` stores `identity` as its target.
+fn record_points_at(record: &Path, identity: &Path) -> bool {
+    record_target(record).is_some_and(|target| target == identity)
+}
+
+/// The path the record file `record` stores, or `None` when there is no such file. Records are
+/// symlinks, read with one call; only something else at that name, such as the plain file holding
+/// the path that Windows gets, is read the slower way.
+fn record_target(record: &Path) -> Option<PathBuf> {
+    match std::fs::read_link(record) {
+        Ok(target) => Some(target),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => None,
+        Err(_) => file::resolve_symlink(record).ok().flatten(),
+    }
+}
+
+/// The path a record is named for and points at.
+fn record_identity(path: &Path) -> PathBuf {
+    // canonicalize needs access to every ancestor, which a sandbox can deny (e.g. Codex
+    // "workspace write" on Windows), so fall back to the absolute path instead of panicking.
+    path.canonicalize()
+        .or_else(|_| std::path::absolute(path))
+        .unwrap_or_else(|_| path.to_path_buf())
 }
 
 /// Appends an extension to a path without replacing existing dots in the filename.
@@ -1429,51 +1707,31 @@ pub fn with_appended_extension(path: &Path, ext: &str) -> PathBuf {
     PathBuf::from(os_string)
 }
 
-/// creates the filename portion of trust/ignore files, e.g.:
+/// The file name of the trust and ignore records for `path`: the parent and file names, for
+/// people reading the directory, then the SHA-256 of the whole path's bytes, which tells apart
+/// paths that the readable part does not.
 fn hashed_path_filename(path: &Path) -> String {
-    // canonicalize needs access to every ancestor, which a sandbox can deny (e.g. Codex
-    // "workspace write" on Windows), so fall back to the absolute path instead of panicking.
-    let canonicalized_path = path
-        .canonicalize()
-        .or_else(|_| std::path::absolute(path))
-        .unwrap_or_else(|_| path.to_path_buf());
-    let hash = hash_to_str(&canonicalized_path);
-    let trunc_str = |s: &OsStr| {
-        let mut s = s.to_string_lossy().to_string();
-        s = s.chars().take(20).collect();
-        s
-    };
-    let trust_path = dirs::TRUSTED_CONFIGS.join(hash_to_str(&hash));
-    if trust_path.exists() {
-        return trust_path
-            .file_name()
-            .unwrap()
-            .to_string_lossy()
-            .to_string();
-    }
-    let parent = canonicalized_path
-        .parent()
-        .map(|p| p.to_path_buf())
-        .unwrap_or_default()
-        .file_name()
-        .map(trunc_str);
-    let filename = canonicalized_path.file_name().map(trunc_str);
+    record_name(&record_identity(path))
+}
+
+/// [`hashed_path_filename`] for a path already resolved by [`record_identity`], which needs no
+/// filesystem call.
+fn record_name(identity: &Path) -> String {
+    use sha2::Digest;
+    let digest = sha2::Sha256::digest(identity.as_os_str().as_encoded_bytes());
+    let hash = digest.iter().map(|b| format!("{b:02x}")).collect();
+    prefixed_record_name(identity, hash)
+}
+
+fn prefixed_record_name(identity: &Path, hash: String) -> String {
+    let trunc_str = |s: &OsStr| s.to_string_lossy().chars().take(20).collect::<String>();
+    let parent = identity.parent().and_then(|p| p.file_name()).map(trunc_str);
+    let filename = identity.file_name().map(trunc_str);
     [parent, filename, Some(hash)]
         .into_iter()
         .flatten()
         .collect::<Vec<_>>()
         .join("-")
-}
-
-fn trust_file_hash(path: &Path) -> eyre::Result<bool> {
-    let trust_path = trust_path(path);
-    let trust_hash_path = with_appended_extension(&trust_path, "hash");
-    if !trust_hash_path.exists() {
-        return Ok(false);
-    }
-    let hash = file::read_to_string(&trust_hash_path)?;
-    let actual = hash::file_hash_sha256(path, None)?;
-    Ok(hash == actual)
 }
 
 pub(crate) fn matching_idiomatic_filenames<'a>(
@@ -2295,6 +2553,45 @@ mod env_file_trust_tests {
         assert!(is_untrusted(&path));
     }
 
+    /// With only `env_files` on, approving an env file is not trust in the same path as config,
+    /// in this run or a later one, and trusting that path the normal way replaces the approval.
+    #[test]
+    fn an_approved_env_file_is_not_config_trust() {
+        use confique::Layer;
+        use mise_settings::{Paranoid, ParanoidCategory};
+        let _held = crate::test::SettingsGuard::lock();
+        let mut settings = crate::config::settings::SettingsPartial::empty();
+        settings.paranoid = Some(Paranoid::only([ParanoidCategory::EnvFiles]));
+        Settings::reset(Some(settings));
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join(".env");
+        std::fs::write(&path, "A=1\n").unwrap();
+
+        trust(&path).unwrap();
+        assert!(env_file_trust_check(&path).unwrap());
+        assert!(!is_trusted(&path));
+        Settings::reset(None);
+        assert!(!is_trusted(&path));
+
+        // A config named by its file name is approved as config.
+        let config = tmp.path().join("mise.toml");
+        std::fs::write(&config, "").unwrap();
+        let mut settings = crate::config::settings::SettingsPartial::empty();
+        settings.paranoid = Some(Paranoid::only([ParanoidCategory::EnvFiles]));
+        Settings::reset(Some(settings));
+        trust(&config).unwrap();
+        assert!(!is_env_file_approval(&config));
+
+        // A directory that replaced the file is trusted by path once the user trusts it.
+        std::fs::remove_file(&path).unwrap();
+        std::fs::create_dir(&path).unwrap();
+        trust(&path).unwrap();
+        assert!(!is_env_file_approval(&path));
+        assert!(!has_trust_hash(&path));
+        untrust(&path).unwrap();
+        untrust(&config).unwrap();
+    }
+
     #[test]
     fn outside_paranoid_mode_every_file_loads() {
         let _held = crate::test::SettingsGuard::lock();
@@ -2327,5 +2624,97 @@ mod hashed_path_filename_tests {
             hashed_path_filename(&relative),
             hashed_path_filename(&absolute)
         );
+    }
+
+    /// Two env files whose paths differ only in where the separators are.
+    fn files_that_differ_in_separators() -> (tempfile::TempDir, PathBuf, PathBuf) {
+        let tmp = tempfile::tempdir().unwrap();
+        let a = tmp.path().join("platform/deploy/staging/api/.env");
+        let b = tmp.path().join("plat/formdeploys/taging/api/.env");
+        for path in [&a, &b] {
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, "A=1\n").unwrap();
+        }
+        // `Path`'s `Hash` skips separators, so these share the name older versions gave a record.
+        let legacy_name = |p: &Path| {
+            let identity = record_identity(p);
+            prefixed_record_name(&identity, hash_to_str(&identity))
+        };
+        assert_eq!(legacy_name(&a), legacy_name(&b));
+        (tmp, a, b)
+    }
+
+    #[test]
+    fn a_record_of_another_path_is_not_trust() {
+        let (_tmp, a, b) = files_that_differ_in_separators();
+        assert_ne!(hashed_path_filename(&a), hashed_path_filename(&b));
+        trust(&a).unwrap();
+        assert!(has_trust_record(&a));
+        assert!(!has_trust_record(&b));
+        untrust(&a).unwrap();
+        assert!(!has_trust_record(&a));
+    }
+
+    #[test]
+    fn a_record_under_the_old_name_counts_only_for_its_target() {
+        let (_tmp, a, b) = files_that_differ_in_separators();
+        let identity = record_identity(&a);
+        let legacy =
+            dirs::TRUSTED_CONFIGS.join(prefixed_record_name(&identity, hash_to_str(&identity)));
+        file::create_dir_all(&*dirs::TRUSTED_CONFIGS).unwrap();
+        file::make_symlink_or_file(&identity, &legacy).unwrap();
+        assert!(has_trust_record(&a));
+        assert!(!has_trust_record(&b));
+        // Re-trusting the other path leaves the old record alone and writes its own.
+        trust(&b).unwrap();
+        assert!(has_trust_record(&a));
+        assert!(has_trust_record(&b));
+        untrust(&a).unwrap();
+        assert!(!legacy.exists());
+        assert!(!has_trust_record(&a));
+        assert!(has_trust_record(&b));
+        untrust(&b).unwrap();
+    }
+
+    #[test]
+    fn trusting_a_path_keeps_the_ignore_of_another() {
+        let (_tmp, a, b) = files_that_differ_in_separators();
+        let identity = record_identity(&b);
+        let legacy =
+            dirs::IGNORED_CONFIGS.join(prefixed_record_name(&identity, hash_to_str(&identity)));
+        file::create_dir_all(&*dirs::IGNORED_CONFIGS).unwrap();
+        file::make_symlink_or_file(&identity, &legacy).unwrap();
+        trust(&a).unwrap();
+        assert_eq!(file::resolve_symlink(&legacy).unwrap(), Some(identity));
+        rm_ignored(b.clone()).unwrap();
+        assert!(!legacy.exists());
+        untrust(&a).unwrap();
+    }
+
+    #[test]
+    fn an_ignored_subproject_stays_ignored_under_a_trusted_root() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mono = tmp.path().canonicalize().unwrap().join("mono");
+        let sub = mono.join("apps/sub");
+        std::fs::create_dir_all(&sub).unwrap();
+        std::fs::write(mono.join("mise.toml"), "monorepo_root = true\n").unwrap();
+        std::fs::write(sub.join("mise.toml"), "").unwrap();
+        let config = sub.join("mise.toml");
+        trust(&mono).unwrap();
+        file::write(with_appended_extension(&trust_path(&mono), "monorepo"), "").unwrap();
+        add_ignored(sub.clone()).unwrap();
+
+        // The ignore of the subproject's root covers its config file, ahead of the trusted
+        // monorepo root above it.
+        assert!(!is_trusted_with(&config, false));
+        assert!(!is_path_trusted(&config));
+        // A command that implies trust records none for it, so the ignore is not removed.
+        assert!(!implicit_trust_may_record(
+            &config,
+            &config_trust_root(&config)
+        ));
+
+        rm_ignored(sub).unwrap();
+        untrust(&mono).unwrap();
     }
 }

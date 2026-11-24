@@ -239,8 +239,12 @@ impl ToolVersion {
     ) -> Result<Self> {
         let install_env = request.options().core.install_env;
         let ba = request.ba().clone();
-        let resolve =
-            crate::toolset::with_safe_mode_tool_scope(&ba, Self::resolve_(config, request, opts));
+        // Boxed here, so that the scopes below are handed a pointer and not a
+        // future of several KB to hold and move.
+        let resolve = crate::toolset::with_safe_mode_tool_scope(
+            &ba,
+            Box::pin(Self::resolve_(config, request, opts)),
+        );
         let mut tv = crate::env::with_install_env(install_env, resolve).await?;
         // Only the request has been validated so far. The version it resolved to came from a
         // version list, a release tag or the lockfile, and for these requests it is what

@@ -53,7 +53,26 @@ pub fn nbold<D>(val: D) -> StyledObject<D> {
 }
 
 pub fn epath(path: &Path) -> StyledObject<String> {
-    estyle(display_path(path))
+    estyle(display_path_escaped(path))
+}
+
+/// [`display_path`] with its control characters escaped, for a path printed to the terminal.
+/// A directory name in a repository can hold an escape sequence that would rewrite a prompt.
+pub fn display_path_escaped(path: &Path) -> String {
+    escape_controls(&display_path(path))
+}
+
+/// `text` with every control character written as its Rust escape, such as `\u{1b}`.
+pub fn escape_controls(text: &str) -> String {
+    text.chars()
+        .map(|c| {
+            if c.is_control() {
+                c.escape_debug().to_string()
+            } else {
+                c.to_string()
+            }
+        })
+        .collect()
 }
 
 pub fn nstyle<D>(val: D) -> StyledObject<D> {
@@ -130,6 +149,19 @@ pub fn prefix_ansi(hash_key: impl AsRef<str>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_path_with_an_escape_sequence_is_printed_escaped() {
+        let path = Path::new("/repo/site\r\x1b[2K\x1b]11;#000000\x07Press y/conf");
+        let shown = display_path_escaped(path);
+        assert!(!shown.chars().any(char::is_control), "{shown:?}");
+        assert_eq!(
+            shown,
+            "/repo/site\\r\\u{1b}[2K\\u{1b}]11;#000000\\u{7}Press y/conf"
+        );
+        assert!(!epath(path).to_string().contains('\x07'));
+        assert_eq!(display_path_escaped(Path::new("/repo/ü")), "/repo/ü");
+    }
 
     #[test]
     fn prefix_ansi_matches_rendered_prefix_style() {

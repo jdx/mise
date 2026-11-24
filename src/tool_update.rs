@@ -163,7 +163,7 @@ fn eligible(request: &ToolRequest, updater: Updater) -> Option<(String, Duration
     // Only what describes this machine right now. Settings about a project's
     // lockfile or remote lookups don't apply: the update runs on global config
     // alone, and checks the global `locked` setting itself.
-    if settings.offline() || settings.ci || ci_info::is_ci() || locked_by_command() {
+    if settings.offline() || settings.ci || *mise_util::env::IS_CI || locked_by_command() {
         return None;
     }
     if updater == Updater::Launch && service_running() {
