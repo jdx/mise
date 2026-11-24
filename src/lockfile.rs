@@ -850,9 +850,9 @@ fn warn_outdated_lockfile(path: &Path, remedy: &str) {
         && outdated_lockfile_version_today(
             version,
             jiff::Timestamp::now()
-                .to_zoned(jiff::tz::TimeZone::UTC)
+                .to_zoned_datetime(jiff::tz::TimeZone::UTC)
                 .date(),
-            || jiff::Zoned::now().date(),
+            || jiff::ZonedDateTime::now().date(),
         )
     {
         warn_once!(
