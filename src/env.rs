@@ -198,7 +198,7 @@ fn env_ignored_config_paths() -> Option<Vec<PathBuf>> {
             .collect()
     })
 }
-pub(crate) static MISE_CEILING_PATHS: Lazy<HashSet<PathBuf>> = Lazy::new(|| {
+pub static MISE_CEILING_PATHS: Lazy<HashSet<PathBuf>> = Lazy::new(|| {
     var_os("MISE_CEILING_PATHS")
         .map(|v| {
             split_paths(&v)

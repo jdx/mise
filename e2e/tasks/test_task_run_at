@@ -38,6 +38,9 @@ run = "exit 7"
 
 [tasks.setup-check]
 run = "cat setup.txt"
+
+[tasks.holder-mode]
+run = "ls -ld .. | cut -c1-10"
 EOF
 # A hook kept in the repository, and a directory that is a symlink out of it.
 mkdir -p .githooks ../outside
@@ -105,13 +108,28 @@ assert_fail "mise run --at HEAD~1 fail"
 assert 'mise run --at HEAD~1 fail || echo exit=$?' "exit=7"
 assert_fail "mise run --at no-such-rev hi" "is not a commit"
 
+# Config above the worktree is not REV's and is not looked up: neither in the
+# temporary directory nor in the state directory that holds the worktrees.
+# Both of these are untrusted and would stop the run.
+mkdir -p "$MISE_TMP_DIR"
+cat <<'TOML' >"$MISE_TMP_DIR/mise.toml"
+[env]
+ABOVE_WORKTREE = "1"
+TOML
+cp "$MISE_TMP_DIR/mise.toml" "$MISE_STATE_DIR/mise.toml"
+assert "mise run --at HEAD~1 hi" "version-one"
+rm "$MISE_TMP_DIR/mise.toml" "$MISE_STATE_DIR/mise.toml"
+
+# Only the user can enter the directory holding the worktree.
+assert "mise run --at HEAD~1 holder-mode" "drwx------"
+
 # The user's checkout is untouched and every temporary worktree is gone.
 assert_empty "git status --porcelain"
 assert "git log -1 --format=%s" "two"
 assert "cat mise.toml" '[tasks.hi]
 run = "echo version-two"'
 assert "git worktree list --porcelain | grep -c '^worktree '" "1"
-assert_empty "ls -A $MISE_TMP_DIR/run-at"
+assert_empty "ls -A $MISE_STATE_DIR/run-at"
 
 # A config at REV is refused, before anything runs, when the main checkout is
 # not trusted. `--yes` (MISE_YES=1 here) does not trust it either.
@@ -121,7 +139,7 @@ assert_fail "test -e ../setup-ran"
 assert_fail "mise run --at HEAD~1 hi" "shares the trust of the repository's main checkout"
 assert_fail "MISE_YES=1 mise run --yes --at HEAD~1 hi" "is not trusted"
 assert "git worktree list --porcelain | grep -c '^worktree '" "1"
-assert_empty "ls -A $MISE_TMP_DIR/run-at"
+assert_empty "ls -A $MISE_STATE_DIR/run-at"
 mise trust
 assert "mise run --at HEAD~1 hi" "version-one"
 
@@ -131,4 +149,4 @@ assert_fail "MISE_PARANOID=1 mise run --at HEAD~1 hi" "Paranoid mode"
 # The `config` category alone does it.
 assert_fail "MISE_PARANOID=config mise run --at HEAD~1 hi" "Paranoid mode"
 assert "git worktree list --porcelain | grep -c '^worktree '" "1"
-assert_empty "ls -A $MISE_TMP_DIR/run-at"
+assert_empty "ls -A $MISE_STATE_DIR/run-at"

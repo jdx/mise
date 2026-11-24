@@ -596,7 +596,7 @@ mise run --at HEAD~1 bench > before.txt
 ```
 
 mise checks REV out into a detached
-[`git worktree`](https://git-scm.com/docs/git-worktree) under its temporary
+[`git worktree`](https://git-scm.com/docs/git-worktree) under its state
 directory, runs the tasks there with that revision's own config, tasks and
 tools, and removes the worktree afterwards, also when a task fails, the tasks
 time out (`--timeout`) or you press Ctrl-C. The run exits with the tasks'
@@ -624,8 +624,9 @@ status. Uncommitted changes in your checkout play no part: REV is a commit.
 - A `mise run --at` inside a `--at` run (where `MISE_RUN_AT_REV` is set) is
   refused.
 
-- Config is looked up from the worktree, so a `mise.toml` in a directory above
-  your checkout (other than the global config) does not apply.
+- Config is looked up from the worktree and no further up, so a `mise.toml` in
+  a directory above your checkout or above the worktree (other than the global
+  config) does not apply. The worktree's directory can be read only by you.
 
 - [Daemons](/daemons.html) that the tasks require keep running after the run,
   as they do after any `mise run`, but their project is gone with the worktree.

@@ -183,7 +183,7 @@ pub(crate) struct Run {
 
     /// Run the tasks at another git revision, in a temporary worktree
     ///
-    /// Checks REV out into a detached `git worktree` under mise's temporary
+    /// Checks REV out into a detached `git worktree` under mise's state
     /// directory, with its submodules, and runs the tasks there with that
     /// revision's own config and tasks. The worktree is removed afterwards,
     /// also when a task fails or is interrupted. Ignored files such as build

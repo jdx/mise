@@ -1,15 +1,16 @@
 //! `mise run --at REV`: run tasks in a temporary git worktree of another revision.
 //!
 //! The tasks run in a child `mise`, started in a detached worktree of REV under mise's
-//! temporary directory, so they load that revision's own config and tasks as if REV were
-//! checked out. The worktree is registered with the user's repository, so mise's trust treats
-//! it as a linked worktree: in normal mode its config shares the trust of the equivalent path in
+//! state directory, so they load that revision's own config and tasks as if REV were
+//! checked out. Config discovery in the child ends at the worktree: nothing above it is REV's.
+//! The worktree is registered with the user's repository, so mise's trust treats it as a
+//! linked worktree: in normal mode its config shares the trust of the equivalent path in
 //! the main checkout, and in paranoid mode, which binds trust to a path and its contents, it
 //! has none. The child trusts nothing on its own (see [`REQUIRE_EXPLICIT_TRUST_ENV`]), so an
 //! untrusted config at REV fails instead of prompting, being trusted by `--yes`, or being
 //! trusted implicitly as `mise run` does in the user's own checkout.
 
-use std::ffi::OsStr;
+use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 
@@ -82,6 +83,7 @@ pub(crate) async fn run(
         );
     }
     check_trust(&worktree.path, &subdir, rev)?;
+    let ceilings = ceiling_paths(&worktree.holder)?;
 
     if ctrlc::is_cancelled() {
         return Err(crate::request_exit(INTERRUPTED));
@@ -89,7 +91,7 @@ pub(crate) async fn run(
     if let Some(setup) = setup.filter(|_| dry_run) {
         info!("--at-setup (not run with --dry-run): {setup}");
     } else if let Some(setup) = setup {
-        let status = wait(setup_command(setup), &dir, &toplevel, &sha)
+        let status = wait(setup_command(setup), &dir, &ceilings, &toplevel, &sha)
             .await
             .wrap_err("mise run --at: failed to start the --at-setup command")?;
         if !status.success() {
@@ -102,7 +104,7 @@ pub(crate) async fn run(
     }
     let mut child = tokio::process::Command::new(&*env::MISE_BIN);
     child.args(&child_args).env(REQUIRE_EXPLICIT_TRUST_ENV, "1");
-    let status = wait(child, &dir, &toplevel, &sha)
+    let status = wait(child, &dir, &ceilings, &toplevel, &sha)
         .await
         .wrap_err("mise run --at: failed to start mise")?;
     drop(worktree);
@@ -147,9 +149,27 @@ fn check_trust(worktree: &Path, subdir: &Path, rev: &str) -> Result<()> {
     Ok(())
 }
 
+/// `MISE_CEILING_PATHS` for the `--at-setup` command and the tasks: the user's own ceilings and
+/// the worktree's holder. Nothing above the worktree belongs to REV, so a `mise` started in it
+/// reads no config or `.miserc.toml` from there, not even a tools-only one that loads without
+/// trust.
+fn ceiling_paths(holder: &Path) -> Result<OsString> {
+    let paths = env::MISE_CEILING_PATHS
+        .iter()
+        .map(PathBuf::as_path)
+        .chain([holder]);
+    std::env::join_paths(paths).wrap_err_with(|| {
+        format!(
+            "mise run --at: {} cannot be put in MISE_CEILING_PATHS",
+            display_path(holder)
+        )
+    })
+}
+
 async fn wait(
     mut cmd: tokio::process::Command,
     dir: &Path,
+    ceilings: &OsStr,
     toplevel: &Path,
     sha: &str,
 ) -> std::io::Result<std::process::ExitStatus> {
@@ -159,6 +179,7 @@ async fn wait(
         // `--cd` was applied here already and is not in the child's arguments; the variable
         // would send the child, or a `mise` in the setup command, back to the user's checkout.
         .env_remove("MISE_CD")
+        .env("MISE_CEILING_PATHS", ceilings)
         .env(SOURCE_ENV, toplevel)
         .env(REV_ENV, sha)
         .stdin(Stdio::inherit());
@@ -239,9 +260,17 @@ struct TempWorktree {
 
 impl TempWorktree {
     fn add(repo: &Path, sha: &str) -> Result<Self> {
-        let base = env::MISE_TMP_DIR.join("run-at");
+        // Under the user's own state directory, not the temporary one: other accounts can write
+        // to the temporary directory's parents, and the tools the tasks start (cargo, node, ...)
+        // read config from the directories above the one they run in. Another account that owns
+        // a parent could also swap the holder, and with it the hooks directory, mid-run.
+        let base = crate::dirs::STATE.join("run-at");
         crate::file::create_dir_all(&base)?;
-        let holder = tempfile::Builder::new()
+        let mut builder = tempfile::Builder::new();
+        // Only the user can read the checkout of REV, whatever the umask.
+        #[cfg(unix)]
+        builder.permissions(std::os::unix::fs::PermissionsExt::from_mode(0o700));
+        let holder = builder
             .prefix(&format!("{}-", &sha[..sha.len().min(12)]))
             .tempdir_in(&base)
             .wrap_err_with(|| format!("failed to create a directory in {}", display_path(&base)))?
