@@ -1228,9 +1228,9 @@ impl AquaBackend {
         let pkg = AQUA_REGISTRY.package(&self.id).await?;
         // Skip get_version_tags() API call if the lockfile URL contains the release tag.
         // Keep the tag for selecting Aqua version overrides, which may be scoped by prefix.
-        let locked_tag = existing_platform
-            .as_deref()
-            .and_then(|url| locked_release_tag(&pkg, url, &tv.version));
+        let locked_tag = existing_platform.as_deref().and_then(|url| {
+            locked_release_tag(&pkg, url, &tv.version, &PlatformTarget::from_current())
+        });
         let tag = if let Some(tag) = locked_tag {
             Some(tag)
         } else if existing_platform.is_some() {
@@ -4699,12 +4699,19 @@ fn checksum_file_fallback(provenance_verified: bool, generate: bool) -> Checksum
 
 /// The release tag of a locked URL, when it names the locked version. A listed tag was mapped to
 /// the version when it was listed; a locked URL's tag could name another release, whose override
-/// declares that release's checks, so the recipe is then selected from the version instead.
-fn locked_release_tag(pkg: &AquaPackage, url: &str, version: &str) -> Option<String> {
+/// declares that release's checks, so the recipe is then selected from the version instead. The
+/// tag is mapped for `target` with the libc `get_version_tags` maps listed tags with, so an
+/// override for that libc applies its `version_prefix` here too.
+fn locked_release_tag(
+    pkg: &AquaPackage,
+    url: &str,
+    version: &str,
+    target: &PlatformTarget,
+) -> Option<String> {
     let tag = github_release_tag_from_url(url)?;
-    let current = PlatformTarget::from_current();
-    let (target_os, target_arch) = AquaBackend::to_aqua_platform(&current);
-    versioned_package_from_tag(pkg, &tag, target_os, target_arch, None)
+    let (target_os, target_arch) = AquaBackend::to_aqua_platform(target);
+    let target_libc = AquaBackend::target_variant_libc(target, None);
+    versioned_package_from_tag(pkg, &tag, target_os, target_arch, target_libc.as_deref())
         .ok()
         .flatten()
         .is_some_and(|(tag_version, _)| tag_version == version)
@@ -5879,7 +5886,7 @@ version_overrides:
         assert_eq!(tag, "jq-1.8.1");
         assert_eq!(versioned.asset, "jq-{{.OS}}-{{.Arch}}");
         assert_eq!(
-            locked_release_tag(&pkg, url, "1.8.1").as_deref(),
+            locked_release_tag(&pkg, url, "1.8.1", &PlatformTarget::from_current()).as_deref(),
             Some("jq-1.8.1")
         );
     }
@@ -5908,12 +5915,17 @@ version_overrides:
                 "https://github.com/evil/payload/releases/download/{tag}/buf-Linux-x86_64.tar.gz"
             )
         };
+        let current = PlatformTarget::from_current();
         assert_eq!(
-            locked_release_tag(&pkg, &url("v1.50.0"), "1.50.0").as_deref(),
+            locked_release_tag(&pkg, &url("v1.50.0"), "1.50.0", &current).as_deref(),
             Some("v1.50.0")
         );
         for tag in ["v0", "v0.41.0", "v1.49.0"] {
-            assert_eq!(locked_release_tag(&pkg, &url(tag), "1.50.0"), None, "{tag}");
+            assert_eq!(
+                locked_release_tag(&pkg, &url(tag), "1.50.0", &current),
+                None,
+                "{tag}"
+            );
         }
     }
 
@@ -5932,6 +5944,43 @@ version_overrides:
                 "provenance verified: {provenance_verified}, generate: {generate}"
             );
         }
+    }
+
+    #[test]
+    fn test_locked_release_tag_maps_with_the_target_libc() {
+        // The musl build is released under `musl-<version>`, as the listing maps it on musl
+        let pkg = pkg_from_yaml(
+            r#"
+type: github_release
+repo_owner: acme
+repo_name: tool
+asset: tool-{{.OS}}-{{.Arch}}
+overrides:
+  - goos: linux
+    version_prefix: musl-
+    variants:
+      - key: libc
+        value: musl
+"#,
+        );
+        let target =
+            |key: &str| PlatformTarget::new(crate::platform::Platform::parse(key).unwrap());
+        let url = |tag: &str| {
+            format!("https://github.com/acme/tool/releases/download/{tag}/tool-linux-amd64")
+        };
+        assert_eq!(
+            locked_release_tag(&pkg, &url("musl-1.2.3"), "1.2.3", &target("linux-x64-musl"))
+                .as_deref(),
+            Some("musl-1.2.3")
+        );
+        assert_eq!(
+            locked_release_tag(&pkg, &url("1.2.3"), "1.2.3", &target("linux-x64-musl")),
+            None
+        );
+        assert_eq!(
+            locked_release_tag(&pkg, &url("1.2.3"), "1.2.3", &target("linux-x64-gnu")).as_deref(),
+            Some("1.2.3")
+        );
     }
 
     #[test]
