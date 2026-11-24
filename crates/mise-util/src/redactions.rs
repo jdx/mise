@@ -262,6 +262,17 @@ pub fn strip_credential_query_params(text: &str) -> Cow<'_, str> {
     out
 }
 
+/// A value that is stored (an install record, a cache entry, a release URL)
+/// without the credentials of any URL in it: the userinfo, as
+/// [`strip_url_credentials_in_value`] removes it, and the query parameters
+/// named like a credential ([`strip_credential_query_params`]).
+pub fn strip_credentials_in_value(value: &str) -> Cow<'_, str> {
+    match strip_url_credentials_in_value(value) {
+        Cow::Borrowed(value) => strip_credential_query_params(value),
+        Cow::Owned(stripped) => Cow::Owned(strip_credential_query_params(&stripped).into_owned()),
+    }
+}
+
 /// `text` without the credential parameters of the queries `url_query` finds
 /// in it, or `None` when it finds none.
 fn strip_credential_params_of(url_query: &regex::Regex, text: &str) -> Option<String> {

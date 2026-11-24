@@ -28,7 +28,7 @@ use crate::ui::progress_report::SingleReport;
 use crate::{dirs, env, file, hash};
 use async_trait::async_trait;
 use eyre::{Result, WrapErr, bail};
-use mise_util::redactions::strip_url_credentials_in_value;
+use mise_util::redactions::{strip_credentials_in_value, strip_url_credentials_in_value};
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
@@ -961,8 +961,11 @@ impl HttpBackend {
         file_path: &Path,
         opts: &HttpOptions<'_>,
     ) -> Result<()> {
+        // The URL is rendered, so a credential templated in from the
+        // environment is in it by now, and this file is part of the install
+        // tree (and of an image `mise oci build` makes).
         let metadata = CacheMetadata {
-            url: strip_url_credentials_in_value(url).into_owned(),
+            url: strip_credentials_in_value(url).into_owned(),
             checksum: opts.checksum(),
             size: file_path.metadata()?.len(),
             extracted_at: SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs(),
@@ -2572,6 +2575,47 @@ mod tests {
             assert!(name.len() + 2 < 255, "{name} is {} bytes", name.len());
             assert!(name.starts_with(prefix));
         }
+    }
+
+    #[test]
+    fn metadata_records_the_url_without_its_credentials() {
+        let backend = HttpBackend {
+            ba: Arc::new(BackendArg::new_raw(
+                "http-mytool".to_string(),
+                Some("http:mytool".to_string()),
+                "mytool".to_string(),
+                None,
+                BackendResolution::new(true),
+            )),
+        };
+        let cache_dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(cache_dir.path().join("key")).unwrap();
+        let artifact = cache_dir.path().join("tool.tar.gz");
+        std::fs::write(&artifact, b"archive-contents").unwrap();
+        let opts = ToolVersionOptions::default();
+        let opts = HttpOptions::new(&opts);
+
+        let recorded = |url: &str| {
+            backend
+                .write_metadata(cache_dir.path(), "key", url, &artifact, &opts)
+                .unwrap();
+            let json =
+                file::read_to_string(HttpBackend::metadata_path(cache_dir.path(), "key")).unwrap();
+            serde_json::from_str::<CacheMetadata>(&json).unwrap().url
+        };
+        assert_eq!(
+            recorded("https://ci:s3cret@dl.example.com/tool.tar.gz?token=s3cret"),
+            "https://dl.example.com/tool.tar.gz"
+        );
+        // Only the parameters named like a credential go.
+        assert_eq!(
+            recorded("https://dl.example.com/tool.tar.gz?ref=main&X-Amz-Signature=s3cret"),
+            "https://dl.example.com/tool.tar.gz?ref=main"
+        );
+        assert_eq!(
+            recorded("https://dl.example.com/tool.tar.gz?ref=main"),
+            "https://dl.example.com/tool.tar.gz?ref=main"
+        );
     }
 
     #[test]
