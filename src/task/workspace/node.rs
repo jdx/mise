@@ -94,17 +94,11 @@ impl WorkspaceProvider for NodeWorkspaceProvider {
             WorkspaceDiscoveryOptions::confined_to_root(),
         )
         .map_err(|error| {
-            // aube reads these at the root itself, and its message quotes
-            // what it could not parse
-            let linked = aube::embed::host()
-                .workspace_yaml
-                .into_iter()
-                .chain([PNPM_WORKSPACE, PACKAGE_JSON])
-                .map(|name| workspace_root.join(name))
-                .find(|path| !diagnostic::may_quote(path));
-            let details = match linked {
+            let details = error.to_string();
+            let details = match linked_root_file_to_hide(workspace_root, &canonical_root, &details)
+            {
                 Some(path) => format!("{}: {}", path.display(), diagnostic::LINKED_DETAILS_HIDDEN),
-                None => error.to_string(),
+                None => details,
             };
             eyre::eyre!(
                 "failed to discover Node workspace packages under {}: {details}",
@@ -636,6 +630,38 @@ fn read_turbo_json(
             Ok(None)
         }
     }
+}
+
+/// The root file whose name must stand in for aube's discovery error, when that error may
+/// quote a file reached through a link.
+///
+/// aube reads the workspace files at the root itself, under `canonical_root`, and its message
+/// starts with the path of the file it could not read or parse, then quotes it. The details are
+/// hidden when that path is a linked file, or when the message names none of the root files and
+/// one of them is linked. A message about the project's own file is kept whole, with its line and
+/// column, even when another root file is linked.
+fn linked_root_file_to_hide(
+    workspace_root: &Path,
+    canonical_root: &Path,
+    message: &str,
+) -> Option<PathBuf> {
+    let files = aube::embed::host()
+        .workspace_yaml
+        .into_iter()
+        .chain([PNPM_WORKSPACE, PACKAGE_JSON])
+        .map(|name| {
+            let named = message.contains(&canonical_root.join(name).display().to_string());
+            (workspace_root.join(name), named)
+        })
+        .collect::<Vec<_>>();
+    let linked = |path: &PathBuf| !diagnostic::may_quote(path);
+    if let Some((path, _)) = files.iter().find(|(path, named)| *named && linked(path)) {
+        return Some(path.clone());
+    }
+    if files.iter().any(|(_, named)| *named) {
+        return None;
+    }
+    files.into_iter().map(|(path, _)| path).find(linked)
 }
 
 fn workspace_definition(
@@ -1778,6 +1804,13 @@ snapshots:
         fs::create_dir_all(&root).unwrap();
         fs::copy(home.join("key"), root.join(PNPM_WORKSPACE)).unwrap();
         assert!(report(&root).contains("s3cr3t"));
+
+        // still quoted, under its own name, when another root file is linked
+        symlink(home.join("token.json"), root.join(PACKAGE_JSON)).unwrap();
+        let own_workspace = report(&root);
+        assert!(own_workspace.contains("s3cr3t"), "{own_workspace}");
+        assert!(!own_workspace.contains("details hidden"), "{own_workspace}");
+        fs::remove_file(root.join(PACKAGE_JSON)).unwrap();
 
         fs::remove_file(root.join(PNPM_WORKSPACE)).unwrap();
         symlink(home.join("key"), root.join(PNPM_WORKSPACE)).unwrap();
