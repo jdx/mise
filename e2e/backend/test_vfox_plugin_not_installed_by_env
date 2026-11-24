@@ -64,3 +64,24 @@ mise install
 assert_succeed "test -L '$PLUGIN_DIR' -o -d '$PLUGIN_DIR'"
 assert_contains "mise ls lazy:tool" "2.0.0"
 assert_contains "mise env -s bash" "LAZY_TOOL_VERSION=2.0.0"
+
+# A plugin that only a backend alias names, not [plugins], is restored by
+# `mise install` even though the tool's install directory is still there.
+git -C "$PLUGIN_SRC" init -q
+git -C "$PLUGIN_SRC" add -A
+git -C "$PLUGIN_SRC" -c user.name=t -c user.email=t@t commit -q -m plugin
+export GIT_CONFIG_COUNT=1
+export GIT_CONFIG_KEY_0="url.$PLUGIN_SRC.insteadOf"
+export GIT_CONFIG_VALUE_0="https://github.com/mise-test/lazy-backend.git"
+rm -rf "$PLUGIN_DIR"
+cat >mise.toml <<'TOML'
+[tool_alias]
+lazy = "vfox:mise-test/lazy-backend"
+
+[tools]
+"lazy:tool" = "2.0.0"
+TOML
+assert_contains "mise hook-env -s bash 2>&1" "[lazy] plugin not installed"
+mise install
+assert_succeed "test -d '$PLUGIN_DIR'"
+assert_contains "mise env -s bash" "LAZY_TOOL_VERSION=2.0.0"

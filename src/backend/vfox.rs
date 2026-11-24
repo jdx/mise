@@ -293,6 +293,15 @@ impl Backend for VfoxBackend {
         if !self.is_version_installed(config, tv, check_symlink) {
             return Ok(false);
         }
+        // An install whose plugin is gone has no bin paths or environment, and
+        // installing the version again is what installs the plugin.
+        if !self.plugin.is_installed() {
+            debug!(
+                "{} install is not satisfied: plugin not installed",
+                tv.style()
+            );
+            return Ok(false);
+        }
         if self.is_backend_plugin() || !self.plugin_has_hook("mise_install_satisfied") {
             return Ok(true);
         }
