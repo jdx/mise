@@ -2998,7 +2998,7 @@ pub(crate) fn checks_parents_as_root() -> bool {
 /// The decision behind [`untrusted_parent_as_root`], with whether mise runs
 /// as root passed in.
 #[cfg(unix)]
-fn untrusted_parent_for(path: &Path, as_root: bool) -> Result<Option<String>> {
+pub(crate) fn untrusted_parent_for(path: &Path, as_root: bool) -> Result<Option<String>> {
     if !as_root {
         return Ok(None);
     }
@@ -3006,7 +3006,7 @@ fn untrusted_parent_for(path: &Path, as_root: bool) -> Result<Option<String>> {
 }
 
 #[cfg(not(unix))]
-fn untrusted_parent_for(_path: &Path, _as_root: bool) -> Result<Option<String>> {
+pub(crate) fn untrusted_parent_for(_path: &Path, _as_root: bool) -> Result<Option<String>> {
     Ok(None)
 }
 

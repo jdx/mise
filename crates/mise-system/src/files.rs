@@ -6112,9 +6112,7 @@ fn plan_apply_after<'a>(
         }
         // as root, a link another user made in a parent directory would send
         // the write wherever that user likes, so it is never followed
-        if let Some(reason) = crate::managed_files::untrusted_parent_as_root(&req.target)
-            .unwrap_or_else(|err| Some(err.to_string()))
-        {
+        if let Some(reason) = untrusted_parents(req).unwrap_or_else(|err| Some(err.to_string())) {
             broken.push(format!("  [dotfiles].\"{}\": {reason}", req.target_raw));
             continue;
         }
@@ -6285,14 +6283,42 @@ fn plan_apply_after<'a>(
 fn refuse_untrusted_parents(req: &FileRequest) -> Result<()> {
     use crate::managed_files::refuse_untrusted_parent_as_root;
     refuse_untrusted_parent_as_root(&req.target)?;
-    if crate::managed_files::checks_parents_as_root()
-        && (req.mode == FileMode::SymlinkEach || req.mode == FileMode::Copy && req.source.is_dir())
-    {
+    if crate::managed_files::checks_parents_as_root() && walks_source_dir(req) {
         for (_, target) in walk_source_files(req)? {
             refuse_untrusted_parent_as_root(&target)?;
         }
     }
     Ok(())
+}
+
+/// Why root refuses `req` before anything is written: the plan asks what
+/// [`refuse_untrusted_parents`] asks at the moment of the change, for the
+/// target and every file a walked directory places, so a dry run fails where
+/// apply would.
+fn untrusted_parents(req: &FileRequest) -> Result<Option<String>> {
+    untrusted_parents_for(req, crate::managed_files::checks_parents_as_root())
+}
+
+/// [`untrusted_parents`] with whether mise runs as root passed in.
+fn untrusted_parents_for(req: &FileRequest, as_root: bool) -> Result<Option<String>> {
+    use crate::managed_files::untrusted_parent_for;
+    if let Some(reason) = untrusted_parent_for(&req.target, as_root)? {
+        return Ok(Some(reason));
+    }
+    if as_root && walks_source_dir(req) {
+        for (_, target) in walk_source_files(req)? {
+            if let Some(reason) = untrusted_parent_for(&target, as_root)? {
+                return Ok(Some(format!("{}: {reason}", target.display_user())));
+            }
+        }
+    }
+    Ok(None)
+}
+
+/// Whether `req` places each file of a source directory under its target,
+/// so that a link beneath the target is a parent of what it writes.
+fn walks_source_dir(req: &FileRequest) -> bool {
+    (req.mode == FileMode::SymlinkEach || req.mode == FileMode::Copy) && req.source.is_dir()
 }
 
 fn recheck_removal(req: &FileRequest, rendered: Option<&str>, force: bool) -> Result<()> {
@@ -10969,6 +10995,36 @@ source = "oldrc""#,
                 "{}",
                 mode.name()
             );
+        }
+        Ok(())
+    }
+
+    /// As root, the plan refuses a directory entry when a file it would place
+    /// lies beneath a link, as apply does, not only when the target itself
+    /// crosses one.
+    #[cfg(unix)]
+    #[test]
+    fn the_plan_checks_the_files_a_directory_entry_places_as_root() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("source");
+        file::create_dir_all(source.join("nested"))?;
+        file::write(source.join("nested").join("file"), "x")?;
+        let target = dir.path().join("target");
+        let elsewhere = dir.path().join("elsewhere");
+        file::create_dir_all(&target)?;
+        file::create_dir_all(&elsewhere)?;
+        std::os::unix::fs::symlink(&elsewhere, target.join("nested"))?;
+        // the target alone crosses no link
+        assert_eq!(
+            crate::managed_files::untrusted_parent_for(&target, true)?,
+            None
+        );
+        for mode in [FileMode::Copy, FileMode::SymlinkEach] {
+            let req = link_req(&source, &target, mode);
+            assert_eq!(untrusted_parents_for(&req, false)?, None, "{}", mode.name());
+            let reason = untrusted_parents_for(&req, true)?
+                .unwrap_or_else(|| panic!("{}: a placed file crosses a link", mode.name()));
+            assert!(reason.contains("nested"), "{}: {reason}", mode.name());
         }
         Ok(())
     }
