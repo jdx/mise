@@ -807,6 +807,16 @@ fn is_strong_entity_tag(value: &str) -> bool {
     !value.starts_with("W/") && is_entity_tag(value)
 }
 
+/// Whether `headers` hold an ETag that is not weak but is no entity-tag either.
+/// It cannot be compared with the tag a partial download was saved with, yet
+/// it may still name another file, so the bytes are not appended to the old ones.
+fn has_unusable_entity_tag(headers: &HeaderMap) -> bool {
+    headers
+        .get(ETAG)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| !value.is_empty() && !value.starts_with("W/") && !is_entity_tag(value))
+}
+
 fn is_strong_last_modified(value: &str, response_date: &str) -> bool {
     let Ok(last_modified) = chrono::DateTime::parse_from_rfc2822(value) else {
         return false;
@@ -2179,6 +2189,7 @@ impl Client {
                         || validator
                             .as_ref()
                             .is_some_and(|value| !value.matches(&state.validator))
+                        || has_unusable_entity_tag(resp.headers())
                     {
                         partial.clear()?;
                         if restarted_without_resume {

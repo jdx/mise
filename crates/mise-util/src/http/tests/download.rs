@@ -438,6 +438,36 @@ async fn test_download_restarts_when_validator_changes() {
 }
 
 #[tokio::test(flavor = "current_thread")]
+async fn test_download_restarts_when_partial_content_has_an_unquoted_etag() {
+    let _guard = set_test_http_retries(0);
+    let (port, count, requests) = spawn_recording_server(vec![
+        truncated_download_response(),
+        unquoted_validator_download_response(),
+        full_download_response(),
+    ])
+    .await;
+    let url = format!("http://127.0.0.1:{port}/artifact");
+    let dir = tempfile::tempdir().unwrap();
+    let destination = dir.path().join("artifact");
+    let client = Client::new(Duration::from_secs(2), ClientKind::Http).unwrap();
+
+    let _err = client
+        .download_file(&url, &destination, None)
+        .await
+        .unwrap_err();
+    client
+        .download_file(&url, &destination, None)
+        .await
+        .unwrap();
+
+    assert_eq!(std::fs::read(&destination).unwrap(), b"helloworld");
+    assert_eq!(count.load(Ordering::SeqCst), 3);
+    let requests = requests.lock().unwrap();
+    assert!(requests[1].to_ascii_lowercase().contains("range: bytes=5-"));
+    assert!(!requests[2].to_ascii_lowercase().contains("range:"));
+}
+
+#[tokio::test(flavor = "current_thread")]
 async fn test_download_discards_partial_when_request_headers_change() {
     let _guard = set_test_http_retries(0);
     let (port, count, requests) = spawn_recording_server(vec![
