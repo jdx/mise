@@ -241,6 +241,10 @@ impl ToolVersion {
         // installed: resolve it without remote lookups, and refuse it unless
         // that finds a version on disk.
         if let Err(refused) = request.ensure_safe_url_tool_key() {
+            if Self::sub_base_is_alias_for_latest(config, &request).await {
+                // An offline resolve still asks the host for `latest` here.
+                return Err(refused);
+            }
             let offline = ResolveOptions {
                 offline: true,
                 ..opts.clone()
@@ -257,6 +261,31 @@ impl ToolVersion {
             };
         }
         Self::resolve_fetchable(config, request, opts).await
+    }
+
+    /// Whether `request` is a `sub-N:` request, or an alias for one, whose base
+    /// is an alias for `latest`. [`Self::resolve_sub`] resolves that base
+    /// against the remote versions even offline, as `mise prune` relies on.
+    async fn sub_base_is_alias_for_latest(config: &Arc<Config>, request: &ToolRequest) -> bool {
+        let Ok(backend) = request.backend() else {
+            return false;
+        };
+        let base = match request {
+            ToolRequest::Sub { orig_version, .. } => orig_version.clone(),
+            ToolRequest::Version { version, .. } => {
+                let aliased = config.resolve_alias(&backend, version).await;
+                match aliased.as_deref().ok().and_then(|v| v.split_once(':')) {
+                    Some((part, base)) if part.starts_with("sub-") => base.to_string(),
+                    _ => return false,
+                }
+            }
+            _ => return false,
+        };
+        base != "latest"
+            && config
+                .resolve_alias(&backend, &base)
+                .await
+                .is_ok_and(|v| v == "latest")
     }
 
     /// [`Self::resolve`] for a request whose tool key safe mode lets mise fetch.
@@ -1434,8 +1463,7 @@ impl ToolVersion {
         let request = request.with_registry_version(v);
         let backend = request.backend()?;
         let opts = &Self::without_covered_refresh(config, &request, &backend, opts).await;
-        // An alias can stand for `latest` too, and resolving that asks the host.
-        if opts.offline && (v == "latest" || config.resolve_alias(&backend, v).await? == "latest") {
+        if v == "latest" && opts.offline {
             let pathname = request.version().replace([':', '/'], "-");
             let path = backend.ba().installs_path().join(&pathname);
             let path = env::find_in_shared_installs(path, &backend.ba().tool_dir_name(), &pathname);
