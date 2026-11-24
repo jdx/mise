@@ -8033,8 +8033,21 @@ fn copy_failure<'a>(source: &'a Path, target: &'a Path) -> impl Fn() -> String +
 /// file (a directory behind a link, say) fails before the target is touched.
 /// An open that fails (a read-only target file or filesystem) changes
 /// nothing and records nothing.
+///
+/// The file is replaced by a new one instead when its current mode lets
+/// someone read it whom the new mode does not ([`mode_drops_readers`]): a
+/// reader who opened the old file keeps its handle after a chmod, and would
+/// read the new content through it.
 fn overwrite_recorded(source: &Path, target: &Path, written: &mut Vec<PathBuf>) -> Result<()> {
     let mut from = CopySource::open(source, target)?;
+    if let Ok(current) = std::fs::symlink_metadata(target)
+        && mode_drops_readers(&current.permissions(), &from.source_mode())
+    {
+        file::remove_file(target)?;
+        written.push(target.to_path_buf());
+        let to = create_private(target).wrap_err_with(copy_failure(source, target))?;
+        return from.copy_into(to, from.source_mode());
+    }
     let to = std::fs::OpenOptions::new()
         .write(true)
         .truncate(true)
@@ -8042,6 +8055,23 @@ fn overwrite_recorded(source: &Path, target: &Path, written: &mut Vec<PathBuf>) 
         .wrap_err_with(copy_failure(source, target))?;
     written.push(target.to_path_buf());
     from.copy_into(to, from.source_mode())
+}
+
+/// Whether a file at mode `current` can be read by a group or other user
+/// that mode `new` would shut out. Only such a change makes writing new
+/// content into the existing file a leak: whoever can open it now can open
+/// it under `new` too. Windows has no such bits, so nothing is shut out.
+fn mode_drops_readers(current: &std::fs::Permissions, new: &std::fs::Permissions) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        current.mode() & 0o044 & !new.mode() != 0
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (current, new);
+        false
+    }
 }
 
 /// Run `write` against a `target` that does not exist yet, recording the
@@ -10940,6 +10970,67 @@ source = "oldrc""#,
                 mode.name()
             );
         }
+        Ok(())
+    }
+
+    /// Which mode changes shut a reader out, and so need a new file.
+    #[cfg(unix)]
+    #[test]
+    fn mode_drops_readers_only_when_a_reader_loses_access() {
+        use std::os::unix::fs::PermissionsExt;
+        for (current, new, drops) in [
+            (0o644, 0o600, true),
+            (0o640, 0o600, true),
+            (0o604, 0o640, true),
+            (0o644, 0o644, false),
+            (0o600, 0o644, false),
+            (0o600, 0o600, false),
+            (0o622, 0o600, false),
+            (0o640, 0o440, false),
+        ] {
+            assert_eq!(
+                mode_drops_readers(
+                    &std::fs::Permissions::from_mode(current),
+                    &std::fs::Permissions::from_mode(new)
+                ),
+                drops,
+                "{current:o} -> {new:o}"
+            );
+        }
+    }
+
+    /// Overwriting a copy whose new mode shuts out readers of the old one
+    /// writes a new file: a handle opened on the old file before the change
+    /// still reads only the old content. When nobody loses access the file
+    /// is overwritten in place.
+    #[cfg(unix)]
+    #[test]
+    fn an_overwrite_that_narrows_the_mode_does_not_reach_old_readers() -> Result<()> {
+        use std::io::Read as _;
+        use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("source");
+        let target = dir.path().join("target");
+        file::write(&source, "secret")?;
+        std::fs::set_permissions(&source, std::fs::Permissions::from_mode(0o600))?;
+
+        file::write(&target, "old")?;
+        std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o644))?;
+        let mut reader = std::fs::File::open(&target)?;
+        let mut written = vec![];
+        overwrite_recorded(&source, &target, &mut written)?;
+        let mut seen = String::new();
+        reader.read_to_string(&mut seen)?;
+        assert_eq!(seen, "old");
+        assert_eq!(std::fs::read_to_string(&target)?, "secret");
+        assert_eq!(permission_bits(&std::fs::metadata(&target)?), 0o600);
+        assert_eq!(written, vec![target.clone()]);
+
+        let inode = std::fs::metadata(&target)?.ino();
+        file::write(&source, "secret 2")?;
+        overwrite_recorded(&source, &target, &mut vec![])?;
+        assert_eq!(std::fs::metadata(&target)?.ino(), inode);
+        assert_eq!(std::fs::read_to_string(&target)?, "secret 2");
         Ok(())
     }
 
