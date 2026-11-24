@@ -6150,10 +6150,35 @@ fn untrusted_lockfile_keeps_a_registry_only_aube_graph() {
         "        version: 1.0.0\n",
         "        version: 1.0.0\n        path: ../cli\n",
     );
+    // The other sections and fields aube writes for a registry graph.
+    let snapshot_metadata = with_package("")
+        .replace(
+            "  autoInstallPeers: true\n",
+            "  autoInstallPeers: true\n  excludeLinksFromLockfile: false\n  lockfileIncludeTarballUrl: false\n",
+        )
+        .replace(
+            "snapshots:\n  cli@1.0.0:\n    dependencies:\n      string_decoder: 1.0.0\n",
+            "time:\n  cli@1.0.0: '2024-01-01T00:00:00.000Z'\nsnapshots:\n  cli@1.0.0:\n    dependencies:\n      string_decoder: 1.0.0\n    optionalDependencies:\n      '@scope/x': 1.0.0\n    transitivePeerDependencies: ['@scope/x']\n",
+        )
+        .replace(
+            "  string_decoder@1.0.0: {}\n",
+            "  string_decoder@1.0.0:\n    optional: true\n",
+        );
+    for added in [
+        "excludeLinksFromLockfile",
+        "lockfileIncludeTarballUrl",
+        "time:",
+        "optionalDependencies",
+        "transitivePeerDependencies",
+        "optional: true",
+    ] {
+        assert!(snapshot_metadata.contains(added), "{added}");
+    }
     let plain = with_package("");
     for (graph, kept) in [
         (plain.as_str(), true),
         (metadata.as_str(), true),
+        (snapshot_metadata.as_str(), true),
         (bundled_true.as_str(), true),
         (bundled_absolute.as_str(), false),
         (bundled_parent.as_str(), false),
