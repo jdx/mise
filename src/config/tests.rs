@@ -100,15 +100,26 @@ fn test_task_config_rust_cache_is_a_default() {
 #[cfg(unix)]
 #[test]
 fn test_path_is_spelled_in_dir_does_not_follow_links_into_it() -> Result<()> {
-    use std::os::unix::fs::symlink;
     let tmp = TempDir::new()?;
-    let real_home = tmp.path().join("real-home");
-    let dotfiles = tmp.path().join("dotfiles");
+    assert_path_spellings(tmp.path())?;
+    // A link above everything, as macOS has in `/var` -> `/private/var` for every temp
+    // directory: paths written below it still name the same files.
+    let real_root = tmp.path().join("real-root");
+    fs::create_dir_all(&real_root)?;
+    std::os::unix::fs::symlink(&real_root, tmp.path().join("linked-root"))?;
+    assert_path_spellings(&tmp.path().join("linked-root"))
+}
+
+#[cfg(unix)]
+fn assert_path_spellings(root: &Path) -> Result<()> {
+    use std::os::unix::fs::symlink;
+    let real_home = root.join("real-home");
+    let dotfiles = root.join("dotfiles");
     fs::create_dir_all(real_home.join(".config"))?;
     fs::create_dir_all(dotfiles.join("mise/tasks/setup"))?;
     File::create(dotfiles.join("mise/tasks/build"))?;
     symlink(dotfiles.join("mise"), real_home.join(".config/mise"))?;
-    let home = tmp.path().join("home");
+    let home = root.join("home");
     symlink(&real_home, &home)?;
     let tasks = home.join(".config/mise/tasks");
 
@@ -125,7 +136,7 @@ fn test_path_is_spelled_in_dir_does_not_follow_links_into_it() -> Result<()> {
         );
     }
 
-    let project = tmp.path().join("project");
+    let project = root.join("project");
     fs::create_dir_all(project.join("mise-tasks"))?;
     fs::create_dir_all(project.join(".mise"))?;
     symlink(tasks.join("build"), project.join("mise-tasks/bootstrap"))?;
