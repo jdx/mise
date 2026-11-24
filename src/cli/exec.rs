@@ -440,8 +440,9 @@ impl Exec {
         }
 
         // Ensure MISE_ENV is set in the spawned shell if it was specified via -E flag
-        if !env::MISE_ENV.is_empty() {
-            env.insert("MISE_ENV".to_string(), env::MISE_ENV.join(","));
+        let child_mise_env = env::mise_env_for_child();
+        for (key, value) in &child_mise_env {
+            env.insert(key.to_string(), value.clone());
         }
 
         // Ensure cache key is propagated to subprocesses for env caching
@@ -457,12 +458,11 @@ impl Exec {
         // would outrank the inner toolset's resolved tool. See discussion #9754.
         // Computed after all env modifications so the diff fully describes what
         // mise added (matches task_executor.rs).
-        let removed_mise_env = if !env::MISE_ENV.is_empty() {
-            // Keep explicit -E profiles active if the child shell sources `mise activate`.
-            env.remove("MISE_ENV")
-        } else {
-            None
-        };
+        // Keep the environments active if the child shell sources `mise activate`.
+        let removed_mise_env: Vec<_> = child_mise_env
+            .iter()
+            .filter_map(|(key, _)| env.remove_entry(*key))
+            .collect();
         env.remove("__MISE_DIFF");
         // Not mise-managed env: a hook-env in the child would revert it from the diff and the
         // child's descendants would apply the running wrapper again.
@@ -473,9 +473,7 @@ impl Exec {
         }
         final_env.extend(env.clone());
         let serialized = EnvDiff::from_final_env(&env::PRISTINE_ENV, &final_env).serialize();
-        if let Some(mise_env) = removed_mise_env {
-            env.insert("MISE_ENV".to_string(), mise_env);
-        }
+        env.extend(removed_mise_env);
         if let Some(marker) = active_wrappers_marker {
             env.insert(crate::shims::ACTIVE_WRAPPERS_ENV.to_string(), marker);
         }

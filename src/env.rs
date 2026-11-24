@@ -348,6 +348,9 @@ pub fn explicit_environment(args: &[String]) -> Option<Vec<String>> {
     if !from_args.is_empty() {
         return Some(from_args);
     }
+    if let Some(selected) = selection_from_parent() {
+        return selected;
+    }
     var("MISE_ENV")
         .ok()
         .or_else(|| var("MISE_PROFILE").ok())
@@ -358,6 +361,52 @@ pub fn explicit_environment(args: &[String]) -> Option<Vec<String>> {
                 .map(String::from)
                 .collect()
         })
+}
+
+/// The `MISE_ENV` value mise gave a command it started, set next to it.
+const MISE_ENV_GIVEN: &str = "__MISE_ENV_GIVEN";
+/// The environments of that `MISE_ENV` that the user selected, empty when the
+/// `.miserc.toml` files chose them all.
+const MISE_ENV_SELECTED: &str = "__MISE_ENV_SELECTED";
+
+/// The variables that give a command mise starts the active environments.
+///
+/// `MISE_ENV` lists them all, expanded, for the command to read. A mise command
+/// among its descendants must not take that list as the user's selection: the
+/// environments and sets of a project `.miserc.toml` would then load the global
+/// config files of those environments there. So mise also records the list it
+/// gave and which of it the user selected; while `MISE_ENV` still holds that
+/// list, the selection is what counts, and a `MISE_ENV` set to anything else is
+/// a new selection.
+pub fn mise_env_for_child() -> Vec<(&'static str, String)> {
+    if MISE_ENV.is_empty() {
+        return vec![];
+    }
+    let given = MISE_ENV.join(",");
+    let selected = explicit_environment(&ARGS.read().unwrap())
+        .unwrap_or_default()
+        .join(",");
+    vec![
+        ("MISE_ENV", given.clone()),
+        (MISE_ENV_GIVEN, given),
+        (MISE_ENV_SELECTED, selected),
+    ]
+}
+
+/// The selection a parent mise recorded, while `MISE_ENV` is still the list
+/// it gave: `Some(None)` when the user selected nothing there.
+fn selection_from_parent() -> Option<Option<Vec<String>>> {
+    let given = var(MISE_ENV_GIVEN).ok()?;
+    if var("MISE_ENV").ok()? != given {
+        return None;
+    }
+    let selected: Vec<String> = var(MISE_ENV_SELECTED)
+        .unwrap_or_default()
+        .split(',')
+        .filter(|s| !s.is_empty())
+        .map(String::from)
+        .collect();
+    Some((!selected.is_empty()).then_some(selected))
 }
 
 fn linux_distro() -> Option<String> {
