@@ -475,6 +475,9 @@ elif [[ ${MISE_E2E_INSIDE_DOCKER:-0} == 1 ]]; then
   # refuses a Homebrew prefix below a directory another user owns, which is
   # every prefix a test makes under them. Root owns them on a real system, so
   # give them to root for the test and hand them back for the host's cleanup.
+  # When root cannot change their owner (a user-namespace-remapped daemon, or no
+  # CAP_CHOWN), the test runs with the owners as they are; only tests that need
+  # a root-owned prefix then fail.
   if [[ $(id -u) == 0 ]]; then
     mount_dirs=(/tmp /home /root)
     mount_owners=()
@@ -484,11 +487,13 @@ elif [[ ${MISE_E2E_INSIDE_DOCKER:-0} == 1 ]]; then
     restore_mount_owners() {
       local i
       for i in "${!mount_dirs[@]}"; do
-        chown "${mount_owners[$i]}" "${mount_dirs[$i]}" || true
+        chown "${mount_owners[$i]}" "${mount_dirs[$i]}" 2>/dev/null || true
       done
     }
     trap restore_mount_owners EXIT
-    chown 0:0 "${mount_dirs[@]}"
+    if ! chown 0:0 "${mount_dirs[@]}" 2>/dev/null; then
+      echo "note: cannot give ${mount_dirs[*]} to root; running with their owners as they are" >&2
+    fi
   fi
   run_test
 else
