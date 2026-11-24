@@ -90,15 +90,17 @@ pub(crate) fn render(tmpl: &str, ctx: &Context) -> Result<String> {
             let tokens = lex(&tag)?;
             let ast = parse_tokens(&tokens)?;
             result += &evaluator.eval(&ast)?;
-            if result.len() > MAX_RENDERED_LEN {
-                bail!("template renders to more than {MAX_RENDERED_LEN} bytes");
-            }
             tag.clear();
             i += 1;
         } else if in_tag {
             tag.push(c);
         } else {
             result.push(c);
+        }
+        // Checked after every append, so literal text counts toward the limit as a tag's
+        // output does
+        if result.len() > MAX_RENDERED_LEN {
+            bail!("template renders to more than {MAX_RENDERED_LEN} bytes");
         }
         i += 1;
     }

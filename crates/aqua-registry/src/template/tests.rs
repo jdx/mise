@@ -356,4 +356,17 @@ fn test_render_limits_output_size() {
         render(&"{{.V}}".repeat(64), &ctx).unwrap().len(),
         MAX_RENDERED_LEN
     );
+
+    // Literal text counts toward the limit: after a tag, and in a template with no tag
+    let ctx = hashmap(vec![("V", "x")]);
+    let suffix = format!("{{{{.V}}}}{}", "l".repeat(MAX_RENDERED_LEN));
+    let err = render(&suffix, &ctx).unwrap_err();
+    assert_eq!(err.to_string(), "template renders to more than 65536 bytes");
+    let suffix = format!("{{{{.V}}}}{}", "l".repeat(MAX_RENDERED_LEN - 1));
+    assert_eq!(render(&suffix, &ctx).unwrap().len(), MAX_RENDERED_LEN);
+    let literal = "l".repeat(MAX_RENDERED_LEN + 1);
+    let err = render(&literal, &ctx).unwrap_err();
+    assert_eq!(err.to_string(), "template renders to more than 65536 bytes");
+    let literal = "l".repeat(MAX_RENDERED_LEN);
+    assert_eq!(render(&literal, &ctx).unwrap().len(), MAX_RENDERED_LEN);
 }
