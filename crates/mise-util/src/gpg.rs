@@ -179,7 +179,21 @@ fn primary_may_sign(key: &SignedPublicKey, fingerprint: &Fingerprint, key_id: &K
             .filter(|sig| sig.typ() != Some(SignatureType::CertRevocation))
     });
     let direct = key.details.direct_signatures.iter().filter(own);
-    may_sign(direct.chain(user_ids))
+    primary_flags_allow_signing(direct, user_ids)
+}
+
+/// Whether a primary key may sign data, given its own direct-key signatures and the self-signature
+/// each user ID speaks through. As for `gpg --verify`, the newest direct-key signature decides
+/// when it has key flags, and otherwise the newest user ID self-signature that has them.
+fn primary_flags_allow_signing<'a>(
+    direct: impl IntoIterator<Item = &'a Signature>,
+    user_ids: impl IntoIterator<Item = &'a Signature>,
+) -> bool {
+    let direct = direct.into_iter().max_by_key(|sig| sig.created());
+    match direct.and_then(key_flags) {
+        Some(flags) => flags.sign(),
+        None => may_sign(user_ids),
+    }
 }
 
 /// The subkeys of `key` that may sign data, rather than only encrypt or authenticate.
@@ -191,13 +205,12 @@ fn signing_subkeys(key: &SignedPublicKey) -> impl Iterator<Item = &SignedPublicS
 
 /// Whether a key may sign data according to its self-signatures. What a key is for is not part of
 /// the key but a key flags subpacket of its self-signatures, which `Signature::verify` does not
-/// look at. The newest one decides, as it does for `gpg --verify`, and the primary user ID if two
-/// are equally new. A key without any key flags predates them and is limited only by its
-/// algorithm.
+/// look at. The newest one with key flags decides, as it does for `gpg --verify`. A key without
+/// any key flags predates them and is limited only by its algorithm.
 fn may_sign<'a>(self_signatures: impl IntoIterator<Item = &'a Signature>) -> bool {
     self_signatures
         .into_iter()
-        .filter_map(|sig| Some(((sig.created()?, sig.is_primary()), key_flags(sig)?)))
+        .filter_map(|sig| Some((sig.created()?, key_flags(sig)?)))
         .max_by_key(|(newest, _)| *newest)
         .is_none_or(|(_, flags)| flags.sign())
 }
@@ -475,6 +488,55 @@ mod tests {
             count_reads_of_bogus_signatures(&unhashed, 100),
             key_ids.len()
         );
+    }
+
+    /// A bogus v4 self-signature of type `typ` made at `created`, with a key flags subpacket of
+    /// `flags` unless that is `None`.
+    fn self_signature(typ: u8, created: u32, flags: Option<u8>) -> Signature {
+        let mut hashed = vec![5, 2];
+        hashed.extend_from_slice(&created.to_be_bytes());
+        if let Some(flags) = flags {
+            hashed.extend_from_slice(&[2, 27, flags]);
+        }
+        let mut body = vec![4, typ, 1, 8, 0, hashed.len() as u8];
+        body.extend_from_slice(&hashed);
+        body.extend_from_slice(&[0, 0, 0, 0, 0, 1, 1]);
+        let mut packet = vec![0xc2, body.len() as u8];
+        packet.extend_from_slice(&body);
+        parse_signatures(&packet).unwrap().remove(0).signature
+    }
+
+    #[test]
+    fn a_direct_key_signature_decides_what_the_primary_key_may_do() {
+        const DIRECT: u8 = 0x1f;
+        const POSITIVE: u8 = 0x13;
+        const CERTIFY: u8 = 0x01;
+        const SIGN: u8 = 0x02;
+        let may_sign = |direct: &[Signature], user_ids: &[Signature]| {
+            primary_flags_allow_signing(direct, user_ids)
+        };
+        let certify_only = self_signature(DIRECT, 100, Some(CERTIFY));
+        let signer = self_signature(DIRECT, 100, Some(CERTIFY | SIGN));
+        let no_flags = self_signature(DIRECT, 300, None);
+        let older_uid = |flags| self_signature(POSITIVE, 50, Some(flags));
+        let newer_uid = |flags| self_signature(POSITIVE, 200, Some(flags));
+
+        // the direct-key signature's flags win over any user ID, however new
+        assert!(!may_sign(&[certify_only.clone()], &[newer_uid(SIGN)]));
+        assert!(may_sign(&[signer.clone()], &[newer_uid(CERTIFY)]));
+        // only the newest direct-key signature speaks, and one without flags leaves it to the
+        // user IDs
+        assert!(may_sign(
+            &[certify_only.clone(), no_flags.clone()],
+            &[newer_uid(SIGN)]
+        ));
+        assert!(!may_sign(&[no_flags.clone()], &[newer_uid(CERTIFY)]));
+        // among user IDs the newest one with key flags decides
+        assert!(may_sign(&[], &[older_uid(CERTIFY), newer_uid(SIGN)]));
+        assert!(!may_sign(&[], &[older_uid(SIGN), newer_uid(CERTIFY)]));
+        // and with no key flags anywhere only the algorithm limits the key
+        assert!(may_sign(&[no_flags], &[]));
+        assert!(!may_sign(&[certify_only], &[]));
     }
 
     #[test]
