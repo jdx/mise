@@ -85,6 +85,59 @@ fn git_requirement(name: &str, version: &str) -> String {
     }
 }
 
+/// A git source's URL as an install uses it and as a lockfile stores it, when
+/// the two differ: the stored one has no userinfo (`user:token@`). Both are
+/// spelled the way aube writes the URL into a dependency graph, without `git+`
+/// and `#ref`. A credential in the query string stays: the lockfile refuses to
+/// record such a graph.
+fn git_url_with_and_without_credentials(name: &str) -> Option<(String, String)> {
+    if !is_git_spec(name) {
+        return None;
+    }
+    let url = name.split('#').next().unwrap_or(name).trim_end_matches('/');
+    let url = url.strip_prefix("git+").unwrap_or(url);
+    let stored = mise_util::redactions::strip_url_credentials_in_arg(url);
+    (stored != url).then(|| (url.to_string(), stored.into_owned()))
+}
+
+/// A dependency graph with every key and string passed through `f`.
+fn aube_graph_map(graph: &toml::Table, f: &dyn Fn(&str) -> String) -> toml::Table {
+    fn map(value: &toml::Value, f: &dyn Fn(&str) -> String) -> toml::Value {
+        match value {
+            toml::Value::String(s) => toml::Value::String(f(s)),
+            toml::Value::Array(values) => {
+                toml::Value::Array(values.iter().map(|v| map(v, f)).collect())
+            }
+            toml::Value::Table(table) => toml::Value::Table(aube_graph_map(table, f)),
+            other => other.clone(),
+        }
+    }
+    graph
+        .iter()
+        .map(|(key, value)| (f(key), map(value, f)))
+        .collect()
+}
+
+/// Whether a key or a string of a dependency graph names the git source at
+/// `url` itself, the way aube writes one: alone (`repo:`), after `git+`
+/// (`specifier:`) or after `<package>@` (the key of a package), and with at
+/// most a `#commit` or a longer path behind it. Anywhere else the URL is only
+/// text in another value, such as the query of another host's URL.
+fn names_git_source(value: &str, url: &str) -> bool {
+    let Some((before, after)) = value.split_once(url) else {
+        return false;
+    };
+    let is_package_key = before.strip_suffix('@').is_some_and(|package| {
+        !package.starts_with('/')
+            && package
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || "@/._~-".contains(c))
+    });
+    (before.is_empty() || before == "git+" || is_package_key)
+        && (after.is_empty() || after.starts_with(['#', '/']))
+        && !after.contains(url)
+}
+
 /// Whether a git source follows its remote's default branch, as opposed to one
 /// that already pins a `#ref` in its URL.
 fn git_tracks_head(name: &str) -> bool {
@@ -2042,6 +2095,48 @@ impl NPMBackend {
         }
     }
 
+    /// `text` of a dependency graph as a lockfile stores it: without the
+    /// credentials of the git source's URL. The graph is committed beside
+    /// `mise.lock`, whose `backend` names the source without them too.
+    fn aube_lock_stored_form(&self, text: &str) -> String {
+        match git_url_with_and_without_credentials(&self.tool_name()) {
+            Some((url, stored)) => text.replace(&url, &stored),
+            None => text.to_string(),
+        }
+    }
+
+    /// Whether a dependency graph names the git source with the credentials of
+    /// its URL.
+    pub(crate) fn aube_lock_holds_credentials(&self, lock: &crate::lockfile::AubeLock) -> bool {
+        git_url_with_and_without_credentials(&self.tool_name()).is_some_and(|(url, stored)| {
+            aube_graph_map(&lock.graph, &|value| value.replace(&url, &stored)) != lock.graph
+                || lock.project.as_deref().is_some_and(|p| p.contains(&url))
+        })
+    }
+
+    /// The dependency graph as an install needs it: with the credentials of
+    /// the git source's URL, which the request supplies and the stored graph
+    /// leaves out. A graph read from a lockfile can be anyone's writing, so
+    /// they only go into the values that name the source itself, and aube gets
+    /// the graph as mise parsed it rather than the text it was read from.
+    fn aube_lock_install_yaml(&self, lock: &crate::lockfile::AubeLock) -> Result<String> {
+        let Some((url, stored)) = git_url_with_and_without_credentials(&self.tool_name()) else {
+            return lock.to_install_yaml();
+        };
+        let graph = aube_graph_map(&lock.graph, &|value| {
+            if names_git_source(value, &stored) {
+                value.replacen(&stored, &url, 1)
+            } else {
+                value.to_string()
+            }
+        });
+        crate::lockfile::AubeLock {
+            graph,
+            ..Default::default()
+        }
+        .to_install_yaml()
+    }
+
     pub(crate) fn from_arg(ba: BackendArg) -> Self {
         Self {
             latest_version_caches: Mutex::new(HashMap::new()),
@@ -2560,14 +2655,14 @@ impl NPMBackend {
             // and aube names it after its own package.json.
             self.write_aube_empty_dependencies(&install_path)?;
         } else {
-            self.write_aube_root_dependency(&install_path, tv)?;
+            self.write_aube_root_dependency(&install_path, &self.package_requirement(tv)?)?;
         }
 
         if let Some(lock) = &tv.aube_lock {
             // aube installs the graph that was checked, not the sidecar text.
             crate::file::write(
                 install_path.join("aube-lock.yaml"),
-                lock.load()?.to_install_yaml()?,
+                self.aube_lock_install_yaml(lock.load()?)?,
             )?;
             let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
             let mut install_options = aube::embed::InstallOptions::new(&install_path);
@@ -2848,12 +2943,11 @@ impl NPMBackend {
         Ok(())
     }
 
-    fn write_aube_root_dependency(&self, install_path: &Path, tv: &ToolVersion) -> Result<()> {
+    fn write_aube_root_dependency(&self, install_path: &Path, requirement: &str) -> Result<()> {
         let path = install_path.join("package.json");
         let mut manifest: serde_json::Value =
             serde_json::from_str(&crate::file::read_to_string(&path)?)?;
-        manifest["dependencies"] =
-            serde_json::json!({ self.package_key(): self.package_requirement(tv)? });
+        manifest["dependencies"] = serde_json::json!({ self.package_key(): requirement });
         crate::file::write(
             path,
             format!("{}\n", serde_json::to_string_pretty(&manifest)?),
@@ -2890,7 +2984,12 @@ impl NPMBackend {
             || is_tarball_spec(&self.tool_name())
             || versions::SemVer::new(&tv.version).is_none()
             || resolved.is_some_and(|v| v.split('(').next() == Some(tv.version.as_str()));
-        if requirement != Some(self.package_requirement(tv)?.as_str()) || !resolves_locked_version {
+        // The graph names a git source without its credentials; one written
+        // with them still names the same source, so both sides are compared
+        // as stored.
+        let expected = self.aube_lock_stored_form(&self.package_requirement(tv)?);
+        let requirement = requirement.map(|r| self.aube_lock_stored_form(r));
+        if requirement.as_deref() != Some(expected.as_str()) || !resolves_locked_version {
             eyre::bail!(
                 "npm:{} dependency graph does not match root version {}; run `mise lock`",
                 self.display_tool_name(),
@@ -2920,7 +3019,8 @@ impl NPMBackend {
         let options = NpmOptions::new(&request_options);
         let allow_builds = options.allow_builds()?;
         self.write_aube_embed_project(temp.path(), tv.before_date, &options, &allow_builds, false)?;
-        self.write_aube_root_dependency(temp.path(), tv)?;
+        let requirement = self.package_requirement(tv)?;
+        self.write_aube_root_dependency(temp.path(), &requirement)?;
         let mut install_options = aube::embed::InstallOptions::new(temp.path());
         install_options.lockfile_only = true;
         install_options.ignore_scripts = true;
@@ -2932,11 +3032,25 @@ impl NPMBackend {
         aube::embed::install_with_overrides(install_options, Self::aube_embed_install_overrides())
             .await
             .map_err(|error| self.format_aube_install_error(error))?;
+        // aube resolved the git source by the URL of the request, and wrote it
+        // into the graph and left it in the project. Both are committed beside
+        // the lockfile, so they are kept without the URL's credentials; an
+        // install puts them back (`aube_lock_install_yaml`).
         let contents = crate::file::read_to_string(temp.path().join("aube-lock.yaml"))?;
+        let contents = self.aube_lock_stored_form(&contents);
+        self.write_aube_root_dependency(temp.path(), &self.aube_lock_stored_form(&requirement))?;
         let mut graph = crate::lockfile::AubeLock::from_yaml(&contents)?;
         graph.project = Some(crate::file::read_to_string(
             temp.path().join("package.json"),
         )?);
+        if self.aube_lock_holds_credentials(&graph) {
+            // The YAML spells the URL in a way the text above did not match.
+            eyre::bail!(
+                "npm:{} dependency graph cannot be stored without the credentials of its URL; \
+                 pass them to git another way, such as a credential helper",
+                self.display_tool_name()
+            );
+        }
         Ok(graph.into())
     }
 
@@ -4038,6 +4152,101 @@ mod tests {
                 "{version}"
             );
         }
+    }
+
+    #[test]
+    fn git_source_graph_is_stored_without_credentials() {
+        let backend = create_npm_git_backend("git+https://ci:glpat-token@git.example.test/o/r.git");
+        let request = ToolRequest::new(backend.ba().clone(), "v1", ToolSource::Argument).unwrap();
+        let tv = ToolVersion::new(request, "v1".to_string());
+        let url = "https://ci:glpat-token@git.example.test/o/r.git";
+        assert_eq!(
+            backend.package_requirement(&tv).unwrap(),
+            format!("git+{url}#v1")
+        );
+        // The graph as aube writes it for the request's URL.
+        let written = format!(
+            r#"importers:
+  .:
+    dependencies:
+      r:
+        specifier: git+{url}#v1
+        version: {url}#deadbeef
+packages:
+  '@o/r@{url}#deadbeef':
+    resolution: {{commit: deadbeef, repo: {url}, type: git}}
+"#
+        );
+        let written_lock = crate::lockfile::AubeLock::from_yaml(&written).unwrap();
+        assert!(backend.aube_lock_holds_credentials(&written_lock));
+
+        let stored = backend.aube_lock_stored_form(&written);
+        assert!(
+            !stored.contains("glpat-token"),
+            "graph holds the token: {stored}"
+        );
+        assert!(stored.contains("specifier: git+https://git.example.test/o/r.git#v1\n"));
+        assert!(stored.contains("repo: https://git.example.test/o/r.git, type: git"));
+        let stored_lock = crate::lockfile::AubeLock::from_yaml(&stored).unwrap();
+        assert!(!backend.aube_lock_holds_credentials(&stored_lock));
+
+        // Either one matches the request, and is installed with the credentials.
+        for lock in [&stored_lock, &written_lock] {
+            backend.validate_aube_lock(&tv, lock).unwrap();
+            let installed = backend.aube_lock_install_yaml(lock).unwrap();
+            assert_eq!(
+                crate::lockfile::AubeLock::from_yaml(&installed).unwrap(),
+                written_lock
+            );
+        }
+
+        // A credential in the query string is for the lockfile to refuse.
+        let backend = create_npm_git_backend(GIT_SOURCE_WITH_CREDENTIALS);
+        assert_eq!(
+            backend.aube_lock_stored_form(GIT_SOURCE_WITH_CREDENTIALS),
+            "git+https://git.example.test/org/repo.git?access_token=query-token#main"
+        );
+    }
+
+    #[test]
+    fn git_source_credentials_only_go_where_the_graph_names_the_source() {
+        let backend = create_npm_git_backend("git+https://ci:glpat-token@git.example.test/o/r.git");
+        let stored = "https://git.example.test/o/r.git";
+        for value in [
+            stored.to_string(),
+            format!("{stored}#deadbeef"),
+            format!("git+{stored}#v1"),
+            format!("r@{stored}#deadbeef"),
+            format!("@o/r@{stored}#deadbeef(peer@1.0.0)"),
+        ] {
+            assert!(names_git_source(&value, stored), "{value}");
+        }
+        // A lockfile is not always the user's own writing. In these the
+        // credentials would go to another host, or into a URL that host is sent.
+        let foreign = [
+            format!("https://evil.example.test/?next={stored}"),
+            format!("https://evil.example.test/x@{stored}#deadbeef"),
+            format!("//evil.example.test/x@{stored}"),
+            format!("{stored}.evil.example.test/r.git"),
+            format!("{stored}#deadbeef(x@https://evil.example.test/?next={stored})"),
+        ];
+        for value in &foreign {
+            assert!(!names_git_source(value, stored), "{value}");
+        }
+        let lock = crate::lockfile::AubeLock::from_yaml(&format!(
+            r#"packages:
+  r@{stored}#deadbeef:
+    resolution: {{commit: deadbeef, repo: {stored}, type: git}}
+  other@1.0.0:
+    resolution: {{tarball: '{}'}}
+"#,
+            foreign[0]
+        ))
+        .unwrap();
+        let installed = backend.aube_lock_install_yaml(&lock).unwrap();
+        assert!(installed.contains("https://ci:glpat-token@git.example.test/o/r.git"));
+        assert!(installed.contains(&foreign[0]), "{installed}");
+        assert_eq!(installed.matches("glpat-token").count(), 2, "{installed}");
     }
 
     #[test]

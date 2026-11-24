@@ -58,6 +58,12 @@ mise use 'npm:git+https://github.com/owner/repo'
 mise use 'npm:github:owner/repo@v1.2.0'
 ```
 
+For a private repository, keep the credentials in git's credential helper
+rather than in the URL. mise records the tool, and its dependency graph beside
+`mise.lock`, without URL credentials, but the `package.json` and
+`aube-lock.yaml` in the install directory keep the URL they were installed
+from, credentials included.
+
 ### Install from a tarball URL
 
 An `https://` tarball URL is also a source, such as a preview build from

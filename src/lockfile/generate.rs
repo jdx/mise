@@ -852,7 +852,11 @@ pub async fn populate_aube_locks(
             } else {
                 old.refresh().ok()
             };
-            if let Some(candidate) = candidate {
+            // A graph stored with the credentials of its git source's URL is
+            // resolved again, which stores it without them.
+            if let Some(candidate) = candidate
+                && !npm.aube_lock_holds_credentials(candidate.load()?)
+            {
                 npm.validate_aube_lock(tv, candidate.load()?)?;
                 lockfile.set_aube_lock(
                     &ba.short,

@@ -428,9 +428,15 @@ impl ToolVersion {
 
     fn from_lockfile(mut request: ToolRequest, lt: LockfileTool) -> Self {
         if let Some(backend_full) = &lt.backend {
+            // A lock names a URL backend without its credentials. When it is
+            // the request's own backend, the request's spelling, credentials
+            // included, is what an install uses.
             let backend = Arc::new(BackendArg::new(
                 request.ba().short.clone(),
-                Some(backend_full.clone()),
+                Some(install_state::with_request_credentials(
+                    &request.ba().full(),
+                    backend_full.clone(),
+                )),
             ));
             // The registry's options are for the backend it chose; the lock's
             // backend would read them as its own settings and record them.
@@ -2207,6 +2213,43 @@ mod tests {
                 .opts
                 .contains_key("workflow")
         );
+    }
+
+    #[test]
+    fn from_lockfile_keeps_the_credentials_of_the_request() {
+        let restore = |backend: &str| {
+            let request = ToolRequest::new(
+                Arc::new(BackendArg::new(
+                    "cargo:https://ci:token@git.example.test/o/r".to_string(),
+                    None,
+                )),
+                "1.0.0",
+                ToolSource::Argument,
+            )
+            .unwrap();
+            let lt = LockfileTool {
+                version: "1.0.0".to_string(),
+                backend: Some(backend.to_string()),
+                specifiers: Default::default(),
+                options: Default::default(),
+                platforms: Default::default(),
+                aube: None,
+                uv: None,
+                provenance: None,
+                unsupported_platforms: Default::default(),
+            };
+            ToolVersion::from_lockfile(request, lt)
+        };
+        // The lock names the request's backend without the credentials.
+        let tv = restore("cargo:https://git.example.test/o/r");
+        assert_eq!(
+            tv.ba().full(),
+            "cargo:https://ci:token@git.example.test/o/r"
+        );
+        assert_eq!(tv.ba().stored_full(), "cargo:https://git.example.test/o/r");
+        // Another backend gets none of them.
+        let tv = restore("cargo:https://git.example.test/other/r");
+        assert_eq!(tv.ba().full(), "cargo:https://git.example.test/other/r");
     }
 
     #[test]
