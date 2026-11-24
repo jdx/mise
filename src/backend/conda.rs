@@ -1221,9 +1221,15 @@ impl Backend for CondaBackend {
                 target.to_key()
             )
         })?;
+        // A channel that leaves out the sha256 has the archive hashed through
+        // the URL that still holds the channel login.
+        let mut checksum = Self::format_sha256(&main);
+        let url =
+            crate::backend::static_helpers::resolve_lock_url(main.url.as_str(), &mut checksum)
+                .await?;
         Ok(PlatformInfo {
-            url: Some(lock_url(main.url.as_str())),
-            checksum: Self::format_sha256(&main),
+            url: Some(url),
+            checksum,
             size: None,
             url_api: None,
             conda_deps: Some(dep_basenames),
