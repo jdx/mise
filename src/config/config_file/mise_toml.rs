@@ -1774,7 +1774,7 @@ static QUOTED_LITERAL: std::sync::LazyLock<regex::Regex> =
     std::sync::LazyLock::new(|| regex::Regex::new(r#""[^"]*"|'[^']*'|`[^`]*`"#).unwrap());
 
 static RAW_BLOCK: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
-    regex::Regex::new(r"(?s)\{%-?\s*raw\s*-?%\}(.*?)\{%-?\s*endraw\s*-?%\}").unwrap()
+    regex::Regex::new(r"(?s)\{%(-?)\s*raw\s*(-?)%\}(.*?)\{%(-?)\s*endraw\s*(-?)%\}").unwrap()
 });
 
 const VERSION_SHIELD: &str = "__mise_deferred_version_expression_";
@@ -1794,7 +1794,10 @@ pub(crate) fn render_option_for_backend(
 }
 
 /// The body of a `{% raw %}` block is written to be rendered by the backend, so it is swapped
-/// for a marker and put back as template code after the config-load render.
+/// for a marker and put back as template code after the config-load render. The block's `-`
+/// markers trim whitespace as they do when the block is rendered: the inner ones trim the body
+/// here, and the outer ones stay on the tags left around the marker, so the render trims the
+/// text next to the block.
 pub(crate) fn shield_raw_blocks(input: &str) -> (String, Vec<String>) {
     let mut deferred = vec![];
     // Most option values hold no block, and the first use of the regex
@@ -1803,8 +1806,20 @@ pub(crate) fn shield_raw_blocks(input: &str) -> (String, Vec<String>) {
         return (input.to_string(), deferred);
     }
     let shielded = RAW_BLOCK.replace_all(input, |caps: &regex::Captures| {
-        deferred.push(caps[1].to_string());
-        format!("{VERSION_SHIELD}{}__", deferred.len() - 1)
+        let mut body = &caps[3];
+        if !caps[2].is_empty() {
+            body = body.trim_start();
+        }
+        if !caps[4].is_empty() {
+            body = body.trim_end();
+        }
+        deferred.push(body.to_string());
+        format!(
+            "{{%{} raw %}}{VERSION_SHIELD}{}__{{% endraw {}%}}",
+            &caps[1],
+            deferred.len() - 1,
+            &caps[5]
+        )
     });
     (shielded.into_owned(), deferred)
 }
@@ -4377,6 +4392,32 @@ mod tests {
                 shield_version_expressions(input),
                 (input.to_string(), vec![])
             );
+        }
+    }
+
+    /// A deferred raw block trims the whitespace its `-` markers ask for, as rendering the block
+    /// does, and its body reaches the backend's render as written.
+    #[test]
+    fn test_shielded_raw_block_keeps_whitespace_control() {
+        use crate::tera::{TeraEngine, render_str};
+        let ctx = tera::Context::new();
+        for input in [
+            "a \n{%- raw -%}\n {{ version }} \n{%- endraw -%}\n b",
+            "a \n{% raw -%}\n {{ version }} \n{%- endraw %}\n b",
+            "a \n{%- raw %}\n {{ version }} \n{% endraw -%}\n b",
+            "a\n{% raw %} {{ version }} {% endraw %}\nb",
+        ] {
+            for mut tera in [
+                TeraEngine::V1(Box::default()),
+                TeraEngine::V2(Box::default()),
+            ] {
+                let direct = render_str(&mut tera, input, &ctx).unwrap();
+                let shielded = render_option_for_backend(shield_raw_blocks(input), |s| {
+                    Ok(render_str(&mut tera, s, &ctx)?)
+                })
+                .unwrap();
+                assert_eq!(shielded, direct, "{input:?}");
+            }
         }
     }
 
