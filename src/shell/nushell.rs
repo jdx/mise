@@ -103,14 +103,19 @@ impl Shell for Nushell {
         // Undoing an inherited activation restores the value every variable had before mise
         // changed it, secrets included. The module is saved to a file, so it asks mise for those
         // operations when it is loaded rather than carrying them. `mise deactivate` also hides
-        // `__MISE_ORIG_PATH`, which activation keeps.
+        // `__MISE_ORIG_PATH`, which activation keeps. When mise fails or is gone, the module still
+        // loads, with nothing undone, so the rest of the config that uses it still runs.
         let inline_prelude = self.format_activate_prelude_inline(&opts.prelude);
         out.push_str(&formatdoc! {r#"
           export-env {{
             let deactivation_ops = if "__MISE_DIFF" in $env {{
-              with-env {{ MISE_SHELL: "nu" }} {{ ^{exe} deactivate }}
-              | parse vars
-              | where name != "__MISE_ORIG_PATH"
+              try {{
+                with-env {{ MISE_SHELL: "nu" }} {{ ^{exe} deactivate }}
+                | parse vars
+                | where name != "__MISE_ORIG_PATH"
+              }} catch {{
+                []
+              }}
             }} else {{
               []
             }}

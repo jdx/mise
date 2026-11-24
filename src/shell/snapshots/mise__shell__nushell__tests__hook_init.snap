@@ -21,9 +21,13 @@ def --env "update-env" [] {
 }
 export-env {
   let deactivation_ops = if "__MISE_DIFF" in $env {
-    with-env { MISE_SHELL: "nu" } { ^"/some/dir/mise" deactivate }
-    | parse vars
-    | where name != "__MISE_ORIG_PATH"
+    try {
+      with-env { MISE_SHELL: "nu" } { ^"/some/dir/mise" deactivate }
+      | parse vars
+      | where name != "__MISE_ORIG_PATH"
+    } catch {
+      []
+    }
   } else {
     []
   }
