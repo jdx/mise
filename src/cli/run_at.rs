@@ -70,7 +70,18 @@ pub(crate) async fn run(
         &sha[..sha.len().min(12)],
         display_path(&worktree.path)
     );
-    init_submodules(&toplevel, &worktree)?;
+    // Before git fetches anything for REV: a submodule's URL is REV's to choose, git offers that
+    // host the user's credentials, and `--init` records the URL in the repository's own config.
+    check_trust(&worktree.path, &subdir, rev)?;
+    if submodules_allowed(&worktree.path, &subdir) {
+        init_submodules(&toplevel, &worktree)?;
+    } else if worktree.path.join(".gitmodules").is_file() {
+        warn!(
+            "mise run --at: the submodules at {rev} are not initialized because {} is not \
+             trusted. Run `mise trust` there to initialize them.",
+            display_path(&toplevel)
+        );
+    }
     let dir = worktree.path.join(&subdir);
     // A symlink at REV could lead the tasks, and the trust check, out of the revision.
     let inside = dir
@@ -82,6 +93,7 @@ pub(crate) async fn run(
             display_path(toplevel.join(&subdir))
         );
     }
+    // Again, for a config that a submodule brought to the tasks' directory or one above it.
     check_trust(&worktree.path, &subdir, rev)?;
     let ceilings = ceiling_paths(&worktree.holder)?;
 
@@ -147,6 +159,18 @@ fn check_trust(worktree: &Path, subdir: &Path, rev: &str) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// Whether REV's submodules may be fetched: a config in the tasks' directory would be trusted,
+/// whether or not REV has one there. [`check_trust`] passes a revision with no config, or with
+/// only file tasks, so it cannot decide this alone; the tasks of such a revision are refused
+/// later by the child. The directory is the deepest one that exists before the submodules do.
+fn submodules_allowed(worktree: &Path, subdir: &Path) -> bool {
+    subdir
+        .ancestors()
+        .map(|sub| worktree.join(sub))
+        .find(|dir| dir.is_dir())
+        .is_some_and(|dir| config_file::is_path_trusted(&dir.join("mise.toml")))
 }
 
 /// `MISE_CEILING_PATHS` for the `--at-setup` command and the tasks: the user's own ceilings and

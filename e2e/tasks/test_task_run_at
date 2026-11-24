@@ -138,10 +138,32 @@ assert_fail "mise run --at HEAD~1 --at-setup 'touch \$MISE_RUN_AT_SOURCE/../setu
 assert_fail "test -e ../setup-ran"
 assert_fail "mise run --at HEAD~1 hi" "shares the trust of the repository's main checkout"
 assert_fail "MISE_YES=1 mise run --yes --at HEAD~1 hi" "is not trusted"
+# Nor are submodules that only REV names fetched before or instead of the
+# refusal: their URLs are REV's to choose, and fetching registers them in the
+# repository's config. Not for a REV with config, and not for one with only a
+# file task, which the trust check before the tasks does not see.
+printf '[submodule "dep"]\n\tpath = dep\n\turl = %s\n' "$(dirname "$PWD")/sub" >>.gitmodules
+git update-index --add --cacheinfo "160000,$(git -C sub rev-parse HEAD),dep"
+git add .gitmodules
+git commit -qm three
+git branch with-dep
+git rm -q mise.toml
+mkdir -p mise-tasks
+printf '#!/usr/bin/env bash\necho file-task\n' >mise-tasks/hi
+chmod +x mise-tasks/hi
+git add mise-tasks/hi
+git commit -qm four
+git branch with-dep-file-task
+git reset -q --hard HEAD~2
+assert_fail "mise run --at with-dep hi" "is not trusted"
+assert_fail "git config --get submodule.dep.url"
+assert_fail "mise run --at with-dep-file-task hi" "are not initialized"
+assert_fail "git config --get submodule.dep.url"
 assert "git worktree list --porcelain | grep -c '^worktree '" "1"
 assert_empty "ls -A $MISE_STATE_DIR/run-at"
 mise trust
 assert "mise run --at HEAD~1 hi" "version-one"
+assert_contains "mise run --at with-dep --at-setup 'cat dep/version.txt' hi" "sub-v2"
 
 # Paranoid mode binds trust to a path and its contents, so config in the
 # worktree, a new path on every run, is never trusted.
