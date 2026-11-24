@@ -980,7 +980,7 @@ impl PythonPlugin {
             tarball_path,
             "astral-sh",
             "python-build-standalone",
-            &[tag.to_string()],
+            &[tag],
             None, // Accept any workflow from repo
             None,
             true,
@@ -1262,7 +1262,7 @@ impl Backend for PythonPlugin {
 
         // Look up the precompiled release for this version and target platform
         let Some((tag, filename)) = self
-            .fetch_precompiled_for_target(version, target, locked_filename)
+            .fetch_precompiled_for_target(version, target, locked_filename.as_deref())
             .await?
         else {
             return Ok(PlatformInfo::default());
@@ -1405,29 +1405,34 @@ fn python_precompiled_created_at(date: &str) -> Option<String> {
     ))
 }
 
-fn python_precompiled_filename_from_url<'a>(url: &'a str, version: &str) -> Option<&'a str> {
+fn python_precompiled_filename_from_url(url: &str, version: &str) -> Option<String> {
     python_precompiled_parts_from_url(url, version).map(|(_, filename)| filename)
 }
 
 /// The python-build-standalone release `url` downloads `version` from, or
 /// `None` when `url` is not that release's build of `version`.
-fn python_precompiled_release_from_url<'a>(url: &'a str, version: &str) -> Option<&'a str> {
+fn python_precompiled_release_from_url(url: &str, version: &str) -> Option<String> {
     python_precompiled_parts_from_url(url, version).map(|(release, _)| release)
 }
 
-fn python_precompiled_parts_from_url<'a>(
-    url: &'a str,
-    version: &str,
-) -> Option<(&'a str, &'a str)> {
-    let (release, filename) = url
-        .strip_prefix(PBS_RELEASE_DOWNLOAD_URL)?
-        .split_once('/')?;
+/// The release and archive name of the python-build-standalone download `url` names, when that
+/// archive is the release's build of `version`. `url` is read as the download reads it, with dot
+/// segments and backslashes resolved and the archive name percent-decoded, so these are the parts
+/// of the file that is fetched, however the URL spells them.
+fn python_precompiled_parts_from_url(url: &str, version: &str) -> Option<(String, String)> {
+    let url = url::Url::parse(url).ok()?;
+    let releases = url::Url::parse(PBS_RELEASE_DOWNLOAD_URL).ok()?;
+    if url.origin() != releases.origin() {
+        return None;
+    }
+    let (release, filename) = url.path().strip_prefix(releases.path())?.split_once('/')?;
     if release.len() != 8 || !release.chars().all(|c| c.is_ascii_digit()) {
         return None;
     }
-    filename
-        .starts_with(&format!("cpython-{version}+{release}-"))
-        .then_some((release, filename))
+    let filename = urlencoding::decode(filename).ok()?;
+    (!filename.contains(['/', '\\'])
+        && filename.starts_with(&format!("cpython-{version}+{release}-")))
+    .then(|| (release.to_string(), filename.into_owned()))
 }
 
 fn select_python_precompiled(
@@ -2043,10 +2048,53 @@ plugins/python-build/share/python-build/patches/3.14.5/foo.patch
     }
 
     #[test]
+    fn precompiled_parts_are_those_of_the_archive_the_url_downloads() {
+        let base = "https://github.com/astral-sh/python-build-standalone/releases/download";
+        let archive = "cpython-3.12.13+20260728-x86_64-unknown-linux-gnu-install_only.tar.gz";
+        let other = "cpython-3.11.15+20260728-x86_64-unknown-linux-gnu-install_only.tar.gz";
+        let found = Some(("20260728", archive));
+        for (url, expected) in [
+            (format!("{base}/20260728/{archive}"), found),
+            // GitHub's own download links spell the `+` as `%2B`
+            (
+                format!("{base}/20260728/{}", archive.replace('+', "%2B")),
+                found,
+            ),
+            // a dot segment that leaves the archive as it is
+            (format!("{base}/20260728/./{archive}"), found),
+            // dot segments, also behind backslashes, that lead to another version's archive
+            (
+                format!("{base}/20260728/cpython-3.12.13+20260728-x/../{other}"),
+                None,
+            ),
+            (
+                format!("{base}/20260728/cpython-3.12.13+20260728-x\\..\\{other}"),
+                None,
+            ),
+            (
+                format!("{base}/20260728/cpython-3.12.13+20260728-x%2F..%2F{other}"),
+                None,
+            ),
+            (format!("{base}/20260728/{other}"), None),
+            (format!("{base}/2026-07-28/{archive}"), None),
+            (
+                format!("https://example.com/releases/download/20260728/{archive}"),
+                None,
+            ),
+        ] {
+            assert_eq!(
+                python_precompiled_parts_from_url(&url, "3.12.13"),
+                expected.map(|(release, filename)| (release.to_string(), filename.to_string())),
+                "{url}"
+            );
+        }
+    }
+
+    #[test]
     fn parses_python_precompiled_filename_from_url() {
         let url = "https://github.com/astral-sh/python-build-standalone/releases/download/20260728/cpython-3.12.13+20260728-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz";
         assert_eq!(
-            python_precompiled_filename_from_url(url, "3.12.13"),
+            python_precompiled_filename_from_url(url, "3.12.13").as_deref(),
             Some("cpython-3.12.13+20260728-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz")
         );
         assert_eq!(python_precompiled_filename_from_url(url, "3.12.12"), None);
