@@ -2,6 +2,7 @@
 
 use crate::dirs;
 use crate::file::display_path;
+use crate::ui::style::display_path_escaped;
 use miette::{Diagnostic, NamedSource, SourceSpan};
 use std::fmt;
 use std::path::{Path, PathBuf};
@@ -271,13 +272,14 @@ pub(crate) fn toml_parse_error(err: &toml::de::Error, source: &str, path: &Path)
         let (line, column) = position(source, span.offset());
         return eyre::eyre!(
             "Invalid TOML in config file {}:{line}:{column}: {LINKED_DETAILS_HIDDEN}",
-            display_path(path)
+            display_path_escaped(path)
         );
     }
 
     let help = backslash_help(source, &span, &message);
     let diagnostic = TomlParseError {
-        src: NamedSource::new(display_path(path), source.to_string()),
+        // miette prints this name above the snippet, so its control characters are escaped.
+        src: NamedSource::new(display_path_escaped(path), source.to_string()),
         span,
         message,
         help,
@@ -303,6 +305,20 @@ mod tests {
             None => format!("{rich:?}"),
         };
         format!("{rich}\n{:?}", hide_linked_source(err, BODY, path))
+    }
+
+    /// A control character in the config's path is escaped in the report, which names the file
+    /// above the snippet.
+    #[test]
+    fn escapes_the_path_it_names() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().canonicalize().unwrap().join("a\x1b[2Jb");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("mise.toml");
+        std::fs::write(&path, BODY).unwrap();
+        let report = reports(&path);
+        assert!(!report.contains('\x1b'), "{report:?}");
+        assert!(report.contains("a\\u{1b}[2Jb"), "{report}");
     }
 
     /// A value error quotes the value, so a linked file's parser message is
