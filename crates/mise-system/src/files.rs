@@ -11138,6 +11138,27 @@ source = "oldrc""#,
         Ok(())
     }
 
+    /// The groups this process belongs to. `nix::unistd::getgroups` does not
+    /// exist on macOS, so this asks libc.
+    #[cfg(unix)]
+    fn process_groups() -> Result<Vec<nix::unistd::Gid>> {
+        // SAFETY: a null buffer of size zero asks for the number of groups and
+        // writes nothing.
+        let count = unsafe { nix::libc::getgroups(0, std::ptr::null_mut()) };
+        if count < 0 {
+            return Err(std::io::Error::last_os_error().into());
+        }
+        let mut groups: Vec<nix::libc::gid_t> = vec![0; count as usize];
+        // SAFETY: `groups` holds `count` values, and getgroups fails instead of
+        // writing more than that.
+        let count = unsafe { nix::libc::getgroups(count, groups.as_mut_ptr()) };
+        if count < 0 {
+            return Err(std::io::Error::last_os_error().into());
+        }
+        groups.truncate(count as usize);
+        Ok(groups.into_iter().map(nix::unistd::Gid::from_raw).collect())
+    }
+
     /// What replacing a copy whose mode narrows keeps, and when it refuses:
     /// the replacement keeps the old file's owner and group, a target mise
     /// cannot write is refused, and a copy that fails part-way leaves the old
@@ -11148,7 +11169,7 @@ source = "oldrc""#,
         use std::io::Read as _;
         use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
         // a group of ours other than the one new files get, when we have one
-        let other_group = nix::unistd::getgroups()?
+        let other_group = process_groups()?
             .into_iter()
             .find(|gid| *gid != nix::unistd::getegid());
         let unreadable = Path::new("/proc/self/mem");
