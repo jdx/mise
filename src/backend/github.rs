@@ -520,6 +520,18 @@ fn record_release_asset(
     })
 }
 
+/// Whether the tool's options or lockfile pin the checksum of the asset being
+/// resolved for `target`. Only the primary asset (`asset_pattern` is None) is
+/// pinned that way; an additional artifact has its own lockfile entry.
+fn pins_primary_asset(
+    tv: &ToolVersion,
+    opts: &GitBackendOptions<'_>,
+    target: &PlatformTarget,
+    asset_pattern: Option<&str>,
+) -> bool {
+    asset_pattern.is_none() && pinned_checksum(tv, &target.to_key(), opts.raw()).is_some()
+}
+
 /// Whether `url` is under one of the public forges' API base URLs. Compared on
 /// the parsed URL, because the parser also accepts other spellings of the same
 /// host (`HTTPS://`, a leading space, userinfo) that a prefix test would take
@@ -2594,8 +2606,13 @@ impl UnifiedGitBackend {
             let digest = if asset.digest.is_some() {
                 asset.digest
             } else {
-                self.try_fetch_checksum_from_assets(opts, &assets_with_urls, &asset.name)
-                    .await?
+                self.try_fetch_checksum_from_assets(
+                    opts,
+                    &assets_with_urls,
+                    &asset.name,
+                    pins_primary_asset(tv, opts, target, asset_pattern),
+                )
+                .await?
             };
 
             return Ok(ReleaseAsset {
@@ -2630,8 +2647,13 @@ impl UnifiedGitBackend {
         let digest = if asset.digest.is_some() {
             asset.digest.clone()
         } else {
-            self.try_fetch_checksum_from_assets(opts, &assets_with_urls, &asset.name)
-                .await?
+            self.try_fetch_checksum_from_assets(
+                opts,
+                &assets_with_urls,
+                &asset.name,
+                pins_primary_asset(tv, opts, target, asset_pattern),
+            )
+            .await?
         };
 
         Ok(ReleaseAsset {
@@ -2700,7 +2722,12 @@ impl UnifiedGitBackend {
 
             // GitLab doesn't provide digests, so try fetching from release assets
             let digest = self
-                .try_fetch_checksum_from_assets(opts, &assets_with_urls, &asset.name)
+                .try_fetch_checksum_from_assets(
+                    opts,
+                    &assets_with_urls,
+                    &asset.name,
+                    pins_primary_asset(tv, opts, target, asset_pattern),
+                )
                 .await?;
 
             return Ok(ReleaseAsset {
@@ -2733,7 +2760,12 @@ impl UnifiedGitBackend {
 
         // GitLab doesn't provide digests, so try fetching from release assets
         let digest = self
-            .try_fetch_checksum_from_assets(opts, &assets_with_urls, &asset.name)
+            .try_fetch_checksum_from_assets(
+                opts,
+                &assets_with_urls,
+                &asset.name,
+                pins_primary_asset(tv, opts, target, asset_pattern),
+            )
             .await?;
 
         Ok(ReleaseAsset {
@@ -2807,7 +2839,12 @@ impl UnifiedGitBackend {
 
             // Try to get checksum from API digest or fetch from release assets
             let digest = self
-                .try_fetch_checksum_from_assets(opts, &assets_with_urls, &asset.name)
+                .try_fetch_checksum_from_assets(
+                    opts,
+                    &assets_with_urls,
+                    &asset.name,
+                    pins_primary_asset(tv, opts, target, asset_pattern),
+                )
                 .await?;
 
             return Ok(ReleaseAsset {
@@ -2840,7 +2877,12 @@ impl UnifiedGitBackend {
 
         // Try to get checksum from API digest or fetch from release assets
         let digest = self
-            .try_fetch_checksum_from_assets(opts, &assets_with_urls, &asset.name)
+            .try_fetch_checksum_from_assets(
+                opts,
+                &assets_with_urls,
+                &asset.name,
+                pins_primary_asset(tv, opts, target, asset_pattern),
+            )
             .await?;
 
         Ok(ReleaseAsset {
@@ -2966,19 +3008,29 @@ impl UnifiedGitBackend {
     ///
     /// Returns the checksum in "sha256:hash" format if found, None when the
     /// release's checksum files do not list the asset. Fails when a checksum
-    /// file could not be downloaded and no other one lists the asset.
+    /// file that may hold the asset's checksum could not be downloaded or read
+    /// and no other one gives it, unless `pinned`: the tool's options or
+    /// lockfile already give the checksum the download is checked against.
     async fn try_fetch_checksum_from_assets(
         &self,
         opts: &GitBackendOptions<'_>,
         assets: &[Asset],
         asset_name: &str,
+        pinned: bool,
     ) -> Result<Option<String>> {
         let fetcher = ChecksumFetcher::new(assets);
         let source = ForgeChecksumSource {
             backend: self,
             api_url: opts.api_url(),
         };
-        match fetcher.fetch_checksum_for(asset_name, &source).await? {
+        let found = match fetcher.fetch_checksum_for(asset_name, &source).await {
+            Err(e) if pinned => {
+                debug!("using the pinned checksum: {e:#}");
+                None
+            }
+            found => found?,
+        };
+        match found {
             Some(result) => {
                 debug!(
                     "Found checksum for {} from {}: {}",

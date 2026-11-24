@@ -521,7 +521,12 @@ copy. Each copy records which file it came from when it is installed, so if
 ### Verification
 
 When GitHub reports a digest for the asset, or the release publishes a checksum
-file that lists it, mise checks the download against it. When lockfiles are
+file that lists it, mise checks the download against it. mise reads lists
+written by `sha256sum`, `sha512sum` and `sha256sum --tag`, including entries
+that name the file by path (`./tool.tar.gz`). When a checksum file cannot be
+downloaded, or names the asset without a hash mise can read, the install fails
+unless another checksum file of the release lists the asset or the
+[`checksum`](#checksum) option pins it. When lockfiles are
 enabled, mise records the checksum in [mise.lock](/dev-tools/mise-lock.html)
 and checks later installs against it. On public GitHub mise also checks GitHub
 artifact attestations. The options below pin values by hand, add SLSA
