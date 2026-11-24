@@ -280,3 +280,19 @@ fn test_lex_empty_string() {
     let tokens = lex(r#""""#).unwrap();
     assert_eq!(tokens, vec![Token::String("")]);
 }
+
+#[test]
+fn test_lex_multibyte_identifier_and_whitespace() {
+    // Token ends are byte offsets, so multibyte letters and spaces lex instead of panicking
+    assert_eq!(
+        lex("日本 \u{3000}.Version").unwrap(),
+        vec![
+            Token::Func("日本"),
+            Token::Whitespace(" \u{3000}"),
+            Token::Key("Version"),
+        ]
+    );
+
+    let err = render("{{日 .Version}}", &hashmap(vec![("Version", "1.0.0")])).unwrap_err();
+    assert_eq!(err.to_string(), "unknown function: 日");
+}

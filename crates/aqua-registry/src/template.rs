@@ -116,8 +116,7 @@ fn lex(code: &str) -> Result<Vec<Token<'_>>> {
     while !code.is_empty() {
         if code.starts_with(" ") {
             let end = code
-                .chars()
-                .enumerate()
+                .char_indices()
                 .find(|(_, c)| !c.is_whitespace())
                 .map(|(i, _)| i);
             if let Some(end) = end {
@@ -177,8 +176,7 @@ fn lex(code: &str) -> Result<Vec<Token<'_>>> {
         } else {
             // Check if it's an identifier (alphanumeric starting with letter)
             let end = code
-                .chars()
-                .enumerate()
+                .char_indices()
                 .find(|(_, c)| !c.is_alphanumeric() && *c != '_' && *c != '-')
                 .map(|(i, _)| i)
                 .unwrap_or(code.len());
