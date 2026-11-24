@@ -1312,6 +1312,7 @@ impl TaskExecutor {
                         &task.args,
                         &env,
                         extra_vars.clone(),
+                        self.clone_default_inline_shell()?,
                     )
                     .await?;
 

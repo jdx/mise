@@ -55,6 +55,10 @@ pub(super) struct TaskScriptParser {
     /// `task_source_files(only_changed=true)`. Stored as a path rather than a
     /// timestamp so a template that never asks for filtering costs no syscall.
     baseline: Option<PathBuf>,
+    /// The shell that runs a script with no shebang when the task sets no `shell`: `mise run
+    /// --shell`, or the default inline shell setting when this is `None`. The template functions
+    /// quote their values for the shell that reads them.
+    inline_shell: Option<Vec<String>>,
 }
 
 impl TaskScriptParser {
@@ -63,7 +67,13 @@ impl TaskScriptParser {
             dir,
             extra_vars: None,
             baseline: None,
+            inline_shell: None,
         }
+    }
+
+    pub(super) fn with_inline_shell(mut self, shell: Vec<String>) -> Self {
+        self.inline_shell = Some(shell);
+        self
     }
 
     pub(super) fn with_extra_vars(mut self, vars: IndexMap<String, String>) -> Self {
@@ -898,11 +908,14 @@ impl TaskScriptParser {
                 out.push(script.trim().to_string());
                 continue;
             }
-            let shell_type = shell_from_shebang(script)
+            let shell = match shell_from_shebang(script)
                 .or(task.shell()?)
-                .unwrap_or(Settings::get().default_inline_shell()?)[0]
-                .parse()
-                .ok();
+                .or_else(|| self.inline_shell.clone())
+            {
+                Some(shell) => shell,
+                None => Settings::get().default_inline_shell()?,
+            };
+            let shell_type = shell[0].parse().ok();
             let escape = {
                 move |v: &usage::parse::ParseValue| match v {
                     // fish reads `\'` and `\\` inside single quotes as escapes, so POSIX quoting,
@@ -1187,6 +1200,56 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(parsed_scripts, vec!["echo abc"]);
+    }
+
+    #[tokio::test]
+    async fn test_task_parse_arg_quotes_for_the_shell_that_runs_the_script() {
+        let config = Config::get().await.unwrap();
+        let script = "echo {{ arg(i=0, name='foo') }}";
+        let fish = vec!["fish".to_string(), "-c".to_string()];
+        let value = [r"\'; touch injected #".to_string()];
+        let fish_quoted = r"echo '\\\'; touch injected #'";
+        let posix_quoted = r"echo '\'\''; touch injected #'";
+        // A shebang picks the shell first, then the task's `shell`, then `mise run --shell`,
+        // then the default inline shell setting.
+        // (task shell, `mise run --shell`, script prefix, expected)
+        let cases: [(Option<&str>, Option<&Vec<String>>, &str, &str); 4] = [
+            (None, None, "", posix_quoted),
+            (None, Some(&fish), "", fish_quoted),
+            (Some("bash -c"), Some(&fish), "", posix_quoted),
+            (None, Some(&fish), "#!/usr/bin/env bash\n", posix_quoted),
+        ];
+        for (task_shell, inline_shell, prefix, expected) in cases {
+            let task = Task {
+                shell: task_shell.map(str::to_string),
+                ..Default::default()
+            };
+            let scripts = vec![format!("{prefix}{script}")];
+            let mut parser = TaskScriptParser::new(None);
+            if let Some(shell) = inline_shell {
+                parser = parser.with_inline_shell(shell.clone());
+            }
+            let (_, spec) = parser
+                .parse_run_scripts(&config, &task, &scripts, &Default::default())
+                .await
+                .unwrap();
+            let parsed = parser
+                .parse_run_scripts_with_args(
+                    &config,
+                    &task,
+                    &scripts,
+                    &Default::default(),
+                    &value,
+                    &spec,
+                )
+                .await
+                .unwrap();
+            assert_eq!(
+                parsed,
+                vec![format!("{prefix}{expected}")],
+                "task shell {task_shell:?}, inline shell {inline_shell:?}, prefix {prefix:?}"
+            );
+        }
     }
 
     #[tokio::test]

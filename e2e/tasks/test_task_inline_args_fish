@@ -24,6 +24,9 @@ run = 'printf "[%s]\n" {{arg(name="word")}}'
 [tasks.say_args]
 shell = "fish -c"
 run = 'printf "[%s]\n" {{arg(name="words", var=true)}}'
+
+[tasks.say_arg_sh]
+run = 'printf "[%s]\n" {{arg(name="word")}}'
 EOF
 
 # the default shell reads the argument below as data
@@ -42,5 +45,8 @@ assert "mise run say -- 'C:\\dir\\file' '\$HOME' ''" '[C:\dir\file]
 assert "mise run say_arg -- \"\\\\'; touch injected #\"" "[\\'; touch injected #]"
 assert "mise run say_args -- \"\\\\'; touch injected #\" \"it's\"" "[\\'; touch injected #]
 [it's]"
+# and for the shell `--shell` picks for a task that names none
+assert "mise run --shell 'fish -c' say_arg_sh -- \"\\\\'; touch injected #\"" "[\\'; touch injected #]"
+assert "mise run --shell 'fish -c' say_sh -- \"\\\\'; touch injected #\"" "[\\'; touch injected #]"
 
 assert_fail "test -e injected"
