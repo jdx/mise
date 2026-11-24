@@ -812,7 +812,9 @@ impl ToolVersion {
     pub fn style(&self) -> String {
         format!(
             "{}{}",
-            style(&self.ba().short).blue().for_stderr(),
+            style(install_state::state_short(&self.ba().short))
+                .blue()
+                .for_stderr(),
             style(&format!("@{}", self.version)).for_stderr()
         )
     }

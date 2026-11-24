@@ -121,7 +121,7 @@ impl Current {
             }
             miseprintln!(
                 "{} {}",
-                &plugin.id(),
+                crate::toolset::install_state::state_short(plugin.id()),
                 versions
                     .iter()
                     .map(|v| v.version.to_string())

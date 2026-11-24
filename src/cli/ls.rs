@@ -19,6 +19,7 @@ use crate::config::project::{effective_requests, nearest_project_tool_requests, 
 use crate::env;
 use crate::file;
 use crate::runtime_symlinks::is_runtime_symlink;
+use crate::toolset::install_state::state_short;
 use crate::toolset::{ToolRequestSet, ToolSource, ToolVersion, Toolset};
 use crate::ui::table::MiseTable;
 
@@ -293,7 +294,7 @@ impl Ls {
         let mut plugins = JSONOutput::new();
         for (plugin_name, runtimes) in &runtimes
             .into_iter()
-            .chunk_by(|(_, p, _, _)| p.id().to_string())
+            .chunk_by(|(_, p, _, _)| state_short(p.id()).into_owned())
         {
             let mut r = vec![];
             for (ls, p, tv, source) in runtimes {
@@ -308,7 +309,8 @@ impl Ls {
                     .await,
                 );
             }
-            plugins.insert(plugin_name.clone(), r);
+            // Two spellings of one tool that differ only in credentials share a key.
+            plugins.entry(plugin_name).or_default().extend(r);
         }
         miseprintln!("{}", serde_json::to_string_pretty(&plugins)?);
         Ok(())
@@ -649,7 +651,7 @@ struct Row {
 
 impl Row {
     fn display_tool(&self) -> Cell {
-        Cell::new(&self.tool).fg(Color::Blue)
+        Cell::new(state_short(self.tool.id())).fg(Color::Blue)
     }
     fn display_version(&self) -> Cell {
         let annotate = |version: String| {
