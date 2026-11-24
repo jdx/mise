@@ -229,8 +229,8 @@ A [conf.d folder](/configuration.html#conf-d-folders) and `.config/mise` are
 config roots of their own inside a project. `mise trust --untrust` and
 `mise trust --ignore` with a directory or no path act on the project and on
 every such root in it, and an ignored project's nested roots stay ignored,
-including ones added later. Name a file in a nested root to act on that root
-alone.
+including ones added later. Name a file to act on that file's root alone, so
+`mise untrust mise.toml` leaves a nested root you trusted on its own trusted.
 
 A config that mise reaches through a symlink inside a project, such as a linked
 `mise.toml`, a linked `conf.d` folder or a linked `.mise` or `.config`
