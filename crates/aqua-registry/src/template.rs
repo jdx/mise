@@ -210,8 +210,17 @@ fn identifier_len(code: &str) -> usize {
         .unwrap_or(code.len())
 }
 
+/// The most tokens one `{{ }}` tag may have. Parsing, evaluating and dropping an expression
+/// recurse once per level of nesting, and an expression cannot nest deeper than it has tokens, so
+/// this bound keeps a registry template from overflowing the stack. The longest tag in the aqua
+/// registry has 25.
+const MAX_TAG_TOKENS: usize = 256;
+
 /// Parse tokens into an AST
 fn parse_tokens(tokens: &[Token]) -> Result<Expr> {
+    if tokens.len() > MAX_TAG_TOKENS {
+        bail!("template expression has more than {MAX_TAG_TOKENS} tokens");
+    }
     let mut tokens = tokens.iter().peekable();
     parse_pipe(&mut tokens)
 }

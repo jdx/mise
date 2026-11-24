@@ -296,3 +296,31 @@ fn test_lex_multibyte_identifier_and_whitespace() {
     let err = render("{{日 .Version}}", &hashmap(vec![("Version", "1.0.0")])).unwrap_err();
     assert_eq!(err.to_string(), "unknown function: 日");
 }
+
+#[test]
+fn test_render_rejects_oversized_expressions() {
+    let ctx = hashmap(vec![("Version", "v1.0.0")]);
+    let too_long = format!("template expression has more than {MAX_TAG_TOKENS} tokens");
+
+    // A pipe of the longest allowed size renders; one more stage is refused
+    let pipe = |stages: usize| format!(".Version {}", "|trimV".repeat(stages));
+    assert_eq!(lex(&pipe(127)).unwrap().len(), MAX_TAG_TOKENS);
+    assert_eq!(
+        render(&format!("{{{{{}}}}}", pipe(127)), &ctx).unwrap(),
+        "1.0.0"
+    );
+    let err = render(&format!("{{{{{}}}}}", pipe(128)), &ctx).unwrap_err();
+    assert_eq!(err.to_string(), too_long);
+
+    // Every way of nesting deeply is refused before it is parsed
+    let n = 200_000;
+    for tag in [
+        format!("{}.Version{}", "(".repeat(n), ")".repeat(n)),
+        format!("{}.Version", "trimV (".repeat(n)),
+        pipe(n),
+        format!("(semver .Version){}", ".Major".repeat(n)),
+    ] {
+        let err = render(&format!("{{{{{tag}}}}}"), &ctx).unwrap_err();
+        assert_eq!(err.to_string(), too_long);
+    }
+}
