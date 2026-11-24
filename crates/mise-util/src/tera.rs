@@ -248,18 +248,29 @@ pub fn in_trusted_templates() -> bool {
         .unwrap_or(false)
 }
 
-/// Empties `env` in safe mode. Project config loads without trust there, and
-/// what its templates render reaches the URLs mise requests, the lockfile and
-/// command output, so they must not see the credentials in the operator's
-/// environment. This is done on every render rather than where a context is
-/// built because backends and tasks render with contexts of their own.
+/// Empties `env` and `vars` in safe mode. Project config loads without trust
+/// there, and what its templates render reaches the URLs mise requests, the
+/// lockfile and command output, so they must not see the credentials in the
+/// operator's environment. Safe mode drops a project's own `[vars]`, so the
+/// `vars` left are the operator's (global and system config, `mise vars`
+/// answers) and are withheld for the same reason. This is done on every render
+/// rather than where a context is built because backends and tasks render with
+/// contexts of their own.
 fn safe_context(context: &Context) -> std::borrow::Cow<'_, Context> {
-    if !context.contains_key("env") || !safe_mode() || in_trusted_templates() {
+    const WITHHELD: [&str; 2] = ["env", "vars"];
+    if !WITHHELD.iter().any(|key| context.contains_key(key))
+        || !safe_mode()
+        || in_trusted_templates()
+    {
         return std::borrow::Cow::Borrowed(context);
     }
-    let mut context = context.clone();
-    context.insert("env", &EnvMap::new());
-    std::borrow::Cow::Owned(context)
+    let mut safe = context.clone();
+    for key in WITHHELD {
+        if context.contains_key(key) {
+            safe.insert(key, &EnvMap::new());
+        }
+    }
+    std::borrow::Cow::Owned(safe)
 }
 
 fn tera_err(message: impl ToString) -> tera::Error {

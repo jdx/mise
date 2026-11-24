@@ -14,7 +14,7 @@ use crate::resources::ResourceOrigin;
 pub use mise_config::secrets::{SecretOptionsTomlConfig, SecretTomlConfig};
 use mise_util::env_diff::EnvMap;
 use mise_util::tera::{
-    BASE_CONTEXT, TeraEngine, get_tera, get_tera_for_oci, get_tera_v2, render_str, render_str_v2,
+    BASE_CONTEXT, TeraEngine, get_tera, get_tera_for_oci, get_tera_v2, render_str_v2,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -288,7 +288,8 @@ impl SecretValues {
         }
         let mut context = config.bootstrap_tera_ctx(config_path).clone();
         context.remove("env");
-        render_str(&mut tera, input, &context).map_err(Into::into)
+        // the operator's dotfiles keep their vars in safe mode, as they do at apply time
+        crate::host::render_config_str(&mut tera, input, &context, config_path).map_err(Into::into)
     }
 
     fn render_inner(

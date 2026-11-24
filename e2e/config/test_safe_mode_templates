@@ -22,6 +22,27 @@ assert_contains "SAFE_TEMPLATE=secret mise tasks ls" "token=secret"
 assert_contains "SAFE_TEMPLATE=secret MISE_SAFE=1 mise tasks ls" "token=none"
 assert_not_contains "SAFE_TEMPLATE=secret MISE_SAFE=1 mise tasks ls" "secret"
 
+echo "=== project templates do not see the operator's vars ==="
+cat <<'EOF' >"$MISE_CONFIG_DIR/config.toml"
+[vars]
+mirror_token = "operator-secret"
+
+[tasks.global-task]
+run = "echo global"
+description = "global={{ vars.mirror_token }}"
+EOF
+cat <<'EOF' >mise.toml
+[tasks.build]
+run = "echo build"
+description = "token={{ vars | json_encode }}"
+EOF
+assert_contains "mise tasks ls" "operator-secret"
+assert_not_contains "MISE_SAFE=1 mise tasks ls" 'token={"mirror_token"'
+assert_contains "MISE_SAFE=1 mise tasks ls" "token={}"
+# a task global config declares is the operator's and keeps them
+assert_contains "MISE_SAFE=1 mise tasks ls" "global=operator-secret"
+rm "$MISE_CONFIG_DIR/config.toml"
+
 echo "=== get_env() and the file filters are refused ==="
 for template in "get_env(name='HOME')" "'/etc/hostname' | hash_file" "'/etc/hostname' | file_size" "'/etc/hostname' | last_modified"; do
   safe_template_tool "{{ $template }}" >mise.toml

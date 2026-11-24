@@ -2913,6 +2913,17 @@ impl Task {
     }
 
     pub(crate) async fn render(&mut self, config: &Arc<Config>, config_root: &Path) -> Result<()> {
+        // A task global or system config declares is the operator's, so safe mode keeps
+        // `env` and `vars` for its templates. One that extends a template is not, because
+        // the template can come from a project.
+        if self.extends.is_none() && crate::config::is_global_config(&self.config_source) {
+            crate::tera::with_templates_trusted(true, self.render_fields(config, config_root)).await
+        } else {
+            self.render_fields(config, config_root).await
+        }
+    }
+
+    async fn render_fields(&mut self, config: &Arc<Config>, config_root: &Path) -> Result<()> {
         if !self.has_render_templates() {
             self.store_raw_render_inputs();
             self.parse_plain_depends()?;

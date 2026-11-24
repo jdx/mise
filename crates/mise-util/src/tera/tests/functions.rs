@@ -593,6 +593,7 @@ fn test_safe_mode_hides_env_and_files() {
     let _reset = ResetSettings;
     let mut ctx = Context::new();
     ctx.insert("env", &json!({ "SECRET": "hunter2" }));
+    ctx.insert("vars", &json!({ "token": "t0ken" }));
     ctx.insert("p", "/etc");
     let refused = [
         ("{{ get_env(name='PATH', default='') }}", "get_env() is"),
@@ -621,10 +622,20 @@ fn test_safe_mode_hides_env_and_files() {
                 render_str(&mut tera, "{{ env.SECRET | default(value='unset') }}", &ctx).unwrap(),
                 "unset"
             );
-            // global and system config keep the environment
+            // the operator's vars are withheld like the environment
+            assert!(render_str(&mut tera, "{{ vars.token }}", &ctx).is_err());
+            assert_eq!(
+                render_str(&mut tera, "{{ vars | json_encode }}", &ctx).unwrap(),
+                "{}"
+            );
+            // global and system config keep the environment and vars
             assert_eq!(
                 render_str_with_env(&mut tera, "{{ env.SECRET }}", &ctx).unwrap(),
                 "hunter2"
+            );
+            assert_eq!(
+                render_str_with_env(&mut tera, "{{ vars.token }}", &ctx).unwrap(),
+                "t0ken"
             );
             for (template, message) in refused {
                 let err = render_str_with_env(&mut tera, template, &ctx).unwrap_err();
