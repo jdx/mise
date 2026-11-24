@@ -1269,6 +1269,32 @@ impl PlatformInfo {
     }
 }
 
+/// A lockfile table being taken apart key by key. An entry has a handful of
+/// keys and its reader asks for every key it knows, most of them absent, so
+/// comparing the names in order is cheaper than hashing each one asked for.
+struct Fields(Vec<(String, toml::Value)>);
+
+impl From<toml::Table> for Fields {
+    fn from(table: toml::Table) -> Self {
+        Self(table.into_iter().collect())
+    }
+}
+
+impl Fields {
+    fn remove(&mut self, key: &str) -> Option<toml::Value> {
+        let index = self.0.iter().position(|(name, _)| name == key)?;
+        Some(self.0.remove(index).1)
+    }
+
+    fn contains_key(&self, key: &str) -> bool {
+        self.0.iter().any(|(name, _)| name == key)
+    }
+
+    fn keys(&self) -> impl Iterator<Item = &String> {
+        self.0.iter().map(|(name, _)| name)
+    }
+}
+
 impl TryFrom<toml::Value> for PlatformInfo {
     type Error = Report;
     fn try_from(value: toml::Value) -> Result<Self> {
@@ -1277,7 +1303,8 @@ impl TryFrom<toml::Value> for PlatformInfo {
                 checksum: Some(checksum),
                 ..Default::default()
             }),
-            toml::Value::Table(mut t) => {
+            toml::Value::Table(t) => {
+                let mut t = Fields::from(t);
                 let install = match t.remove("install") {
                     Some(toml::Value::String(s)) if s == "source" => Some(s),
                     Some(toml::Value::String(s)) => {
@@ -2043,6 +2070,18 @@ impl Lockfile {
                 }
             }
         } else {
+            if let Some(project) =
+                crate::config::config_file::config_root::linked_lockfile_project(path)
+                && leads_out_of(path, &project)
+                && !owner_vouches_for_lockfile(path)
+            {
+                bail!(
+                    "refusing to write lockfile {}: it is reached through a symlink inside {}, which leads out of that project, and a link out is only followed for global config, or for trusted config outside safe mode. Run `mise trust` in {} if the link is yours",
+                    display_path(path),
+                    display_path(&project),
+                    display_path(&project)
+                );
+            }
             path.to_path_buf()
         };
         let path = target.as_path();
@@ -3223,11 +3262,23 @@ fn may_write_through_symlink(link: &Path, target: &Path) -> bool {
     {
         return true;
     }
-    if is_global_lockfile(link) {
-        return true;
-    }
-    !Settings::safe_mode()
-        && Config::maybe_get().is_some_and(|config| lockfile_is_trusted(&config, link))
+    owner_vouches_for_lockfile(link)
+}
+
+/// Whether the directory of `path` resolves to somewhere outside `project`, or cannot be
+/// resolved.
+fn leads_out_of(path: &Path, project: &Path) -> bool {
+    let dir = path.parent().and_then(|dir| fs::canonicalize(dir).ok());
+    let project = fs::canonicalize(project).ok();
+    !matches!((dir, project), (Some(dir), Some(project)) if dir.starts_with(&project))
+}
+
+/// Whether the config that owns the lockfile at `path` vouches for writing it wherever its
+/// path leads: the global or system lockfile, or a trusted project's outside safe mode.
+fn owner_vouches_for_lockfile(path: &Path) -> bool {
+    is_global_lockfile(path)
+        || (!Settings::safe_mode()
+            && Config::maybe_get().is_some_and(|config| lockfile_is_trusted(&config, path)))
 }
 
 /// Checks if a config path is a "local" config (should go to mise.local.lock)
@@ -7195,7 +7246,8 @@ impl TryFrom<toml::Value> for LockfileTool {
                 provenance: None,
                 unsupported_platforms: BTreeSet::new(),
             },
-            toml::Value::Table(mut t) => {
+            toml::Value::Table(t) => {
+                let mut t = Fields::from(t);
                 let mut platforms = BTreeMap::new();
                 // Handle nested platforms table format: [tools.X.platforms.linux-x64]
                 if let Some(platforms_table) = t.remove("platforms") {

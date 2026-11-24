@@ -288,6 +288,7 @@ impl ConfigSet {
 
         let raw = config.to_string();
         MiseToml::from_str(&raw, &file)?;
+        crate::config::config_file::symlink_check_before_write(&file)?;
         if let Some(parent) = file.parent() {
             std::fs::create_dir_all(parent)?;
         }

@@ -26,12 +26,13 @@ pub(crate) struct Untrust {
 impl Untrust {
     pub(crate) async fn run(self) -> Result<()> {
         let config_file = self.config_file()?;
+        let named_file = self.config_file.as_ref().is_some_and(|p| p.is_file());
         // Only a pathless untrust looks for config, and that loads the tool backends.
         let filenames = match config_file {
             Some(_) => vec![],
             None => crate::config::trust_config_filenames().await,
         };
-        trust::untrust_config_file(config_file, &filenames)
+        trust::untrust_config_file(config_file, named_file, &filenames)
     }
 
     fn config_file(&self) -> Result<Option<PathBuf>> {

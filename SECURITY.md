@@ -3,6 +3,8 @@
 mise installs and runs developer tools, which carries risk. This page lists the major areas of mise, the security
 measures in place for each, and what remains to be done. To report a vulnerability, see
 [Reporting a vulnerability](#reporting-a-vulnerability).
+For what mise trusts and what its controls protect, see the
+[threat model](https://mise.jdx.dev/security.html#threat-model).
 
 Please open a ticket or send me an email if you have thoughts on how mise can be made more secure.
 
@@ -72,6 +74,11 @@ The only supported version is the most recent one.
 ## Reporting a vulnerability
 
 Send an email to security@<MISE_JDX_DOMAIN_IN_README>
+
+Filing a report doesn’t guarantee public credit. For security reports, identify
+the affected version, how the issue arises in normal use, what an attacker must
+control, and the impact. We may close speculative, duplicate, or bulk reports
+that don’t establish an impact on mise.
 
 If you want, you may encrypt the message with GPG:
 

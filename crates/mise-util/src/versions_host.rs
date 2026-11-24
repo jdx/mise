@@ -19,7 +19,7 @@ use std::{
 /// and a trailing ` ci` token on the User-Agent, which the host's request logs
 /// record so CI traffic can be left out of usage counts.
 pub static VERSIONS_HOST_HEADERS: LazyLock<HeaderMap> =
-    LazyLock::new(|| versions_host_headers(ci_info::is_ci(), crate::user_agent::get()));
+    LazyLock::new(|| versions_host_headers(*crate::env::IS_CI, crate::user_agent::get()));
 
 fn versions_host_headers(ci: bool, user_agent: &str) -> HeaderMap {
     let mut headers = HeaderMap::new();

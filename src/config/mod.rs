@@ -28,6 +28,7 @@ use crate::config::config_file::{
 use crate::config::env_directive::{EnvDirective, EnvResolveOptions, EnvResults, ToolsFilter};
 use crate::config::tracking::Tracker;
 use crate::env::{MISE_DEFAULT_CONFIG_FILENAME, MISE_DEFAULT_TOOL_VERSIONS_FILENAME};
+use crate::errors::Untrusted;
 use crate::file::display_path;
 use crate::remote_source::RemoteSource;
 use crate::shorthands::{Shorthands, get_shorthands};
@@ -1834,11 +1835,25 @@ impl Config {
                 .env_paths
                 .insert(0, dirs::COMMAND_WRAPPERS.clone());
         }
-        for env_file in Settings::get().env_files() {
+        let settings = Settings::get();
+        for env_file in settings.env_files() {
             if env_results.env_files.contains(&env_file) {
                 continue;
             }
-            if !config_file::env_file_trust_check(&env_file)? {
+            // An absolute entry names one file the operator chose, which safe mode keeps. A
+            // relative one is searched for upward from the working directory, so it can be a
+            // file a repository supplies.
+            let named = settings
+                .env_file
+                .iter()
+                .flatten()
+                .any(|name| name.is_absolute() && *name == env_file);
+            let allowed = if named {
+                config_file::named_env_file_trust_check(&env_file, None)?
+            } else {
+                config_file::env_file_trust_check(&env_file)?
+            };
+            if !allowed {
                 // Trusting the file later changes nothing the cache key sees. A file that is not
                 // there has nothing to trust.
                 if env_file.exists() {
@@ -2658,28 +2673,81 @@ fn shared_config_filenames(
     if !override_config_filenames.is_empty() {
         paths.extend(override_config_filenames.iter().map(escape))
     } else {
-        paths.extend(
-            [
-                ".config/mise/conf.d/*.toml",
-                ".config/mise/conf.d/*/mise.toml",
-                ".config/mise/config.toml",
-                ".config/mise/mise.toml",
-                ".config/mise.toml",
-                ".mise/conf.d/*.toml",
-                ".mise/conf.d/*/mise.toml",
-                ".mise/config.toml",
-                "mise/conf.d/*.toml",
-                "mise/conf.d/*/mise.toml",
-                "mise/config.toml",
-                "mise.toml",
-                &escape(&env::MISE_DEFAULT_CONFIG_FILENAME), // mise.toml
-                ".mise.toml",
-            ]
-            .map(String::from),
-        );
+        let (before_default, after_default) = MISE_CONFIG_FILENAMES.split_at(12);
+        paths.extend(before_default.iter().map(|s| s.to_string()));
+        paths.insert(escape(&env::MISE_DEFAULT_CONFIG_FILENAME)); // mise.toml
+        paths.extend(after_default.iter().map(|s| s.to_string()));
     }
 
     paths
+}
+
+/// mise's own shared config filename patterns, lowest precedence first. The
+/// default config filename goes after the twelfth.
+const MISE_CONFIG_FILENAMES: [&str; 13] = [
+    ".config/mise/conf.d/*.toml",
+    ".config/mise/conf.d/*/mise.toml",
+    ".config/mise/config.toml",
+    ".config/mise/mise.toml",
+    ".config/mise.toml",
+    ".mise/conf.d/*.toml",
+    ".mise/conf.d/*/mise.toml",
+    ".mise/config.toml",
+    "mise/conf.d/*.toml",
+    "mise/conf.d/*/mise.toml",
+    "mise/config.toml",
+    "mise.toml",
+    ".mise.toml",
+];
+
+/// mise's own `.local` config filename patterns, lowest precedence first.
+const LOCAL_CONFIG_FILENAMES: [&str; 10] = [
+    ".config/mise/conf.d/*/mise.local.toml",
+    ".config/mise/config.local.toml",
+    ".config/mise/mise.local.toml",
+    ".config/mise.local.toml",
+    ".mise/conf.d/*/mise.local.toml",
+    ".mise/config.local.toml",
+    "mise/conf.d/*/mise.local.toml",
+    "mise/config.local.toml",
+    "mise.local.toml",
+    ".mise.local.toml",
+];
+
+/// Whether `path` is found under one of mise's own config filenames, or under a name that the
+/// `MISE_OVERRIDE_*_FILENAMES` and `MISE_DEFAULT_*_FILENAME` environment variables set. A name
+/// that only a `.miserc.toml` adds does not count: a project's `.miserc.toml` loads before
+/// anything is trusted, so it must not decide what an approval of a file covers.
+pub(crate) fn has_own_config_filename(path: &Path) -> bool {
+    let escape = |s: &str| glob::Pattern::escape(s);
+    let mut names: Vec<String> = [".tool-versions"]
+        .into_iter()
+        .chain(MISE_CONFIG_FILENAMES)
+        .chain(LOCAL_CONFIG_FILENAMES)
+        .map(String::from)
+        .collect();
+    for var in [
+        "MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES",
+        "MISE_OVERRIDE_CONFIG_FILENAMES",
+    ] {
+        if let Ok(value) = std::env::var(var) {
+            names.extend(value.split(':').filter(|s| !s.is_empty()).map(escape));
+        }
+    }
+    for var in [
+        "MISE_DEFAULT_TOOL_VERSIONS_FILENAME",
+        "MISE_DEFAULT_CONFIG_FILENAME",
+    ] {
+        if let Ok(value) = std::env::var(var) {
+            names.push(escape(&value));
+        }
+    }
+    let Ok(path) = path.absolutize() else {
+        return false;
+    };
+    load_config_paths(&names, true)
+        .iter()
+        .any(|config| config.absolutize().is_ok_and(|config| config == path))
 }
 /// `.local` override filenames for one directory, lowest precedence first. They
 /// outrank every shared and environment file in the same directory, except the
@@ -2689,18 +2757,7 @@ static LOCAL_OVERRIDE_CONFIG_FILENAMES: Lazy<Vec<&'static str>> = Lazy::new(|| {
     if !env::MISE_OVERRIDE_CONFIG_FILENAMES.is_empty() {
         return vec![];
     }
-    vec![
-        ".config/mise/conf.d/*/mise.local.toml",
-        ".config/mise/config.local.toml",
-        ".config/mise/mise.local.toml",
-        ".config/mise.local.toml",
-        ".mise/conf.d/*/mise.local.toml",
-        ".mise/config.local.toml",
-        "mise/conf.d/*/mise.local.toml",
-        "mise/config.local.toml",
-        "mise.local.toml",
-        ".mise.local.toml",
-    ]
+    LOCAL_CONFIG_FILENAMES.to_vec()
 });
 /// Config filename patterns for a single MISE_ENV environment, in precedence order
 /// (later wins). `local` selects the `mise.{env}.local.toml` family instead of
@@ -3667,6 +3724,25 @@ pub fn is_global_config(path: &Path) -> bool {
         || is_system_config(path)
 }
 
+/// [`is_global_config`] for a file a write may be about to create.
+///
+/// Discovery lists the global config files that exist, so the `config.toml` that a first
+/// `mise use -g` creates is not among them. A file directly in the global or system config
+/// directory, or in its `conf.d`, is global config by where it is; a file deeper below it is
+/// a project like any other.
+pub fn is_global_config_write(path: &Path) -> bool {
+    if is_global_config(path) || env::MISE_GLOBAL_CONFIG_FILE.as_deref() == Some(path) {
+        return true;
+    }
+    let Some(parent) = path.parent() else {
+        return false;
+    };
+    [&*dirs::CONFIG, &*dirs::SYSTEM_CONFIG]
+        .into_iter()
+        .flat_map(|dir| [dir.to_path_buf(), dir.join("conf.d")])
+        .any(|dir| file::same_file(parent, &dir))
+}
+
 /// Whether `path` is one of the global override files, which outrank all project config.
 /// See [`override_config_files`].
 ///
@@ -3861,7 +3937,10 @@ pub(crate) fn config_path_is_ignored(path: &Path, include_ignored: bool) -> bool
     // config there, so ignoring that project must not drop the global config
     // and the global-only settings it holds.
     let ctr_ignored = !is_global_config(path) && config_file::is_persisted_ignored(&ctr);
-    if ctr_ignored || config_file::is_persisted_ignored(path) {
+    if ctr_ignored
+        || config_file::is_persisted_ignored(path)
+        || config_file::project_is_ignored(path)
+    {
         return !config_file::is_trusted_via_config_paths(path);
     }
     false
@@ -4386,12 +4465,12 @@ fn resolve_global_write_path(opts: &ConfigPathOptions) -> Result<PathBuf> {
 fn declined_trust_prompt(path: &Path, err: &eyre::Report) -> bool {
     matches!(
         err.downcast_ref::<crate::errors::Error>(),
-        Some(crate::errors::Error::UntrustedConfig(_))
+        Some(crate::errors::Error::UntrustedConfig(..))
     ) && (config_file::is_ignored(&config_trust_root(path)) || config_file::is_ignored(path))
 }
 
 static SKIP_UNTRUSTED_CONFIGS: AtomicBool = AtomicBool::new(false);
-static SKIPPED_UNTRUSTED_CONFIGS: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
+static SKIPPED_UNTRUSTED_CONFIGS: Mutex<Vec<(PathBuf, Untrusted)>> = Mutex::new(Vec::new());
 
 /// Makes config loading skip untrusted config files instead of failing, so the
 /// remaining (e.g. global) configs still apply. Used by `hook-env`, where entering
@@ -4406,15 +4485,37 @@ pub(crate) fn skip_untrusted_path(path: &Path) -> bool {
         return false;
     }
     debug!("skipping untrusted file: {}", display_path(path));
-    let mut skipped = SKIPPED_UNTRUSTED_CONFIGS.lock().unwrap();
-    if !skipped.iter().any(|p| p == path) {
-        skipped.push(path.to_path_buf());
-    }
+    record_skipped_untrusted(path, &Untrusted::NotTrusted);
     true
+}
+
+/// Why `err` refused a config, when it is the untrusted-config error.
+fn untrusted_reason(err: &eyre::Report) -> Option<&Untrusted> {
+    match err.downcast_ref::<crate::errors::Error>() {
+        Some(crate::errors::Error::UntrustedConfig(_, why)) => Some(why),
+        _ => None,
+    }
+}
+
+fn record_skipped_untrusted(path: &Path, why: &Untrusted) {
+    let mut skipped = SKIPPED_UNTRUSTED_CONFIGS.lock().unwrap();
+    if !skipped.iter().any(|(p, _)| p == path) {
+        skipped.push((path.to_path_buf(), why.clone()));
+    }
 }
 
 /// Untrusted config files skipped so far when [`skip_untrusted_configs`] is active.
 pub fn skipped_untrusted_configs() -> Vec<PathBuf> {
+    SKIPPED_UNTRUSTED_CONFIGS
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|(path, _)| path.clone())
+        .collect()
+}
+
+/// [`skipped_untrusted_configs`] with the reason each one was refused.
+pub fn skipped_untrusted_configs_with_reasons() -> Vec<(PathBuf, Untrusted)> {
     SKIPPED_UNTRUSTED_CONFIGS.lock().unwrap().clone()
 }
 
@@ -4461,22 +4562,18 @@ async fn load_all_config_files(
                 }
                 Err(err)
                     if SKIP_UNTRUSTED_CONFIGS.load(Ordering::Relaxed)
-                        && matches!(
-                            err.downcast_ref::<crate::errors::Error>(),
-                            Some(crate::errors::Error::UntrustedConfig(_))
-                        ) =>
+                        && untrusted_reason(&err).is_some() =>
                 {
                     debug!("skipping untrusted config file: {}", display_path(f));
-                    let mut skipped = SKIPPED_UNTRUSTED_CONFIGS.lock().unwrap();
-                    if !skipped.contains(f) {
-                        skipped.push(f.clone());
+                    if let Some(why) = untrusted_reason(&err) {
+                        record_skipped_untrusted(f, why);
                     }
                     continue;
                 }
                 Err(err) => {
                     return Err(err.wrap_err(format!(
                         "error parsing config file: {}",
-                        style::ebold(display_path(f))
+                        style::ebold(style::display_path_escaped(f))
                     )));
                 }
             };
@@ -4522,7 +4619,7 @@ pub async fn load_config_files_from_paths(
             Err(err) => {
                 return Err(err.wrap_err(format!(
                     "error parsing config file: {}",
-                    style::ebold(display_path(f))
+                    style::ebold(style::display_path_escaped(f))
                 )));
             }
         };
@@ -5738,7 +5835,27 @@ pub(crate) fn is_global_task_include_path(path: &Path) -> bool {
         dirs::SYSTEM_CONFIG.join("tasks"),
     ]
     .iter()
-    .any(|prefix| file::path_starts_with_resolved(path, prefix))
+    .any(|dir| path_is_spelled_in_dir(path, dir))
+}
+
+/// Whether `path`, as written, names something inside `dir`. Links on the way to `dir` itself are
+/// followed, so `dir` reached under another spelling (a linked home or config directory) still
+/// counts, but links in `path` below that are not: a project file that links into `dir` is still
+/// the project's file.
+fn path_is_spelled_in_dir(path: &Path, dir: &Path) -> bool {
+    let Ok(path) = path.absolutize() else {
+        return false;
+    };
+    let Ok(dir) = dir.absolutize() else {
+        return false;
+    };
+    path.starts_with(&dir)
+        || dir.ancestors().any(|ancestor| {
+            let rest = dir.strip_prefix(ancestor).unwrap_or(Path::new(""));
+            ancestor
+                .canonicalize()
+                .is_ok_and(|resolved| path.starts_with(dunce::simplified(&resolved).join(rest)))
+        })
 }
 
 #[async_backtrace::framed]
@@ -6138,6 +6255,10 @@ async fn load_local_tasks_with_context(
                     for hierarchy_dir in hierarchy_dirs {
                         for config_path in config_paths_in_dir(&hierarchy_dir) {
                             if !seen_config_paths.insert(file::desymlink_path(&config_path)) {
+                                continue;
+                            }
+                            // an ignored subproject is left out, as config discovery leaves it out
+                            if config_path_is_ignored(&config_path, false) {
                                 continue;
                             }
                             match config_file::parse(&config_path).await {

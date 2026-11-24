@@ -1433,11 +1433,14 @@ pub fn make_symlink_or_file(target: &Path, link: &Path) -> Result<()> {
 pub fn resolve_symlink(link: &Path) -> Result<Option<PathBuf>> {
     // Windows aliases created before runtime links became junctions are plain
     // files holding the target path, so both forms are read here.
-    if link.is_symlink() {
+    // One look at the path answers both questions: what is not a link is
+    // what following it would find.
+    let file_type = link.symlink_metadata().ok().map(|m| m.file_type());
+    if file_type.is_some_and(|t| t.is_symlink()) {
         Ok(Some(fs::read_link(link)?))
     } else if let Some(target) = junction_target(link) {
         Ok(Some(target))
-    } else if link.is_file() {
+    } else if file_type.is_some_and(|t| t.is_file()) {
         Ok(Some(fs::read_to_string(link)?.into()))
     } else {
         Ok(None)
@@ -2309,10 +2312,21 @@ pub fn is_mise_shims_dir(path: &Path) -> bool {
     if paths_eq(&resolved, &user_shims) || paths_eq(&resolved, &sys_shims) {
         return true;
     }
+    // A shims directory that does not exist has no other spelling, and the
+    // comparison above already covered its own. Asking for its canonical form
+    // would walk every parent only to fail, once for each `PATH` entry.
+    let canon_shims = [user_shims, sys_shims]
+        .into_iter()
+        .filter(|shims| shims.symlink_metadata().is_ok())
+        .map(|shims| canonicalize_or_self(&shims))
+        .collect::<Vec<_>>();
+    if canon_shims.is_empty() {
+        return false;
+    }
     let canon_input = canonicalize_path_entry_or_self(&resolved);
-    let canon_user = canonicalize_or_self(&user_shims);
-    let canon_sys = canonicalize_or_self(&sys_shims);
-    paths_eq(&canon_input, &canon_user) || paths_eq(&canon_input, &canon_sys)
+    canon_shims
+        .iter()
+        .any(|shims| paths_eq(&canon_input, shims))
 }
 
 /// Returns true if `path` resolves to the shim that delegated to this mise

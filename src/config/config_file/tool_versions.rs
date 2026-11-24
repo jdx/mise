@@ -212,6 +212,7 @@ impl ConfigFile for ToolVersions {
             );
         }
         let s = self.dump()?;
+        super::symlink_check_before_write(&self.path)?;
         file::write_atomic(&self.path, s)
     }
 
