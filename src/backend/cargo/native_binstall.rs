@@ -993,6 +993,11 @@ fn native_target_cfgs(platform: &PlatformTarget, triple: &str) -> NativeTargetCf
     }
 }
 
+/// The deepest `not()`/`all()`/`any()` nesting of an override's `cfg()` that
+/// mise evaluates. Real keys nest a few levels; the key comes from the crate's
+/// manifest, and this bound keeps its evaluation from exhausting the stack.
+const MAX_CFG_DEPTH: usize = 32;
+
 fn native_cfg_override_matches(key: &str, cfgs: &NativeTargetCfg) -> bool {
     let Some(expr) = key
         .strip_prefix("cfg(")
@@ -1000,50 +1005,66 @@ fn native_cfg_override_matches(key: &str, cfgs: &NativeTargetCfg) -> bool {
     else {
         return false;
     };
-    native_cfg_expr_matches(expr.trim(), cfgs)
+    native_cfg_expr_matches(expr, cfgs, 0).unwrap_or_else(|| {
+        debug!(
+            "ignoring cargo-binstall override nested more than {MAX_CFG_DEPTH} cfg() levels deep"
+        );
+        false
+    })
 }
 
-fn native_cfg_expr_matches(expr: &str, cfgs: &NativeTargetCfg) -> bool {
+/// Whether `expr`, found `depth` groups deep, holds for `cfgs`. `None` when it
+/// nests past `MAX_CFG_DEPTH`; that ignores the whole key, so an enclosing
+/// `not()` cannot turn the refusal into a match. `all()` and `any()` evaluate
+/// every argument, so whether a key is refused does not depend on the target.
+fn native_cfg_expr_matches(expr: &str, cfgs: &NativeTargetCfg, depth: usize) -> Option<bool> {
+    if depth > MAX_CFG_DEPTH {
+        return None;
+    }
     let expr = expr.trim();
     if expr == "unix" {
-        return cfgs.family == "unix";
+        return Some(cfgs.family == "unix");
     }
     if expr == "windows" {
-        return cfgs.family == "windows";
+        return Some(cfgs.family == "windows");
     }
     if let Some(inner) = expr
         .strip_prefix("not(")
         .and_then(|expr| expr.strip_suffix(')'))
     {
-        return !native_cfg_expr_matches(inner, cfgs);
+        return native_cfg_expr_matches(inner, cfgs, depth + 1).map(|matches| !matches);
     }
+    let args_match = |inner| {
+        split_native_cfg_args(inner)
+            .into_iter()
+            .map(|part| native_cfg_expr_matches(part, cfgs, depth + 1))
+            .collect::<Option<Vec<_>>>()
+    };
     if let Some(inner) = expr
         .strip_prefix("all(")
         .and_then(|expr| expr.strip_suffix(')'))
     {
-        let parts = split_native_cfg_args(inner);
-        return !parts.is_empty() && parts.iter().all(|part| native_cfg_expr_matches(part, cfgs));
+        let matches = args_match(inner)?;
+        return Some(!matches.is_empty() && matches.into_iter().all(|matches| matches));
     }
     if let Some(inner) = expr
         .strip_prefix("any(")
         .and_then(|expr| expr.strip_suffix(')'))
     {
-        return split_native_cfg_args(inner)
-            .iter()
-            .any(|part| native_cfg_expr_matches(part, cfgs));
+        return Some(args_match(inner)?.into_iter().any(|matches| matches));
     }
     if let Some((key, value)) = expr.split_once('=') {
         let key = key.trim();
         let value = value.trim().trim_matches('"');
-        return match key {
+        return Some(match key {
             "target_os" => cfgs.os == value,
             "target_arch" => cfgs.arch == value,
             "target_env" => cfgs.env.as_deref() == Some(value),
             "target_family" => cfgs.family == value,
             _ => false,
-        };
+        });
     }
-    false
+    Some(false)
 }
 
 fn split_native_cfg_args(args: &str) -> Vec<&str> {
@@ -1405,6 +1426,48 @@ mod tests {
         .unwrap();
 
         assert_eq!(metadata.pkg_fmt.as_deref(), Some("zip"));
+    }
+
+    #[test]
+    fn native_cfg_override_nesting_is_bounded() {
+        let cfgs = native_target_cfgs(
+            &PlatformTarget::new(Platform::parse("linux-x64").unwrap()),
+            "x86_64-unknown-linux-gnu",
+        );
+        let nested = |op: &str, levels: usize, leaf: &str| {
+            format!("cfg({}{leaf}{})", op.repeat(levels), ")".repeat(levels))
+        };
+
+        assert!(native_cfg_override_matches(
+            &nested("any(", MAX_CFG_DEPTH, "unix"),
+            &cfgs
+        ));
+        assert!(!native_cfg_override_matches(
+            &nested("any(", MAX_CFG_DEPTH + 1, "unix"),
+            &cfgs
+        ));
+        // an odd number of not() around a non-match reads as a match, unless
+        // the key is refused as a whole
+        assert!(native_cfg_override_matches(
+            &nested("not(", MAX_CFG_DEPTH - 1, "windows"),
+            &cfgs
+        ));
+        assert!(!native_cfg_override_matches(
+            &nested("not(", MAX_CFG_DEPTH + 1, "windows"),
+            &cfgs
+        ));
+        // refused whatever an earlier argument already decided
+        let past_the_bound = nested("any(", MAX_CFG_DEPTH, "unix");
+        let past_the_bound = &past_the_bound["cfg(".len()..past_the_bound.len() - 1];
+        assert!(!native_cfg_override_matches(
+            &format!("cfg(any(unix, {past_the_bound}))"),
+            &cfgs
+        ));
+        // deep enough to overflow the stack if it were evaluated
+        assert!(!native_cfg_override_matches(
+            &nested("any(", 50_000, "unix"),
+            &cfgs
+        ));
     }
 
     #[test]
