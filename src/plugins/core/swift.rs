@@ -147,13 +147,35 @@ impl SwiftPlugin {
         .await?;
         let signature = file::read(&sig_path)?;
         gpg::verify_swift(tarball_path, &signature)?;
-        Ok(())
+        verify_release_name(tarball_path)
     }
 
     fn verify(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<()> {
         self.test_swift(ctx, tv)
             .map_err(|err| explain_missing_libraries(tv, err))
     }
+}
+
+/// Check that a signed Linux tarball is the release it was downloaded as.
+///
+/// The signature says swift.org published these bytes, not which release they are: the same few
+/// keys sign every release for every distro, and every tarball is public along with its `.sig`.
+/// Whoever answers for the download URL could otherwise serve another signed release (an older
+/// one, or another distro's) and have it installed as the version that was asked for. What names
+/// the release inside the signed bytes is the directory everything is packed under, which is the
+/// tarball's own name (`swift-6.1.2-RELEASE-ubuntu24.04`) and which extraction strips. Every
+/// tarball swift.org signs unpacks under that one directory, so its first entry settles it.
+fn verify_release_name(tarball_path: &Path) -> Result<()> {
+    let filename = tarball_path.file_name().unwrap().to_string_lossy();
+    let expected = filename.strip_suffix(".tar.gz").unwrap_or(&filename);
+    let top_level = file::first_tar_entry_top_level(tarball_path, file::ExtractionFormat::TarGz)?;
+    if top_level.as_deref() != Some(expected) {
+        bail!(
+            "{filename} is signed by swift.org but is not {expected}: it unpacks to {}",
+            top_level.as_deref().unwrap_or("nothing")
+        );
+    }
+    Ok(())
 }
 
 /// Name the shared libraries a failed `swift --version` could not load.
@@ -1542,8 +1564,9 @@ mod lockfile_tests {
 
 #[cfg(all(test, target_os = "linux"))]
 mod linux_tests {
-    use super::{missing_sonames, parse_ldd_missing};
+    use super::{missing_sonames, parse_ldd_missing, verify_release_name};
     use crate::file;
+    use std::path::{Path, PathBuf};
 
     #[test]
     fn parse_ldd_missing_reads_unresolved_sonames() {
@@ -1588,5 +1611,73 @@ mod linux_tests {
         let tmp = tempfile::tempdir().unwrap();
 
         assert!(missing_sonames(tmp.path(), &Default::default()).is_empty());
+    }
+    /// A tarball named `filename` holding one empty file at each of `entries`.
+    fn tarball(dir: &Path, filename: &str, entries: &[&str]) -> PathBuf {
+        let path = dir.join(filename);
+        let encoder = flate2::write::GzEncoder::new(
+            std::fs::File::create(&path).unwrap(),
+            flate2::Compression::fast(),
+        );
+        let mut archive = jdx_tar::Builder::new(encoder);
+        for entry in entries {
+            let mut header = jdx_tar::Header::new_gnu(jdx_tar::EntryType::File);
+            header.set_size(0);
+            header.set_mode(0o755);
+            archive
+                .append_data(&mut header, entry, std::io::empty())
+                .unwrap();
+        }
+        archive.into_inner().unwrap().finish().unwrap();
+        path
+    }
+
+    #[test]
+    fn verify_release_name_accepts_the_release_the_tarball_is_named_for() {
+        let tmp = tempfile::tempdir().unwrap();
+        for name in [
+            "swift-6.1.2-RELEASE-ubuntu24.04",
+            "swift-6.1.2-RELEASE-ubi9-aarch64",
+        ] {
+            let path = tarball(
+                tmp.path(),
+                &format!("{name}.tar.gz"),
+                &[
+                    &format!("./{name}/usr/bin/swift"),
+                    &format!("{name}/usr/lib/x"),
+                ],
+            );
+            verify_release_name(&path).unwrap();
+        }
+    }
+
+    /// Every one of these is a tarball swift.org signed, so the signature check
+    /// passes for it. None of them is the release the URL named.
+    #[test]
+    fn verify_release_name_refuses_another_release() {
+        let tmp = tempfile::tempdir().unwrap();
+        for entries in [
+            // an older release
+            &["swift-6.0.3-RELEASE-ubuntu24.04/usr/bin/swift"][..],
+            // a release whose version only starts the same way
+            &["swift-6.1-RELEASE-ubuntu24.04/usr/bin/swift"],
+            // the same release for another distro, and for another architecture
+            &["swift-6.1.2-RELEASE-ubuntu22.04/usr/bin/swift"],
+            &["swift-6.1.2-RELEASE-ubuntu24.04-aarch64/usr/bin/swift"],
+            // not a release layout at all
+            &["usr/bin/swift"],
+            &[],
+        ] {
+            let path = tarball(
+                tmp.path(),
+                "swift-6.1.2-RELEASE-ubuntu24.04.tar.gz",
+                entries,
+            );
+            let err = verify_release_name(&path).unwrap_err().to_string();
+            assert!(
+                err.contains("is not swift-6.1.2-RELEASE-ubuntu24.04"),
+                "{entries:?}: {err}"
+            );
+        }
     }
 }

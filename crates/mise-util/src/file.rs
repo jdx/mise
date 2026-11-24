@@ -3651,6 +3651,25 @@ fn skip_curdir_components(path: &Path) -> impl Iterator<Item = std::path::Compon
         .skip_while(|c| matches!(c, std::path::Component::CurDir))
 }
 
+/// The top-level directory or file that the first entry of a tar archive unpacks to, skipping
+/// leading `.` components. Reads only as far as that entry, so a large archive is not
+/// decompressed in full. `None` for an archive with no such entry.
+pub fn first_tar_entry_top_level(
+    archive: &Path,
+    format: ExtractionFormat,
+) -> Result<Option<String>> {
+    let tar = open_tar(format, archive)?;
+    let mut archive = Archive::new(tar);
+    for entry in archive.entries()? {
+        let entry = entry?;
+        let path = entry.path()?;
+        if let Some(first) = skip_curdir_components(&path).next() {
+            return Ok(Some(first.as_os_str().to_string_lossy().to_string()));
+        }
+    }
+    Ok(None)
+}
+
 /// Inspects the top-level contents of a tar archive without extracting it.
 ///
 /// Stops at the second distinct top-level entry, which already settles
