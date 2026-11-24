@@ -29,6 +29,23 @@ fn render_flags_array(value: &str) -> String {
         .join(" ")
 }
 
+/// Whether `name` can be a variable in bash or zsh: letters, digits and `_`, not starting with
+/// a digit.
+///
+/// Quoting cannot stand in for this check. `export` and `unset` parse the word again once the
+/// quotes are off and evaluate the subscript of a `name[subscript]`, command substitutions
+/// included: `export 'x[$(cmd)]'=y` runs `cmd` in zsh, and so does `unset 'DIRSTACK[$(cmd)]'` in
+/// bash. Names come from env files and `[env]` tables, which take any string, so one the shell
+/// could not hold as a variable is left out of the script.
+///
+/// Letters are not limited to ASCII: zsh accepts the others in a UTF-8 locale, and a shell that
+/// does not refuses them without evaluating anything.
+fn is_shell_name(name: &str) -> bool {
+    !name.is_empty()
+        && !name.starts_with(|c: char| c.is_ascii_digit())
+        && name.chars().all(|c| c == '_' || c.is_alphanumeric())
+}
+
 impl Shell for Bash {
     fn activate(&self, opts: ActivateOptions) -> String {
         let exe = opts.exe;
@@ -90,6 +107,10 @@ impl Shell for Bash {
             v.into()
         };
         let k = if is_path { "PATH" } else { k };
+        if !is_shell_name(k) {
+            debug!("not exporting {k:?}: it is not a shell variable name");
+            return String::new();
+        }
         let k = shell_escape::unix::escape(k.into());
         let v = shell_escape::unix::escape(v);
         format!("export {k}={v}\n")
@@ -103,6 +124,10 @@ impl Shell for Bash {
             v.into()
         };
         let k = if is_path { "PATH" } else { k };
+        if !is_shell_name(k) {
+            debug!("not exporting {k:?}: it is not a shell variable name");
+            return String::new();
+        }
         let v = v
             .replace('\\', "\\\\")
             .replace('"', "\\\"")
@@ -112,6 +137,9 @@ impl Shell for Bash {
     }
 
     fn unset_env(&self, k: &str) -> String {
+        if !is_shell_name(k) {
+            return String::new();
+        }
         format!("unset {k}\n", k = shell_escape::unix::escape(k.into()))
     }
 
@@ -164,6 +192,29 @@ mod tests {
     #[test]
     fn test_set_env() {
         assert_snapshot!(Bash::default().set_env("FOO", "1"));
+    }
+
+    #[test]
+    fn a_name_that_is_not_a_shell_variable_is_left_out() {
+        let bash = Bash::default();
+        for name in [
+            "x[$(touch marker)]",
+            "DIRSTACK[`touch marker`]",
+            "a[1]",
+            "a-b",
+            "a.b",
+            "a b",
+            "a=b",
+            "1a",
+            "",
+        ] {
+            assert_eq!(bash.set_env(name, "x"), "", "{name}");
+            assert_eq!(bash.prepend_env(name, "x"), "", "{name}");
+            assert_eq!(bash.unset_env(name), "", "{name}");
+        }
+        assert_eq!(bash.set_env("_a1", "x"), "export _a1=x\n");
+        assert_eq!(bash.unset_env("_a1"), "unset _a1\n");
+        assert_eq!(bash.set_env("ÉTÉ", "x"), "export 'ÉTÉ'=x\n");
     }
 
     #[test]
