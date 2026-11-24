@@ -521,16 +521,16 @@ async fn fetch_bearer_token(
             HeaderValue::from_str(&c.basic_auth_header())?,
         );
     }
-    let resp: TokenResponse = HTTP
-        .json_with_headers(url.as_str(), &headers)
-        .await
-        .wrap_err_with(|| match credential {
-            Some(c) => format!(
-                "fetching token from {realm} as {} (are the stored credentials still valid?)",
-                c.username
-            ),
-            None => format!("fetching anonymous token from {realm}"),
-        })?;
+    let resp: TokenResponse =
+        get_token(&url, &headers)
+            .await
+            .wrap_err_with(|| match credential {
+                Some(c) => format!(
+                    "fetching token from {realm} as {} (are the stored credentials still valid?)",
+                    c.username
+                ),
+                None => format!("fetching anonymous token from {realm}"),
+            })?;
     Ok(resp.token.or(resp.access_token))
 }
 
@@ -643,6 +643,25 @@ macro_rules! retry_transient {
             }
         }
     }};
+}
+
+/// Request a bearer token, retrying transient failures. The registry chose the URL, and the
+/// token that comes back is sent to the registry, so the request carries the registry login the
+/// caller put in `headers` or nothing: it goes out with the plain client, which adds no netrc
+/// login and no token for the host the URL names.
+async fn get_token(url: &url::Url, headers: &HeaderMap) -> Result<TokenResponse> {
+    retry_transient!("GET", url, get_token_once(url, headers).await)
+}
+
+async fn get_token_once(url: &url::Url, headers: &HeaderMap) -> Result<TokenResponse> {
+    let resp = HTTP
+        .reqwest()?
+        .get(url.clone())
+        .headers(headers.clone())
+        .send()
+        .await?
+        .error_for_status()?;
+    Ok(buffer_body(resp).await?.json().await?)
 }
 
 /// Download a blob (config or layer) into memory, refreshing auth on `401`
