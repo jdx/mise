@@ -10,7 +10,7 @@ use crate::backend::cargo::CargoOptions;
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::{get_filename_from_url, read_archive_metadata};
 use crate::config::Settings;
-use crate::file::{self, ExtractOptions, ExtractionFormat};
+use crate::file::{self, ExtractBudget, ExtractOptions, ExtractionFormat};
 use crate::hash;
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
@@ -172,6 +172,9 @@ pub(super) async fn install(
         let download_dir = tempfile::Builder::new()
             .prefix("mise-cargo-binstall-archives-")
             .tempdir()?;
+        // The crate chooses how many archives there are, one per bin, so
+        // they share one extract_max_ratio limit.
+        let mut extract_budget = ExtractBudget::default();
         let mut pending = vec![];
         for bin in &bins {
             let vars = template_ctx.vars(&bin.name);
@@ -197,6 +200,7 @@ pub(super) async fn install(
                     preserve_mtime: true,
                 },
             )?;
+            extract_budget.add(&archive_path, &extract_dir)?;
             // The binary is copied by path, which reads through a shipped link.
             file::ensure_symlinks_stay_within(&extract_dir)?;
             let Some(src) = find_native_bin(&extract_dir, binstall.bin_dir.as_deref(), &vars)?
