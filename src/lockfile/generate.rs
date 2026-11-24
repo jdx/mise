@@ -602,6 +602,7 @@ pub async fn generate(
             if let Ok(info) = &mut resolution.4 {
                 complete_artifact_checksums(info).await?;
                 if let Some(old) = previous_info {
+                    check_replaced_weak_pins(&old, info).await?;
                     preserve_legacy_metadata(&old, info);
                 }
             }
@@ -1206,49 +1207,99 @@ impl Drop for ProgressGuard<'_> {
 /// Gives every artifact a sha256, blake3 or sha512 checksum. One with none is
 /// downloaded and hashed. One with an md5 or sha1 checksum, which the release
 /// publisher chose and could make a second file match, is downloaded, checked
-/// against it, and pinned by its sha256 instead.
+/// against it, and pinned by its sha256 instead. A checksum taken from the
+/// download is confirmed, so it loses any [`ChecksumSource`](crate::lockfile::ChecksumSource) mark.
 async fn complete_artifact_checksums(info: &mut PlatformInfo) -> Result<()> {
     if info.checksum.as_deref().is_none_or(is_weak_checksum)
         && let Some(url) = &info.url
     {
+        let expected = info.checksum.as_deref().map(|c| (c, RELEASE_CHECKSUM));
         info.checksum = Some(
             artifact_checksum(
                 url,
                 info.url_api.as_deref(),
                 info.download_headers.as_ref(),
-                info.checksum.as_deref(),
+                expected.as_slice(),
             )
             .await?,
         );
+        info.checksum_source = None;
     }
     for artifact in &mut info.additional_artifacts {
         if artifact.checksum.as_deref().is_none_or(is_weak_checksum) {
+            let expected = artifact.checksum.as_deref().map(|c| (c, RELEASE_CHECKSUM));
             artifact.checksum = Some(
                 artifact_checksum(
                     &artifact.url,
                     artifact.url_api.as_deref(),
                     None,
-                    artifact.checksum.as_deref(),
+                    expected.as_slice(),
                 )
                 .await?,
             );
+            artifact.checksum_source = None;
         }
     }
     Ok(())
 }
 
-/// The sha256 of the artifact at `url`, after checking it against `expected`
-/// (`algorithm:hash`) when given.
+const RELEASE_CHECKSUM: &str = "the checksum its release lists";
+const LOCKED_CHECKSUM: &str = "the checksum mise.lock pinned it by";
+
+/// A refreshed entry replaces the md5 or sha1 checksum `old` pinned an
+/// artifact by. When the artifact is still at the same URL, it is downloaded
+/// and checked against that pin as well as the new checksum, so the refresh
+/// cannot move the pin to other bytes the URL now serves.
+async fn check_replaced_weak_pins(old: &PlatformInfo, new: &PlatformInfo) -> Result<()> {
+    let replaced = |old: &Option<String>, new: &Option<String>| {
+        old.as_deref()
+            .filter(|old| is_weak_checksum(old) && Some(*old) != new.as_deref())
+            .map(str::to_owned)
+    };
+    if let Some(url) = &new.url
+        && old.url == new.url
+        && let Some(pin) = replaced(&old.checksum, &new.checksum)
+    {
+        let mut expected = vec![(pin.as_str(), LOCKED_CHECKSUM)];
+        expected.extend(new.checksum.as_deref().map(|c| (c, RELEASE_CHECKSUM)));
+        artifact_checksum(
+            url,
+            new.url_api.as_deref(),
+            new.download_headers.as_ref(),
+            &expected,
+        )
+        .await?;
+    }
+    for artifact in &new.additional_artifacts {
+        let Some(pin) = old
+            .additional_artifacts
+            .iter()
+            .find(|old| old.url == artifact.url)
+            .and_then(|old| replaced(&old.checksum, &artifact.checksum))
+        else {
+            continue;
+        };
+        let mut expected = vec![(pin.as_str(), LOCKED_CHECKSUM)];
+        expected.extend(artifact.checksum.as_deref().map(|c| (c, RELEASE_CHECKSUM)));
+        artifact_checksum(&artifact.url, artifact.url_api.as_deref(), None, &expected).await?;
+    }
+    Ok(())
+}
+
+/// The sha256 of the artifact at `url`, after checking it against each
+/// `expected` checksum (`algorithm:hash`, and what it is for the error).
 async fn artifact_checksum(
     url: &str,
     api_url: Option<&str>,
     headers: Option<&reqwest::header::HeaderMap>,
-    expected: Option<&str>,
+    expected: &[(&str, &str)],
 ) -> Result<String> {
     let check = |path: &std::path::Path| -> Result<()> {
-        if let Some((algorithm, hash)) = expected.and_then(|c| c.split_once(':')) {
-            crate::hash::ensure_checksum(path, hash, None, algorithm)
-                .wrap_err_with(|| format!("{url} does not match the checksum its release lists"))?;
+        for (checksum, what) in expected {
+            if let Some((algorithm, hash)) = checksum.split_once(':') {
+                crate::hash::ensure_checksum(path, hash, None, algorithm)
+                    .wrap_err_with(|| format!("{url} does not match {what}"))?;
+            }
         }
         Ok(())
     };
@@ -1722,12 +1773,19 @@ mod tests {
         };
 
         let mut info = with_checksum("md5:8e5b948a454515dbabfc7eb718daa52f");
+        info.checksum_source = Some(crate::lockfile::ChecksumSource::VersionsHost);
+        info.additional_artifacts[0].checksum_source =
+            Some(crate::lockfile::ChecksumSource::VersionsHost);
         complete_artifact_checksums(&mut info).await.unwrap();
         assert_eq!(info.checksum.as_deref(), Some(sha256.as_str()));
         assert_eq!(
             info.additional_artifacts[0].checksum.as_deref(),
             Some(sha256.as_str())
         );
+        // The download confirmed the sha256, so it can pin a kept download.
+        assert_eq!(info.checksum_source, None);
+        assert_eq!(info.pin_checksum(), Some(&sha256));
+        assert_eq!(info.additional_artifacts[0].checksum_source, None);
 
         // The md5 the release lists still has to match.
         let mut info = with_checksum("md5:00000000000000000000000000000000");
@@ -1745,6 +1803,57 @@ mod tests {
         let mut info = with_checksum(&blake3);
         complete_artifact_checksums(&mut info).await.unwrap();
         assert_eq!(info.checksum.as_deref(), Some(blake3.as_str()));
+    }
+
+    #[tokio::test]
+    async fn refresh_checks_the_artifact_against_the_weak_pin_it_replaces() {
+        let tmp = tempfile::tempdir().unwrap();
+        let artifact = tmp.path().join("probe");
+        std::fs::write(&artifact, b"artifact").unwrap();
+        let url = url::Url::from_file_path(&artifact).unwrap().to_string();
+        let sha256 = format!(
+            "sha256:{}",
+            crate::hash::file_hash_sha256(&artifact, None).unwrap()
+        );
+        let entry = |url: &str, checksum: &str| PlatformInfo {
+            url: Some(url.into()),
+            checksum: Some(checksum.into()),
+            additional_artifacts: vec![crate::lockfile::ArtifactInfo {
+                url: url.into(),
+                checksum: Some(checksum.into()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let refreshed = entry(&url, &sha256);
+
+        // The bytes the URL serves are the ones mise.lock pinned.
+        let old = entry(&url, "md5:8e5b948a454515dbabfc7eb718daa52f");
+        check_replaced_weak_pins(&old, &refreshed).await.unwrap();
+
+        // Other bytes at the same URL stop the refresh, for the primary
+        // artifact and for an additional one.
+        let other = "md5:00000000000000000000000000000000";
+        let err = check_replaced_weak_pins(&entry(&url, other), &refreshed)
+            .await
+            .unwrap_err();
+        assert!(
+            format!("{err:#}").contains("does not match the checksum mise.lock pinned it by"),
+            "{err:#}"
+        );
+        let mut old = entry(&url, &sha256);
+        old.additional_artifacts[0].checksum = Some(other.into());
+        assert!(check_replaced_weak_pins(&old, &refreshed).await.is_err());
+
+        // A pin for another URL, or a strong one, says nothing about these bytes.
+        let elsewhere = entry("file:///nonexistent/other", other);
+        check_replaced_weak_pins(&elsewhere, &refreshed)
+            .await
+            .unwrap();
+        let blake3 = format!("blake3:{}", "0".repeat(64));
+        check_replaced_weak_pins(&entry(&url, &blake3), &refreshed)
+            .await
+            .unwrap();
     }
 
     #[tokio::test]
@@ -2427,7 +2536,7 @@ mod tests {
         headers.insert("authorization", "Bearer secret".parse().unwrap());
         let browser_url = format!("{}/browser", server.url());
         let api_url = format!("{}/api/asset", server.url());
-        let checksum = artifact_checksum(&browser_url, Some(&api_url), Some(&headers), None)
+        let checksum = artifact_checksum(&browser_url, Some(&api_url), Some(&headers), &[])
             .await
             .unwrap();
         head.assert_async().await;
@@ -2453,7 +2562,7 @@ mod tests {
         headers.insert("authorization", "Bearer secret".parse().unwrap());
         let browser_url = format!("{}/browser", server.url());
         let api_url = format!("{}/api/asset", server.url());
-        let checksum = artifact_checksum(&browser_url, Some(&api_url), Some(&headers), None)
+        let checksum = artifact_checksum(&browser_url, Some(&api_url), Some(&headers), &[])
             .await
             .unwrap();
         head.assert_async().await;
