@@ -25,6 +25,13 @@
 //! project tool is left to those recorded hosts as well: the one an operator's
 //! URL replacement sent to another host. Project settings do not load in safe
 //! mode, so the operator chose that host, typically a mirror with a netrc login.
+//!
+//! The GitHub token that [`crate::http::host_auth_headers`] adds to any request
+//! for a GitHub API or raw content URL is withheld from those recorded hosts
+//! too, the public forges included, unless the request is a global tool's work.
+//! It goes to the service it was issued for, but the project chose the URL and
+//! gets the answer back (as versions, say), so the token would read for the
+//! project whatever the operator can read.
 
 use std::collections::HashSet;
 use std::future::Future;
@@ -228,6 +235,16 @@ pub fn netrc_denied_on_replacement_host(url: &url::Url) -> bool {
         return false;
     }
     netrc_denied_for_host(url)
+}
+
+/// Whether a request for `url` goes without the GitHub token that
+/// [`crate::http::host_auth_headers`] adds on the strength of the host alone:
+/// true when project config named the host in a URL option (or named a
+/// templated host), and the request is not the work of a tool from global or
+/// system config. Forge backends ask `github::get_headers` for a repository's
+/// own URLs themselves and keep the token on the public forges.
+pub fn host_auth_denied(url: &url::Url) -> bool {
+    netrc_denied_on_replacement_host(url)
 }
 
 fn netrc_denied_for_host(url: &url::Url) -> bool {

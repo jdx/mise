@@ -3243,7 +3243,14 @@ pub fn host_auth_headers(url: &Url) -> Result<HeaderMap> {
     // files are a 404 without the token, so it is routed here too. `get_headers`
     // decides what each host actually gets.
     if crate::github::is_github_api_url(url) || crate::github::is_github_raw_content_url(url) {
-        return crate::github::get_headers(url.as_str(), crate::github::API_URL);
+        let mut headers = crate::github::get_headers(url.as_str(), crate::github::API_URL)?;
+        // A host that a project tool's URL named in safe mode; see
+        // `untrusted_hosts`. The media type headers stay, so what is public
+        // there still downloads.
+        if crate::untrusted_hosts::host_auth_denied(url) {
+            headers.remove(AUTHORIZATION);
+        }
+        return Ok(headers);
     }
 
     // A generic URL does not carry the configured GitHub Enterprise, GitLab or

@@ -304,6 +304,10 @@ These are skipped without an error, so resolution commands keep working:
   of your [URL replacements](/url-replacements.html) sends to another host is
   the exception: you chose that host, so a project tool keeps the `~/.netrc`
   login for your mirror, unless the project names the mirror's host itself.
+  The GitHub token that mise otherwise adds to any request for a GitHub API or
+  `raw.githubusercontent.com` URL is withheld from the hosts a project tool's
+  URL options name too, so a project URL cannot read a private repository's
+  files with it.
   The `headers` of an `http:` tool in a global `[tool_alias]` go with the
   options written beside them: a project entry for that tool which sets an
   option of its own, such as `version_list_url`, gets none of them.

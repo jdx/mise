@@ -291,6 +291,54 @@ fn test_enterprise_api_path_gets_token_only_at_api_url_origin() {
     });
 }
 
+/// In safe mode a project tool's URL option can name GitHub's own hosts, and
+/// the project gets the response back (as versions, say). The generic client's
+/// automatic token is withheld from such a host, except in the work done for a
+/// tool from global config.
+#[test]
+fn test_host_auth_headers_withhold_token_from_hosts_a_project_named() {
+    use reqwest::header::AUTHORIZATION;
+    let _settings = crate::testing::lock_ignoring_poison(&crate::testing::SETTINGS_LOCK);
+    with_github_token(|| {
+        let auth =
+            |url: &str| crate::http::host_auth_headers(&url::Url::parse(url).unwrap()).unwrap();
+        let raw = "https://raw.githubusercontent.com/owner/private/main/deploy.env";
+        let contents = "https://api.github.com/repos/owner/private/contents/deploy.env";
+        crate::untrusted_hosts::reset();
+        assert!(auth(raw).contains_key(AUTHORIZATION));
+        assert!(auth(contents).contains_key(AUTHORIZATION));
+
+        crate::untrusted_hosts::deny_netrc_for_url(raw);
+        assert!(!auth(raw).contains_key(AUTHORIZATION));
+        assert!(auth(contents).contains_key(AUTHORIZATION));
+
+        crate::untrusted_hosts::deny_netrc_for_url(contents);
+        let headers = auth(contents);
+        assert!(!headers.contains_key(AUTHORIZATION));
+        // public content still downloads
+        assert_eq!(headers.get("accept").unwrap(), "application/vnd.github.raw");
+
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap();
+        // a project tool's work gets none there either
+        let project = runtime.block_on(crate::untrusted_hosts::with_tool_scope(false, async {
+            auth(raw)
+        }));
+        assert!(!project.contains_key(AUTHORIZATION));
+        // a global tool keeps the token on the same hosts
+        let trusted = runtime.block_on(crate::untrusted_hosts::with_tool_scope(true, async {
+            (auth(raw), auth(contents))
+        }));
+        assert!(trusted.0.contains_key(AUTHORIZATION));
+        assert!(trusted.1.contains_key(AUTHORIZATION));
+        // and so do the forge backends, which ask for a repository's own URLs
+        let forge = get_headers(contents, API_URL).unwrap();
+        assert!(forge.contains_key(AUTHORIZATION));
+        crate::untrusted_hosts::reset();
+    });
+}
+
 /// `github.enterprise_hosts` names Enterprise Servers whose `/api/v3` URLs get
 /// the token from any caller, such as an `http:` tool or a remote task file.
 #[test]
