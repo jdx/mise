@@ -1324,6 +1324,7 @@ impl Client {
             extra_headers: HeaderMap::new(),
             retries: crate::network::http_retries(&Settings::get()),
             allow_html: false,
+            host_auth: true,
         }
     }
 
@@ -2827,6 +2828,7 @@ pub struct TextRequest<'a> {
     extra_headers: HeaderMap,
     retries: i64,
     allow_html: bool,
+    host_auth: bool,
 }
 
 impl TextRequest<'_> {
@@ -2847,6 +2849,16 @@ impl TextRequest<'_> {
         self
     }
 
+    /// Leave out the credentials [`host_auth_headers`] adds by host alone, for a
+    /// URL that a third party chose, such as a link in a release. Sending them
+    /// would fetch for the third party whatever the user can read there; the
+    /// caller passes the credentials the request is meant to carry with
+    /// [`Self::headers`].
+    pub fn without_host_auth(mut self) -> Self {
+        self.host_auth = false;
+        self
+    }
+
     pub async fn send(mut self) -> Result<String> {
         ensure!(
             !crate::network::offline(&Settings::get()),
@@ -2854,7 +2866,11 @@ impl TextRequest<'_> {
         );
         let mut url = self.url.clone().map_err(|e| eyre!(e))?;
         // Merge GitHub headers with any extra headers provided
-        let mut headers = host_auth_headers(&url)?;
+        let mut headers = if self.host_auth {
+            host_auth_headers(&url)?
+        } else {
+            HeaderMap::new()
+        };
         headers.extend(self.extra_headers.clone());
         let text = self
             .client

@@ -701,6 +701,60 @@ fn forward_rules_still_carry_a_header_the_request_kept() {
     assert_eq!(redirected[AUTHORIZATION], "Bearer origin-token");
 }
 
+/// A GitHub API URL gets the user's token on the strength of its host alone.
+/// `without_host_auth` is for a URL a third party chose, and sends none.
+#[tokio::test(flavor = "multi_thread")]
+async fn text_request_without_host_auth_sends_no_forge_token() {
+    struct TokenOverride;
+    impl Drop for TokenOverride {
+        fn drop(&mut self) {
+            *crate::github::test_support::TOKENS_FILE_OVERRIDE
+                .write()
+                .unwrap() = None;
+        }
+    }
+
+    let (port, _, requests) = spawn_recording_server(vec![ok_response(), ok_response()]).await;
+    let settings_lock = crate::testing::lock_ignoring_poison(&crate::testing::SETTINGS_LOCK);
+    let _github_env_lock = crate::testing::lock_ignoring_poison(&crate::github::TEST_ENV_LOCK);
+    // The loopback server stands in for an Enterprise Server the user listed,
+    // whose `/api/v3` URLs get the token from any caller.
+    let mut settings = mise_settings::SettingsPartial::empty();
+    settings.github.enterprise_hosts = Some(vec!["127.0.0.1".to_string()]);
+    crate::testing::reset_settings(Some(settings));
+    let _settings = SettingsGuard {
+        _lock: settings_lock,
+    };
+    let mut tokens = std::collections::HashMap::new();
+    tokens.insert("127.0.0.1".to_string(), "ghp_operator".to_string());
+    *crate::github::test_support::TOKENS_FILE_OVERRIDE
+        .write()
+        .unwrap() = Some(tokens);
+    let _token = TokenOverride;
+
+    let url = format!("http://127.0.0.1:{port}/api/v3/repos/owner/private/contents/key");
+    let client = Client::new(Duration::from_secs(3), ClientKind::Http).unwrap();
+    client.get_text_request(&url).send().await.unwrap();
+    client
+        .get_text_request(&url)
+        .without_host_auth()
+        .send()
+        .await
+        .unwrap();
+
+    let requests = requests.lock().unwrap();
+    let with_host_auth = requests[0].to_ascii_lowercase();
+    let without_host_auth = requests[1].to_ascii_lowercase();
+    assert!(
+        with_host_auth.contains("authorization: bearer ghp_operator"),
+        "{with_host_auth}"
+    );
+    assert!(
+        !without_host_auth.contains("authorization:"),
+        "{without_host_auth}"
+    );
+}
+
 #[test]
 fn with_host_auth_layers_configured_headers_over_automatic_ones() {
     let url = Url::parse("https://example.com/file").unwrap();
