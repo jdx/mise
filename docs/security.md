@@ -7,8 +7,8 @@ socialDescription: "Control config trust, verify downloads, delay new releases, 
 
 Each mise security control covers one stage, from loading a project's config to
 running the commands it starts. The one you meet first is
-[configuration trust](#configuration-trust): mise asks before it lets a
-repository's config run code.
+[configuration trust](#configuration-trust), which controls when a
+repository's config can run code.
 
 ## What mise protects against
 
@@ -22,14 +22,26 @@ repository's config run code.
 | A task or command reads, writes or reaches more than it needs            | [Sandboxing](/sandboxing.html)                  | Off; Linux and macOS only                                    |
 | A secret ends up in your shell, a log or a process that does not need it | [Secrets](#secrets)                             | Opt in                                                       |
 
-Each control has its own scope. Trusting a config does not verify an upstream
-release, and sandboxing a task does not sandbox mise while it evaluates config.
+## Threat model
 
-These controls do not review the software you choose to install. A tool, a
-package or an asdf or vfox plugin runs with your permissions once you install
-it. Global and system config, such as `~/.config/mise/config.toml`, belongs to
-you, so mise trusts it without asking. mise itself runs as your user with no
-sandbox.
+- **Project configuration.** mise assumes you or your administrator control
+  global and system config. [Configuration trust](#configuration-trust) limits
+  what project config can do without your approval. Treat trusting a project as
+  trusting its code: trusted config can run commands as you. Some commands
+  [imply trust](#implicit-trust), and CI trusts project config by default.
+  Use [safe mode](#safe-mode) when automation only needs to read project config
+  you have not reviewed.
+- **Tools and plugins.** Choose tools, packages, and asdf or vfox plugins from
+  sources you trust. Plugins and install scripts can run with your permissions
+  during installation, before you ever run the tool.
+  [Download verification](#download-verification) checks the artifact against
+  the evidence available from the backend and upstream publisher. It does not
+  tell you whether that publisher or its software is safe.
+- **Running commands.** mise runs as your user. Optional
+  [sandboxing](/sandboxing.html) limits supported operations of the commands you
+  run with it. It does not sandbox mise while it evaluates config, installs
+  tools, or runs hooks. Run untrusted projects or tools in an isolated
+  environment without access to your usual files or credentials.
 
 ## Configuration trust
 
@@ -105,7 +117,11 @@ trust.
 
 When a command needs a config that is not trusted:
 
-- In a terminal, mise asks
+- A command you type in a terminal trusts the config's directory without
+  asking, records it as `mise trust` would, and says
+  ``mise trusted <dir> because you ran a mise command there. Undo with `mise untrust`.``<!-- cli: skip -->
+  See [Typed in a terminal](#typed-in-a-terminal) for what counts.
+- Otherwise, when stdin and stderr are a terminal, mise asks
   `mise config files in <dir> are not trusted. Trust them?`<!-- cli: skip -->
   with Yes, No and All, where All answers yes to every prompt in that command.
   No adds the
@@ -144,6 +160,29 @@ the file's whole config root, so if another config file there is not trusted
 yet, such as a `mise.local.toml` or a `mise.staging.toml`, mise asks about it
 first, the way it does when that file loads. In safe mode a write records no
 trust.
+
+### Typed in a terminal
+
+Outside the commands that imply trust, typing any other mise command, such as `mise ls`
+or `mise env`, in an untrusted project trusts that project without the prompt
+when all of these hold:
+
+- stdin, stdout and stderr are all a terminal. A command whose output is
+  captured, such as `$(mise env)` in a prompt or `eval "$(mise env)"` in a
+  shell startup file, still asks.
+- Paranoid mode's `config` category is off.
+- mise is not running as a shim, as the `mise x` a shim runs, for shell
+  completion, or for the shell's command-not-found handler after you mistype a
+  command.
+- On Unix systems such as Linux and macOS, you own the config file and its directory, and the
+  target of either when it is a symlink. A `mise.toml` another account left in a
+  shared directory still asks. Windows does not check ownership.
+
+mise trusts the config's directory as `mise trust` would and prints
+``mise trusted <dir> because you ran a mise command there. Undo with `mise untrust`.``<!-- cli: skip -->
+once per directory, which `--quiet` hides. A directory on the ignore list or
+under `ignored_config_paths` stays ignored, and shell activation still skips
+untrusted config. Only paranoid mode turns this off.
 
 ### CI and `--yes`
 

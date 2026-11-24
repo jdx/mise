@@ -1269,6 +1269,32 @@ impl PlatformInfo {
     }
 }
 
+/// A lockfile table being taken apart key by key. An entry has a handful of
+/// keys and its reader asks for every key it knows, most of them absent, so
+/// comparing the names in order is cheaper than hashing each one asked for.
+struct Fields(Vec<(String, toml::Value)>);
+
+impl From<toml::Table> for Fields {
+    fn from(table: toml::Table) -> Self {
+        Self(table.into_iter().collect())
+    }
+}
+
+impl Fields {
+    fn remove(&mut self, key: &str) -> Option<toml::Value> {
+        let index = self.0.iter().position(|(name, _)| name == key)?;
+        Some(self.0.remove(index).1)
+    }
+
+    fn contains_key(&self, key: &str) -> bool {
+        self.0.iter().any(|(name, _)| name == key)
+    }
+
+    fn keys(&self) -> impl Iterator<Item = &String> {
+        self.0.iter().map(|(name, _)| name)
+    }
+}
+
 impl TryFrom<toml::Value> for PlatformInfo {
     type Error = Report;
     fn try_from(value: toml::Value) -> Result<Self> {
@@ -1277,7 +1303,8 @@ impl TryFrom<toml::Value> for PlatformInfo {
                 checksum: Some(checksum),
                 ..Default::default()
             }),
-            toml::Value::Table(mut t) => {
+            toml::Value::Table(t) => {
+                let mut t = Fields::from(t);
                 let install = match t.remove("install") {
                     Some(toml::Value::String(s)) if s == "source" => Some(s),
                     Some(toml::Value::String(s)) => {
@@ -7219,7 +7246,8 @@ impl TryFrom<toml::Value> for LockfileTool {
                 provenance: None,
                 unsupported_platforms: BTreeSet::new(),
             },
-            toml::Value::Table(mut t) => {
+            toml::Value::Table(t) => {
+                let mut t = Fields::from(t);
                 let mut platforms = BTreeMap::new();
                 // Handle nested platforms table format: [tools.X.platforms.linux-x64]
                 if let Some(platforms_table) = t.remove("platforms") {

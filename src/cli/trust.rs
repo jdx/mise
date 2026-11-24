@@ -14,8 +14,9 @@ use std::sync::Arc;
 /// Mark a config file as trusted
 ///
 /// Trust lets mise load the parts of a config file that can run code or change
-/// your environment. Without it, mise prompts, skips the file, or fails with an
-/// untrusted-config error when it cannot prompt.
+/// your environment. A mise command you type in a terminal trusts the project's
+/// config for you and says so. Otherwise mise prompts, skips the file, or fails
+/// with an untrusted-config error when it cannot prompt.
 ///
 /// A file with no template syntax that contains only `min_version`, `[tools]`
 /// entries with plain version strings (or arrays of them), and `[tasks]` in

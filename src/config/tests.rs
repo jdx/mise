@@ -2320,9 +2320,7 @@ async fn test_resolve_tool_opts_prefers_s3_listing_config_over_install_manifest_
 
 #[tokio::test]
 async fn test_resolve_tool_opts_prefers_env_backend_override_over_alias_opts() -> Result<()> {
-    unsafe {
-        std::env::set_var("MISE_BACKENDS_ENV_OPTS_TEST", "github:env/repo[foo=env]");
-    }
+    crate::env::set_var("MISE_BACKENDS_ENV_OPTS_TEST", "github:env/repo[foo=env]");
 
     let result = async {
         let mut all_aliases = AliasMap::default();
@@ -2377,9 +2375,7 @@ async fn test_resolve_tool_opts_prefers_env_backend_override_over_alias_opts() -
     }
     .await;
 
-    unsafe {
-        std::env::remove_var("MISE_BACKENDS_ENV_OPTS_TEST");
-    }
+    crate::env::remove_var("MISE_BACKENDS_ENV_OPTS_TEST");
 
     result
 }

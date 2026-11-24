@@ -757,7 +757,9 @@ impl Backend for AquaBackend {
 
         let candidates = match cache
             .get_or_try_init_async(async || {
-                let pkg = self.package_with_version_candidates(tv).await?;
+                // Boxed: only a missing cache entry runs this, and held inline
+                // its 5 KB are moved around on every call that finds one.
+                let pkg = Box::pin(self.package_with_version_candidates(tv)).await?;
                 // Pure: no filesystem reads, so a mid-install call can never
                 // cache a transient-empty result.
                 Self::candidate_bin_paths_for_platform(

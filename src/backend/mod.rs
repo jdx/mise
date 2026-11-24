@@ -4413,7 +4413,7 @@ pub trait Backend: Debug + Send + Sync {
             // A postinstall hook's own mise sees its unfinished installation
             // as installed, and only while the hook runs.
             let state_key = tv.state_key();
-            if std::env::var_os("MISE_TOOL_INSTALL_PATH").is_some() {
+            if *IN_POSTINSTALL_HOOK {
                 return check_path_on_disk(install_path, check_symlink, &state_key);
             }
             install_state::installed_check(
@@ -7256,6 +7256,13 @@ pub trait Backend: Debug + Send + Sync {
         })
     }
 }
+
+/// Whether this mise was started by a postinstall hook, which is told the
+/// installation it belongs to. Read once: mise sets the variable on the hook's
+/// process, never on its own, and the installed check asks several times per
+/// tool.
+static IN_POSTINSTALL_HOOK: LazyLock<bool> =
+    LazyLock::new(|| std::env::var_os("MISE_TOOL_INSTALL_PATH").is_some());
 
 /// A postinstall hook may invoke mise for the exact installation it is
 /// finishing. That process is entitled to use the path supplied by its parent,

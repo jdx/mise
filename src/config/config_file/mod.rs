@@ -50,6 +50,7 @@ pub mod idiomatic_version;
 pub(crate) mod min_version;
 pub mod mise_toml;
 pub(crate) mod tool_versions;
+mod typed_consent;
 mod unknown_key;
 
 #[derive(Debug, PartialEq)]
@@ -792,7 +793,7 @@ pub fn trust_check(path: &Path) -> eyre::Result<()> {
     // so unsafe config can load before the command starts; safe config is
     // persisted by `trust_active_config` after settings initialization.
     if implicitly_trusts_active_config()
-        && !ci_info::is_ci()
+        && !*mise_util::env::IS_CI
         && Settings::try_get().is_ok_and(|settings| !settings.paranoid.config())
     {
         let config_root = config_trust_root(path);
@@ -823,6 +824,13 @@ pub fn trust_check(path: &Path) -> eyre::Result<()> {
     }
     ensure_trust_can_approve(path)?;
     if cmd != "hook-env" && !strict && !is_ignored(&config_root) && !is_ignored(path) {
+        // A typed command implies trust like the commands above, so an ignored project's
+        // nested root is left to the prompt too.
+        if implicit_trust_may_record(path, &config_root)
+            && typed_consent::trust_typed_command(path, &config_root)?
+        {
+            return Ok(());
+        }
         let ans = if settings::is_loaded()
             && Settings::try_get().is_ok_and(|settings| settings.yes && !settings.paranoid.config())
         {
@@ -1053,7 +1061,7 @@ fn is_trusted_without_config_paths(
         if !trusted {
             return false;
         }
-    } else if mise_util::testing::in_tests() || ci_info::is_ci() {
+    } else if mise_util::testing::in_tests() || *mise_util::env::IS_CI {
         // in tests/CI we trust everything
         return true;
     } else if !record.owned {
@@ -1286,9 +1294,9 @@ fn ignored_entry_path(entry: &Path) -> Option<PathBuf> {
 /// a dismissed prompt, so it is overridden by `trusted_config_paths` (see
 /// [`is_trusted_via_config_paths`]).
 pub(crate) fn is_persisted_ignored(path: &Path) -> bool {
-    match path.canonicalize() {
-        Ok(path) => is_canonical_path_persisted_ignored(&path),
-        Err(_) => {
+    match file::canonicalize_cached(path) {
+        Some(path) => is_canonical_path_persisted_ignored(&path),
+        None => {
             debug!("is_persisted_ignored: path canonicalize failed");
             true
         }
@@ -1433,7 +1441,7 @@ fn config_requires_trust(path: &Path) -> bool {
 /// nobody trusted. CI trusts everything and records nothing, so it leaves the
 /// marker alone.
 pub(crate) fn set_monorepo_root_marker(path: &Path, enabled: bool) -> Result<()> {
-    if ci_info::is_ci() {
+    if *mise_util::env::IS_CI {
         return Ok(());
     }
     let config_root = config_trust_root(path);

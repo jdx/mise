@@ -612,16 +612,19 @@ impl BackendArg {
     /// entry separately by `get_backend_alias_opts`, so they survive either way.
     /// Legacy spellings are normalised, so `mytool = "nodejs"` finds `node`.
     fn aliased_registry_short(&self) -> Option<String> {
-        if self.has_explicit_backend_identifier()
-            || self.has_env_backend_override()
-            || !config::is_loaded()
-        {
+        if self.has_explicit_backend_identifier() || !config::is_loaded() {
             return None;
         }
         let full = Config::get_()
             .all_aliases
             .get(unalias_backend(&self.short).as_ref())
             .and_then(|a| a.backend.clone())?;
+        // An override replaces the alias. It is checked after the alias is
+        // found because most tools have none, and this runs many times per
+        // tool: reading the environment costs more than the lookup above.
+        if self.has_env_backend_override() {
+            return None;
+        }
         let name = split_bracketed_opts(&full).map_or(full.as_str(), |(name, _)| name);
         if name.contains(':') {
             return None;
@@ -1016,6 +1019,9 @@ impl BackendArg {
     }
 
     fn env_backend_override(&self) -> Option<String> {
+        if !crate::env::backend_override_vars_set() {
+            return None;
+        }
         backend_override_env_keys(&self.short)
             .iter()
             .find_map(|key| env::var(key).ok())
@@ -1583,20 +1589,18 @@ mod tests {
         ));
     }
 
-    /// The names are cached, not the values: a variable set or removed after
-    /// the first lookup still takes effect.
+    /// The names are cached, not the values: a variable mise sets or removes
+    /// after the first lookup still takes effect.
     #[test]
     fn env_backend_override_reads_the_variable_each_time() {
         let ba = BackendArg::from("pypi:env-override-reread");
         assert_eq!(ba.env_backend_override(), None);
-        unsafe { std::env::set_var("MISE_BACKENDS_PIPX_ENV_OVERRIDE_REREAD", "pipx:legacy") };
+        crate::env::set_var("MISE_BACKENDS_PIPX_ENV_OVERRIDE_REREAD", "pipx:legacy");
         assert_eq!(ba.env_backend_override().as_deref(), Some("pipx:legacy"));
-        unsafe { std::env::set_var("MISE_BACKENDS_PYPI_ENV_OVERRIDE_REREAD", "pypi:current") };
+        crate::env::set_var("MISE_BACKENDS_PYPI_ENV_OVERRIDE_REREAD", "pypi:current");
         assert_eq!(ba.env_backend_override().as_deref(), Some("pypi:current"));
-        unsafe {
-            std::env::remove_var("MISE_BACKENDS_PYPI_ENV_OVERRIDE_REREAD");
-            std::env::remove_var("MISE_BACKENDS_PIPX_ENV_OVERRIDE_REREAD");
-        }
+        crate::env::remove_var("MISE_BACKENDS_PYPI_ENV_OVERRIDE_REREAD");
+        crate::env::remove_var("MISE_BACKENDS_PIPX_ENV_OVERRIDE_REREAD");
         assert_eq!(ba.env_backend_override(), None);
     }
 }

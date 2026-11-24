@@ -141,10 +141,51 @@ thread_local! {
     /// outside a load. `load` runs on one thread, so this never mixes concurrent loads.
     static LOAD_PARSE_CACHE: std::cell::RefCell<Option<ParseCache>> =
         const { std::cell::RefCell::new(None) };
+    /// The settings layer read from the environment during the current [`load`], which builds
+    /// settings three times. Reading it asks the environment for every setting's variable, so
+    /// the three passes share one read. `None` outside a load, where each read is fresh;
+    /// `Some(None)` until the load's first pass reads it.
+    static LOAD_ENV_LAYER: std::cell::RefCell<Option<Option<SettingsPartial>>> =
+        const { std::cell::RefCell::new(None) };
+    /// How many times the environment's settings layer was read on this thread.
+    #[cfg(test)]
+    static ENV_LAYER_READS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
     /// How many times each settings file was actually parsed on this thread.
     #[cfg(test)]
     static PARSE_COUNTS: std::cell::RefCell<std::collections::HashMap<PathBuf, usize>> =
         std::cell::RefCell::new(std::collections::HashMap::new());
+}
+
+/// Shares one read of the environment's settings layer for as long as it lives.
+struct SharedEnvLayer;
+
+impl SharedEnvLayer {
+    fn start() -> Self {
+        LOAD_ENV_LAYER.set(Some(None));
+        Self
+    }
+}
+
+impl Drop for SharedEnvLayer {
+    fn drop(&mut self) {
+        LOAD_ENV_LAYER.set(None);
+    }
+}
+
+/// The settings the environment sets, as the layer `builder().env()` would read.
+fn env_settings_layer() -> Result<SettingsPartial> {
+    if let Some(Some(shared)) = LOAD_ENV_LAYER.with_borrow(Clone::clone) {
+        return Ok(shared);
+    }
+    #[cfg(test)]
+    ENV_LAYER_READS.set(ENV_LAYER_READS.get() + 1);
+    let layer = SettingsPartial::from_env()?;
+    LOAD_ENV_LAYER.with_borrow_mut(|shared| {
+        if let Some(shared) = shared {
+            *shared = Some(layer.clone());
+        }
+    });
+    Ok(layer)
 }
 
 fn parse_settings_file_once(path: &Path) -> Result<SettingsPartial> {
@@ -533,7 +574,7 @@ fn self_update_env_alias_layer() -> Result<Option<SettingsPartial>> {
     {
         return Ok(None);
     }
-    let mut env_layer = SettingsPartial::from_env()?;
+    let mut env_layer = env_settings_layer()?;
     normalize_self_update_aliases(&mut env_layer);
     let mut alias_layer = SettingsPartial::empty();
     alias_layer.self_update.auto = env_layer.self_update.auto;
@@ -1699,7 +1740,7 @@ impl SettingsInternal for Settings {
         .iter()
         .any(|name| std::env::var_os(name).is_some())
         {
-            let mut env_aliases = Self::builder().env().load()?;
+            let mut env_aliases = Self::builder().preloaded(env_settings_layer()?).load()?;
             env_aliases.normalize_pypi_aliases()?;
             let mut alias_layer = SettingsPartial::default();
             // Normalize the environment as its own source before layering it over files.
@@ -1720,7 +1761,7 @@ impl SettingsInternal for Settings {
         if let Some(alias_layer) = self_update_env_alias_layer()? {
             builder = builder.preloaded(alias_layer);
         }
-        builder = builder.env();
+        builder = builder.preloaded(env_settings_layer()?);
         if policy.source == SettingsSourcePolicy::Hierarchy {
             for layer in Self::settings_layers_from(root, policy.trust) {
                 if matches!((&layer.pypi.uvx, &layer.pipx.uvx), (Some(a), Some(b)) if a != b)
@@ -1961,6 +2002,7 @@ fn rebuild() -> Result<()> {
 fn load() -> Result<Arc<Settings>> {
     time!("try_get");
 
+    let _env_layer = SharedEnvLayer::start();
     // Initial pass to obtain cd option
     let mut settings = Settings::load_sources_from(None, SettingsLoadPolicy::ENVIRONMENT_ONLY)?;
     time!("try_get load1");
@@ -2049,7 +2091,7 @@ fn load() -> Result<Arc<Settings>> {
     } else if *env::CLICOLOR == Some(false) {
         console::set_colors_enabled(false);
         console::set_colors_enabled_stderr(false);
-    } else if ci_info::is_ci() && !mise_util::testing::in_tests() {
+    } else if *mise_util::env::IS_CI && !mise_util::testing::in_tests() {
         console::set_colors_enabled_stderr(true);
     }
     if settings.ci {
@@ -2660,6 +2702,33 @@ mod tests {
         );
     }
 
+    /// One load reads the environment's settings once for its three passes, and a load after
+    /// it reads the environment again, so a variable changed in between takes effect.
+    #[test]
+    fn test_load_reads_the_environment_once() {
+        let _settings = crate::test::SettingsGuard::lock();
+        let reads = || ENV_LAYER_READS.get();
+
+        let before = reads();
+        let settings = load();
+        assert!(settings.is_ok(), "{:?}", settings.err());
+        assert_eq!(reads() - before, 1);
+
+        let before = reads();
+        let settings = load();
+        assert!(settings.is_ok(), "{:?}", settings.err());
+        assert_eq!(
+            reads() - before,
+            1,
+            "a later load reused the first one's read"
+        );
+
+        let before = reads();
+        assert!(env_settings_layer().is_ok());
+        assert!(env_settings_layer().is_ok());
+        assert_eq!(reads() - before, 2, "a read outside a load was shared");
+    }
+
     /// `load` must open the cache for its two passes and close it afterwards, or the first
     /// settings reload after an edit would keep serving the old values.
     #[test]
@@ -2670,6 +2739,7 @@ mod tests {
         let settings = load();
         assert!(settings.is_ok(), "{:?}", settings.err());
         assert!(LOAD_PARSE_CACHE.with_borrow(Option::is_none));
+        assert!(LOAD_ENV_LAYER.with_borrow(Option::is_none));
         // Every file the real load touched was parsed exactly once.
         PARSE_COUNTS.with_borrow(|counts| {
             assert!(counts.values().all(|n| *n == 1), "{counts:?}");
