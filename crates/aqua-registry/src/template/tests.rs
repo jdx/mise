@@ -324,3 +324,36 @@ fn test_render_rejects_oversized_expressions() {
         assert_eq!(err.to_string(), too_long);
     }
 }
+
+#[test]
+fn test_render_limits_output_size() {
+    let ctx = hashmap(vec![("FileName", "tool")]);
+    let a32 = "a".repeat(32);
+
+    // Each stage multiplies the length by 33; eight of them would ask for terabytes
+    let chain = |stages: usize| {
+        let replace = format!(r#" | replace "" "{a32}""#);
+        format!("{{{{.FileName{}}}}}", replace.repeat(stages))
+    };
+    assert_eq!(render(&chain(1), &ctx).unwrap().len(), 5 * 33 - 1);
+    let err = render(&chain(8), &ctx).unwrap_err();
+    assert_eq!(err.to_string(), "replace produces more than 65536 bytes");
+
+    // A result of exactly the limit is kept
+    let ctx = hashmap(vec![("V", "o")]);
+    let exact = format!(
+        r#"{{{{replace "o" "{}" .V}}}}"#,
+        "o".repeat(MAX_RENDERED_LEN)
+    );
+    assert_eq!(render(&exact, &ctx).unwrap().len(), MAX_RENDERED_LEN);
+
+    // Many tags that are each short enough still add up
+    let long = "v".repeat(1024);
+    let ctx = hashmap(vec![("V", long.as_str())]);
+    let err = render(&"{{.V}}".repeat(65), &ctx).unwrap_err();
+    assert_eq!(err.to_string(), "template renders to more than 65536 bytes");
+    assert_eq!(
+        render(&"{{.V}}".repeat(64), &ctx).unwrap().len(),
+        MAX_RENDERED_LEN
+    );
+}

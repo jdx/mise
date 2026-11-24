@@ -67,6 +67,11 @@ impl Value for SemVerValue {
     }
 }
 
+/// The longest string a template may render to, and the longest result of `replace`. Registry
+/// templates build file names, paths and URLs, and chained `replace` calls grow a value
+/// exponentially, so a registry entry of a few hundred bytes could otherwise ask for terabytes.
+const MAX_RENDERED_LEN: usize = 64 * 1024;
+
 pub(crate) fn render(tmpl: &str, ctx: &Context) -> Result<String> {
     let mut result = String::new();
     let mut in_tag = false;
@@ -85,6 +90,9 @@ pub(crate) fn render(tmpl: &str, ctx: &Context) -> Result<String> {
             let tokens = lex(&tag)?;
             let ast = parse_tokens(&tokens)?;
             result += &evaluator.eval(&ast)?;
+            if result.len() > MAX_RENDERED_LEN {
+                bail!("template renders to more than {MAX_RENDERED_LEN} bytes");
+            }
             tag.clear();
             i += 1;
         } else if in_tag {
@@ -408,6 +416,14 @@ static FUNCTION_REGISTRY: LazyLock<HashMap<&'static str, TemplateFn>> = LazyLock
         let from = args[0].as_string();
         let to = args[1].as_string();
         let text = args[2].as_string();
+        // One call can multiply the length of its input by the length of `to`, so the size is
+        // checked before the result is built
+        let matches = text.matches(from.as_str()).count();
+        let len =
+            (text.len() - matches * from.len()).saturating_add(matches.saturating_mul(to.len()));
+        if len > MAX_RENDERED_LEN {
+            bail!("replace produces more than {MAX_RENDERED_LEN} bytes");
+        }
         Ok(Box::new(StringValue(text.replace(&from, &to))) as Box<dyn Value>)
     });
 
