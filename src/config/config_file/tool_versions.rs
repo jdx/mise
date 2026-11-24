@@ -355,9 +355,11 @@ fn lines_map(raw: &str, rendered: &str) -> bool {
     raw.lines().count() == rendered.lines().count()
         && !raw.contains("{%")
         && !raw.contains("{#")
-        && raw
-            .lines()
-            .all(|line| !line.trim_start().starts_with("{{-") && !line.trim_end().ends_with("-}}"))
+        && raw.lines().all(|line| {
+            // a `-}}` with no `{{` before it on the line closes nothing
+            let closes = line.trim_end().ends_with("-}}") && line.contains("{{");
+            !line.trim_start().starts_with("{{-") && !closes
+        })
         && raw.lines().all(|mut line| {
             while let Some(open) = line.find("{{") {
                 match line[open + 2..].find("}}") {
@@ -559,6 +561,8 @@ mod tests {
             ),
             // inside a line it removes spaces only
             ("node 2 {{- env.NV }}\n", "node 20.0.0\n", true),
+            // written text that only looks like the end of a template
+            ("node 20 # see -}}\n", "node 20 # see -}}\n", true),
         ] {
             assert_eq!(lines_map(raw, rendered), maps, "{raw:?}");
         }
