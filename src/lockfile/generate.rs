@@ -415,8 +415,24 @@ fn can_reuse(info: &PlatformInfo, version: &str) -> bool {
 /// (the same URL once the login is left out). Taking the login out of a URL
 /// does not change the artifact, so it does not re-pin it: an entry with no
 /// login is reused with the checksums it has, and so is this one.
+///
+/// A kept checksum keeps what `old` said about those bytes: when it is not
+/// the checksum just resolved (another algorithm counts as another), the
+/// provenance, its legacy `provenance_verified` and, for the main artifact,
+/// the `github_attestations` probe status are the old ones too, none when
+/// `old` had none, since the new provenance was checked for other bytes.
+/// When the checksums are the same, the new provenance stays: it covers them.
 fn keep_pins_recorded_with_a_login(old: &PlatformInfo, new: &mut PlatformInfo) {
     use crate::backend::static_helpers::is_lock_url;
+    let same_bytes = |old: Option<&str>, new: Option<&str>| match (
+        old.and_then(|c| c.split_once(':')),
+        new.and_then(|c| c.split_once(':')),
+    ) {
+        (Some((old_algo, old_hash)), Some((new_algo, new_hash))) => {
+            old_algo.eq_ignore_ascii_case(new_algo) && old_hash.eq_ignore_ascii_case(new_hash)
+        }
+        _ => old.is_some() && old == new,
+    };
     let old_has_login = old.url.as_deref().is_some_and(has_login)
         || old.additional_artifacts.iter().any(|a| has_login(&a.url));
     if !old_has_login {
@@ -426,6 +442,11 @@ fn keep_pins_recorded_with_a_login(old: &PlatformInfo, new: &mut PlatformInfo) {
         && let Some(url) = new.url.as_deref()
         && is_lock_url(old.url.as_deref(), url)
     {
+        if !same_bytes(old.checksum.as_deref(), new.checksum.as_deref()) {
+            new.provenance = old.provenance.clone();
+            new.provenance_verified = old.provenance_verified;
+            new.github_attestations = old.github_attestations;
+        }
         new.checksum = old.checksum.clone();
         new.checksum_source = old.checksum_source;
     }
@@ -433,6 +454,10 @@ fn keep_pins_recorded_with_a_login(old: &PlatformInfo, new: &mut PlatformInfo) {
         if let Some(old) = old.additional_artifacts.iter().find(|old| {
             old.checksum.is_some() && is_lock_url(Some(old.url.as_str()), &artifact.url)
         }) {
+            if !same_bytes(old.checksum.as_deref(), artifact.checksum.as_deref()) {
+                artifact.provenance = old.provenance.clone();
+                artifact.provenance_verified = old.provenance_verified;
+            }
             artifact.checksum = old.checksum.clone();
             artifact.checksum_source = old.checksum_source;
         }
@@ -1751,6 +1776,52 @@ mod tests {
                 Some(artifact_checksum),
                 "{old:?}"
             );
+        }
+    }
+
+    #[test]
+    fn kept_checksums_keep_the_provenance_recorded_with_them() {
+        let entry = |url: &str, checksum: &str, provenance: Option<ProvenanceType>| PlatformInfo {
+            url: Some(url.into()),
+            checksum: Some(checksum.into()),
+            provenance: provenance.clone(),
+            additional_artifacts: vec![crate::lockfile::ArtifactInfo {
+                checksum: Some(format!("{checksum}-sig")),
+                url: format!("{url}.sig"),
+                provenance,
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let old_url = "https://ci:token@mirror.example/v20.0.0/node-linux-x64.tar.gz";
+        let new_url = "https://mirror.example/v20.0.0/node-linux-x64.tar.gz";
+        let fresh = Some(ProvenanceType::GithubAttestations);
+        let recorded = Some(ProvenanceType::Minisign);
+        // (old provenance, newly resolved checksum, provenance the entry keeps)
+        let cases = [
+            // Other bytes: the provenance of the new ones does not cover the kept pin.
+            (None, "sha256:new", None),
+            (recorded.clone(), "sha256:new", recorded.clone()),
+            // Another algorithm does not show the bytes are the same.
+            (None, "blake3:old", None),
+            // The same bytes: the new provenance covers them.
+            (None, "sha256:old", fresh.clone()),
+            (recorded.clone(), "SHA256:OLD", fresh.clone()),
+        ];
+        for (old_provenance, new_checksum, kept) in cases {
+            let old = entry(old_url, "sha256:old", old_provenance.clone());
+            let mut new = entry(new_url, new_checksum, fresh.clone());
+            keep_pins_recorded_with_a_login(&old, &mut new);
+            let case = format!("{old_provenance:?} {new_checksum}");
+            assert_eq!(new.checksum.as_deref(), Some("sha256:old"), "{case}");
+            assert_eq!(new.provenance, kept, "{case}");
+            let artifact = &new.additional_artifacts[0];
+            assert_eq!(
+                artifact.checksum.as_deref(),
+                Some("sha256:old-sig"),
+                "{case}"
+            );
+            assert_eq!(artifact.provenance, kept, "{case}");
         }
     }
 
