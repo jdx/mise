@@ -417,7 +417,7 @@ fn run_under_terminal_lock(
 /// clearing the inherited environment first so the child sees exactly the env
 /// mise built. Returns true if it was applied; when `mise_env` is absent the
 /// command's inherited environment is left untouched (stock behavior).
-fn apply_mise_env(lua: &Lua, cmd: &mut Command) -> LuaResult<bool> {
+pub(super) fn apply_mise_env(lua: &Lua, cmd: &mut Command) -> LuaResult<bool> {
     if let Ok(mise_env) = lua.named_registry_value::<Table>("mise_env") {
         cmd.env_clear();
         for pair in mise_env.pairs::<String, String>() {

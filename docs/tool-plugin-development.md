@@ -559,7 +559,7 @@ PLUGIN = {
 
 When the project configures a listed tool, mise installs it before this
 plugin's tool and puts it on `PATH` for the commands the hooks run with
-`cmd.exec` and `os.execute`, but not `io.popen`. While the tool installs, those
+`cmd.exec`, `os.execute` and `io.popen`. While the tool installs, those
 commands also see `[env]` values marked `tools = true`. `depends` does not
 choose a version or install a tool the project does not configure; an
 unconfigured one can still come from the existing `PATH`. Do not list the

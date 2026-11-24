@@ -273,7 +273,9 @@ fn dir_is_trusted(config: &Config, dir: &Path) -> bool {
 /// Names, one per line, the plugins whose environment hooks are running in
 /// the mise processes above this one. A hook that runs `mise`, as Poetry's
 /// does with `mise which python3`, starts a mise that resolves the same tools
-/// and would run the same hook again, without end.
+/// and would run the same hook again, without end. It is set only in the
+/// environment mise builds for the hook, which its `cmd.exec`, `cmd.stream`,
+/// `os.execute` and `io.popen` children get, never on mise's own process.
 const RUNNING_ENV_HOOKS: &str = "__MISE_VFOX_ENV_HOOKS";
 
 /// The plugins [`RUNNING_ENV_HOOKS`] named when this mise started.
@@ -289,48 +291,14 @@ fn env_hooks_running_above() -> &'static [String] {
     })
 }
 
-/// [`RUNNING_ENV_HOOKS`] for the children of the given plugins' hooks.
-fn running_env_hooks_value<'a>(plugins: impl IntoIterator<Item = &'a String>) -> String {
+/// [`RUNNING_ENV_HOOKS`] for the children of a plugin's environment hook.
+fn running_env_hooks_value(plugin: &str) -> String {
     env_hooks_running_above()
         .iter()
-        .chain(plugins)
         .map(String::as_str)
+        .chain([plugin])
         .collect::<Vec<_>>()
         .join("\n")
-}
-
-/// Marks a plugin's environment hook as running for as long as it lives.
-/// `io.popen` children inherit mise's own environment rather than the hook's
-/// `cmd_env`, so the variable is set on the process, naming every plugin
-/// whose environment hook is running in it.
-struct RunningEnvHook(String);
-
-impl RunningEnvHook {
-    fn running() -> &'static std::sync::Mutex<Vec<String>> {
-        static RUNNING: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
-        &RUNNING
-    }
-
-    fn start(plugin: &str) -> Self {
-        let mut running = Self::running().lock().unwrap();
-        running.push(plugin.to_string());
-        env::set_var(RUNNING_ENV_HOOKS, running_env_hooks_value(running.iter()));
-        Self(plugin.to_string())
-    }
-}
-
-impl Drop for RunningEnvHook {
-    fn drop(&mut self) {
-        let mut running = Self::running().lock().unwrap();
-        if let Some(i) = running.iter().position(|name| *name == self.0) {
-            running.remove(i);
-        }
-        if running.is_empty() && env_hooks_running_above().is_empty() {
-            env::remove_var(RUNNING_ENV_HOOKS);
-        } else {
-            env::set_var(RUNNING_ENV_HOOKS, running_env_hooks_value(running.iter()));
-        }
-    }
 }
 
 /// Removes the variables naming a project directory the user has not trusted
@@ -1288,7 +1256,7 @@ impl VfoxBackend {
             withhold_untrusted_dirs(config, &mut cmd_env, trusted_cwd);
             cmd_env.insert(
                 RUNNING_ENV_HOOKS.to_string(),
-                running_env_hooks_value([&self.pathname]),
+                running_env_hooks_value(&self.pathname),
             );
             cmd_env
         };
@@ -1384,7 +1352,6 @@ impl VfoxBackend {
                 let recorder = vfox::HookDependencyRecorder::default();
                 vfox.hook_dependencies = Some(recorder.clone());
 
-                let running = RunningEnvHook::start(&self.pathname);
                 // Use backend methods if the plugin supports them
                 let env_keys = if self.is_backend_plugin() {
                     let tool_name = self.get_tool_name()?;
@@ -1406,7 +1373,6 @@ impl VfoxBackend {
                     )
                     .await?
                 };
-                drop(running);
 
                 let env = env_keys
                     .into_iter()

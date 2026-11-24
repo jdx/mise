@@ -31,8 +31,8 @@ differ by platform.
 The rest of the Lua 5.1 standard library behaves as usual, except that the
 `debug` library is not loaded and `require` searches only the plugin's
 directories (see [Loading your own code](#loading-your-own-code)). `io.popen`
-always uses the environment of the mise process rather than the hook
-environment, so run commands with `cmd.exec` instead.
+runs its command in the [hook environment](#hook-environment) in hooks that
+have one, like `os.execute`.
 
 ### `RUNTIME` {#runtime}
 
@@ -94,7 +94,7 @@ hooks, mise removes its shims directory from that `PATH`, so a hook cannot reach
 another tool through its shim. Package manager plugin hooks keep it; see
 [package manager plugins](/package-plugin-development.html#mise-plugin-toml).
 
-`os.getenv`, `os.execute`, `cmd.exec` and `cmd.stream` use this
+`os.getenv`, `os.execute`, `io.popen`, `cmd.exec` and `cmd.stream` use this
 environment. Values you pass in the `env` option of `cmd.exec` or `cmd.stream`
 are merged over it.
 

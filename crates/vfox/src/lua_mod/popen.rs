@@ -1,4 +1,5 @@
-//! `io.popen` for hooks that run detached from the user's working directory.
+//! `io.popen` for hooks that run detached from the user's working directory or
+//! with an environment mise built for them.
 //!
 //! Stock `io.popen` starts its shell in mise's own working directory, which is
 //! usually a project the user may not have trusted. A `git` there obeys the
@@ -7,16 +8,23 @@
 //! project's commands. Hooks that have nothing to do with the project get a
 //! detached directory (see `Plugin::detach_cmds_from_cwd`), and this replacement
 //! starts their `io.popen` children there, like `os.execute` and `cmd.exec`.
+//!
+//! Stock `io.popen` also hands its children mise's own environment. A hook
+//! that mise gives an environment (registry `mise_env`), as it does every
+//! environment hook, runs its `io.popen` children with that environment
+//! instead, as `os.execute` and `cmd.exec` do: without the project directories
+//! mise withholds from the hook, and with the variables mise adds for it.
 
 use mlua::prelude::*;
 use mlua::{AnyUserData, Function, Table, UserData, UserDataMethods, Variadic};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::process::{Child, ChildStdin, ChildStdout, Stdio};
 
-use super::cmd::{cmd_shell, command_from_shell, detached_cwd, start_in};
+use super::cmd::{apply_mise_env, cmd_shell, command_from_shell, detached_cwd, start_in};
 
 /// Replace `io.popen` so it starts children in the detached directory when the
-/// hook has one, and behaves as stock `io.popen` otherwise.
+/// hook has one and with the hook's environment when mise built one, and
+/// behaves as stock `io.popen` otherwise.
 pub(crate) fn mod_popen(lua: &Lua) -> LuaResult<()> {
     let Some(io) = lua.globals().get::<Option<Table>>("io")? else {
         return Ok(());
@@ -24,14 +32,18 @@ pub(crate) fn mod_popen(lua: &Lua) -> LuaResult<()> {
     let stock: Option<Function> = io.get("popen")?;
     let popen = lua.create_function(
         move |lua, (command, mode): (String, Option<String>)| -> LuaResult<LuaMultiValue> {
-            match detached_cwd(lua)? {
-                Some(cwd) => popen(lua, &command, mode.as_deref(), &cwd),
-                None => match &stock {
-                    Some(stock) => stock.call((command, mode)),
-                    None => Err(LuaError::RuntimeError(
-                        "io.popen is not available".to_string(),
-                    )),
-                },
+            let cwd = detached_cwd(lua)?;
+            let has_mise_env = lua
+                .named_registry_value::<Option<Table>>("mise_env")?
+                .is_some();
+            if cwd.is_some() || has_mise_env {
+                return popen(lua, &command, mode.as_deref(), cwd.as_deref());
+            }
+            match &stock {
+                Some(stock) => stock.call((command, mode)),
+                None => Err(LuaError::RuntimeError(
+                    "io.popen is not available".to_string(),
+                )),
             }
         },
     )?;
@@ -51,10 +63,33 @@ pub(crate) fn mod_popen(lua: &Lua) -> LuaResult<()> {
             None => Ok(LuaNil),
         }
     })?;
-    io.set("type", io_type)
+    io.set("type", io_type)?;
+    // `io.close(handle)` closes these handles as `handle:close()` does.
+    let stock_close: Option<Function> = io.get("close")?;
+    let io_close =
+        lua.create_function(move |_, args: LuaMultiValue| -> LuaResult<LuaMultiValue> {
+            if let Some(LuaValue::UserData(ud)) = args.front()
+                && let Ok(mut file) = ud.borrow_mut::<PopenFile>()
+            {
+                file.open()?.close();
+                return Ok(LuaMultiValue::from_iter([LuaValue::Boolean(true)]));
+            }
+            match &stock_close {
+                Some(stock) => stock.call(args),
+                None => Err(LuaError::RuntimeError(
+                    "io.close is not available".to_string(),
+                )),
+            }
+        })?;
+    io.set("close", io_close)
 }
 
-fn popen(lua: &Lua, command: &str, mode: Option<&str>, cwd: &str) -> LuaResult<LuaMultiValue> {
+fn popen(
+    lua: &Lua,
+    command: &str,
+    mode: Option<&str>,
+    cwd: Option<&str>,
+) -> LuaResult<LuaMultiValue> {
     let write = match mode.unwrap_or("r") {
         "r" | "rb" => false,
         "w" | "wb" => true,
@@ -65,7 +100,10 @@ fn popen(lua: &Lua, command: &str, mode: Option<&str>, cwd: &str) -> LuaResult<L
         }
     };
     let mut cmd = command_from_shell(&cmd_shell(lua)?, command)?;
-    start_in(&mut cmd, cwd);
+    apply_mise_env(lua, &mut cmd)?;
+    if let Some(cwd) = cwd {
+        start_in(&mut cmd, cwd);
+    }
     if write {
         cmd.stdin(Stdio::piped());
     } else {
@@ -434,6 +472,9 @@ mod tests {
             local w = io.popen("cat >/dev/null", "w")
             note(io.type(w), w:close(), io.type(w))
             note(closed_error(function() return w:write("x") end))
+            local c = io.popen("exit 5")
+            note(io.close(c), io.type(c))
+            note(closed_error(function() return io.close(c) end))
             note(io.type("not a file"), io.type(io.stdout))
             -- a handle dropped without close is reaped by the collector
             io.popen("exit 4")
@@ -460,6 +501,59 @@ mod tests {
         assert_eq!(expected[11], "true");
         assert_eq!(expected[3], "false,true");
         assert_eq!(expected[2], "closed file");
+    }
+
+    /// Sets the environment mise builds for a hook, as `Plugin::set_cmd_env` does.
+    fn set_mise_env(lua: &Lua, vars: &[(&str, &str)]) {
+        let env = lua.create_table().unwrap();
+        for (key, value) in vars {
+            env.set(*key, *value).unwrap();
+        }
+        lua.set_named_registry_value("mise_env", env).unwrap();
+    }
+
+    #[test]
+    fn popen_children_get_the_hook_environment() {
+        let path = std::env::var("PATH").unwrap();
+        let home = std::env::var("HOME").unwrap();
+        let run = |lua: &Lua| -> (String, String) {
+            lua.load(
+                r#"
+                local h = io.popen("printf '%s|%s' \"${HOOK_VAR-unset}\" \"${HOME-unset}\"")
+                local seen = h:read("*a")
+                h:close()
+                local p = io.popen("pwd")
+                local cwd = p:read("*l")
+                p:close()
+                return seen, cwd
+                "#,
+            )
+            .eval()
+            .unwrap()
+        };
+
+        let attached = Lua::new();
+        cmd(&attached).unwrap();
+        set_mise_env(&attached, &[("PATH", &path), ("HOOK_VAR", "set")]);
+        let (seen, cwd) = run(&attached);
+        assert_eq!(seen, "set|unset");
+        assert_eq!(
+            canon(&cwd),
+            std::env::current_dir().unwrap().canonicalize().unwrap()
+        );
+
+        let dir = tempfile::tempdir().unwrap();
+        let detached = detached_lua(dir.path());
+        set_mise_env(&detached, &[("PATH", &path), ("HOOK_VAR", "set")]);
+        let (seen, cwd) = run(&detached);
+        assert_eq!(seen, "set|unset");
+        assert_eq!(canon(&cwd), dir.path().canonicalize().unwrap());
+
+        // with no hook environment, children inherit mise's own
+        let stock = Lua::new();
+        cmd(&stock).unwrap();
+        let (seen, _) = run(&stock);
+        assert_eq!(seen, format!("unset|{home}"));
     }
 
     #[test]
