@@ -485,6 +485,14 @@ ending in `.toml` for `override_config_filenames` or `tool-versions` for
 `override_tool_versions_filenames`; set any other name in
 `~/.config/mise/miserc.toml`.
 
+A `.miserc.toml` found from the current directory loads without trust, and on
+every command mise looks for the files of each selected environment and for each
+override filename in every directory it searches. mise therefore uses only the
+first 64 entries of such a file's `env` and of each of its override filename
+lists, and the `env_sets` of all such files may name 64 environments between
+them: a set that would go past that is ignored. mise warns about what it leaves
+out. The global and system files, `MISE_ENV` and `-E` are not limited.
+
 ### Where mise looks for .miserc.toml {#miserc-locations}
 
 From highest to lowest precedence:

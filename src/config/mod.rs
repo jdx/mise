@@ -3315,10 +3315,16 @@ fn load_config_paths_from_dirs(
 /// Callers pass mise's own config filenames, with the idiomatic filenames
 /// added when they look for those too, so every other entry is idiomatic.
 fn idiomatic_filenames_in(config_filenames: &[String]) -> Vec<&str> {
+    // A set: both lists grow with the selected environments and the override
+    // filenames, so a scan of one per entry of the other is quadratic.
+    let own: HashSet<&str> = DEFAULT_CONFIG_FILENAMES
+        .iter()
+        .map(String::as_str)
+        .collect();
     config_filenames
         .iter()
-        .filter(|f| !DEFAULT_CONFIG_FILENAMES.contains(f))
         .map(String::as_str)
+        .filter(|f| !own.contains(f))
         .collect()
 }
 

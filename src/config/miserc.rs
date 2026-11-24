@@ -490,6 +490,8 @@ fn load_miserc_files(files: Vec<PathBuf>) -> Result<MisercSettings> {
     let mut global_env: Vec<String> = vec![];
     // The names of the sets they define; a project file cannot redefine one.
     let mut global_sets: Vec<String> = vec![];
+    // How many more names the project files may put in `env_sets`.
+    let mut project_set_names = PROJECT_NAMES_MAX;
 
     for path in files.into_iter().rev() {
         file::ensure_config_file_size(&path)?;
@@ -510,6 +512,7 @@ fn load_miserc_files(files: Vec<PathBuf>) -> Result<MisercSettings> {
                     .map(|sets| sets.keys().cloned().collect())
                     .unwrap_or_default();
             } else {
+                limit_project_names(&mut settings, &mut project_set_names, &path);
                 keep_global_envs(&mut settings, &global_env);
                 keep_inherited_ignored_config_paths(
                     &mut settings,
@@ -526,6 +529,60 @@ fn load_miserc_files(files: Vec<PathBuf>) -> Result<MisercSettings> {
     }
 
     Ok(merged)
+}
+
+/// The most names a project `.miserc.toml` may list in `env` and in each
+/// override filename list, and the most the `env_sets` of all project files may
+/// hold between them.
+const PROJECT_NAMES_MAX: usize = 64;
+
+/// A project `.miserc.toml` loads without trust, and every command, the shell
+/// hook included, looks for the config files of each selected environment and
+/// for each override filename in every directory up to the root. A long list
+/// would stall them all, so `env` and the override filenames keep their first
+/// [`PROJECT_NAMES_MAX`] entries. `env_sets` merge across the project files and
+/// each selected name can expand to one, so they share `set_names`, what is
+/// left of that many names: a set that no longer fits is dropped, and its name
+/// is then an environment like any other.
+fn limit_project_names(settings: &mut MisercSettings, set_names: &mut usize, path: &Path) {
+    for (key, names) in [
+        ("env", settings.env.as_mut()),
+        (
+            "override_config_filenames",
+            settings.override_config_filenames.as_mut(),
+        ),
+        (
+            "override_tool_versions_filenames",
+            settings.override_tool_versions_filenames.as_mut(),
+        ),
+    ] {
+        let Some(names) = names.filter(|names| names.len() > PROJECT_NAMES_MAX) else {
+            continue;
+        };
+        warn_while_loading_settings(format!(
+            "{}: using only the first {PROJECT_NAMES_MAX} of the {} entries in {key}",
+            file::display_path(path),
+            names.len()
+        ));
+        names.truncate(PROJECT_NAMES_MAX);
+    }
+    if let Some(sets) = settings.env_sets.as_mut() {
+        let defined = sets.len();
+        sets.retain(|_, members| {
+            let fits = members.len() <= *set_names;
+            if fits {
+                *set_names -= members.len();
+            }
+            fits
+        });
+        if sets.len() < defined {
+            warn_while_loading_settings(format!(
+                "{}: ignoring {} of the sets in env_sets: project files may name at most {PROJECT_NAMES_MAX} environments in sets",
+                file::display_path(path),
+                defined - sets.len()
+            ));
+        }
+    }
 }
 
 /// A project `.miserc.toml` loads without trust, so its `env` adds to the
@@ -855,6 +912,55 @@ mod tests {
         let mut settings = MisercSettings::default();
         keep_inherited_ignored_config_paths(&mut settings, Some(&inherited));
         assert_eq!(settings.ignored_config_paths, None);
+    }
+
+    #[test]
+    fn test_limit_project_names() {
+        let names = |n: usize| (0..n).map(|i| format!("e{i}")).collect::<Vec<_>>();
+        let path = Path::new("/work/.miserc.toml");
+
+        // an ordinary file is left alone
+        let mut set_names = PROJECT_NAMES_MAX;
+        let mut settings: MisercSettings =
+            toml::from_str("env = [\"dev\"]\n[env_sets]\nteam = [\"ssh\", \"pac\"]").unwrap();
+        limit_project_names(&mut settings, &mut set_names, path);
+        assert_eq!(settings.env, Some(vec!["dev".to_string()]));
+        assert_eq!(settings.env_sets.unwrap()["team"], ["ssh", "pac"]);
+        assert_eq!(set_names, PROJECT_NAMES_MAX - 2);
+
+        // long lists keep their first entries
+        let long = names(PROJECT_NAMES_MAX + 1000);
+        let mut settings = MisercSettings {
+            env: Some(long.clone()),
+            override_config_filenames: Some(long.clone()),
+            override_tool_versions_filenames: Some(long.clone()),
+            ..Default::default()
+        };
+        limit_project_names(&mut settings, &mut set_names, path);
+        let kept = Some(names(PROJECT_NAMES_MAX));
+        assert_eq!(settings.env, kept);
+        assert_eq!(settings.override_config_filenames, kept);
+        assert_eq!(settings.override_tool_versions_filenames, kept);
+
+        // the sets of every project file count against one limit, so neither a
+        // large set nor many small ones, in one file or several, get past it
+        let mut set_names = PROJECT_NAMES_MAX;
+        let mut settings = MisercSettings {
+            env_sets: Some(indexmap::IndexMap::from([
+                ("big".to_string(), long),
+                ("a".to_string(), names(PROJECT_NAMES_MAX - 1)),
+                ("b".to_string(), names(2)),
+                ("c".to_string(), names(1)),
+            ])),
+            ..Default::default()
+        };
+        limit_project_names(&mut settings, &mut set_names, path);
+        let sets = settings.env_sets.unwrap();
+        assert_eq!(sets.keys().collect::<Vec<_>>(), ["a", "c"]);
+        assert_eq!(set_names, 0);
+        let mut settings: MisercSettings = toml::from_str("[env_sets]\nd = [\"x\"]").unwrap();
+        limit_project_names(&mut settings, &mut set_names, path);
+        assert!(settings.env_sets.unwrap().is_empty());
     }
 
     #[test]
