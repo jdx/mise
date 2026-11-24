@@ -400,10 +400,11 @@ async fn fetch_() -> Result<VersionsIndex> {
     let mut headers = VERSIONS_HOST_HEADERS.clone();
     // Read once: a 304 vouches for the body this `ETag` came with. Only a copy
     // that parses is revalidated; a corrupt or outdated one would otherwise get
-    // a 304 on every command and never be replaced.
+    // a 304 on every command and never be replaced. So would any copy whose
+    // `ETag` is `*` rather than an entity-tag.
     let cached = read_cached().ok().and_then(|(etag, body)| {
         let index = VersionsIndex::parse(&body).ok()?;
-        (!etag.is_empty()).then_some((etag, index))
+        crate::http::is_entity_tag(&etag).then_some((etag, index))
     });
     if let Some((etag, _)) = &cached {
         headers.insert(IF_NONE_MATCH, HeaderValue::from_str(etag)?);

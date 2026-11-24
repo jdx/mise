@@ -314,7 +314,9 @@ async fn revalidate_policy_text(url: &str, store: &Path) -> Result<Option<String
         .filter(|stored| stored.url == url);
     let mut headers = crate::http::host_auth_headers(&url.parse()?)?;
     if let Some(stored) = &stored {
-        if let Some(etag) = stored.etag.as_deref() {
+        // Only an entity-tag is sent back: `*` matches any list.
+        let etag = stored.etag.as_deref();
+        if let Some(etag) = etag.filter(|etag| crate::http::is_entity_tag(etag)) {
             headers.insert(IF_NONE_MATCH, HeaderValue::from_str(etag)?);
         } else if let Some(last_modified) = stored.last_modified.as_deref() {
             headers.insert(IF_MODIFIED_SINCE, HeaderValue::from_str(last_modified)?);
@@ -344,7 +346,7 @@ async fn revalidate_policy_text(url: &str, store: &Path) -> Result<Option<String
     };
     // A weak ETag is enough: reused text is verified again, signature,
     // expiry and sequence, before anything trusts it.
-    let etag = header(ETAG);
+    let etag = header(ETAG).filter(|etag| crate::http::is_entity_tag(etag));
     let last_modified = header(LAST_MODIFIED);
     let text = crate::http::buffer_body(resp).await?.text().await?;
     if etag.is_some() || last_modified.is_some() {
@@ -3701,6 +3703,33 @@ mod tests {
             .mock("GET", path)
             .match_header("if-none-match", mockito::Matcher::Missing)
             .match_header("if-modified-since", mockito::Matcher::Missing)
+            .with_body("{}")
+            .expect(2)
+            .create_async()
+            .await;
+        for _ in 0..2 {
+            assert_eq!(
+                revalidate_policy_text(&url, store.path()).await.unwrap(),
+                Some("{}".to_string())
+            );
+        }
+        list.assert_async().await;
+        assert!(!stored_policy_path(store.path(), &url).exists());
+    }
+
+    /// `If-None-Match: *` matches whatever list the host has, so an `ETag`
+    /// that is not an entity-tag is no validator.
+    #[tokio::test]
+    async fn a_release_list_with_a_wildcard_etag_is_not_kept() {
+        let _config = Config::get().await.unwrap();
+        let store = tempfile::tempdir().unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let path = "/wildcard/HEAD/.well-known/packslip.json";
+        let url = format!("{}{path}", server.url());
+        let list = server
+            .mock("GET", path)
+            .match_header("if-none-match", mockito::Matcher::Missing)
+            .with_header("etag", "*")
             .with_body("{}")
             .expect(2)
             .create_async()

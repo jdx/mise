@@ -279,7 +279,7 @@ impl DownloadValidator {
 
     fn is_valid(&self) -> bool {
         match self {
-            Self::Etag(value) => !value.is_empty() && !value.starts_with("W/"),
+            Self::Etag(value) => is_strong_entity_tag(value),
             Self::LastModified {
                 value,
                 response_date,
@@ -775,7 +775,7 @@ fn response_validator(headers: &HeaderMap) -> Option<DownloadValidator> {
     headers
         .get(ETAG)
         .and_then(|value| value.to_str().ok())
-        .filter(|value| !value.is_empty() && !value.starts_with("W/"))
+        .filter(|value| is_strong_entity_tag(value))
         .map(|value| DownloadValidator::Etag(value.to_string()))
         .or_else(|| {
             let value = headers
@@ -790,6 +790,23 @@ fn response_validator(headers: &HeaderMap) -> Option<DownloadValidator> {
         })
 }
 
+/// Whether `value` is exactly one entity-tag (RFC 9110 section 8.8.3), weak
+/// or strong: an optional `W/`, then a quoted string with no quote or space
+/// inside. Only that may be sent back in `If-None-Match`, where `*` and a list
+/// of tags match files the tag never came with.
+pub fn is_entity_tag(value: &str) -> bool {
+    value
+        .strip_prefix("W/")
+        .unwrap_or(value)
+        .strip_prefix('"')
+        .and_then(|tag| tag.strip_suffix('"'))
+        .is_some_and(|tag| tag.bytes().all(|b| b.is_ascii_graphic() && b != b'"'))
+}
+
+fn is_strong_entity_tag(value: &str) -> bool {
+    !value.starts_with("W/") && is_entity_tag(value)
+}
+
 fn is_strong_last_modified(value: &str, response_date: &str) -> bool {
     let Ok(last_modified) = chrono::DateTime::parse_from_rfc2822(value) else {
         return false;
@@ -797,7 +814,10 @@ fn is_strong_last_modified(value: &str, response_date: &str) -> bool {
     let Ok(response_date) = chrono::DateTime::parse_from_rfc2822(response_date) else {
         return false;
     };
-    response_date.signed_duration_since(last_modified) >= chrono::Duration::seconds(60)
+    // A date still ahead of this clock, sent in `If-Modified-Since`, gets a 304
+    // for every file the server publishes until then.
+    last_modified <= chrono::Utc::now()
+        && response_date.signed_duration_since(last_modified) >= chrono::Duration::seconds(60)
 }
 
 fn parse_content_range(value: &str) -> Option<ParsedContentRange> {
