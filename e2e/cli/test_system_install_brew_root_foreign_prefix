@@ -29,3 +29,10 @@ assert_fail_contains "mise bootstrap packages apply --dry-run --yes" "could redi
 mkdir -p "$PWD/owned"
 export MISE_SYSTEM_BREW_PREFIX="$PWD/owned/brew-prefix"
 assert_contains "mise bootstrap packages apply --dry-run --yes 2>&1" "install cask example-good/1.0"
+
+# a root-owned Cellar link is judged by where it leads as well
+mkdir -p "$PWD/linked/brew-prefix" "$PWD/disk/cellar"
+chown 65534 "$PWD/disk"
+ln -s "$PWD/disk/cellar" "$PWD/linked/brew-prefix/Cellar"
+export MISE_SYSTEM_BREW_PREFIX="$PWD/linked/brew-prefix"
+assert_fail_contains "mise bootstrap packages apply --dry-run --yes" "$PWD/disk is owned by"

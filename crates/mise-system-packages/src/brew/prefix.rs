@@ -177,9 +177,10 @@ fn sudo_invoking_uid() -> Option<u32> {
 /// Refuse to work as root in a prefix another account controls. Root can
 /// write anywhere, and mise stages, copies, links and removes by path, so the
 /// owner of the prefix, of a directory above it or of one of its standard
-/// directories could swap a directory for a symlink between a check and a
-/// write and have root create files wherever they like. Each of those must
-/// be owned by root or by the user who ran `sudo mise`.
+/// directories (or of a directory a standard directory links to) could swap
+/// a directory for a symlink between a check and a write and have root
+/// create files wherever they like. Each of those must be owned by root or
+/// by the user who ran `sudo mise`.
 pub(super) fn refuse_foreign_as_root() -> Result<()> {
     if !nix::unistd::geteuid().is_root() {
         return Ok(());
@@ -204,24 +205,39 @@ pub(super) fn refuse_foreign_as_root() -> Result<()> {
     Ok(())
 }
 
-/// The first existing path, of `prefix`, the directories above it (spelled
-/// as given and as resolved) and `dirs`, whose owner is neither root nor
-/// `sudo_uid`. Read without following symlinks, so a link counts by its own
-/// owner, who can repoint it.
+/// The first existing path of `guarded_paths` whose owner is neither root
+/// nor `sudo_uid`. Read without following symlinks, so a link counts by its
+/// own owner, who can repoint it.
 fn foreign_component(
     prefix: &Path,
     dirs: &[PathBuf],
     sudo_uid: Option<u32>,
 ) -> Option<(PathBuf, u32)> {
-    let real = prefix.canonicalize().ok();
-    prefix
-        .ancestors()
-        .chain(real.iter().flat_map(|real| real.ancestors()))
+    guarded_paths(prefix, dirs).into_iter().find_map(|path| {
+        let uid = std::os::unix::fs::MetadataExt::uid(&path.symlink_metadata().ok()?);
+        (uid != 0 && Some(uid) != sudo_uid).then_some((path, uid))
+    })
+}
+
+/// The paths whose owners could redirect root's writes in the prefix: the
+/// prefix and the directories above it, and each of `dirs`, all spelled as
+/// given and as resolved with the directories above the resolved path. A
+/// standard directory that is a link (a Cellar on another disk) is written
+/// through, so the directories it leads to count as much as the link.
+fn guarded_paths(prefix: &Path, dirs: &[PathBuf]) -> Vec<PathBuf> {
+    std::iter::once(prefix)
         .chain(dirs.iter().map(PathBuf::as_path))
-        .find_map(|path| {
-            let uid = std::os::unix::fs::MetadataExt::uid(&path.symlink_metadata().ok()?);
-            (uid != 0 && Some(uid) != sudo_uid).then(|| (path.to_path_buf(), uid))
+        .flat_map(|path| {
+            let real = path.canonicalize().ok();
+            path.ancestors()
+                .map(Path::to_path_buf)
+                .chain(
+                    real.iter()
+                        .flat_map(|real| real.ancestors().map(Path::to_path_buf)),
+                )
+                .collect::<Vec<_>>()
         })
+        .collect()
 }
 
 /// Who should own the prefix. Under `sudo mise`, the invoking user
@@ -374,6 +390,24 @@ mod tests {
             foreign_component(Path::new("/nonexistent-mise-prefix"), &[], None),
             None
         );
+    }
+
+    /// a standard directory that is a link is judged by where it leads too,
+    /// so a Cellar link that root owns cannot hand root's writes to the
+    /// owner of the directory it points at
+    #[test]
+    fn root_checks_where_the_standard_directories_lead() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path().canonicalize().unwrap();
+        let prefix = base.join("prefix");
+        let disk = base.join("disk/cellar");
+        std::fs::create_dir_all(&prefix).unwrap();
+        std::fs::create_dir_all(&disk).unwrap();
+        std::os::unix::fs::symlink(&disk, prefix.join("Cellar")).unwrap();
+        let paths = guarded_paths(&prefix, &[prefix.join("Cellar")]);
+        assert!(paths.contains(&prefix.join("Cellar")));
+        assert!(paths.contains(&disk));
+        assert!(paths.contains(&base.join("disk")));
     }
 
     #[test]
