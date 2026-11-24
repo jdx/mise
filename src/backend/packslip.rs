@@ -309,7 +309,7 @@ async fn request_policy_text(url: &str) -> Result<Option<String>> {
     let headers = crate::http::host_auth_headers(&url.parse()?)?;
     let resp = match HTTP_FETCH.get_async_with_headers(url, &headers).await {
         Ok(resp) => resp,
-        Err(err) if crate::http::error_code(&err) == Some(404) => return Ok(None),
+        Err(err) if answered_not_found(&err) => return Ok(None),
         Err(err) => return Err(err),
     };
     if resp.status() == reqwest::StatusCode::NOT_MODIFIED {
@@ -321,6 +321,17 @@ async fn request_policy_text(url: &str) -> Result<Option<String>> {
             .text()
             .await?,
     ))
+}
+
+/// Whether the host answered `err` with 404, read from the response status
+/// alone. A 404 is the one answer that says there is no list, so a timeout or
+/// a refused connection, whose message names the URL and so holds `404` for a
+/// repository called that, is never taken for one.
+fn answered_not_found(err: &eyre::Report) -> bool {
+    err.chain()
+        .filter_map(|cause| cause.downcast_ref::<reqwest::Error>())
+        .find_map(reqwest::Error::status)
+        == Some(reqwest::StatusCode::NOT_FOUND)
 }
 
 /// The signed release list of a project on its own domain.
@@ -3650,6 +3661,48 @@ mod tests {
             fetch_policy_text(&url).await.unwrap().as_deref(),
             Some("{}")
         );
+    }
+
+    /// Only the host's 404 says there is no list: a request that timed out
+    /// fails, though its message names a URL holding `404`.
+    #[tokio::test]
+    async fn a_release_list_request_without_an_answer_is_no_404() {
+        let _settings = crate::test::SettingsGuard::lock();
+        let _config = Config::get().await.unwrap();
+        let mut server = mockito::Server::new_async().await;
+        mirror_at(&server);
+        // How the client reports a request that timed out.
+        let timed_out = eyre!(
+            "HTTP timed out after 3s for https://raw.githubusercontent.com/o/repo404/HEAD/.well-known/packslip.json"
+        );
+        assert!(!answered_not_found(&timed_out), "{timed_out:#}");
+
+        let path = "/o/repo404/HEAD/.well-known/packslip.json";
+        let _gone = server
+            .mock("GET", path)
+            .with_status(404)
+            .create_async()
+            .await;
+        let _failing = server
+            .mock("GET", "/o/repo404/HEAD/failing.json")
+            .with_status(500)
+            .create_async()
+            .await;
+        let headers = reqwest::header::HeaderMap::new();
+        let not_found = HTTP_FETCH
+            .get_async_with_headers(format!("{}{path}", server.url()), &headers)
+            .await
+            .unwrap_err()
+            .wrap_err("fetching the list");
+        assert!(answered_not_found(&not_found), "{not_found:#}");
+        let failed = HTTP_FETCH
+            .get_async_with_headers(
+                format!("{}/o/repo404/HEAD/failing.json", server.url()),
+                &headers,
+            )
+            .await
+            .unwrap_err();
+        assert!(!answered_not_found(&failed), "{failed:#}");
     }
 
     /// Each command downloads the list again, whatever validator came with
