@@ -69,11 +69,12 @@ impl Vfox {
         options: IndexMap<String, toml::Value>,
     ) -> Result<()> {
         let plugin = self.get_sdk_detached(sdk)?;
+        // The hook's commands do not run in mise's working directory.
         let ctx = BackendInstallContext {
             tool: tool.to_string(),
             version: version.to_string(),
-            install_path,
-            download_path,
+            install_path: std::path::absolute(install_path)?,
+            download_path: std::path::absolute(download_path)?,
             options,
         };
         plugin.backend_install(ctx).await?;
@@ -95,12 +96,13 @@ impl Vfox {
         if !plugin.get_metadata()?.hooks.contains("backend_uninstall") {
             return Ok(());
         }
+        // The hook's commands do not run in mise's working directory.
         plugin
             .backend_uninstall(BackendUninstallContext {
                 tool: tool.to_string(),
                 version: version.to_string(),
-                install_path,
-                download_path,
+                install_path: std::path::absolute(install_path)?,
+                download_path: std::path::absolute(download_path)?,
                 options,
             })
             .await

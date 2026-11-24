@@ -148,9 +148,10 @@ impl Vfox {
         if !sdk.get_metadata()?.hooks.contains("mise_install_satisfied") {
             return Ok(None);
         }
+        // The hook's commands do not run in mise's working directory.
         let ctx = MiseInstallSatisfiedContext {
             version: version.to_string(),
-            path: install_dir.as_ref().to_path_buf(),
+            path: std::path::absolute(install_dir)?,
             options,
         };
         Ok(Some(sdk.mise_install_satisfied(ctx).await?))

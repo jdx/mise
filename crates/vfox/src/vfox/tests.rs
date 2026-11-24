@@ -839,3 +839,94 @@ async fn env_hooks_still_run_in_the_working_directory() {
         std::env::current_dir().unwrap().canonicalize().unwrap()
     );
 }
+
+/// A plugin whose install-related hooks report the paths mise handed them.
+fn path_probe_plugin(plugins: &Path) {
+    let dir = plugins.join("path-probe");
+    std::fs::create_dir_all(dir.join("hooks")).unwrap();
+    std::fs::write(
+        dir.join("metadata.lua"),
+        r#"PLUGIN = {}
+PLUGIN.name = "path-probe"
+PLUGIN.version = "0.1.0"
+PLUGIN.minRuntimeVersion = "0.3.0"
+"#,
+    )
+    .unwrap();
+    for (hook, function) in [
+        ("backend_install", "BackendInstall"),
+        ("backend_uninstall", "BackendUninstall"),
+    ] {
+        std::fs::write(
+            dir.join(format!("hooks/{hook}.lua")),
+            format!(
+                "function PLUGIN:{function}(ctx)\n    error(\"paths=\" .. ctx.install_path .. \",\" .. ctx.download_path)\nend\n"
+            ),
+        )
+        .unwrap();
+    }
+    std::fs::write(
+        dir.join("hooks/mise_install_satisfied.lua"),
+        "function PLUGIN:MiseInstallSatisfied(ctx)\n    return { satisfied = false, reason = ctx.path }\nend\n",
+    )
+    .unwrap();
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn install_hooks_get_absolute_paths() {
+    let plugins = tempfile::tempdir().unwrap();
+    path_probe_plugin(plugins.path());
+    let mut vfox = Vfox::test();
+    vfox.plugin_dir = plugins.path().to_path_buf();
+    let cwd = std::env::current_dir().unwrap();
+    let expected = format!(
+        "paths={},{}",
+        cwd.join("rel/install").display(),
+        cwd.join("rel/download").display()
+    );
+
+    let install = vfox
+        .backend_install(
+            "path-probe",
+            "tool",
+            "1.0.0",
+            PathBuf::from("rel/install"),
+            PathBuf::from("rel/download"),
+            IndexMap::new(),
+        )
+        .await
+        .unwrap_err();
+    assert!(format!("{install:?}").contains(&expected), "{install:?}");
+
+    let uninstall = vfox
+        .backend_uninstall(
+            "path-probe",
+            "tool",
+            "1.0.0",
+            PathBuf::from("rel/install"),
+            PathBuf::from("rel/download"),
+            IndexMap::new(),
+        )
+        .await
+        .unwrap_err();
+    assert!(
+        format!("{uninstall:?}").contains(&expected),
+        "{uninstall:?}"
+    );
+
+    let satisfied = vfox
+        .mise_install_satisfied(
+            "path-probe",
+            "1.0.0",
+            "rel/install",
+            IndexMap::<String, String>::new(),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        satisfied.reason.as_deref(),
+        cwd.join("rel/install").to_str()
+    );
+}
