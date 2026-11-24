@@ -177,6 +177,7 @@ impl LockfileEntries {
     ) -> Result<Self> {
         let cache = crate::cache::CacheManagerBuilder::new(cache_file)
             .with_cache_key(crate::build_time::built_info::BUILT_TIME_UTC.to_string())
+            .with_positional_fields()
             .build::<CachedEntries>();
         if cache.has_fresh_value() {
             match cache.get_cached().and_then(Self::try_from) {
@@ -265,7 +266,7 @@ struct CachedEntries {
     empty: bool,
     lockfile_version: u32,
     tools: Vec<(String, Vec<CachedToolEntry>)>,
-    rest: toml::Table,
+    rest: Vec<(String, CachedValue)>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -274,7 +275,68 @@ enum CachedToolEntry {
     /// An entry with a dependency graph, as its parsed TOML: reading it back
     /// runs the same [`LockfileTool::try_from`] the lockfile's text went
     /// through.
-    Source(toml::Value),
+    Source(CachedValue),
+}
+
+/// A TOML value. The cache file names no fields, and `toml::Value` tells a
+/// date from a table by a field's name, so it is kept as this instead.
+#[derive(Clone, Serialize, Deserialize)]
+enum CachedValue {
+    String(String),
+    Integer(i64),
+    Float(f64),
+    Boolean(bool),
+    /// As TOML writes it.
+    Datetime(String),
+    Array(Vec<CachedValue>),
+    Table(Vec<(String, CachedValue)>),
+}
+
+impl From<&toml::Value> for CachedValue {
+    fn from(value: &toml::Value) -> Self {
+        match value {
+            toml::Value::String(s) => Self::String(s.clone()),
+            toml::Value::Integer(i) => Self::Integer(*i),
+            toml::Value::Float(f) => Self::Float(*f),
+            toml::Value::Boolean(b) => Self::Boolean(*b),
+            toml::Value::Datetime(date) => Self::Datetime(date.to_string()),
+            toml::Value::Array(array) => Self::Array(array.iter().map(Into::into).collect()),
+            toml::Value::Table(table) => Self::Table(cached_table(table)),
+        }
+    }
+}
+
+/// The value `cached` was made from. Not a `TryFrom`: `toml::Value::try_from`
+/// is toml's own function, which serializes its argument.
+fn value_from_cached(cached: CachedValue) -> Result<toml::Value> {
+    Ok(match cached {
+        CachedValue::String(s) => toml::Value::String(s),
+        CachedValue::Integer(i) => toml::Value::Integer(i),
+        CachedValue::Float(f) => toml::Value::Float(f),
+        CachedValue::Boolean(b) => toml::Value::Boolean(b),
+        CachedValue::Datetime(date) => toml::Value::Datetime(date.parse()?),
+        CachedValue::Array(array) => toml::Value::Array(
+            array
+                .into_iter()
+                .map(value_from_cached)
+                .collect::<Result<_>>()?,
+        ),
+        CachedValue::Table(table) => toml::Value::Table(table_from_cached(table)?),
+    })
+}
+
+fn cached_table(table: &toml::Table) -> Vec<(String, CachedValue)> {
+    table
+        .iter()
+        .map(|(key, value)| (key.clone(), value.into()))
+        .collect()
+}
+
+fn table_from_cached(table: Vec<(String, CachedValue)>) -> Result<toml::Table> {
+    table
+        .into_iter()
+        .map(|(key, value)| Ok((key, value_from_cached(value)?)))
+        .collect()
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -345,9 +407,10 @@ impl CachedEntries {
                     .map(|tool| match CachedTool::without_graph(tool) {
                         Some(tool) => CachedToolEntry::Typed(tool),
                         None => CachedToolEntry::Source(
-                            graph_sources
+                            (&graph_sources
                                 .next()
-                                .expect("an entry with a graph has its source"),
+                                .expect("an entry with a graph has its source"))
+                                .into(),
                         ),
                     })
                     .collect();
@@ -358,7 +421,7 @@ impl CachedEntries {
             empty: *empty,
             lockfile_version: *lockfile_version,
             tools,
-            rest: rest.clone(),
+            rest: cached_table(rest),
         }
     }
 }
@@ -379,7 +442,9 @@ impl TryFrom<CachedEntries> for LockfileEntries {
                     .into_iter()
                     .map(|entry| match entry {
                         CachedToolEntry::Typed(tool) => Ok(tool.into()),
-                        CachedToolEntry::Source(value) => LockfileTool::try_from(value),
+                        CachedToolEntry::Source(value) => {
+                            LockfileTool::try_from(value_from_cached(value)?)
+                        }
                     })
                     .collect::<Result<Vec<_>>>()?;
                 Ok((short, versions))
@@ -389,7 +454,7 @@ impl TryFrom<CachedEntries> for LockfileEntries {
             empty,
             lockfile_version,
             tools,
-            rest,
+            rest: table_from_cached(rest)?,
         })
     }
 }
