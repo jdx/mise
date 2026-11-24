@@ -1541,16 +1541,14 @@ fn parse_checksum_content(
             LineAlgorithm::Unknown => None,
         };
         // An exact name wins. A list written from another directory names the
-        // file by path ("./file", "dist/file"); release assets have no
-        // directories, so the last component is the asset name. A directory
-        // with whitespace in it is not a path but other text, such as
-        // `Path : C:\dist\file` in PowerShell output.
+        // file by path ("./file", "dist/file", "C:\my dir\file"); release
+        // assets have no directories, so the last component is the asset name.
         if line.name == target_file {
             exact.add(line.hash, line_algorithm);
         } else if line
             .name
             .rsplit_once(['/', '\\'])
-            .is_some_and(|(dir, name)| name == target_file && !dir.contains(char::is_whitespace))
+            .is_some_and(|(_, name)| name == target_file)
         {
             by_path.add(line.hash, line_algorithm);
         }
@@ -1689,13 +1687,17 @@ fn parse_checksum_line(line: &str) -> Option<ChecksumLine<'_>> {
         });
     }
 
-    // The file name is the rest of the line after the hash, so a name with
-    // spaces in it is read whole.
+    // The file name is the rest of the line after the hash and the
+    // whitespace and binary-mode marker (`*`) that follow it, so a name or a
+    // directory with spaces in it is read whole. The separator is not counted
+    // to the byte (one space, two, a tab), and spaces around the line are
+    // dropped: a release asset's name never starts or ends with a space or
+    // `*`. A rest that starts with `:` is the value of a `Key : value` line,
+    // such as PowerShell `Format-List` output, and names no file.
     let (hash, name) = line.trim().split_once(char::is_whitespace)?;
     let name = name.trim_start();
-    // Strip the coreutils binary-mode marker ("<hash> *<file>")
     let name = name.strip_prefix('*').unwrap_or(name);
-    if name.is_empty() {
+    if name.is_empty() || name.starts_with(':') {
         return None;
     }
     Some(ChecksumLine {
@@ -4295,22 +4297,45 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-darwin.ta
     }
 
     #[test]
-    fn test_file_names_with_spaces_are_read_whole() {
+    fn test_coreutils_line_names_its_file() {
         let asset = "tool linux.zip";
-        for content in [
-            format!("{DARWIN_SHA256}  tool\n{LINUX_SHA256}  tool linux.zip\n"),
-            format!("{DARWIN_SHA256} *tool\n{LINUX_SHA256} *tool linux.zip \r\n"),
+        // (list, whether it gives the asset's hash)
+        for (content, listed) in [
+            (
+                format!("{DARWIN_SHA256}  tool\n{LINUX_SHA256}  tool linux.zip\n"),
+                true,
+            ),
+            (
+                format!("{DARWIN_SHA256} *tool\n{LINUX_SHA256} *tool linux.zip \r\n"),
+                true,
+            ),
+            (format!("{LINUX_SHA256}\ttool linux.zip\n"), true),
+            (format!("{LINUX_SHA256}  ./tool linux.zip\n"), true),
+            (format!("{LINUX_SHA256}  dist/tool linux.zip\n"), true),
+            (
+                format!("{LINUX_SHA256}  build output/tool linux.zip\n"),
+                true,
+            ),
+            (
+                format!("{LINUX_SHA256}  C:\\my builds\\tool linux.zip\n"),
+                true,
+            ),
+            (format!("{LINUX_SHA256}  tool linux.zip.sig\n"), false),
+            (format!("{LINUX_SHA256}  tool\n"), false),
+            // `Key : value` lines of PowerShell `Format-List` output name no file
+            (
+                format!("Hash : {LINUX_SHA256}\nPath : C:\\my builds\\tool linux.zip\n"),
+                false,
+            ),
         ] {
             let result = parse_checksum_content(&content, asset, "sha256", "SHA256SUMS", false)
-                .unwrap()
-                .unwrap();
-            assert_eq!(result.hash, LINUX_SHA256, "{content:?}");
+                .unwrap_or_else(|e| panic!("{content:?}: {e:#}"));
+            assert_eq!(
+                result.map(|r| r.hash),
+                listed.then(|| LINUX_SHA256.to_string()),
+                "{content:?}"
+            );
         }
-        let content = format!("{LINUX_SHA256}  dist/tool linux.zip\n");
-        let result = parse_checksum_content(&content, asset, "sha256", "SHA256SUMS", false)
-            .unwrap()
-            .unwrap();
-        assert_eq!(result.hash, LINUX_SHA256);
         let content = format!("{LINUX_SHA256}  tool linux.zip\n");
         assert!(
             parse_checksum_content(&content, "tool", "sha256", "SHA256SUMS", false)
