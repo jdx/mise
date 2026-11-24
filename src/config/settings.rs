@@ -574,7 +574,7 @@ fn self_update_env_alias_layer() -> Result<Option<SettingsPartial>> {
     {
         return Ok(None);
     }
-    let mut env_layer = SettingsPartial::from_env()?;
+    let mut env_layer = env_settings_layer()?;
     normalize_self_update_aliases(&mut env_layer);
     let mut alias_layer = SettingsPartial::empty();
     alias_layer.self_update.auto = env_layer.self_update.auto;
@@ -1733,7 +1733,7 @@ impl SettingsInternal for Settings {
         .iter()
         .any(|name| std::env::var_os(name).is_some())
         {
-            let mut env_aliases = Self::builder().env().load()?;
+            let mut env_aliases = Self::builder().preloaded(env_settings_layer()?).load()?;
             env_aliases.normalize_pypi_aliases()?;
             let mut alias_layer = SettingsPartial::default();
             // Normalize the environment as its own source before layering it over files.

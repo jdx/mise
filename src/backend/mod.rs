@@ -7257,6 +7257,13 @@ pub trait Backend: Debug + Send + Sync {
     }
 }
 
+/// Whether this mise was started by a postinstall hook, which is told the
+/// installation it belongs to. Read once: mise sets the variable on the hook's
+/// process, never on its own, and the installed check asks several times per
+/// tool.
+static IN_POSTINSTALL_HOOK: LazyLock<bool> =
+    LazyLock::new(|| std::env::var_os("MISE_TOOL_INSTALL_PATH").is_some());
+
 /// A postinstall hook may invoke mise for the exact installation it is
 /// finishing. That process is entitled to use the path supplied by its parent,
 /// even though the generic incomplete marker remains in place until the hook
@@ -7265,13 +7272,6 @@ pub trait Backend: Debug + Send + Sync {
 /// current one: a process the hook left running inherits the environment, but
 /// once that hook ends (or another install retries the version), the half-done
 /// version is not its to use.
-/// Whether this mise was started by a postinstall hook, which is told the
-/// installation it belongs to. Read once: mise sets the variable on the hook's
-/// process, never on its own, and the installed check asks several times per
-/// tool.
-static IN_POSTINSTALL_HOOK: LazyLock<bool> =
-    LazyLock::new(|| std::env::var_os("MISE_TOOL_INSTALL_PATH").is_some());
-
 pub(crate) fn is_active_postinstall_install(tv: &ToolVersion, install_path: &Path) -> bool {
     std::env::var_os("MISE_TOOL_INSTALL_PATH")
         .as_deref()
