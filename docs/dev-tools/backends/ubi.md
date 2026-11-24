@@ -132,7 +132,8 @@ token only when every request goes to the provider's API (or, for GitHub, to
 `github.com`). A download URL on another host, or a GitLab release whose asset
 links point at another host, installs only while none of those variables is
 set; otherwise mise refuses it. Install such a tool with the github, gitlab or
-http backend instead.
+http backend instead. For a GitLab project, mise reads the release just before
+ubi does, with the token ubi will send, to see where its asset links point.
 
 mise puts `bin_path` on `PATH` when it is set. Otherwise it uses the install
 directory when `extract_all` is set, then the install's `bin/` directory if it

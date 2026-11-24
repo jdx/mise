@@ -768,40 +768,20 @@ fn name_is_url(n: &str) -> bool {
     n.starts_with("http")
 }
 
-fn set_token<'a>(mut builder: UbiBuilder<'a>, forge: &ForgeType) -> UbiBuilder<'a> {
-    match forge {
-        ForgeType::GitHub => {
-            if let Some(token) = &*GITHUB_TOKEN {
-                builder = builder.token(token)
-            }
-            builder
-        }
-        ForgeType::GitLab => {
-            if let Some(token) = &*GITLAB_TOKEN {
-                builder = builder.token(token)
-            }
-            builder
-        }
-        _ => builder,
-    }
-}
-
-fn set_enterprise_token<'a>(mut builder: UbiBuilder<'a>, forge: &ForgeType) -> UbiBuilder<'a> {
-    match forge {
-        ForgeType::GitHub => {
-            if let Some(token) = &*MISE_GITHUB_ENTERPRISE_TOKEN {
-                builder = builder.token(token);
-            }
-            builder
-        }
-        ForgeType::GitLab => {
-            if let Some(token) = &*MISE_GITLAB_ENTERPRISE_TOKEN {
-                builder = builder.token(token);
-            }
-            builder
-        }
-        _ => builder,
-    }
+/// The token ubi sends to `forge`: the one mise gives it (the enterprise token
+/// for an `api_url` that is not the public API, else the forge token), or else
+/// the one ubi reads from [`forge_token_env_var`] itself.
+fn ubi_token(forge: &ForgeType, public_api: bool) -> Option<String> {
+    let (token, enterprise_token) = match forge {
+        ForgeType::GitHub => (&*GITHUB_TOKEN, &*MISE_GITHUB_ENTERPRISE_TOKEN),
+        ForgeType::GitLab => (&*GITLAB_TOKEN, &*MISE_GITLAB_ENTERPRISE_TOKEN),
+        _ => (&None, &None),
+    };
+    enterprise_token
+        .clone()
+        .filter(|_| !public_api)
+        .or_else(|| token.clone())
+        .or_else(|| forge_token_env_var(forge).and_then(|name| std::env::var(name).ok()))
 }
 
 /// The forge ubi talks to: a URL on codeberg.org or gitlab.com selects that
@@ -846,6 +826,8 @@ fn is_public_forge_api_url(api_url: &str) -> Result<bool> {
 /// public GitHub API also github.com, which serves its release downloads.
 struct TokenHosts {
     forge: ForgeType,
+    /// The API ubi uses, without a trailing slash.
+    api_url: String,
     api_origin: url::Origin,
     api_host: String,
     public_api: bool,
@@ -865,11 +847,13 @@ impl TokenHosts {
                 ForgeType::GitLab => "https://gitlab.com/api/v4",
             },
         };
-        let api_url = url::Url::parse(api_url)?;
+        let api_url = api_url.strip_suffix('/').unwrap_or(api_url);
+        let parsed = url::Url::parse(api_url)?;
         Ok(Self {
             forge,
-            api_origin: api_url.origin(),
-            api_host: api_url.host_str().unwrap_or_default().to_string(),
+            api_url: api_url.to_string(),
+            api_origin: parsed.origin(),
+            api_host: parsed.host_str().unwrap_or_default().to_string(),
             public_api,
         })
     }
@@ -886,12 +870,12 @@ impl TokenHosts {
                 && url.host_str() == Some("github.com"))
     }
 
-    /// A host this install would send the token to that may not get it.
+    /// A host this install would send `token` to that may not get it.
     async fn foreign_host(
         &self,
         name: &str,
         v: &str,
-        opts: &UbiOptions<'_>,
+        token: Option<&str>,
     ) -> Result<Option<String>> {
         let host = |url: &str| {
             url::Url::parse(url)
@@ -902,11 +886,12 @@ impl TokenHosts {
         if name_is_url(name) {
             return Ok((!self.allows(name)).then(|| host(name)));
         }
-        if self.forge != ForgeType::GitLab || !gitlab_token_available(self.public_api) {
+        let Some(token) = token.filter(|_| self.forge == ForgeType::GitLab) else {
             return Ok(None);
-        }
+        };
         // GitLab release links can point at any host, and ubi downloads from them.
-        let release = gitlab::get_release_for_url(&opts.api_url(&self.forge)?, name, v).await?;
+        // The release is read now and with ubi's token, as ubi reads it.
+        let release = gitlab::get_release_now(&self.api_url, name, v, Some(token)).await?;
         Ok(release
             .assets
             .links
@@ -914,12 +899,6 @@ impl TokenHosts {
             .find(|link| !self.allows(&link.url))
             .map(|link| host(&link.url)))
     }
-}
-
-fn gitlab_token_available(public_api: bool) -> bool {
-    GITLAB_TOKEN.is_some()
-        || (!public_api && MISE_GITLAB_ENTERPRISE_TOKEN.is_some())
-        || forge_token_env_var(&ForgeType::GitLab).is_some()
 }
 
 async fn install(
@@ -974,6 +953,7 @@ async fn install(
     // ubi sends its token with every request, the download included, and reads
     // one from the environment when it is given none.
     let env_token = forge_token_env_var(&forge);
+    let token = ubi_token(&forge, token_hosts.public_api);
     if token_denied {
         if let Some(var) = env_token {
             bail!(
@@ -981,17 +961,14 @@ async fn install(
                 token_hosts.api_host
             );
         }
-    } else if let Some(host) = token_hosts.foreign_host(name, v, opts).await? {
+    } else if let Some(host) = token_hosts.foreign_host(name, v, token.as_deref()).await? {
         if let Some(var) = env_token {
             bail!(
                 "ubi would send the {var} token to {host}, which is not the {forge:?} API\nhint: unset {var}, or install the tool with the github, gitlab or http backend"
             );
         }
-    } else {
-        builder = set_token(builder, &forge);
-        if !token_hosts.public_api {
-            builder = set_enterprise_token(builder, &forge);
-        }
+    } else if let Some(token) = &token {
+        builder = builder.token(token);
     }
 
     let mut ubi = builder.build().map_err(|e| eyre::eyre!("{e:#}"))?;
@@ -1078,6 +1055,69 @@ mod tests {
         assert!(gitlab.allows("https://gitlab.com/o/r/-/releases/v1/downloads/tool.tar.gz"));
         assert!(!gitlab.allows("https://cdn.example/tool.tar.gz"));
         assert!(!gitlab.allows("https://github.com/o/r/releases/download/v1/tool.tar.gz"));
+    }
+
+    #[tokio::test]
+    async fn test_gitlab_release_links_are_read_now_with_ubi_token() {
+        let mut server = mockito::Server::new_async().await;
+        let api_url = server.url();
+        let release = |link: &str| {
+            serde_json::json!({
+                "tag_name": "v1",
+                "description": null,
+                "released_at": null,
+                "assets": {"sources": [], "links": [{
+                    "id": 1,
+                    "name": "tool.tar.gz",
+                    "url": link,
+                    "direct_asset_url": link,
+                    "link_type": "package",
+                }]},
+            })
+            .to_string()
+        };
+        let path = "/projects/o%2Fr/releases/v1";
+        let hosts = TokenHosts::new(ForgeType::GitLab, Some(&format!("{api_url}/"))).unwrap();
+        assert!(!hosts.public_api);
+
+        // A job token is sent as ubi sends it.
+        let on_gitlab = server
+            .mock("GET", path)
+            .match_header("authorization", "Bearer job-token")
+            .with_header("content-type", "application/json")
+            .with_body(release(&format!(
+                "{api_url}/o/r/-/releases/v1/downloads/tool.tar.gz"
+            )))
+            .expect(1)
+            .create_async()
+            .await;
+        let host = hosts
+            .foreign_host("o/r", "v1", Some("job-token"))
+            .await
+            .unwrap();
+        assert_eq!(host, None);
+        on_gitlab.assert_async().await;
+        on_gitlab.remove_async().await;
+
+        // A link changed since is seen on the next install.
+        let elsewhere = server
+            .mock("GET", path)
+            .match_header("authorization", "Bearer job-token")
+            .with_header("content-type", "application/json")
+            .with_body(release("https://downloads.example/tool.tar.gz"))
+            .expect(1)
+            .create_async()
+            .await;
+        let host = hosts
+            .foreign_host("o/r", "v1", Some("job-token"))
+            .await
+            .unwrap();
+        assert_eq!(host.as_deref(), Some("downloads.example"));
+        elsewhere.assert_async().await;
+
+        // With no token there is nothing to send, and nothing is read.
+        let host = hosts.foreign_host("o/r", "v1", None).await.unwrap();
+        assert_eq!(host, None);
     }
 
     #[test]

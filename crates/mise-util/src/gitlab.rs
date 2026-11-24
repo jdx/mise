@@ -336,13 +336,38 @@ pub async fn get_release_for_url(api_url: &str, repo: &str, tag: &str) -> Result
         .clone())
 }
 
-async fn get_release_(api_url: &str, repo: &str, tag: &str) -> Result<GitlabRelease> {
-    let url = format!(
+/// The release `tag` of `repo` as GitLab serves it now, not from the cache,
+/// read with `token` as the bearer token when there is one. Only `api_url` gets
+/// the token.
+pub async fn get_release_now(
+    api_url: &str,
+    repo: &str,
+    tag: &str,
+    token: Option<&str>,
+) -> Result<GitlabRelease> {
+    let mut headers = HeaderMap::new();
+    if let Some(token) = token {
+        headers.insert(
+            reqwest::header::AUTHORIZATION,
+            tokens::bearer_header("GitLab", token)?,
+        );
+    }
+    crate::http::HTTP_FETCH
+        .json_with_headers(release_url(api_url, repo, tag), &headers)
+        .await
+}
+
+fn release_url(api_url: &str, repo: &str, tag: &str) -> String {
+    format!(
         "{}/projects/{}/releases/{}",
         api_url,
         urlencoding::encode(repo),
         urlencoding::encode(tag)
-    );
+    )
+}
+
+async fn get_release_(api_url: &str, repo: &str, tag: &str) -> Result<GitlabRelease> {
+    let url = release_url(api_url, repo, tag);
     let headers = get_headers(&url, api_url)?;
     crate::http::HTTP_FETCH
         .json_with_headers(url, &headers)
