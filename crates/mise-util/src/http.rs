@@ -1324,6 +1324,7 @@ impl Client {
             extra_headers: HeaderMap::new(),
             retries: crate::network::http_retries(&Settings::get()),
             allow_html: false,
+            max_bytes: MAX_BODY_BYTES,
         }
     }
 
@@ -2816,6 +2817,7 @@ pub struct TextRequest<'a> {
     extra_headers: HeaderMap,
     retries: i64,
     allow_html: bool,
+    max_bytes: usize,
 }
 
 impl TextRequest<'_> {
@@ -2836,12 +2838,21 @@ impl TextRequest<'_> {
         self
     }
 
+    /// Fail once the decoded body passes `max_bytes` instead of
+    /// [`MAX_BODY_BYTES`], for callers that know their answer is small and
+    /// make many such requests or keep what they parse out of each.
+    pub fn max_bytes(mut self, max_bytes: usize) -> Self {
+        self.max_bytes = max_bytes;
+        self
+    }
+
     pub async fn send(mut self) -> Result<String> {
         ensure!(
             !crate::network::offline(&Settings::get()),
             "offline mode is enabled"
         );
         let mut url = self.url.clone().map_err(|e| eyre!(e))?;
+        let max_bytes = self.max_bytes;
         // Merge GitHub headers with any extra headers provided
         let mut headers = host_auth_headers(&url)?;
         headers.extend(self.extra_headers.clone());
@@ -2857,7 +2868,7 @@ impl TextRequest<'_> {
                     error_for_status: true,
                 },
                 |resp| async move {
-                    Ok(buffer_body(resp)
+                    Ok(buffer_body_with_limit(resp, max_bytes)
                         .await?
                         .text()
                         .await

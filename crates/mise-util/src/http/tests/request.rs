@@ -555,6 +555,33 @@ async fn test_buffer_body_refuses_a_declared_length_over_the_limit() {
 }
 
 #[tokio::test]
+async fn test_text_request_max_bytes_lowers_the_body_limit() {
+    let _settings = set_test_http_retries(1);
+    let mut server = mockito::Server::new_async().await;
+    let mock = server
+        .mock("GET", "/info")
+        .with_status(200)
+        .with_body(r#"{"Version":"v1.0.0"}"#)
+        .expect(2)
+        .create_async()
+        .await;
+    let url = format!("{}/info", server.url());
+
+    let client = Client::new(Duration::from_secs(30), ClientKind::Http).unwrap();
+    let text = client.get_text_request(&url).max_bytes(20).send().await;
+    assert_eq!(text.unwrap(), r#"{"Version":"v1.0.0"}"#);
+    let err = client
+        .get_text_request(&url)
+        .max_bytes(19)
+        .send()
+        .await
+        .unwrap_err();
+    assert!(err.to_string().contains("is larger than 19 B"), "{err}");
+    assert!(!is_transient(&err));
+    mock.assert_async().await;
+}
+
+#[tokio::test]
 async fn test_buffer_body_keeps_what_decoding_the_body_needs() {
     let mut server = mockito::Server::new_async().await;
     server

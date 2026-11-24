@@ -475,6 +475,13 @@ const GO_PROXY_VERSION_METADATA_LIMIT: usize = 100;
 /// this has to cover the releases published inside that window — ten is ample
 /// for the 24h default and still bounds the listing at a few seconds.
 const GO_LIST_VERSION_METADATA_LIMIT: usize = 10;
+/// Most bytes of a module proxy's `.info` or `@latest` answer that are read.
+///
+/// A real one is a few hundred bytes, but the proxy decides what it sends, and
+/// the HTTP client's own limit is sized for one large document: these are
+/// fetched 20 at a time, and the date out of each is kept until the whole
+/// listing is dated.
+const GO_PROXY_VERSION_INFO_MAX_BYTES: usize = 64 * 1024;
 
 impl GoBackend {
     pub(crate) fn from_arg(ba: BackendArg) -> Self {
@@ -996,7 +1003,12 @@ async fn query_proxy_version_metadata(
 ) -> ProxyVersionInfoResult {
     for proxy in proxies {
         let url = format!("{}/{}", proxy.url, endpoint);
-        match HTTP_FETCH.get_text(&url).await {
+        match HTTP_FETCH
+            .get_text_request(&url)
+            .max_bytes(GO_PROXY_VERSION_INFO_MAX_BYTES)
+            .send()
+            .await
+        {
             Ok(body) => match serde_json::from_str::<GoModuleVersionMetadata>(&body) {
                 Ok(info) => return ProxyVersionInfoResult::Found(info),
                 Err(_) => return ProxyVersionInfoResult::Error,
@@ -1358,6 +1370,41 @@ mod tests {
         let info: GoModuleVersionMetadata = serde_json::from_str(raw).unwrap();
         assert_eq!(info.version, "v1.2.3");
         assert_eq!(info.time, Some("2026-04-08T12:56:30Z".to_string()));
+    }
+
+    #[tokio::test]
+    async fn proxy_version_metadata_refuses_an_oversized_answer() {
+        // Still valid JSON: the padding sits inside the date, which is kept.
+        let oversized = format!(
+            r#"{{"Version":"v1.0.1","Time":"2026-04-08T12:56:30Z{}"}}"#,
+            " ".repeat(GO_PROXY_VERSION_INFO_MAX_BYTES)
+        );
+        let mut server = mockito::Server::new_async().await;
+        let small = server
+            .mock("GET", "/example.com/tool/@v/v1.0.0.info")
+            .with_status(200)
+            .with_body(r#"{"Version":"v1.0.0","Time":"2026-04-08T12:56:30Z"}"#)
+            .create_async()
+            .await;
+        let large = server
+            .mock("GET", "/example.com/tool/@v/v1.0.1.info")
+            .with_status(200)
+            .with_body(oversized)
+            .create_async()
+            .await;
+        let proxies = parse_goproxy_value(&server.url());
+
+        let found = query_proxy_version_metadata(&proxies, "example.com/tool/@v/v1.0.0.info").await;
+        assert!(matches!(
+            found,
+            ProxyVersionInfoResult::Found(info)
+                if info.time.as_deref() == Some("2026-04-08T12:56:30Z")
+        ));
+        let refused =
+            query_proxy_version_metadata(&proxies, "example.com/tool/@v/v1.0.1.info").await;
+        assert!(matches!(refused, ProxyVersionInfoResult::Error));
+        small.assert_async().await;
+        large.assert_async().await;
     }
 
     #[test]
