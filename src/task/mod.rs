@@ -1267,6 +1267,19 @@ impl Task {
             && self.additional_config_sources.iter().all(|p| trusted(p))
     }
 
+    /// Whether only the operator wrote this task: every file it is defined in is global or
+    /// system config or lies under their task include directories, and it extends no template.
+    /// Applying a template records the template's file as a config source, but some tasks are
+    /// built before templates are applied, and a template can come from a project.
+    fn is_operators(&self) -> bool {
+        let global = |path: &Path| {
+            config::is_global_config(path) || config::is_global_task_include_path(path)
+        };
+        self.extends.is_none()
+            && global(&self.config_source)
+            && self.additional_config_sources.iter().all(|p| global(p))
+    }
+
     pub fn tool_args(&self) -> Result<Vec<ToolArg>> {
         let args = self
             .tools
@@ -1275,13 +1288,7 @@ impl Task {
             .collect::<Result<Vec<_>>>()?;
         // In safe mode the tools of a project's task are the project's, like its `[tools]`, so
         // their options are kept inert in the same way (see `is_safe_mode_project_tool`).
-        let global = |path: &Path| {
-            config::is_global_config(path) || config::is_global_task_include_path(path)
-        };
-        if config::Settings::safe_mode()
-            && !(global(&self.config_source)
-                && self.additional_config_sources.iter().all(|p| global(p)))
-        {
+        if config::Settings::safe_mode() && !self.is_operators() {
             config::record_safe_mode_project_tools(
                 args.iter()
                     .flat_map(|arg| [arg.ba.short.clone(), arg.ba.full()])
@@ -2934,10 +2941,8 @@ impl Task {
     }
 
     pub(crate) async fn render(&mut self, config: &Arc<Config>, config_root: &Path) -> Result<()> {
-        // A task global or system config declares is the operator's, so safe mode keeps
-        // `env` and `vars` for its templates. One that extends a template is not, because
-        // the template can come from a project.
-        if self.extends.is_none() && crate::config::is_global_config(&self.config_source) {
+        // A task only the operator wrote keeps `env` and `vars` for its templates in safe mode.
+        if self.is_operators() {
             crate::tera::with_templates_trusted(true, self.render_fields(config, config_root)).await
         } else {
             self.render_fields(config, config_root).await

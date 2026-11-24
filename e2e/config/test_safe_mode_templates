@@ -41,7 +41,16 @@ assert_not_contains "MISE_SAFE=1 mise tasks ls" 'token={"mirror_token"'
 assert_contains "MISE_SAFE=1 mise tasks ls" "token={}"
 # a task global config declares is the operator's and keeps them
 assert_contains "MISE_SAFE=1 mise tasks ls" "global=operator-secret"
-rm "$MISE_CONFIG_DIR/config.toml"
+# so is a file task in the global task directory, which keeps env too
+mkdir -p "$MISE_CONFIG_DIR/tasks"
+cat <<'EOF' >"$MISE_CONFIG_DIR/tasks/gfile"
+#!/usr/bin/env bash
+#MISE description="file={{ env.SAFE_TEMPLATE | default(value='none') }}/{{ vars.mirror_token | default(value='none') }}"
+echo gfile
+EOF
+chmod +x "$MISE_CONFIG_DIR/tasks/gfile"
+assert_contains "SAFE_TEMPLATE=from-env MISE_SAFE=1 mise tasks ls" "file=from-env/operator-secret"
+rm -r "$MISE_CONFIG_DIR/tasks" "$MISE_CONFIG_DIR/config.toml"
 
 echo "=== get_env() and the file filters are refused ==="
 for template in "get_env(name='HOME')" "'/etc/hostname' | hash_file" "'/etc/hostname' | file_size" "'/etc/hostname' | last_modified"; do

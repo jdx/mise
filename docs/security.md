@@ -305,8 +305,9 @@ These are skipped without an error, so resolution commands keep working:
   A template that reads a variable without a `default` fails, as it does when
   the variable is unset. This covers a project's `.miserc.toml` too. The
   options of a tool from global or system config, including a global
-  `[tool_alias]`, and the tasks and dotfiles global or system config declares
-  keep `env` and `vars`. A task that `extends` a template does not.
+  `[tool_alias]`, the tasks and dotfiles global or system config declares, and
+  the file tasks in the global or system `tasks` directory keep `env` and
+  `vars`. A task that `extends` a template does not.
 - `_.source` in every config, including global config.
 - Project `[shell_alias]`.
 - The commands in a project task's usage spec that shell completion would run.
