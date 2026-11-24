@@ -920,7 +920,7 @@ impl GitProvider {
         target: Option<&PlatformTarget>,
     ) -> Result<Self> {
         let provider = opts.provider(target);
-        let kind = if ba.tool_name.contains("gitlab.com") {
+        let kind = if Self::is_gitlab_com_url(&ba.tool_name) {
             GitProviderKind::GitLab
         } else {
             match provider.to_lowercase().as_str() {
@@ -1005,6 +1005,14 @@ impl GitProvider {
         url.set_username("").ok()?;
         url.set_password(None).ok()?;
         Some(url)
+    }
+
+    /// Whether the tool name is the URL of a repository on gitlab.com. Only the
+    /// host counts: a package on another forge can have `gitlab.com` in its
+    /// owner or repository name, and is not the gitlab.com project of that name.
+    fn is_gitlab_com_url(tool_name: &str) -> bool {
+        let name = tool_name.strip_prefix("spm:").unwrap_or(tool_name);
+        Url::parse(name).is_ok_and(|url| url.host_str() == Some("gitlab.com"))
     }
 
     /// When the tool name is a full URL pointing to a self-hosted instance,
@@ -1691,6 +1699,29 @@ mod tests {
             GitProvider::from_ba(&get_ba("https://github.com/org/Tool.git".to_string(), None)),
             GitProvider {
                 api_url: github::API_URL.to_string(),
+                kind: GitProviderKind::GitHub
+            }
+        );
+
+        // `gitlab.com` in an owner or repository name is not the host
+        for tool in [
+            "https://github.com/acme/gitlab.com-sync.git",
+            "https://github.com/gitlab.com/Tool.git",
+            "acme/gitlab.com-sync",
+        ] {
+            assert_eq!(
+                GitProvider::from_ba(&get_ba(tool.to_string(), None)),
+                GitProvider::default(),
+                "{tool}"
+            );
+        }
+        assert_eq!(
+            GitProvider::from_ba(&get_ba(
+                "https://github.acme.com/org/gitlab.com-sync.git".to_string(),
+                None
+            )),
+            GitProvider {
+                api_url: "https://github.acme.com/api/v3".to_string(),
                 kind: GitProviderKind::GitHub
             }
         );
