@@ -743,6 +743,7 @@ async fn test_download_to_reports_progress() {
 /// A plugin whose `Available` reports, as versions, the directories its
 /// `io.popen`, `os.execute` and `cmd.exec` children start in, and whether
 /// `GIT_DIR` reaches them.
+#[cfg(unix)]
 fn cwd_probe_plugin(plugins: &Path) {
     let dir = plugins.join("cwd-probe");
     std::fs::create_dir_all(dir.join("hooks")).unwrap();
@@ -843,6 +844,7 @@ async fn env_hooks_still_run_in_the_working_directory() {
 }
 
 /// A plugin whose install-related hooks report the paths mise handed them.
+#[cfg(unix)]
 fn path_probe_plugin(plugins: &Path) {
     let dir = plugins.join("path-probe");
     std::fs::create_dir_all(dir.join("hooks")).unwrap();
