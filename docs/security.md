@@ -329,6 +329,11 @@ These are skipped without an error, so resolution commands keep working:
   tasks are listed from their TOML alone.
 - Project `[deps]`, so `mise deps` and `mise exec` do not run a repository's
   dependency providers. Providers in global and system config still run.
+- Project `[oci]`, so a repository cannot have
+  [`mise oci`](/dev-tools/mise-oci.html) copy files from the build host into
+  the image with `[[oci.copy]]`, or pull a base image with your registry
+  credentials. `mise oci` names the skipped files. `--from`, `--copy` and,
+  with `--include-global`, the `[oci]` in global config still apply.
 - Project daemon declarations. Daemons also do not start or stop when you change
   directories.
 - Project `[bootstrap]`, `[dotfiles]` and `[dotfile_groups]`, and the

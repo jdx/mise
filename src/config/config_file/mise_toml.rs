@@ -2449,7 +2449,20 @@ impl ConfigFile for MiseToml {
     }
 
     fn oci_config(&self) -> Option<OciConfig> {
-        self.oci.clone()
+        let oci = self.oci.as_ref()?;
+        // `[[oci.copy]]` packs any host path into the image, and `from` pulls
+        // a base image with the registry credentials of whoever runs mise.
+        // Safe mode loads project config without trust, so like project
+        // `[deps]` only global and system config may declare `[oci]` there.
+        // `mise oci` builds less than the file declares, so say why.
+        if Settings::safe_mode() && !is_global_config(&self.path) {
+            warn_once!(
+                "ignoring [oci] in {}: safe mode (MISE_SAFE=1)",
+                display_path(&self.path)
+            );
+            return None;
+        }
+        Some(oci.clone())
     }
 
     fn doctor_config(&self) -> crate::config::doctor::DoctorConfig {

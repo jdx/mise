@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+
+# `[[oci.copy]]` packs a host path into the image `mise oci` builds, and
+# `[oci].from` pulls a base image with the operator's registry credentials.
+# Safe mode loads project config without trust, so it ignores project [oci];
+# the section in global config still applies with --include-global.
+
+export MISE_EXPERIMENTAL=1
+
+# The image paths of the [[oci.copy]] layers in the image layout at $1.
+copies() {
+  local manifest
+  manifest="$(jq -r '.manifests[0].digest | ltrimstr("sha256:")' "$1/index.json")"
+  jq -r '[.layers[] | .annotations."dev.mise.copy" // empty] | join(",")' "$1/blobs/sha256/$manifest"
+}
+
+echo "host file" >"$HOME/host-file"
+cat <<EOF >mise.toml
+[[oci.copy]]
+host = "$HOME/host-file"
+image = "/srv/project-copy"
+EOF
+
+echo "=== project [oci] applies outside safe mode ==="
+assert_succeed "mise oci build --from scratch --no-mise -o out"
+assert "echo $(copies out)" "/srv/project-copy"
+
+echo "=== safe mode ignores project [oci] ==="
+assert_contains "MISE_SAFE=1 mise oci build --from scratch --no-mise -o out-safe 2>&1" "ignoring [oci] in"
+assert "echo $(copies out-safe)" ""
+
+echo "=== safe mode keeps global [oci] ==="
+cat <<EOF >"$MISE_CONFIG_DIR/config.toml"
+[[oci.copy]]
+host = "$HOME/host-file"
+image = "/srv/global-copy"
+EOF
+assert_succeed "MISE_SAFE=1 mise oci build --include-global --from scratch --no-mise -o out-global"
+assert "echo $(copies out-global)" "/srv/global-copy"
