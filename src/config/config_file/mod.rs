@@ -132,13 +132,42 @@ fn ensure_tool_request_count(path: &Path, count: usize) -> Result<()> {
 
 /// The same bound on what the config files request together: each can stay below it and name
 /// other tools, and the toolset is what they add up to.
-pub(crate) fn ensure_total_tool_request_count(count: usize) -> Result<()> {
-    if count > MAX_TOOL_REQUESTS {
-        return Err(eyre!(
-            "the config files request {count} tool versions, mise allows {MAX_TOOL_REQUESTS}"
-        ));
+///
+/// What is bounded is the requests that take effect. A config file's list for a tool replaces
+/// the lists of lower-priority files for that tool, so the files are given from the highest
+/// priority down and [`Self::add`] drops the tools a closer file already named before counting.
+/// The count only grows, a list a closer config replaces never counts, and the walk stops at the
+/// first file that goes over, before the requests of the files below it are built.
+#[derive(Debug, Default)]
+pub(crate) struct EffectiveToolRequests {
+    named: HashSet<Arc<BackendArg>>,
+    count: usize,
+}
+
+impl EffectiveToolRequests {
+    /// Drop from `tools` the tools a higher-priority file named, count the rest, and refuse
+    /// once the count is over [`MAX_TOOL_REQUESTS`].
+    pub(crate) fn add<V>(
+        &mut self,
+        tools: &mut IndexMap<Arc<BackendArg>, V>,
+        requests: impl Fn(&V) -> usize,
+    ) -> Result<()> {
+        tools.retain(|ba, _| !self.named.contains(ba));
+        self.count += tools.values().map(&requests).sum::<usize>();
+        if self.count > MAX_TOOL_REQUESTS {
+            return Err(eyre!(
+                "the config files request {} tool versions, mise allows {MAX_TOOL_REQUESTS}",
+                self.count
+            ));
+        }
+        self.named.extend(tools.keys().cloned());
+        Ok(())
     }
-    Ok(())
+
+    /// Whether a higher-priority file named `ba`.
+    pub(crate) fn is_named(&self, ba: &BackendArg) -> bool {
+        self.named.contains(ba)
+    }
 }
 
 /// A templated tool entry's options as written and as the config that declares them renders
@@ -1855,6 +1884,49 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use super::*;
+
+    /// Files from the highest priority down; a tool's list in a closer file replaces the lists
+    /// below it, so only the lists that take effect count toward the bound.
+    #[test]
+    fn only_tool_requests_that_take_effect_count_toward_the_bound() {
+        let files = |sizes: &[(&str, usize)]| {
+            sizes
+                .iter()
+                .map(|(tool, n)| (Arc::new(BackendArg::from(*tool)), vec![(); *n]))
+                .collect::<IndexMap<_, _>>()
+        };
+        let total = |stack: &[&[(&str, usize)]]| {
+            let mut effective = EffectiveToolRequests::default();
+            for file in stack {
+                effective.add(&mut files(file), Vec::len)?;
+            }
+            Ok::<_, eyre::Report>(effective.count)
+        };
+
+        // a project replaces the 600 node versions two parents request
+        let parents: &[&[(&str, usize)]] = &[&[("node", 1)], &[("node", 600)], &[("python", 500)]];
+        assert_eq!(total(parents).unwrap(), 501);
+        // what each file adds for tools no closer file named does count
+        let spread: &[&[(&str, usize)]] = &[&[("node", 600)], &[("node", 1), ("python", 401)]];
+        assert!(
+            total(spread)
+                .unwrap_err()
+                .to_string()
+                .contains("1001 tool versions")
+        );
+        let at_limit: &[&[(&str, usize)]] = &[&[("node", 600)], &[("python", 400)]];
+        assert_eq!(total(at_limit).unwrap(), MAX_TOOL_REQUESTS);
+
+        let mut effective = EffectiveToolRequests::default();
+        let mut lower = files(&[("python", 3), ("node", 2)]);
+        effective.add(&mut files(&[("node", 1)]), Vec::len).unwrap();
+        effective.add(&mut lower, Vec::len).unwrap();
+        assert_eq!(
+            lower.keys().map(|ba| ba.short.as_str()).collect::<Vec<_>>(),
+            ["python"]
+        );
+        assert!(effective.is_named(&BackendArg::from("node")));
+    }
 
     #[tokio::test]
     async fn test_detect_config_file_type() {

@@ -7,7 +7,7 @@ use std::{
 
 use crate::args::{BackendArg, ToolArg};
 use crate::backend::backend_type::BackendType;
-use crate::config::config_file::ensure_total_tool_request_count;
+use crate::config::config_file::EffectiveToolRequests;
 use crate::config::{Config, ConfigMap, Settings};
 use crate::env;
 use crate::env_diff::EnvMap;
@@ -230,9 +230,17 @@ impl ToolRequestSetBuilder {
         mut trs: ToolRequestSet,
     ) -> eyre::Result<ToolRequestSet> {
         let config_files = self.config_files.as_ref().unwrap_or(&config.config_files);
-        for cf in config_files.values().rev() {
-            trs = merge(trs, cf.to_tool_request_set()?);
-            ensure_total_tool_request_count(trs.tools.values().map(Vec::len).sum())?;
+        // highest priority first, so only the requests that take effect count
+        let mut effective = EffectiveToolRequests::default();
+        let mut per_file = Vec::with_capacity(config_files.len());
+        for cf in config_files.values() {
+            let mut cf_trs = cf.to_tool_request_set()?;
+            cf_trs.sources.retain(|ba, _| !effective.is_named(ba));
+            effective.add(&mut cf_trs.tools, Vec::len)?;
+            per_file.push(cf_trs);
+        }
+        for cf_trs in per_file.into_iter().rev() {
+            trs = merge(trs, cf_trs);
         }
         if self.config_files.is_none() {
             config.daemons()?.add_tool_requests(&mut trs)?;
