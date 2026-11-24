@@ -405,9 +405,10 @@ fn can_reuse(info: &PlatformInfo, version: &str) -> bool {
 }
 
 /// A conda entry is reused only while every `[conda-packages]` entry it names is in the
-/// lockfile, has a checksum and may be installed with it; otherwise the tool is resolved
-/// again, which rewrites its dependencies under keys that name their channel, with the
-/// checksums their channel declares.
+/// lockfile under a key that names its channel, has a checksum that can be verified and
+/// may be installed with it; otherwise the tool is resolved again, which rewrites its
+/// dependencies under keys that name their channel, with the checksums their channel
+/// declares.
 fn conda_deps_reusable(previous: &Lockfile, platform: &str, info: &PlatformInfo) -> bool {
     let Some(deps) = &info.conda_deps else {
         return true;
@@ -416,12 +417,16 @@ fn conda_deps_reusable(previous: &Lockfile, platform: &str, info: &PlatformInfo)
         return false;
     };
     deps.iter().all(|key| {
-        previous
-            .get_conda_package(platform, key)
-            .is_some_and(|package| {
-                package.checksum.is_some()
-                    && CondaBackend::check_locked_dependency(key, package, main_url).is_ok()
-            })
+        key.contains('@')
+            && previous
+                .get_conda_package(platform, key)
+                .is_some_and(|package| {
+                    package
+                        .checksum
+                        .as_deref()
+                        .is_some_and(crate::hash::is_well_formed_checksum)
+                        && CondaBackend::check_locked_dependency(key, package, main_url).is_ok()
+                })
     })
 }
 
@@ -1713,35 +1718,48 @@ mod tests {
         assert!(!can_reuse(&info, "2.2.2"));
     }
 
-    /// A conda entry whose dependency is missing or comes from another channel is
-    /// resolved again rather than reused.
+    /// A conda entry whose dependency is missing, comes from another channel, has a
+    /// checksum that cannot be verified or a key without its channel is resolved again
+    /// rather than reused.
     #[test]
     fn conda_entry_with_a_dependency_from_another_channel_is_not_reusable() {
         let forge = "https://conda.anaconda.org/conda-forge/linux-64";
-        let info = PlatformInfo {
+        let dep_url = format!("{forge}/zlib-1.3.1-h_2.conda");
+        let tagged = format!("zlib-1.3.1-h_2@{}", CondaBackend::channel_tag(&dep_url));
+        let bare = "zlib-1.3.1-h_2";
+        let info_with = |key: &str| PlatformInfo {
             url: Some(format!("{forge}/tool-1.0-h_0.conda")),
-            checksum: Some("sha256:old".into()),
-            conda_deps: Some(vec!["zlib-1.3.1-h_2".into()]),
+            checksum: Some(format!("sha256:{}", "a".repeat(64))),
+            conda_deps: Some(vec![key.to_string()]),
             ..Default::default()
         };
-        let lockfile_with = |url: &str, checksum: Option<&str>| {
+        let sha256 = format!("sha256:{}", "b".repeat(64));
+        let lockfile_with = |key: &str, url: &str, checksum: Option<&str>| {
             let mut lockfile = Lockfile::default();
             let package = crate::lockfile::CondaPackageInfo {
                 url: url.to_string(),
                 checksum: checksum.map(str::to_string),
             };
-            lockfile.set_conda_package("linux-x64", "zlib-1.3.1-h_2", package);
+            lockfile.set_conda_package("linux-x64", key, package);
             lockfile
         };
-        let lockfile = |url: &str| lockfile_with(url, Some("sha256:old"));
         let platform = "linux-x64";
-        let same = lockfile(&format!("{forge}/zlib-1.3.1-h_2.conda"));
+        let info = info_with(&tagged);
+        let same = lockfile_with(&tagged, &dep_url, Some(&sha256));
         assert!(conda_deps_reusable(&same, platform, &info));
-        let unverified = lockfile_with(&format!("{forge}/zlib-1.3.1-h_2.conda"), None);
-        assert!(!conda_deps_reusable(&unverified, platform, &info));
-        let other = lockfile("https://conda.example.com/evil/linux-64/zlib-1.3.1-h_2.conda");
+        for checksum in [None, Some("crc32:00"), Some("sha256:"), Some("sha256:00")] {
+            let unverified = lockfile_with(&tagged, &dep_url, checksum);
+            assert!(
+                !conda_deps_reusable(&unverified, platform, &info),
+                "{checksum:?}"
+            );
+        }
+        let evil = "https://conda.example.com/evil/linux-64/zlib-1.3.1-h_2.conda";
+        let other = lockfile_with(&tagged, evil, Some(&sha256));
         assert!(!conda_deps_reusable(&other, platform, &info));
         assert!(!conda_deps_reusable(&Lockfile::default(), platform, &info));
+        let untagged = lockfile_with(bare, &dep_url, Some(&sha256));
+        assert!(!conda_deps_reusable(&untagged, platform, &info_with(bare)));
     }
 
     #[tokio::test]

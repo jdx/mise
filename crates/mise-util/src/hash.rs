@@ -124,6 +124,25 @@ pub fn is_verifiable_checksum(checksum: &str) -> bool {
         .is_some_and(|(algo, _)| CHECKSUM_ALGORITHMS.contains(&algo))
 }
 
+/// Whether `checksum` is `<algorithm>:<digest>` with an algorithm
+/// `ensure_checksum` can verify and a digest of that algorithm's length in
+/// hexadecimal.
+pub fn is_well_formed_checksum(checksum: &str) -> bool {
+    let Some((algo, digest)) = checksum.split_once(':') else {
+        return false;
+    };
+    let hex_len = match algo {
+        "blake3" | "sha256" => 64,
+        "sha512" => 128,
+        "sha384" => 96,
+        "sha224" => 56,
+        "sha1" => 40,
+        "md5" => 32,
+        _ => return false,
+    };
+    digest.len() == hex_len && digest.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
 pub fn ensure_checksum(
     path: &Path,
     checksum: &str,
@@ -215,6 +234,46 @@ mod tests {
         assert!(ensure_checksum(&path, "00", None, "no-such-algorithm").is_err());
         assert!(!is_verifiable_checksum("no-such-algorithm:00"));
         assert!(!is_verifiable_checksum("00"));
+    }
+
+    #[test]
+    fn well_formed_checksums_have_a_full_hex_digest() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("artifact");
+        file::write(&path, b"artifact").unwrap();
+        for algo in CHECKSUM_ALGORITHMS {
+            // the digest `ensure_checksum` computes, which has the length to accept
+            let err = ensure_checksum(&path, "00", None, algo).unwrap_err();
+            let digest = err
+                .downcast_ref::<ChecksumMismatch>()
+                .unwrap()
+                .actual
+                .clone();
+            assert!(
+                is_well_formed_checksum(&format!("{algo}:{digest}")),
+                "{algo}"
+            );
+            assert!(
+                is_well_formed_checksum(&format!("{algo}:{}", digest.to_uppercase())),
+                "{algo}"
+            );
+            assert!(!is_well_formed_checksum(&format!("{algo}:")), "{algo}");
+            assert!(!is_well_formed_checksum(&format!("{algo}:00")), "{algo}");
+            assert!(
+                !is_well_formed_checksum(&format!("{algo}:{}0", digest)),
+                "{algo}"
+            );
+            let not_hex = "z".repeat(digest.len());
+            assert!(
+                !is_well_formed_checksum(&format!("{algo}:{not_hex}")),
+                "{algo}"
+            );
+        }
+        assert!(!is_well_formed_checksum(&format!(
+            "crc32:{}",
+            "0".repeat(8)
+        )));
+        assert!(!is_well_formed_checksum(&"0".repeat(64)));
     }
 
     #[test]

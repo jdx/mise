@@ -324,7 +324,7 @@ impl CondaBackend {
     /// that one channel's package cannot replace the package another channel has under
     /// the same name. A channel's owner chooses its URL, so the tag is 128 bits of a
     /// sha256: too long to search for a URL whose tag equals another channel's.
-    fn channel_tag(url: &str) -> String {
+    pub(crate) fn channel_tag(url: &str) -> String {
         hash::hash_sha256_to_str(Self::channel_subdir(url))[..32].to_string()
     }
 
@@ -803,7 +803,7 @@ impl CondaBackend {
                 return Some(err);
             }
             match package.checksum.as_deref() {
-                Some(checksum) if !hash::is_verifiable_checksum(checksum) => {
+                Some(checksum) if !hash::is_well_formed_checksum(checksum) => {
                     return Some(eyre::eyre!(
                         "Invalid lockfile checksum {checksum:?} for conda package {key} of {tool} on platform {platform_key} (--locked mode)\n\
                         hint: Run `mise lock` to record checksums"
@@ -2440,8 +2440,19 @@ mod tests {
         assert_eq!(problem(&lockfile_with(None), &deps, false), None);
         let err = problem(&lockfile_with(None), &deps, true).unwrap();
         assert!(err.contains("No lockfile checksum found"), "{err}");
-        let err = problem(&lockfile_with(Some("crc32:00")), &deps, false).unwrap();
-        assert!(err.contains("Invalid lockfile checksum"), "{err}");
+        for malformed in [
+            "crc32:00",
+            "sha256:",
+            "sha256:00",
+            "md5:zz",
+            sha256.trim_end_matches('d'),
+        ] {
+            let err = problem(&lockfile_with(Some(malformed)), &deps, false).unwrap();
+            assert!(
+                err.contains("Invalid lockfile checksum"),
+                "{malformed}: {err}"
+            );
+        }
         let err = problem(&super::Lockfile::default(), &deps, false).unwrap();
         assert!(
             err.contains("is not in the [conda-packages] section"),
