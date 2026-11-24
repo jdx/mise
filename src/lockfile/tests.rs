@@ -245,10 +245,12 @@ fn test_lockfile_version_at_matches_a_full_read() {
     );
 }
 
-/// Every kind of value TOML has, since the cache has to return each one as
-/// the parser produced it.
-const EVERY_TOML_VALUE: &str = r#"
+/// A lockfile that sets every field an entry can hold, and every kind of
+/// value TOML has in the keys that are kept as a table, since the cache has
+/// to return each one as the parser produced it.
+const EVERY_ENTRY_FIELD: &str = r#"
 lockfile_version = 4
+tool-stubs = ["bin/stub"]
 negative = -7
 big = 9007199254740993
 float = 1.5
@@ -266,37 +268,101 @@ mixed = [1, "two", 3.0, { four = 4 }]
 [[tools.node]]
 version = "24.1.0"
 backend = "core:node"
+specifiers = ["24", "lts"]
+unsupported_platforms = ["linux-riscv64"]
+provenance = { repository = "github.com/nodejs/node" }
+"platforms.macos-arm64" = "sha256:inline"
+
+[tools.node.options]
+flavor = "glibc-217"
 
 [tools.node.platforms.linux-x64]
+install = "source"
 checksum = "sha256:abc"
+checksum_source = "mise-versions"
 size = 123
+url = "https://example.com/node.tar.gz"
+url_api = "https://api.example.com/assets/1"
+conda_deps = ["ncurses-6.4-h7ea286d_0"]
+provenance_verified = true
+signer = "github:nodejs/node/.github/workflows/release.yml"
+attested_by = "repackager"
+repository_ids = { repository = "922514152", owner = "216188" }
+
+[tools.node.platforms.linux-x64.provenance.slsa]
+url = "https://example.com/node.intoto.jsonl"
+
+[[tools.node.platforms.linux-x64.additional_artifacts]]
+checksum = "sha256:def"
+checksum_source = "mise-versions"
+size = 456
+url = "https://example.com/extra.tar.gz"
+url_api = "https://api.example.com/assets/2"
+provenance = "cosign"
+provenance_verified = false
+
+[tools.node.platforms.linux-arm64]
+url = "https://example.com/node-arm64.tar.gz"
+github_attestations = "unavailable"
+
+[tools.node.platforms.macos-x64]
+provenance = "slsa"
+provenance_url = "https://example.com/legacy.intoto.jsonl"
 
 [[tools.node]]
 version = 2026-11-23
+
+[[tools."npm:prettier"]]
+version = "3.6.2"
+backend = "npm:prettier"
+aube = { path = "mise.lock.d/npm-prettier", digest = "sha256:0000000000000000000000000000000000000000000000000000000000000000" }
+
+[[tools.plain]]
+version = "1.0.0"
+
+[conda-packages.linux-64."ncurses-6.4-h7ea286d_0"]
+url = "https://example.com/ncurses.conda"
+checksum = "sha256:123"
 "#;
 
-#[test]
-fn parse_lockfile_toml_returns_what_the_parser_did_from_its_cache() {
-    let temp = tempfile::tempdir().unwrap();
-    let cache_file = temp.path().join("lockfile.msgpack.z");
-    let parsed: toml::Table = toml::from_str(EVERY_TOML_VALUE).unwrap();
+/// `content`'s entries from `cache_file`, written out in full. Two entries
+/// are compared this way because `ProvenanceType`'s equality ignores the URL
+/// an SLSA provenance carries.
+fn entries_in(cache_file: &Path, content: &str) -> Result<String> {
+    LockfileEntries::of_in(cache_file, content, Report::from).map(|entries| format!("{entries:?}"))
+}
 
-    assert_eq!(
-        parse_lockfile_toml_in(&cache_file, EVERY_TOML_VALUE).unwrap(),
-        parsed
-    );
-    // Text that does not parse proves the second answer is the stored one.
-    let cached = parse_lockfile_toml_in(&cache_file, "not = [toml").unwrap();
-    assert_eq!(cached, parsed);
-    // The order of keys is part of what the parser returned.
-    assert_eq!(
-        cached.keys().collect::<Vec<_>>(),
-        parsed.keys().collect::<Vec<_>>()
-    );
+fn entries_parsed(content: &str) -> String {
+    let (entries, _) = LockfileEntries::parse(content, Report::from, false).unwrap();
+    format!("{entries:?}")
 }
 
 #[test]
-fn parse_lockfile_toml_parses_again_when_its_cache_is_damaged() {
+fn lockfile_entries_come_back_from_the_cache_as_they_were_parsed() {
+    let temp = tempfile::tempdir().unwrap();
+    let cache_file = temp.path().join("lockfile.msgpack.z");
+    let parsed = entries_parsed(EVERY_ENTRY_FIELD);
+    // The fixture sets what the lockfile's own serialization leaves out.
+    for field in [
+        "size: Some(123)",
+        "size: Some(456)",
+        "https://example.com/node.intoto.jsonl",
+        "https://example.com/legacy.intoto.jsonl",
+        "VersionsHost",
+        "Unavailable",
+        "Sidecar",
+        "\"2026-11-23\"",
+    ] {
+        assert!(parsed.contains(field), "{field} is not in {parsed}");
+    }
+
+    assert_eq!(entries_in(&cache_file, EVERY_ENTRY_FIELD).unwrap(), parsed);
+    // Text that does not parse proves the second answer is the stored one.
+    assert_eq!(entries_in(&cache_file, "not = [toml").unwrap(), parsed);
+}
+
+#[test]
+fn lockfile_entries_are_parsed_again_when_their_cache_is_damaged() {
     let temp = tempfile::tempdir().unwrap();
     let cache_file = temp.path().join("lockfile.msgpack.z");
     let cache_files = || -> Vec<PathBuf> {
@@ -305,51 +371,55 @@ fn parse_lockfile_toml_parses_again_when_its_cache_is_damaged() {
             .map(|entry| entry.unwrap().path())
             .collect()
     };
-    let parsed: toml::Table = toml::from_str(EVERY_TOML_VALUE).unwrap();
+    let parsed = entries_parsed(EVERY_ENTRY_FIELD);
 
-    // Text that does not parse reports its error and stores nothing.
-    assert!(parse_lockfile_toml_in(&cache_file, "not = [toml").is_err());
+    // Text that does not parse reports its error and stores nothing, and so
+    // does text that parses to an entry mise refuses.
+    assert!(entries_in(&cache_file, "not = [toml").is_err());
+    let refused =
+        "[[tools.node]]\nversion = \"1\"\n[tools.node.platforms.linux-x64]\ninstall = \"other\"\n";
+    let err = entries_in(&cache_file, refused).unwrap_err();
+    assert!(
+        format!("{err:#}").contains("unrecognized install"),
+        "{err:#}"
+    );
     assert!(cache_files().is_empty());
 
-    parse_lockfile_toml_in(&cache_file, EVERY_TOML_VALUE).unwrap();
+    entries_in(&cache_file, EVERY_ENTRY_FIELD).unwrap();
     let [stored] = &cache_files()[..] else {
         panic!("expected one cache file, found {:?}", cache_files());
     };
     std::fs::write(stored, b"damaged").unwrap();
-    assert_eq!(
-        parse_lockfile_toml_in(&cache_file, EVERY_TOML_VALUE).unwrap(),
-        parsed
-    );
+    assert_eq!(entries_in(&cache_file, EVERY_ENTRY_FIELD).unwrap(), parsed);
     // And the damaged file was replaced by one that reads.
-    assert_eq!(
-        parse_lockfile_toml_in(&cache_file, "not = [toml").unwrap(),
-        parsed
-    );
+    assert_eq!(entries_in(&cache_file, "not = [toml").unwrap(), parsed);
 }
 
 #[test]
-fn parse_lockfile_toml_names_its_cache_by_the_content() {
+fn lockfile_entries_name_their_cache_by_the_content() {
     let temp = tempfile::tempdir().unwrap();
     let cache_files = || std::fs::read_dir(temp.path()).unwrap().count();
     let version = |content: &str| {
-        parse_lockfile_toml_under(temp.path(), content).unwrap()["lockfile_version"].as_integer()
+        LockfileEntries::of_under(temp.path(), content, Report::from)
+            .unwrap()
+            .lockfile_version
     };
     // Long enough to be cached, and differing by one byte.
-    let padding = "# padding\n".repeat(PARSED_TOML_CACHE_MIN_LEN / 10 + 1);
+    let padding = "# padding\n".repeat(LOCKFILE_ENTRIES_CACHE_MIN_LEN / 10 + 1);
     let first = format!("{padding}lockfile_version = 3\n");
     let second = format!("{padding}lockfile_version = 4\n");
 
-    assert_eq!(version(&first), Some(3));
+    assert_eq!(version(&first), 3);
     assert_eq!(cache_files(), 1);
-    assert_eq!(version(&second), Some(4));
+    assert_eq!(version(&second), 4);
     assert_eq!(cache_files(), 2);
     // Each reads its own entry back, and writes no other.
-    assert_eq!(version(&first), Some(3));
-    assert_eq!(version(&second), Some(4));
+    assert_eq!(version(&first), 3);
+    assert_eq!(version(&second), 4);
     assert_eq!(cache_files(), 2);
 
     // A short lockfile is parsed without an entry.
-    assert_eq!(version("lockfile_version = 5\n"), Some(5));
+    assert_eq!(version("lockfile_version = 2\n"), 2);
     assert_eq!(cache_files(), 2);
 }
 
