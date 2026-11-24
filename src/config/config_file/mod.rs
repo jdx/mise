@@ -733,7 +733,7 @@ pub fn trust_active_config() -> Result<()> {
             continue;
         }
         let config_root = config_trust_root(&path);
-        if is_ignored(&config_root) || is_ignored(&path) {
+        if !implicit_trust_may_record(&path, &config_root) {
             continue;
         }
         if !is_trusted(&config_root) {
@@ -764,7 +764,14 @@ fn trust_and_reload_settings(config_root: &Path) -> eyre::Result<()> {
 /// refused that config, and trust implied by a command neither overrides nor removes the refusal,
 /// even where something else (a trusted monorepo root, a file record) already trusts the file.
 fn implicit_trust_may_record(path: &Path, config_root: &Path) -> bool {
-    !is_ignored(config_root) && !is_ignored(path)
+    !is_ignored(config_root) && !is_ignored(path) && !project_is_ignored(path)
+}
+
+/// Whether `path` sits in a config root nested in a project (a conf.d folder, `.config/mise`)
+/// whose project is ignored. Ignoring a project ignores those roots too, including one that
+/// arrives after the ignore.
+pub(crate) fn project_is_ignored(path: &Path) -> bool {
+    config_root::nested_root_project(path).is_some_and(|project| is_ignored(&project))
 }
 
 /// Checks whether a config may load, prompting for trust when appropriate.
@@ -963,7 +970,8 @@ fn is_trusted_with(path: &Path, content_bound: bool) -> bool {
 /// that trusts a file by where it lies (a trusted monorepo root, a sibling git worktree, CI).
 /// A directory is a trust root of its own and was looked up by itself.
 fn root_is_ignored(path: &Path, canonicalized_path: &Path) -> bool {
-    !canonicalized_path.is_dir() && is_persisted_ignored(&config_trust_root(path))
+    !canonicalized_path.is_dir()
+        && (is_persisted_ignored(&config_trust_root(path)) || project_is_ignored(path))
 }
 
 /// The trust rules that need no `trusted_config_paths` lookup.

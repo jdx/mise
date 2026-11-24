@@ -64,6 +64,23 @@ fn enclosing_project(path: &Path) -> PathBuf {
     root
 }
 
+/// The project that holds a config root of its own: a conf.d folder, or `.config/mise` for
+/// `.config/mise/mise.toml`. `None` for any other config and for global config.
+///
+/// Such a root is part of the project, so an ignore or untrust of the project covers it.
+pub fn nested_root_project(path: &Path) -> Option<PathBuf> {
+    if is_global_config(path) {
+        return None;
+    }
+    let path = path.absolutize().ok()?.to_path_buf();
+    let root = config_root(&path);
+    let mut project = enclosing_project(&path);
+    if project.ends_with(".config/mise") {
+        project = project.parent()?.parent()?.to_path_buf();
+    }
+    (project != root && root.starts_with(&project)).then_some(project)
+}
+
 /// The project a config was found in, when a symlink lies between that project's directory and
 /// the config, the config itself included.
 ///
@@ -255,6 +272,34 @@ mod tests {
             std::fs::canonicalize(&link).unwrap(),
             std::fs::canonicalize(&real).unwrap()
         );
+    }
+
+    /// A conf.d folder and `.config/mise` are roots of their own, held by the project around them.
+    #[test]
+    fn a_nested_config_root_belongs_to_the_project_around_it() {
+        let temp = tempfile::tempdir().unwrap();
+        let p = temp.path().join("proj");
+        for nested in [
+            ".mise/conf.d/x/mise.local.toml",
+            "mise/conf.d/x/mise.toml",
+            ".config/mise/mise.local.toml",
+            ".config/mise/mise.toml",
+            ".config/mise/conf.d/x/mise.toml",
+        ] {
+            assert_eq!(
+                nested_root_project(&p.join(nested)),
+                Some(p.clone()),
+                "{nested}"
+            );
+        }
+        for own in [
+            "mise.toml",
+            ".mise/config.toml",
+            ".config/mise.toml",
+            "mise.local.toml",
+        ] {
+            assert_eq!(nested_root_project(&p.join(own)), None, "{own}");
+        }
     }
 
     /// Any link between a project and its config makes the config the project's, whatever the

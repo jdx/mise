@@ -3861,7 +3861,10 @@ pub(crate) fn config_path_is_ignored(path: &Path, include_ignored: bool) -> bool
     // config there, so ignoring that project must not drop the global config
     // and the global-only settings it holds.
     let ctr_ignored = !is_global_config(path) && config_file::is_persisted_ignored(&ctr);
-    if ctr_ignored || config_file::is_persisted_ignored(path) {
+    if ctr_ignored
+        || config_file::is_persisted_ignored(path)
+        || config_file::project_is_ignored(path)
+    {
         return !config_file::is_trusted_via_config_paths(path);
     }
     false

@@ -95,14 +95,16 @@ impl Trust {
             return self.show();
         }
         if self.untrust {
-            untrust_config_file(self.config_file()?, &self.config_filenames)
+            untrust_config_file(
+                self.config_file()?,
+                self.named_file(),
+                &self.config_filenames,
+            )
         } else if self.ignore {
             self.ignore()
         } else if self.all {
-            while let Some(p) = self.get_next_untrusted() {
-                self.config_file = Some(p);
-                self.trust()?;
-            }
+            // Each is already a trust root, which `trust` would resolve again to a file in it.
+            while self.trust_next_config()? {}
             // Env files need trust whether or not their project's config was already trusted.
             let descendants = self.get_descendants();
             for p in self.get_untrusted_descendants() {
@@ -206,8 +208,39 @@ fn nearest_local_config_file(filenames: &[String]) -> Option<PathBuf> {
         .find(|p| !is_global_config(p))
 }
 
+/// The trust roots `--ignore` and `--untrust` act on for `path`, whose own trust root is `cfr`.
+/// The project's root comes first.
+///
+/// Outside paranoid mode a project stands for the config roots nested in it, a conf.d folder or
+/// `.config/mise`, whichever of its files was picked: the project's root and each nested root
+/// it holds now. Otherwise a file the project ships in such a folder would take the refusal for
+/// itself and leave the project trusted. A file the user named inside a nested root stands only
+/// for that root, and in paranoid mode, where trust is per file, every file stands only for
+/// `cfr`.
+fn refused_roots(path: &Path, cfr: &Path, named_file: bool) -> Vec<PathBuf> {
+    if cfr == path || Settings::get().paranoid.config() {
+        return vec![cfr.to_path_buf()];
+    }
+    let nested = config_file::config_root::nested_root_project(path);
+    if named_file && nested.is_some() {
+        return vec![cfr.to_path_buf()];
+    }
+    let project = nested.unwrap_or_else(|| cfr.to_path_buf());
+    let mut roots = vec![project.clone(), cfr.to_path_buf()];
+    for file in config_files_in_dir(&project) {
+        if !is_global_config(&file) {
+            let root = config_trust_root(&file);
+            if root.starts_with(&project) {
+                roots.push(root);
+            }
+        }
+    }
+    roots.into_iter().unique().collect()
+}
+
 pub(super) fn untrust_config_file(
     config_file: Option<PathBuf>,
+    named_file: bool,
     filenames: &[String],
 ) -> Result<()> {
     let path = match config_file {
@@ -221,7 +254,10 @@ pub(super) fn untrust_config_file(
         },
     };
     let cfr = config_file::trust_root_for_cli(&path);
-    config_file::untrust(&cfr)?;
+    let roots = refused_roots(&path, &cfr, named_file);
+    for root in &roots {
+        config_file::untrust(root)?;
+    }
     // `mise trust` also approved the file itself when only `env_files` is on.
     if path.is_file()
         && path != cfr
@@ -230,8 +266,10 @@ pub(super) fn untrust_config_file(
     {
         config_file::untrust(&path)?;
     }
-    let cfr = cfr.canonicalize()?;
-    info!("untrusted {}", display_path(&cfr));
+    for root in &roots {
+        info!("untrusted {}", display_path(&root.canonicalize()?));
+    }
+    let cfr = roots[0].canonicalize()?;
 
     let trusted_via_settings = Settings::get()
         .trusted_config_paths()
@@ -312,7 +350,10 @@ impl Trust {
             );
         }
         let cfr = config_file::trust_root_for_cli(&path);
-        config_file::add_ignored(cfr.clone())?;
+        let roots = refused_roots(&path, &cfr, self.named_file());
+        for root in &roots {
+            config_file::add_ignored(root.clone())?;
+        }
         // `mise trust` also approved the file itself when only `env_files` is on.
         if path.is_file()
             && path != cfr
@@ -321,8 +362,10 @@ impl Trust {
         {
             config_file::add_ignored(path.clone())?;
         }
-        let cfr = cfr.canonicalize()?;
-        info!("ignored {}", display_path(&cfr));
+        for root in &roots {
+            info!("ignored {}", display_path(&root.canonicalize()?));
+        }
+        let cfr = roots[0].canonicalize()?;
 
         let trusted_via_settings = Settings::get()
             .trusted_config_paths()
@@ -472,6 +515,11 @@ impl Trust {
 
     fn config_file(&self) -> Result<Option<PathBuf>> {
         resolve_config_file(self.config_file.as_ref())
+    }
+
+    /// Whether the user named a config file, rather than a directory or nothing.
+    fn named_file(&self) -> bool {
+        self.config_file.as_ref().is_some_and(|p| p.is_file())
     }
 
     fn get_next_untrusted(&self) -> Option<PathBuf> {

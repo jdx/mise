@@ -176,6 +176,13 @@ that is a git repository of its own, such as a tracked `~/code/.config`.
 the [state directory](/directories.html). See [`mise trust`](/cli/trust.html)
 for every flag.
 
+A [conf.d folder](/configuration.html#conf-d-folders) and `.config/mise` are
+config roots of their own inside a project. `mise trust --untrust` and
+`mise trust --ignore` with a directory or no path act on the project and on
+every such root in it, and an ignored project's nested roots stay ignored,
+including ones added later. Name a file in a nested root to act on that root
+alone.
+
 A config that mise reaches through a symlink inside a project, such as a linked
 `mise.toml`, a linked `conf.d` folder or a linked `.mise` directory, belongs to
 that project: it is trusted when the project is, and trust in the file or
