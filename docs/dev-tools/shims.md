@@ -592,7 +592,13 @@ up with the `mr_boxington` tool option and the `mr-boxington` tool.
 
 The `cargo`, `npm` and `pipx` backends run their install commands without command
 wrappers on `PATH`, so a `cargo` wrapper does not take over the `cargo install` that
-a `cargo:` tool runs.
+a `cargo:` tool runs. A tool's `postinstall` hook keeps the wrapper directory where
+your `PATH` already has it, behind the tool's own directories.
+
+All projects share one wrapper directory. A shim that another project's wrapper left
+there does nothing in a project that does not wrap that command: the command runs as
+it would without the shim, so a directory you list before mise's shims still wins
+over a mise tool.
 
 Other wrappers still apply. If `pnpm` and `node` are both wrapped, a script that
 `pnpm` runs gets the `node` wrapper, with its `args` and `env`, while `pnpm`'s own

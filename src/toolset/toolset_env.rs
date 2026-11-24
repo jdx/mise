@@ -15,7 +15,7 @@ use crate::path_env::PathEnv;
 use crate::toolset::Toolset;
 use crate::toolset::env_cache::{CachedEnv, compute_settings_hash, get_file_mtime};
 use crate::toolset::tool_request::ToolRequest;
-use crate::{env, file, github, parallel, uv};
+use crate::{dirs, env, file, github, parallel, uv};
 
 /// PATH with mise-managed install dirs filtered out. mise re-adds the current
 /// toolset's bin dirs below, so a stale `installs/<tool>/<ver>/bin` left on PATH
@@ -92,7 +92,13 @@ impl Toolset {
             path_env.mark_managed(farm);
         }
         for p in paths {
-            path_env.add(p);
+            // mise lists the wrapper directory as an entry of its own when the config has
+            // wrappers. A project's commands run with this PATH, so the wrappers lead it.
+            if p == *dirs::COMMAND_WRAPPERS {
+                path_env.add_command_wrappers();
+            } else {
+                path_env.add(p);
+            }
         }
         if shim_boundary.is_none() {
             for dir in shim_farms {

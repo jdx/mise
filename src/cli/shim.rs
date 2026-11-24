@@ -195,6 +195,51 @@ fn invoked_from_wrapper_dir(bin_name: &str) -> bool {
         .is_some_and(|dir| file::is_command_wrapper_dir(dir))
 }
 
+/// The `bin_name` a `PATH` lookup would have found ahead of the mise shims directory, when that
+/// lookup found a shim in the command-wrappers directory instead. Only asked for a command this
+/// project does not wrap.
+///
+/// Every project shares that directory, and it leads the `PATH` mise gives a project with
+/// wrappers. A shim another project left there must not decide which tool runs: without it the
+/// lookup reaches these entries first, as it does for a tool's ordinary shim, and a directory
+/// the user lists before the shims wins over mise's tools.
+///
+/// None when the shim was run by its path: its caller chose it, as `mise x -- <name>` does
+/// after looking mise's tools up ahead of the inherited entries. None without a shims
+/// directory on `PATH`, where mise's tools come first anyway.
+fn inherited_bin_ahead_of_shims(bin_name: &str) -> Option<PathBuf> {
+    let argv0 = Path::new(&*env::ARGV0);
+    if argv0
+        .parent()
+        .is_some_and(|dir| !dir.as_os_str().is_empty())
+    {
+        return None;
+    }
+    // The lookup ran on this process's `PATH`. `env::PATH` is that `PATH` without what a
+    // parent mise added, the wrapper directory included.
+    let found_in = env::PATH_NON_PRISTINE.iter().find(|dir| {
+        let bin = dir.join(bin_name);
+        bin.is_file() && file::is_executable(&bin)
+    })?;
+    if !file::is_command_wrapper_dir(found_in) {
+        return None;
+    }
+    let shims = env::PATH
+        .iter()
+        .position(|dir| file::is_mise_shims_dir(dir))?;
+    let mise_bin = file::canonicalize_or_self(&env::MISE_BIN);
+    env::PATH[..shims]
+        .iter()
+        .filter(|dir| !file::is_command_wrapper_dir(dir))
+        .map(|dir| dir.join(bin_name))
+        .find(|bin| {
+            bin.is_file()
+                && file::is_executable(bin)
+                && !file::is_active_mise_shim(bin)
+                && file::canonicalize_cached(bin).is_none_or(|bin| bin != mise_bin)
+        })
+}
+
 /// Apply the command wrapper for `mise x -- <name>` run by a native Windows shim.
 ///
 /// `exe`- and `file`-mode shims on Windows are not mise itself: they run `mise x -- <name>` with
@@ -398,6 +443,12 @@ async fn which_shim(
     {
         trace!("shim[{bin_name}] WRAPPER command: {}", wrapper.command());
         return Ok((ShimCommand::Wrapper(wrapper), ts));
+    }
+    if !is_active_command_wrapper(shim_name)
+        && let Some(bin) = inherited_bin_ahead_of_shims(bin_name)
+    {
+        trace!("shim[{bin_name}] INHERITED {bin}", bin = display_path(&bin));
+        return Ok((ShimCommand::SystemFallback(bin), ts));
     }
     // A configured tool may intentionally override an executable bundled by another installed
     // tool (for example, a pinned npm overrides Node's npm). Install a missing provider declared

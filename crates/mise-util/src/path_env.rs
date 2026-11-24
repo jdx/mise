@@ -10,7 +10,8 @@ use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 pub struct PathEnv {
-    /// The command-wrapper directory, when mise adds it. It leads the PATH, ahead of `pre`.
+    /// The command-wrapper directory, when [`Self::add_command_wrappers`] put it there. It leads
+    /// the PATH, ahead of `pre`.
     wrappers: Vec<PathBuf>,
     pre: Vec<PathBuf>,
     mise: Vec<PathBuf>,
@@ -37,24 +38,37 @@ impl PathEnv {
         }
     }
 
+    /// A PATH mise built for a child process, to add more directories to. The command-wrapper
+    /// directory keeps the lead it has there: what [`Self::add`] adds goes behind it, even when
+    /// that PATH has no shims directory to mark where mise's entries end.
+    pub fn from_child_path(paths: impl IntoIterator<Item = PathBuf>) -> Self {
+        let mut paths = paths.into_iter().peekable();
+        // Exact match: mise wrote this entry from the same value.
+        let wrappers = paths.next_if(|path| *path == *dirs::COMMAND_WRAPPERS);
+        let mut path_env = Self::from_iter(paths);
+        path_env.wrappers.extend(wrappers);
+        path_env
+    }
+
     /// Add a directory mise manages. It goes behind the inherited entries that precede the
     /// mise shims directory, which the user put ahead of mise on purpose.
-    ///
-    /// The command-wrapper directory is the exception and leads the whole PATH. A wrapper
-    /// replaces a command by name, so it has to win over a directory holding the real one
-    /// wherever that directory sits, such as a `~/.cargo/bin` listed before the shims.
-    /// `mise x -- cargo` already looks wrappers up first; this keeps a `cargo` that a child
-    /// shell or build tool looks up on the same answer.
     pub fn add(&mut self, path: PathBuf) {
         for part in split_paths(&path) {
-            // Exact match: mise adds this directory by this very path, and `add` runs for
-            // every tool directory, so it must not touch the filesystem.
-            if part == *dirs::COMMAND_WRAPPERS {
-                self.wrappers.push(part);
-            } else {
-                self.mise.push(part);
-            }
+            self.mise.push(part);
         }
+    }
+
+    /// Put the command-wrapper directory at the head of the PATH, ahead of the inherited
+    /// entries that precede the mise shims directory. A wrapper replaces a command by name, so
+    /// it has to win over a directory holding the real one wherever that directory sits, such
+    /// as a `~/.cargo/bin` listed before the shims. `mise x -- cargo` already looks wrappers up
+    /// first; this keeps a `cargo` that a child shell or build tool looks up on the same answer.
+    ///
+    /// Only for the PATH a project's commands run with. An install or a hook builds its PATH
+    /// with [`Self::add`], which leaves the wrapper directory where its caller listed it, so
+    /// a wrapper does not get ahead of the tool being installed or its dependencies.
+    pub fn add_command_wrappers(&mut self) {
+        self.wrappers.push(dirs::COMMAND_WRAPPERS.clone());
     }
 
     /// First occurrence wins; later exact duplicates are dropped. A later duplicate of
@@ -86,8 +100,8 @@ impl PathEnv {
         self.marked.push(path);
     }
 
-    /// The entries added through [`Self::add`] or reported through [`Self::mark_managed`], in the order they appear in
-    /// [`Self::to_vec`]. An entry that was already on the PATH keeps its place
+    /// The entries added through [`Self::add`] or [`Self::add_command_wrappers`], or reported
+    /// through [`Self::mark_managed`], in the order they appear in [`Self::to_vec`]. An entry that was already on the PATH keeps its place
     /// in the result, so a directory mise moved forward is still reported.
     pub fn managed_entries(&self) -> Vec<PathBuf> {
         let managed: HashSet<&PathBuf> = self
