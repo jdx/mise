@@ -426,6 +426,82 @@ fn test_apply_netrc_overrides_existing_auth_when_url_redirected() {
     assert_eq!(auth_value(&out), vec!["Basic bmV0cmM=".to_string()]);
 }
 
+/// Credentials stay with the host and port they were written for. A scheme
+/// change between the default ports keeps them, so the downgrade check refuses
+/// the request rather than sending it without them.
+#[test]
+fn credentials_stay_only_on_the_host_and_port_they_were_written_for() {
+    for (original, rewritten, kept) in [
+        (
+            "https://api.example.com/f",
+            "https://api.example.com/mirror/f",
+            true,
+        ),
+        (
+            "https://api.example.com/f",
+            "https://api.example.com:443/f",
+            true,
+        ),
+        (
+            "https://api.example.com/f",
+            "http://api.example.com/f",
+            true,
+        ),
+        (
+            "https://api.example.com/f",
+            "https://api.example.com:8443/f",
+            false,
+        ),
+        (
+            "http://api.example.com:3000/f",
+            "http://api.example.com:4000/f",
+            false,
+        ),
+        (
+            "http://api.example.com:3000/f",
+            "http://api.example.com/f",
+            false,
+        ),
+        (
+            "https://user:pw@api.example.com/f",
+            "https://user:pw@api.example.com:8443/f",
+            false,
+        ),
+        (
+            "https://api.example.com/f",
+            "https://mirror.example.com/f",
+            false,
+        ),
+    ] {
+        let original: Url = original.parse().unwrap();
+        let mut url: Url = rewritten.parse().unwrap();
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            AUTHORIZATION,
+            HeaderValue::from_static("Bearer origin-token"),
+        );
+        headers.insert("x-api-key", HeaderValue::from_static("secret"));
+
+        clear_cross_host_credentials(&mut headers, &original, &mut url);
+
+        assert_eq!(
+            headers.contains_key(AUTHORIZATION),
+            kept,
+            "{original} -> {rewritten}"
+        );
+        assert_eq!(
+            headers.contains_key("x-api-key"),
+            kept,
+            "{original} -> {rewritten}"
+        );
+        assert_eq!(
+            url.password().is_some(),
+            kept && original.password().is_some(),
+            "{original} -> {rewritten}"
+        );
+    }
+}
+
 #[test]
 fn test_cross_host_replacement_clears_credentials_without_netrc() {
     let original: Url = "https://user:password@public.example.com/file"

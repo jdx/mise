@@ -2549,7 +2549,7 @@ impl Client {
         // for the original host's header. Retries re-attach the full rules because they
         // start again from the original URL.
         let redirect_rules = forward_rules.scoped_to(&final_headers);
-        // Refuse the downgrade for credentials that survive host scoping: a same-host
+        // Refuse the downgrade for credentials that survive host scoping: a same-server
         // rewrite keeps the original Authorization, and userinfo written into the rule
         // itself is sent as-is. This runs before netrc because netrc credentials are
         // scoped to the *replacement* host by the user, who already gets them sent to a
@@ -3462,9 +3462,21 @@ fn is_credential_header(name: &HeaderName, value: &HeaderValue) -> bool {
         || name.contains("credential")
 }
 
-/// Drop credentials scoped to the original host before contacting a replacement host.
+/// Whether a URL rewrite keeps a request on the server its credentials were
+/// written for: the same host and the same port. A port is another server, so
+/// `https://host/` and `https://host:8443/` differ. A change of scheme between
+/// the defaults (`https://host/` to `http://host/`) is the same server reached in
+/// the clear; credentials stay with it so that
+/// [`ensure_secure_url_replacement`] refuses the downgrade instead of sending
+/// the request without them.
+pub fn same_server(original_url: &Url, url: &Url) -> bool {
+    url.host() == original_url.host() && url.port() == original_url.port()
+}
+
+/// Drop credentials scoped to the original server ([`same_server`]) before
+/// contacting a replacement one.
 pub fn clear_cross_host_credentials(headers: &mut HeaderMap, original_url: &Url, url: &mut Url) {
-    if url.host() == original_url.host() {
+    if same_server(original_url, url) {
         return;
     }
     let credential_headers = headers
@@ -3664,15 +3676,12 @@ fn without_userinfo(url: &Url) -> Url {
 }
 
 /// Gives `rewritten` the userinfo of `original` back when the rule kept the
-/// request on the same host and port and wrote no userinfo of its own. A login
-/// is for its own server, so a rewrite to another one goes without it.
+/// request on the same server ([`same_server`]) and wrote no userinfo of its
+/// own. A login is for its own server, so a rewrite to another one goes without
+/// it.
 fn restore_same_host_userinfo(original: &Url, rewritten: &mut Url) {
     let has_userinfo = |url: &Url| !url.username().is_empty() || url.password().is_some();
-    if !has_userinfo(original)
-        || has_userinfo(rewritten)
-        || rewritten.host() != original.host()
-        || rewritten.port() != original.port()
-    {
+    if !has_userinfo(original) || has_userinfo(rewritten) || !same_server(original, rewritten) {
         return;
     }
     // Both are on the same host, so both can hold userinfo.
