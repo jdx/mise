@@ -2404,10 +2404,12 @@ pub fn get_headers<U: IntoUrl>(url: U, api_url: &str) -> Result<HeaderMap> {
     }
 
     // Not an API URL, so the block above skipped it, but a private repository's
-    // raw file still needs the token.
+    // raw file still needs the token. The lookup is by GitHub's own host, and
+    // the request's scheme and port go to the credential helpers.
     if !is_github_api_url(&url)
         && is_github_raw_content_url(&url)
-        && let Some((token, source)) = resolve_token("raw.githubusercontent.com")
+        && let Some((token, source)) =
+            resolve_token_inner("raw.githubusercontent.com", true, Some(&url))
     {
         remember_token_source("raw.githubusercontent.com", &token, source);
         headers.insert(

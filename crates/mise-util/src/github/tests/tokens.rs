@@ -371,3 +371,61 @@ fn test_get_headers_rejects_relative_url() {
         "unexpected error: {err}"
     );
 }
+
+/// A private raw file is fetched with the token Git keeps for github.com, and
+/// Git is asked about the server the request goes to: a raw URL on another
+/// port is another server, and Git has no credential for it.
+#[cfg(unix)]
+#[test]
+fn test_raw_content_asks_git_about_the_port_of_the_request() {
+    use confique::Layer;
+
+    struct SettingsGuard {
+        _lock: std::sync::MutexGuard<'static, ()>,
+    }
+    impl Drop for SettingsGuard {
+        fn drop(&mut self) {
+            crate::testing::reset_settings(None);
+        }
+    }
+    let _settings = SettingsGuard {
+        _lock: crate::testing::lock_ignoring_poison(&crate::testing::SETTINGS_LOCK),
+    };
+    with_github_token(|| {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = tmp.path().join("git-credentials");
+        std::fs::write(&store, "https://alice:for-default-port@github.com\n").unwrap();
+        let global = tmp.path().join("gitconfig");
+        std::fs::write(
+            &global,
+            format!(
+                "[credential]\n\thelper = store --file='{}'\n",
+                store.display()
+            ),
+        )
+        .unwrap();
+        let mut env = crate::testing::EnvVarGuard::new();
+        env.set("GIT_CONFIG_GLOBAL", &global);
+        env.set("GIT_CONFIG_NOSYSTEM", "1");
+        env.remove("GITHUB_TOKEN");
+        let mut settings = mise_settings::SettingsPartial::empty();
+        settings.github.use_git_credentials = Some(true);
+        settings.github.gh_cli_tokens = Some(false);
+        crate::testing::reset_settings(Some(settings));
+
+        let auth = |url: &str| {
+            get_headers(url, API_URL)
+                .unwrap()
+                .get(reqwest::header::AUTHORIZATION)
+                .map(|v| v.to_str().unwrap().to_string())
+        };
+        assert_eq!(
+            auth("https://raw.githubusercontent.com/owner/private/main/f").as_deref(),
+            Some("Bearer for-default-port")
+        );
+        assert_eq!(
+            auth("https://raw.githubusercontent.com:8443/owner/private/main/f"),
+            None
+        );
+    });
+}
