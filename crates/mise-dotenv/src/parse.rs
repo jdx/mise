@@ -339,6 +339,9 @@ impl Parser {
     fn parse_value(&mut self) -> Result<String, ParseError> {
         let mut value = String::new();
         let mut first_segment = true;
+        // Only the opening quote can span lines, so every unquoted segment is on the line the
+        // value ends on. Its end is looked up once, not for each segment or `${`.
+        let mut line_end = None;
 
         loop {
             match self.peek() {
@@ -351,7 +354,7 @@ impl Parser {
                     value.push_str(&self.parse_quoted(quote, style)?);
                 }
                 _ => {
-                    let (segment, ended) = self.parse_unquoted()?;
+                    let (segment, ended) = self.parse_unquoted(&mut line_end)?;
                     value.push_str(&segment);
                     if ended {
                         return Ok(value);
@@ -424,8 +427,11 @@ impl Parser {
     /// Parses an unquoted segment up to the next quote that opens a segment, a comment, or the
     /// line end. Returns
     /// whether the value ends here; when it does, trailing whitespace is trimmed and the rest of
-    /// the line is consumed.
-    fn parse_unquoted(&mut self) -> Result<(String, bool), ParseError> {
+    /// the line is consumed. `line_end` caches where the line ends across the segments of a value.
+    fn parse_unquoted(
+        &mut self,
+        line_end: &mut Option<usize>,
+    ) -> Result<(String, bool), ParseError> {
         let value_start = self.position;
         let mut escaped = false;
         let mut ended = true;
@@ -452,9 +458,11 @@ impl Parser {
                 if self.source[after_dollar..].starts_with('$') {
                     self.advance();
                 } else if self.source[after_dollar..].starts_with('{') {
-                    let line_end = self.source[after_dollar..]
-                        .find(['\n', '\r'])
-                        .map_or(self.source.len(), |offset| after_dollar + offset);
+                    let line_end = *line_end.get_or_insert_with(|| {
+                        self.source[after_dollar..]
+                            .find(['\n', '\r'])
+                            .map_or(self.source.len(), |offset| after_dollar + offset)
+                    });
                     if let Some(end) =
                         Self::find_substitution_end(&self.source[..line_end], after_dollar + 1)
                     {
@@ -465,6 +473,12 @@ impl Parser {
                             ));
                         }
                         self.position = end;
+                    } else {
+                        // Nothing closes it on this line, so expanding it fails. Scanning on
+                        // would search the rest of the line again for every later `${`.
+                        return Err(
+                            self.error(self.position, ParseErrorKind::UnterminatedSubstitution)
+                        );
                     }
                 }
             } else if matches!(character, '\'' | '"') && self.quote_closes_on_line(character) {
@@ -1530,6 +1544,41 @@ NEWLINE='a\nb'",
             parse_with_options("KEY=${VALUE:=default}", options).unwrap()[0].1,
             "${VALUE:=default}"
         );
+    }
+
+    #[test]
+    fn reads_a_line_of_substitutions_once() {
+        // Searching the rest of the line again for every `${` made each of these take time
+        // quadratic in the length of the line.
+        let options = ParseOptions::new().substitution(true);
+        let count = 50_000;
+
+        let closed = format!("B=b\nKEY={}\n", "${B}".repeat(count));
+        let parsed = parse_with_options(&closed, options).unwrap();
+        assert_eq!(parsed[1].1, "b".repeat(count));
+
+        let segments = format!("B=b\nKEY={}\n", "${B}'c'".repeat(count));
+        let parsed = parse_with_options(&segments, options).unwrap();
+        assert_eq!(parsed[1].1, "bc".repeat(count));
+
+        let unclosed = format!("B=b\nKEY=${{B}}{}\n", "${".repeat(count));
+        let error = parse_with_options(&unclosed, options).unwrap_err();
+        assert_eq!(error.kind(), &ParseErrorKind::UnterminatedSubstitution);
+        assert_eq!((error.line(), error.column()), (2, 9));
+    }
+
+    #[test]
+    fn substitutions_after_a_multiline_quote_end_on_the_last_line() {
+        let options = ParseOptions::new().substitution(true).multiline(true);
+
+        let input = "B=b\nKEY=\"1\n2\"${B}'c'${B}\nNEXT=${B}\n";
+        let parsed = parse_with_options(input, options).unwrap();
+        assert_eq!(parsed[1].1, "1\n2bcb");
+        assert_eq!(parsed[2], ("NEXT".to_owned(), "b".to_owned()));
+
+        let error = parse_with_options("KEY=\"1\n2\"${B\nNEXT=}\n", options).unwrap_err();
+        assert_eq!(error.kind(), &ParseErrorKind::UnterminatedSubstitution);
+        assert_eq!((error.line(), error.column()), (2, 3));
     }
 
     #[test]
