@@ -117,10 +117,12 @@ impl Vfox {
         options: IndexMap<String, toml::Value>,
     ) -> Result<Vec<EnvKey>> {
         let plugin = self.get_sdk_with_env(sdk)?;
+        // Outside a trusted directory the hook's commands do not run in mise's
+        // working directory.
         let ctx = BackendExecEnvContext {
             tool: tool.to_string(),
             version: version.to_string(),
-            install_path,
+            install_path: std::path::absolute(install_path)?,
             options,
         };
         let response = plugin.backend_exec_env(ctx).await?;

@@ -158,7 +158,8 @@ async fn test_env_keys() {
     // Asserted rather than snapshotted: the dummy plugin reports the install dir itself on
     // Windows and its `bin` subdirectory elsewhere (see test_env_keys_for_install_dir), and
     // the separators differ too, so one snapshot cannot describe both.
-    let install_dir = vfox.install_dir.join("dummy").join("1.0.0");
+    // The hook gets the install directory as an absolute path.
+    let install_dir = std::path::absolute(vfox.install_dir.join("dummy").join("1.0.0")).unwrap();
     let expected = if cfg!(windows) {
         install_dir
     } else {
@@ -182,6 +183,7 @@ async fn test_env_keys_for_install_dir() {
         )
         .await
         .unwrap();
+    let install_dir = std::path::absolute(install_dir).unwrap();
     let expected = if cfg!(windows) {
         install_dir
     } else {
@@ -870,6 +872,16 @@ PLUGIN.minRuntimeVersion = "0.3.0"
         "function PLUGIN:MiseInstallSatisfied(ctx)\n    return { satisfied = false, reason = ctx.path }\nend\n",
     )
     .unwrap();
+    std::fs::write(
+        dir.join("hooks/env_keys.lua"),
+        "function PLUGIN:EnvKeys(ctx)\n    return { { key = \"SEEN\", value = ctx.path } }\nend\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("hooks/backend_exec_env.lua"),
+        "function PLUGIN:BackendExecEnv(ctx)\n    return { env_vars = { { key = \"SEEN\", value = ctx.install_path } } }\nend\n",
+    )
+    .unwrap();
 }
 
 #[cfg(unix)]
@@ -929,4 +941,43 @@ async fn install_hooks_get_absolute_paths() {
         satisfied.reason.as_deref(),
         cwd.join("rel/install").to_str()
     );
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn env_hooks_get_absolute_paths() {
+    let plugins = tempfile::tempdir().unwrap();
+    path_probe_plugin(plugins.path());
+    let mut vfox = Vfox::test();
+    vfox.plugin_dir = plugins.path().to_path_buf();
+    vfox.detach_cmds = true;
+    let expected = std::env::current_dir().unwrap().join("rel/install");
+    let seen = |keys: Vec<crate::hooks::env_keys::EnvKey>| {
+        keys.into_iter()
+            .find(|key| key.key == "SEEN")
+            .map(|key| PathBuf::from(key.value))
+    };
+
+    let env_keys = vfox
+        .env_keys_for_install_dir(
+            "path-probe",
+            "1.0.0",
+            "rel/install",
+            IndexMap::<String, String>::new(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(seen(env_keys), Some(expected.clone()));
+
+    let exec_env = vfox
+        .backend_exec_env(
+            "path-probe",
+            "tool",
+            "1.0.0",
+            PathBuf::from("rel/install"),
+            IndexMap::new(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(seen(exec_env), Some(expected));
 }

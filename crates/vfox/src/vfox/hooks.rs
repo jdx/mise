@@ -108,7 +108,10 @@ impl Vfox {
         install_dir: impl AsRef<Path>,
         options: T,
     ) -> Result<Vec<EnvKey>> {
-        let sdk_info = sdk.sdk_info(version.to_string(), install_dir.as_ref().to_path_buf())?;
+        // Outside a trusted directory the hook's commands do not run in mise's
+        // working directory.
+        let install_dir = std::path::absolute(install_dir)?;
+        let sdk_info = sdk.sdk_info(version.to_string(), install_dir)?;
         let ctx = EnvKeysContext {
             args: vec![],
             version: version.to_string(),
