@@ -2592,8 +2592,11 @@ mod tests {
         // Which executable an entry with no `bin` describes is the same for
         // every entry, so an answer about one executable reads the list of
         // executables a fixed number of times, not once per such entry.
-        const ICONS: usize = 2_000;
-        const BINS: usize = 300;
+        // Walking the executables for each of these entries costs one answer
+        // ICONS * BINS steps, seconds in a debug build; reading them once
+        // costs milliseconds.
+        const ICONS: usize = 10_000;
+        const BINS: usize = 5_000;
         let mut entries: Vec<String> = (0..ICONS)
             .map(|i| format!(r#"{{"kind":"icon","archive":"icons/{i}.png"}}"#))
             .collect();
@@ -2607,20 +2610,13 @@ mod tests {
         let artifact = &s.predicate.artifacts[0];
         let root = Path::new("/unused");
         let started = std::time::Instant::now();
-        let completed: Vec<&str> = artifact
-            .bin
-            .iter()
-            .map(|bin| bin.name.as_str())
-            .filter(|name| {
-                !completion_sources(&s, root, "zsh", Some(artifact), Some(name)).is_empty()
-            })
-            .collect();
-        assert_eq!(completed, ["u"]);
+        let answer = completion_sources(&s, root, "zsh", Some(artifact), Some("u"));
+        let elapsed = started.elapsed();
+        assert_eq!(answer.len(), 1, "{answer:?}");
         assert!(
-            started.elapsed() < std::time::Duration::from_secs(30),
-            "asking about {} executables took {:?}",
+            elapsed < std::time::Duration::from_millis(500),
+            "asking about one of {} executables took {elapsed:?}",
             artifact.bin.len(),
-            started.elapsed()
         );
     }
 
