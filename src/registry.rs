@@ -3,7 +3,7 @@ use crate::backend::backend_type::BackendType;
 use crate::backend::options::VersionOrder;
 use crate::config::{Settings, SettingsExt};
 use crate::http::HTTP;
-use crate::toolset::{RawBackendOptions, ToolVersionOptions};
+use crate::toolset::{RawBackendOptions, ToolVersion, ToolVersionOptions};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::{dirs, file};
 use eyre::{Context, Result, bail, ensure};
@@ -1249,6 +1249,16 @@ pub(crate) fn requires_github_attestations(full: &str, version: &str) -> bool {
                 .iter()
                 .any(|backend| backend.requires_github_attestations(version))
         })
+}
+
+/// Whether installing `tv` from `full` must carry GitHub artifact attestations.
+/// The requested version counts as well as the resolved one: the release
+/// metadata that resolves a request comes from the forge, or from a mirror
+/// `url_replacements` names, and a renamed or unplaceable answer must not drop
+/// a requirement the request itself meets.
+pub(crate) fn tool_version_requires_github_attestations(full: &str, tv: &ToolVersion) -> bool {
+    requires_github_attestations(full, &tv.version)
+        || requires_github_attestations(full, &tv.request.version())
 }
 
 pub(crate) fn shorts_for_full(full: &str) -> &'static Vec<&'static str> {

@@ -344,9 +344,19 @@ async fn get_release_(api_url: &str, repo: &str, tag: &str) -> Result<GitlabRele
         urlencoding::encode(tag)
     );
     let headers = get_headers(&url, api_url)?;
-    crate::http::HTTP_FETCH
+    let release: GitlabRelease = crate::http::HTTP_FETCH
         .json_with_headers(url, &headers)
-        .await
+        .await?;
+    // The version installed and what is verified for it follow the release's
+    // tag, so an answer for another tag is refused before anything caches it.
+    if tag != "latest" && release.tag_name != tag {
+        eyre::bail!(
+            "refusing GitLab release {}: the API was asked for {repo}@{tag}; \
+             check the host `url_replacements` sends the GitLab API to",
+            release.tag_name
+        );
+    }
+    Ok(release)
 }
 
 fn next_page(headers: &HeaderMap) -> Option<String> {
@@ -1008,6 +1018,36 @@ hosts:
             .unwrap();
         mock.assert_async().await;
         assert_eq!(release.tag_name, "admin-cli/v1.2.3");
+    }
+
+    // The version and what is verified for it follow the release's tag, so an answer for
+    // another tag is refused.
+    #[tokio::test]
+    async fn test_get_release_refuses_a_release_for_another_tag() {
+        let mut server = mockito::Server::new_async().await;
+        let base = server.url();
+        let _token = TokensFileOverrideGuard::set(&host_of(&base));
+
+        let mock = server
+            .mock(
+                "GET",
+                mockito::Matcher::Regex(r"^/projects/.+/releases/v3\.27\.1$".to_string()),
+            )
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(release_json("v3.0.0").to_string())
+            .expect(1)
+            .create_async()
+            .await;
+
+        let err = get_release_(&base, "owner/repo", "v3.27.1")
+            .await
+            .unwrap_err();
+        mock.assert_async().await;
+        assert!(
+            err.to_string().contains("refusing GitLab release v3.0.0"),
+            "{err}"
+        );
     }
 
     // Same regression for the tags loop -- see `test_list_releases_sends_auth_on_every_page`.

@@ -1491,9 +1491,9 @@ impl UnifiedGitBackend {
             && settings.github.github_attestations
             && opts.github_attestations()
             && attestations_supported(&opts.api_url())
-            && crate::registry::requires_github_attestations(
+            && crate::registry::tool_version_requires_github_attestations(
                 &self.ba.full_without_opts(),
-                &tv.version,
+                tv,
             ))
         .then_some(ProvenanceType::GithubAttestations)
     }
@@ -3844,6 +3844,34 @@ mod tests {
             "github:Aubepkg/Aube",
             "2.3.0"
         ));
+    }
+
+    #[test]
+    fn test_registry_attestation_requirement_follows_the_requested_version() {
+        // registry/aube.toml: github:aubepkg/aube, attestations_since = 2.2.5
+        let tv = |request: &str, version: &str| {
+            ToolVersion::new(
+                crate::toolset::ToolRequest::new(
+                    std::sync::Arc::new(BackendArg::from("github:aubepkg/aube")),
+                    request,
+                    crate::toolset::ToolSource::Argument,
+                )
+                .unwrap(),
+                version.into(),
+            )
+        };
+        let required = |tv: &ToolVersion| {
+            crate::registry::tool_version_requires_github_attestations("github:aubepkg/aube", tv)
+        };
+        // A release lookup that renames the request to an older or unplaceable
+        // version keeps the requirement the request meets.
+        assert!(required(&tv("2.3.0", "2.0.0")));
+        assert!(required(&tv("2.3.0", "2.3.0.1")));
+        // Legitimate requests are judged as before.
+        assert!(required(&tv("2.3.0", "2.3.0")));
+        assert!(required(&tv("latest", "2.3.0")));
+        assert!(!required(&tv("2.2.4", "2.2.4")));
+        assert!(!required(&tv("latest", "2.2.4")));
     }
     use crate::args::BackendArg;
 

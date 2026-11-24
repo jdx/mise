@@ -193,9 +193,19 @@ fn release_url(api_url: &str, repo: &str, tag: &str) -> String {
 async fn get_release_(api_url: &str, repo: &str, tag: &str) -> Result<ForgejoRelease> {
     let url = release_url(api_url, repo, tag);
     let headers = get_headers(&url, api_url)?;
-    crate::http::HTTP_FETCH
+    let release: ForgejoRelease = crate::http::HTTP_FETCH
         .json_with_headers(url, &headers)
-        .await
+        .await?;
+    // The version installed and what is verified for it follow the release's
+    // tag, so an answer for another tag is refused before anything caches it.
+    if tag != "latest" && release.tag_name != tag {
+        eyre::bail!(
+            "refusing Forgejo release {}: the API was asked for {repo}@{tag}; \
+             check the host `url_replacements` sends the Forgejo API to",
+            release.tag_name
+        );
+    }
+    Ok(release)
 }
 
 fn next_page(headers: &HeaderMap) -> Option<String> {
@@ -694,6 +704,32 @@ something_else = "value"
         page1_mock.assert_async().await;
         page2_mock.assert_async().await;
         assert!(releases.iter().any(|r| r.tag_name == "v1.0.0"));
+    }
+    // The version and what is verified for it follow the release's tag, so an answer for
+    // another tag is refused.
+    #[tokio::test]
+    async fn test_get_release_refuses_a_release_for_another_tag() {
+        let mut server = mockito::Server::new_async().await;
+        let base = server.url();
+        let repo = "owner/tag-mismatch";
+        let mock = server
+            .mock(
+                "GET",
+                format!("/repos/{repo}/releases/tags/v3.27.1").as_str(),
+            )
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(serde_json::to_string(&release("v3.0.0", false, false)).unwrap())
+            .expect(1)
+            .create_async()
+            .await;
+
+        let err = get_release_(&base, repo, "v3.27.1").await.unwrap_err();
+        mock.assert_async().await;
+        assert!(
+            err.to_string().contains("refusing Forgejo release v3.0.0"),
+            "{err}"
+        );
     }
     // #10343: the prerelease fallback is bounded to MAX_RELEASE_FALLBACK_PAGES pages.
     #[tokio::test]

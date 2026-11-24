@@ -1172,7 +1172,7 @@ pub fn digest_download_pin(digest: Option<&str>, url_api: Option<&str>) -> Optio
         .map(str::to_string)
 }
 
-fn valid_github_release_tag(release: &GithubRelease, tag: &str) -> bool {
+pub(crate) fn valid_github_release_tag(release: &GithubRelease, tag: &str) -> bool {
     tag == "latest" || release.tag_name == tag
 }
 
