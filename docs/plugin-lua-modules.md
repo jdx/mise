@@ -121,6 +121,11 @@ names a trusted directory. A hook that finds a project from the current
 directory, such as a `Pipfile` whose virtualenv it activates, therefore finds
 none until you trust that directory.
 
+An environment hook may run `mise` itself, for example `mise which python3`.
+That mise resolves the same tools, so it skips the environment hooks of the
+plugins whose hooks started it, and treats their tools as if those hooks had
+returned nothing.
+
 ## metadata.lua {#metadata}
 
 `metadata.lua` sits at the plugin's root and assigns the `PLUGIN` table:

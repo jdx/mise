@@ -270,6 +270,69 @@ fn dir_is_trusted(config: &Config, dir: &Path) -> bool {
     })
 }
 
+/// Names, one per line, the plugins whose environment hooks are running in
+/// the mise processes above this one. A hook that runs `mise`, as Poetry's
+/// does with `mise which python3`, starts a mise that resolves the same tools
+/// and would run the same hook again, without end.
+const RUNNING_ENV_HOOKS: &str = "__MISE_VFOX_ENV_HOOKS";
+
+/// The plugins [`RUNNING_ENV_HOOKS`] named when this mise started.
+fn env_hooks_running_above() -> &'static [String] {
+    static ABOVE: OnceLock<Vec<String>> = OnceLock::new();
+    ABOVE.get_or_init(|| {
+        env::var(RUNNING_ENV_HOOKS)
+            .unwrap_or_default()
+            .lines()
+            .filter(|name| !name.is_empty())
+            .map(str::to_string)
+            .collect()
+    })
+}
+
+/// [`RUNNING_ENV_HOOKS`] for the children of the given plugins' hooks.
+fn running_env_hooks_value<'a>(plugins: impl IntoIterator<Item = &'a String>) -> String {
+    env_hooks_running_above()
+        .iter()
+        .chain(plugins)
+        .map(String::as_str)
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Marks a plugin's environment hook as running for as long as it lives.
+/// `io.popen` children inherit mise's own environment rather than the hook's
+/// `cmd_env`, so the variable is set on the process, naming every plugin
+/// whose environment hook is running in it.
+struct RunningEnvHook(String);
+
+impl RunningEnvHook {
+    fn running() -> &'static std::sync::Mutex<Vec<String>> {
+        static RUNNING: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+        &RUNNING
+    }
+
+    fn start(plugin: &str) -> Self {
+        let mut running = Self::running().lock().unwrap();
+        running.push(plugin.to_string());
+        env::set_var(RUNNING_ENV_HOOKS, running_env_hooks_value(running.iter()));
+        Self(plugin.to_string())
+    }
+}
+
+impl Drop for RunningEnvHook {
+    fn drop(&mut self) {
+        let mut running = Self::running().lock().unwrap();
+        if let Some(i) = running.iter().position(|name| *name == self.0) {
+            running.remove(i);
+        }
+        if running.is_empty() && env_hooks_running_above().is_empty() {
+            env::remove_var(RUNNING_ENV_HOOKS);
+        } else {
+            env::set_var(RUNNING_ENV_HOOKS, running_env_hooks_value(running.iter()));
+        }
+    }
+}
+
 /// Removes the variables naming a project directory the user has not trusted
 /// from an environment hook's env: `PWD` unless it is the trusted working
 /// directory `trusted_cwd`, and `MISE_PROJECT_ROOT`, which a shell hook leaves
@@ -1223,6 +1286,10 @@ impl VfoxBackend {
         let hook_env = async || {
             let mut cmd_env = self.cmd_env_with_options(config, &opts).await;
             withhold_untrusted_dirs(config, &mut cmd_env, trusted_cwd);
+            cmd_env.insert(
+                RUNNING_ENV_HOOKS.to_string(),
+                running_env_hooks_value([&self.pathname]),
+            );
             cmd_env
         };
         let install_path = tv.install_path();
@@ -1298,6 +1365,15 @@ impl VfoxBackend {
                         }
                     }
                 }
+                // This mise was started by this plugin's own environment hook,
+                // which is still waiting for it to answer.
+                if env_hooks_running_above().contains(&self.pathname) {
+                    debug!(
+                        "skipping the environment hook of {}: it started this mise",
+                        self.pathname
+                    );
+                    return Ok(BTreeMap::new());
+                }
                 self.ensure_plugin_installed(config).await?;
                 let (mut vfox, _log_rx) = self.plugin.vfox();
                 vfox.cmd_env = Some(match cmd_env {
@@ -1308,6 +1384,7 @@ impl VfoxBackend {
                 let recorder = vfox::HookDependencyRecorder::default();
                 vfox.hook_dependencies = Some(recorder.clone());
 
+                let running = RunningEnvHook::start(&self.pathname);
                 // Use backend methods if the plugin supports them
                 let env_keys = if self.is_backend_plugin() {
                     let tool_name = self.get_tool_name()?;
@@ -1329,6 +1406,7 @@ impl VfoxBackend {
                     )
                     .await?
                 };
+                drop(running);
 
                 let env = env_keys
                     .into_iter()
