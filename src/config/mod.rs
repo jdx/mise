@@ -5553,10 +5553,13 @@ fn expand_task_inputs(
     Ok(expanded)
 }
 
+/// Renders the templated `entries` a config declared. With `keep_failed`, an entry that does
+/// not render stays as written instead of failing the load.
 fn render_task_input_entries(
     entries: &[String],
     config_root: &Path,
     tera_ctx: &tera::Context,
+    keep_failed: bool,
 ) -> Result<Vec<String>> {
     let mut tera_ctx = tera_ctx.clone();
     tera_ctx.insert("config_root", &config_root.to_string_lossy());
@@ -5564,10 +5567,13 @@ fn render_task_input_entries(
     entries
         .iter()
         .map(|entry| {
-            if contains_template_syntax(entry) {
-                Ok(render_str(&mut tera, entry, &tera_ctx)?)
-            } else {
-                Ok(entry.clone())
+            if !contains_template_syntax(entry) {
+                return Ok(entry.clone());
+            }
+            match render_str(&mut tera, entry, &tera_ctx) {
+                Ok(rendered) => Ok(rendered),
+                Err(_) if keep_failed => Ok(entry.clone()),
+                Err(err) => Err(err.into()),
             }
         })
         .collect()
@@ -5588,18 +5594,23 @@ async fn apply_task_config_inputs(
     Settings::get().ensure_experimental(mise_config::experimental::TASK_INPUT_GROUPS.what)?;
 
     // Only the entries a config declares are rendered here, never the task's own
-    // `sources`. The task's context resolves its `vars`, and `vars._.source` runs a
-    // script, so like `Task::render` this builds it only when there is a template to
-    // render: a task from a tasks-only config nobody trusted stays inert until it is
-    // run, and naming a group in its `sources` does not change that.
-    let tera_ctx = if task_inputs.has_templates() {
+    // `sources`. The task's context resolves its `vars` and `env`, and `vars._.source`
+    // runs a script, so this builds it only for a task the user vouches for: a task from
+    // a tasks-only config nobody trusted stays inert until it is run, even when a trusted
+    // ancestor cascades templated entries to it. Such a task renders them without its own
+    // `vars` and `env`, and an entry that needs them stays as written.
+    let trusted = task.is_trusted(config);
+    let tera_ctx = if !task_inputs.has_templates() {
+        tera::Context::new()
+    } else if trusted {
         task.tera_ctx(config).await?
     } else {
-        tera::Context::new()
+        task.tera_ctx_for_usage_preflight(config)
     };
+    let keep_failed = !trusted;
     let global_inputs = match &task_inputs.global_inputs {
         Some((entries, root)) => Some((
-            render_task_input_entries(entries, root, &tera_ctx)?,
+            render_task_input_entries(entries, root, &tera_ctx, keep_failed)?,
             root.clone(),
         )),
         None => None,
@@ -5611,7 +5622,7 @@ async fn apply_task_config_inputs(
             Ok((
                 name.clone(),
                 (
-                    render_task_input_entries(entries, root, &tera_ctx)?,
+                    render_task_input_entries(entries, root, &tera_ctx, keep_failed)?,
                     root.clone(),
                 ),
             ))

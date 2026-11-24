@@ -1381,6 +1381,12 @@ Group entries resolve relative to the config root of the file that defines
 them, even when a task sets a different `dir`. Entries written directly in a
 task's `sources` stay relative to the task's directory.
 
+A templated entry sees the task's `vars` and `env` only once the task's
+project is trusted. For a task that loaded without trust, such as one in a
+subproject a trusted parent cascades groups to, mise renders the entry without
+them and keeps an entry that needs them as written, so listing tasks runs
+nothing the task defines.
+
 ### `task_config.global_env` <Badge type="warning" text="experimental" /> {#task_config.global_env}
 
 - **Type**: `string[]`

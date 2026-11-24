@@ -59,3 +59,34 @@ EOF
 mise trust >/dev/null
 assert_contains "mise tasks info build --json" "$PWD/lib/**"
 assert "ls $ran" "sourced"
+rm "$ran/sourced"
+
+echo "=== a trusted parent's cascaded templated entry does not run an untrusted task's vars ==="
+rm mise.toml
+cat <<'EOF' >mise.toml
+[task_config]
+cascade = true
+
+[task_config.input_groups]
+src = ["{{ vars.dir }}/**"]
+EOF
+mise trust >/dev/null
+mkdir child
+cat <<EOF >child/setup.sh
+touch "$ran/sourced"
+export dir=lib
+EOF
+cat <<'EOF' >child/mise.toml
+[tasks.build]
+run = "true"
+sources = ["@group:src"]
+vars._.source = "./setup.sh"
+EOF
+cd child || exit 1
+assert_contains "mise trust --show" "child: untrusted"
+assert_contains "mise tasks ls" "build"
+mise __complete_word__ --shell fish --line 'mise run ' >/dev/null 2>&1 || true
+assert_empty "ls $ran"
+assert "mise trust"
+assert_contains "mise tasks info build --json" "$(dirname "$PWD")/lib/**"
+assert "ls $ran" "sourced"
