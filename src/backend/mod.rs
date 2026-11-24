@@ -7077,9 +7077,11 @@ pub trait Backend: Debug + Send + Sync {
             }
             // An md5 or sha1 hash from the release, not from mise.lock, has
             // checked the download; the lockfile pins it by blake3 instead.
+            // A version read from mise.lock gets the release's hash for a
+            // platform the lockfile had no checksum for.
             if lockfile_enabled
-                && !tv.resolved_from_lockfile()
                 && static_helpers::is_weak_checksum(checksum)
+                && !tv.checksum_is_from_lockfile(&platform_key, checksum)
             {
                 let hash = hash::file_hash_blake3(file, Some(ctx.pr.as_ref()))?;
                 tv.lock_platforms

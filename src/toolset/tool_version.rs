@@ -99,6 +99,8 @@ pub struct ToolVersion {
     /// the request itself, not a release, so nothing may record or compare it as one.
     deferred: bool,
     pub lock_platforms: LockPlatforms,
+    /// `lock_platforms` as mise.lock recorded it, before this run added to it
+    lockfile_platforms: LockPlatforms,
     /// Platforms mise.lock records this version has no build for.
     pub lock_unsupported_platforms: BTreeSet<String>,
     pub install_path: Option<PathBuf>,
@@ -219,6 +221,7 @@ impl ToolVersion {
             resolved_from_lockfile: false,
             deferred: false,
             lock_platforms: Default::default(),
+            lockfile_platforms: Default::default(),
             lock_unsupported_platforms: Default::default(),
             install_path: None,
             install_path_is_exact: false,
@@ -456,6 +459,7 @@ impl ToolVersion {
         tv.locked = true;
         tv.resolved_from_lockfile = true;
         tv.lock_platforms = lt.platforms.into();
+        tv.lockfile_platforms = tv.lock_platforms.clone();
         tv.lock_unsupported_platforms = lt.unsupported_platforms;
         tv.aube_lock = lt.aube;
         tv.uv_lock = lt.uv;
@@ -465,6 +469,17 @@ impl ToolVersion {
 
     pub fn resolved_from_lockfile(&self) -> bool {
         self.resolved_from_lockfile
+    }
+
+    /// Whether mise.lock pinned `platform_key`'s artifact by `checksum`, as
+    /// opposed to this run taking it from somewhere else, such as the
+    /// release. A version read from mise.lock may have no checksum for a
+    /// platform until it is installed there.
+    pub fn checksum_is_from_lockfile(&self, platform_key: &str, checksum: &str) -> bool {
+        self.lockfile_platforms
+            .get(platform_key)
+            .and_then(|platform| platform.checksum.as_deref())
+            == Some(checksum)
     }
 
     /// Why each dependency graph the lockfile records for this version cannot
@@ -2211,6 +2226,42 @@ mod tests {
                 .opts
                 .contains_key("workflow")
         );
+    }
+
+    #[test]
+    fn checksum_found_during_install_is_not_taken_for_the_lockfiles() {
+        let backend = Arc::new(BackendArg::new("tool".to_string(), None));
+        let request = ToolRequest::new(backend, "1.0.0", ToolSource::Argument).unwrap();
+        let md5 = "md5:8e5b948a454515dbabfc7eb718daa52f";
+        let lt = LockfileTool {
+            version: "1.0.0".to_string(),
+            backend: Some("github:owner/tool".to_string()),
+            specifiers: Default::default(),
+            options: Default::default(),
+            platforms: BTreeMap::from([(
+                "linux-x64".to_string(),
+                PlatformInfo {
+                    checksum: Some(md5.to_string()),
+                    ..Default::default()
+                },
+            )]),
+            aube: None,
+            uv: None,
+            provenance: None,
+            unsupported_platforms: Default::default(),
+        };
+        let mut tv = ToolVersion::from_lockfile(request, lt);
+        // The release's hash for a platform mise.lock has no checksum for
+        tv.lock_platforms
+            .entry("macos-arm64".to_string())
+            .or_default()
+            .checksum = Some(md5.to_string());
+
+        assert!(tv.checksum_is_from_lockfile("linux-x64", md5));
+        assert!(!tv.checksum_is_from_lockfile("macos-arm64", md5));
+        assert!(!tv.checksum_is_from_lockfile("linux-x64", "md5:00000000000000000000000000000000"));
+        let found = ToolVersion::new(tv.request.clone(), "1.0.0".to_string());
+        assert!(!found.checksum_is_from_lockfile("linux-x64", md5));
     }
 
     #[test]
