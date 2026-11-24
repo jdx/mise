@@ -392,6 +392,7 @@ impl Trust {
                 }
             },
         };
+        config_file::ensure_trust_can_approve(&path)?;
         config_file::trust(&path)?;
         // With only `env_files` on, a file named like a config may be an env file. Its content
         // hash is checked on its own, so approve it as well as its directory.
@@ -413,6 +414,7 @@ impl Trust {
         let Some(path) = self.get_next_untrusted() else {
             return Ok(false);
         };
+        config_file::ensure_trust_can_approve(&path)?;
         config_file::trust(&path)?;
         info!("trusted {}", display_path(&path.canonicalize()?));
         Ok(true)

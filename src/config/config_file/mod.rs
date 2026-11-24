@@ -18,6 +18,7 @@ use crate::config::settings::IdiomaticVersionFileSettings;
 use crate::config::{AliasMap, CommandWrapper, Settings, SettingsExt, settings};
 use crate::deps::DepsConfig;
 use crate::errors::Error::{UntrustedConfig, UntrustedEnvFile};
+use crate::errors::Untrusted;
 use crate::file::display_path;
 use crate::hash::hash_to_str;
 use crate::hooks::Hook;
@@ -34,7 +35,7 @@ use crate::{
     config, dirs, env, file, hash,
     registry::REGISTRY,
 };
-use eyre::{Result, bail, eyre};
+use eyre::{Result, eyre};
 use globset::{GlobBuilder, GlobMatcher};
 use idiomatic_version::IdiomaticVersionFile;
 use indexmap::{IndexMap, IndexSet};
@@ -818,21 +819,9 @@ pub fn trust_check(path: &Path) -> eyre::Result<()> {
         return Ok(());
     }
     if *REQUIRE_EXPLICIT_TRUST {
-        Err(UntrustedConfig(path.into()))?
+        Err(UntrustedConfig(path.into(), Untrusted::NotTrusted))?
     }
-    if Settings::try_get().is_ok_and(|settings| settings.paranoid.config())
-        && let Some(project) = config_root::linked_project(path)
-    {
-        bail!(
-            "{} is reached through a symlink inside {}, and paranoid mode cannot approve it: \
-             it approves a file by its content, and a link inside a project is that project's \
-             to change. Replace the link with a copy of the file, or add {} to \
-             `trusted_config_paths`.",
-            display_path(path),
-            display_path(&project),
-            display_path(&project)
-        );
-    }
+    ensure_trust_can_approve(path)?;
     if cmd != "hook-env" && !strict && !is_ignored(&config_root) && !is_ignored(path) {
         let ans = if settings::is_loaded()
             && Settings::try_get().is_ok_and(|settings| settings.yes && !settings.paranoid.config())
@@ -857,7 +846,23 @@ pub fn trust_check(path: &Path) -> eyre::Result<()> {
             Confirmation::Unanswered | Confirmation::Unavailable => {}
         }
     }
-    Err(UntrustedConfig(path.into()))?
+    Err(UntrustedConfig(path.into(), Untrusted::NotTrusted))?
+}
+
+/// Fails with [`Untrusted::LinkedInProject`] for a config that paranoid mode reaches through a
+/// symlink inside a project. Paranoid mode approves a file by its content, and a link inside a
+/// project is that project's to change, so no trust record can approve such a config: loading it
+/// and `mise trust` both refuse it.
+pub fn ensure_trust_can_approve(path: &Path) -> eyre::Result<()> {
+    if Settings::try_get().is_ok_and(|settings| settings.paranoid.config())
+        && let Some(project) = config_root::linked_project(path)
+    {
+        Err(UntrustedConfig(
+            path.into(),
+            Untrusted::LinkedInProject(project),
+        ))?
+    }
+    Ok(())
 }
 
 /// Whether paranoid mode lets a file named by `env._.file` load.

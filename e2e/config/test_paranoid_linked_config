@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+
+# Paranoid mode cannot approve a config reached through a symlink inside a project. Entering the
+# project skips that config like any other untrusted one and says why, and `mise trust` refuses
+# it instead of recording a trust that would not count.
+
+export MISE_TRUSTED_CONFIG_PATHS=""
+export MISE_YES=0
+export MISE_PARANOID=1
+unset CI GITHUB_ACTIONS GITHUB_ACTION 2>/dev/null || true
+
+cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
+[env]
+GLOBALFOO = "g"
+EOF
+
+mkdir -p shared project
+cat >shared/mise.toml <<'EOF'
+[env]
+LINKED_VALUE = "from-shared"
+EOF
+ln -s "$PWD/shared/mise.toml" project/mise.toml
+cd project || exit 1
+
+# hook-env still loads the rest of the config and names the reason and the remedy.
+assert_contains "mise hook-env -s bash" "GLOBALFOO"
+assert_not_contains "mise hook-env -s bash" "LINKED_VALUE"
+assert_contains "mise hook-env -s bash 2>&1" "is reached through a symlink inside"
+assert_contains "mise hook-env -s bash 2>&1" "trusted_config_paths"
+
+# A typed command explains the refusal.
+assert_fail_contains "mise env 2>&1" "reached through a symlink inside"
+
+# Every form of `mise trust` refuses it and records nothing.
+records="$MISE_STATE_DIR/trusted-configs"
+for cmd in "mise trust" "mise trust ." "mise trust mise.toml" "mise trust --all"; do
+  assert_fail_contains "$cmd 2>&1" "paranoid mode cannot approve it"
+  assert "find '$records' -type l -o -type f 2>/dev/null | wc -l | tr -d ' '" "0"
+done
+
+# The remedies it names load the config.
+assert_contains "MISE_TRUSTED_CONFIG_PATHS='$PWD' mise env" "LINKED_VALUE=from-shared"
+rm mise.toml
+cp ../shared/mise.toml mise.toml
+mise trust
+assert_contains "mise env" "LINKED_VALUE=from-shared"

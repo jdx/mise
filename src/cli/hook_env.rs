@@ -3,6 +3,7 @@ use crate::direnv::DirenvDiff;
 use crate::env::{__MISE_DIFF, PATH_KEY, TERM_WIDTH};
 use crate::env::{join_paths, split_paths};
 use crate::env_diff::{EnvDiff, EnvDiffOperation, EnvMap, env_value_matches};
+use crate::errors::Untrusted;
 use crate::file::{self, canonicalize_path_entry, display_rel_path};
 use crate::hook_env::{PREV_SESSION, WatchFilePattern};
 use crate::shell::{EXAMPLE_SHELL, ShellType, require_shell};
@@ -244,12 +245,20 @@ impl HookEnv {
             // Written directly to stderr because the untrusted config's own
             // [settings] (e.g. quiet, log_level) are applied before the trust
             // check and must not be able to silence this notice.
-            for config_path in &untrusted_configs {
+            for (config_path, why) in crate::config::skipped_untrusted_configs_with_reasons() {
+                let problem = match &why {
+                    Untrusted::NotTrusted => "is not trusted,".to_string(),
+                    Untrusted::LinkedInProject(project) => format!(
+                        "is reached through a symlink inside {}, which paranoid mode cannot approve.",
+                        style::display_path_escaped(project)
+                    ),
+                };
                 safe_eprintln!(
-                    "{} {} {} is not trusted, run `mise trust` to enable it",
+                    "{} {} {} {problem} {}",
                     style::eyellow("mise"),
                     style::eyellow("WARN"),
-                    style::display_path_escaped(config_path)
+                    style::display_path_escaped(&config_path),
+                    why.remedy(&config_path)
                 );
             }
         }

@@ -28,6 +28,7 @@ use crate::config::config_file::{
 use crate::config::env_directive::{EnvDirective, EnvResolveOptions, EnvResults, ToolsFilter};
 use crate::config::tracking::Tracker;
 use crate::env::{MISE_DEFAULT_CONFIG_FILENAME, MISE_DEFAULT_TOOL_VERSIONS_FILENAME};
+use crate::errors::Untrusted;
 use crate::file::display_path;
 use crate::remote_source::RemoteSource;
 use crate::shorthands::{Shorthands, get_shorthands};
@@ -4445,12 +4446,12 @@ fn resolve_global_write_path(opts: &ConfigPathOptions) -> Result<PathBuf> {
 fn declined_trust_prompt(path: &Path, err: &eyre::Report) -> bool {
     matches!(
         err.downcast_ref::<crate::errors::Error>(),
-        Some(crate::errors::Error::UntrustedConfig(_))
+        Some(crate::errors::Error::UntrustedConfig(..))
     ) && (config_file::is_ignored(&config_trust_root(path)) || config_file::is_ignored(path))
 }
 
 static SKIP_UNTRUSTED_CONFIGS: AtomicBool = AtomicBool::new(false);
-static SKIPPED_UNTRUSTED_CONFIGS: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
+static SKIPPED_UNTRUSTED_CONFIGS: Mutex<Vec<(PathBuf, Untrusted)>> = Mutex::new(Vec::new());
 
 /// Makes config loading skip untrusted config files instead of failing, so the
 /// remaining (e.g. global) configs still apply. Used by `hook-env`, where entering
@@ -4465,15 +4466,37 @@ pub(crate) fn skip_untrusted_path(path: &Path) -> bool {
         return false;
     }
     debug!("skipping untrusted file: {}", display_path(path));
-    let mut skipped = SKIPPED_UNTRUSTED_CONFIGS.lock().unwrap();
-    if !skipped.iter().any(|p| p == path) {
-        skipped.push(path.to_path_buf());
-    }
+    record_skipped_untrusted(path, &Untrusted::NotTrusted);
     true
+}
+
+/// Why `err` refused a config, when it is the untrusted-config error.
+fn untrusted_reason(err: &eyre::Report) -> Option<&Untrusted> {
+    match err.downcast_ref::<crate::errors::Error>() {
+        Some(crate::errors::Error::UntrustedConfig(_, why)) => Some(why),
+        _ => None,
+    }
+}
+
+fn record_skipped_untrusted(path: &Path, why: &Untrusted) {
+    let mut skipped = SKIPPED_UNTRUSTED_CONFIGS.lock().unwrap();
+    if !skipped.iter().any(|(p, _)| p == path) {
+        skipped.push((path.to_path_buf(), why.clone()));
+    }
 }
 
 /// Untrusted config files skipped so far when [`skip_untrusted_configs`] is active.
 pub fn skipped_untrusted_configs() -> Vec<PathBuf> {
+    SKIPPED_UNTRUSTED_CONFIGS
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|(path, _)| path.clone())
+        .collect()
+}
+
+/// [`skipped_untrusted_configs`] with the reason each one was refused.
+pub fn skipped_untrusted_configs_with_reasons() -> Vec<(PathBuf, Untrusted)> {
     SKIPPED_UNTRUSTED_CONFIGS.lock().unwrap().clone()
 }
 
@@ -4520,15 +4543,11 @@ async fn load_all_config_files(
                 }
                 Err(err)
                     if SKIP_UNTRUSTED_CONFIGS.load(Ordering::Relaxed)
-                        && matches!(
-                            err.downcast_ref::<crate::errors::Error>(),
-                            Some(crate::errors::Error::UntrustedConfig(_))
-                        ) =>
+                        && untrusted_reason(&err).is_some() =>
                 {
                     debug!("skipping untrusted config file: {}", display_path(f));
-                    let mut skipped = SKIPPED_UNTRUSTED_CONFIGS.lock().unwrap();
-                    if !skipped.contains(f) {
-                        skipped.push(f.clone());
+                    if let Some(why) = untrusted_reason(&err) {
+                        record_skipped_untrusted(f, why);
                     }
                     continue;
                 }
