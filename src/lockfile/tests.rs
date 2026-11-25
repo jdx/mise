@@ -481,6 +481,8 @@ fn lockfiles_with_the_same_text_share_cached_entries_but_keep_their_own_sidecars
         graph::absolute(&second).join("mise.lock.d/npm-prettier")
     );
     assert_eq!(std::fs::read(&cache_file).unwrap(), stored);
+    // The test cache is shared and not pruned, and this run's entry is unique.
+    std::fs::remove_file(&cache_file).unwrap();
 }
 
 #[test]
