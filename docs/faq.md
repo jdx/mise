@@ -344,6 +344,37 @@ What each check covers depends on the backend. See [Security](/security.html),
 and report vulnerabilities as described in
 [Reporting a vulnerability](/security.html#reporting-a-vulnerability).
 
+### Does mise phone home? {#does-mise-phone-home}
+
+No. mise sends no analytics or install reports. Every request it makes fetches
+something the command needs:
+
+- **Listing and installing tools.** mise lists versions from
+  [mise-versions](https://mise-versions.jdx.dev), a cache of public version
+  lists and GitHub release data, and downloads tools from where they are
+  published. Java metadata comes from `mise-java.jdx.dev`. Set
+  [`use_versions_host`](/configuration/settings.html#use_versions_host) to
+  `false` to list versions from each tool's source instead.
+- **Checking for a newer mise.** `mise version` and `mise --version` fetch
+  `mise.jdx.dev/releases.tsv` at most once a day, except in CI, under an AI
+  agent, or with
+  [`disable_update_warning`](/configuration/settings.html#disable_update_warning)
+  set. `mise doctor` and `mise self-update` check it too.
+- **Opt-in features.** `mise patrons` and
+  [`registry_floating`](/configuration/settings.html#registry_floating)
+  download from `jdx.dev` and `mise.jdx.dev`.
+
+As with any HTTP request, the server sees your IP address and a User-Agent with
+the mise version, platform, and shell. What mise-versions logs, and for how
+long, is described under
+[`use_versions_host`](/configuration/settings.html#use_versions_host).
+[`offline`](/configuration/settings.html#offline) blocks every request.
+
+mise 2026.11.14 and older also reported each install of a core or registry
+tool; set
+[`use_versions_host_track`](/configuration/settings.html#use_versions_host_track)
+to `false` to turn that off in them.
+
 ### What is usage?
 
 [usage](https://usage.jdx.dev/) is a spec for describing a command's arguments,

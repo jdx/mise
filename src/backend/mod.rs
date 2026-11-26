@@ -5931,10 +5931,6 @@ pub trait Backend: Debug + Send + Sync {
             ctx.pr.next_operation();
         }
 
-        // Track the installation asynchronously (fire-and-forget)
-        // Do this before install so the request has time to complete during installation
-        versions_host::track_install(tv.short(), &tv.ba().full(), &tv.version);
-
         ctx.pr.set_message("install".into());
 
         let old_tv = tv.clone();
