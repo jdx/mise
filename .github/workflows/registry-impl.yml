@@ -20,6 +20,7 @@ env:
   MISE_TRUSTED_CONFIG_PATHS: ${{ github.workspace }}
   MISE_EXPERIMENTAL: 1
   MISE_LOCKFILE: 1
+  MISE_USE_VERSIONS_HOST_TRACK: 0
   RUST_BACKTRACE: 1
   MISE_GITHUB_TOKEN: ${{ secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
 
@@ -265,6 +266,7 @@ jobs:
             -e TEST_TRANCHE_COUNT="$TEST_TRANCHE_COUNT" \
             -e MISE_EXPERIMENTAL=1 \
             -e MISE_LOCKFILE=1 \
+            -e MISE_USE_VERSIONS_HOST_TRACK=0 \
             -e RUST_BACKTRACE=1 \
             ghcr.io/jdx/mise:e2e \
             sh -lc '
@@ -327,6 +329,7 @@ jobs:
             -e TEST_TOOL_JOBS="$TEST_TOOL_JOBS" \
             -e MISE_EXPERIMENTAL=1 \
             -e MISE_LOCKFILE=1 \
+            -e MISE_USE_VERSIONS_HOST_TRACK=0 \
             -e RUST_BACKTRACE=1 \
             ghcr.io/jdx/mise:e2e \
             sh -lc '
