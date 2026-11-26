@@ -354,13 +354,13 @@ something the command needs:
   lists and GitHub release data, and downloads tools from where they are
   published. Set
   [`use_versions_host`](/configuration/settings.html#use_versions_host) to
-  `false` to list versions from each tool's source instead. Two installs use
-  these hosts even then: Java reads its catalog of builds from
-  `mise-java.jdx.dev` ([How mise installs Java](/lang/java.html#how-mise-installs-java)),
-  and precompiled Python reads its index of builds from mise-versions
+  `false` to list versions from each tool's source instead. That setting does
+  not cover every request to these hosts: Java lists and installs its builds
+  from a catalog on `mise-java.jdx.dev`
+  ([How mise installs Java](/lang/java.html#how-mise-installs-java)), and
+  CPython's precompiled builds are listed, installed and locked from an index
+  on mise-versions
   ([How mise installs Python](/lang/python.html#precompiled-python-binaries)).
-  A `java` plugin avoids the first; on Linux and macOS, compiling Python with
-  [`python.compile`](/lang/python.html#python.compile) avoids the second.
 - **Checking for a newer mise.** `mise version` and `mise --version` fetch
   `mise.jdx.dev/releases.tsv` at most once a day, except in CI, under an AI
   agent, or with
@@ -374,7 +374,9 @@ As with any HTTP request, the server sees your IP address and a User-Agent with
 the mise version, platform, and shell. What mise-versions logs, and for how
 long, is described under
 [`use_versions_host`](/configuration/settings.html#use_versions_host).
-[`offline`](/configuration/settings.html#offline) blocks every request.
+[`offline`](/configuration/settings.html#offline) blocks mise's own HTTP
+requests. Package managers and plugins that mise runs, such as `npm`, `git` or
+an asdf plugin, make their own requests and follow their own settings.
 
 mise 2026.11.14 and older also reported each install of a core or registry
 tool; set
