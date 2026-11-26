@@ -352,9 +352,15 @@ something the command needs:
 - **Listing and installing tools.** mise lists versions from
   [mise-versions](https://mise-versions.jdx.dev), a cache of public version
   lists and GitHub release data, and downloads tools from where they are
-  published. Java metadata comes from `mise-java.jdx.dev`. Set
+  published. Set
   [`use_versions_host`](/configuration/settings.html#use_versions_host) to
-  `false` to list versions from each tool's source instead.
+  `false` to list versions from each tool's source instead. Two installs use
+  these hosts even then: Java reads its catalog of builds from
+  `mise-java.jdx.dev` ([How mise installs Java](/lang/java.html#how-mise-installs-java)),
+  and precompiled Python reads its index of builds from mise-versions
+  ([How mise installs Python](/lang/python.html#precompiled-python-binaries)).
+  A `java` plugin avoids the first; on Linux and macOS, compiling Python with
+  [`python.compile`](/lang/python.html#python.compile) avoids the second.
 - **Checking for a newer mise.** `mise version` and `mise --version` fetch
   `mise.jdx.dev/releases.tsv` at most once a day, except in CI, under an AI
   agent, or with
