@@ -464,6 +464,20 @@ fn keep_pins_recorded_with_a_login(old: &PlatformInfo, new: &mut PlatformInfo) {
     }
 }
 
+/// The checksum of `old`, a conda package recorded with the channel's login,
+/// carried into `new`, the same package resolved again at the same URL without
+/// it: as for [`keep_pins_recorded_with_a_login`], leaving the login out does
+/// not re-pin the package.
+fn keep_conda_pin_recorded_with_a_login(
+    old: &crate::backend::conda::CondaPackageInfo,
+    new: &mut crate::backend::conda::CondaPackageInfo,
+) {
+    use crate::backend::static_helpers::is_lock_url;
+    if has_login(&old.url) && old.checksum.is_some() && is_lock_url(Some(&old.url), &new.url) {
+        new.checksum = old.checksum.clone();
+    }
+}
+
 /// How the target platforms were chosen. Platforms the user named are replaced
 /// individually and warn when a tool has no build for one of them.
 pub enum PlatformSelection {
@@ -746,7 +760,10 @@ pub async fn generate(
             info,
         );
         candidate.bind_request(&short, &specifier, &version, &options);
-        for (key, value) in conda {
+        for (key, mut value) in conda {
+            if let Some(old) = candidate.get_conda_package(&platform.to_key(), &key) {
+                keep_conda_pin_recorded_with_a_login(old, &mut value);
+            }
             candidate.set_conda_package(&platform.to_key(), &key, value);
         }
     }
@@ -1330,18 +1347,24 @@ pub(crate) async fn download_for_verification(
     Ok(directory)
 }
 
+/// `provenance_verified` of `old` carried into `new` for each artifact that is
+/// the same: the same checksum at the same URL, a login left out, since the
+/// entry is written without the login an old one recorded.
 fn preserve_legacy_metadata(old: &PlatformInfo, new: &mut PlatformInfo) {
+    use crate::backend::static_helpers::lock_url;
     new.provenance_verified = None;
-    if old.url == new.url && old.checksum == new.checksum {
+    let same_url = match (old.url.as_deref(), new.url.as_deref()) {
+        (Some(old), Some(new)) => lock_url(old) == lock_url(new),
+        (old, new) => old == new,
+    };
+    if same_url && old.checksum == new.checksum {
         new.provenance_verified = old.provenance_verified;
     }
     for artifact in &mut new.additional_artifacts {
         artifact.provenance_verified = None;
-        if let Some(old) = old
-            .additional_artifacts
-            .iter()
-            .find(|old| old.url == artifact.url && old.checksum == artifact.checksum)
-        {
+        if let Some(old) = old.additional_artifacts.iter().find(|old| {
+            lock_url(&old.url) == lock_url(&artifact.url) && old.checksum == artifact.checksum
+        }) {
             artifact.provenance_verified = old.provenance_verified;
         }
     }
@@ -2153,6 +2176,56 @@ mod tests {
         };
         preserve_legacy_metadata(&old, &mut changed);
         assert_eq!(changed.provenance_verified, None);
+    }
+
+    #[test]
+    fn conda_pins_recorded_with_a_login_are_kept() {
+        use crate::backend::conda::CondaPackageInfo;
+        let package = |url: &str, checksum: &str| CondaPackageInfo {
+            url: url.into(),
+            checksum: Some(checksum.into()),
+        };
+        let url = "https://conda.example/linux-64/zlib-1.3-h0_0.conda";
+        let with_login = "https://ci:token@conda.example/linux-64/zlib-1.3-h0_0.conda";
+        let other = "https://conda.example/linux-64/zlib-1.3-h1_0.conda";
+        // (old, resolved checksum at `new_url`, checksum written)
+        for (old, new_url, written) in [
+            (package(with_login, "sha256:old"), url, "sha256:old"),
+            (package(with_login, "sha256:old"), other, "sha256:new"),
+            // A record with no login is resolved as before.
+            (package(url, "sha256:old"), url, "sha256:new"),
+        ] {
+            let mut new = package(new_url, "sha256:new");
+            keep_conda_pin_recorded_with_a_login(&old, &mut new);
+            assert_eq!(new.checksum.as_deref(), Some(written), "{old:?} {new_url}");
+            assert_eq!(new.url, new_url);
+        }
+    }
+
+    #[test]
+    fn legacy_bits_follow_an_artifact_whose_login_was_left_out() {
+        let entry = |url: &str| PlatformInfo {
+            url: Some(url.into()),
+            checksum: Some("sha256:old".into()),
+            provenance_verified: Some(true),
+            additional_artifacts: vec![crate::lockfile::ArtifactInfo {
+                url: format!("{url}.sig"),
+                checksum: Some("sha256:old-sig".into()),
+                provenance_verified: Some(true),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let old = entry("https://ci:token@mirror.example/v20.0.0/node-linux-x64.tar.gz");
+        let mut new = PlatformInfo {
+            provenance_verified: None,
+            ..entry("https://mirror.example/v20.0.0/node-linux-x64.tar.gz")
+        };
+        new.additional_artifacts[0].provenance_verified = None;
+        keep_pins_recorded_with_a_login(&old, &mut new);
+        preserve_legacy_metadata(&old, &mut new);
+        assert_eq!(new.provenance_verified, Some(true));
+        assert_eq!(new.additional_artifacts[0].provenance_verified, Some(true));
     }
 
     #[tokio::test]
