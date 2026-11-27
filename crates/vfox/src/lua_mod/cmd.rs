@@ -308,6 +308,19 @@ fn apply_options(cmd: &mut Command, options: Option<&Table>) -> LuaResult<()> {
     };
     if let Ok(cwd) = options.get::<String>("cwd") {
         cmd.current_dir(Path::new(&cwd));
+        // A `PWD` set for the detached directory or by the hook environment
+        // would name the wrong directory now: point it at `cwd`, or drop it
+        // when `cwd` is relative and the child must work it out.
+        if cmd
+            .get_envs()
+            .any(|(key, value)| key == "PWD" && value.is_some())
+        {
+            if Path::new(&cwd).is_absolute() {
+                cmd.env("PWD", &cwd);
+            } else {
+                cmd.env_remove("PWD");
+            }
+        }
     }
     if let Ok(env) = options.get::<Table>("env") {
         for pair in env.pairs::<String, String>() {

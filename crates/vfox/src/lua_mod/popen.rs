@@ -90,9 +90,11 @@ fn popen(
     mode: Option<&str>,
     cwd: Option<&str>,
 ) -> LuaResult<LuaMultiValue> {
-    let write = match mode.unwrap_or("r") {
-        "r" | "rb" => false,
-        "w" | "wb" => true,
+    let (write, binary) = match mode.unwrap_or("r") {
+        "r" => (false, false),
+        "rb" => (false, true),
+        "w" => (true, false),
+        "wb" => (true, true),
         other => {
             return Err(LuaError::RuntimeError(format!(
                 "io.popen: invalid mode {other:?}, expected \"r\" or \"w\""
@@ -117,6 +119,7 @@ fn popen(
         stdin: child.stdin.take(),
         stdout: child.stdout.take().map(BufReader::new),
         child: Some(child),
+        binary,
         closed: false,
     };
     lua.create_userdata(file)?.into_lua_multi(lua)
@@ -133,6 +136,8 @@ struct PopenFile {
     stdin: Option<ChildStdin>,
     stdout: Option<BufReader<ChildStdout>>,
     child: Option<Child>,
+    /// Opened with `"rb"` or `"wb"`.
+    binary: bool,
     closed: bool,
 }
 
@@ -153,6 +158,12 @@ impl PopenFile {
             .ok_or_else(|| LuaError::RuntimeError("file is not readable".to_string()))
     }
 
+    /// Whether reads drop the `\r` of a `\r\n`: stock `io.popen` opens the pipe
+    /// in text mode on Windows unless the mode asks for binary.
+    fn translates_crlf(&self) -> bool {
+        cfg!(windows) && !self.binary
+    }
+
     fn close(&mut self) {
         self.closed = true;
         // Closing the pipes first lets a child blocked on a full pipe see EOF or
@@ -171,8 +182,7 @@ impl PopenFile {
         }
         if !keep_newline && line.last() == Some(&b'\n') {
             line.pop();
-            // Stock `io.popen` opens the pipe in text mode on Windows.
-            if cfg!(windows) && line.last() == Some(&b'\r') {
+            if self.translates_crlf() && line.last() == Some(&b'\r') {
                 line.pop();
             }
         }
@@ -182,7 +192,7 @@ impl PopenFile {
     fn read_all(&mut self) -> LuaResult<Vec<u8>> {
         let mut all = Vec::new();
         self.reader()?.read_to_end(&mut all)?;
-        if cfg!(windows) {
+        if self.translates_crlf() {
             let mut text = Vec::with_capacity(all.len());
             let mut bytes = all.iter().peekable();
             while let Some(&byte) = bytes.next() {
@@ -207,6 +217,9 @@ impl PopenFile {
         Ok(Some(buf))
     }
 
+    /// Reads a number as Lua 5.1's `fscanf("%lf")` does: skips whitespace, then
+    /// consumes only the longest prefix that can start a decimal number (a sign,
+    /// digits, one `.`, an exponent), leaving whatever follows unread.
     fn read_number(&mut self) -> LuaResult<Option<f64>> {
         let reader = self.reader()?;
         loop {
@@ -220,15 +233,29 @@ impl PopenFile {
             reader.consume(1);
         }
         let mut token = Vec::new();
-        loop {
-            let buf = reader.fill_buf()?;
-            match buf.first() {
-                Some(&byte) if byte.is_ascii_alphanumeric() || b"+-.".contains(&byte) => {
-                    token.push(byte);
-                    reader.consume(1);
+        let (mut seen_digit, mut seen_dot, mut seen_exp) = (false, false, false);
+        while let Some(&byte) = reader.fill_buf()?.first() {
+            let accept = match byte {
+                b'0'..=b'9' => {
+                    seen_digit = true;
+                    true
                 }
-                _ => break,
+                b'+' | b'-' => token.is_empty() || matches!(token.last(), Some(b'e' | b'E')),
+                b'.' if !seen_dot && !seen_exp => {
+                    seen_dot = true;
+                    true
+                }
+                b'e' | b'E' if seen_digit && !seen_exp => {
+                    seen_exp = true;
+                    true
+                }
+                _ => false,
+            };
+            if !accept {
+                break;
             }
+            token.push(byte);
+            reader.consume(1);
         }
         Ok(std::str::from_utf8(&token)
             .ok()
@@ -503,6 +530,32 @@ mod tests {
         assert_eq!(expected[2], "closed file");
     }
 
+    /// What `read("*n")` returns, then what is left unread, for each output.
+    fn number_reads(lua: &Lua) -> Vec<String> {
+        lua.load(
+            r#"
+            local seen = {}
+            for _, out in ipairs({ "12foo", "  -3.5e2x", "0.5.5", "abc", "+7 8", "4e", "1e+2-3" }) do
+                local h = io.popen("printf '%s' '" .. out .. "'")
+                local n = h:read("*n")
+                seen[#seen + 1] = tostring(n) .. "|" .. h:read("*a")
+                h:close()
+            end
+            return seen
+            "#,
+        )
+        .eval()
+        .unwrap()
+    }
+
+    #[test]
+    fn popen_reads_a_number_like_stock_popen() {
+        let expected = number_reads(&Lua::new());
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(number_reads(&detached_lua(dir.path())), expected);
+        assert_eq!(expected[0], "12|foo");
+    }
+
     /// Sets the environment mise builds for a hook, as `Plugin::set_cmd_env` does.
     fn set_mise_env(lua: &Lua, vars: &[(&str, &str)]) {
         let env = lua.create_table().unwrap();
@@ -571,5 +624,26 @@ mod tests {
             .unwrap();
         assert_eq!(canon(&default_cwd), detached.path().canonicalize().unwrap());
         assert_eq!(canon(&chosen_cwd), chosen.path().canonicalize().unwrap());
+    }
+
+    #[test]
+    fn a_hook_cwd_option_moves_pwd_with_it() {
+        let detached = tempfile::tempdir().unwrap();
+        let chosen = tempfile::tempdir().unwrap();
+        let lua = detached_lua(detached.path());
+        // `printenv` instead of a shell, which would repair a stale PWD itself
+        let shell = lua.create_sequence_from(["printenv"]).unwrap();
+        lua.set_named_registry_value("mise_cmd_shell", shell)
+            .unwrap();
+        let chosen_str = chosen.path().to_string_lossy().to_string();
+        let (default_pwd, chosen_pwd): (String, String) = lua
+            .load(mlua::chunk! {
+                local cmd = require("cmd")
+                return cmd.exec("PWD"), cmd.exec("PWD", { cwd = $chosen_str })
+            })
+            .eval()
+            .unwrap();
+        assert_eq!(default_pwd.trim(), detached.path().to_string_lossy());
+        assert_eq!(chosen_pwd.trim(), chosen.path().to_string_lossy());
     }
 }
