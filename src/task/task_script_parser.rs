@@ -13,6 +13,7 @@ use serde_json::{Value as JsonValue, json};
 use std::collections::{HashMap, HashSet};
 use std::iter::once;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 
@@ -909,43 +910,21 @@ impl TaskScriptParser {
                 continue;
             }
             let shell = rendered_script_shell(script, task, self.run_shell.as_deref())?;
-            let shell_type = shell.first().and_then(|program| program.parse().ok());
-            // `dash`, `ksh` and `ash` are no `ShellType`, but they read POSIX quoting too.
-            let posix = shell
-                .first()
-                .is_some_and(|program| crate::path::is_posix_shell_program(Path::new(program)));
+            let quoting = ArgQuoting::of(&shell);
+            // Set once a template function has quoted a value, which it did for `shell`.
+            let quoted = Arc::new(AtomicBool::new(false));
             let escape = {
-                move |v: &usage::parse::ParseValue| match v {
-                    // fish reads `\'` and `\\` inside single quotes as escapes, so POSIX quoting,
-                    // which is also how usage joins these, would let a value end its own string
-                    usage::parse::ParseValue::MultiString(values)
-                        if shell_type == Some(ShellType::Fish) =>
-                    {
-                        values
-                            .iter()
-                            .map(|value| crate::shell::fish_escape(value.into()))
-                            .join(" ")
-                    }
-                    usage::parse::ParseValue::MultiString(_) => {
-                        // these are already escaped
-                        v.to_string()
-                    }
-                    _ => match shell_type {
-                        Some(ShellType::Zsh | ShellType::Bash) => {
-                            shell_words::quote(&v.to_string()).to_string()
-                        }
-                        Some(ShellType::Fish) => {
-                            crate::shell::fish_escape(v.to_string().into()).to_string()
-                        }
-                        _ if posix => shell_words::quote(&v.to_string()).to_string(),
-                        _ => v.to_string(),
-                    },
+                let quoted = quoted.clone();
+                move |v: &usage::parse::ParseValue| {
+                    quoted.store(true, Ordering::Relaxed);
+                    quoting.escape(v)
                 }
             };
             let mut tera = self.get_tera();
             self.register_task_source_files_function(&mut tera, task);
             Self::register_template_function(&mut tera, "arg", {
                 {
+                    let escape = escape.clone();
                     let usage_args = m.args.clone();
                     move |args| {
                         let seen_args = Arc::new(Mutex::new(HashSet::new()));
@@ -969,6 +948,7 @@ impl TaskScriptParser {
             });
             let flag_func = {
                 |default_value: String| {
+                    let escape = escape.clone();
                     let usage_flags = m.flags.clone();
                     move |args: &HashMap<String, JsonValue>| {
                         let name = Self::string_arg(args, "name")?;
@@ -989,9 +969,23 @@ impl TaskScriptParser {
             tera_ctx.insert("env", &env);
             let usage_map = Self::make_usage_ctx(spec, &m);
             tera_ctx.insert("usage", &usage_map);
-            out.push(Self::render_script_with_context(
-                &mut tera, script, &tera_ctx,
-            )?);
+            let rendered = Self::render_script_with_context(&mut tera, script, &tera_ctx)?;
+            // The values were quoted for the shell the source picks, before rendering. A
+            // template can render a shebang where there was none, or change one, and the script
+            // then runs under a shell that reads that quoting otherwise.
+            if quoted.load(Ordering::Relaxed) {
+                let runs = rendered_script_shell(&rendered, task, self.run_shell.as_deref())?;
+                if ArgQuoting::of(&runs) != quoting {
+                    eyre::bail!(
+                        "task {}: its script renders to run under {}, but arg(), option() and \
+                         flag() quoted their values for {}. Write the shebang without a template.",
+                        task.name,
+                        shell_name(&runs),
+                        shell_name(&shell),
+                    );
+                }
+            }
+            out.push(rendered);
         }
         Ok(out)
     }
@@ -1182,6 +1176,51 @@ fn rendered_script_shell(
     }
 }
 
+/// How the template functions quote a value for the shell that reads the script.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ArgQuoting {
+    Fish,
+    Posix,
+    /// A shell whose quoting mise does not know, such as `cmd`: the value goes in as it is.
+    Raw,
+}
+
+impl ArgQuoting {
+    fn of(shell: &[String]) -> Self {
+        let Some(program) = shell.first() else {
+            return Self::Raw;
+        };
+        match program.parse() {
+            Ok(ShellType::Fish) => Self::Fish,
+            Ok(ShellType::Zsh | ShellType::Bash) => Self::Posix,
+            // `dash`, `ksh` and `ash` are no `ShellType`, but they read POSIX quoting too.
+            _ if crate::path::is_posix_shell_program(Path::new(program)) => Self::Posix,
+            _ => Self::Raw,
+        }
+    }
+
+    fn escape(self, v: &usage::parse::ParseValue) -> String {
+        match (self, v) {
+            // fish reads `\'` and `\\` inside single quotes as escapes, so POSIX quoting, which
+            // is also how usage joins these, would let a value end its own string
+            (Self::Fish, usage::parse::ParseValue::MultiString(values)) => values
+                .iter()
+                .map(|value| crate::shell::fish_escape(value.into()))
+                .join(" "),
+            // these are already escaped
+            (_, usage::parse::ParseValue::MultiString(_)) => v.to_string(),
+            (Self::Fish, _) => crate::shell::fish_escape(v.to_string().into()).to_string(),
+            (Self::Posix, _) => shell_words::quote(&v.to_string()).to_string(),
+            (Self::Raw, _) => v.to_string(),
+        }
+    }
+}
+
+/// The program of `shell`, for an error message.
+fn shell_name(shell: &[String]) -> &str {
+    shell.first().map_or("no shell", String::as_str)
+}
+
 fn shell_from_shebang(script: &str) -> Option<Vec<String>> {
     let shebang = script.lines().next()?.strip_prefix("#!")?;
     let shebang = shebang.strip_prefix("/usr/bin/env -S").unwrap_or(shebang);
@@ -1327,6 +1366,81 @@ mod tests {
             )
             .await
             .unwrap();
+    }
+
+    /// The template functions quote for the shell the source picks, before rendering, so a
+    /// shebang that only rendering makes, or changes, would run the script under a shell that
+    /// reads that quoting otherwise.
+    #[tokio::test]
+    async fn test_task_parse_arg_refuses_a_shebang_that_changes_the_quoting() {
+        let _guard = crate::test::SettingsGuard::lock();
+        Settings::override_with(|settings| {
+            settings.use_file_shell_for_executable_tasks = Some(false);
+        })
+        .unwrap();
+        let config = Config::get().await.unwrap();
+        let arg = "echo {{ arg(i=0, name='foo') }}";
+        let value = [r"\'; touch injected #".to_string()];
+        let rendered_bash = format!("{{{{ '#!/usr/bin/env bash' }}}}\n{arg}");
+        let templated_bash = format!("#!/usr/bin/env {{{{ 'bash' }}}}\n{arg}");
+        let static_bash = format!("#!/usr/bin/env bash\n{arg}");
+        // (task shell, `mise run --shell`, script, refused)
+        let cases = [
+            (None, Some("fish -c"), rendered_bash.clone(), true),
+            (Some("fish -c"), None, rendered_bash.clone(), cfg!(unix)),
+            (None, Some("fish -c"), templated_bash.clone(), true),
+            // The same quoting either way.
+            (Some("bash -c"), None, rendered_bash.clone(), false),
+            (None, Some("fish -c"), static_bash, false),
+            // No value was quoted.
+            (
+                None,
+                Some("fish -c"),
+                "{{ '#!/usr/bin/env bash' }}\necho hi".into(),
+                false,
+            ),
+        ];
+        for (task_shell, run_shell, script, refused) in cases {
+            let task = Task {
+                name: "t".into(),
+                shell: task_shell.map(str::to_string),
+                ..Default::default()
+            };
+            let scripts = vec![script.clone()];
+            let parser = TaskScriptParser::new(None).with_run_shell(run_shell.map(str::to_string));
+            let (_, spec) = parser
+                .parse_run_scripts(&config, &task, &scripts, &Default::default())
+                .await
+                .unwrap();
+            let parsed = parser
+                .parse_run_scripts_with_args(
+                    &config,
+                    &task,
+                    &scripts,
+                    &Default::default(),
+                    if script.contains("arg(") {
+                        &value[..]
+                    } else {
+                        &[]
+                    },
+                    &spec,
+                )
+                .await;
+            let case = format!("task shell {task_shell:?}, --shell {run_shell:?}, {script:?}");
+            match parsed {
+                Err(err) if refused => {
+                    assert!(
+                        format!("{err:#}").contains("Write the shebang"),
+                        "{case}: {err:#}"
+                    )
+                }
+                Err(err) => panic!("{case}: {err:#}"),
+                Ok(parsed) => {
+                    assert!(!refused, "{case}: {parsed:?}");
+                    assert!(parsed[0].starts_with("#!/usr/bin/env bash\n"), "{case}");
+                }
+            }
+        }
     }
 
     #[tokio::test]
