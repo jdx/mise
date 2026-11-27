@@ -44,3 +44,10 @@ assert_contains "cd ~/other && MISE_OVERRIDE_CONFIG_FILENAMES=project.toml mise 
 echo 'override_config_filenames = ["mise.toml", ".env"]' >.miserc.toml
 assert_contains "mise trust . 2>&1" "trusted ~/workdir/proj"
 assert_contains "mise hook-env -s bash 2>&1" "PROJECT_TEST=loaded"
+
+# Untrusting or ignoring the directory acts on the project too, whichever file the names pick.
+assert_contains "mise untrust . 2>&1" "untrusted ~/workdir/proj"
+assert_not_contains "mise hook-env -s bash 2>&1 || true" "PROJECT_TEST=loaded"
+assert_contains "mise trust . 2>&1" "trusted ~/workdir/proj"
+assert_contains "mise trust --ignore . 2>&1" "ignored ~/workdir/proj"
+assert_not_contains "mise hook-env -s bash 2>&1 || true" "PROJECT_TEST=loaded"

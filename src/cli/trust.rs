@@ -220,7 +220,7 @@ fn nearest_local_config_file(filenames: &[String]) -> Option<PathBuf> {
 /// only configs are for another environment. That way a file the project ships in such a folder
 /// cannot take the refusal for itself and leave the project trusted.
 fn refused_roots(path: &Path, cfr: &Path, named_file: bool) -> Vec<PathBuf> {
-    if named_file || cfr == path || Settings::get().paranoid.config() {
+    if named_file || Settings::get().paranoid.config() {
         return vec![cfr.to_path_buf()];
     }
     let project =
@@ -235,6 +235,26 @@ fn refused_roots(path: &Path, cfr: &Path, named_file: bool) -> Vec<PathBuf> {
         }
     }
     roots.into_iter().unique().collect()
+}
+
+/// The trust root that `mise trust` records for `path`, which `--ignore` and `--untrust` act on.
+/// A directory or no path stands for the project, whichever file in it the names in effect
+/// pick: with only `env_files` on, a name that `.miserc.toml` added would otherwise make that
+/// file its own root and leave the project's record in place.
+fn cli_trust_root(path: &Path, named_file: bool) -> PathBuf {
+    if named_file {
+        config_file::trust_root_for_cli(path)
+    } else {
+        config_trust_root(path)
+    }
+}
+
+/// Whether `mise trust` without a path or with `--all` has to act on the trust root `ctr`: it
+/// is not trusted, or paranoid mode reaches it through a link inside a project, which loading
+/// refuses whatever record its target has. `mise trust` then fails on it with that reason
+/// instead of finishing as if nothing were left.
+fn needs_trust(ctr: &Path) -> bool {
+    !config_file::is_trusted(ctr) || config_file::ensure_trust_can_approve(ctr).is_err()
 }
 
 pub(super) fn untrust_config_file(
@@ -252,7 +272,7 @@ pub(super) fn untrust_config_file(
             }
         },
     };
-    let cfr = config_file::trust_root_for_cli(&path);
+    let cfr = cli_trust_root(&path, named_file);
     let roots = refused_roots(&path, &cfr, named_file);
     for root in &roots {
         config_file::untrust(root)?;
@@ -348,7 +368,7 @@ impl Trust {
                 display_path(&path)
             );
         }
-        let cfr = config_file::trust_root_for_cli(&path);
+        let cfr = cli_trust_root(&path, self.named_file());
         let roots = refused_roots(&path, &cfr, self.named_file());
         for root in &roots {
             config_file::add_ignored(root.clone())?;
@@ -380,8 +400,7 @@ impl Trust {
     fn trust(&self) -> Result<()> {
         let path = match self.config_file()? {
             // A directory is the project whichever file in it the names in effect pick.
-            Some(filename) if !self.named_file() => config_file::config_trust_root(&filename),
-            Some(filename) => config_file::trust_root_for_cli(&filename),
+            Some(filename) => cli_trust_root(&filename, self.named_file()),
             None => match self.get_next_untrusted() {
                 Some(path) => path,
                 None => {
@@ -531,7 +550,7 @@ impl Trust {
             .filter(|p| !is_global_config(p))
             .map(|p| config_trust_root(&p))
             .unique()
-            .find(|ctr| !config_file::is_trusted(ctr))
+            .find(|ctr| needs_trust(ctr))
     }
 
     /// Untrusted config files in subdirectories of the current directory.
@@ -543,7 +562,7 @@ impl Trust {
     fn get_untrusted_descendants(&self) -> Vec<PathBuf> {
         self.get_descendants()
             .into_iter()
-            .filter(|p| !config_file::is_trusted(&config_trust_root(p)))
+            .filter(|p| needs_trust(&config_trust_root(p)))
             .collect()
     }
 

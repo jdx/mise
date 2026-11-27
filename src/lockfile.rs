@@ -17,6 +17,7 @@ use crate::file::display_path;
 use crate::path::PathExt;
 use crate::platform::Platform;
 use crate::toolset::{ToolRequest, ToolSource, ToolVersion, ToolVersionOptions, Toolset};
+use crate::ui::style::display_path_escaped;
 use eyre::{Report, Result, bail, eyre};
 use indexmap::IndexSet;
 use itertools::Itertools;
@@ -2039,9 +2040,9 @@ impl Lockfile {
         {
             bail!(
                 "refusing to write lockfile {}: it is reached through a symlink inside {}, which leads out of that project, and a link out is only followed for global config, or for trusted config outside safe mode. Run `mise trust` in {} if the link is yours",
-                display_path(path),
-                display_path(&project),
-                display_path(&project)
+                display_path_escaped(path),
+                display_path_escaped(&project),
+                display_path_escaped(&project)
             );
         }
         // Resolve the lockfile target before choosing sidecar locations and pointers.
@@ -2060,8 +2061,8 @@ impl Lockfile {
                     if !may_write_through_symlink(&link, &link_target) {
                         bail!(
                             "refusing to write lockfile {} through its symlink to {}: a link out of the lockfile's directory is only followed for global config, or for trusted config outside safe mode",
-                            display_path(path),
-                            display_path(&link_target)
+                            display_path_escaped(path),
+                            display_path_escaped(&link_target)
                         );
                     }
                     source_symlink = Some(link);

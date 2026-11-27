@@ -90,13 +90,32 @@ impl Untrusted {
     pub fn remedy(&self, path: &Path) -> String {
         match self {
             Untrusted::NotTrusted => "run `mise trust` to enable it".to_string(),
-            Untrusted::LinkedInProject(project) => format!(
-                "Replace the link {} with a copy of the file, or add {} to `trusted_config_paths`.",
-                display_path_escaped(path),
-                display_path_escaped(project)
-            ),
+            Untrusted::LinkedInProject(project) => {
+                let link = outermost_link(path, project);
+                let copy = if link == path {
+                    "the file"
+                } else {
+                    "the directory it leads to"
+                };
+                format!(
+                    "Replace the link {} with a copy of {copy} and run `mise trust`, or add {} to `trusted_config_paths`.",
+                    display_path_escaped(link),
+                    display_path_escaped(project)
+                )
+            }
         }
     }
+}
+
+/// The outermost symlink between `project` and `path`, `path` included, or `path` when there is
+/// none. That is the link to replace: replacing a file below a linked `.config` would leave the
+/// directory linked.
+fn outermost_link<'a>(path: &'a Path, project: &Path) -> &'a Path {
+    path.ancestors()
+        .take_while(|p| *p != project && p.starts_with(project))
+        .filter(|p| p.is_symlink())
+        .last()
+        .unwrap_or(path)
 }
 
 /// When the version list could not be fetched, the version being installed
@@ -269,5 +288,27 @@ mod tests {
 
         assert!(Error::is_not_in_lockfile(&err));
         assert!(!Error::is_required_channel_resolution_err(&err));
+    }
+
+    #[test]
+    fn linked_remedy_names_the_outermost_link() {
+        let tmp = tempfile::tempdir().unwrap();
+        let shared = tmp.path().join("shared");
+        let project = tmp.path().join("project");
+        std::fs::create_dir_all(shared.join("mise")).unwrap();
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::write(shared.join("mise/config.toml"), "").unwrap();
+        std::os::unix::fs::symlink(&shared, project.join(".config")).unwrap();
+        std::os::unix::fs::symlink(shared.join("mise/config.toml"), project.join("mise.toml"))
+            .unwrap();
+        let why = Untrusted::LinkedInProject(project.clone());
+
+        let in_dir = project.join(".config/mise/config.toml");
+        assert_eq!(outermost_link(&in_dir, &project), project.join(".config"));
+        assert!(why.remedy(&in_dir).contains("the directory it leads to"));
+
+        let file = project.join("mise.toml");
+        assert_eq!(outermost_link(&file, &project), file);
+        assert!(why.remedy(&file).contains("a copy of the file"));
     }
 }

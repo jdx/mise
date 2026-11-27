@@ -38,6 +38,13 @@ for cmd in "mise trust" "mise trust ." "mise trust mise.toml" "mise trust --all"
   assert "find '$records' -type l -o -type f 2>/dev/null | wc -l | tr -d ' '" "0"
 done
 
+# A record for the link's target does not count either, so `mise trust` without a path still
+# says why instead of finishing as if nothing were left to trust.
+(cd ../shared && mise trust mise.toml)
+for cmd in "mise trust" "mise trust --all"; do
+  assert_fail_contains "$cmd 2>&1" "paranoid mode cannot approve it"
+done
+
 # The remedies it names load the config.
 assert_contains "MISE_TRUSTED_CONFIG_PATHS='$PWD' mise env" "LINKED_VALUE=from-shared"
 rm mise.toml

@@ -1022,7 +1022,14 @@ fn check_trust(path: &Path, canonical: &Path, content_bound: bool, kind: TrustAs
         is_trusted_without_config_paths(path, canonical, content_bound, &record)
             || trusted_config_path_matches(canonical)
     };
-    if trusted && kind == TrustAs::Config && !env_file_approval {
+    // Trust that depends on the file's content is checked again next time: the file can change
+    // within one process, and the memo would keep accepting it.
+    if trusted
+        && kind == TrustAs::Config
+        && !env_file_approval
+        && !content_bound
+        && !record.has_hash()
+    {
         add_trusted(canonical.to_path_buf());
     }
     trusted
@@ -1352,10 +1359,10 @@ fn trust_as(path: &Path, kind: TrustAs) -> Result<()> {
     let canonicalized_path = path.canonicalize()?;
     // What this writes decides the next check, which the memo would answer from the old state.
     IS_TRUSTED.lock().unwrap().remove(&canonicalized_path);
-    if !record_points_at(&hashed_path, &canonicalized_path) {
-        file::create_dir_all(hashed_path.parent().unwrap())?;
-        file::make_symlink_or_file(&canonicalized_path, &hashed_path)?;
-    }
+    file::create_dir_all(hashed_path.parent().unwrap())?;
+    // The record is written last, after the sidecars that say what it approves: a write that
+    // fails part way leaves no new record, rather than one without its env file marker that
+    // would count as trust in the path as config.
     // The hash is only read for content-bound trust. Record it for an env file too, which is
     // bound to its content when only the `env_files` category is on. A trust root that is a
     // directory is a config trusted the normal way and has no content to hash.
@@ -1380,6 +1387,9 @@ fn trust_as(path: &Path, kind: TrustAs) -> Result<()> {
         file::write(env_file_path, "")?;
     } else if env_file_path.exists() {
         file::remove_file(&env_file_path)?;
+    }
+    if !record_points_at(&hashed_path, &canonicalized_path) {
+        file::make_symlink_or_file(&canonicalized_path, &hashed_path)?;
     }
     Ok(())
 }
@@ -2459,6 +2469,24 @@ mod env_file_trust_tests {
 
         trust(&path).unwrap();
         assert!(env_file_trust_check(&path).unwrap());
+    }
+
+    /// Config trust bound to the content is not memoized either: the check after an edit
+    /// compares the hash again.
+    #[test]
+    fn an_edited_config_needs_new_trust_even_after_a_passing_check() {
+        let held = crate::test::SettingsGuard::lock();
+        paranoid_on(&held);
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("mise.toml");
+        std::fs::write(&path, "[env]\nA = '1'\n").unwrap();
+
+        trust(&path).unwrap();
+        assert!(is_trusted(&path));
+        assert!(is_trusted(&path));
+
+        std::fs::write(&path, "[env]\nA = '2'\n").unwrap();
+        assert!(!is_trusted(&path));
     }
 
     #[test]
