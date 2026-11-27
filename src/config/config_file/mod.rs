@@ -579,7 +579,7 @@ pub(super) async fn parse_detected(
 /// A `path:<dir>` version names a directory that is already on disk, so it needs
 /// no install step: its `bin` is put on PATH as soon as the config loads, which
 /// would let an untrusted repository shadow any command.
-pub(crate) fn version_requires_trust(version: &str) -> bool {
+pub fn version_requires_trust(version: &str) -> bool {
     version.starts_with("path:")
 }
 
@@ -1506,7 +1506,13 @@ pub fn symlink_check_before_write(path: &Path) -> Result<()> {
         let project = project.canonicalize().ok();
         !matches!((dir, project), (Some(dir), Some(project)) if dir.starts_with(&project))
     });
-    if !path.is_symlink() && !dir_leads_out {
+    // A directory link that stays in the project can still lead to global config, as a home
+    // directory's `.mise` linked to `.config/mise` does, so that case is never waved through.
+    let to_global = || {
+        path.absolutize()
+            .is_ok_and(|abs| config::is_project_link_to_global_config(&abs))
+    };
+    if !path.is_symlink() && !dir_leads_out && !to_global() {
         return Ok(());
     }
     let target = file::atomic_write_target(path)?;
@@ -1532,10 +1538,7 @@ pub fn symlink_check_before_write(path: &Path) -> Result<()> {
     // Global config's root is the home directory, which holds the project too, so a project's
     // link to global config would pass every check below, and the trust it would need is the
     // home directory's. The project's author chose that link, and `-g` writes the same file.
-    if path
-        .absolutize()
-        .is_ok_and(|abs| config::is_project_link_to_global_config(&abs))
-    {
+    if to_global() {
         return refuse(
             "a project's link to global config is not followed. Write global config with `-g`",
         );

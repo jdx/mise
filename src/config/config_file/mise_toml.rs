@@ -297,6 +297,32 @@ fn restore_option_templates(request: &mut ToolRequest, templates: &[ToolOptionTe
     }
 }
 
+/// Drop each option of `request` that still holds template syntax and is neither given on the
+/// command line (`explicit`) nor written as a template in `templates`. Safe mode keeps project
+/// config other than the file being written out of `templates`, but an option such a project
+/// declares can still be a template after loading: an expression that reads `version` is left
+/// unrendered until the version is known. Written into another file, a later run without safe
+/// mode would render it there.
+fn drop_unlent_templates(
+    request: &mut ToolRequest,
+    templates: &[ToolOptionTemplate],
+    explicit: &ToolVersionOptions,
+) {
+    let options = request.options_mut();
+    options.opts.retain(|k, v| {
+        !toml_value_has_template(v)
+            || explicit.opts.contains_key(k)
+            || templates.iter().any(|t| t.written.opts.get(k) == Some(&*v))
+    });
+    options.core.install_env.retain(|k, v| {
+        !matches!(v, EnvValue::String(s) if contains_template_syntax(s))
+            || explicit.core.install_env.contains_key(k)
+            || templates
+                .iter()
+                .any(|t| t.written.install_env.get(k) == Some(&*v))
+    });
+}
+
 const TOOL_SELECTOR_KEYS: [&str; 4] = ["version", "prefix", "ref", "path"];
 
 fn tool_request_selector(request: &ToolRequest) -> (&'static str, String) {
@@ -1933,6 +1959,7 @@ impl ConfigFile for MiseToml {
         // replace `{{ env.TOKEN }}` with the token, so a value that a template renders to is
         // written as that template.
         let templates = self.templates_for_rewrite(ba);
+        let safe_mode = Settings::safe_mode();
         // The registry's defaults for a tool are not the file's to record: they apply on their
         // own, and writing them would pin today's registry choices (such as packslip's
         // `workflow`) into the user's config. An option the file already spells out stays.
@@ -1957,6 +1984,9 @@ impl ConfigFile for MiseToml {
                     || defaults.opts.get(k) != Some(v)
             });
             restore_option_templates(tr, &templates);
+            if safe_mode {
+                drop_unlent_templates(tr, &templates, &explicit);
+            }
         }
         let mut tools = self.tools.lock().unwrap();
         let is_tools_sorted = is_tools_sorted(&tools); // was it previously sorted (if so we'll keep it sorted)

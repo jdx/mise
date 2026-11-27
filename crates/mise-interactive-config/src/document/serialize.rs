@@ -21,9 +21,17 @@ impl TomlDocument {
             }
 
             let mut table = Table::new();
+            // A tool's value is a version, and a version is a string even when it reads `true`
+            // or `false`, as a suggestion or a prefix cut from one can. Written as a boolean, it
+            // would leave a config mise cannot load.
+            let versions = section.name == "tools";
 
             for entry in &section.entries {
-                let item = Self::entry_value_to_item(&entry.value);
+                let item = if versions {
+                    Self::version_value_to_item(&entry.value)
+                } else {
+                    Self::entry_value_to_item(&entry.value)
+                };
 
                 // Handle dotted keys (like _.path in env section) by creating nested tables
                 if entry.key.contains('.') && section.name == "env" {
@@ -100,6 +108,28 @@ impl TomlDocument {
         } else {
             // No dot, insert directly
             table.insert(key, item);
+        }
+    }
+
+    /// Like [`Self::entry_value_to_item`] for a `[tools]` entry: its versions, whether the
+    /// value itself, the items of a list of versions or the `version` of a table, stay strings.
+    /// The other options of a table are written as any other value.
+    fn version_value_to_item(value: &EntryValue) -> Item {
+        let string = |s: &String| Value::String(Formatted::new(s.clone()));
+        match value {
+            EntryValue::Simple(s) => Item::Value(string(s)),
+            EntryValue::Array(items) => {
+                Item::Value(Value::Array(items.iter().map(string).collect()))
+            }
+            EntryValue::InlineTable(pairs) => {
+                let mut item = Self::entry_value_to_item(value);
+                if let Some(table) = item.as_inline_table_mut() {
+                    for (k, v) in pairs.iter().filter(|(k, _)| k == "version") {
+                        table.insert(k, string(v));
+                    }
+                }
+                item
+            }
         }
     }
 
