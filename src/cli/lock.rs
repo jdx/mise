@@ -1467,6 +1467,14 @@ impl Lock {
         for short in withheld {
             lockfile.restore_missing_versions(previous, short);
         }
+        // Safe mode left out a task file, so `tools` lacks what its tasks request, and a
+        // version only they pin was dropped above. Keep every locked version, as
+        // `prune_stale_versions` does outside generate mode.
+        if crate::config::safe_mode_skipped_task_file() {
+            for short in previous.tools().keys() {
+                lockfile.restore_missing_versions(previous, short);
+            }
+        }
         Ok((Vec::new(), Vec::new()))
     }
 

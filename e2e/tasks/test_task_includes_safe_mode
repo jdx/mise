@@ -135,6 +135,16 @@ EOF
 assert_succeed "MISE_SAFE=1 mise -C repo/sub lock --platform linux-x64"
 assert_contains "cat repo/sub/mise.lock" "3.10.0"
 assert_contains "cat repo/sub/mise.lock" "3.9.0"
+
+echo "=== and in generate mode, with the platforms the lockfile already has ==="
+cat <<'EOF' >repo/sub/mise.lock
+[[tools."github:mvdan/sh"]]
+version = "3.9.0"
+backend = "github:mvdan/sh"
+EOF
+assert_succeed "MISE_LOCKFILE_MODE=generate MISE_LOCKFILE_AUTO_PRUNE=1 MISE_SAFE=1 mise -C repo/sub lock"
+assert_contains "cat repo/sub/mise.lock" "3.10.0"
+assert_contains "cat repo/sub/mise.lock" "3.9.0"
 rm -r repo outside
 
 echo "=== mise lock keeps the entries of a remote task include it skipped ==="
