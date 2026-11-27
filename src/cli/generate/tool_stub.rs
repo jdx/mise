@@ -22,7 +22,7 @@ use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::fs;
 use std::io::ErrorKind;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 use toml_edit::DocumentMut;
 
@@ -173,18 +173,22 @@ impl ToolStub {
             (self.generate_stub().await?, None)
         };
 
+        // A locked stub is rewritten where its link led when it was checked and read, and its
+        // launcher sits beside that file, not beside the link.
+        let stub_path = sidecar
+            .as_ref()
+            .map_or(self.output.as_path(), |s| s.stub_path.as_path());
+
         // Before the stub is written, so a launcher that is not ours stops the run rather than
         // leaving a regenerated stub whose launcher was silently skipped. Same ordering, and the
         // same reason, as `task-stubs`.
-        self.validate_windows_launcher(&stub_content)?;
+        Self::validate_windows_launcher(stub_path, &stub_content)?;
 
         // Before the stub is written, so a failed lockfile write leaves the
         // stub unchanged.
         if let Some(sidecar) = &sidecar {
             sidecar.write()?;
         }
-        // A locked stub is rewritten where its link led when it was checked and read.
-        let stub_path = sidecar.as_ref().map_or(&self.output, |s| &s.stub_path);
 
         if let Some(parent) = stub_path.parent() {
             file::create_dir_all(parent)?;
@@ -192,7 +196,7 @@ impl ToolStub {
 
         file::write(stub_path, &stub_content)?;
         file::make_executable(stub_path)?;
-        let launcher = self.write_windows_launcher(&stub_content)?;
+        let launcher = Self::write_windows_launcher(stub_path, &stub_content)?;
 
         // Both lines printed here rather than where each file is written, so the launcher cannot
         // end up announced with a different verb than the stub it belongs to.
@@ -225,8 +229,8 @@ impl ToolStub {
     /// Returns the launcher when one was written, so the caller can name it. Removing a stale one
     /// stays silent: this is the path that reports what the command produced, and a deletion is a
     /// different kind of message.
-    fn write_windows_launcher(&self, stub_content: &str) -> Result<Option<PathBuf>> {
-        let Some(launcher) = super::windows_launcher_path(&self.output) else {
+    fn write_windows_launcher(stub: &Path, stub_content: &str) -> Result<Option<PathBuf>> {
+        let Some(launcher) = super::windows_launcher_path(stub) else {
             return Ok(None);
         };
         if wants_windows_launcher(stub_content) {
@@ -247,11 +251,11 @@ impl ToolStub {
     /// `--output` is the user's choice, so `<stub>.cmd` is a name a project may already be using
     /// for a script of its own, and nothing about that name says mise owns it. The stub itself is
     /// different: the user named it, so overwriting it is what they asked for.
-    fn validate_windows_launcher(&self, stub_content: &str) -> Result<()> {
+    fn validate_windows_launcher(stub: &Path, stub_content: &str) -> Result<()> {
         if !wants_windows_launcher(stub_content) {
             return Ok(());
         }
-        let Some(launcher) = super::windows_launcher_path(&self.output) else {
+        let Some(launcher) = super::windows_launcher_path(stub) else {
             return Ok(());
         };
         match fs::symlink_metadata(&launcher) {

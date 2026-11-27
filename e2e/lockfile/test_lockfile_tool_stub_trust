@@ -46,6 +46,9 @@ for paranoid in config 1; do
   mkdir -p "$HOME/linkbin"
   ln -sf "$PWD/bin/widget" "$HOME/linkbin/widget"
   assert_succeed "MISE_PARANOID=$paranoid MISE_YES=0 mise generate tool-stub $HOME/linkbin/widget --lock"
+  # and its Windows launcher goes beside the stub that was rewritten, not beside the link
+  assert_succeed "test -f bin/widget.cmd"
+  assert_fail "test -e $HOME/linkbin/widget.cmd"
   rm -f "$HOME/stub-option-ran"
   MISE_PARANOID=$paranoid mise trust --untrust bin/widget
   MISE_PARANOID=$paranoid mise trust --untrust mise.toml
@@ -170,3 +173,29 @@ MISE_PARANOID=config mise trust --untrust mono/packages/a/mise.toml
 assert_fail_contains "$lock_plain 2>&1" "mono/packages/a/mise.toml"
 MISE_PARANOID=config mise trust --ignore mono/packages/a/mise.toml
 assert_succeed "$lock_plain"
+
+# A root config that discovery ignores does not decide where the shared lockfile
+# goes either: here the `.config/` one that loads places it. Paranoid mode, so
+# the ignore record names the one file rather than the directory.
+mkdir -p mono2/.config mono2/packages/a/bin
+cat >mono2/.config/mise.toml <<'TOML'
+monorepo_root = true
+
+[monorepo]
+lockfile = true
+config_roots = ["packages/*"]
+TOML
+cp mono2/.config/mise.toml mono2/mise.toml
+echo '[tools]' >mono2/packages/a/mise.toml
+cat >mono2/packages/a/bin/plain <<'STUB'
+tool = "http:plain"
+version = "1.0.0"
+url = "file:///nonexistent/plain.tar.gz"
+STUB
+for f in mono2/.config/mise.toml mono2/packages/a/mise.toml mono2/packages/a/bin/plain; do
+  MISE_PARANOID=config mise trust "$f"
+done
+MISE_PARANOID=config mise trust --ignore mono2/mise.toml
+assert_succeed "cd $HOME/outside && MISE_PARANOID=config MISE_EXPERIMENTAL=1 MISE_YES=0 mise generate tool-stub $PWD/mono2/packages/a/bin/plain --lock"
+assert_contains "cat mono2/.config/mise.lock" "packages/a/bin/plain"
+assert_fail "test -e mono2/mise.lock"

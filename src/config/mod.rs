@@ -2249,6 +2249,8 @@ pub fn monorepo_lockfile_dir(root: &Path) -> PathBuf {
                 && !lockfile::is_local_config(path)
                 && lockfile::extract_env_from_config_path(path).is_none()
                 && !is_conf_d_folder_file(path)
+                // A config discovery ignores never loads, so it does not place the lockfile.
+                && !config_path_is_ignored(path, false)
         })
         .collect_vec();
     // Prefer the base config that declares the root (read statically, nothing
