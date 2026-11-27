@@ -13,3 +13,15 @@ assert_not_contains_text "$out" "panicked"
 # A malformed flag-shaped argument must not panic either.
 out="$(MISE_FRIENDLY_ERROR=1 RUST_BACKTRACE=0 mise "$(printf -- '-\xc3')" 2>&1 || true)"
 assert_not_contains_text "$out" "panicked"
+
+# The lossy copy is for mise's own command line only. U+FFFD in place of a byte
+# is another name, which a repository can give to a second file, so a command
+# run by mise gets its arguments as they were given. Linux only: macOS has no
+# file names with such bytes.
+if [[ $(uname) == Linux ]]; then
+  arg="$(printf 'notes\xff')"
+  assert "mise x -- printf %s '$arg' | od -An -tx1 | tr -d ' '" "6e6f746573ff"
+  assert "mise x -c 'printf %s $arg' | od -An -tx1 | tr -d ' '" "6e6f746573ff"
+  mise use dummy@latest
+  assert_contains "'$MISE_DATA_DIR/shims/dummy' '$arg' | od -An -tx1 | tr -d ' \n'" "6e6f746573ff0a"
+fi

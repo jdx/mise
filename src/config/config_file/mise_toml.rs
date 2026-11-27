@@ -5598,6 +5598,17 @@ run = "cargo build"
         assert!(!is_safe_config_body(
             "[tools]\nnode = [\"20\", \"path:./local\"]\n"
         ));
+        // `rev:` and `ref:` name any commit the forge serves, such as a pull request's head
+        assert!(!is_safe_config_body(
+            "[tools]\n\"cargo:https://github.com/o/r\" = \"rev:refs/pull/1/head\"\n"
+        ));
+        assert!(!is_safe_config_body(
+            "[tools]\n\"cargo:o/r\" = [\"tag:v1\", \"rev-refs/pull/1/head\"]\n"
+        ));
+        assert!(!is_safe_config_body("[tools]\nnode = \"ref:main\"\n"));
+        assert!(is_safe_config_body(
+            "[tools]\n\"cargo:o/r\" = \"tag:v1.0.0\"\n\"cargo:o/s\" = \"branch:main\"\n"
+        ));
 
         // templates can execute commands
         assert!(!is_safe_config_body(indoc! {r#"
@@ -5632,12 +5643,22 @@ run = "cargo build"
         [tools]
         "spm:https://evil.example/o/gitlab.com.git" = "latest"
         "#}));
+        // the backend is read after leading `core:` prefixes are dropped
+        assert!(!is_safe_config_body(indoc! {r#"
+        [tools]
+        "core:spm:https://evil.example/o/r.git" = "latest"
+        "#}));
+        assert!(!is_safe_config_body(indoc! {r#"
+        [tools]
+        "core:core:spm:https://evil.example/o/r.git" = "latest"
+        "#}));
         // github.com and gitlab.com use the public APIs
         assert!(is_safe_config_body(indoc! {r#"
         [tools]
         "spm:https://github.com/o/r.git" = "latest"
         "spm:https://gitlab.com/o/r.git" = "latest"
         "spm:o/r" = "latest"
+        "core:spm:https://github.com/o/r.git" = "latest"
         "#}));
         // tasks with templates render (and can exec) while loading
         assert!(!is_safe_config_body(indoc! {r#"

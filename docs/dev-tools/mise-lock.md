@@ -304,6 +304,11 @@ update never changes where a locked tool installs from. `mise install` and
 mise WARN  communique is locked to github:jdx/communique, but the registry now installs it from packslip:github.com/jdx/communique. Run `mise backends switch communique` to switch.
 ```
 
+This applies once the project is [trusted](/security.html#configuration-trust).
+Until then mise ignores a lock entry whose backend is not the one the registry
+selects, including one the registry still lists as a fallback, and warns that
+the entry needs trust.
+
 [`mise backends switch`](/cli/backends/switch.html) moves the lock entries to the
 registry's backend at the same versions, records the new backend's checksums and
 URLs, and reinstalls installed versions from it:
@@ -523,18 +528,18 @@ is not configured fails, as it does for `mise lock`.
 What a lock entry records depends on the backend. Inspect the generated entry
 for the tool and platform you care about.
 
-| Backend                                                                                            | What `mise.lock` records                                                                                  |
-| -------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| aqua, github, gitlab, forgejo, http, s3                                                            | A URL per platform and a checksum where the release provides one or mise can compute it                   |
-| packslip                                                                                           | URL and checksum per platform, and the signer the project committed to; policy is checked at installation |
-| conda                                                                                              | URL and checksum per platform, and the package's dependencies                                             |
-| Core tools that download archives: Bun, Deno, Elixir, Erlang, Go, Java, Node.js, Python, Ruby, Zig | A URL per platform and a checksum where one is available                                                  |
-| core:swift                                                                                         | URL and checksum per platform and Linux distro; locked mode does not require the URL                      |
-| npm (embedded aube) and pypi (uv)                                                                  | The version, plus a [dependency graph](#dependency-graphs) in format version 2 and later                  |
-| cargo, dotnet, gem, go, spinel, core:dotnet, core:rust                                             | The top-level version only; the language's installer resolves dependencies and build inputs               |
-| vfox tool plugins                                                                                  | URLs that the plugin's hooks return, which locked mode requires                                           |
-| asdf and vfox backend plugins                                                                      | The version only; the plugin performs the installation                                                    |
-| spm                                                                                                | The version, and the bundle's URL and checksum when installed from an artifact bundle                     |
+| Backend                                                                                            | What `mise.lock` records                                                                                    |
+| -------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| aqua, github, gitlab, forgejo, http, s3                                                            | A URL per platform and a checksum where the release provides one or mise can compute it                     |
+| packslip                                                                                           | URL and checksum per platform, and the signer the project committed to; policy is checked at installation   |
+| conda                                                                                              | URL and checksum per platform, and the package's dependencies                                               |
+| Core tools that download archives: Bun, Deno, Elixir, Erlang, Go, Java, Node.js, Python, Ruby, Zig | A URL per platform and a checksum where one is available                                                    |
+| core:swift                                                                                         | URL and checksum per platform and Linux distro; locked mode does not require the URL                        |
+| npm (embedded aube) and pypi (uv)                                                                  | The version, plus a [dependency graph](#dependency-graphs) in format version 2 and later                    |
+| cargo, dotnet, gem, go, spinel, core:dotnet, core:rust                                             | The top-level version only; the language's installer resolves dependencies and build inputs                 |
+| vfox tool plugins                                                                                  | The URL the plugin's hooks return, which locked mode requires, and its checksum, which every install checks |
+| asdf and vfox backend plugins                                                                      | The version only; the plugin performs the installation                                                      |
+| spm                                                                                                | The version, and the bundle's URL and checksum when installed from an artifact bundle                       |
 
 Locked mode does not require a URL for `asdf`, `cargo`, `dotnet`, `gem`, `go`,
 `npm`, `pypi` (`pipx`), `spinel`, `spm`, `ubi`, `core:dotnet`, `core:rust`,
@@ -639,6 +644,11 @@ When an entry has both a checksum and provenance, `mise install` can skip
 repeating the provenance check. That makes the lockfile a trust input: review
 changes to it, and take it only from a trusted project source. Checksums are
 still verified on every download.
+
+The lockfile of a project whose config is not
+[trusted](/security.html#what-needs-trust) is not such an input, and neither is
+a checksum recorded without its URL. Their checksums are still compared with
+every download, but the provenance check runs as it would without a lockfile.
 
 To repeat provenance checks on every install, set
 [`locked_verify_provenance`](/configuration/settings.html#locked_verify_provenance),

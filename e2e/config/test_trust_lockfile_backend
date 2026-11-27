@@ -74,6 +74,16 @@ assert_contains "cat ls.log" "which needs its config to be trusted"
 assert_contains "cd proj && MISE_YES=0 mise tool shfmt --backend 2>/dev/null" "aqua:mvdan/sh"
 assert_contains "MISE_YES=0 mise -C proj trust --show" "untrusted"
 
+# nor onto a backend the registry only lists behind the one it selects, such as
+# a fallback asdf plugin that mise would clone and run
+cat <<'EOF' >proj/mise.lock
+[[tools.shfmt]]
+version = "3.10.0"
+backend = "asdf:luizm/asdf-shfmt"
+EOF
+assert_contains "cd proj && MISE_YES=0 mise tool shfmt --backend 2>&1" "locks shfmt@3.10.0 to asdf:luizm/asdf-shfmt, which needs its config to be trusted"
+assert_contains "cd proj && MISE_YES=0 mise tool shfmt --backend 2>/dev/null" "aqua:mvdan/sh"
+
 # a backend that names no tool is ignored too, instead of crashing every prompt
 cat <<'EOF' >proj/mise.lock
 [[tools.shfmt]]

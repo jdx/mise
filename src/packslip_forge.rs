@@ -833,6 +833,7 @@ mod tests {
         let observed = |check: Option<&'static Check>| packslip_pins::Observed {
             scheme: "sigstore-oidc",
             key_id: "https://github.com/jdx/hk/.github/workflows/release.yml@refs/tags/v2.3.0",
+            key_fingerprint: None,
             issuer: Some("https://token.actions.githubusercontent.com"),
             attested_by: "vendor",
             provenance: false,
@@ -921,6 +922,7 @@ mod tests {
         packslip_pins::Observed {
             scheme: "sigstore-oidc",
             key_id: "https://github.com/jdx/hk/.github/workflows/release.yml@refs/tags/v2.3.0",
+            key_fingerprint: None,
             issuer: Some("https://token.actions.githubusercontent.com"),
             attested_by: "vendor",
             provenance,
