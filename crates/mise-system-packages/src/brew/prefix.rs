@@ -223,12 +223,14 @@ fn foreign_component(
 /// prefix and the directories above it, and each of `dirs`, all spelled as
 /// given and as resolved with the directories above the resolved path. A
 /// standard directory that is a link (a Cellar on another disk) is written
-/// through, so the directories it leads to count as much as the link.
+/// through, so the directories it leads to count as much as the link. A path
+/// that does not exist yet is resolved through its nearest existing ancestor,
+/// which a link above a prefix still to be created can lead anywhere from.
 fn guarded_paths(prefix: &Path, dirs: &[PathBuf]) -> Vec<PathBuf> {
     std::iter::once(prefix)
         .chain(dirs.iter().map(PathBuf::as_path))
         .flat_map(|path| {
-            let real = path.canonicalize().ok();
+            let real = path.ancestors().find_map(|path| path.canonicalize().ok());
             path.ancestors()
                 .map(Path::to_path_buf)
                 .chain(
@@ -408,6 +410,23 @@ mod tests {
         assert!(paths.contains(&prefix.join("Cellar")));
         assert!(paths.contains(&disk));
         assert!(paths.contains(&base.join("disk")));
+    }
+
+    /// a prefix still to be created under a link is judged by where the link
+    /// leads too, since creating the prefix writes there
+    #[test]
+    fn root_checks_where_a_link_above_a_missing_prefix_leads() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path().canonicalize().unwrap();
+        let target = base.join("foreign/base");
+        std::fs::create_dir_all(&target).unwrap();
+        let alias = base.join("alias");
+        std::os::unix::fs::symlink(&target, &alias).unwrap();
+        let prefix = alias.join("new/prefix");
+        let paths = guarded_paths(&prefix, &[prefix.join("Cellar")]);
+        assert!(paths.contains(&alias));
+        assert!(paths.contains(&target));
+        assert!(paths.contains(&base.join("foreign")));
     }
 
     #[test]
