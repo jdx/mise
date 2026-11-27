@@ -402,6 +402,7 @@ described under [tool options](/dev-tools/tool-options.html).
 | `bun_args`              | Bun                                                 | Extra arguments for `bun install --global`                                                                                           |
 | `npm_args`              | npm                                                 | Extra arguments for `npm install -g`                                                                                                 |
 | `install_env`           | `aube_cli`, pnpm, Bun, npm                          | Environment variables for the installer; see below                                                                                   |
+| `node`                  | embedded aube                                       | Runs the tool's executables on this mise-managed Node; see below                                                                     |
 
 ### `aube_args`, `pnpm_args`, `bun_args` and `npm_args`
 
@@ -435,6 +436,30 @@ npm.package_manager = "npm"
 "npm:some-tool" = { version = "latest", install_env = { NODE_OPTIONS = "--max-old-space-size=4096" } }
 ```
 
+### `node`
+
+Pin the Node a CLI runs on, separately from the project's Node. Without it, an
+npm executable starts with `#!/usr/bin/env node` and runs on whichever `node` is
+on `PATH`, so a project that pins an older Node can break a globally installed
+CLI.
+
+```toml
+[tools]
+"npm:@earendil-works/pi-coding-agent" = { version = "0.86.1", node = "26" }
+```
+
+mise installs the selected Node alongside the tool and writes the tool's
+launchers with that Node's absolute path. `PATH` is left alone, so processes the
+CLI starts still see the project's `node`. `mise prune` keeps the bound Node
+while a tool uses it.
+
+- Only the embedded aube installer can bind executables. With another
+  `npm.package_manager`, the option is an error.
+- The binding is fixed when the tool installs. Changing or removing `node`
+  reinstalls the tool; a newer Node matching the same request takes effect on
+  the next reinstall.
+- The selected Node is not yet recorded in `mise.lock`.
+
 ## Settings
 
 <script setup>
@@ -446,7 +471,7 @@ import Settings from '/components/settings.vue';
 
 | Symptom                                               | What to do                                                                                                             |
 | ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `node` is missing when the CLI starts                 | Add `node` to `[tools]`; the embedded installer does not add a runtime to your project.                                |
+| `node` is missing when the CLI starts                 | Add `node` to `[tools]`, or set the tool's [`node`](#node) option.                                                     |
 | A native dependency is missing                        | Its build script did not run. Approve only that package with [`allow_builds`](#build-scripts-and-supply-chain-checks). |
 | Version listing works but installation fails          | Check which installer you selected and whether it can read the registry and credentials.                               |
 | aube refuses a package for trust, downloads or source | Read the error, then the matching section under [supply-chain checks](#build-scripts-and-supply-chain-checks).         |

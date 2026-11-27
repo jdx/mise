@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+
+# `node = "..."` on an npm: tool binds its executables to that mise-managed
+# Node, whatever `node` is on PATH when the command runs.
+cat >mise.toml <<'EOF2'
+[tools]
+"npm:cowsay" = { version = "1.6.0", node = "20.11.1" }
+EOF2
+mise install
+
+install_dir="$MISE_DATA_DIR/installs/npm-cowsay/1.6.0"
+node_dir="$MISE_DATA_DIR/installs/node/20.11.1"
+assert_succeed "test -x '$node_dir/bin/node'"
+assert_contains "cat '$install_dir/.mise-node.json'" '"request": "20.11.1"'
+assert_contains "cat '$install_dir/node_modules/.bin/cowsay'" "$node_dir/bin/node"
+
+# A `node` earlier on PATH that refuses to run must not be used.
+mkdir fake-node
+cat >fake-node/node <<'EOF2'
+#!/bin/sh
+echo "wrong node" >&2
+exit 1
+EOF2
+chmod +x fake-node/node
+assert_contains "PATH='$PWD/fake-node':\$PATH mise x -- cowsay bound" "bound"
+
+# The bound Node stays installed while the tool needs it.
+mise prune --yes
+assert_succeed "test -x '$node_dir/bin/node'"
+
+# Changing the selected Node reinstalls the tool against the new one.
+cat >mise.toml <<'EOF2'
+[tools]
+"npm:cowsay" = { version = "1.6.0", node = "20.12.2" }
+EOF2
+mise install
+assert_contains "cat '$install_dir/.mise-node.json'" '"request": "20.12.2"'
+assert_contains "cat '$install_dir/node_modules/.bin/cowsay'" "$MISE_DATA_DIR/installs/node/20.12.2/bin/node"
+
+# Other installers cannot bind executables, so the option is an error there.
+assert_fail_contains "MISE_NPM_PACKAGE_MANAGER=npm mise install --force" "needs the embedded aube installer"
