@@ -179,10 +179,12 @@ when all of these hold:
   completion, or for the shell's command-not-found handler after you mistype a
   command.
 - On Unix systems such as Linux and macOS, you own the config file and its
-  directory, every other config file the command loads from that directory,
-  and the target of each one that is a symlink. A config file another account
-  left in a shared directory, such as a `.config/mise.toml` beside your own
-  `mise.toml`, still asks. Windows does not check ownership.
+  directory, every other config file the trust would cover in that directory,
+  including ones for another `MISE_ENV` such as `mise.prod.toml`, each
+  directory between that directory and those files, and the target of each one
+  that is a symlink. A config file another account left in a shared directory,
+  such as a `.config/mise.toml` beside your own `mise.toml`, still asks.
+  Windows does not check ownership.
 
 mise cannot tell a command you typed from one a program started on the same
 terminal, so a mise command run from a script or a Makefile target you start
@@ -193,8 +195,12 @@ mise trusts the config's directory as `mise trust` would and prints
 ``mise trusted <dir> because you ran a mise command there. Undo with `mise untrust <file>`.``<!-- cli: skip -->
 once per directory, which `--quiet` hides. `<file>` is the config file whose
 directory was trusted; `mise untrust` without it acts on the nearest config
-only. The notice is printed as soon as the trust is recorded, so it appears even
-when the project's settings then fail to load. A directory on the ignore list or
+only. mise quotes `<file>` for the shell `mise activate` set up. Without
+activation it cannot tell which shell you typed in, so it shows `<file>` only
+when the path needs no quoting, and otherwise prints the path and asks you to
+quote it for your shell. When the project's settings then fail to load, mise removes the record
+again and fails with the settings error, since every later command, `mise untrust`
+too, would fail on that setting. A directory on the ignore list or
 under `ignored_config_paths` stays ignored, and shell activation still skips
 untrusted config. Only paranoid mode turns this off.
 
@@ -276,6 +282,21 @@ covered it is gone, they need trust of their own again. See
 `mise trust --ignore` stays ignored under a trusted root: mise does not load
 its config or list its tasks, and a command that trusts the root does not
 remove the ignore. In paranoid mode, trusting the root trusts only that file.
+
+A command [typed in a terminal](#typed-in-a-terminal) in an untrusted monorepo
+root, or in a subproject below it, trusts the root the same way, so the trust
+covers every subproject config below it, including ones added later. The
+ownership check looks only at the root's own config files, not at the
+subprojects'. On a shared checkout, this means anyone who can write to the tree
+can add a subproject config that the root's trust covers, and it loads without
+asking.
+
+Leaving the root untrusted does not prevent this. Even after `mise trust` in a
+subproject, the next command you type there trusts the untrusted root above it
+and prints the notice. To keep the root out, run `mise trust --ignore` on the
+root's config, then `mise trust` in each subproject you want. Alternatively,
+enable paranoid mode's `config` category. Typed commands then ask again, and
+trusting the root trusts only that file.
 
 ### Git worktrees
 
