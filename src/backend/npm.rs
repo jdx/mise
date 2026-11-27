@@ -1362,21 +1362,39 @@ impl Backend for NPMBackend {
 
         let cache = self.latest_version_cache().lock().await;
         let this = self;
+        // Like the version list, a dist-tag read from a cached packument of
+        // unknown age is used but not saved (see `remote_versions_may_be_stale`).
+        let may_be_stale = self.remote_versions_may_be_stale();
+        let fetched = std::sync::atomic::AtomicBool::new(false);
         timeout::run_with_timeout_async(
             async || {
                 cache
-                    .get_or_try_init_async(async || {
-                        if Settings::get().npm.shell_out {
-                            return this.latest_dist_tag_npm_view(config).await;
-                        }
-                        npm_registry::latest_dist_tag(&this.tool_name()).await
-                    })
+                    .get_or_try_init_async_if(
+                        async || {
+                            fetched.store(true, std::sync::atomic::Ordering::Relaxed);
+                            if Settings::get().npm.shell_out {
+                                return this.latest_dist_tag_npm_view(config).await;
+                            }
+                            npm_registry::latest_dist_tag(&this.tool_name()).await
+                        },
+                        |_| !may_be_stale || !fetched.load(std::sync::atomic::Ordering::Relaxed),
+                    )
                     .await
             },
             Settings::get().fetch_remote_versions_timeout(),
         )
         .await
-        .cloned()
+    }
+
+    /// In the offline modes the packument comes from aube-registry's cache
+    /// however old it is, so lists and dist-tags built from it are not saved.
+    /// `npm view` and git or tarball sources ask their source instead.
+    fn remote_versions_may_be_stale(&self) -> bool {
+        let name = self.tool_name();
+        !Settings::get().npm.shell_out
+            && !is_git_spec(&name)
+            && !is_tarball_spec(&name)
+            && npm_registry::serves_unrevalidated_packuments()
     }
 
     async fn resolve_exact_version(

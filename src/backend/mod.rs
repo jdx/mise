@@ -3752,6 +3752,15 @@ pub trait Backend: Debug + Send + Sync {
         Ok((self._list_remote_versions(config).await?, false))
     }
 
+    /// Whether a list `_list_remote_versions` returns in this process may come
+    /// from local metadata of unknown age rather than from the source. Such a
+    /// list is used, but not saved to the remote-version cache: the cache file
+    /// would be dated now and keep the old answer fresh for
+    /// `fetch_remote_versions_cache`.
+    fn remote_versions_may_be_stale(&self) -> bool {
+        false
+    }
+
     async fn remote_version_cache_context(&self, _config: &Arc<Config>) -> Result<Option<String>> {
         Ok(None)
     }
@@ -4004,7 +4013,10 @@ pub trait Backend: Debug + Send + Sync {
         }
 
         let degraded = std::sync::atomic::AtomicBool::new(false);
+        let fetched = std::sync::atomic::AtomicBool::new(false);
+        let may_be_stale = self.remote_versions_may_be_stale();
         let fetch = || async {
+            fetched.store(true, std::sync::atomic::Ordering::Relaxed);
             trace!("Listing remote versions for {}", ba.to_string());
             // Try versions host first (now returns VersionInfo with timestamps)
             if let Some(tool) = &versions_host_tool {
@@ -4084,9 +4096,22 @@ pub trait Backend: Debug + Send + Sync {
                 &mut remote_versions,
                 [listing_opts, selection_opts],
             );
-            remote_versions.get_or_try_init_async(fetch).await?.clone()
+            if may_be_stale {
+                // A list already in memory or a fresh cache file is used; one
+                // built now from metadata of unknown age is not kept.
+                remote_versions
+                    .get_or_try_init_async_if(fetch, |_| {
+                        !fetched.load(std::sync::atomic::Ordering::Relaxed)
+                    })
+                    .await?
+            } else {
+                remote_versions.get_or_try_init_async(fetch).await?.clone()
+            }
         };
-        if versions.is_empty() || degraded.load(std::sync::atomic::Ordering::Relaxed) {
+        if versions.is_empty()
+            || degraded.load(std::sync::atomic::Ordering::Relaxed)
+            || (refresh && may_be_stale && fetched.load(std::sync::atomic::Ordering::Relaxed))
+        {
             remote_versions.clear()?;
         }
         Ok(filter_cached_prereleases(versions, want_prereleases))
