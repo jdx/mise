@@ -22,7 +22,7 @@ use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::fs;
 use std::io::ErrorKind;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::LazyLock;
 use toml_edit::DocumentMut;
 
@@ -181,15 +181,17 @@ impl ToolStub {
         // Before the stub is written, so a failed lockfile write leaves the
         // stub unchanged.
         if let Some(sidecar) = &sidecar {
-            sidecar.write(&self.output)?;
+            sidecar.write()?;
         }
+        // A locked stub is rewritten where its link led when it was checked and read.
+        let stub_path = sidecar.as_ref().map_or(&self.output, |s| &s.stub_path);
 
-        if let Some(parent) = self.output.parent() {
+        if let Some(parent) = stub_path.parent() {
             file::create_dir_all(parent)?;
         }
 
-        file::write(&self.output, &stub_content)?;
-        file::make_executable(&self.output)?;
+        file::write(stub_path, &stub_content)?;
+        file::make_executable(stub_path)?;
         let launcher = self.write_windows_launcher(&stub_content)?;
 
         // Both lines printed here rather than where each file is written, so the launcher cannot
@@ -798,7 +800,13 @@ exec "$MISE_BIN" tool-stub "$0" "$@"
                 "--lock records lock data in mise.lock, but lockfiles are disabled (`lockfile = false`)"
             );
         }
-        let Some((config_path, monorepo_root)) = lockfile::tool_stub_config(&self.output) else {
+        // The stub a link leads to is resolved once, and that file is the one whose owners
+        // are trust-checked, that is read and that is rewritten: a link to a project's stub
+        // (say on PATH) is not a file of the directory the link sits in, and a link that
+        // changes during the run must not swap in another project's file. The name the stub
+        // was given still names its tool, as in a run.
+        let real_stub = dunce::canonicalize(&self.output)?;
+        let Some((config_path, monorepo_root)) = lockfile::tool_stub_config(&real_stub) else {
             bail!(
                 "no project config found above {}\n\
                 hint: a stub's lock data lives in its project's mise.lock; add a mise.toml in the stub's project",
@@ -817,14 +825,11 @@ exec "$MISE_BIN" tool-stub "$0" "$@"
         for owner in lockfile::tool_stub_lockfile_owners(&config_path, monorepo_root.as_deref()) {
             trust_check(&owner)?;
         }
-        // Trust is checked on the stub a link leads to, as `mise lock` finds it, and that file
-        // is the one read: a link to a project's stub (say on PATH) is not a file of the
-        // directory the link sits in. The name it was given still names its tool, as in a run.
-        let real_stub = dunce::canonicalize(&self.output)?;
         if Settings::get().paranoid.config() {
             trust_check(&real_stub)?;
         }
-        let mut stub = ToolStubFile::from_content(&self.output, file::read_to_string(&real_stub)?)?;
+        let content = file::read_to_string(&real_stub)?;
+        let mut stub = ToolStubFile::from_content(&self.output, content.clone())?;
         if Settings::safe_mode() && stub.has_tool_options() {
             bail!(
                 "cannot lock tool stub {} in safe mode: its tool options apply only outside safe mode\n\
@@ -865,8 +870,7 @@ exec "$MISE_BIN" tool-stub "$0" "$@"
         }
 
         // Like a mise.toml request, the stub keeps its version request and
-        // mise.lock records the resolution.
-        let content = file::read_to_string(&self.output)?;
+        // mise.lock records the resolution. The text rewritten is the text checked above.
         let toml_content = extract_toml_from_stub(&content);
         let mut doc = toml_content.parse::<DocumentMut>()?;
         if self.version != "latest" {
@@ -877,6 +881,7 @@ exec "$MISE_BIN" tool-stub "$0" "$@"
         let toml_content = doc.to_string();
         let content = format!("#!/usr/bin/env -S mise tool-stub\n\n{toml_content}");
         let sidecar = SidecarLock {
+            stub_path: real_stub,
             lockfile_path,
             tv,
             targets: lock_targets,
@@ -968,6 +973,10 @@ exec "$MISE_BIN" tool-stub "$0" "$@"
 
 /// A stub's resolved lock data bound for its project's mise.lock.
 struct SidecarLock {
+    /// The stub file that was trust-checked and read, its links resolved once. It is the
+    /// one rewritten and recorded, so a link that changes during the run cannot swap in
+    /// another project's file.
+    stub_path: PathBuf,
     lockfile_path: PathBuf,
     tv: ToolVersion,
     /// Every platform variant locked, including the current host and those
@@ -977,7 +986,8 @@ struct SidecarLock {
 }
 
 impl SidecarLock {
-    fn write(&self, stub: &Path) -> Result<()> {
+    fn write(&self) -> Result<()> {
+        let stub = &self.stub_path;
         let _lock = crate::lock_file::LockFile::new(&self.lockfile_path)
             .with_callback(|l| debug!("waiting for lock on {}", display_path(l)))
             .lock()?;
