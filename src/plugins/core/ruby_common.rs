@@ -246,11 +246,27 @@ fn read_ruby_file_option(gemfile_path: &Path, filename: &str) -> Option<String> 
     if !is_safe_relative_ruby_file(filename) {
         return None;
     }
-    let path = gemfile_path.parent()?.join(filename);
+    let dir = gemfile_path.parent()?;
+    let path = dir.join(filename);
     // A pipe or a link to a device under that name would be read without end.
     if is_gemfile_path(&path) || !path.is_file() {
         return None;
     }
+    // The name stays in the Gemfile's directory, and so must the file behind it:
+    // a project ships its symlinks too, and one that leaves the directory, in any
+    // part of the name, would put a file of the user's into the version mise
+    // prints. The project picks the name as well, so a target of the same name
+    // proves nothing here.
+    let resolved = path.canonicalize().ok()?;
+    if !resolved.starts_with(dir.canonicalize().ok()?) {
+        warn!(
+            "not reading {} named by `ruby file:` in {}: a symlink leads it out of the Gemfile's directory; copy the file into the project or set the version in the Gemfile",
+            file::display_path(&path),
+            file::display_path(gemfile_path),
+        );
+        return None;
+    }
+    let path = resolved;
     let version = parse_bundler_ruby_version_file(&file::read_config_to_string(&path).ok()?);
     if is_ruby_version_string(&version) {
         Some(version)
@@ -451,6 +467,41 @@ mod tests {
         file::write(&gemfile, "ruby file: \".ruby-version\"\n").unwrap();
         assert_eq!(parse_gemfile(&gemfile).unwrap(), "");
         assert!(gemfile_watch_patterns(&gemfile).len() == 1);
+    }
+
+    /// `..` in the name is refused, and a symlink must not get around that: the
+    /// file read is the one the name resolves to.
+    #[cfg(unix)]
+    #[test]
+    fn parse_gemfile_file_option_refuses_a_link_out_of_the_directory() {
+        use std::os::unix::fs::symlink;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let outside = tmp.path().join("outside");
+        let project = tmp.path().join("project");
+        file::create_dir_all(&outside).unwrap();
+        file::create_dir_all(project.join("sub")).unwrap();
+        file::write(outside.join("code"), "123456\n").unwrap();
+        file::write(project.join("sub/.ruby-version"), "3.3.6\n").unwrap();
+        let gemfile = project.join("Gemfile");
+
+        // The file is a link out, under another name or under the target's.
+        symlink("../outside/code", project.join("version")).unwrap();
+        file::write(&gemfile, "ruby file: \"version\"\n").unwrap();
+        assert_eq!(parse_gemfile(&gemfile).unwrap(), "");
+        symlink("../outside/code", project.join("code")).unwrap();
+        file::write(&gemfile, "ruby file: \"code\"\n").unwrap();
+        assert_eq!(parse_gemfile(&gemfile).unwrap(), "");
+
+        // A directory in the name is a link out.
+        symlink("../outside", project.join("dir")).unwrap();
+        file::write(&gemfile, "ruby file: \"dir/code\"\n").unwrap();
+        assert_eq!(parse_gemfile(&gemfile).unwrap(), "");
+
+        // A link that stays in the directory is still read.
+        symlink("sub/.ruby-version", project.join(".ruby-version")).unwrap();
+        file::write(&gemfile, "ruby file: \".ruby-version\"\n").unwrap();
+        assert_eq!(parse_gemfile(&gemfile).unwrap(), "3.3.6");
     }
 
     #[test]
