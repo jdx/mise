@@ -161,11 +161,12 @@ fn string_array(items: &[String]) -> Value {
     Value::Array(items.iter().map(|v| Value::String(v.clone())).collect())
 }
 
-/// The expr environment shared by `version_expr` and `version_date_expr`.
+/// The expr environment shared by `version_expr`, `version_date_expr` and
+/// `version_date_next_expr`, with a bounded `fromJSON`. One per evaluation.
 fn expr_environment() -> Environment<'static> {
     use versions::Versioning;
 
-    let mut env = Environment::new();
+    let mut env = crate::backend::expr_env::environment();
     // Add sortVersions function for semver-aware sorting
     env.add_function("sortVersions", |c| {
         if c.args.len() != 1 {
@@ -683,5 +684,42 @@ mod tests {
         assert!(eval_version_dates("\"2024-01-02\"", &[String::new()], &[]).is_err());
         assert!(eval_version_dates("[1, 2]", &[String::new()], &[]).is_err());
         assert!(eval_version_dates("[[1, 2, 3]]", &[String::new()], &[]).is_err());
+    }
+
+    #[test]
+    fn test_expressions_bound_json_nested_in_the_body() {
+        // A small body whose string holds more values than the body may.
+        let nested = format!("[{}0]", "0,".repeat(mise_util::http::MAX_JSON_VALUES));
+        let body = serde_json::json!({ "payload": nested, "next": nested }).to_string();
+        let versions = vec!["1.0.0".to_string()];
+
+        let err =
+            eval_version_expr("fromJSON(fromJSON(body).payload)", &body, &versions).unwrap_err();
+        assert!(
+            err.to_string().contains("values in one expression"),
+            "{err}"
+        );
+        let err =
+            next_date_url("fromJSON(fromJSON(body).next)[0]", &body, "https://x.test").unwrap_err();
+        assert!(
+            err.to_string().contains("values in one expression"),
+            "{err}"
+        );
+        let err = eval_version_dates(
+            "fromJSON(fromJSON(body).payload)",
+            std::slice::from_ref(&body),
+            &versions,
+        )
+        .unwrap_err();
+        assert!(
+            err.to_string().contains("values in one expression"),
+            "{err}"
+        );
+
+        let body = r#"{"payload": "[\"1.0.0\"]"}"#;
+        assert_eq!(
+            eval_version_expr("fromJSON(fromJSON(body).payload)", body, &versions).unwrap(),
+            versions
+        );
     }
 }

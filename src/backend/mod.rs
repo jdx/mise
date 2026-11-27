@@ -66,6 +66,7 @@ pub mod backend_type;
 pub(crate) mod cargo;
 pub(crate) mod conda;
 pub(crate) mod dotnet;
+pub(crate) mod expr_env;
 mod external_plugin_cache;
 pub(crate) mod gem;
 pub(crate) mod github;
