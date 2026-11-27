@@ -92,14 +92,14 @@ impl Untrusted {
             Untrusted::NotTrusted => "run `mise trust` to enable it".to_string(),
             Untrusted::LinkedInProject(project) => {
                 let link = outermost_link(path, project);
-                let copy = if link == path {
+                let copy = if !link.is_dir() {
                     "the file"
                 } else {
                     "the directory it leads to"
                 };
                 format!(
                     "Replace the link {} with a copy of {copy} and run `mise trust`, or add {} to `trusted_config_paths`.",
-                    display_path_escaped(link),
+                    display_path_escaped(&link),
                     display_path_escaped(project)
                 )
             }
@@ -109,13 +109,17 @@ impl Untrusted {
 
 /// The outermost symlink between `project` and `path`, `path` included, or `path` when there is
 /// none. That is the link to replace: replacing a file below a linked `.config` would leave the
-/// directory linked.
-fn outermost_link<'a>(path: &'a Path, project: &Path) -> &'a Path {
+/// directory linked. Both paths are made absolute without following links, so a relative path
+/// from `mise trust .` still finds a linked directory.
+fn outermost_link(path: &Path, project: &Path) -> PathBuf {
+    let path = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
+    let project = std::path::absolute(project).unwrap_or_else(|_| project.to_path_buf());
     path.ancestors()
-        .take_while(|p| *p != project && p.starts_with(project))
+        .take_while(|p| *p != project && p.starts_with(&project))
         .filter(|p| p.is_symlink())
         .last()
-        .unwrap_or(path)
+        .unwrap_or(&path)
+        .to_path_buf()
 }
 
 /// When the version list could not be fetched, the version being installed

@@ -45,6 +45,16 @@ for cmd in "mise trust" "mise trust --all"; do
   assert_fail_contains "$cmd 2>&1" "paranoid mode cannot approve it"
 done
 
+# A linked config that loading accepts, here through `trusted_config_paths`,
+# does not stop `mise trust --all`.
+assert "MISE_TRUSTED_CONFIG_PATHS='$PWD' mise trust --all"
+
+# A config below a linked directory, named by a relative path, names the
+# directory as the link to replace.
+mkdir ../linked-dir
+ln -s "$PWD/../shared" ../linked-dir/.config
+assert_fail_contains "cd ../linked-dir && mise trust .config/mise.toml 2>&1" "linked-dir/.config with a copy of the directory it leads to"
+
 # The remedies it names load the config.
 assert_contains "MISE_TRUSTED_CONFIG_PATHS='$PWD' mise env" "LINKED_VALUE=from-shared"
 rm mise.toml

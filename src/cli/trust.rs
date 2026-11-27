@@ -249,12 +249,17 @@ fn cli_trust_root(path: &Path, named_file: bool) -> PathBuf {
     }
 }
 
-/// Whether `mise trust` without a path or with `--all` has to act on the trust root `ctr`: it
-/// is not trusted, or paranoid mode reaches it through a link inside a project, which loading
-/// refuses whatever record its target has. `mise trust` then fails on it with that reason
-/// instead of finishing as if nothing were left.
+/// Whether `mise trust` without a path or with `--all` has to act on the trust root `ctr`, which
+/// loading would refuse. A config paranoid mode reaches through a link inside a project is
+/// judged as loading judges it, by that project, whatever record its target has: when the
+/// project is not trusted (`trusted_config_paths` can trust it), `mise trust` fails on it with
+/// that reason instead of finishing as if nothing were left.
 fn needs_trust(ctr: &Path) -> bool {
-    !config_file::is_trusted(ctr) || config_file::ensure_trust_can_approve(ctr).is_err()
+    if config_file::ensure_trust_can_approve(ctr).is_err() {
+        !config_file::is_path_trusted(ctr)
+    } else {
+        !config_file::is_trusted(ctr)
+    }
 }
 
 pub(super) fn untrust_config_file(
