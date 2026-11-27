@@ -2189,7 +2189,11 @@ impl Client {
                         || validator
                             .as_ref()
                             .is_some_and(|value| !value.matches(&state.validator))
-                        || has_unusable_entity_tag(resp.headers())
+                        // A Last-Modified date that matched the saved one
+                        // confirms the file; an unquoted ETag beside it does
+                        // not undo that.
+                        || (has_unusable_entity_tag(resp.headers())
+                            && !matches!(validator, Some(DownloadValidator::LastModified { .. })))
                     {
                         partial.clear()?;
                         if restarted_without_resume {

@@ -405,6 +405,31 @@ fn resumed_last_modified_download_response() -> &'static str {
         "world"
     )
 }
+fn truncated_last_modified_unquoted_etag_download_response() -> &'static str {
+    concat!(
+        "HTTP/1.1 200 OK\r\n",
+        "Content-Length: 10\r\n",
+        "ETag: artifact-v1\r\n",
+        "Last-Modified: Wed, 21 Oct 2015 07:28:00 GMT\r\n",
+        "Date: Wed, 21 Oct 2015 07:29:00 GMT\r\n",
+        "Connection: close\r\n",
+        "\r\n",
+        "hello"
+    )
+}
+fn resumed_last_modified_unquoted_etag_download_response() -> &'static str {
+    concat!(
+        "HTTP/1.1 206 Partial Content\r\n",
+        "Content-Length: 5\r\n",
+        "Content-Range: bytes 5-9/10\r\n",
+        "ETag: artifact-v1\r\n",
+        "Last-Modified: Wed, 21 Oct 2015 07:28:00 GMT\r\n",
+        "Date: Wed, 21 Oct 2015 07:30:00 GMT\r\n",
+        "Connection: close\r\n",
+        "\r\n",
+        "world"
+    )
+}
 fn invalid_resumed_download_response() -> &'static str {
     concat!(
         "HTTP/1.1 206 Partial Content\r\n",

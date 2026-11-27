@@ -94,6 +94,31 @@ async fn test_download_retry_resumes_with_last_modified_validator() {
 }
 
 #[tokio::test(flavor = "current_thread")]
+async fn test_download_resumes_with_last_modified_beside_an_unquoted_etag() {
+    let _guard = set_test_http_retries(1);
+    let (port, count, requests) = spawn_recording_server(vec![
+        truncated_last_modified_unquoted_etag_download_response(),
+        resumed_last_modified_unquoted_etag_download_response(),
+    ])
+    .await;
+    let url = format!("http://127.0.0.1:{port}/artifact");
+    let dir = tempfile::tempdir().unwrap();
+    let destination = dir.path().join("artifact");
+    let client = Client::new(Duration::from_secs(2), ClientKind::Http).unwrap();
+
+    client
+        .download_file(&url, &destination, None)
+        .await
+        .unwrap();
+
+    assert_eq!(std::fs::read(&destination).unwrap(), b"helloworld");
+    assert_eq!(count.load(Ordering::SeqCst), 2);
+    let resumed = requests.lock().unwrap()[1].to_ascii_lowercase();
+    assert!(resumed.contains("range: bytes=5-"));
+    assert!(resumed.contains("if-range: wed, 21 oct 2015 07:28:00 gmt"));
+}
+
+#[tokio::test(flavor = "current_thread")]
 async fn test_download_resumes_across_calls_without_storing_secrets() {
     let _guard = set_test_http_retries(0);
     let (port, count, requests) = spawn_recording_server(vec![
