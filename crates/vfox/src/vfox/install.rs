@@ -46,6 +46,14 @@ impl Vfox {
         trace!("{pre_install:?}");
         let mut verified_attestation = None;
         let mut checksum_verified = false;
+        // The lockfile checksum pins a download; with no download it pins nothing.
+        if pre_install.url.is_none()
+            && let Some(locked) = &self.locked_checksum
+        {
+            return Err(crate::VfoxError::Error(format!(
+                "the lockfile records checksum {locked} for {sdk}@{version}, but the plugin's PreInstall returned no URL, so there is nothing to check it against; if the plugin no longer downloads this version, remove the checksum from its entry in mise.lock"
+            )));
+        }
         if pre_install.url.is_some() {
             let metadata = sdk.get_metadata()?;
             if !metadata.downloads {

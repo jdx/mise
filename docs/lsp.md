@@ -199,9 +199,13 @@ somewhere it does not read:
 - More directory entries than the server scans for file tasks (5000 in all), or
   more than 200 config and include files.
 
+Only the first 100 unknown names in a file get a "did you mean" fix.
+
 `task-cycle` marks each `depends` that is part of a dependency cycle among the
 tasks the file defines, with the cycle in the message. A task that depends on
-itself is not reported, because mise ignores that.
+itself is not reported, because mise ignores that. The cycle check does a
+limited amount of work for one file: when very many `depends` are on long
+cycles, the first of them in the file are reported and the rest are not.
 
 ### Deprecated keys
 

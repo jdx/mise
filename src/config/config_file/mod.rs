@@ -568,7 +568,19 @@ pub(super) async fn parse_detected(
 /// A `path:<dir>` version names a directory that is already on disk, so it needs
 /// no install step: its `bin` is put on PATH as soon as the config loads, which
 /// would let an untrusted repository shadow any command.
+///
+/// A `ref:` or `rev:` version (or `ref-`/`rev-`, which `ToolRequest` reads the same way) names
+/// any commit the tool's repository serves, and forges serve commits nobody published there:
+/// a pull request's head (`refs/pull/1/head`) or, on GitHub, a fork's commit by its id. A
+/// shim or the not-found handler builds such a version from source when another version of
+/// the tool is installed. `tag:` and `branch:` only name what the repository's maintainers
+/// pushed, as a plain version names what they released.
 pub(crate) fn version_requires_trust(version: &str) -> bool {
+    is_path_version(version) || matches!(version.split_once([':', '-']), Some(("ref" | "rev", _)))
+}
+
+/// Whether a tool version is a `path:` version, which safe mode ignores in project config.
+pub(crate) fn is_path_version(version: &str) -> bool {
     version.starts_with("path:")
 }
 
@@ -578,8 +590,12 @@ pub(crate) fn version_requires_trust(version: &str) -> bool {
 /// An `spm:` package named by the URL of a self-hosted forge makes mise derive
 /// that host's API from the name and send it the user's forge token, as an
 /// `api_url` option would.
+///
+/// The key is checked as `BackendArg` reads it, after `unalias_backend` drops
+/// leading `core:` prefixes, so `core:spm:<url>` is the same `spm:` key.
 fn tool_key_requires_trust(tool: &str) -> bool {
-    tool.contains('[') || crate::backend::spm::tool_key_selects_api_host(tool)
+    let tool = crate::backend::unalias_backend(tool.trim());
+    tool.contains('[') || crate::backend::spm::tool_key_selects_api_host(&tool)
 }
 
 /// Whether a detected config requires trust before tracked loading may parse it.
@@ -649,6 +665,39 @@ pub fn config_trust_root(path: &Path) -> PathBuf {
 /// not *need* trust (e.g. safe configs loaded without it).
 pub fn is_path_trusted(path: &Path) -> bool {
     is_trusted(&config_trust_root(path)) || is_trusted(path)
+}
+
+/// Whether mise may put a directory that lives in the project at `dir` first on PATH, such as
+/// the `bin` of a virtualenv there. Its files then run in place of system commands, which is
+/// what `_.python.venv` and `_.path` in that project's own config need trust for.
+///
+/// True when a loaded config file rooted at `dir` is trusted, or, outside paranoid mode, when
+/// `dir` itself is (`mise trust <dir>`). A trust record of a parent directory does not count: a
+/// clone below a trusted project is not that project. What already trusts every config file
+/// below a directory, a `trusted_config_paths` entry or a trusted monorepo root, does count,
+/// through [`is_trusted`]: the project's own config could then put its files on PATH anyway.
+/// A project file linked to global config does not lend it global config's trust. Safe mode
+/// trusts no project, so this is false there.
+pub fn is_project_dir_trusted(config: &Config, dir: &Path) -> bool {
+    if Settings::safe_mode() {
+        return false;
+    }
+    let trusted_config_here = config.config_files.iter().any(|(path, cf)| {
+        cf.project_root().as_deref() == Some(dir)
+            && !config::is_project_link_to_global_config(path)
+            && is_path_trusted(path)
+    });
+    trusted_config_here || (!Settings::get().paranoid.config() && is_trusted(dir))
+}
+
+/// What to run so that [`is_project_dir_trusted`] accepts `dir`, for a warning that names it.
+pub fn project_dir_trust_hint(dir: &Path) -> String {
+    let dir = display_path(dir);
+    if Settings::get().paranoid.config() {
+        format!("trust a mise config file in {dir} with `mise trust <file>`")
+    } else {
+        format!("run `mise trust {dir}`")
+    }
 }
 
 static IMPLICITLY_TRUST_ACTIVE_CONFIG: AtomicBool = AtomicBool::new(false);
@@ -768,7 +817,7 @@ pub fn trust_check(path: &Path) -> eyre::Result<()> {
     // so unsafe config can load before the command starts; safe config is
     // persisted by `trust_active_config` after settings initialization.
     if implicitly_trusts_active_config()
-        && !ci_info::is_ci()
+        && !*mise_util::env::IS_CI
         && Settings::try_get().is_ok_and(|settings| !settings.paranoid.config())
     {
         let config_root = config_trust_root(path);
@@ -974,7 +1023,7 @@ fn is_trusted_without_config_paths(
         if !trusted {
             return false;
         }
-    } else if mise_util::testing::in_tests() || ci_info::is_ci() {
+    } else if mise_util::testing::in_tests() || *mise_util::env::IS_CI {
         // in tests/CI we trust everything
         return true;
     } else if !trust_path(path).exists() {
@@ -1205,9 +1254,9 @@ pub(crate) fn is_persisted_ignored(path: &Path) -> bool {
             }
         }
     });
-    match path.canonicalize() {
-        Ok(path) => IS_IGNORED.lock().unwrap().contains(&path),
-        Err(_) => {
+    match file::canonicalize_cached(path) {
+        Some(path) => IS_IGNORED.lock().unwrap().contains(&path),
+        None => {
             debug!("is_persisted_ignored: path canonicalize failed");
             true
         }
@@ -1305,7 +1354,7 @@ fn config_requires_trust(path: &Path) -> bool {
 /// nobody trusted. CI trusts everything and records nothing, so it leaves the
 /// marker alone.
 pub(crate) fn set_monorepo_root_marker(path: &Path, enabled: bool) -> Result<()> {
-    if ci_info::is_ci() {
+    if *mise_util::env::IS_CI {
         return Ok(());
     }
     let config_root = config_trust_root(path);

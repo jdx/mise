@@ -71,12 +71,11 @@ impl ElixirPlugin {
             .get_text_cached("https://builds.hex.pm/builds/elixir/builds.txt")
             .await?;
         Ok(builds.lines().find_map(|line| {
-            let parts: Vec<&str> = line.split_whitespace().collect();
-            if parts.len() >= 4 && parts[0] == version_tag {
-                Some(format!("sha256:{}", parts[3]))
-            } else {
-                None
+            let mut parts = line.split_whitespace();
+            if parts.next()? != version_tag {
+                return None;
             }
+            Some(format!("sha256:{}", parts.nth(2)?))
         }))
     }
 
@@ -154,14 +153,10 @@ impl Backend for ElixirPlugin {
             .lines()
             .unique()
             .filter_map(|s| {
-                let parts: Vec<&str> = s.split_whitespace().collect();
-                if parts.len() >= 3 {
-                    let version = parts[0].trim_start_matches('v');
-                    let timestamp = parts[2]; // Third field is the timestamp
-                    Some((version.to_string(), timestamp.to_string()))
-                } else {
-                    None
-                }
+                let mut parts = s.split_whitespace();
+                let version = parts.next()?.trim_start_matches('v');
+                let timestamp = parts.nth(1)?; // Third field is the timestamp
+                Some((version.to_string(), timestamp.to_string()))
             })
             .filter(|(v, _)| regex!(r"^[0-9]+\.[0-9]+\.[0-9]").is_match(v))
             .sorted_by_cached_key(|(s, _)| {

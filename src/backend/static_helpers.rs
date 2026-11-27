@@ -284,6 +284,20 @@ fn is_checksum_hex(s: &str, algo: &str) -> bool {
     s.len() == expected_len && s.chars().all(|c| c.is_ascii_hexdigit())
 }
 
+/// Whether `algorithm` is md5 or sha1. Whoever publishes a file can make a
+/// second one with the same such hash, so it still checks a download but is
+/// never what pins a file in `mise.lock`.
+pub(crate) fn is_weak_checksum_algorithm(algorithm: &str) -> bool {
+    algorithm.eq_ignore_ascii_case("md5") || algorithm.eq_ignore_ascii_case("sha1")
+}
+
+/// [`is_weak_checksum_algorithm`] for a checksum written `algorithm:hash`.
+pub(crate) fn is_weak_checksum(checksum: &str) -> bool {
+    checksum
+        .split_once(':')
+        .is_some_and(|(algorithm, _)| is_weak_checksum_algorithm(algorithm.trim()))
+}
+
 pub(crate) trait VerifiableError: Sized + Send + Sync + 'static {
     fn is_not_found(&self) -> bool;
     fn into_eyre(self) -> eyre::Report;
@@ -291,6 +305,14 @@ pub(crate) trait VerifiableError: Sized + Send + Sync + 'static {
 
 impl VerifiableError for eyre::Report {
     fn is_not_found(&self) -> bool {
+        // The release was found; its checksum could not be read, and the
+        // message may quote that download's 404.
+        if self
+            .chain()
+            .any(|cause| cause.is::<super::asset_matcher::UnverifiableAsset>())
+        {
+            return false;
+        }
         if self.to_string().contains("404") {
             return true;
         }
@@ -1515,6 +1537,35 @@ fn take_matching(available: &mut Vec<PathBuf>, pattern: &str) -> eyre::Result<Op
     }
 
     Ok(None)
+}
+
+/// Largest metadata file mise reads whole out of a downloaded archive (a
+/// crate's `Cargo.toml`, an artifact bundle's `info.json`). Parsing one takes
+/// many times its size in memory, and the extraction limit is sized for disk
+/// space, so it does not bound that. Real files of this kind are at most tens
+/// of KiB.
+pub(crate) const ARCHIVE_METADATA_LIMIT: u64 = 1024 * 1024;
+
+/// Reads a metadata file out of an unpacked download, refusing one that is not
+/// a regular file (a shipped link to `/dev/zero` or a pipe) or is larger than
+/// [`ARCHIVE_METADATA_LIMIT`].
+pub(crate) fn read_archive_metadata(path: &Path) -> Result<String> {
+    use std::io::Read;
+    let mut body = String::new();
+    file::open_regular_file(path)
+        .and_then(|file| {
+            file.take(ARCHIVE_METADATA_LIMIT + 1)
+                .read_to_string(&mut body)
+        })
+        .wrap_err_with(|| format!("failed to read {}", file::display_path(path)))?;
+    if body.len() as u64 > ARCHIVE_METADATA_LIMIT {
+        bail!(
+            "not reading {}: it is larger than {} MiB, the most mise reads from a downloaded package's metadata",
+            file::display_path(path),
+            ARCHIVE_METADATA_LIMIT / 1024 / 1024
+        );
+    }
+    Ok(body)
 }
 
 /// Rejects `bin`/`rename_exe` names that are not plain file names (`../tool`,

@@ -23,6 +23,7 @@ impl Plugin {
         ctx: BackendInstallContext,
     ) -> Result<BackendInstallResponse> {
         debug!("[vfox:{}] backend_install", self.name);
+        self.ensure_backend_hook("backend_install")?;
         self.eval_async(chunk! {
             require "hooks/backend_install"
             return PLUGIN:BackendInstall($ctx)
