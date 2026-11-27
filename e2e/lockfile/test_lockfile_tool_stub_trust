@@ -161,3 +161,12 @@ mkdir -p "$HOME/outside"
 lock_plain="cd $HOME/outside && MISE_PARANOID=config MISE_EXPERIMENTAL=1 MISE_YES=0 mise generate tool-stub $PWD/mono/packages/a/bin/plain --lock"
 assert_fail_contains "$lock_plain 2>&1" "mono/.mise.toml are not trusted"
 assert_succeed "MISE_IGNORED_CONFIG_PATHS=$PWD/mono/.mise.toml && export MISE_IGNORED_CONFIG_PATHS && $lock_plain"
+# Nor does one that `mise trust --ignore` recorded.
+MISE_PARANOID=config mise trust --ignore mono/.mise.toml
+assert_succeed "$lock_plain"
+# A stub's own config that discovery ignores owns nothing either: the next config
+# that loads does.
+MISE_PARANOID=config mise trust --untrust mono/packages/a/mise.toml
+assert_fail_contains "$lock_plain 2>&1" "mono/packages/a/mise.toml"
+MISE_PARANOID=config mise trust --ignore mono/packages/a/mise.toml
+assert_succeed "$lock_plain"
