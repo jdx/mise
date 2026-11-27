@@ -250,8 +250,9 @@ mise dot unapply --group work    # remove one group's files
 `--prune` and `unapply --group` remove a link only while it still points at
 the source mise linked, and a copied file only while it still holds what mise
 wrote. They leave anything you changed in place with a warning; add `--force`
-to remove changed copies too. Directories they empty are removed, up to the
-target of the group or entry that deployed the file. `unapply --group` works
+to remove changed copies too. Directories that mise created and that they
+empty are removed, up to the target of the group or entry that deployed the
+file; a directory you made stays, even when it is empty. `unapply --group` works
 whether or not the group is still selected or declared. `--prune` asks before
 it removes anything unless you pass `--yes`, and it covers every group, so it
 takes no target arguments.

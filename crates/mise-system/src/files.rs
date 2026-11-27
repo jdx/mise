@@ -5951,9 +5951,8 @@ fn execute_layer(
             let start = written.len();
             // what is missing now is what a failed apply may have to take away again
             let mut created = missing_ancestors(&req.target);
-            if req.mode == FileMode::SymlinkEach
-                || req.mode == FileMode::Copy && req.source.is_dir()
-            {
+            let walks = walks_source_dir(req);
+            if walks {
                 if std::fs::symlink_metadata(&req.target).is_err() {
                     created.push(req.target.clone());
                 }
@@ -5961,10 +5960,19 @@ fn execute_layer(
                 for (_, target) in walk_source_files(req).unwrap_or_default() {
                     created.extend(missing_ancestors(&target));
                 }
+                // the target is shared with the user's files, so what a later removal may take
+                // with it is only what mise created there
+                crate::created_dirs::track(&req.target, deployed_under(req));
             }
             if let Err(err) = apply_one(req, rendered.as_deref(), written) {
                 settle_failed_apply(req, &created, &stale, pending);
+                if walks {
+                    crate::created_dirs::record(&req.target, &created);
+                }
                 return Err(err);
+            }
+            if walks {
+                crate::created_dirs::record(&req.target, &created);
             }
             // a target that appeared since planning is left alone and not
             // written, so it is not this group's to prune
@@ -6297,15 +6305,17 @@ fn record_template_states(updates: &[(&FileRequest, String)]) -> Result<()> {
 }
 
 fn cleanup_reconciled_directories(reconciliation: &SymlinkEachReconciliation) -> Result<()> {
+    let created = crate::created_dirs::CreatedDirs::load();
     for target in &reconciliation.targets {
-        remove_empty_dirs_upward(
+        let removed = remove_empty_dirs_upward(
             reconciliation
                 .stale_links
                 .iter()
                 .filter(|link| link.target.starts_with(target))
                 .filter_map(|link| link.target.parent()),
-            |dir| dir != target && dir.starts_with(target),
+            |dir| dir != target && dir.starts_with(target) && created.may_remove(target, dir),
         )?;
+        crate::created_dirs::forget(&removed);
     }
     Ok(())
 }
@@ -6862,9 +6872,12 @@ fn unapply_one(plan: &UnapplyPlan<'_>) -> Result<()> {
     if plan.cleanup_empty_dirs && plan.req.target.is_dir() {
         parents.push(plan.req.target.clone());
         // the walk ends at the target: its parent does not start with it
-        remove_empty_dirs_upward(parents.iter().map(PathBuf::as_path), |dir| {
-            dir.starts_with(&plan.req.target)
+        let created = crate::created_dirs::CreatedDirs::load();
+        let removed = remove_empty_dirs_upward(parents.iter().map(PathBuf::as_path), |dir| {
+            dir.starts_with(&plan.req.target) && created.may_remove(&plan.req.target, dir)
         })?;
+        crate::created_dirs::forget(&removed);
+        crate::created_dirs::untrack_if_clear(&plan.req.target, deployed_under(plan.req));
     }
     Ok(())
 }
@@ -7468,6 +7481,41 @@ fn remove_empty_dirs_upward<'a>(
     Ok(removed)
 }
 
+/// Whether `req` deploys each file of a source directory under its target, which it shares with
+/// files mise does not manage.
+fn walks_source_dir(req: &FileRequest) -> bool {
+    req.mode == FileMode::SymlinkEach || req.mode == FileMode::Copy && req.source.is_dir()
+}
+
+/// What `req` may already have deployed under its target: the files of its source, the links its
+/// `symlink-each` record names, and what its group's record names under the target. Used to tell
+/// the directories an earlier mise created from the user's, before mise recorded them.
+fn deployed_under(req: &FileRequest) -> Vec<PathBuf> {
+    let mut paths = walk_source_files(req)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|(_, target)| target)
+        .collect::<Vec<_>>();
+    if req.mode == FileMode::SymlinkEach
+        && let LoadedSymlinkEachState::Present(state) = load_symlink_each_state(req)
+    {
+        paths.extend(state.links.into_iter().map(|link| link.target));
+    }
+    if let Some(group) = &req.group
+        && let Some(record) = crate::dotfile_groups::load_record(group)
+    {
+        let target = lexical_normalize(&req.target);
+        paths.extend(
+            record
+                .paths
+                .into_iter()
+                .filter(|path| lexical_normalize(&path.root) == target)
+                .map(|path| path.target),
+        );
+    }
+    paths
+}
+
 /// Ancestors of `path` that do not exist yet, outermost first.
 pub(crate) fn missing_ancestors(path: &Path) -> Vec<PathBuf> {
     let mut missing = vec![];
@@ -7865,9 +7913,14 @@ fn prune_stale_links(req: &FileRequest, written: &mut Vec<PathBuf>) -> Result<()
         written.push(path.clone());
     }
     let needed: HashSet<PathBuf> = needed_dirs(req)?.into_iter().collect();
-    remove_empty_dirs_upward(stale.iter().filter_map(|p| p.parent()), |dir| {
-        dir != req.target && dir.starts_with(&req.target) && !needed.contains(dir)
+    let created = crate::created_dirs::CreatedDirs::load();
+    let removed = remove_empty_dirs_upward(stale.iter().filter_map(|p| p.parent()), |dir| {
+        dir != req.target
+            && dir.starts_with(&req.target)
+            && !needed.contains(dir)
+            && created.may_remove(&req.target, dir)
     })?;
+    crate::created_dirs::forget(&removed);
     Ok(())
 }
 

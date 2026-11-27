@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# shellcheck source-path=SCRIPTDIR
+
+# The randomized drift test of symlink-each groups, over many more seeds than
+# test_dotfiles_groups_drift runs by default.
+export DRIFT_SEEDS DRIFT_ROUNDS
+DRIFT_SEEDS="$(seq 4 53)"
+DRIFT_ROUNDS=10
+# shellcheck source=test_dotfiles_groups_drift
+source "$TEST_DIR/test_dotfiles_groups_drift"

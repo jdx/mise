@@ -35,6 +35,7 @@ use eyre::{Result, bail};
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
+use crate::created_dirs::CreatedDirs;
 use crate::edits::{self, EditRequest};
 use crate::files::{self, FileMode, FileRequest, FileTomlEntry, FileTomlTable};
 use crate::history::journal;
@@ -1278,6 +1279,7 @@ pub struct RemoveOpts {
 pub fn remove_recorded(record: &GroupRecord, opts: &RemoveOpts) -> Result<Vec<PathBuf>> {
     let mut removed = vec![];
     let mut kept = vec![];
+    let created = crate::created_dirs::CreatedDirs::load();
     for path in &record.paths {
         if !path.exists() {
             continue;
@@ -1332,7 +1334,7 @@ pub fn remove_recorded(record: &GroupRecord, opts: &RemoveOpts) -> Result<Vec<Pa
         );
         removed.push(path.target.clone());
         if let Some(parent) = path.target.parent() {
-            remove_empty_dirs(parent, &path.root)?;
+            remove_empty_dirs(parent, &path.root, &created)?;
         }
     }
     // `record` may be only part of what the group deployed (see
@@ -1351,6 +1353,21 @@ pub fn remove_recorded(record: &GroupRecord, opts: &RemoveOpts) -> Result<Vec<Pa
     }
     if !opts.dry_run {
         files::forget_group_symlink_each_states(&record.group);
+        let roots = record
+            .paths
+            .iter()
+            .map(|path| &path.root)
+            .collect::<HashSet<_>>();
+        for root in roots {
+            crate::created_dirs::untrack_if_clear(
+                root,
+                record
+                    .paths
+                    .iter()
+                    .filter(|path| path.root == *root)
+                    .map(|path| path.target.clone()),
+            );
+        }
     }
     Ok(removed)
 }
@@ -1411,21 +1428,26 @@ fn remove_no_follow(root: &Path, target: &Path) -> Result<()> {
 }
 
 /// Remove empty directories from `dir` up to, but not including, `root`,
-/// and never the home directory.
-fn remove_empty_dirs(dir: &Path, root: &Path) -> Result<()> {
+/// and never the home directory. Under a root that records the directories
+/// mise created there, only those go: an empty one of the user's stays.
+fn remove_empty_dirs(dir: &Path, root: &Path, created: &CreatedDirs) -> Result<()> {
+    let mut removed = vec![];
     let mut dir = Some(dir);
     while let Some(d) = dir {
         if d == root
             || !d.starts_with(root)
             || d == *dirs::HOME
+            || !created.may_remove(root, d)
             || !d.is_dir()
             || d.read_dir()?.next().is_some()
         {
             break;
         }
         file::remove_dir(d)?;
+        removed.push(d.to_path_buf());
         dir = d.parent();
     }
+    crate::created_dirs::forget(&removed);
     Ok(())
 }
 
