@@ -7,8 +7,8 @@ socialDescription: "Control config trust, verify downloads, delay new releases, 
 
 Each mise security control covers one stage, from loading a project's config to
 running the commands it starts. The one you meet first is
-[configuration trust](#configuration-trust): mise asks before it lets a
-repository's config run code.
+[configuration trust](#configuration-trust), which controls when a
+repository's config can run code.
 
 ## What mise protects against
 
@@ -22,14 +22,26 @@ repository's config run code.
 | A task or command reads, writes or reaches more than it needs            | [Sandboxing](/sandboxing.html)                  | Off; Linux and macOS only                                    |
 | A secret ends up in your shell, a log or a process that does not need it | [Secrets](#secrets)                             | Opt in                                                       |
 
-Each control has its own scope. Trusting a config does not verify an upstream
-release, and sandboxing a task does not sandbox mise while it evaluates config.
+## Threat model
 
-These controls do not review the software you choose to install. A tool, a
-package or an asdf or vfox plugin runs with your permissions once you install
-it. Global and system config, such as `~/.config/mise/config.toml`, belongs to
-you, so mise trusts it without asking. mise itself runs as your user with no
-sandbox.
+- **Project configuration.** mise assumes you or your administrator control
+  global and system config. [Configuration trust](#configuration-trust) limits
+  what project config can do without your approval. Treat trusting a project as
+  trusting its code: trusted config can run commands as you. Some commands
+  [imply trust](#implicit-trust), and CI trusts project config by default.
+  Use [safe mode](#safe-mode) when automation only needs to read project config
+  you have not reviewed.
+- **Tools and plugins.** Choose tools, packages, and asdf or vfox plugins from
+  sources you trust. Plugins and install scripts can run with your permissions
+  during installation, before you ever run the tool.
+  [Download verification](#download-verification) checks the artifact against
+  the evidence available from the backend and upstream publisher. It does not
+  tell you whether that publisher or its software is safe.
+- **Running commands.** mise runs as your user. Optional
+  [sandboxing](/sandboxing.html) limits supported operations of the commands you
+  run with it. It does not sandbox mise while it evaluates config, installs
+  tools, or runs hooks. Run untrusted projects or tools in an isolated
+  environment without access to your usual files or credentials.
 
 ## Configuration trust
 
@@ -49,7 +61,9 @@ A `mise.toml` loads without trust when it has no template syntax
   name that is the URL of a host other than github.com or gitlab.com, which
   mise would send your forge token to, and no
   [`path:`](/dev-tools/versions.html) version, which puts a directory on `PATH`
-  without an install
+  without an install, and no `ref:` or `rev:` version, which can name any
+  commit the forge serves, such as a pull request from a fork (`tag:` and
+  `branch:` versions load without trust)
 - `[tasks]`, as long as no task lists `secrets`
 
 Anything else needs trust, including tool option tables, `[env]`, `[hooks]`,
@@ -59,13 +73,15 @@ commands or other settings before you trust it. Other files follow the same
 idea:
 
 - `.tool-versions` needs trust only when it contains template syntax, inline
-  tool options such as `node[postinstall=...] 24`, or a `path:` version.
+  tool options such as `node[postinstall=...] 24`, or a `path:`, `ref:` or
+  `rev:` version.
 - Idiomatic version files such as `.nvmrc` need trust only when they contain a
-  `path:` version.
+  `path:`, `ref:` or `rev:` version.
 - A project's [`mise.lock`](/dev-tools/mise-lock.html) is read with its config.
   Until that config is trusted, the lockfile only pins versions and checksums:
   mise ignores an entry that locks a tool to a backend other than the one its
-  tool key or the registry selects, or that adds options, and downloads from
+  tool key or the registry selects, that adds options, or that locks a `ref:` or
+  `rev:` version, and downloads from
   where the backend normally would instead of the lockfile's URLs and
   dependency graphs.
 - Task files, including TOML files from
@@ -258,7 +274,9 @@ These fail with `<operation> is disabled in safe mode (MISE_SAFE=1)`:
   config.
 - Running tasks.
 - The tool options `postinstall` and `install_env`, and the `spm:` backend's
-  `install_command`.
+  `install_command`. `mise lock` does not run uv for a `pypi:` tool that sets
+  `install_env`, so it warns and locks that tool's version without a
+  [dependency graph](/dev-tools/mise-lock.html#dependency-graphs).
 - asdf plugin scripts, so tools from the `asdf:` backend cannot list or install
   versions.
 - Requests to S3, which are signed with your AWS credentials, so tools from the
@@ -304,6 +322,12 @@ These are skipped without an error, so resolution commands keep working:
   for their commands and does not install them on first use.
 - Project `[settings]`, so a repository cannot turn off verification or redirect
   a backend.
+- The `packslip:` backend's
+  [`trust = "vendor"`](/dev-tools/backends/packslip.html#trust) option, unless a
+  `[tools]` entry of global or system config sets it for the same tool, so a
+  repository cannot exempt a release from the
+  [`packslip.stampers`](/configuration/settings.html#packslip.stampers) you
+  require. This applies to a tool named on the command line too.
 - Remote `include` entries in project config, which mise does not fetch.
 - Remote task files (`file = "https://…"` or `git::…`) in project config. Their
   tasks are listed from their TOML alone.
@@ -451,6 +475,11 @@ The cutoff applies when mise has to choose a version, for a prefix such as
 - An installed version that matches the request. The cutoff limits which new
   versions mise downloads; it does not deactivate one you have. `mise lock` with
   a configured cutoff, rather than the default, re-checks installed matches.
+
+Two release tags can spell one version, such as `2.0.0` and `v2.0.0`. For
+`github:`, `gitlab:` and `forgejo:` tools, a version the cutoff chose is
+installed from a release of it that is older than the cutoff. If the only
+release mise finds for it is newer, the install fails instead.
 
 For `packslip:` tools, mise compares the cutoff with the release's verified
 transparency-log time; see

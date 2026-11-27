@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# A vfox EnvKeys hook may return a key more than once; mise joins the values
+# into one path list. A value that holds the separator, such as a directory
+# named web:app, is left out with a warning and the other entries are kept.
+
+PLUGIN_DIR="$PWD/colon"
+INSTALL="$MISE_DATA_DIR/installs/colon/1.0.0"
+mkdir -p "$PLUGIN_DIR/hooks" "$INSTALL/bin" "$INSTALL/sbin" "$PWD/web:app/bin"
+cat >"$PLUGIN_DIR/metadata.lua" <<'LUA'
+PLUGIN = { name = "colon", version = "0.1.0" }
+LUA
+cat >"$PLUGIN_DIR/hooks/env_keys.lua" <<LUA
+function PLUGIN:EnvKeys(ctx)
+  return {
+    { key = "PATH", value = ctx.path .. "/bin" },
+    { key = "PATH", value = "$PWD/web:app/bin" },
+    { key = "PATH", value = ctx.path .. "/sbin" },
+  }
+end
+LUA
+mise plugins link colon "$PLUGIN_DIR"
+cat >mise.toml <<'TOML'
+[tools]
+colon = "1.0.0"
+TOML
+
+assert_contains "mise hook-env -s bash 2>&1" "ignoring PATH entry"
+assert_not_contains "mise hook-env -s bash 2>/dev/null" "web:app"
+assert "mise bin-paths colon" "$INSTALL/bin
+$INSTALL/sbin"

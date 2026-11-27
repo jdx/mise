@@ -57,6 +57,7 @@ impl En {
             allow_env: vec![],
             secrets: vec![],
             secrets_all: false,
+            native_shim_completion: false,
         }
         .run()
         .await
