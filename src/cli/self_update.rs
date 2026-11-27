@@ -71,7 +71,7 @@ pub(crate) async fn maybe_auto_update(
         enabled: settings.self_update.auto.is_on(),
         offline: settings.offline(),
         prefer_offline: settings.prefer_offline(),
-        ci: settings.ci || ci_info::is_ci(),
+        ci: settings.ci || *mise_util::env::IS_CI,
         attended: console::user_attended_stderr(),
         already_reexecuted: env::var_os(AUTO_UPDATE_REEXEC_ENV).is_some(),
         self_update_available: SelfUpdate::is_available(),
@@ -172,7 +172,7 @@ pub(crate) async fn update_before_tools() -> Result<bool> {
         || settings.offline()
         || settings.prefer_offline()
         || settings.ci
-        || ci_info::is_ci()
+        || *mise_util::env::IS_CI
         || !SelfUpdate::is_available()
     {
         return Ok(false);

@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+
+# mise-versions' answer that a repository has no signed release list is
+# signed by nothing, and a list is what withdraws a release. The `provenance`
+# category of paranoid mode, on its own, has GitHub answer that instead.
+
+export MISE_MINIMUM_RELEASE_AGE=0
+export MISE_HTTP_RETRIES=0
+
+start_http_server --handler - <<'EOF_SERVER'
+import http.server
+
+
+class Handler(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == "/api/github/repos/jdx/packslip/packslip-list":
+            body = b'{"present":false,"fetched_at":"2026-10-26T12:00:00Z"}'
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+        else:
+            body = b"not found"
+            self.send_response(404)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *args):
+        pass
+EOF_SERVER
+
+export MISE_URL_REPLACEMENTS="{\"https://mise-versions.jdx.dev\":\"http://127.0.0.1:$HTTP_PORT\"}"
+raw="raw.githubusercontent.com/jdx/packslip/HEAD/.well-known/packslip.json"
+
+list="mise ls-remote packslip:github.com/jdx/packslip 2>&1"
+
+# Normal mode takes the mirror's answer.
+assert_contains "MISE_DEBUG=1 $list" "/api/github/repos/jdx/packslip/packslip-list"
+assert_not_contains "MISE_DEBUG=1 $list" "$raw"
+
+# Another category alone changes nothing here.
+assert_not_contains "MISE_PARANOID=plugins MISE_DEBUG=1 $list" "$raw"
+
+# The provenance category alone asks GitHub, whose 404 confirms there is none.
+assert_contains "MISE_PARANOID=provenance MISE_DEBUG=1 $list" "$raw"
+assert_contains "MISE_PARANOID=provenance $list" "0.2.0"
