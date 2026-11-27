@@ -59,3 +59,8 @@ cd three || exit 1
 assert_contains "bin/dummy" "This is Dummy 2.0.1!"
 assert_contains "cat bin/dummy" 'version = "1.0.0"'
 assert_contains "bin/dummy" "This is Dummy 1.0.0!"
+
+# The cache is read before startup, so settings that fail to load are reported
+# by startup rather than crashing the stub.
+assert_fail_contains "MISE_LOCKFILE_MODE=bogus bin/dummy 2>&1" "lockfile_mode"
+assert_not_contains "MISE_LOCKFILE_MODE=bogus bin/dummy 2>&1 || true" "panicked"

@@ -36,6 +36,11 @@ impl BinPathCache {
         if !Self::is_cacheable(stub_path) {
             return Ok(None);
         }
+        // The cache is read before normal startup, so settings that fail to load mean no
+        // cache: startup then reports what is wrong instead of this panicking.
+        let Ok(settings) = crate::config::Settings::try_get() else {
+            return Ok(None);
+        };
         let path = std::path::absolute(stub_path)?;
         let mut hasher = Sha256::new();
         hasher.update(path.as_os_str().as_encoded_bytes());
@@ -44,7 +49,7 @@ impl BinPathCache {
         // Read like `Lockfile::read` reads it: only when lockfiles are on, and only a regular
         // file, with the bounded reader, since a lockfile name that is a pipe or a device
         // would never finish reading.
-        if crate::config::Settings::get().lockfile_enabled()
+        if settings.lockfile_enabled()
             && let Some((lockfile, _)) = crate::lockfile::lockfile_path_for_tool_stub(stub_path)
             && lockfile.is_file()
             && let Ok(lock) = file::read_config_to_string(&lockfile)
