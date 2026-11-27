@@ -301,6 +301,11 @@ fn status_with_timeout(
     wait_with_timeout(&mut child, deadline)?.ok_or_else(|| timed_out_error(command, timeout))
 }
 
+/// Whether `key` names `PWD`, which Windows spells in any case.
+fn is_pwd(key: &std::ffi::OsStr) -> bool {
+    key == "PWD" || (cfg!(windows) && key.eq_ignore_ascii_case("PWD"))
+}
+
 /// Apply the `cwd` and `env` options. Explicit env vars override the mise env.
 fn apply_options(cmd: &mut Command, options: Option<&Table>) -> LuaResult<()> {
     let Some(options) = options else {
@@ -313,7 +318,7 @@ fn apply_options(cmd: &mut Command, options: Option<&Table>) -> LuaResult<()> {
         // when `cwd` is relative and the child must work it out.
         if cmd
             .get_envs()
-            .any(|(key, value)| key == "PWD" && value.is_some())
+            .any(|(key, value)| value.is_some() && is_pwd(key))
         {
             if Path::new(&cwd).is_absolute() {
                 cmd.env("PWD", &cwd);
@@ -576,6 +581,13 @@ pub(super) fn command_from_shell(shell: &[String], command: &str) -> LuaResult<C
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pwd_is_matched_in_any_case_only_on_windows() {
+        assert!(is_pwd("PWD".as_ref()));
+        assert_eq!(is_pwd("Pwd".as_ref()), cfg!(windows));
+        assert!(!is_pwd("OLDPWD".as_ref()));
+    }
 
     #[test]
     fn test_cmd() {
