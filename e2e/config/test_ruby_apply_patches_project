@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+
+# ruby.apply_patches is settable from a trusted project config, like
+# node.apply_patches: a legacy project can carry the patches its Ruby needs.
+
+cat <<'EOF2' >mise.toml
+[settings.ruby]
+apply_patches = "/opt/patches/ruby.patch"
+EOF2
+mise trust mise.toml
+assert "mise settings get ruby.apply_patches" "/opt/patches/ruby.patch"
+assert_not_contains "mise settings get ruby.apply_patches 2>&1" "ignored for security reasons"
