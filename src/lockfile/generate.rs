@@ -449,8 +449,12 @@ fn reusable_without_login(info: &PlatformInfo, version: &str) -> Option<Platform
 /// the `github_attestations` probe status are the old ones too, none when
 /// `old` had none, since the new provenance was checked for other bytes.
 /// When the checksums are the same, the new provenance stays: it covers them.
+///
+/// Only a sha256, blake3 or sha512 pin is carried. An md5 or sha1 one is
+/// replaced, as [`can_reuse`] has it, by [`upgrade_weak_pins_recorded_with_a_login`].
 fn keep_pins_recorded_with_a_login(old: &PlatformInfo, new: &mut PlatformInfo) {
     use crate::backend::static_helpers::is_lock_url;
+    let strong = |checksum: Option<&str>| checksum.is_some_and(|c| !is_weak_checksum(c));
     let same_bytes = |old: Option<&str>, new: Option<&str>| match (
         old.and_then(|c| c.split_once(':')),
         new.and_then(|c| c.split_once(':')),
@@ -469,7 +473,7 @@ fn keep_pins_recorded_with_a_login(old: &PlatformInfo, new: &mut PlatformInfo) {
     if !old_has_login {
         return;
     }
-    if old.checksum.is_some()
+    if strong(old.checksum.as_deref())
         && let Some(url) = new.url.as_deref()
         && is_lock_url(old.url.as_deref(), url)
     {
@@ -483,7 +487,7 @@ fn keep_pins_recorded_with_a_login(old: &PlatformInfo, new: &mut PlatformInfo) {
     }
     for artifact in &mut new.additional_artifacts {
         if let Some(old) = old.additional_artifacts.iter().find(|old| {
-            old.checksum.is_some() && is_lock_url(Some(old.url.as_str()), &artifact.url)
+            strong(old.checksum.as_deref()) && is_lock_url(Some(old.url.as_str()), &artifact.url)
         }) {
             if !same_bytes(old.checksum.as_deref(), artifact.checksum.as_deref()) {
                 artifact.provenance = old.provenance.clone();
@@ -495,18 +499,79 @@ fn keep_pins_recorded_with_a_login(old: &PlatformInfo, new: &mut PlatformInfo) {
     }
 }
 
+/// The md5 or sha1 pins of `old`, an entry whose URLs held a login, replaced in
+/// `new` by the sha256 of each artifact both name. The artifact is downloaded
+/// from `old`'s URL, with the login, and checked against the old pin and the
+/// checksum just resolved. [`complete_artifact_checksums`] would download it
+/// from `new`'s URL, which leaves the login out, and a server that needs the
+/// login would refuse it.
+async fn upgrade_weak_pins_recorded_with_a_login(
+    old: &PlatformInfo,
+    new: &mut PlatformInfo,
+) -> Result<()> {
+    use crate::backend::static_helpers::is_lock_url;
+    let weak = |checksum: Option<&str>| checksum.filter(|c| is_weak_checksum(c)).map(str::to_owned);
+    if let Some(pin) = weak(old.checksum.as_deref())
+        && let Some(old_url) = old.url.as_deref()
+        && (has_login(old_url) || old.url_api.as_deref().is_some_and(has_login))
+        && is_lock_url(Some(old_url), new.url.as_deref().unwrap_or_default())
+    {
+        let mut expected = vec![(pin.as_str(), LOCKED_CHECKSUM)];
+        expected.extend(new.checksum.as_deref().map(|c| (c, RELEASE_CHECKSUM)));
+        new.checksum = Some(
+            artifact_checksum(
+                old_url,
+                old.url_api.as_deref(),
+                new.download_headers.as_ref(),
+                &expected,
+            )
+            .await?,
+        );
+        new.checksum_source = None;
+    }
+    for artifact in &mut new.additional_artifacts {
+        let Some((old, pin)) = old.additional_artifacts.iter().find_map(|old| {
+            let login = has_login(&old.url) || old.url_api.as_deref().is_some_and(has_login);
+            (login && is_lock_url(Some(old.url.as_str()), &artifact.url))
+                .then(|| weak(old.checksum.as_deref()).map(|pin| (old, pin)))
+                .flatten()
+        }) else {
+            continue;
+        };
+        let mut expected = vec![(pin.as_str(), LOCKED_CHECKSUM)];
+        expected.extend(artifact.checksum.as_deref().map(|c| (c, RELEASE_CHECKSUM)));
+        artifact.checksum =
+            Some(artifact_checksum(&old.url, old.url_api.as_deref(), None, &expected).await?);
+        artifact.checksum_source = None;
+    }
+    Ok(())
+}
+
 /// The checksum of `old`, a conda package recorded with the channel's login,
 /// carried into `new`, the same package resolved again at the same URL without
 /// it: as for [`keep_pins_recorded_with_a_login`], leaving the login out does
-/// not re-pin the package.
-fn keep_conda_pin_recorded_with_a_login(
+/// not re-pin the package. An md5 or sha1 pin is replaced instead, by the
+/// sha256 of the package downloaded with the login and checked against the old
+/// pin and the checksum just resolved, as
+/// [`upgrade_weak_pins_recorded_with_a_login`] does.
+async fn keep_conda_pin_recorded_with_a_login(
     old: &crate::backend::conda::CondaPackageInfo,
     new: &mut crate::backend::conda::CondaPackageInfo,
-) {
+) -> Result<()> {
     use crate::backend::static_helpers::is_lock_url;
-    if has_login(&old.url) && old.checksum.is_some() && is_lock_url(Some(&old.url), &new.url) {
-        new.checksum = old.checksum.clone();
+    if !has_login(&old.url) || !is_lock_url(Some(&old.url), &new.url) {
+        return Ok(());
     }
+    match old.checksum.as_deref() {
+        Some(pin) if is_weak_checksum(pin) => {
+            let mut expected = vec![(pin, LOCKED_CHECKSUM)];
+            expected.extend(new.checksum.as_deref().map(|c| (c, RELEASE_CHECKSUM)));
+            new.checksum = Some(artifact_checksum(&old.url, None, None, &expected).await?);
+        }
+        Some(_) => new.checksum = old.checksum.clone(),
+        None => {}
+    }
+    Ok(())
 }
 
 /// How the target platforms were chosen. Platforms the user named are replaced
@@ -697,6 +762,7 @@ pub async fn generate(
             };
             if let Ok(info) = &mut resolution.4 {
                 if let Some(old) = &previous_info {
+                    upgrade_weak_pins_recorded_with_a_login(old, info).await?;
                     keep_pins_recorded_with_a_login(old, info);
                 }
                 complete_artifact_checksums(info).await?;
@@ -795,8 +861,11 @@ pub async fn generate(
         for (key, mut value) in conda {
             // `previous`, not `candidate`: another tool that shares the
             // package may already have written it there without the login.
-            if let Some(old) = previous.get_conda_package(&platform.to_key(), &key) {
-                keep_conda_pin_recorded_with_a_login(old, &mut value);
+            if let Some(old) = previous.get_conda_package(&platform.to_key(), &key)
+                && let Err(error) = keep_conda_pin_recorded_with_a_login(old, &mut value).await
+            {
+                report.abandon();
+                return Err(error);
             }
             candidate.set_conda_package(&platform.to_key(), &key, value);
         }
@@ -2455,8 +2524,8 @@ mod tests {
         assert_eq!(changed.provenance_verified, None);
     }
 
-    #[test]
-    fn conda_pins_recorded_with_a_login_are_kept() {
+    #[tokio::test]
+    async fn conda_pins_recorded_with_a_login_are_kept() {
         use crate::backend::conda::CondaPackageInfo;
         let package = |url: &str, checksum: &str| CondaPackageInfo {
             url: url.into(),
@@ -2471,12 +2540,137 @@ mod tests {
             (package(with_login, "sha256:old"), other, "sha256:new"),
             // A record with no login is resolved as before.
             (package(url, "sha256:old"), url, "sha256:new"),
+            (package(url, "md5:old"), url, "sha256:new"),
         ] {
             let mut new = package(new_url, "sha256:new");
-            keep_conda_pin_recorded_with_a_login(&old, &mut new);
+            keep_conda_pin_recorded_with_a_login(&old, &mut new)
+                .await
+                .unwrap();
             assert_eq!(new.checksum.as_deref(), Some(written), "{old:?} {new_url}");
             assert_eq!(new.url, new_url);
         }
+    }
+
+    /// A conda package pinned by md5 with the channel's login is not pinned by
+    /// md5 again: it is downloaded with the login, checked against the md5, and
+    /// written with its sha256 and the URL without the login.
+    #[tokio::test]
+    async fn conda_md5_pin_recorded_with_a_login_is_replaced_from_the_login_url() {
+        use crate::backend::conda::CondaPackageInfo;
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/linux-64/zlib.conda")
+            .match_header("authorization", "Basic Y2k6dG9rZW4=")
+            .with_body("artifact")
+            .create_async()
+            .await;
+        let url = format!("{}/linux-64/zlib.conda", server.url());
+        let old = CondaPackageInfo {
+            url: url.replace("http://", "http://ci:token@"),
+            checksum: Some(format!("md5:{ARTIFACT_MD5}")),
+        };
+        let mut new = CondaPackageInfo {
+            url: url.clone(),
+            checksum: None,
+        };
+        keep_conda_pin_recorded_with_a_login(&old, &mut new)
+            .await
+            .unwrap();
+        mock.assert_async().await;
+        assert_eq!(new.checksum, Some(format!("sha256:{ARTIFACT_SHA256}")));
+        assert_eq!(new.url, url);
+
+        let mut wrong = CondaPackageInfo {
+            url: url.clone(),
+            checksum: None,
+        };
+        let tampered = CondaPackageInfo {
+            checksum: Some("md5:00000000000000000000000000000000".into()),
+            ..old
+        };
+        assert!(
+            keep_conda_pin_recorded_with_a_login(&tampered, &mut wrong)
+                .await
+                .is_err()
+        );
+    }
+
+    const ARTIFACT_MD5: &str = "8e5b948a454515dbabfc7eb718daa52f";
+    const ARTIFACT_SHA256: &str =
+        "c7c5c1d70c5dec4416ab6158afd0b223ef40c29b1dc1f97ed9428b94d4cadb1c";
+
+    /// An entry pinned by md5 with a login does not keep the md5 pin (which
+    /// [`can_reuse`] refused so it would be replaced). The artifacts are
+    /// downloaded from the URLs with the login, checked against the md5, and
+    /// pinned by sha256 under the URLs without the login.
+    #[tokio::test]
+    async fn md5_pins_recorded_with_a_login_are_replaced_from_the_login_url() {
+        let mut server = mockito::Server::new_async().await;
+        let mocks = [
+            server
+                .mock("GET", "/tool.tar.gz")
+                .match_header("authorization", "Basic Y2k6dG9rZW4=")
+                .with_body("artifact")
+                .create_async()
+                .await,
+            server
+                .mock("GET", "/tool.tar.gz.sig")
+                .match_header("authorization", "Basic Y2k6dG9rZW4=")
+                .with_body("artifact")
+                .create_async()
+                .await,
+        ];
+        let tarball = format!("{}/tool.tar.gz", server.url());
+        let sig = format!("{tarball}.sig");
+        let with_login = |url: &str| url.replace("http://", "http://ci:token@");
+        let md5 = format!("md5:{ARTIFACT_MD5}");
+        let entry = |url: &str, sig: &str, checksum: Option<&str>| PlatformInfo {
+            url: Some(url.into()),
+            checksum: checksum.map(str::to_owned),
+            additional_artifacts: vec![crate::lockfile::ArtifactInfo {
+                url: sig.into(),
+                checksum: checksum.map(str::to_owned),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let old = entry(&with_login(&tarball), &with_login(&sig), Some(&md5));
+
+        // The weak pin is not carried.
+        let mut new = entry(&tarball, &sig, None);
+        keep_pins_recorded_with_a_login(&old, &mut new);
+        assert_eq!(new.checksum, None);
+        assert_eq!(new.additional_artifacts[0].checksum, None);
+
+        upgrade_weak_pins_recorded_with_a_login(&old, &mut new)
+            .await
+            .unwrap();
+        keep_pins_recorded_with_a_login(&old, &mut new);
+        complete_artifact_checksums(&mut new).await.unwrap();
+        for mock in mocks {
+            mock.assert_async().await;
+        }
+        let sha256 = format!("sha256:{ARTIFACT_SHA256}");
+        assert_eq!(new.checksum.as_deref(), Some(sha256.as_str()));
+        assert_eq!(
+            new.additional_artifacts[0].checksum.as_deref(),
+            Some(sha256.as_str())
+        );
+        assert_eq!(new.url.as_deref(), Some(tarball.as_str()));
+        assert_eq!(new.additional_artifacts[0].url, sig);
+
+        // Bytes that do not match the old pin are refused.
+        let tampered = entry(
+            &with_login(&tarball),
+            &with_login(&sig),
+            Some("md5:00000000000000000000000000000000"),
+        );
+        let mut new = entry(&tarball, &sig, None);
+        assert!(
+            upgrade_weak_pins_recorded_with_a_login(&tampered, &mut new)
+                .await
+                .is_err()
+        );
     }
 
     #[test]
