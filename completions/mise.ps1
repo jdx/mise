@@ -11,8 +11,9 @@ Register-ArgumentCompleter -Native -CommandName 'mise' -ScriptBlock {
     $extent = $commandAst.Extent
     $offset = $cursorPosition - $extent.StartOffset
     if ($offset -lt 0) { $offset = 0 }
-    if ($offset -gt $extent.Text.Length) { $offset = $extent.Text.Length }
-    $line = $extent.Text.Substring(0, $offset)
+    # The extent ends at the last token, so a space typed before the cursor is not in its text;
+    # padding restores it, and the binary needs it to tell a finished word from one being typed.
+    $line = $extent.Text.PadRight($offset).Substring(0, $offset)
     $out = @(& 'mise' __complete_word__ --shell powershell --line $line 2>$null)
 
     $files = $null

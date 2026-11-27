@@ -137,7 +137,7 @@
               "attestations_since": {
                 "type": "string",
                 "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(\\+[0-9A-Za-z-]+(\\.[0-9A-Za-z-]+)*)?$",
-                "description": "First version whose release assets carry GitHub attestations. From it on, installing without a verified attestation fails instead of skipping verification. Versions that are not semantic versions are never required. github: and aqua: backends only; an aqua: recipe must also declare github_artifact_attestations."
+                "description": "First version whose release assets carry GitHub attestations. From it on, installing without a verified attestation fails instead of skipping verification. A version made only of dot-separated numbers that is not a semantic version, such as 2.50 or 2.50.0.1, is compared by those numbers, a missing one counting as 0; other versions, such as nightly or a ref, are never required. github: and aqua: backends only; an aqua: recipe must also declare github_artifact_attestations."
               }
             },
             "required": ["full"],

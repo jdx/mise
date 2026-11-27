@@ -44,6 +44,44 @@ struct ReleaseAsset {
     release_tag: Option<String>,
 }
 
+/// A candidate tag whose release is newer than the release-age cutoff its
+/// version was chosen under.
+#[derive(Debug, Clone, thiserror::Error)]
+#[error("release {tag} was published {published}, after the minimum_release_age cutoff {before}")]
+struct HiddenByCutoff {
+    tag: String,
+    published: String,
+    before: jiff::Timestamp,
+}
+
+/// Why a candidate tag gave no asset. A release the cutoff hides counts as a
+/// tag that is not there, so the version's other spellings are tried.
+struct TagError(eyre::Report);
+
+impl From<eyre::Report> for TagError {
+    fn from(err: eyre::Report) -> Self {
+        Self(err)
+    }
+}
+
+impl VerifiableError for TagError {
+    fn is_not_found(&self) -> bool {
+        self.0.is::<HiddenByCutoff>() || self.0.is_not_found()
+    }
+
+    fn into_eyre(self) -> eyre::Report {
+        self.0
+    }
+}
+
+/// The release-age cutoff that chose `tv`'s version, if one did. A lockfile
+/// entry and a request naming the version exactly are installed whatever
+/// their age, as `minimum_release_age` documents.
+fn selection_cutoff(tv: &ToolVersion) -> Option<jiff::Timestamp> {
+    let chosen = tv.resolved_from_lockfile() || tv.request_pinned_this_version();
+    tv.before_date.filter(|_| !chosen)
+}
+
 #[derive(Debug, Clone, Copy)]
 struct AssetVerification {
     explicit_pattern: bool,
@@ -518,6 +556,40 @@ fn record_release_asset(
     pinned.or_else(|| {
         crate::versions_host::digest_download_pin(asset.digest.as_deref(), Some(&asset.url_api))
     })
+}
+
+/// Whether the tool's options or lockfile pin the checksum of the asset being
+/// resolved for `target`. The primary asset (`asset_pattern` is None) is pinned
+/// by the tool's checksum; an additional artifact by the checksum mise.lock
+/// keeps at its pattern's position, which is all an untrusted lockfile keeps
+/// of it (see `Lockfile::drop_what_needs_trust`). Download verification then
+/// checks the asset against that checksum.
+fn pins_asset(
+    tv: &ToolVersion,
+    opts: &GitBackendOptions<'_>,
+    target: &PlatformTarget,
+    asset_pattern: Option<&str>,
+) -> bool {
+    let platform_key = target.to_key();
+    let Some(asset_pattern) = asset_pattern else {
+        return pinned_checksum(tv, &platform_key, opts.raw()).is_some();
+    };
+    let patterns = opts.additional_asset_patterns_for_target(target);
+    let Some(artifacts) = tv
+        .lock_platforms
+        .get(&platform_key)
+        .map(|platform| &platform.additional_artifacts)
+        .filter(|artifacts| artifacts.len() == patterns.len())
+    else {
+        return false;
+    };
+    patterns
+        .iter()
+        .zip(artifacts)
+        .find(|(pattern, _)| *pattern == asset_pattern)
+        .is_some_and(|(_, artifact)| {
+            artifact.checksum.is_some() && artifact.checksum_source.is_none()
+        })
 }
 
 /// Whether `url` is under one of the public forges' API base URLs. Compared on
@@ -1491,9 +1563,9 @@ impl UnifiedGitBackend {
             && settings.github.github_attestations
             && opts.github_attestations()
             && attestations_supported(&opts.api_url())
-            && crate::registry::requires_github_attestations(
+            && crate::registry::tool_version_requires_github_attestations(
                 &self.ba.full_without_opts(),
-                &tv.version,
+                tv,
             ))
         .then_some(ProvenanceType::GithubAttestations)
     }
@@ -2075,6 +2147,13 @@ impl UnifiedGitBackend {
             .lock_platforms
             .get(&platform_key)
             .is_some_and(|p| p.checksum.is_some());
+        // Whether that checksum stands for a download that was verified. The one a
+        // lockfile that is not trusted keeps has no URL until the asset is recorded
+        // below: it pins the bytes and replaces no check.
+        let lockfile_vouches = tv
+            .lock_platforms
+            .get(&platform_key)
+            .is_some_and(PlatformInfo::has_vouched_checksum);
         // Read before the asset's digest is recorded below.
         let pinned = pinned_checksum(tv, &platform_key, opts.raw());
         let platform_info = tv.lock_platforms.entry(platform_key).or_default();
@@ -2135,12 +2214,13 @@ impl UnifiedGitBackend {
         let settings = Settings::get();
         let force_verify = settings.force_provenance_verify();
         // `has_lockfile_integrity` also counts a checksum taken from the release API above;
-        // only a checksum the lockfile already had may stand in for verification.
-        if lockfile_has_checksum && has_lockfile_integrity && !force_verify {
+        // only a checksum the lockfile already had, and vouches for, may stand in for
+        // verification.
+        if lockfile_vouches && has_lockfile_integrity && !force_verify {
             // Still check that the recorded provenance type's setting is enabled —
             // disabling a verification setting with a provenance-bearing lockfile is a downgrade.
             self.ensure_provenance_setting_enabled(tv, &platform_key)?;
-        } else if !force_verify && locked_provenance.is_none() && lockfile_has_checksum {
+        } else if !force_verify && locked_provenance.is_none() && lockfile_vouches {
             debug!(
                 "skipping provenance detection for {} \
                  (lockfile has checksum but no provenance)",
@@ -2204,8 +2284,12 @@ impl UnifiedGitBackend {
             .cloned()
             .unwrap_or_default();
         let lockfile_has_checksum = artifact_info.checksum.is_some();
+        // Read before the URL is recorded below: a lockfile that is not trusted
+        // keeps the checksum without it, as a pin that replaces no check.
+        let lockfile_vouches = artifact_info.has_vouched_checksum();
         let required = self.registry_required_provenance(tv, opts);
-        let has_lockfile_integrity = artifact_info.has_checksum_and_provenance()
+        let has_lockfile_integrity = lockfile_vouches
+            && artifact_info.has_checksum_and_provenance()
             && locked_provenance_satisfies(artifact_info.provenance.as_ref(), required.as_ref());
         artifact_info.url = asset.url.clone();
         artifact_info.url_api = (!asset.url_api.is_empty()).then(|| asset.url_api.clone());
@@ -2248,7 +2332,7 @@ impl UnifiedGitBackend {
             }
         } else if !Settings::get().force_provenance_verify()
             && expected_provenance.is_none()
-            && lockfile_has_checksum
+            && lockfile_vouches
         {
             debug!(
                 "skipping provenance detection for additional asset {} \
@@ -2471,7 +2555,13 @@ impl UnifiedGitBackend {
         let version_prefix = opts.version_prefix();
         let tags = opts.tag_filter()?;
         let allowed = |tag: &str| tags.allows(tag);
-        if self.is_gitlab() {
+        // Two tags can spell one version (`2.0.0` and `v2.0.0`), each its own
+        // release with its own date, and the cutoff chose the version by the
+        // date of one that passed it. A candidate whose release the cutoff
+        // hides is passed over for the version's other spellings.
+        let cutoff = selection_cutoff(tv);
+        let hidden = &std::sync::Mutex::new(None);
+        let resolved = if self.is_gitlab() {
             try_allowed_release_tags(
                 version,
                 version_prefix,
@@ -2480,6 +2570,8 @@ impl UnifiedGitBackend {
                 None,
                 allowed,
                 |candidate| async move {
+                    self.check_release_age(opts, repo, &candidate, cutoff, hidden)
+                        .await?;
                     self.resolve_gitlab_asset_url_for_target(
                         tv,
                         opts,
@@ -2489,6 +2581,7 @@ impl UnifiedGitBackend {
                         asset_pattern,
                     )
                     .await
+                    .map_err(TagError)
                 },
             )
             .await
@@ -2501,6 +2594,8 @@ impl UnifiedGitBackend {
                 None,
                 allowed,
                 |candidate| async move {
+                    self.check_release_age(opts, repo, &candidate, cutoff, hidden)
+                        .await?;
                     self.resolve_forgejo_asset_url_for_target(
                         tv,
                         opts,
@@ -2510,6 +2605,7 @@ impl UnifiedGitBackend {
                         asset_pattern,
                     )
                     .await
+                    .map_err(TagError)
                 },
             )
             .await
@@ -2525,6 +2621,8 @@ impl UnifiedGitBackend {
                 listed_tag.as_deref(),
                 allowed,
                 |candidate| async move {
+                    self.check_release_age(opts, repo, &candidate, cutoff, hidden)
+                        .await?;
                     self.resolve_github_asset_url_for_target(
                         tv,
                         opts,
@@ -2534,10 +2632,83 @@ impl UnifiedGitBackend {
                         asset_pattern,
                     )
                     .await
+                    .map_err(TagError)
                 },
             )
             .await
+        };
+        match resolved {
+            Err(err) if err.is_not_found() || err.is::<HiddenByCutoff>() => {
+                let Some(hidden) = hidden.lock().unwrap().take() else {
+                    return Err(err);
+                };
+                eyre::bail!(
+                    "refusing to install {}@{version}: minimum_release_age chose {version} by a release older than the cutoff, but the only release of it mise found is newer: {hidden}. \
+                     Install it by naming the version exactly ({}@{version}), or wait until the release is older than minimum_release_age.",
+                    self.ba(),
+                    self.ba(),
+                )
+            }
+            resolved => resolved,
         }
+    }
+
+    /// Refuses the release tagged `tag` when it was published after `cutoff`.
+    /// Such a tag is recorded in `hidden` and counts as not found, so the
+    /// version's other spellings are tried. This runs before an asset is
+    /// picked from the release, so a problem with a hidden release's assets
+    /// or checksum files never stops the search for an older spelling.
+    async fn check_release_age(
+        &self,
+        opts: &GitBackendOptions<'_>,
+        repo: &str,
+        tag: &str,
+        cutoff: Option<jiff::Timestamp>,
+        hidden: &std::sync::Mutex<Option<HiddenByCutoff>>,
+    ) -> std::result::Result<(), TagError> {
+        let Some(before) = cutoff else {
+            return Ok(());
+        };
+        let published = self.release_published_at(opts, repo, tag).await?;
+        let release = VersionInfo {
+            created_at: published.clone(),
+            ..Default::default()
+        };
+        if !release.hidden_by_date(before) {
+            return Ok(());
+        }
+        let found = HiddenByCutoff {
+            tag: tag.to_string(),
+            published: published.unwrap_or_default(),
+            before,
+        };
+        debug!("{repo}: {found}; trying the version's other tags");
+        hidden.lock().unwrap().get_or_insert_with(|| found.clone());
+        Err(TagError(eyre::Report::new(found)))
+    }
+
+    /// The date the version list gives the release tagged `tag`. The asset is
+    /// picked from the same release next, and reads it from the cache.
+    async fn release_published_at(
+        &self,
+        opts: &GitBackendOptions<'_>,
+        repo: &str,
+        tag: &str,
+    ) -> Result<Option<String>> {
+        let api_url = opts.api_url();
+        Ok(if self.is_gitlab() {
+            let release = gitlab::get_release_for_url(&api_url, repo, tag).await?;
+            release.published_at().map(str::to_string)
+        } else if self.is_forgejo() {
+            Some(
+                forgejo::get_release_for_url(&api_url, repo, tag)
+                    .await?
+                    .created_at,
+            )
+        } else {
+            let release = self.get_github_release_for_url(&api_url, repo, tag).await?;
+            Some(release.released_at().to_string())
+        })
     }
 
     /// Resolves GitHub asset URL for a specific target platform
@@ -2595,8 +2766,13 @@ impl UnifiedGitBackend {
             let digest = if asset.digest.is_some() {
                 asset.digest
             } else {
-                self.try_fetch_checksum_from_assets(opts, &assets_with_urls, &asset.name)
-                    .await
+                self.try_fetch_checksum_from_assets(
+                    opts,
+                    &assets_with_urls,
+                    &asset.name,
+                    pins_asset(tv, opts, target, asset_pattern),
+                )
+                .await?
             };
 
             return Ok(ReleaseAsset {
@@ -2631,8 +2807,13 @@ impl UnifiedGitBackend {
         let digest = if asset.digest.is_some() {
             asset.digest.clone()
         } else {
-            self.try_fetch_checksum_from_assets(opts, &assets_with_urls, &asset.name)
-                .await
+            self.try_fetch_checksum_from_assets(
+                opts,
+                &assets_with_urls,
+                &asset.name,
+                pins_asset(tv, opts, target, asset_pattern),
+            )
+            .await?
         };
 
         Ok(ReleaseAsset {
@@ -2701,8 +2882,13 @@ impl UnifiedGitBackend {
 
             // GitLab doesn't provide digests, so try fetching from release assets
             let digest = self
-                .try_fetch_checksum_from_assets(opts, &assets_with_urls, &asset.name)
-                .await;
+                .try_fetch_checksum_from_assets(
+                    opts,
+                    &assets_with_urls,
+                    &asset.name,
+                    pins_asset(tv, opts, target, asset_pattern),
+                )
+                .await?;
 
             return Ok(ReleaseAsset {
                 name: asset.name,
@@ -2734,8 +2920,13 @@ impl UnifiedGitBackend {
 
         // GitLab doesn't provide digests, so try fetching from release assets
         let digest = self
-            .try_fetch_checksum_from_assets(opts, &assets_with_urls, &asset.name)
-            .await;
+            .try_fetch_checksum_from_assets(
+                opts,
+                &assets_with_urls,
+                &asset.name,
+                pins_asset(tv, opts, target, asset_pattern),
+            )
+            .await?;
 
         Ok(ReleaseAsset {
             name: asset.name.clone(),
@@ -2808,8 +2999,13 @@ impl UnifiedGitBackend {
 
             // Try to get checksum from API digest or fetch from release assets
             let digest = self
-                .try_fetch_checksum_from_assets(opts, &assets_with_urls, &asset.name)
-                .await;
+                .try_fetch_checksum_from_assets(
+                    opts,
+                    &assets_with_urls,
+                    &asset.name,
+                    pins_asset(tv, opts, target, asset_pattern),
+                )
+                .await?;
 
             return Ok(ReleaseAsset {
                 name: asset.name,
@@ -2841,8 +3037,13 @@ impl UnifiedGitBackend {
 
         // Try to get checksum from API digest or fetch from release assets
         let digest = self
-            .try_fetch_checksum_from_assets(opts, &assets_with_urls, &asset.name)
-            .await;
+            .try_fetch_checksum_from_assets(
+                opts,
+                &assets_with_urls,
+                &asset.name,
+                pins_asset(tv, opts, target, asset_pattern),
+            )
+            .await?;
 
         Ok(ReleaseAsset {
             name: asset.name.clone(),
@@ -3006,19 +3207,31 @@ impl UnifiedGitBackend {
     /// This method looks for checksum files (SHA256SUMS, *.sha256, etc.) in the release
     /// assets and attempts to extract the checksum for the target asset.
     ///
-    /// Returns the checksum in "sha256:hash" format if found, None otherwise.
+    /// Returns the checksum in "sha256:hash" format if found, None when the
+    /// release's checksum files do not list the asset. Fails when a checksum
+    /// file that may hold the asset's checksum could not be downloaded or read
+    /// and no other one gives it, unless `pinned`: the tool's options or
+    /// lockfile already give the checksum the download is checked against.
     async fn try_fetch_checksum_from_assets(
         &self,
         opts: &GitBackendOptions<'_>,
         assets: &[Asset],
         asset_name: &str,
-    ) -> Option<String> {
+        pinned: bool,
+    ) -> Result<Option<String>> {
         let fetcher = ChecksumFetcher::new(assets);
         let source = ForgeChecksumSource {
             backend: self,
             api_url: opts.api_url(),
         };
-        match fetcher.fetch_checksum_for(asset_name, &source).await {
+        let found = match fetcher.fetch_checksum_for(asset_name, &source).await {
+            Err(e) if pinned => {
+                debug!("using the pinned checksum: {e:#}");
+                None
+            }
+            found => found?,
+        };
+        match found {
             Some(result) => {
                 debug!(
                     "Found checksum for {} from {}: {}",
@@ -3026,11 +3239,11 @@ impl UnifiedGitBackend {
                     result.source_file,
                     result.to_string_formatted()
                 );
-                Some(result.to_string_formatted())
+                Ok(Some(result.to_string_formatted()))
             }
             None => {
                 trace!("No checksum file found for {}", asset_name);
-                None
+                Ok(None)
             }
         }
     }
@@ -3891,6 +4104,34 @@ mod tests {
             "2.3.0"
         ));
     }
+
+    #[test]
+    fn test_registry_attestation_requirement_follows_the_requested_version() {
+        // registry/aube.toml: github:aubepkg/aube, attestations_since = 2.2.5
+        let tv = |request: &str, version: &str| {
+            ToolVersion::new(
+                crate::toolset::ToolRequest::new(
+                    std::sync::Arc::new(BackendArg::from("github:aubepkg/aube")),
+                    request,
+                    crate::toolset::ToolSource::Argument,
+                )
+                .unwrap(),
+                version.into(),
+            )
+        };
+        let required = |tv: &ToolVersion| {
+            crate::registry::tool_version_requires_github_attestations("github:aubepkg/aube", tv)
+        };
+        // A release lookup that renames the request to an older or unplaceable
+        // version keeps the requirement the request meets.
+        assert!(required(&tv("2.3.0", "2.0.0")));
+        assert!(required(&tv("2.3.0", "2.3.0.1")));
+        // Legitimate requests are judged as before.
+        assert!(required(&tv("2.3.0", "2.3.0")));
+        assert!(required(&tv("latest", "2.3.0")));
+        assert!(!required(&tv("2.2.4", "2.2.4")));
+        assert!(!required(&tv("latest", "2.2.4")));
+    }
     use crate::args::BackendArg;
 
     fn release_json(tag: &str, asset: &str) -> String {
@@ -4064,6 +4305,405 @@ mod tests {
         }
         v_tag.assert_async().await;
         bare_tag.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_version_chosen_under_the_release_age_cutoff_is_not_installed_from_a_newer_twin_tag()
+     {
+        // `2.0.0` is years old and `v2.0.0` was published after the cutoff.
+        // Both list as version 2.0.0, and `v2.0.0` is the spelling tried first.
+        // `v3.0.0` is the only release of 3.0.0 and is also too new.
+        let asset_url = |tag: &str| format!("https://example.com/{tag}/tool-linux-x64.tar.gz");
+        let gitlab_release = |tag: &str, date: &str| {
+            serde_json::json!({
+                "tag_name": tag,
+                "description": null,
+                "created_at": date,
+                "released_at": date,
+                "assets": { "sources": [], "links": [{
+                    "id": 1,
+                    "name": "tool-linux-x64.tar.gz",
+                    "url": asset_url(tag),
+                    "direct_asset_url": asset_url(tag),
+                    "link_type": "package",
+                }] },
+            })
+        };
+        let forgejo_release = |tag: &str, date: &str| {
+            serde_json::json!({
+                "id": 1,
+                "tag_name": tag,
+                "draft": false,
+                "prerelease": false,
+                "created_at": date,
+                "assets": [{
+                    "id": 1,
+                    "name": "tool-linux-x64.tar.gz",
+                    "uuid": "0",
+                    "browser_download_url": asset_url(tag),
+                }],
+            })
+        };
+        let releases = [
+            ("2.0.0", Some("2021-01-10T00:00:00Z")),
+            ("v2.0.0", Some("2025-06-02T00:00:00Z")),
+            ("v3.0.0", Some("2025-06-02T00:00:00Z")),
+            ("3.0.0", None),
+        ];
+        let before = crate::duration::parse_into_timestamp("2025-06-01").unwrap();
+        let target = PlatformTarget::new(crate::platform::Platform::parse("linux-x64").unwrap());
+
+        for forge in ["gitlab", "forgejo"] {
+            let mut server = mockito::Server::new_async().await;
+            for (tag, date) in releases {
+                let path = if forge == "gitlab" {
+                    format!(r"^/projects/.+/releases/{}$", regex::escape(tag))
+                } else {
+                    format!(r"^/repos/.+/releases/tags/{}$", regex::escape(tag))
+                };
+                let mock = server.mock("GET", mockito::Matcher::Regex(path));
+                match date {
+                    Some(date) => {
+                        let body = if forge == "gitlab" {
+                            gitlab_release(tag, date)
+                        } else {
+                            forgejo_release(tag, date)
+                        };
+                        mock.with_header("content-type", "application/json")
+                            .with_body(body.to_string())
+                    }
+                    None => mock.with_status(404),
+                }
+                .create_async()
+                .await;
+            }
+            let backend = if forge == "gitlab" {
+                create_test_gitlab_backend()
+            } else {
+                create_test_forgejo_backend()
+            };
+            let mut raw = ToolVersionOptions::default();
+            raw.opts
+                .insert("api_url".into(), toml::Value::String(server.url()));
+            let opts = backend.options(&raw);
+            let repo = format!("test/twin-tags-under-cutoff-{forge}");
+            let installed_from = async |requested: &str, version: &str| {
+                let request = ToolRequest::new(
+                    backend.ba.clone(),
+                    requested,
+                    crate::toolset::ToolSource::Argument,
+                )
+                .unwrap();
+                let mut tv = ToolVersion::new(request, version.to_string());
+                tv.before_date = Some(before);
+                backend
+                    .resolve_asset_url_for_target(&tv, &opts, &repo, &target)
+                    .await
+                    .map(|asset| asset.url)
+            };
+
+            // The cutoff chose 2.0.0 by the old release, so that one is installed.
+            for requested in ["latest", "2"] {
+                assert_eq!(
+                    installed_from(requested, "2.0.0").await.unwrap(),
+                    asset_url("2.0.0"),
+                    "{forge} {requested}"
+                );
+            }
+            // A request that names the version is not subject to the cutoff.
+            assert_eq!(
+                installed_from("2.0.0", "2.0.0").await.unwrap(),
+                asset_url("v2.0.0"),
+                "{forge} exact"
+            );
+            assert_eq!(
+                installed_from("3.0.0", "3.0.0").await.unwrap(),
+                asset_url("v3.0.0"),
+                "{forge} exact"
+            );
+            // A version whose only release is too new is refused, not installed.
+            let err = installed_from("latest", "3.0.0").await.unwrap_err();
+            assert!(
+                err.to_string().contains("refusing to install")
+                    && err.to_string().contains("release v3.0.0 was published"),
+                "{forge}: {err}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_release_hidden_by_the_cutoff_does_not_stop_the_search_with_its_checksum_file() {
+        // `v2.0.0` is tried first and is newer than the cutoff, and its checksum
+        // file cannot be downloaded. The cutoff chose 2.0.0 by the old `2.0.0`
+        // release, which must still be found.
+        let asset = "tool-linux-x64.tar.gz";
+        let sidecar = format!("{asset}.sha256");
+        let before = crate::duration::parse_into_timestamp("2025-06-01").unwrap();
+        let target = PlatformTarget::new(crate::platform::Platform::parse("linux-x64").unwrap());
+        for forge in ["gitlab", "forgejo"] {
+            let mut server = mockito::Server::new_async().await;
+            let server_url = server.url();
+            let file_url = |tag: &str, name: &str| format!("{server_url}/files/{tag}/{name}");
+            let release = |tag: &str, date: &str, files: &[&str]| {
+                if forge == "gitlab" {
+                    serde_json::json!({
+                        "tag_name": tag,
+                        "description": null,
+                        "created_at": date,
+                        "released_at": date,
+                        "assets": { "sources": [], "links": files.iter().map(|name| serde_json::json!({
+                            "id": 1,
+                            "name": name,
+                            "url": file_url(tag, name),
+                            "direct_asset_url": file_url(tag, name),
+                            "link_type": "package",
+                        })).collect::<Vec<_>>() },
+                    })
+                } else {
+                    serde_json::json!({
+                        "id": 1,
+                        "tag_name": tag,
+                        "draft": false,
+                        "prerelease": false,
+                        "created_at": date,
+                        "assets": files.iter().map(|name| serde_json::json!({
+                            "id": 1,
+                            "name": name,
+                            "uuid": name,
+                            "browser_download_url": file_url(tag, name),
+                        })).collect::<Vec<_>>(),
+                    })
+                }
+            };
+            for (tag, date, files) in [
+                ("2.0.0", "2021-01-10T00:00:00Z", vec![asset]),
+                (
+                    "v2.0.0",
+                    "2025-06-02T00:00:00Z",
+                    vec![asset, sidecar.as_str()],
+                ),
+            ] {
+                let path = if forge == "gitlab" {
+                    format!(r"^/projects/.+/releases/{}$", regex::escape(tag))
+                } else {
+                    format!(r"^/repos/.+/releases/tags/{}$", regex::escape(tag))
+                };
+                server
+                    .mock("GET", mockito::Matcher::Regex(path))
+                    .with_header("content-type", "application/json")
+                    .with_body(release(tag, date, &files).to_string())
+                    .create_async()
+                    .await;
+            }
+            server
+                .mock("GET", mockito::Matcher::Regex(r"\.sha256$".into()))
+                .with_status(500)
+                .create_async()
+                .await;
+            let backend = if forge == "gitlab" {
+                create_test_gitlab_backend()
+            } else {
+                create_test_forgejo_backend()
+            };
+            let mut raw = ToolVersionOptions::default();
+            raw.opts
+                .insert("api_url".into(), toml::Value::String(server.url()));
+            let opts = backend.options(&raw);
+            let repo = format!("test/hidden-twin-checksum-{forge}");
+            let installed_from = async |requested: &str| {
+                let request = ToolRequest::new(
+                    backend.ba.clone(),
+                    requested,
+                    crate::toolset::ToolSource::Argument,
+                )
+                .unwrap();
+                let mut tv = ToolVersion::new(request, "2.0.0".to_string());
+                tv.before_date = Some(before);
+                backend
+                    .resolve_asset_url_for_target(&tv, &opts, &repo, &target)
+                    .await
+                    .map(|asset| asset.url)
+            };
+
+            assert_eq!(
+                installed_from("latest")
+                    .await
+                    .unwrap_or_else(|e| panic!("{forge}: {e:#}")),
+                file_url("2.0.0", asset),
+                "{forge}"
+            );
+            // Named exactly, the version is installed from `v2.0.0`, and its
+            // unreadable checksum file still fails the install.
+            let err = installed_from("2.0.0").await.unwrap_err();
+            assert!(
+                format!("{err:#}").contains("cannot verify tool-linux-x64.tar.gz"),
+                "{forge}: {err:#}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_pinned_checksum_installs_when_the_release_checksum_file_cannot_be_read() {
+        let pin = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+        let target = PlatformTarget::new(crate::platform::Platform::parse("linux-x64").unwrap());
+        for forge in ["gitlab", "forgejo"] {
+            let mut server = mockito::Server::new_async().await;
+            let asset = "tool-linux-x64.tar.gz";
+            let sidecar = format!("{asset}.sha256");
+            let server_url = server.url();
+            let file_url = |name: &str| format!("{server_url}/files/{forge}/{name}");
+            let release = if forge == "gitlab" {
+                serde_json::json!({
+                    "tag_name": "v1.0.0",
+                    "description": null,
+                    "created_at": "2024-01-01T00:00:00Z",
+                    "released_at": "2024-01-01T00:00:00Z",
+                    "assets": { "sources": [], "links": ([asset, sidecar.as_str()].map(|name| serde_json::json!({
+                        "id": 1,
+                        "name": name,
+                        "url": file_url(name),
+                        "direct_asset_url": file_url(name),
+                        "link_type": "package",
+                    }))) },
+                })
+            } else {
+                serde_json::json!({
+                    "id": 1,
+                    "tag_name": "v1.0.0",
+                    "draft": false,
+                    "prerelease": false,
+                    "created_at": "2024-01-01T00:00:00Z",
+                    "assets": ([(asset, "a"), (sidecar.as_str(), "s")].map(|(name, uuid)| serde_json::json!({
+                        "id": 1,
+                        "name": name,
+                        "uuid": uuid,
+                        "browser_download_url": file_url(name),
+                    }))),
+                })
+            };
+            let path = if forge == "gitlab" {
+                r"^/projects/.+/releases/v1\.0\.0$"
+            } else {
+                r"^/repos/.+/releases/tags/v1\.0\.0$"
+            };
+            server
+                .mock("GET", mockito::Matcher::Regex(path.into()))
+                .with_header("content-type", "application/json")
+                .with_body(release.to_string())
+                .create_async()
+                .await;
+            server
+                .mock("GET", mockito::Matcher::Regex(path.replace(r"/v1", "/1")))
+                .with_status(404)
+                .create_async()
+                .await;
+            // Every download of the checksum file fails, however it is asked for.
+            server
+                .mock(
+                    "GET",
+                    mockito::Matcher::Regex(r"\.sha256$|/attachments/s$".into()),
+                )
+                .with_status(404)
+                .create_async()
+                .await;
+            let backend = if forge == "gitlab" {
+                create_test_gitlab_backend()
+            } else {
+                create_test_forgejo_backend()
+            };
+            let repo = format!("test/unreadable-checksum-file-{forge}");
+            let resolve = async |checksum_option: Option<&str>, lock_pin: Option<&str>| {
+                let mut raw = ToolVersionOptions::default();
+                raw.opts
+                    .insert("api_url".into(), toml::Value::String(server.url()));
+                if let Some(checksum) = checksum_option {
+                    raw.opts
+                        .insert("checksum".into(), toml::Value::String(checksum.into()));
+                }
+                let opts = backend.options(&raw);
+                let request = ToolRequest::new(
+                    backend.ba.clone(),
+                    "1.0.0",
+                    crate::toolset::ToolSource::Argument,
+                )
+                .unwrap();
+                let mut tv = ToolVersion::new(request, "1.0.0".to_string());
+                if let Some(checksum) = lock_pin {
+                    tv.lock_platforms.insert(
+                        target.to_key(),
+                        crate::lockfile::PlatformInfo {
+                            checksum: Some(checksum.to_string()),
+                            ..Default::default()
+                        },
+                    );
+                }
+                backend
+                    .resolve_asset_url_for_target(&tv, &opts, &repo, &target)
+                    .await
+            };
+
+            let err = resolve(None, None).await.unwrap_err();
+            assert!(
+                format!("{err:#}").contains("cannot verify tool-linux-x64.tar.gz"),
+                "{forge}: {err:#}"
+            );
+            for (option, lock) in [(Some(pin), None), (None, Some(pin))] {
+                let asset = resolve(option, lock)
+                    .await
+                    .unwrap_or_else(|e| panic!("{forge} {option:?} {lock:?}: {e:#}"));
+                assert_eq!(asset.url, file_url("tool-linux-x64.tar.gz"), "{forge}");
+                assert_eq!(asset.digest, None, "{forge}");
+            }
+
+            // An additional asset is pinned by the checksum mise.lock keeps at
+            // its pattern's position, with no URL as in an untrusted lockfile.
+            let resolve_additional = async |lock_pin: Option<&str>| {
+                let mut raw = ToolVersionOptions::default();
+                raw.opts
+                    .insert("api_url".into(), toml::Value::String(server.url()));
+                raw.opts.insert(
+                    "additional_asset_patterns".into(),
+                    toml::Value::String(asset.into()),
+                );
+                let opts = backend.options(&raw);
+                let request = ToolRequest::new(
+                    backend.ba.clone(),
+                    "1.0.0",
+                    crate::toolset::ToolSource::Argument,
+                )
+                .unwrap();
+                let mut tv = ToolVersion::new(request, "1.0.0".to_string());
+                tv.lock_platforms.insert(
+                    target.to_key(),
+                    crate::lockfile::PlatformInfo {
+                        additional_artifacts: vec![crate::lockfile::ArtifactInfo {
+                            checksum: lock_pin.map(str::to_string),
+                            ..Default::default()
+                        }],
+                        ..Default::default()
+                    },
+                );
+                backend
+                    .resolve_asset_url_for_target_with_pattern(
+                        &tv,
+                        &opts,
+                        &repo,
+                        &target,
+                        Some(asset),
+                    )
+                    .await
+            };
+            let err = resolve_additional(None).await.unwrap_err();
+            assert!(
+                format!("{err:#}").contains("cannot verify tool-linux-x64.tar.gz"),
+                "{forge}: {err:#}"
+            );
+            let additional = resolve_additional(Some(pin))
+                .await
+                .unwrap_or_else(|e| panic!("{forge} additional: {e:#}"));
+            assert_eq!(additional.url, file_url(asset), "{forge}");
+            assert_eq!(additional.digest, None, "{forge}");
+        }
     }
 
     #[test]
@@ -5782,6 +6422,7 @@ platforms.macos-arm64.url = 'https://example.com/{{ version }}/tool-darwin-arm64
         let result = ChecksumFetcher::new(&assets)
             .fetch_checksum_for("tool-linux.tar.gz", &source)
             .await
+            .unwrap()
             .expect("checksum is found");
         assert_eq!(
             result.to_string_formatted(),
@@ -5816,6 +6457,7 @@ platforms.macos-arm64.url = 'https://example.com/{{ version }}/tool-darwin-arm64
         let result = ChecksumFetcher::new(&assets)
             .fetch_checksum_for("tool-linux.tar.gz", &source)
             .await
+            .unwrap()
             .expect("checksum is found");
         assert_eq!(
             result.to_string_formatted(),

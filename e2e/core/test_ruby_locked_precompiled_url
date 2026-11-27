@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+
+# mise.lock pins the precompiled Ruby archive by URL and checksum. The release
+# API must not get to choose another archive (a newer build revision), nor
+# make mise compile Ruby instead by finding no release at all.
+export MISE_LOCKFILE=1
+
+detect_platform
+CURRENT_PLATFORM="$MISE_PLATFORM"
+if [[ $MISE_PLATFORM_OS == "linux" ]] && type -P ldd >/dev/null && ldd --version 2>&1 | grep -qi musl; then
+  CURRENT_PLATFORM="$CURRENT_PLATFORM-musl"
+fi
+
+sha256() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | cut -d' ' -f1
+  else
+    shasum -a 256 "$1" | cut -d' ' -f1
+  fi
+}
+
+# A stand-in for acme/ruby: release archives whose ruby prints a banner
+SERVED="$HOME/served"
+DOWNLOAD="$SERVED/github.com/acme/ruby/releases/download"
+make_ruby() {
+  local stage="$HOME/stage-$1"
+  mkdir -p "$stage/ruby-3.4.1/bin" "$DOWNLOAD/$1"
+  printf '#!/bin/sh\necho "%s"\n' "$2" >"$stage/ruby-3.4.1/bin/ruby"
+  chmod +x "$stage/ruby-3.4.1/bin/ruby"
+  tar -czf "$DOWNLOAD/$1/ruby-3.4.1.test_box.tar.gz" -C "$stage" ruby-3.4.1
+}
+release_json() {
+  local url="https://github.com/acme/ruby/releases/download/$1/ruby-3.4.1.test_box.tar.gz"
+  printf '{"tag_name":"%s","draft":false,"prerelease":false,"created_at":"2026-01-01T00:00:00Z","assets":[{"name":"ruby-3.4.1.test_box.tar.gz","browser_download_url":"%s","url":"%s","digest":"sha256:%s"}]}' \
+    "$1" "$url" "$url" "$(sha256 "$DOWNLOAD/$1/ruby-3.4.1.test_box.tar.gz")"
+}
+make_ruby 3.4.1 "genuine ruby"
+make_ruby 3.4.1-1 "other ruby"
+GENUINE_SHA=$(sha256 "$DOWNLOAD/3.4.1/ruby-3.4.1.test_box.tar.gz")
+
+mkdir -p "$SERVED/api/tags"
+release_json 3.4.1 >"$SERVED/api/tags/3.4.1.json"
+printf '[%s]' "$(release_json 3.4.1)" >"$SERVED/api/releases.json"
+
+start_http_server --dir "$SERVED"
+
+export MISE_URL_REPLACEMENTS="{\"regex:^https://api\\\\.github\\\\.com/repos/acme/ruby/releases/tags/([^/?]+).*\":\"http://127.0.0.1:$HTTP_PORT/api/tags/\$1.json\",\"regex:^https://api\\\\.github\\\\.com/repos/acme/ruby/releases(\\\\?.*)?\$\":\"http://127.0.0.1:$HTTP_PORT/api/releases.json\",\"https://github.com\":\"http://127.0.0.1:$HTTP_PORT/github.com\"}"
+export MISE_RUBY_PRECOMPILED_URL=acme/ruby
+export MISE_RUBY_PRECOMPILED_ARCH=test
+export MISE_RUBY_PRECOMPILED_OS=box
+export MISE_RUBY_GITHUB_ATTESTATIONS=false
+# A source build is not what the lockfile pins; make one fail
+export MISE_RUBY_BUILD_REPO="file://$HOME/no-ruby-build"
+
+cat <<'TOML' >mise.toml
+[tools]
+ruby = "3.4.1"
+TOML
+# A cache of its own, so the release list below is fetched again
+assert_succeed "MISE_CACHE_DIR=$HOME/lock-cache mise lock --platform $CURRENT_PLATFORM"
+assert_contains "cat mise.lock" "checksum = \"sha256:$GENUINE_SHA\""
+assert_contains "cat mise.lock" "/releases/download/3.4.1/ruby-3.4.1.test_box.tar.gz"
+cp mise.lock mise.lock.orig
+
+# The release list gains a build revision after mise.lock was written
+release_json 3.4.1-1 >"$SERVED/api/tags/3.4.1-1.json"
+printf '[%s,%s]' "$(release_json 3.4.1-1)" "$(release_json 3.4.1)" >"$SERVED/api/releases.json"
+
+assert_succeed "mise install --locked ruby"
+assert "mise x --locked -- ruby" "genuine ruby"
+assert_succeed "diff mise.lock.orig mise.lock"
+
+# The release API answers nothing: the locked archive is still installed
+mise uninstall ruby@3.4.1
+rm -r "$SERVED/api"
+assert_succeed "MISE_CACHE_DIR=$HOME/empty-cache mise install --locked ruby"
+assert "mise x --locked -- ruby" "genuine ruby"

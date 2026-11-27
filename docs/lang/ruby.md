@@ -52,8 +52,9 @@ This changes your global config. Add `--local` to enable it in the project's
 
 mise then reads `.ruby-version` (a leading `ruby-` is ignored), a
 `ruby "4.0.7"` line in `Gemfile`, or Bundler's `ruby file: ".ruby-version"`,
-which is resolved next to the `Gemfile`. To write `.ruby-version` from the
-selected Ruby:
+which is resolved next to the `Gemfile`. That file has to be in the `Gemfile`'s
+directory or below it: mise does not follow a symlink that leads out of it. To
+write `.ruby-version` from the selected Ruby:
 
 ```sh
 mise exec -- ruby -e 'puts RUBY_VERSION' > .ruby-version
@@ -133,6 +134,20 @@ version = "3.3.11"
 [tools.ruby."platforms.linux-x64"]
 url = "https://github.com/jdx/ruby/releases/download/3.3.11-1/ruby-3.3.11.x86_64_linux.tar.gz"
 ```
+
+mise downloads that URL as it is; it does not compile Ruby instead when the
+release can no longer be found. When the entry has a `checksum`, the download
+must match it. An entry without one is checked against the digest the release
+lists for that archive, when it lists one and the locked `url` is the release's
+own download URL. A locked `url` that points anywhere else, such as a mirror,
+gets no checksum check unless the entry has a `checksum`. Without one, the
+archive must still pass that repository's GitHub artifact attestation check
+when [`ruby.precompiled_url`](/lang/ruby.html#ruby.precompiled_url) names a
+GitHub repository (`owner/repo`, the default) and
+[`ruby.github_attestations`](/lang/ruby.html#ruby.github_attestations) is on.
+When `ruby.precompiled_url` is a full URL template, mise checks no
+attestations, so give the lock entries a `checksum` to have those downloads
+checked.
 
 To move to the newest build of the same version, delete the Ruby entry from
 `mise.lock`, or every Ruby platform `url`, then run:

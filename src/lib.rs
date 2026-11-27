@@ -153,6 +153,7 @@ pub fn register_util_hooks() {
             .to_string(),
     );
     mise_ui::set_interrupt_hook(vfox::cancel_http_requests);
+    vfox::set_http_timeout(|| config::Settings::get().http_timeout());
     mise_ui::progress_report::set_longest_plugin_name(|| {
         backend::list()
             .into_iter()

@@ -1,5 +1,4 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::env::temp_dir;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -231,7 +230,10 @@ impl RubyPlugin {
         pr: Option<&dyn SingleReport>,
         tmp_dir_name: &str,
     ) -> Result<PathBuf> {
-        let tmp = temp_dir().join(tmp_dir_name);
+        // Staged next to the install prefix, in mise's own cache directory. Under a fixed name
+        // in the system temporary directory another local user can create the directory first
+        // and replace the scripts that are then run from it.
+        let tmp = self.ba.cache_path().join(tmp_dir_name);
         file::remove_all(&tmp)?;
         file::create_dir_all(tmp.parent().unwrap())?;
         let source = PluginSource::parse(repo);
@@ -657,13 +659,61 @@ impl RubyPlugin {
             return Ok(None);
         };
 
-        let locked_build_revision =
-            Self::extract_build_revision_from_lock_platforms(tv, &tv.version);
-        let Some((url, checksum)) = self
-            .resolve_precompiled_url(&tv.version, &platform, locked_build_revision.as_deref())
-            .await?
-        else {
-            return Ok(None);
+        // A lockfile pins the exact archive, and the locked checksum below is that
+        // archive's. The release API must not get to name another one, such as a
+        // newer build revision or a moved asset, nor make mise compile instead by
+        // finding nothing: the pinned URL has to win.
+        let locked = tv
+            .lock_platforms
+            .get(&self.get_platform_key())
+            .and_then(|pi| pi.url.clone().map(|url| (url, pi.checksum.is_some())));
+        let (url, checksum) = match locked {
+            Some((url, has_checksum))
+                if self.is_precompiled_archive_url(&url, &tv.version, &platform) =>
+            {
+                debug!("using lockfile URL for ruby {}: {url}", tv.version);
+                // An entry without a checksum is still checked against the release
+                // digest, when the release lists the same archive.
+                let checksum = if has_checksum {
+                    None
+                } else {
+                    let locked_build_revision =
+                        Self::extract_build_revision_from_lock_platforms(tv, &tv.version);
+                    self.resolve_precompiled_url(
+                        &tv.version,
+                        &platform,
+                        locked_build_revision.as_deref(),
+                    )
+                    .await?
+                    .filter(|(resolved, _)| *resolved == url)
+                    .and_then(|(_, checksum)| checksum)
+                };
+                (url, checksum)
+            }
+            // The entry pins something else: the source tarball, locked when there was
+            // no precompiled build. Locked mode installs only what the lock describes.
+            Some((url, _)) if ctx.locked => {
+                debug!(
+                    "mise.lock pins {url} for ruby {}, not a precompiled build",
+                    tv.version
+                );
+                return Ok(None);
+            }
+            _ => {
+                let locked_build_revision =
+                    Self::extract_build_revision_from_lock_platforms(tv, &tv.version);
+                let Some(resolved) = self
+                    .resolve_precompiled_url(
+                        &tv.version,
+                        &platform,
+                        locked_build_revision.as_deref(),
+                    )
+                    .await?
+                else {
+                    return Ok(None);
+                };
+                resolved
+            }
         };
 
         let filename = match url.rsplit('/').next() {
@@ -686,13 +736,17 @@ impl RubyPlugin {
             hash::ensure_checksum(&tarball_path, hash_str, Some(ctx.pr.as_ref()), "sha256")?;
         }
 
-        // Locked bytes remain checked even when provenance verification is reused.
+        // Locked bytes remain checked even when provenance verification is reused. An
+        // entry for another URL describes another artifact (the source tarball). One
+        // without a URL, as safe mode keeps from a project lockfile, still pins by
+        // checksum, but its provenance is verified again.
         let platform_key = PlatformTarget::from_current().to_key();
         let locked_info = tv
             .lock_platforms
             .get(&platform_key)
-            .filter(|info| info.url.as_deref() == Some(url.as_str()));
-        let reuse_provenance = locked_info.is_some_and(|info| info.has_checksum_and_provenance())
+            .filter(|info| info.url.as_deref().is_none_or(|locked| locked == url));
+        let reuse_provenance = locked_info
+            .is_some_and(|info| info.url.is_some() && info.has_checksum_and_provenance())
             && !Settings::get().force_provenance_verify();
         if let Some((algorithm, expected)) = locked_info
             .and_then(|info| info.checksum.as_deref())
@@ -1401,6 +1455,57 @@ mod tests {
                 ),
                 ("ruby_install".to_string(), "false".to_string()),
             ])
+        );
+    }
+
+    /// A lockfile pins the archive its checksum describes, so an install uses a locked
+    /// precompiled URL as it is instead of asking the release API again. The source
+    /// tarball `lock_info` records when there is no precompiled build is not one.
+    #[test]
+    fn test_ruby_locked_precompiled_archive_url() {
+        let releases = "https://github.com/jdx/ruby/releases/download";
+        with_ruby_settings(
+            |_| {},
+            |backend| {
+                for url in [
+                    format!("{releases}/3.4.1/ruby-3.4.1.x86_64_linux.tar.gz"),
+                    format!("{releases}/3.4.1-2/ruby-3.4.1.x86_64_linux.tar.gz"),
+                ] {
+                    assert!(
+                        backend.is_precompiled_archive_url(&url, "3.4.1", "x86_64_linux"),
+                        "{url}"
+                    );
+                }
+                for url in [
+                    "https://cache.ruby-lang.org/pub/ruby/3.4/ruby-3.4.1.tar.gz".to_string(),
+                    format!("{releases}/3.4.1-2/ruby-3.4.1.arm64_linux.tar.gz"),
+                    format!("{releases}/3.4.2-1/ruby-3.4.2.x86_64_linux.tar.gz"),
+                    format!("{releases}/3.4.1/ruby-3.4.1.x86_64_linux.tar.gz#/.."),
+                ] {
+                    assert!(
+                        !backend.is_precompiled_archive_url(&url, "3.4.1", "x86_64_linux"),
+                        "{url}"
+                    );
+                }
+            },
+        );
+        with_ruby_settings(
+            |settings| {
+                settings.ruby.precompiled_url =
+                    Some("https://example.com/ruby-{version}-{platform}.tar.gz".to_string());
+            },
+            |backend| {
+                assert!(backend.is_precompiled_archive_url(
+                    "https://example.com/ruby-3.4.1-x86_64_linux.tar.gz",
+                    "3.4.1",
+                    "x86_64_linux"
+                ));
+                assert!(!backend.is_precompiled_archive_url(
+                    "https://cache.ruby-lang.org/pub/ruby/3.4/ruby-3.4.1.tar.gz",
+                    "3.4.1",
+                    "x86_64_linux"
+                ));
+            },
         );
     }
 

@@ -73,6 +73,31 @@ rm -f mise.lock
 MISE_NODE_GPG_VERIFY=false mise lock --platform linux-x64
 assert_contains "cat mise.lock" 'checksum = "sha256:0000'
 
+# A lock entry with a checksum and no URL, which is what a lockfile that is not
+# trusted keeps, pins the archive but says nothing about who published it. A
+# locked install downloads from the mirror and must still check the signature
+detect_platform
+cat <<EOF_LOCK >mise.lock
+lockfile_version = 4
+
+[[tools.node]]
+version = "18.20.8"
+backend = "core:node"
+specifiers = ["18.20.8"]
+
+[tools.node.options]
+mirror_url = "$MISE_NODE_MIRROR_URL"
+
+[tools.node."platforms.$MISE_PLATFORM"]
+checksum = "sha256:$(printf 'placeholder archive' | sha256sum | cut -d' ' -f1)"
+EOF_LOCK
+assert_fail "mise install --locked" "signature does not match any trusted public key"
+# and a pin the archive does not match fails before the mirror's checksum can replace it
+sed -i 's|^checksum = "sha256:.*"|checksum = "sha256:0000000000000000000000000000000000000000000000000000000000000000"|' mise.lock
+assert_fail "mise install --locked" "Checksum mismatch"
+# an install that is not locked compares the pin too
+assert_fail "mise install" "Checksum mismatch"
+
 # A SHASUMS256.txt whose signature matches is locked
 mkdir -p "$MIRROR/v20.11.0"
 echo '[{"version":"v20.11.0","files":[]}]' >"$MIRROR/index.json"

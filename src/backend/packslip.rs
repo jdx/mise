@@ -35,7 +35,6 @@ use crate::backend::{
 };
 use crate::cache::CacheManagerBuilder;
 use crate::config::{Config, Settings, SettingsExt};
-use crate::dirs;
 use crate::file;
 use crate::github;
 use crate::http::HTTP_FETCH;
@@ -195,6 +194,12 @@ fn release_url_tag(url: &str) -> Option<String> {
     (!tag.is_empty()).then(|| tag.into_owned())
 }
 
+/// Most bytes a signed release list may hold. Like a manifest (see
+/// [`crate::packslip::MAX_MANIFEST_BYTES`]) it is read whole into memory and
+/// parsed before anything has verified it; a release takes a few hundred bytes
+/// of it.
+const MAX_RELEASE_LIST_BYTES: usize = 4 * 1024 * 1024;
+
 /// The text of a signed release list at `url` (a vendor's or a stamper's), or
 /// `None` when there is none. A resolution reads the list for every release it
 /// looks at, so one command would otherwise fetch the same file over and over,
@@ -202,10 +207,8 @@ fn release_url_tag(url: &str) -> Option<String> {
 /// covers a command and no more: a long-running process (`mise mcp`, `mise
 /// watch`) reads the list again, so a withdrawal is still noticed.
 ///
-/// Every command still asks the host. What it saves across commands is the
-/// body: the last copy is kept with its validator, and a `304 Not Modified`
-/// answer reuses it. The text is verified by the caller either way, exactly
-/// as a fresh download would be.
+/// Every command asks the host and reads the whole answer: nothing is kept
+/// across commands, see [`request_policy_text`].
 pub(crate) async fn fetch_policy_text(url: &str) -> Result<Option<String>> {
     fetch_policy_text_via(url, None).await
 }
@@ -234,7 +237,21 @@ async fn mirrored_policy_text(url: &str, repo: &str, sub: Option<&str>) -> Optio
         return None;
     }
     match crate::versions_host::github_packslip_list(repo, sub).await {
+        Ok(Some(crate::versions_host::PackslipList::Present(text)))
+            if text.len() > MAX_RELEASE_LIST_BYTES =>
+        {
+            // GitHub is asked, and the same limit refuses it there.
+            debug!("mise-versions answered with an oversized release list of {repo}");
+            None
+        }
         Ok(Some(crate::versions_host::PackslipList::Present(text))) => Some(Some(text)),
+        // Nothing signs "no list", and a list is what withdraws a release, so
+        // paranoid mode has GitHub answer that, failing when it cannot.
+        Ok(Some(crate::versions_host::PackslipList::Absent))
+            if Settings::get().paranoid.provenance() =>
+        {
+            None
+        }
         Ok(Some(crate::versions_host::PackslipList::Absent)) => Some(None),
         Ok(None) => None,
         Err(err) => {
@@ -273,10 +290,7 @@ async fn fetch_policy_text_via(
             };
             let text = match mirrored {
                 Some(text) => text,
-                None => {
-                    let store = dirs::CACHE.join("packslip").join("policy");
-                    revalidate_policy_text(url, &store).await?
-                }
+                None => request_policy_text(url).await?,
             };
             Ok::<_, eyre::Report>((std::time::Instant::now(), text))
         })
@@ -284,85 +298,40 @@ async fn fetch_policy_text_via(
     Ok(text.clone())
 }
 
-/// The last copy of a policy file and the validator its host sent with it.
-#[derive(Debug, Serialize, Deserialize)]
-struct StoredPolicy {
-    url: String,
-    etag: Option<String>,
-    last_modified: Option<String>,
-    text: String,
-}
-
-fn stored_policy_path(store: &Path, url: &str) -> PathBuf {
-    use sha2::{Digest, Sha256};
-    store.join(format!(
-        "{}.json",
-        hex::encode(Sha256::digest(url.as_bytes()))
+/// One request for the policy file at `url`, with no reuse within the
+/// process. It is never conditional, and no copy is kept to make it so: a
+/// `304 Not Modified` confirms a validator, and which text a validator belongs
+/// to is only what one earlier answer said. An older list of the vendor's,
+/// answered once under the current list's `ETag`, would be confirmed by the
+/// vendor's own host from then on, and signature, expiry and sequence hold for
+/// it as they did when it was current, so a withdrawal would stay unseen.
+async fn request_policy_text(url: &str) -> Result<Option<String>> {
+    let headers = crate::http::host_auth_headers(&url.parse()?)?;
+    let resp = match HTTP_FETCH.get_async_with_headers(url, &headers).await {
+        Ok(resp) => resp,
+        Err(err) if answered_not_found(&err) => return Ok(None),
+        Err(err) => return Err(err),
+    };
+    if resp.status() == reqwest::StatusCode::NOT_MODIFIED {
+        bail!("{url} answered 304 Not Modified to an unconditional request");
+    }
+    Ok(Some(
+        crate::http::buffer_body_with_limit(resp, MAX_RELEASE_LIST_BYTES)
+            .await?
+            .text()
+            .await?,
     ))
 }
 
-/// One conditional request for the policy file at `url`, with no reuse
-/// within the process.
-async fn revalidate_policy_text(url: &str, store: &Path) -> Result<Option<String>> {
-    use reqwest::StatusCode;
-    use reqwest::header::{ETAG, HeaderValue, IF_MODIFIED_SINCE, IF_NONE_MATCH, LAST_MODIFIED};
-
-    let path = stored_policy_path(store, url);
-    let stored = file::read_to_string(&path)
-        .ok()
-        .and_then(|text| serde_json::from_str::<StoredPolicy>(&text).ok())
-        .filter(|stored| stored.url == url);
-    let mut headers = crate::http::host_auth_headers(&url.parse()?)?;
-    if let Some(stored) = &stored {
-        if let Some(etag) = stored.etag.as_deref() {
-            headers.insert(IF_NONE_MATCH, HeaderValue::from_str(etag)?);
-        } else if let Some(last_modified) = stored.last_modified.as_deref() {
-            headers.insert(IF_MODIFIED_SINCE, HeaderValue::from_str(last_modified)?);
-        }
-    }
-    let resp = match HTTP_FETCH.get_async_with_headers(url, &headers).await {
-        Ok(resp) => resp,
-        Err(err) if crate::http::error_code(&err) == Some(404) => {
-            // Nothing to revalidate next time.
-            let _ = std::fs::remove_file(&path);
-            return Ok(None);
-        }
-        Err(err) => return Err(err),
-    };
-    if resp.status() == StatusCode::NOT_MODIFIED {
-        // A host only says this to the validator sent, which came with this text.
-        return match stored {
-            Some(stored) => Ok(Some(stored.text)),
-            None => bail!("{url} answered 304 Not Modified to an unconditional request"),
-        };
-    }
-    let header = |name| {
-        resp.headers()
-            .get(name)
-            .and_then(|value: &HeaderValue| value.to_str().ok())
-            .map(str::to_string)
-    };
-    // A weak ETag is enough: reused text is verified again, signature,
-    // expiry and sequence, before anything trusts it.
-    let etag = header(ETAG);
-    let last_modified = header(LAST_MODIFIED);
-    let text = crate::http::buffer_body(resp).await?.text().await?;
-    if etag.is_some() || last_modified.is_some() {
-        let stored = StoredPolicy {
-            url: url.to_string(),
-            etag,
-            last_modified,
-            text: text.clone(),
-        };
-        let written = file::create_dir_all(store)
-            .and_then(|()| file::write_atomic(&path, serde_json::to_vec(&stored)?));
-        if let Err(err) = written {
-            debug!("could not keep {url} for revalidation: {err:#}");
-        }
-    } else {
-        let _ = std::fs::remove_file(&path);
-    }
-    Ok(Some(text))
+/// Whether the host answered `err` with 404, read from the response status
+/// alone. A 404 is the one answer that says there is no list, so a timeout or
+/// a refused connection, whose message names the URL and so holds `404` for a
+/// repository called that, is never taken for one.
+fn answered_not_found(err: &eyre::Report) -> bool {
+    err.chain()
+        .filter_map(|cause| cause.downcast_ref::<reqwest::Error>())
+        .find_map(reqwest::Error::status)
+        == Some(reqwest::StatusCode::NOT_FOUND)
 }
 
 /// The signed release list of a project on its own domain.
@@ -985,6 +954,17 @@ impl Pin {
             .filter_map(|policy| policy.identity.as_ref().or(policy.identity_prefix.as_ref()))
             .map(|identity| packslip_pins::signer_of("sigstore-oidc", identity))
             .collect()
+    }
+
+    /// The fingerprint of the key a release verified under this pin was
+    /// signed with, for the signer pin to hold to. A verified release names
+    /// its key by the ID in the key line alone, which a line for any other
+    /// key can carry.
+    fn key_fingerprint(&self) -> Option<String> {
+        match self {
+            Pin::Key(key) => Some(key.fingerprint()),
+            Pin::Forge(_) | Pin::Identity(_) | Pin::Workflows(_) => None,
+        }
     }
 
     /// What may have signed: one trust, or one per accepted identity.
@@ -1990,11 +1970,13 @@ impl PackslipBackend {
         let scheme = verified.scheme.to_string();
         let attested_by = verified.attested_by.to_string();
         let listed = pin.listed_signers();
+        let key_fingerprint = pin.key_fingerprint();
         packslip_pins::check(
             project,
             Observed {
                 scheme: &scheme,
                 key_id: &verified.key_id,
+                key_fingerprint: key_fingerprint.as_deref(),
                 issuer: verified.issuer.as_deref(),
                 attested_by: &attested_by,
                 provenance: verified.provenance_linked,
@@ -2290,6 +2272,7 @@ pub(crate) struct PendingPin {
     project: String,
     scheme: String,
     key_id: String,
+    key_fingerprint: Option<String>,
     issuer: Option<String>,
     attested_by: String,
     provenance: bool,
@@ -2305,6 +2288,7 @@ impl PendingPin {
             Observed {
                 scheme: &self.scheme,
                 key_id: &self.key_id,
+                key_fingerprint: self.key_fingerprint.as_deref(),
                 issuer: self.issuer.as_deref(),
                 attested_by: &self.attested_by,
                 provenance: self.provenance,
@@ -2500,9 +2484,11 @@ impl PackslipBackend {
         // Nothing is recorded until the release is accepted in full, so a
         // refused install leaves no pin behind.
         let listed = pin.listed_signers();
+        let key_fingerprint = pin.key_fingerprint();
         let observed = Observed {
             scheme: &scheme,
             key_id: &verified.key_id,
+            key_fingerprint: key_fingerprint.as_deref(),
             issuer: verified.issuer.as_deref(),
             attested_by: &attested_by,
             provenance: verified.provenance_linked,
@@ -2680,6 +2666,7 @@ impl PackslipBackend {
                 project,
                 scheme: observed.scheme.to_owned(),
                 key_id: observed.key_id.to_owned(),
+                key_fingerprint: observed.key_fingerprint.map(str::to_owned),
                 issuer: observed.issuer.map(str::to_owned),
                 attested_by: observed.attested_by.to_owned(),
                 provenance: observed.provenance,
@@ -3538,6 +3525,63 @@ mod tests {
         }
     }
 
+    /// Nothing signs the mirror's "no list", so the `provenance` category has
+    /// GitHub answer it: a list there counts, and a GitHub that cannot be
+    /// read fails the fetch.
+    #[tokio::test]
+    async fn paranoid_provenance_has_github_confirm_there_is_no_list() {
+        let _settings = crate::test::SettingsGuard::lock();
+        let _config = Config::get().await.unwrap();
+        let mut server = mockito::Server::new_async().await;
+        {
+            use confique::Layer;
+            let mut replacements = indexmap::IndexMap::new();
+            replacements.insert("https://mise-versions.jdx.dev".to_string(), server.url());
+            let mut settings = mise_settings::SettingsPartial::empty();
+            settings.url_replacements = Some(replacements);
+            settings.http_retries = Some(0);
+            settings.paranoid = Some(mise_settings::Paranoid::only([
+                mise_settings::ParanoidCategory::Provenance,
+            ]));
+            Settings::reset(Some(settings));
+        }
+        let base = server.url();
+        let raw = |name: &str| format!("{base}/{name}/HEAD/.well-known/packslip.json");
+        for (name, status, expected) in [
+            ("paranoid-denied", 200, Some(Some("{}"))),
+            ("paranoid-absent", 404, Some(None)),
+            ("paranoid-limited", 429, None),
+        ] {
+            let mirror = server
+                .mock(
+                    "GET",
+                    format!("/api/github/repos/o/{name}/packslip-list").as_str(),
+                )
+                .with_body(r#"{"present":false,"fetched_at":"2026-10-26T12:00:00Z"}"#)
+                .expect(1)
+                .create_async()
+                .await;
+            let github = server
+                .mock(
+                    "GET",
+                    format!("/{name}/HEAD/.well-known/packslip.json").as_str(),
+                )
+                .with_status(status)
+                .with_body("{}")
+                .expect(1)
+                .create_async()
+                .await;
+            let fetched = fetch_github_policy_text(&format!("o/{name}"), None, &raw(name)).await;
+            assert_eq!(
+                fetched.ok(),
+                expected.map(|text| text.map(str::to_string)),
+                "{name}"
+            );
+            mirror.assert_async().await;
+            github.assert_async().await;
+        }
+    }
+
     #[tokio::test]
     async fn a_url_replacement_for_the_list_keeps_the_mirror_out_of_it() {
         let _settings = crate::test::SettingsGuard::lock();
@@ -3619,100 +3663,169 @@ mod tests {
         );
     }
 
-    /// Each command asks again, but a list the host says is unchanged is
-    /// not downloaded again.
+    /// Only the host's 404 says there is no list: a request that timed out
+    /// fails, though its message names a URL holding `404`.
     #[tokio::test]
-    async fn an_unchanged_release_list_is_revalidated_not_downloaded() {
+    async fn a_release_list_request_without_an_answer_is_no_404() {
+        let _settings = crate::test::SettingsGuard::lock();
         let _config = Config::get().await.unwrap();
-        let store = tempfile::tempdir().unwrap();
         let mut server = mockito::Server::new_async().await;
-        let path = "/revalidated/HEAD/.well-known/packslip.json";
-        let url = format!("{}{path}", server.url());
-        let first = server
+        mirror_at(&server);
+        // How the client reports a request that timed out.
+        let timed_out = eyre!(
+            "HTTP timed out after 3s for https://raw.githubusercontent.com/o/repo404/HEAD/.well-known/packslip.json"
+        );
+        assert!(!answered_not_found(&timed_out), "{timed_out:#}");
+
+        let path = "/o/repo404/HEAD/.well-known/packslip.json";
+        let _gone = server
             .mock("GET", path)
-            .match_header("if-none-match", mockito::Matcher::Missing)
-            .with_header("etag", "\"v1\"")
+            .with_status(404)
+            .create_async()
+            .await;
+        let _failing = server
+            .mock("GET", "/o/repo404/HEAD/failing.json")
+            .with_status(500)
+            .create_async()
+            .await;
+        let headers = reqwest::header::HeaderMap::new();
+        let not_found = HTTP_FETCH
+            .get_async_with_headers(format!("{}{path}", server.url()), &headers)
+            .await
+            .unwrap_err()
+            .wrap_err("fetching the list");
+        assert!(answered_not_found(&not_found), "{not_found:#}");
+        let failed = HTTP_FETCH
+            .get_async_with_headers(
+                format!("{}/o/repo404/HEAD/failing.json", server.url()),
+                &headers,
+            )
+            .await
+            .unwrap_err();
+        assert!(!answered_not_found(&failed), "{failed:#}");
+    }
+
+    /// Each command downloads the list again, whatever validator came with
+    /// the last one: an answer that pairs an older list with the current
+    /// list's `ETag` must not have the host confirm the older list afterwards.
+    #[tokio::test]
+    async fn a_release_list_is_never_revalidated() {
+        let _config = Config::get().await.unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let path = "/replayed/HEAD/.well-known/packslip.json";
+        let url = format!("{}{path}", server.url());
+        let replayed = server
+            .mock("GET", path)
+            .with_header("etag", "\"v2\"")
+            .with_header("last-modified", "Thu, 12 Nov 2026 00:00:00 GMT")
             .with_body("{\"v\":1}")
             .expect(1)
             .create_async()
             .await;
         assert_eq!(
-            revalidate_policy_text(&url, store.path()).await.unwrap(),
+            request_policy_text(&url).await.unwrap(),
             Some("{\"v\":1}".to_string())
         );
-        first.assert_async().await;
+        replayed.assert_async().await;
+        replayed.remove_async().await;
 
-        let unchanged = server
+        // The host now: it would confirm its own validators.
+        let confirmed_by_etag = server
             .mock("GET", path)
-            .match_header("if-none-match", "\"v1\"")
+            .match_header("if-none-match", mockito::Matcher::Any)
             .with_status(304)
-            .expect(1)
+            .expect(0)
             .create_async()
             .await;
-        assert_eq!(
-            revalidate_policy_text(&url, store.path()).await.unwrap(),
-            Some("{\"v\":1}".to_string())
-        );
-        unchanged.assert_async().await;
-        unchanged.remove_async().await;
-
-        // A changed list replaces the copy and its validator.
-        let changed = server
+        let confirmed_by_date = server
             .mock("GET", path)
-            .match_header("if-none-match", "\"v1\"")
+            .match_header("if-modified-since", mockito::Matcher::Any)
+            .with_status(304)
+            .expect(0)
+            .create_async()
+            .await;
+        let current = server
+            .mock("GET", path)
+            .match_header("if-none-match", mockito::Matcher::Missing)
+            .match_header("if-modified-since", mockito::Matcher::Missing)
             .with_header("etag", "\"v2\"")
             .with_body("{\"v\":2}")
-            .expect(1)
+            .expect(2)
             .create_async()
             .await;
-        assert_eq!(
-            revalidate_policy_text(&url, store.path()).await.unwrap(),
-            Some("{\"v\":2}".to_string())
-        );
-        changed.assert_async().await;
-        changed.remove_async().await;
+        for _ in 0..2 {
+            assert_eq!(
+                request_policy_text(&url).await.unwrap(),
+                Some("{\"v\":2}".to_string())
+            );
+        }
+        current.assert_async().await;
+        confirmed_by_etag.assert_async().await;
+        confirmed_by_date.assert_async().await;
 
-        // A list that is gone is gone: nothing is served from the copy, and
-        // the next request is unconditional.
+        // A list that is gone is gone.
+        current.remove_async().await;
         let gone = server
             .mock("GET", path)
             .with_status(404)
             .expect(1)
             .create_async()
             .await;
-        assert_eq!(
-            revalidate_policy_text(&url, store.path()).await.unwrap(),
-            None
-        );
+        assert_eq!(request_policy_text(&url).await.unwrap(), None);
         gone.assert_async().await;
-        assert!(!stored_policy_path(store.path(), &url).exists());
     }
 
-    /// Without a validator there is nothing to revalidate against, so nothing
-    /// is kept.
+    /// The list is parsed before its signature is checked, so its size is
+    /// bounded where it is read: from its host and from the mirror.
     #[tokio::test]
-    async fn a_release_list_without_a_validator_is_not_kept() {
+    async fn an_oversized_release_list_is_refused() {
+        let _settings = crate::test::SettingsGuard::lock();
         let _config = Config::get().await.unwrap();
-        let store = tempfile::tempdir().unwrap();
         let mut server = mockito::Server::new_async().await;
-        let path = "/unvalidated/HEAD/.well-known/packslip.json";
+        let oversized = " ".repeat(MAX_RELEASE_LIST_BYTES + 1);
+        let path = "/oversized/HEAD/.well-known/packslip.json";
         let url = format!("{}{path}", server.url());
         let list = server
             .mock("GET", path)
-            .match_header("if-none-match", mockito::Matcher::Missing)
-            .match_header("if-modified-since", mockito::Matcher::Missing)
-            .with_body("{}")
-            .expect(2)
+            .with_body(&oversized)
+            .expect(1)
             .create_async()
             .await;
-        for _ in 0..2 {
-            assert_eq!(
-                revalidate_policy_text(&url, store.path()).await.unwrap(),
-                Some("{}".to_string())
-            );
-        }
+        let err = request_policy_text(&url).await.unwrap_err();
+        assert!(
+            err.to_string().contains("is larger than 4.0 MiB"),
+            "{err:#}"
+        );
         list.assert_async().await;
-        assert!(!stored_policy_path(store.path(), &url).exists());
+
+        // The mirror's copy is no answer: GitHub is asked.
+        mirror_at(&server);
+        let answer = serde_json::json!({"present": true, "text": oversized});
+        let mirror = server
+            .mock("GET", "/api/github/repos/o/mirror-oversized/packslip-list")
+            .with_body(answer.to_string())
+            .expect(1)
+            .create_async()
+            .await;
+        let raw = server
+            .mock("GET", "/mirror-oversized/HEAD/.well-known/packslip.json")
+            .with_body("{}")
+            .expect(1)
+            .create_async()
+            .await;
+        let url = format!(
+            "{}/mirror-oversized/HEAD/.well-known/packslip.json",
+            server.url()
+        );
+        assert_eq!(
+            fetch_github_policy_text("o/mirror-oversized", None, &url)
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("{}")
+        );
+        mirror.assert_async().await;
+        raw.assert_async().await;
     }
 
     /// A verification is reused only for the same signer options, stamp, and

@@ -641,10 +641,14 @@ impl Backend for JavaPlugin {
                             Some(ctx.pr.as_ref()),
                         )
                         .await?;
-                        // Optionally verify checksum if present
-                        self.verify_checksum(ctx, &mut tv, &tarball_path)?;
                     } else {
                         ctx.pr.set_message(format!("cached {filename}"));
+                    }
+                    // A file that was already there is checked too, and one that fails is not
+                    // kept: with always_keep_download the next attempt would find it here.
+                    if let Err(err) = self.verify_checksum(ctx, &mut tv, &tarball_path) {
+                        file::remove_file(&tarball_path)?;
+                        return Err(err);
                     }
 
                     // The lockfile already names the build, so the catalog is not consulted.
@@ -722,9 +726,14 @@ impl Backend for JavaPlugin {
         // - "1.2" should match "1.2.3" but not "1.20"
         // - vendor prefixes like "temurin-" should match "temurin-25..."
         let query_regex = if is_vendor_prefix {
-            Regex::new(&format!("^{query}.*$")).unwrap()
+            Regex::new(&format!("^{query}.*$"))
         } else {
-            Regex::new(&format!("^{query}([+\\-.].+)?$")).unwrap()
+            Regex::new(&format!("^{query}([+\\-.].+)?$"))
+        };
+        // The escaped query always parses; one too long to compile names no
+        // version, so it matches nothing.
+        let Ok(query_regex) = query_regex else {
+            return vec![];
         };
 
         versions
@@ -1235,6 +1244,15 @@ mod tests {
             query,
             true,
         )
+    }
+
+    /// A version too long to compile into a pattern matches nothing instead of
+    /// stopping the resolution of every tool.
+    #[test]
+    fn an_overlong_query_matches_nothing() {
+        let long = "1".repeat(400_000);
+        assert!(match_versions(&["21.0.1"], &long).is_empty());
+        assert!(match_versions(&["temurin-21.0.1"], &format!("temurin-{long}-")).is_empty());
     }
 
     /// A numeric query must not bleed into a longer version: "11.0.1" selects
