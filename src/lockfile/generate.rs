@@ -393,9 +393,9 @@ fn has_login(url: &str) -> bool {
 }
 
 /// An entry whose URL names another release was left behind when its `version`
-/// was rewritten (Renovate does this), so it is refreshed, not reused. So is
-/// one whose URL holds a login, so that the backend records it without one;
-/// its checksums stay pinned ([`keep_pins_recorded_with_a_login`]).
+/// was rewritten (Renovate does this), so it is refreshed, not reused. An entry
+/// whose URL holds a login is not current either, so the lockfile is written
+/// again without it ([`reusable_without_login`]).
 fn can_reuse(info: &PlatformInfo, version: &str) -> bool {
     info.checksum.is_some()
         && info.url.as_deref().is_some_and(|url| {
@@ -408,6 +408,20 @@ fn can_reuse(info: &PlatformInfo, version: &str) -> bool {
                 && !has_login(&artifact.url)
         })
         && !Settings::get().force_provenance_verify()
+}
+
+/// `info` with the login left out of its URLs, the way a backend records them
+/// ([`lock_url`](crate::backend::static_helpers::lock_url)), when it is then
+/// reusable. Leaving a login out does not change the artifact, so the entry
+/// keeps its checksums without asking the host again, which may be down.
+fn reusable_without_login(info: &PlatformInfo, version: &str) -> Option<PlatformInfo> {
+    use crate::backend::static_helpers::lock_url;
+    let mut info = info.clone();
+    info.url = info.url.as_deref().map(lock_url);
+    for artifact in &mut info.additional_artifacts {
+        artifact.url = lock_url(&artifact.url);
+    }
+    can_reuse(&info, version).then_some(info)
 }
 
 /// The checksums of `old`, an entry whose URLs held a login, carried into
@@ -627,7 +641,7 @@ pub async fn generate(
         // in the same ordered result stream so all downgrade checks still run.
         let reusable = previous_info
             .as_ref()
-            .filter(|info| can_reuse(info, &tv.version));
+            .and_then(|info| reusable_without_login(info, &tv.version));
         if actual.is_none()
             && let Some(info) = reusable
         {
@@ -639,7 +653,7 @@ pub async fn generate(
                     tv.version.clone(),
                     ba.stored_full(),
                     platform,
-                    Ok(info.clone()),
+                    Ok(info),
                     options,
                     BTreeMap::new(),
                     LockResolutionStatus::Optional,
@@ -1745,6 +1759,43 @@ mod tests {
                 ..Default::default()
             });
         assert!(!can_reuse(&info, "20.0.0"));
+    }
+
+    /// An entry that is complete but for the login is reused with it left
+    /// out, so `mise lock` does not need the host to keep its checksums.
+    #[test]
+    fn entry_whose_url_holds_a_login_is_reused_without_it() {
+        let info = PlatformInfo {
+            url: Some("https://ci:token@mirror.example/v20.0.0/node-linux-x64.tar.gz".into()),
+            checksum: Some("sha256:old".into()),
+            additional_artifacts: vec![crate::lockfile::ArtifactInfo {
+                checksum: Some("sha256:sig".into()),
+                url: "https://ci@mirror.example/v20.0.0/SHASUMS256.txt.sig".into(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let reused = reusable_without_login(&info, "20.0.0").unwrap();
+        assert_eq!(
+            reused.url.as_deref(),
+            Some("https://mirror.example/v20.0.0/node-linux-x64.tar.gz")
+        );
+        assert_eq!(
+            reused.additional_artifacts[0].url,
+            "https://mirror.example/v20.0.0/SHASUMS256.txt.sig"
+        );
+        assert_eq!(reused.checksum.as_deref(), Some("sha256:old"));
+        assert_eq!(
+            reused.additional_artifacts[0].checksum.as_deref(),
+            Some("sha256:sig")
+        );
+        // The other checks still hold.
+        let mut signed = info.clone();
+        signed.signer = Some("ed25519:key".into());
+        assert!(reusable_without_login(&signed, "20.0.0").is_none());
+        let mut incomplete = info.clone();
+        incomplete.checksum = None;
+        assert!(reusable_without_login(&incomplete, "20.0.0").is_none());
     }
 
     #[test]
