@@ -49,6 +49,9 @@ source with kerl when none is available:
 
 Set [`erlang.compile`](/lang/erlang.html#erlang.compile) to `true` to always build from source,
 or to `false` to fail instead of compiling when no precompiled build exists.
+If [`mise.lock`](/dev-tools/mise-lock.html) pins a checksum for the precompiled
+build and mise cannot find that build, the install fails instead of compiling;
+set `erlang.compile = true` to build from source.
 mise sets no Erlang environment variables; the install's `bin` directory goes
 on `PATH`.
 

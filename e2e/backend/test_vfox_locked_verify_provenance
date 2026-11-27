@@ -1,0 +1,122 @@
+#!/usr/bin/env bash
+# When mise.lock records cosign provenance for a vfox tool, an install normally
+# trusts the plugin's checksum instead of checking the signature again. The
+# paranoid "provenance" category and locked_verify_provenance each make every
+# install check the signature, and a release that lost its signature fails.
+
+require_cmd openssl
+
+PLUGIN_DIR="$PWD/vfox-signed"
+SERVER_ROOT="$PWD/server"
+mkdir -p "$PLUGIN_DIR/hooks" "$SERVER_ROOT"
+
+sha256_of() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | cut -d' ' -f1
+  else
+    shasum -a 256 "$1" | cut -d' ' -f1
+  fi
+}
+
+# Put a 1.0.0 archive that prints $1, and its checksum file, on the release
+# host. The signature is left alone: the publisher signs separately.
+publish() {
+  local stage="$PWD/stage"
+  rm -rf "$stage"
+  mkdir -p "$stage/bin"
+  printf '#!/usr/bin/env sh\necho %s\n' "$1" >"$stage/bin/signed-tool"
+  chmod +x "$stage/bin/signed-tool"
+  printf 'keep archive root\n' >"$stage/README"
+  tar -czf "$SERVER_ROOT/tool.tar.gz" -C "$stage" .
+  sha256_of "$SERVER_ROOT/tool.tar.gz" >"$SERVER_ROOT/tool.tar.gz.sha256"
+}
+
+openssl ecparam -genkey -name prime256v1 -noout -out cosign.key
+openssl pkey -in cosign.key -pubout -out "$PLUGIN_DIR/cosign.pub"
+publish genuine
+# what `cosign sign-blob --key` writes: a base64 ECDSA P-256 signature
+openssl dgst -sha256 -sign cosign.key "$SERVER_ROOT/tool.tar.gz" |
+  openssl base64 -A >"$SERVER_ROOT/tool.tar.gz.sig"
+start_http_server --dir "$SERVER_ROOT"
+
+cat >"$PLUGIN_DIR/metadata.lua" <<'LUA'
+PLUGIN = { name = "signed-tool", version = "0.1.0" }
+LUA
+
+cat >"$PLUGIN_DIR/hooks/available.lua" <<'LUA'
+function PLUGIN:Available(ctx)
+	return { { version = "1.0.0" } }
+end
+LUA
+
+# The plugin declares an attestation only when the release has a signature.
+cat >"$PLUGIN_DIR/hooks/pre_install.lua" <<LUA
+function PLUGIN:PreInstall(ctx)
+	local http = require("http")
+	local release = "http://127.0.0.1:$HTTP_PORT/tool.tar.gz"
+	local checksum = http.get({ url = release .. ".sha256" })
+	local sig = http.get({ url = release .. ".sig" })
+	local attestation = nil
+	if sig.status_code == 200 then
+		local path = os.tmpname()
+		local f = io.open(path, "w")
+		f:write(sig.body)
+		f:close()
+		attestation = {
+			cosign_sig_or_bundle_path = path,
+			cosign_public_key_path = RUNTIME.pluginDirPath .. "/cosign.pub",
+		}
+	end
+	return {
+		version = ctx.version,
+		url = release,
+		sha256 = checksum.body:match("%x+"),
+		attestation = attestation,
+	}
+end
+LUA
+
+cat >"$PLUGIN_DIR/hooks/env_keys.lua" <<'LUA'
+function PLUGIN:EnvKeys(ctx)
+	return { { key = "PATH", value = ctx.path .. "/bin" } }
+end
+LUA
+
+mise plugin link signed-tool "$PLUGIN_DIR"
+cat >mise.toml <<'TOML'
+[tools]
+signed-tool = "1.0.0"
+TOML
+export MISE_LOCKFILE_MODE=generate
+touch mise.lock
+mise install
+assert_contains "cat mise.lock" 'provenance = "cosign"'
+assert "mise x -- signed-tool" "genuine"
+
+# The lock entry records provenance but no checksum, so the download is
+# compared only with what the release host and the signature say.
+sed -E '/^checksum = /d' mise.lock >mise.lock.new
+mv mise.lock.new mise.lock
+assert_not_contains "cat mise.lock" "checksum ="
+cp "$SERVER_ROOT/tool.tar.gz" genuine.tar.gz
+cp "$SERVER_ROOT/tool.tar.gz.sha256" genuine.tar.gz.sha256
+cp "$SERVER_ROOT/tool.tar.gz.sig" genuine.tar.gz.sig
+
+# The release host serves another archive with a matching checksum file,
+# under the old signature.
+publish tampered
+assert_fail_contains "MISE_LOCKED_VERIFY_PROVENANCE=1 mise install -f" "signature"
+assert_fail_contains "MISE_PARANOID=provenance mise install -f" "signature"
+
+# The signature is gone, so the plugin declares no attestation at all.
+rm "$SERVER_ROOT/tool.tar.gz.sig"
+assert_fail_contains "MISE_LOCKED_VERIFY_PROVENANCE=1 mise install -f" "Lockfile requires cosign provenance"
+assert_fail_contains "MISE_PARANOID=provenance mise install -f" "Lockfile requires cosign provenance"
+
+# The genuine release still installs when the signature is checked.
+cp genuine.tar.gz "$SERVER_ROOT/tool.tar.gz"
+cp genuine.tar.gz.sha256 "$SERVER_ROOT/tool.tar.gz.sha256"
+cp genuine.tar.gz.sig "$SERVER_ROOT/tool.tar.gz.sig"
+assert_succeed "MISE_PARANOID=provenance mise install -f"
+assert "mise x -- signed-tool" "genuine"
+assert_contains "cat mise.lock" 'provenance = "cosign"'

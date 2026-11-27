@@ -3,7 +3,7 @@ use crate::backend::backend_type::BackendType;
 use crate::backend::options::VersionOrder;
 use crate::config::{Settings, SettingsExt};
 use crate::http::HTTP;
-use crate::toolset::{RawBackendOptions, ToolVersionOptions};
+use crate::toolset::{RawBackendOptions, ToolVersion, ToolVersionOptions};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::{dirs, file};
 use eyre::{Context, Result, bail, ensure};
@@ -177,23 +177,52 @@ pub struct RegistryBackend {
     /// publish them. `github:` and `aqua:` backends only; for `aqua:` the
     /// recipe must also declare the attestations. Only the one version being installed is compared, never
     /// a version list, so unlike `min_version` any `version_order` works: a
-    /// version that isn't semver is simply not required.
+    /// version that is neither semver nor a list of numbers is not required.
     pub attestations_since: Option<&'static str>,
     pub options: &'static [(&'static str, &'static str)],
 }
 
+/// `parts`, each a string of ASCII digits, padded with `0` to `len` and keyed
+/// so that comparing keys compares the numbers, however many digits they have.
+fn padded_numbers<'a>(parts: &[&'a str], len: usize) -> Vec<(usize, &'a str)> {
+    (0..len)
+        .map(|i| {
+            let digits = parts.get(i).copied().unwrap_or("0").trim_start_matches('0');
+            (digits.len(), digits)
+        })
+        .collect()
+}
+
 impl RegistryBackend {
     /// Whether the concrete, installed `version` must carry GitHub artifact
-    /// attestations. Anything that is not a semantic version (a ref, a
-    /// channel, a build the registry can't place) is not required: the
-    /// boundary never orders opaque versions.
+    /// attestations. A semantic version is compared with the boundary, and
+    /// so is a version made only of dot-separated numbers (`0.72`,
+    /// `2.50.0.1`), a missing number counting as 0. Anything else (a ref, a
+    /// channel, a pre-release the boundary can't place) is not required:
+    /// the boundary never orders opaque versions.
     fn requires_github_attestations(&self, version: &str) -> bool {
         let Some(since) = self.attestations_since else {
             return false;
         };
         let since = semver::Version::parse(since).expect("validated registry attestations_since");
         let version = version.trim_start_matches(['v', 'V']);
-        semver::Version::parse(version).is_ok_and(|v| !v.cmp_precedence(&since).is_lt())
+        if let Ok(version) = semver::Version::parse(version) {
+            return !version.cmp_precedence(&since).is_lt();
+        }
+        let parts: Vec<&str> = version.split('.').collect();
+        if !parts
+            .iter()
+            .all(|part| !part.is_empty() && part.bytes().all(|b| b.is_ascii_digit()))
+        {
+            return false;
+        }
+        // A pre-release boundary sorts before its release, and a list of
+        // numbers equal to that release is required either way, so only the
+        // three numbers of the boundary matter.
+        let since = [since.major, since.minor, since.patch].map(|n| n.to_string());
+        let since: Vec<&str> = since.iter().map(String::as_str).collect();
+        let len = parts.len().max(since.len());
+        padded_numbers(&parts, len) >= padded_numbers(&since, len)
     }
 
     /// Whether this entry's version range shares any version with `other`'s.
@@ -773,21 +802,7 @@ static ENV_BACKENDS: Lazy<Mutex<HashMap<String, &'static str>>> =
 /// Whether any tool's backends may come from a MISE_BACKENDS_* override. When
 /// none can, a caller walking the whole registry can skip the per-tool check.
 pub(crate) fn has_backend_overrides() -> bool {
-    !ENV_BACKENDS.lock().unwrap().is_empty()
-        || crate::env::vars_safe().any(|(key, _)| is_backend_override_key(&key))
-}
-
-/// Whether `key` names a MISE_BACKENDS_* override. Windows variable names are
-/// case-insensitive, so `mise_backends_node` counts there as it does for
-/// `env::var`.
-fn is_backend_override_key(key: &str) -> bool {
-    const PREFIX: &str = "MISE_BACKENDS_";
-    if cfg!(windows) {
-        key.get(..PREFIX.len())
-            .is_some_and(|start| start.eq_ignore_ascii_case(PREFIX))
-    } else {
-        key.starts_with(PREFIX)
-    }
+    !ENV_BACKENDS.lock().unwrap().is_empty() || crate::env::backend_override_vars_set()
 }
 
 impl RegistryTool {
@@ -832,7 +847,9 @@ impl RegistryTool {
         }
 
         // Check environment variable
-        if let Ok(env_value) = env::var(&env_key) {
+        if crate::env::backend_override_vars_set()
+            && let Ok(env_value) = env::var(&env_key)
+        {
             // Store in cache with 'static lifetime
             let leaked = Box::leak(env_value.into_boxed_str());
             let mut cache = ENV_BACKENDS.lock().unwrap();
@@ -1251,6 +1268,16 @@ pub(crate) fn requires_github_attestations(full: &str, version: &str) -> bool {
         })
 }
 
+/// Whether installing `tv` from `full` must carry GitHub artifact attestations.
+/// The requested version counts as well as the resolved one: the release
+/// metadata that resolves a request comes from the forge, or from a mirror
+/// `url_replacements` names, and a renamed or unplaceable answer must not drop
+/// a requirement the request itself meets.
+pub(crate) fn tool_version_requires_github_attestations(full: &str, tv: &ToolVersion) -> bool {
+    requires_github_attestations(full, &tv.version)
+        || requires_github_attestations(full, &tv.request.version())
+}
+
 pub(crate) fn shorts_for_full(full: &str) -> &'static Vec<&'static str> {
     static EMPTY: Vec<&'static str> = vec![];
     static FULL_TO_SHORT: Lazy<HashMap<&'static str, Vec<&'static str>>> = Lazy::new(|| {
@@ -1357,8 +1384,9 @@ pub fn tool_enabled<T: Ord>(
 
 #[cfg(test)]
 mod tests {
-    use super::{BTreeMap, baked_registry, is_backend_override_key, registry_from_sources};
+    use super::{BTreeMap, baked_registry, registry_from_sources};
     use crate::config::Config;
+    use crate::env::is_backend_override_key;
 
     #[test]
     fn test_backend_override_key_prefix() {
@@ -1762,15 +1790,32 @@ backends = [
         for version in ["2.50.0", "v2.50.0", "V2.51.3", "3.0.0", "2.50.0+build.1"] {
             assert!(backend.requires_github_attestations(version), "{version}");
         }
-        // Earlier releases, and anything the registry can't place, are not
-        // required: opaque versions are never ordered.
+        // A release tagged with fewer or more numbers than semver is placed
+        // by its numbers, a missing one counting as 0.
+        for version in [
+            "2.50",
+            "v2.51",
+            "3",
+            "2.50.0.1",
+            "2.050.00",
+            "2024.01.15.1",
+            "99999999999999999999.0",
+        ] {
+            assert!(backend.requires_github_attestations(version), "{version}");
+        }
+        // Earlier releases, and anything that is not a list of numbers, are
+        // not required: channels and refs are never ordered.
         for version in [
             "2.49.9",
+            "2.49",
+            "2",
+            "2.49.9.9",
             "2.50.0-rc.1",
-            "2.50",
+            "2.50.",
+            "2..50",
+            "2.50-1",
             "nightly",
             "ref:main",
-            "2024.01.15.1",
             "",
         ] {
             assert!(!backend.requires_github_attestations(version), "{version}");
@@ -2553,19 +2598,13 @@ url = "https://example.com/tool-{{ version }}.tar.gz"
             assert!(!default_backends.is_empty());
 
             // Test with env var override
-            // SAFETY: This is safe in a test environment
-            unsafe {
-                env::set_var("MISE_BACKENDS_NODE", "test:backend");
-            }
+            crate::env::set_var("MISE_BACKENDS_NODE", "test:backend");
             let overridden_backends = tool.backends();
             assert_eq!(overridden_backends.len(), 1);
             assert_eq!(overridden_backends[0], "test:backend");
 
             // Clean up
-            // SAFETY: This is safe in a test environment
-            unsafe {
-                env::remove_var("MISE_BACKENDS_NODE");
-            }
+            crate::env::remove_var("MISE_BACKENDS_NODE");
             ENV_BACKENDS.lock().unwrap().clear();
         }
     }

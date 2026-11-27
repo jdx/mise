@@ -1147,7 +1147,10 @@ impl Cli {
     }
 
     pub(crate) async fn run(args: &Vec<String>) -> Result<()> {
-        run_with_exit_signal(Self::run_inner(args), ctrlc::exit_signal()).await
+        // Boxed: a command's future is some 80 KB, and held inline it is copied
+        // into the `select!` here and again, twice that size, as `main` hands
+        // its own future to the runtime.
+        run_with_exit_signal(Box::pin(Self::run_inner(args)), ctrlc::exit_signal()).await
     }
 
     async fn run_inner(args: &Vec<String>) -> Result<()> {
