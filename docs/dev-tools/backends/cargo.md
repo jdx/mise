@@ -81,6 +81,17 @@ mise uses the first method that applies:
 4. If cargo-binstall is not installed and
    [`cargo.binstall_native = true`](/dev-tools/backends/cargo.html#cargo.binstall_native), mise tries its own
    prebuilt-binary installer and runs `cargo install` when it finds no binary.
+   That installer only reads crates.io, so mise skips it when
+   [`cargo.registry_name`](/dev-tools/backends/cargo.html#cargo.registry_name) is set, or when your Cargo
+   configuration sets `registry.default` (or `CARGO_REGISTRY_DEFAULT`) to a
+   registry other than `crates-io` or replaces the crates.io source. A crate's
+   `pkg-url` must be an `https` URL: a crate whose `pkg-url` gives another
+   scheme is built with `cargo install`. Your
+   [`url_replacements`](/url-replacements.html) still apply to that URL, and a
+   rule that rewrites it to `http` downloads the binary over `http`. When the
+   crate declares a minisign key in `package.metadata.binstall.signing`, a
+   binary whose signature does not verify against that key is not installed,
+   and mise runs `cargo install`.
 5. Otherwise mise runs `cargo install`.
 
 Set [`cargo.binstall_only = true`](/dev-tools/backends/cargo.html#cargo.binstall_only) to fail instead of

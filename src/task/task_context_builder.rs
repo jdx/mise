@@ -683,10 +683,11 @@ impl TaskContextBuilder {
         }
         env_remove.extend(results.env_remove.iter().cloned());
 
-        // Apply path additions
+        // Apply path additions. `env` holds the PATH the toolset built, whose command wrappers
+        // stay ahead of the directories added here.
         if !results.env_paths.is_empty() {
             use crate::path_env::PathEnv;
-            let mut path_env = PathEnv::from_iter(env::split_paths(
+            let mut path_env = PathEnv::from_child_path(env::split_paths(
                 &env.get(&*env::PATH_KEY).cloned().unwrap_or_default(),
             ));
             for path in &results.env_paths {

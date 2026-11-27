@@ -155,6 +155,11 @@ pub(crate) struct Exec {
     /// [experimental] Give the command every secret the project can inject, except file secrets
     #[usage(long, conflicts = "secrets", verbatim_doc_comment)]
     pub secrets_all: bool,
+
+    /// A native shim is completing a word, which installs nothing. Set before a
+    /// command wrapper rewrites `command`, which moves the completion arguments.
+    #[usage(skip)]
+    pub native_shim_completion: bool,
 }
 
 impl Exec {
@@ -234,6 +239,10 @@ impl Exec {
             ts = build(&config).await?;
         }
 
+        self.native_shim_completion = self
+            .command
+            .as_deref()
+            .is_some_and(super::shim::is_native_shim_completion);
         // A native Windows shim runs `mise x -- <name>` rather than mise as `<name>`, so its
         // command wrapper is applied here instead of by `handle_shim`.
         if self.tool.is_empty()
@@ -243,6 +252,14 @@ impl Exec {
                     .await?
         {
             return self.run_with_command_wrapper(config, ts, wrapper_env).await;
+        }
+        // A native shim gets what `which_shim` gives a shim that is mise itself: the tool that
+        // provides the command. The user typed the tool's name, not `mise exec`, so
+        // `run_with_context` leaves the config's other missing tools alone.
+        if self.tool.is_empty()
+            && let Some(command) = &self.command
+        {
+            super::shim::install_native_shim_command(&mut config, &mut ts, command).await?;
         }
 
         self.run_with_context(
@@ -321,9 +338,12 @@ impl Exec {
             // prevent installing things in shims by checking for tty
             // also don't autoinstall if at least 1 tool is specified
             // in that case the user probably just wants that one tool
+            // a shim that is not mise itself runs `mise x -- <tool>` with only
+            // `__MISE_SHIM_PATH` set: the user typed the tool's name, not `mise exec`
             missing_args_only: !self.tool.is_empty()
                 || !Settings::get().exec_auto_install
-                || *env::__MISE_SHIM,
+                || *env::__MISE_SHIM
+                || env::MISE_SHIM_PATH.read().unwrap().is_some(),
             skip_auto_install: !Settings::get().exec_auto_install || !Settings::get().auto_install,
             resolve_options,
             // Running a tool doesn't need the other missing lazy tools resolved after an install.
@@ -368,6 +388,7 @@ impl Exec {
         // would otherwise do this never gets the chance.
         if ts.has_lazy_declarations()
             && !program.contains(['/', '\\'])
+            && !self.native_shim_completion
             && ts.has_missing_lazy_bin_provider(&config, &program).await?
         {
             ts.install_missing_lazy_bin(&mut config, &program).await?;
@@ -601,6 +622,9 @@ impl Exec {
             args.insert(0, "-C".into());
         }
 
+        // The shim of a wrapper this config does not have is another project's. Looking the
+        // program up without it finds what `mise x` runs when that shim was never written.
+        let skip_wrapper_dirs = !config_wraps_command(&config, &ts, &program)?;
         time!("exec");
         // shell_body_mode: true only for the `-c`/`--command` path, where
         // parse_command synthesized `shell + [flags.., body]`. A positional
@@ -615,6 +639,7 @@ impl Exec {
             &ExecExtras {
                 scrub_on_failure: &scrub_on_failure,
                 configured_paths: &configured_paths,
+                skip_wrapper_dirs,
             },
         )
         .await
@@ -720,18 +745,11 @@ async fn warn_if_command_falls_back(
     // A command wrapper configured for this command runs in place of any tool's binary. Its
     // shim may not exist yet, so read the configuration. The wrapper of a command that is
     // already running does not apply: that command runs the real tool.
-    let name = crate::shims::command_name_without_exe_suffix(program);
-    if !crate::shims::is_active_command_wrapper(name) {
-        let wrappers = crate::config::load_command_wrappers(
-            &config.config_files,
-            ts.versions.values().flat_map(|versions| &versions.requests),
-        )?;
-        if wrappers
-            .keys()
-            .any(|wrapper| crate::shims::command_names_eq(wrapper, name))
-        {
-            return Ok(vec![]);
-        }
+    if !crate::shims::is_active_command_wrapper(crate::shims::command_name_without_exe_suffix(
+        program,
+    )) && config_wraps_command(config, ts, program)?
+    {
+        return Ok(vec![]);
     }
     // A `_.path` entry is searched ahead of every tool path, even when the inherited PATH already
     // has it, so it supplies the command whether or not the tool is installed. Entries declared
@@ -780,6 +798,18 @@ async fn warn_if_command_falls_back(
 /// Removes `keys` from mise's own environment. `exec_program` writes the whole child
 /// environment into the process before it execs, and mise keeps running when that fails
 /// (it builds a toolset for the error hint, which can spawn processes).
+/// Whether the config has a command wrapper for `program`.
+fn config_wraps_command(config: &Config, ts: &Toolset, program: &str) -> Result<bool> {
+    let name = crate::shims::command_name_without_exe_suffix(program);
+    let wrappers = crate::config::load_command_wrappers(
+        &config.config_files,
+        ts.versions.values().flat_map(|versions| &versions.requests),
+    )?;
+    Ok(wrappers
+        .keys()
+        .any(|wrapper| crate::shims::same_command_name(wrapper, name)))
+}
+
 fn scrub_env(keys: &[String]) {
     for key in keys {
         env::remove_var(key);
@@ -806,6 +836,9 @@ pub(crate) struct ExecExtras<'a> {
     /// tool-added paths and tool bins. The caller's PATH may already hold them, but they still
     /// rank as mise-added when the program is resolved.
     pub configured_paths: &'a [std::path::PathBuf],
+    /// Leave the command-wrapper directories out of the program lookup: the config has no
+    /// wrapper for the program, so a shim there was left by another project.
+    pub skip_wrapper_dirs: bool,
 }
 
 #[cfg(all(not(test), unix))]
@@ -826,6 +859,7 @@ where
     let ExecExtras {
         scrub_on_failure,
         configured_paths,
+        skip_wrapper_dirs,
     } = *extras;
     // Capture the marker before deny-env removes variables from the process.
     // The lazy state must retain the dispatching shim for candidate filtering.
@@ -851,7 +885,8 @@ where
     for (k, v) in env.iter() {
         env::set_var(k, v);
     }
-    let args = args.into_iter().map(Into::into).collect::<Vec<_>>();
+    // What came from mise's own command line is a lossy copy: the program gets the originals.
+    let args = env::args_as_given(args.into_iter().map(Into::into).collect());
     let program = program.to_executable();
     // Captured before `program` is shadowed by the resolved path, so a failed
     // exec can still name what the user asked for.
@@ -883,7 +918,7 @@ where
             let all_paths: Vec<_> = std::env::split_paths(&OsString::from(path_val)).collect();
             let wrappers: Vec<_> = all_paths
                 .iter()
-                .filter(|p| crate::file::is_command_wrapper_dir(p))
+                .filter(|p| !skip_wrapper_dirs && crate::file::is_command_wrapper_dir(p))
                 .cloned()
                 .collect();
             // Mise-added paths first (preserving relative order)
@@ -1029,6 +1064,7 @@ where
     let ExecExtras {
         scrub_on_failure,
         configured_paths,
+        skip_wrapper_dirs,
     } = *extras;
     // Capture the marker before deny-env removes variables from the process.
     // The lazy state must retain the dispatching shim for candidate filtering.
@@ -1080,7 +1116,7 @@ where
         let all_paths: Vec<_> = std::env::split_paths(&OsString::from(path_val)).collect();
         let wrappers: Vec<_> = all_paths
             .iter()
-            .filter(|p| crate::file::is_command_wrapper_dir(p))
+            .filter(|p| !skip_wrapper_dirs && crate::file::is_command_wrapper_dir(p))
             .cloned()
             .collect();
         let mise_added: Vec<_> = all_paths
@@ -1161,7 +1197,8 @@ where
         // A native shim that finds its own path here was picked instead of the tool.
         env::set_var(env::MISE_SHIM_TARGET_ENV, &program);
     }
-    let args: Vec<OsString> = args.into_iter().map(Into::into).collect();
+    // What came from mise's own command line is a lossy copy: the program gets the originals.
+    let args = env::args_as_given(args.into_iter().map(Into::into).collect());
 
     // Windows does not support exec in the same way as Unix,
     // so we emulate it instead by not handling Ctrl-C and letting
@@ -1255,8 +1292,11 @@ where
     let ExecExtras {
         scrub_on_failure,
         configured_paths,
+        skip_wrapper_dirs,
     } = *extras;
-    trace!("exec extras: scrub {scrub_on_failure:?}, configured paths {configured_paths:?}");
+    trace!(
+        "exec extras: scrub {scrub_on_failure:?}, configured paths {configured_paths:?}, skip wrapper dirs {skip_wrapper_dirs}"
+    );
     let mut cmd = cmd::cmd(program, args);
     for (k, v) in env.iter() {
         cmd = cmd.env(k, v);

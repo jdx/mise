@@ -56,7 +56,9 @@ name the kind of reference explicitly. Support depends on the backend: npm
 packages from Git accept all four, cargo packages from Git accept `tag:`,
 `branch:`, and `rev:` but not `ref:`, `spm` packages accept `ref:` and `rev:`,
 and plugins accept the references they implement. The Python and Erlang core
-tools do not build from references.
+tools do not build from references. A `ref:` or `rev:` reference can name any
+commit the forge serves, including a pull request from a fork, so a project
+config that uses one [needs trust](/security.html#what-needs-trust).
 
 `path:<PATH>` uses a directory you built or installed elsewhere, such as a
 Homebrew keg (`path:/opt/homebrew/opt/node@24`). `~/` expands to your home

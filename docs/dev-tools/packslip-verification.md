@@ -59,6 +59,11 @@ repository, as for a private one, or when
 list or its absence reaches mise within about ten minutes of a change on the
 default branch; the list is verified either way.
 
+Nothing signs mise-versions' answer that a repository has no list. Normal mode
+accepts it. The `provenance` category of
+[paranoid mode](/paranoid.html#release-lists-from-mise-versions) asks GitHub
+instead and fails the command when GitHub cannot be read.
+
 Versions the list omits can still come from GitHub releases; omission does not
 withdraw them. For a domain project, the signed list is the entire release
 index. A vendor withdrawal excludes a version even if a trusted stamper approved
@@ -122,8 +127,11 @@ mise keeps trust decisions in two places:
 | `mise.lock`                                                                       | The project's signer, attestor, and forge-ID commitment beside each platform's artifact URL and checksum, which also applies on another machine's first install. |
 
 For a keyless signer, continuity compares the workflow path without its tag or
-branch ref, so a new release tag of the same workflow is the same signer. A new
-workflow path or key needs an explicit trust decision. A
+branch ref, so a new release tag of the same workflow is the same signer. For a
+key, the pin in `pins.toml` holds the key's ID and a fingerprint of the whole
+key, so another key that carries the same ID is another signer. `mise.lock`
+records the key's ID only. A new workflow path or key needs an explicit trust
+decision. A
 [`workflow`](/dev-tools/backends/packslip.html#workflow) list is one: a release
 may move between the workflows it names. A change of signing
 scheme, a change from vendor to repackager, or provenance links that disappear

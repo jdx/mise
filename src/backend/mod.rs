@@ -889,6 +889,10 @@ fn backend_list_denial(
 }
 
 pub fn arg_to_backend(ba: BackendArg) -> Option<ABackend> {
+    // `asdf:` selects a backend and names no tool in it. The plugin types assert a name.
+    if ba.tool_name.trim().is_empty() {
+        return None;
+    }
     match ba.backend_type() {
         BackendType::Core => crate::plugins::core::get(&ba),
         BackendType::Aqua => Some(Arc::new(aqua::AquaBackend::from_arg(ba))),
@@ -5655,6 +5659,10 @@ pub trait Backend: Debug + Send + Sync {
         {
             warn_once!("{} is deprecated: {reason}", rt.short);
         }
+        // Toolset installs preflight these options before doing any work, but direct callers
+        // such as `install-into` must be protected here too, before `prepare_install_version`,
+        // which can already run a package manager with the request's `install_env`.
+        tv.request.ensure_safe_install_options()?;
         let graph_install_is_current = !ctx.locked
             && !ctx.force
             && (tv.uv_lock.is_some() || tv.aube_lock.is_some())
@@ -5687,9 +5695,6 @@ pub trait Backend: Debug + Send + Sync {
                 stub_keys,
             )?;
         }
-        // Toolset installs preflight these options before doing any work, but
-        // direct callers such as `install-into` must be protected here too.
-        tv.request.ensure_safe_install_options()?;
 
         // Check for --locked mode: if enabled and no lockfile URL exists, fail early
         // Exempt tool stubs from lockfile requirements since they are ephemeral
@@ -5930,10 +5935,6 @@ pub trait Backend: Debug + Send + Sync {
                 .await?;
             ctx.pr.next_operation();
         }
-
-        // Track the installation asynchronously (fire-and-forget)
-        // Do this before install so the request has time to complete during installation
-        versions_host::track_install(tv.short(), &tv.ba().full(), &tv.version);
 
         ctx.pr.set_message("install".into());
 
@@ -7074,6 +7075,20 @@ pub trait Backend: Debug + Send + Sync {
                 )?;
             } else {
                 bail!("Invalid checksum: {checksum}");
+            }
+            // An md5 or sha1 hash from the release, not from mise.lock, has
+            // checked the download; the lockfile pins it by blake3 instead.
+            // A version read from mise.lock gets the release's hash for a
+            // platform the lockfile had no checksum for.
+            if lockfile_enabled
+                && static_helpers::is_weak_checksum(checksum)
+                && !tv.checksum_is_from_lockfile(&platform_key, checksum)
+            {
+                let hash = hash::file_hash_blake3(file, Some(ctx.pr.as_ref()))?;
+                tv.lock_platforms
+                    .entry(platform_key.clone())
+                    .or_default()
+                    .checksum = Some(format!("blake3:{hash}"));
             }
         } else if lockfile_enabled {
             ctx.pr.set_message(format!("generate checksum {filename}"));

@@ -117,7 +117,11 @@ pub(crate) fn ubi_fuzzy_match(
     } else {
         &escaped_query
     };
-    let query_regex = Regex::new(&format!("^{query}([-.].+)?$")).unwrap();
+    // The escaped query always parses; one too long to compile names no
+    // version, so it matches nothing.
+    let Ok(query_regex) = Regex::new(&format!("^{query}([-.].+)?$")) else {
+        return vec![];
+    };
 
     versions
         .into_iter()
@@ -615,6 +619,18 @@ async fn install(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A version too long to compile into a pattern matches nothing instead of
+    /// stopping the resolution of every tool.
+    #[test]
+    fn an_overlong_query_matches_nothing() {
+        let long = "1".repeat(400_000);
+        assert!(ubi_fuzzy_match(vec!["1.0.0".to_string()], &long, true).is_empty());
+        assert_eq!(
+            ubi_fuzzy_match(vec!["1.0.0".to_string()], "1", true),
+            vec!["1.0.0"]
+        );
+    }
 
     #[test]
     fn test_identity_options_ignore_tag_regex_only() {

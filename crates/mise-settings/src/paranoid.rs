@@ -21,7 +21,7 @@ pub enum ParanoidCategory {
     /// Refuse to install an unregistered community plugin by short name.
     Plugins,
     /// Re-verify provenance on every install and confirm a mise-versions
-    /// "no attestations" answer with GitHub.
+    /// "no attestations" or "no release list" answer with GitHub.
     Provenance,
 }
 

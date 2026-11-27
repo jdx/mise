@@ -26,7 +26,7 @@ tokio = { version = "1", features = ["full"] }
 xx = { version = "2", default-features = false }
 
 [target.'cfg(unix)'.dependencies]
-nix = { version = "0.31", features = ["signal", "user"] }
+nix = { version = "0.32", features = ["signal", "user"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = [
