@@ -155,6 +155,11 @@ pub(crate) struct Exec {
     /// [experimental] Give the command every secret the project can inject, except file secrets
     #[usage(long, conflicts = "secrets", verbatim_doc_comment)]
     pub secrets_all: bool,
+
+    /// A native shim is completing a word, which installs nothing. Set before a
+    /// command wrapper rewrites `command`, which moves the completion arguments.
+    #[usage(skip)]
+    pub native_shim_completion: bool,
 }
 
 impl Exec {
@@ -234,6 +239,10 @@ impl Exec {
             ts = build(&config).await?;
         }
 
+        self.native_shim_completion = self
+            .command
+            .as_deref()
+            .is_some_and(super::shim::is_native_shim_completion);
         // A native Windows shim runs `mise x -- <name>` rather than mise as `<name>`, so its
         // command wrapper is applied here instead of by `handle_shim`.
         if self.tool.is_empty()
@@ -243,6 +252,14 @@ impl Exec {
                     .await?
         {
             return self.run_with_command_wrapper(config, ts, wrapper_env).await;
+        }
+        // A native shim gets what `which_shim` gives a shim that is mise itself: the tool that
+        // provides the command. The user typed the tool's name, not `mise exec`, so
+        // `run_with_context` leaves the config's other missing tools alone.
+        if self.tool.is_empty()
+            && let Some(command) = &self.command
+        {
+            super::shim::install_native_shim_command(&mut config, &mut ts, command).await?;
         }
 
         self.run_with_context(
@@ -321,9 +338,12 @@ impl Exec {
             // prevent installing things in shims by checking for tty
             // also don't autoinstall if at least 1 tool is specified
             // in that case the user probably just wants that one tool
+            // a shim that is not mise itself runs `mise x -- <tool>` with only
+            // `__MISE_SHIM_PATH` set: the user typed the tool's name, not `mise exec`
             missing_args_only: !self.tool.is_empty()
                 || !Settings::get().exec_auto_install
-                || *env::__MISE_SHIM,
+                || *env::__MISE_SHIM
+                || env::MISE_SHIM_PATH.read().unwrap().is_some(),
             skip_auto_install: !Settings::get().exec_auto_install || !Settings::get().auto_install,
             resolve_options,
             // Running a tool doesn't need the other missing lazy tools resolved after an install.
@@ -368,6 +388,7 @@ impl Exec {
         // would otherwise do this never gets the chance.
         if ts.has_lazy_declarations()
             && !program.contains(['/', '\\'])
+            && !self.native_shim_completion
             && ts.has_missing_lazy_bin_provider(&config, &program).await?
         {
             ts.install_missing_lazy_bin(&mut config, &program).await?;
@@ -864,7 +885,8 @@ where
     for (k, v) in env.iter() {
         env::set_var(k, v);
     }
-    let args = args.into_iter().map(Into::into).collect::<Vec<_>>();
+    // What came from mise's own command line is a lossy copy: the program gets the originals.
+    let args = env::args_as_given(args.into_iter().map(Into::into).collect());
     let program = program.to_executable();
     // Captured before `program` is shadowed by the resolved path, so a failed
     // exec can still name what the user asked for.
@@ -1175,7 +1197,8 @@ where
         // A native shim that finds its own path here was picked instead of the tool.
         env::set_var(env::MISE_SHIM_TARGET_ENV, &program);
     }
-    let args: Vec<OsString> = args.into_iter().map(Into::into).collect();
+    // What came from mise's own command line is a lossy copy: the program gets the originals.
+    let args = env::args_as_given(args.into_iter().map(Into::into).collect());
 
     // Windows does not support exec in the same way as Unix,
     // so we emulate it instead by not handling Ctrl-C and letting

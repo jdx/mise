@@ -287,12 +287,12 @@ impl NodePlugin {
         let settings = Settings::get();
         let platform_key = self.get_platform_key();
         let tarball_name = local.file_name().unwrap().to_string_lossy().to_string();
-        // Safe mode drops a project lockfile's URL and keeps its checksum. Locked mode
-        // then downloads from the mirror, and the kept checksum still pins the file.
-        let pinned_by_checksum = ctx.locked
-            && tv.lock_platforms.get(&platform_key).is_some_and(|info| {
-                info.is_pinned_without_url() && info.install.as_deref() == lockfile_install
-            });
+        // A lockfile that is not trusted, or one written without URLs, keeps a checksum
+        // without its URL. mise then downloads from the mirror, locked or not, and the
+        // kept checksum still pins the file.
+        let pinned_by_checksum = tv.lock_platforms.get(&platform_key).is_some_and(|info| {
+            info.is_pinned_without_url() && info.install.as_deref() == lockfile_install
+        });
         if local.exists() {
             ctx.pr.set_message(format!("cached {tarball_name}"));
         } else {
@@ -312,8 +312,10 @@ impl NodePlugin {
         }
         ctx.pr.next_operation();
         let url = url.to_string();
+        // A checksum that lost its URL pins the bytes but does not say Node.js
+        // published them: its URL never matches, so SHASUMS256.txt and its
+        // signature are checked as they are without a lockfile.
         let needs_checksum = settings.node.verify
-            && !pinned_by_checksum
             && tv
                 .lock_platforms
                 .get(&platform_key)
@@ -323,6 +325,10 @@ impl NodePlugin {
                         || platform_info.install.as_deref() != lockfile_install
                 })
                 .unwrap_or(true);
+        if needs_checksum && pinned_by_checksum {
+            // The published checksum replaces the pin below, so compare the pin first.
+            self.verify_checksum(ctx, tv, local)?;
+        }
         let checksum = if needs_checksum {
             Some(self.get_checksum(ctx, tv, local, version).await?)
         } else {

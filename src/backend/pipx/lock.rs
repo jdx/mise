@@ -464,6 +464,14 @@ impl PIPXBackend {
         uv: &Path,
         project: &Path,
     ) -> Result<CmdLineRunner<'static>> {
+        // Installing refuses `install_env` in safe mode (`ensure_safe_install_options`), and
+        // `mise lock` starts uv without installing anything, so this is where uv gets it.
+        if !tv.install_env().is_empty() {
+            Settings::ensure_not_safe(&format!(
+                "using tool-level install_env for {}",
+                self.ba.short
+            ))?;
+        }
         let registry = self.get_registry_url(config).await?;
         let index = uv_index_url(&registry)?;
         let mut cmd = CmdLineRunner::new(uv)

@@ -889,6 +889,10 @@ fn backend_list_denial(
 }
 
 pub fn arg_to_backend(ba: BackendArg) -> Option<ABackend> {
+    // `asdf:` selects a backend and names no tool in it. The plugin types assert a name.
+    if ba.tool_name.trim().is_empty() {
+        return None;
+    }
     match ba.backend_type() {
         BackendType::Core => crate::plugins::core::get(&ba),
         BackendType::Aqua => Some(Arc::new(aqua::AquaBackend::from_arg(ba))),
@@ -5655,6 +5659,10 @@ pub trait Backend: Debug + Send + Sync {
         {
             warn_once!("{} is deprecated: {reason}", rt.short);
         }
+        // Toolset installs preflight these options before doing any work, but direct callers
+        // such as `install-into` must be protected here too, before `prepare_install_version`,
+        // which can already run a package manager with the request's `install_env`.
+        tv.request.ensure_safe_install_options()?;
         let graph_install_is_current = !ctx.locked
             && !ctx.force
             && (tv.uv_lock.is_some() || tv.aube_lock.is_some())
@@ -5687,9 +5695,6 @@ pub trait Backend: Debug + Send + Sync {
                 stub_keys,
             )?;
         }
-        // Toolset installs preflight these options before doing any work, but
-        // direct callers such as `install-into` must be protected here too.
-        tv.request.ensure_safe_install_options()?;
 
         // Check for --locked mode: if enabled and no lockfile URL exists, fail early
         // Exempt tool stubs from lockfile requirements since they are ephemeral
