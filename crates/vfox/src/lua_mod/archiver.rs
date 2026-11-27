@@ -140,7 +140,19 @@ fn decompress_archive(archive: &Path, destination: &Path) -> mlua::Result<()> {
             mlua::Error::runtime(format!("invalid archive path: {}", archive.display()))
         })?;
     if filename.ends_with(".zip") {
-        xx::archive::unzip(archive, destination).into_lua_err()?;
+        // `ZipArchive::extract` refuses entry names that leave the destination
+        // (`../x`, `/x`) and links that point out of it.
+        std::fs::File::open(archive)
+            .map_err(zip::result::ZipError::from)
+            .and_then(zip::ZipArchive::new)
+            .and_then(|mut zip| zip.extract(destination))
+            .map_err(|err| {
+                mlua::Error::runtime(format!(
+                    "failed to extract {} into {}: {err}",
+                    archive.display(),
+                    destination.display()
+                ))
+            })?;
     } else if filename.ends_with(".tar.gz") {
         xx::archive::untar_gz(archive, destination).into_lua_err()?;
     } else if filename.ends_with(".tar.xz") {
@@ -297,6 +309,70 @@ mod tests {
         .exec()
         .unwrap();
         assert!(dst_path.join("foo/test.txt").is_file());
+    }
+
+    fn write_zip(path: &Path, entries: &[(&str, &str)]) {
+        let mut zip = zip::ZipWriter::new(std::fs::File::create(path).unwrap());
+        let options = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Stored);
+        for (name, content) in entries {
+            zip.start_file(*name, options).unwrap();
+            std::io::Write::write_all(&mut zip, content.as_bytes()).unwrap();
+        }
+        zip.finish().unwrap();
+    }
+
+    #[test]
+    fn test_zip_entries_leaving_the_destination_are_refused() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let work = temp_dir.path().join("a/b");
+        std::fs::create_dir_all(&work).unwrap();
+        let escape = temp_dir.path().join("a/escaped.txt");
+        let archive = work.join("evil.zip");
+        write_zip(
+            &archive,
+            &[("pkg/ok.txt", "ok"), ("../../escaped.txt", "pwned")],
+        );
+        let archive = archive.to_string_lossy().to_string();
+        for strip in [0, 1] {
+            let dst_path = work.join(format!("out-{strip}"));
+            let dst_path_str = dst_path.to_string_lossy().to_string();
+            let archive = archive.clone();
+            let lua = Lua::new();
+            mod_archiver(&lua).unwrap();
+            let err = lua
+                .load(mlua::chunk! {
+                    local archiver = require("archiver")
+                    archiver.decompress($archive, $dst_path_str, {strip_components = $strip})
+                })
+                .exec()
+                .unwrap_err();
+            assert!(err.to_string().contains("failed to extract"), "{err}");
+            assert!(!escape.exists(), "strip {strip} wrote {}", escape.display());
+            assert!(!work.join("escaped.txt").exists());
+        }
+    }
+
+    #[test]
+    fn test_zip_absolute_entry_names_stay_in_the_destination() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let outside = temp_dir.path().join("outside.txt");
+        let archive = temp_dir.path().join("abs.zip");
+        let name = outside.to_string_lossy().to_string();
+        write_zip(&archive, &[(name.as_str(), "pwned")]);
+        let archive = archive.to_string_lossy().to_string();
+        let dst_path = temp_dir.path().join("out");
+        let dst_path_str = dst_path.to_string_lossy().to_string();
+        let lua = Lua::new();
+        mod_archiver(&lua).unwrap();
+        // Either refused or unpacked below the destination; never at the name.
+        let _ = lua
+            .load(mlua::chunk! {
+                local archiver = require("archiver")
+                archiver.decompress($archive, $dst_path_str)
+            })
+            .exec();
+        assert!(!outside.exists());
     }
 
     #[test]

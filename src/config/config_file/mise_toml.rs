@@ -5497,12 +5497,22 @@ run = "cargo build"
         [tools]
         "spm:https://evil.example/o/gitlab.com.git" = "latest"
         "#}));
+        // the backend is read after leading `core:` prefixes are dropped
+        assert!(!is_safe_config_body(indoc! {r#"
+        [tools]
+        "core:spm:https://evil.example/o/r.git" = "latest"
+        "#}));
+        assert!(!is_safe_config_body(indoc! {r#"
+        [tools]
+        "core:core:spm:https://evil.example/o/r.git" = "latest"
+        "#}));
         // github.com and gitlab.com use the public APIs
         assert!(is_safe_config_body(indoc! {r#"
         [tools]
         "spm:https://github.com/o/r.git" = "latest"
         "spm:https://gitlab.com/o/r.git" = "latest"
         "spm:o/r" = "latest"
+        "core:spm:https://github.com/o/r.git" = "latest"
         "#}));
         // tasks with templates render (and can exec) while loading
         assert!(!is_safe_config_body(indoc! {r#"

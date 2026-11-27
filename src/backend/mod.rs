@@ -4413,7 +4413,7 @@ pub trait Backend: Debug + Send + Sync {
             // A postinstall hook's own mise sees its unfinished installation
             // as installed, and only while the hook runs.
             let state_key = tv.state_key();
-            if std::env::var_os("MISE_TOOL_INSTALL_PATH").is_some() {
+            if *IN_POSTINSTALL_HOOK {
                 return check_path_on_disk(install_path, check_symlink, &state_key);
             }
             install_state::installed_check(
@@ -5931,10 +5931,6 @@ pub trait Backend: Debug + Send + Sync {
             ctx.pr.next_operation();
         }
 
-        // Track the installation asynchronously (fire-and-forget)
-        // Do this before install so the request has time to complete during installation
-        versions_host::track_install(tv.short(), &tv.ba().full(), &tv.version);
-
         ctx.pr.set_message("install".into());
 
         let old_tv = tv.clone();
@@ -7075,6 +7071,20 @@ pub trait Backend: Debug + Send + Sync {
             } else {
                 bail!("Invalid checksum: {checksum}");
             }
+            // An md5 or sha1 hash from the release, not from mise.lock, has
+            // checked the download; the lockfile pins it by blake3 instead.
+            // A version read from mise.lock gets the release's hash for a
+            // platform the lockfile had no checksum for.
+            if lockfile_enabled
+                && static_helpers::is_weak_checksum(checksum)
+                && !tv.checksum_is_from_lockfile(&platform_key, checksum)
+            {
+                let hash = hash::file_hash_blake3(file, Some(ctx.pr.as_ref()))?;
+                tv.lock_platforms
+                    .entry(platform_key.clone())
+                    .or_default()
+                    .checksum = Some(format!("blake3:{hash}"));
+            }
         } else if lockfile_enabled {
             ctx.pr.set_message(format!("generate checksum {filename}"));
             let hash = hash::file_hash_blake3(file, Some(ctx.pr.as_ref()))?;
@@ -7256,6 +7266,13 @@ pub trait Backend: Debug + Send + Sync {
         })
     }
 }
+
+/// Whether this mise was started by a postinstall hook, which is told the
+/// installation it belongs to. Read once: mise sets the variable on the hook's
+/// process, never on its own, and the installed check asks several times per
+/// tool.
+static IN_POSTINSTALL_HOOK: LazyLock<bool> =
+    LazyLock::new(|| std::env::var_os("MISE_TOOL_INSTALL_PATH").is_some());
 
 /// A postinstall hook may invoke mise for the exact installation it is
 /// finishing. That process is entitled to use the path supplied by its parent,

@@ -289,6 +289,30 @@ impl Plugin {
         Ok(ctx)
     }
 
+    /// Fails unless the plugin ships `hooks/<hook>.lua`. A backend hook is only
+    /// called on a plugin used as `<plugin>:<tool>`, and a tool plugin used that
+    /// way has none, so this turns a Lua `require` failure into an error that
+    /// names the plugin and the hook.
+    /// Refuses a plugin that does not ship `hooks/<hook>.lua`, by looking at its files,
+    /// so none of its Lua (metadata or other hooks) runs for a hook it does not define.
+    pub(crate) fn ensure_backend_hook(&self, hook: &str) -> Result<()> {
+        let ships_hook = match &self.source {
+            PluginSource::Filesystem(dir) => {
+                dir.join("hooks").join(format!("{hook}.lua")).is_file()
+            }
+            PluginSource::Embedded(embedded) => {
+                embedded.hooks.iter().any(|(name, _)| *name == hook)
+            }
+        };
+        if !ships_hook {
+            error!(
+                "vfox plugin {} has no hooks/{hook}.lua, so it is not a backend plugin and cannot be used as {}:<tool>",
+                self.name, self.name
+            );
+        }
+        Ok(())
+    }
+
     pub(crate) async fn exec_async(&self, chunk: impl AsChunk) -> Result<()> {
         self.load()?;
         let chunk = self.lua.load(chunk);
@@ -311,17 +335,20 @@ impl Plugin {
         self.metadata.get_or_try_init(|| {
             debug!("[vfox] Getting metadata for {self}");
 
-            // For filesystem plugins, set Lua package paths
-            if let PluginSource::Filesystem(dir) = &self.source {
-                set_paths(
-                    &self.lua,
-                    &[
-                        dir.join("?.lua"),
-                        dir.join("hooks/?.lua"),
-                        dir.join("lib/?.lua"),
-                    ],
-                )?;
-            }
+            // Replace Lua's default search paths for every plugin: the defaults start
+            // with "./?.lua" and "./?.so", so a `require` of a module the plugin does not
+            // ship would load it from the current directory. A filesystem plugin searches
+            // its own directory; an embedded plugin searches nothing, because its lib
+            // modules are in `package.preload` and its hooks in `package.loaded`.
+            let paths = match &self.source {
+                PluginSource::Filesystem(dir) => vec![
+                    dir.join("?.lua"),
+                    dir.join("hooks/?.lua"),
+                    dir.join("lib/?.lua"),
+                ],
+                PluginSource::Embedded(_) => vec![],
+            };
+            set_paths(&self.lua, &paths)?;
 
             // Plugins wrap async calls such as http.get in pcall
             lua_mod::pcall(&self.lua)?;
@@ -442,7 +469,10 @@ fn set_paths(lua: &Lua, paths: &[PathBuf]) -> Result<()> {
         .collect::<Vec<String>>()
         .join(";");
 
-    get_package(lua)?.set("path", paths)?;
+    let package = get_package(lua)?;
+    package.set("path", paths)?;
+    // Plugins are Lua only; no native module is ever loaded from any directory.
+    package.set("cpath", "")?;
 
     Ok(())
 }
@@ -484,5 +514,96 @@ mod tests {
         });
 
         assert_eq!(rewrite_url("not a url".to_string(), &rewriter), "not a url");
+    }
+
+    #[tokio::test]
+    async fn embedded_plugin_requires_nothing_from_the_filesystem() {
+        let embedded = embedded_plugins::get_embedded_plugin("oci").unwrap();
+        let plugin = Plugin::from_embedded("oci", embedded).unwrap();
+
+        let (path, cpath): (String, String) = plugin
+            .eval_async("return package.path, package.cpath")
+            .await
+            .unwrap();
+        assert_eq!(path, "");
+        assert_eq!(cpath, "");
+
+        // a hook the plugin does not ship is an error, not a file lookup in ./
+        let err = plugin
+            .exec_async(r#"require "hooks/backend_list_versions""#)
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("not found"), "{err}");
+        assert!(!err.contains("./hooks"), "{err}");
+    }
+
+    #[tokio::test]
+    async fn a_tool_plugin_used_as_a_backend_runs_no_backend_hook() {
+        let embedded = embedded_plugins::get_embedded_plugin("oci").unwrap();
+        let plugin = Plugin::from_embedded("oci", embedded).unwrap();
+        let ctx = crate::hooks::backend_exec_env::BackendExecEnvContext {
+            tool: "demo".to_string(),
+            version: "1.0.0".to_string(),
+            install_path: PathBuf::from("/nonexistent"),
+            options: Default::default(),
+        };
+        let err = plugin.backend_exec_env(ctx).await.unwrap_err().to_string();
+        assert!(
+            err.contains("vfox plugin oci has no hooks/backend_exec_env.lua"),
+            "{err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn filesystem_plugin_searches_only_its_own_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let plugin_dir = dir.path().join("demo");
+        std::fs::create_dir_all(plugin_dir.join("hooks")).unwrap();
+        std::fs::write(
+            plugin_dir.join("metadata.lua"),
+            r#"PLUGIN = { name = "demo", version = "1.0.0" }"#,
+        )
+        .unwrap();
+        let plugin = Plugin::from_dir(&plugin_dir).unwrap();
+
+        let (path, cpath): (String, String) = plugin
+            .eval_async("return package.path, package.cpath")
+            .await
+            .unwrap();
+        for entry in path.split(';') {
+            assert!(
+                Path::new(entry).starts_with(&plugin_dir),
+                "{entry} is outside {plugin_dir:?}"
+            );
+        }
+        assert_eq!(cpath, "");
+    }
+
+    #[tokio::test]
+    async fn a_missing_backend_hook_is_refused_before_any_plugin_code_runs() {
+        let dir = tempfile::tempdir().unwrap();
+        let plugin_dir = dir.path().join("demo");
+        std::fs::create_dir_all(plugin_dir.join("hooks")).unwrap();
+        std::fs::write(plugin_dir.join("metadata.lua"), r#"error("metadata ran")"#).unwrap();
+        std::fs::write(
+            plugin_dir.join("hooks/available.lua"),
+            r#"error("available ran")"#,
+        )
+        .unwrap();
+        let plugin = Plugin::from_dir(&plugin_dir).unwrap();
+        let ctx = crate::hooks::backend_list_versions::BackendListVersionsContext {
+            tool: "demo".to_string(),
+            options: Default::default(),
+        };
+        let err = plugin
+            .backend_list_versions(ctx)
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("vfox plugin demo has no hooks/backend_list_versions.lua"),
+            "{err}"
+        );
     }
 }

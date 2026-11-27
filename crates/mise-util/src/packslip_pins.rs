@@ -27,6 +27,13 @@ pub struct Pin {
     pub signer: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub issuer: Option<String>,
+    /// For a key-signed project, the fingerprint of the whole public key that
+    /// signed the last accepted release: the ID in `signer` is only text in
+    /// the key line, which a line for any other key can carry. Pins written
+    /// before mise recorded it have none: they hold by ID, and gain it from
+    /// the next release accepted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key_fingerprint: Option<String>,
     /// `vendor` or `repackager`.
     pub attested_by: String,
     /// Whether every artifact of an accepted release linked provenance.
@@ -103,13 +110,28 @@ impl Pins {
     /// (`verified`), or, with none, the IDs recorded under `project`'s own
     /// name or for a release last signed as `project`. A name can only be
     /// added, never taken away, so what is found here is held to in full.
+    ///
+    /// A forge name is the same project in whatever letter case it is
+    /// spelled, as the forge resolves it ([`forge::same_project`]), so every
+    /// spelling of `project` recorded here is one of its own names.
     fn repository_keys(&self, project: &str, verified: Option<&ForgePin>) -> BTreeSet<String> {
         let mut keys = BTreeSet::from([project.to_string()]);
+        keys.extend(
+            self.pins
+                .keys()
+                .chain(self.sequences.keys())
+                .chain(self.list_forges.keys())
+                .filter(|key| forge::same_project(key, project))
+                .cloned(),
+        );
         let ids: Vec<&ForgePin> = match verified {
             Some(verified) => vec![verified],
             None => self
                 .forges()
-                .filter(|(key, forge)| *key == project || forge.project == project)
+                .filter(|(key, forge)| {
+                    forge::same_project(key, project)
+                        || forge::same_project(&forge.project, project)
+                })
                 .map(|(_, forge)| forge)
                 .collect(),
         };
@@ -133,8 +155,13 @@ impl Pins {
             self.pins
                 .iter()
                 .filter(|(_, pin)| {
-                    pin.forge.as_ref().is_some_and(|f| f.project == project)
-                        || pin.former_names.contains(project)
+                    pin.forge
+                        .as_ref()
+                        .is_some_and(|f| forge::same_project(&f.project, project))
+                        || pin
+                            .former_names
+                            .iter()
+                            .any(|name| forge::same_project(name, project))
                 })
                 .map(|(key, _)| key.clone()),
         );
@@ -142,7 +169,7 @@ impl Pins {
             .into_iter()
             .filter(|key| self.pins.contains_key(key))
             .collect();
-        keys.sort_by_key(|key| key.as_str() != project);
+        keys.sort_by_key(|key| (key.as_str() != project, !forge::same_project(key, project)));
         keys
     }
 
@@ -211,6 +238,9 @@ fn save(path: &Path, pins: &Pins) -> Result<()> {
 pub struct Observed<'a> {
     pub scheme: &'a str,
     pub key_id: &'a str,
+    /// The fingerprint of the public key that verified the release, for a
+    /// key-signed project: `key_id` is then only the ID its key line carries.
+    pub key_fingerprint: Option<&'a str>,
     pub issuer: Option<&'a str>,
     pub attested_by: &'a str,
     pub provenance: bool,
@@ -328,6 +358,14 @@ fn check_against(pin: &Pin, key: &str, project: &str, observed: Observed<'_>) ->
             "is signed by {signer} ({}), but {} ({}) signed what mise accepted before",
             observed.scheme, pin.signer, pin.scheme
         ));
+    } else if let Some(pinned) = &pin.key_fingerprint
+        && observed.key_fingerprint != Some(pinned.as_str())
+    {
+        // The ID is only text in a key line, so another key can carry it.
+        problems.push(format!(
+            "is signed by another key that carries the ID {signer} (fingerprint {}), but the key with fingerprint {pinned} signed what mise accepted before",
+            observed.key_fingerprint.unwrap_or("unknown")
+        ));
     }
     if pin.attested_by == "vendor" && observed.attested_by == "repackager" {
         problems.push(
@@ -349,7 +387,7 @@ fn check_against(pin: &Pin, key: &str, project: &str, observed: Observed<'_>) ->
 
 /// Where a pin found under another name was recorded, for a refusal.
 fn pinned_as(key: &str, project: &str) -> String {
-    if key == project {
+    if forge::same_project(key, project) {
         String::new()
     } else {
         format!(" (mise pinned the repository as packslip:{key}, before it was renamed)")
@@ -385,6 +423,7 @@ pub fn record_at(path: &Path, project: &str, observed: Observed<'_>) -> Result<P
             scheme: observed.scheme.to_string(),
             signer,
             issuer: observed.issuer.map(str::to_string),
+            key_fingerprint: observed.key_fingerprint.map(str::to_string),
             attested_by: observed.attested_by.to_string(),
             provenance: observed.provenance,
             unlogged: !observed.logged,
@@ -407,6 +446,9 @@ pub fn record_at(path: &Path, project: &str, observed: Observed<'_>) -> Result<P
         // options list beside the pinned one: remember it as it is now.
         signer,
         issuer: observed.issuer.map(str::to_string).or(pin.issuer.clone()),
+        // Likewise its key: the pinned one, or the one a pin from before
+        // mise recorded fingerprints holds to from here on.
+        key_fingerprint: observed.key_fingerprint.map(str::to_string),
         attested_by: observed.attested_by.to_string(),
         provenance: observed.provenance || any(|pin| pin.provenance),
         unlogged: !observed.logged || any(|pin| pin.unlogged),
@@ -418,7 +460,7 @@ pub fn record_at(path: &Path, project: &str, observed: Observed<'_>) -> Result<P
         former_names: keys
             .iter()
             .flat_map(|key| pins.pins[key].former_names.iter().chain([key]))
-            .filter(|name| name.as_str() != project)
+            .filter(|name| !forge::same_project(name, project))
             .cloned()
             .collect(),
         ..pin.clone()
@@ -483,7 +525,7 @@ pub fn check_sequence_at(
 
 /// Under which name a release list was accepted, for a refusal.
 fn accepted_as(key: &str, project: &str) -> String {
-    if key == project {
+    if forge::same_project(key, project) {
         String::new()
     } else {
         format!(" as packslip:{key}, the same repository before it was renamed")
@@ -564,6 +606,7 @@ mod tests {
         Observed {
             scheme,
             key_id,
+            key_fingerprint: None,
             issuer: Some("https://token.actions.githubusercontent.com"),
             attested_by: "vendor",
             provenance: false,
@@ -723,6 +766,68 @@ mod tests {
     }
 
     #[test]
+    fn another_key_with_the_pinned_key_id_is_another_signer() {
+        use packslip::minisign::{PublicKey, SecretKey, key_id_hex};
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("pins.toml");
+        let project = "tool.example.com";
+        let vendor = SecretKey::from_seed([7; 32]).public_key();
+        // Whoever writes a key line chooses the ID in it.
+        let copied = PublicKey {
+            key_id: vendor.key_id,
+            ..SecretKey::from_seed([8; 32]).public_key()
+        };
+        let id = key_id_hex(&vendor.key_id);
+        let (vendor, copied) = (vendor.fingerprint(), copied.fingerprint());
+        assert_ne!(vendor, copied);
+        let signed_with = |fingerprint| Observed {
+            key_fingerprint: fingerprint,
+            issuer: None,
+            ..observed("sigstore-key", &id)
+        };
+
+        let pin = record_at(&path, project, signed_with(Some(&vendor))).unwrap();
+        assert_eq!(pin.signer, id);
+        assert_eq!(pin.key_fingerprint.as_deref(), Some(vendor.as_str()));
+        check_at(&path, project, signed_with(Some(&vendor))).unwrap();
+        assert_eq!(
+            record_at(&path, project, signed_with(Some(&vendor))).unwrap(),
+            pin
+        );
+        for other in [Some(copied.as_str()), None] {
+            let err = check_at(&path, project, signed_with(other)).unwrap_err();
+            let msg = err.to_string();
+            assert!(msg.contains("another key that carries the ID"), "{msg}");
+            assert!(msg.contains(&vendor), "{msg}");
+            assert!(msg.contains("mise packslip forget"), "{msg}");
+            assert!(record_at(&path, project, signed_with(other)).is_err());
+        }
+        assert_eq!(load(&path).unwrap().pins[project], pin);
+
+        // A pin from before mise recorded fingerprints holds by ID, and then
+        // to the key of the next release accepted.
+        let mut pins = load(&path).unwrap();
+        pins.pins.get_mut(project).unwrap().key_fingerprint = None;
+        save(&path, &pins).unwrap();
+        assert!(
+            !file::read_to_string(&path)
+                .unwrap()
+                .contains("key_fingerprint")
+        );
+        let other_id = Observed {
+            key_id: "0000000000000000",
+            ..signed_with(Some(&vendor))
+        };
+        assert!(check_at(&path, project, other_id).is_err());
+        check_at(&path, project, signed_with(Some(&vendor))).unwrap();
+        assert_eq!(
+            record_at(&path, project, signed_with(Some(&vendor))).unwrap(),
+            pin
+        );
+        assert!(check_at(&path, project, signed_with(Some(&copied))).is_err());
+    }
+
+    #[test]
     fn a_repackager_pin_yields_to_the_vendor() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("pins.toml");
@@ -806,6 +911,7 @@ pinned_at = "2026-09-01T00:00:00Z"
                 scheme: "sigstore-oidc".into(),
                 signer: "https://github.com/new/r/.github/workflows/release.yml".into(),
                 issuer: None,
+                key_fingerprint: None,
                 attested_by: "vendor".into(),
                 provenance: false,
                 unlogged: false,
@@ -1130,6 +1236,68 @@ pinned_at = "2026-09-01T00:00:00Z"
     }
 
     #[test]
+    fn a_forge_name_in_another_letter_case_is_held_to_the_same_pin() {
+        use packslip::sigstore::{GITHUB_ISSUER, SourceRepository};
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("pins.toml");
+        let (name, other_case) = ("github.com/o/r", "github.com/O/R");
+        let release = |id: &str| {
+            let key_id = oidc("v1");
+            let source = SourceRepository::new(format!("https://{name}")).with_id(id);
+            let check = forge::check(
+                &Expected::new(name),
+                name,
+                &key_id,
+                Some(GITHUB_ISSUER),
+                Some(&source),
+            )
+            .unwrap();
+            (key_id, check)
+        };
+        let (key_id, check) = release("42");
+        let first = Observed {
+            forge: Some(&check),
+            ..observed("sigstore-oidc", &key_id)
+        };
+        record_at(&path, name, first).unwrap();
+        check_sequence_at(&path, name, 5, None).unwrap();
+        assert_eq!(
+            forge_pin_at(&path, other_case).unwrap(),
+            Some(repo(name, "42"))
+        );
+        // A repository re-created under the name is refused in any spelling.
+        let (key_id, check) = release("99");
+        let taken = Observed {
+            forge: Some(&check),
+            ..observed("sigstore-oidc", &key_id)
+        };
+        assert!(check_at(&path, other_case, taken).is_err());
+        assert!(record_at(&path, other_case, taken).is_err());
+        assert!(check_sequence_at(&path, other_case, 4, None).is_err());
+        assert!(check_missing_list_at(&path, other_case, None).is_err());
+        // The same repository under the other spelling keeps one pin.
+        let pin = record_at(&path, other_case, first).unwrap();
+        assert!(pin.former_names.is_empty());
+        assert_eq!(
+            list_at(&path).unwrap().keys().collect::<Vec<_>>(),
+            [other_case]
+        );
+        assert!(check_at(&path, name, taken).is_err());
+        // Forgetting either spelling forgets the pin and the sequence.
+        assert!(forget_at(&path, name).unwrap());
+        assert!(list_at(&path).unwrap().is_empty());
+        check_sequence_at(&path, other_case, 1, None).unwrap();
+        // A monorepo subpath, and a name on any other host, compare exactly.
+        for (recorded, other) in [
+            ("github.com/o/r/tool", "github.com/o/r/Tool"),
+            ("t.example.com/tool", "t.example.com/Tool"),
+        ] {
+            check_sequence_at(&path, recorded, 5, None).unwrap();
+            check_sequence_at(&path, other, 1, None).unwrap();
+        }
+    }
+
+    #[test]
     fn an_owner_id_an_older_pin_recorded_is_read_and_ignored() {
         // mise 2026.9 recorded the repository's owner ID too. Such a pin still
         // reads, and a release of the same repository under another owner,
@@ -1208,6 +1376,7 @@ owner_id = "7"
                 scheme: "sigstore-oidc".into(),
                 signer: WORKFLOW.into(),
                 issuer: None,
+                key_fingerprint: None,
                 attested_by: "vendor".into(),
                 provenance: false,
                 unlogged: false,

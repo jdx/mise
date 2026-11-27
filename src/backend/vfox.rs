@@ -18,12 +18,13 @@ use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::config::{Config, Settings, SettingsExt};
 use crate::dirs;
 use crate::env_diff::EnvMap;
+use crate::errors::Error::PluginNotInstalled;
 use crate::hash::{hash_sha256_to_str, hash_to_str};
 use crate::install_context::InstallContext;
 use crate::lockfile::{PlatformInfo, ProvenanceType};
 use crate::plugins::Plugin;
 use crate::plugins::vfox_plugin::VfoxPlugin;
-use crate::toolset::{ToolOptions, ToolVersion, Toolset, install_state};
+use crate::toolset::{ToolOptions, ToolRequest, ToolVersion, Toolset, install_state};
 use crate::ui::multi_progress_report::MultiProgressReport;
 
 type AliasCaches = HashMap<String, Arc<CacheManager<BTreeMap<String, String>>>>;
@@ -416,6 +417,16 @@ impl Backend for VfoxBackend {
         if !self.is_version_installed(config, tv, check_symlink) {
             return Ok(false);
         }
+        // An install whose plugin is gone has no bin paths or environment, and
+        // installing the version again is what installs the plugin. A `system`
+        // version needs no plugin: mise installed nothing for it.
+        if !self.plugin.is_installed() && !matches!(tv.request, ToolRequest::System { .. }) {
+            debug!(
+                "{} install is not satisfied: plugin not installed",
+                tv.style()
+            );
+            return Ok(false);
+        }
         if self.is_backend_plugin() || !self.plugin_has_hook("mise_install_satisfied") {
             return Ok(true);
         }
@@ -603,6 +614,12 @@ impl Backend for VfoxBackend {
         if !self.is_backend_plugin() || !could_be_alias(version) {
             return Ok(None);
         }
+        // Versions are resolved for every tool a config names, trusted or not,
+        // and on every prompt, so a plugin is not installed just to ask it for
+        // its aliases: `mise install` installs it and resolves again.
+        if !self.plugin.is_installed() {
+            return Ok(None);
+        }
         let config = Config::get().await?;
         // `v1.2.3` may be a literal release, so an installed version resolves as
         // written when the lookup fails. Anything else could be an alias name, and
@@ -658,8 +675,8 @@ impl Backend for VfoxBackend {
         }
 
         // Reuse non-SLSA lockfile provenance, but re-verify SLSA so the configured
-        // signer is checked even when a checksum is available. Unlike aqua/github,
-        // the vfox backend doesn't populate PlatformInfo.checksum.
+        // signer is checked even when a checksum is available. Paranoid mode and
+        // locked_verify_provenance re-verify every attestation.
         let platform_key = self.get_platform_key();
         let has_lockfile_provenance = tv
             .lock_platforms
@@ -670,14 +687,14 @@ impl Backend for VfoxBackend {
             .get(&platform_key)
             .and_then(|pi| pi.provenance.as_ref())
             .is_some_and(ProvenanceType::is_slsa);
-        vfox.skip_verification = has_lockfile_provenance && !locked_slsa;
-        // In locked mode the download must be the artifact the lockfile pinned.
-        if ctx.locked {
-            vfox.locked_checksum = tv
-                .lock_platforms
-                .get(&platform_key)
-                .and_then(|pi| pi.checksum.clone());
-        }
+        vfox.skip_verification =
+            has_lockfile_provenance && !locked_slsa && !Settings::get().force_provenance_verify();
+        // The download must be the artifact the lockfile pinned, with or without
+        // --locked.
+        vfox.locked_checksum = tv
+            .lock_platforms
+            .get(&platform_key)
+            .and_then(|pi| pi.checksum.clone());
 
         // Save expected provenance before take() so we can detect type changes afterward,
         // then clear it so we can detect whether install re-sets it.
@@ -705,6 +722,7 @@ impl Backend for VfoxBackend {
             let pi = tv.lock_platforms.entry(platform_key.clone()).or_default();
             pi.provenance = Some(provenance);
         } else if let Some(ref expected) = expected_provenance
+            && vfox.skip_verification
             && result.checksum_verified
             && !expected.is_slsa()
         {
@@ -759,6 +777,11 @@ impl Backend for VfoxBackend {
         config: &Arc<Config>,
         tv: &ToolVersion,
     ) -> eyre::Result<Vec<PathBuf>> {
+        // `system` names a tool mise did not install, yet it always counts as
+        // installed, so there is no install for a plugin hook to describe.
+        if matches!(tv.request, ToolRequest::System { .. }) {
+            return Ok(vec![]);
+        }
         let path = self
             ._exec_env(config, tv)
             .await?
@@ -780,6 +803,9 @@ impl Backend for VfoxBackend {
         _ts: &Toolset,
         tv: &ToolVersion,
     ) -> eyre::Result<EnvMap> {
+        if matches!(tv.request, ToolRequest::System { .. }) {
+            return Ok(EnvMap::new());
+        }
         Ok(self
             ._exec_env(config, tv)
             .await?
@@ -961,7 +987,6 @@ impl VfoxBackend {
                 timeout::run_with_timeout_async(
                     || async {
                         let (mut vfox, _log_rx) = self.plugin.vfox();
-                        self.ensure_plugin_installed(config).await?;
                         if let Ok(dep_env) = self.dependency_env(config).await {
                             vfox.cmd_env = Some(dep_env.into_iter().collect());
                         }
@@ -1359,7 +1384,16 @@ impl VfoxBackend {
                     );
                     return Ok(BTreeMap::new());
                 }
-                self.ensure_plugin_installed(config).await?;
+                // The environment is looked up for every installed tool a
+                // config names, trusted or not, and on every prompt, so a
+                // missing plugin is reported here, not installed: `mise install`
+                // and `mise plugins install` install it.
+                if !self.plugin.is_installed() {
+                    bail!(
+                        "{}, so {tv} has no environment; run `mise install` to install it",
+                        PluginNotInstalled(self.plugin.name().to_string())
+                    );
+                }
                 let (mut vfox, _log_rx) = self.plugin.vfox();
                 vfox.cmd_env = Some(match cmd_env {
                     Some(cmd_env) => cmd_env,
@@ -1398,13 +1432,21 @@ impl VfoxBackend {
                         if let Some(val) = acc.get(key) {
                             let mut paths = env::split_paths(val).collect::<Vec<PathBuf>>();
                             paths.push(PathBuf::from(&env_key.value));
-                            acc.insert(
-                                env_key.key.clone(),
-                                env::join_paths(paths)
-                                    .unwrap()
-                                    .to_string_lossy()
-                                    .to_string(),
-                            );
+                            // A value that holds the separator, such as a
+                            // directory named `web:app`, cannot be one entry
+                            // of the list, so it is left out.
+                            match env::join_paths(paths) {
+                                Ok(joined) => {
+                                    acc.insert(
+                                        env_key.key.clone(),
+                                        joined.to_string_lossy().to_string(),
+                                    );
+                                }
+                                Err(err) => warn!(
+                                    "ignoring {key} entry {:?} from {tv}: {err}; rename the directory so it has no path separator",
+                                    env_key.value
+                                ),
+                            }
                         } else {
                             acc.insert(key.clone(), env_key.value.clone());
                         }
@@ -1489,8 +1531,9 @@ pub(crate) async fn download_with_plugin_headers(
     let mut vfox = vfox::Vfox::new();
     vfox.set_url_rewriter(crate::http::apply_url_replacements);
     vfox.set_http_headers_resolver(crate::http::netrc_headers);
-    // The vfox client has no timeouts of its own; bound the whole download
-    // by `http_download_timeout`, as the default download path does.
+    // The vfox client bounds connecting and each read by `http_timeout`; bound
+    // the whole download by `http_download_timeout`, as the default download
+    // path does.
     let limit = Settings::get().http_download_timeout();
     tokio::time::timeout(limit, vfox.download_to(&url, path, Some(headers)))
         .await
