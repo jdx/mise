@@ -424,3 +424,26 @@ fn test_no_settings_configured() {
     apply_url_replacements(&mut url);
     assert_eq!(url.as_str(), original.as_str());
 }
+
+/// A tab or line break in a regex rule's server ends a capture name as it does
+/// in the rewrite, so the login of `https://ci:secret@$1<TAB>mirror.example/`
+/// is checked against the server the rewrite reaches, and the rule applies.
+#[test]
+fn test_regex_replacement_credentials_keep_capture_boundaries_at_tabs() {
+    for replacement in [
+        "https://ci:secret@$1\tmirror.example/$2",
+        "https://ci:secret@$1\nmirror.example/$2",
+        " https://ci:secret@$1\rmirror.example\t/$2",
+    ] {
+        let mut replacements = IndexMap::new();
+        replacements.insert(
+            r"regex:^https://([^./]+)\.cdn\.example\.com/(.+)".to_string(),
+            replacement.to_string(),
+        );
+        assert_eq!(
+            rewritten(&replacements, "https://eu.cdn.example.com/tool-1.0"),
+            "https://ci:secret@eumirror.example/tool-1.0",
+            "{replacement:?}"
+        );
+    }
+}

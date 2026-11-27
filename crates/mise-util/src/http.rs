@@ -3670,18 +3670,51 @@ fn split_replacement(replacement: &str) -> (Option<&str>, &str, &str) {
 /// `https://user:password@mirror.example.com/github/`. The replacement is read
 /// as the URL parser reads it, which drops every tab and line break and the
 /// controls and spaces at the start, so `https:/<TAB>/user:password@host/` has
-/// credentials too.
-fn replacement_credentials(replacement: &str) -> Option<String> {
-    let replacement: String = replacement
-        .trim_start_matches(|c: char| c <= ' ')
-        .chars()
-        .filter(|c| !matches!(c, '\t' | '\n' | '\r'))
-        .collect();
-    let (_, authority, rest) = split_replacement(&replacement);
-    authority
+/// credentials too. The front is returned as written, tabs and line breaks
+/// included, so a regex rule's `$1<TAB>.example.com` still ends its capture
+/// name where the rewrite does when it is expanded.
+fn replacement_credentials(replacement: &str) -> Option<&str> {
+    let replacement = trim_url_start(replacement);
+    let parsed = without_url_tabs(replacement);
+    let (_, authority, rest) = split_replacement(&parsed);
+    if !authority
         .rsplit_once('@')
         .is_some_and(|(userinfo, _)| !userinfo.is_empty())
-        .then(|| replacement[..replacement.len() - rest.len()].to_string())
+    {
+        return None;
+    }
+    // The end of the front in `replacement`: after as many kept characters as
+    // the parsed front has, and before the tabs and line breaks that follow it.
+    let mut kept = parsed.len() - rest.len();
+    let end = replacement
+        .char_indices()
+        .find(|&(_, c)| {
+            if is_url_tab(c) {
+                return false;
+            }
+            if kept == 0 {
+                return true;
+            }
+            kept -= c.len_utf8();
+            false
+        })
+        .map_or(replacement.len(), |(i, _)| i);
+    Some(&replacement[..end])
+}
+
+/// The controls and spaces the URL parser drops from the start of a URL.
+fn trim_url_start(url: &str) -> &str {
+    url.trim_start_matches(|c: char| c <= ' ')
+}
+
+/// Tabs and line breaks, which the URL parser drops wherever they are.
+fn is_url_tab(c: char) -> bool {
+    matches!(c, '\t' | '\n' | '\r')
+}
+
+/// `url` as the URL parser reads it, without its tabs and line breaks.
+fn without_url_tabs(url: &str) -> String {
+    url.chars().filter(|&c| !is_url_tab(c)).collect()
 }
 
 /// Credentials written into a `url_replacements` rule are for the server that
@@ -3694,7 +3727,8 @@ fn replacement_credentials(replacement: &str) -> Option<String> {
 /// a capture that brought more than a piece of the scheme or authority has
 /// moved the credentials somewhere else.
 fn credentials_in_place(server: &str, url: &Url) -> bool {
-    let (scheme, authority, rest) = split_replacement(server);
+    let server = without_url_tabs(trim_url_start(server));
+    let (scheme, authority, rest) = split_replacement(&server);
     let scheme = scheme.unwrap_or(url.scheme());
     rest.is_empty()
         && Url::parse(&format!("{scheme}://{authority}/")).is_ok_and(|named| {
@@ -3755,7 +3789,7 @@ pub fn apply_url_replacements(url: &mut Url) {
                         && replacement_credentials(replacement).is_none_or(|server| {
                             regex.captures(&url_string).is_some_and(|captures| {
                                 let mut expanded = String::new();
-                                captures.expand(&server, &mut expanded);
+                                captures.expand(server, &mut expanded);
                                 credentials_in_place(&expanded, &new_url)
                             })
                         })
@@ -3784,7 +3818,7 @@ pub fn apply_url_replacements(url: &mut Url) {
                     if new_url_string != url_string
                         && let Ok(new_url) = new_url_string.parse::<Url>()
                         && replacement_credentials(replacement)
-                            .is_none_or(|server| credentials_in_place(&server, &new_url))
+                            .is_none_or(|server| credentials_in_place(server, &new_url))
                     {
                         *url = new_url;
                         restore_same_host_userinfo(&original, url);
