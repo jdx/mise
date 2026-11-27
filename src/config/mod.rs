@@ -7881,6 +7881,10 @@ fn task_includes_and_bounds_for_dir(
 ) -> Result<(Vec<PathBuf>, Option<Vec<PathBuf>>)> {
     let (includes, resolve_dir, _, is_global) = task_include_patterns_for_dir(dir, config_files)?;
     let bounds = safe_mode_task_include_bounds(&resolve_dir, is_global, config_files);
+    // An excluded include is kept for the callers to drop, and safe mode did not skip it: it
+    // contributes no tasks either way, so it must not stop `mise prune` or `mise lock`. A
+    // broken `excludes` is reported where the tasks load.
+    let excludes = task_excludes_for_dir(dir, config_files).unwrap_or_default();
 
     let includes = includes
         .into_iter()
@@ -7891,7 +7895,9 @@ fn task_includes_and_bounds_for_dir(
             }
             expand_task_include(&resolve_dir, &p)
         })
-        .filter(|p| !skip_task_file_outside(p, bounds.as_deref()))
+        .filter(|p| {
+            is_task_path_excluded(p, &excludes) || !skip_task_file_outside(p, bounds.as_deref())
+        })
         .unique()
         .collect::<Vec<_>>();
     Ok((includes, bounds))
@@ -9425,7 +9431,11 @@ fn included_task_definitions(
                 .iter()
                 .filter(|p| !is_remote_task_include(p))
                 .flat_map(|p| expand_task_include(&root, p))
-                .filter(|p| !skip_task_file_outside(p, bounds.as_deref()))
+                // An excluded include is dropped below, and safe mode did not skip it.
+                .filter(|p| {
+                    is_task_path_excluded(p, &own_excludes)
+                        || !skip_task_file_outside(p, bounds.as_deref())
+                })
                 .collect::<Vec<_>>();
             groups.push((own, own_excludes, bounds));
         }
