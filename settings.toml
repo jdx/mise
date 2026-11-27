@@ -3445,7 +3445,6 @@ mise applies them through ruby-build, or ruby-install when
 patched.
 """
 env = "MISE_RUBY_APPLY_PATCHES"
-global_only = true
 optional = true
 type = "String"
 
