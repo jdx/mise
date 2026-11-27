@@ -3647,13 +3647,21 @@ fn split_replacement(replacement: &str) -> (Option<&str>, &str, &str) {
 
 /// The front of a `url_replacements` replacement that carries credentials, up
 /// to the end of its authority: `https://user:password@mirror.example.com` of
-/// `https://user:password@mirror.example.com/github/`.
-fn replacement_credentials(replacement: &str) -> Option<&str> {
-    let (_, authority, rest) = split_replacement(replacement);
+/// `https://user:password@mirror.example.com/github/`. The replacement is read
+/// as the URL parser reads it, which drops every tab and line break and the
+/// controls and spaces at the start, so `https:/<TAB>/user:password@host/` has
+/// credentials too.
+fn replacement_credentials(replacement: &str) -> Option<String> {
+    let replacement: String = replacement
+        .trim_start_matches(|c: char| c <= ' ')
+        .chars()
+        .filter(|c| !matches!(c, '\t' | '\n' | '\r'))
+        .collect();
+    let (_, authority, rest) = split_replacement(&replacement);
     authority
         .rsplit_once('@')
         .is_some_and(|(userinfo, _)| !userinfo.is_empty())
-        .then(|| &replacement[..replacement.len() - rest.len()])
+        .then(|| replacement[..replacement.len() - rest.len()].to_string())
 }
 
 /// Credentials written into a `url_replacements` rule are for the server that
@@ -3727,7 +3735,7 @@ pub fn apply_url_replacements(url: &mut Url) {
                         && replacement_credentials(replacement).is_none_or(|server| {
                             regex.captures(&url_string).is_some_and(|captures| {
                                 let mut expanded = String::new();
-                                captures.expand(server, &mut expanded);
+                                captures.expand(&server, &mut expanded);
                                 credentials_in_place(&expanded, &new_url)
                             })
                         })
@@ -3756,7 +3764,7 @@ pub fn apply_url_replacements(url: &mut Url) {
                     if new_url_string != url_string
                         && let Ok(new_url) = new_url_string.parse::<Url>()
                         && replacement_credentials(replacement)
-                            .is_none_or(|server| credentials_in_place(server, &new_url))
+                            .is_none_or(|server| credentials_in_place(&server, &new_url))
                     {
                         *url = new_url;
                         restore_same_host_userinfo(&original, url);

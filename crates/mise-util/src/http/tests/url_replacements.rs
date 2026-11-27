@@ -333,8 +333,9 @@ fn test_replacement_credentials_only_reach_the_replacement_host() {
 }
 
 /// The URL parser reads the server of an `http(s)` URL after any run of `/` and
-/// `\` that follows the colon, so every such spelling of a replacement with a
-/// login names the same server, and the login reaches only that server.
+/// `\` that follows the colon, and drops tabs, line breaks and leading spaces,
+/// so every such spelling of a replacement with a login names the same server,
+/// and the login reaches only that server.
 #[test]
 fn test_replacement_credentials_are_found_in_every_spelling_of_the_server() {
     for replacement in [
@@ -344,6 +345,9 @@ fn test_replacement_credentials_are_found_in_every_spelling_of_the_server() {
         r"https:\\user:secret@mirror.example.com/",
         r"https:/\user:secret@mirror.example.com/",
         "HTTPS:///user:secret@mirror.example.com/",
+        "https:/\t/user:secret@mirror.example.com/",
+        "https:\n//user:secret@mirror.example.com/",
+        " https://user:sec\rret@mirror.example.com/",
     ] {
         let mut rules = IndexMap::new();
         rules.insert("https://github.com/".to_string(), replacement.to_string());
