@@ -347,6 +347,17 @@ fn unc_working_dir_error(dir: &Path) -> String {
 }
 
 fn inline_args_style(program: &str, shell_args: &[String]) -> InlineArgsStyle {
+    // `env fish -c` starts fish, which reads the arguments. The template functions quote for the
+    // same program.
+    let shell = once(program.to_string())
+        .chain(shell_args.iter().cloned())
+        .collect_vec();
+    if let Some(command) = super::task_script_parser::resolve_env(&shell)
+        && command != shell
+        && let Some((program, shell_args)) = command.split_first()
+    {
+        return inline_args_style(program, shell_args);
+    }
     if crate::path::program_stem(Path::new(program)).as_deref() == Some("fish") {
         return InlineArgsStyle::FishCommandText;
     }
@@ -4092,6 +4103,12 @@ mod tests {
                 InlineArgsStyle::PosixCommandText
             );
         }
+        // `env` starts the shell that reads the arguments.
+        let env_fish = ["-S-i".to_string(), "fish".to_string(), "-c".to_string()];
+        assert_eq!(
+            inline_args_style("/usr/bin/env", &env_fish),
+            InlineArgsStyle::FishCommandText
+        );
     }
 
     #[test]

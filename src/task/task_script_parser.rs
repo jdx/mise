@@ -10,7 +10,7 @@ use indexmap::IndexMap;
 use itertools::Itertools;
 use serde::de::DeserializeOwned;
 use serde_json::{Value as JsonValue, json};
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::iter::once;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -909,7 +909,7 @@ impl TaskScriptParser {
                 continue;
             }
             let shell = rendered_script_shell(script, task, self.run_shell.as_deref())?;
-            let quoting = ArgQuoting::of(&shell);
+            let quoting = ArgQuoting::of(&shell.words);
             // The values the template functions quoted for `shell`, checked once the script is
             // rendered and the shell that runs it is known.
             let quoted = Arc::new(Mutex::new(Vec::new()));
@@ -976,27 +976,31 @@ impl TaskScriptParser {
             let quoted = std::mem::take(&mut *quoted.lock().unwrap());
             if !quoted.is_empty() {
                 let runs = rendered_script_shell(&rendered, task, self.run_shell.as_deref())?;
-                let runs_quoting = ArgQuoting::of(&runs);
+                let runs_quoting = ArgQuoting::of(&runs.words);
                 if quoted.iter().any(|v| !quoting.reads_alike(runs_quoting, v)) {
                     if let Some(unknown) = [&shell, &runs]
                         .into_iter()
-                        .find(|shell| ArgQuoting::of(shell) == ArgQuoting::Unknown)
+                        .find(|shell| ArgQuoting::of(&shell.words) == ArgQuoting::Unknown)
                     {
+                        let (what, example) = if unknown.from_shebang {
+                            ("shebang", "#!/usr/bin/env -S bash -e")
+                        } else {
+                            ("shell", "env bash -c")
+                        };
                         eyre::bail!(
-                            "task {}: mise cannot tell which program its shebang `{}` starts, so \
+                            "task {}: mise cannot tell which program its {what} `{}` starts, so \
                              it cannot quote the values of arg(), option() and flag() for it. Name \
-                             the program after `env` and its options, for example `#!/usr/bin/env \
-                             -S bash -e`.",
+                             the program after `env` and its options, for example `{example}`.",
                             task.name,
-                            unknown.join(" "),
+                            unknown.words.join(" "),
                         );
                     }
                     eyre::bail!(
                         "task {}: its script renders to run under {}, but arg(), option() and \
                          flag() quoted their values for {}. Write the shebang without a template.",
                         task.name,
-                        shell_name(&runs),
-                        shell_name(&shell),
+                        runs.name(),
+                        shell.name(),
                     );
                 }
             }
@@ -1173,21 +1177,47 @@ fn rendered_script_shell(
     script: &str,
     task: &Task,
     run_shell: Option<&str>,
-) -> Result<Vec<String>> {
+) -> Result<ScriptShell> {
     let script = script.trim_start();
+    let configured = |words| ScriptShell {
+        words,
+        from_shebang: false,
+    };
     if !script.starts_with("#!") {
-        return match task.shell()? {
-            Some(shell) => Ok(shell),
-            None => super::task_executor::inline_shell(run_shell),
-        };
+        return Ok(configured(match task.shell()? {
+            Some(shell) => shell,
+            None => super::task_executor::inline_shell(run_shell)?,
+        }));
     }
-    let shebang = shell_from_shebang(script);
+    let shebang = ScriptShell {
+        words: shell_from_shebang(script).unwrap_or_default(),
+        from_shebang: true,
+    };
     if cfg!(unix) && !Settings::get().use_file_shell_for_executable_tasks {
-        return Ok(shebang.unwrap_or_default());
+        return Ok(shebang);
     }
-    match task.shell()?.or(shebang) {
-        Some(shell) => Ok(shell),
-        None => Settings::get().default_file_shell(),
+    match task.shell()? {
+        Some(shell) => Ok(configured(shell)),
+        None if !shebang.words.is_empty() => Ok(shebang),
+        None => Ok(configured(Settings::get().default_file_shell()?)),
+    }
+}
+
+/// A shell [`rendered_script_shell`] picks, and whether the script's shebang names it or the
+/// task's `shell`, `mise run --shell` or a default shell setting does.
+struct ScriptShell {
+    words: Vec<String>,
+    from_shebang: bool,
+}
+
+impl ScriptShell {
+    /// The program, for an error message: the one `env` starts when mise can tell.
+    fn name(&self) -> String {
+        match resolve_env(&self.words).and_then(|shell| shell.into_iter().next()) {
+            Some(program) => program,
+            None if self.words.is_empty() => "no shell".into(),
+            None => self.words.join(" "),
+        }
     }
 }
 
@@ -1198,7 +1228,7 @@ enum ArgQuoting {
     Posix,
     /// A shell whose quoting mise does not know, such as `cmd`: the value goes in as it is.
     Raw,
-    /// A program mise cannot name, such as the one an `env` shebang starts with options mise
+    /// A program mise cannot name, such as the one an `env` wrapper starts after options mise
     /// does not know. It may be a shell, so only a value no shell quotes goes in.
     Unknown,
 }
@@ -1236,15 +1266,17 @@ impl ArgQuoting {
         }
     }
 
+    /// The quoting for the program `shell` runs, which for an `env` wrapper is the one `env`
+    /// starts.
     fn of(shell: &[String]) -> Self {
+        let Some(shell) = resolve_env(shell) else {
+            return Self::Unknown;
+        };
         // No shell runs the script then: the executor refuses a blank `--shell`, and the kernel
         // a blank shebang.
         let Some(program) = shell.first() else {
             return Self::Raw;
         };
-        if is_env(program) {
-            return Self::Unknown;
-        }
         match program.parse() {
             Ok(ShellType::Fish) => Self::Fish,
             Ok(ShellType::Zsh | ShellType::Bash) => Self::Posix,
@@ -1271,30 +1303,27 @@ impl ArgQuoting {
     }
 }
 
-/// The program of `shell`, for an error message.
-fn shell_name(shell: &[String]) -> &str {
-    shell.first().map_or("no shell", String::as_str)
-}
-
-/// The program the kernel starts for the shebang on the first line of `script`, and its
-/// arguments. The kernel skips blanks after `#!`, and `env`, wherever it is installed
-/// (`#!/usr/bin/env bash`, `#! /bin/env -S bash -e`), runs the program that follows its options.
-/// When mise cannot tell which program that is, `env` stays the program, which
-/// [`ArgQuoting::of`] takes for an unknown one.
+/// The words of the shebang on the first line of `script`: the program the kernel starts and
+/// its arguments. The kernel skips blanks after `#!`.
 fn shell_from_shebang(script: &str) -> Option<Vec<String>> {
-    let mut parts = script
+    let words = script
         .lines()
         .next()?
         .strip_prefix("#!")?
-        .split_whitespace();
-    let program = parts.next()?;
-    let args = parts.collect_vec();
-    let command = if is_env(program) {
-        env_command(&args)
-    } else {
-        None
-    };
-    Some(command.unwrap_or_else(|| once(program).chain(args).map(str::to_string).collect()))
+        .split_whitespace()
+        .map(str::to_string)
+        .collect_vec();
+    (!words.is_empty()).then_some(words)
+}
+
+/// The command `shell` runs: `shell` itself, or for an `env` wrapper, wherever `env` is
+/// installed, the command `env` starts. `None` when mise cannot tell which program that is.
+pub(super) fn resolve_env(shell: &[String]) -> Option<Vec<String>> {
+    let mut shell = shell.to_vec();
+    while shell.first().is_some_and(|program| is_env(program)) {
+        shell = env_command(&shell[1..])?;
+    }
+    Some(shell)
 }
 
 fn is_env(program: &str) -> bool {
@@ -1303,58 +1332,72 @@ fn is_env(program: &str) -> bool {
         .is_some_and(|name| name == "env" || name == "env.exe")
 }
 
-/// The command `env` runs for `args`: the words after its options and `NAME=value` settings.
-/// `None` when there is no command or an option mise does not know, as it cannot tell then
-/// where the command starts.
-fn env_command(args: &[&str]) -> Option<Vec<String>> {
-    let mut rest = args;
-    while let Some((&arg, tail)) = rest.split_first() {
-        if arg == "--" {
-            rest = tail;
-            break;
+/// The characters GNU `env` reads in a `-S` string as more than themselves: quotes, `\` escapes,
+/// `${NAME}` and `#` comments. Linux hands `env` all the words of a shebang as one argument, which
+/// `-S` splits, so any of the words may be read that way.
+const ENV_SPLIT_STRING_SYNTAX: [char; 5] = ['\'', '"', '\\', '$', '#'];
+
+/// The next of `env`'s words, or `None` when there is none or `env` may read it as more than it
+/// is.
+fn next_env_word(words: &mut VecDeque<String>) -> Option<String> {
+    words
+        .pop_front()
+        .filter(|word| !word.contains(ENV_SPLIT_STRING_SYNTAX))
+}
+
+/// The command `env` runs for `args`, read as GNU `env` reads them: options up to `--` or the
+/// first word that is none, where `-S STRING` puts the words of `STRING` in its place; then
+/// `NAME=value` settings; then the command. `None` when mise cannot tell which program that is:
+/// there is none, `env` has an option mise does not know, or a word may mean more than it says.
+fn env_command(args: &[String]) -> Option<Vec<String>> {
+    let mut words: VecDeque<String> = args.iter().cloned().collect();
+    let mut options = true;
+    loop {
+        let word = next_env_word(&mut words)?;
+        if options && word == "--" {
+            options = false;
+            continue;
         }
-        if !arg.starts_with('-') && !arg.contains('=') {
-            break;
+        if options && word.starts_with('-') && word != "-" {
+            let split = match word.as_str() {
+                "-S" | "--split-string" => Some(next_env_word(&mut words)?),
+                _ => word
+                    .strip_prefix("--split-string=")
+                    .or_else(|| word.strip_prefix("-S"))
+                    .map(str::to_string),
+            };
+            if let Some(split) = split {
+                for word in split.split_whitespace().rev() {
+                    words.push_front(word.to_string());
+                }
+                continue;
+            }
+            match word.as_str() {
+                "-u" | "--unset" | "-C" | "--chdir" => {
+                    next_env_word(&mut words)?;
+                }
+                "-i" | "--ignore-environment" | "-0" | "--null" | "-v" | "--debug" => {}
+                _ if word.starts_with("--unset=") || word.starts_with("--chdir=") => {}
+                _ if word.len() > 2 && (word.starts_with("-u") || word.starts_with("-C")) => {}
+                _ => return None,
+            }
+            continue;
         }
-        rest = tail;
-        // `-Sbash -e`: the split string, which starts with the command, is in the same word.
-        let split = arg
-            .strip_prefix("--split-string=")
-            .or_else(|| arg.strip_prefix("-S"))
-            .filter(|split| !split.is_empty());
-        if let Some(split) = split {
-            return Some(
-                once(split)
-                    .chain(rest.iter().copied())
-                    .map(str::to_string)
-                    .collect(),
-            );
+        // `env -` is `env -i`.
+        if options && word == "-" {
+            options = false;
+            continue;
         }
-        match arg {
-            "-u" | "--unset" | "-C" | "--chdir" => rest = rest.get(1..)?,
-            "-"
-            | "-i"
-            | "--ignore-environment"
-            | "-0"
-            | "--null"
-            | "-v"
-            | "--debug"
-            | "-S"
-            | "--split-string" => {}
-            _ if arg.starts_with("--unset=") || arg.starts_with("--chdir=") => {}
-            _ if arg.len() > 2 && (arg.starts_with("-u") || arg.starts_with("-C")) => {}
-            // `NAME=value`
-            _ if !arg.starts_with('-') => {}
-            _ => return None,
+        options = false;
+        // `NAME=value`
+        if word.contains('=') {
+            continue;
         }
+        if word.is_empty() || word.starts_with('-') || word.contains(char::is_whitespace) {
+            return None;
+        }
+        return Some(once(word).chain(words).collect());
     }
-    let (command, args) = rest.split_first()?;
-    Some(
-        once(*command)
-            .chain(args.iter().copied())
-            .map(str::to_string)
-            .collect(),
-    )
 }
 
 /// Whether a render error is a template reading a field of `env` that the context lacks.
@@ -1598,6 +1641,7 @@ mod tests {
     #[test]
     fn test_shell_from_shebang_looks_past_env() {
         let words = |words: &str| Some(words.split(' ').map(str::to_string).collect_vec());
+        // (shebang, the command it runs, or None when mise cannot tell which program `env` starts)
         for (shebang, expected) in [
             ("#!/usr/bin/env bash -e", words("bash -e")),
             ("#! /usr/bin/env bash -e", words("bash -e")),
@@ -1606,35 +1650,129 @@ mod tests {
             ("#!/usr/bin/env -Sbash", words("bash")),
             ("#!/usr/bin/env --split-string=bash", words("bash")),
             ("#!/usr/bin/env --split-string bash", words("bash")),
+            ("#!/usr/bin/env --split-string= bash", words("bash")),
+            ("#!/usr/bin/env -S-i bash", words("bash")),
+            ("#!/usr/bin/env -SFOO=1 bash", words("bash")),
             ("#!/usr/bin/env -u FOO bash", words("bash")),
             ("#!/usr/bin/env --unset FOO bash", words("bash")),
             ("#!/usr/bin/env -uFOO --unset=BAR bash", words("bash")),
             ("#!/usr/bin/env -C /tmp bash", words("bash")),
             ("#!/usr/bin/env --chdir=/tmp -i bash", words("bash")),
+            ("#!/usr/bin/env -u X -C /tmp FOO=1 bash", words("bash")),
             ("#!/usr/bin/env -- bash", words("bash")),
+            ("#!/usr/bin/env -- FOO=1 bash", words("bash")),
+            ("#!/usr/bin/env -i -- bash", words("bash")),
+            ("#!/usr/bin/env - bash", words("bash")),
+            ("#!/usr/bin/env env bash", words("bash")),
             ("#!/bin/env -S -u FOO X=1 bash -e", words("bash -e")),
             ("#!\t/bin/bash -e", words("/bin/bash -e")),
             ("#!/usr/local/bin/tclsh", words("/usr/local/bin/tclsh")),
-            // `env` stays the program when mise cannot find the one it starts.
-            ("#!/usr/bin/env", words("/usr/bin/env")),
-            ("#!/usr/bin/env -S", words("/usr/bin/env -S")),
-            ("#!/usr/bin/env -u", words("/usr/bin/env -u")),
-            (
-                "#!/usr/bin/env --frobnicate bash",
-                words("/usr/bin/env --frobnicate bash"),
-            ),
-            (
-                "#!/usr/bin/env --split-string= bash",
-                words("/usr/bin/env --split-string= bash"),
-            ),
-            ("echo hi", None),
+            ("#!/usr/bin/env", None),
+            ("#!/usr/bin/env -S", None),
+            ("#!/usr/bin/env -u", None),
+            ("#!/usr/bin/env --frobnicate bash", None),
+            ("#!/usr/bin/env -iS bash", None),
+            // Options end at the first setting, so `-i` is the command.
+            ("#!/usr/bin/env FOO=1 -i bash", None),
+            ("#!/usr/bin/env -- -i bash", None),
+            // `env -S` reads quotes, escapes, `${NAME}` and comments, which mise does not.
+            ("#!/usr/bin/env -S 'FOO=1 bash'", None),
+            ("#!/usr/bin/env -S -i FOO=a\\_bash tclsh", None),
+            ("#!/usr/bin/env -S ${SHELL}", None),
+            ("#!/usr/bin/env -S #bash tclsh", None),
         ] {
-            assert_eq!(shell_from_shebang(shebang), expected, "{shebang}");
+            let shell = shell_from_shebang(shebang).unwrap();
+            assert_eq!(resolve_env(&shell), expected, "{shebang}");
         }
+        assert_eq!(shell_from_shebang("echo hi"), None);
+        assert_eq!(shell_from_shebang("#! "), None);
         assert_eq!(
             ArgQuoting::of(&["/usr/bin/env".to_string()]),
             ArgQuoting::Unknown
         );
+    }
+
+    /// Every way to spell `env` before a shell either quotes `arg()` values for that shell or
+    /// refuses them, in a shebang and in a task `shell` or `mise run --shell`. None inserts the
+    /// value as it is.
+    #[tokio::test]
+    async fn test_task_parse_arg_never_inserts_raw_for_an_env_shell() {
+        let _guard = crate::test::SettingsGuard::lock();
+        Settings::override_with(|settings| {
+            settings.use_file_shell_for_executable_tasks = Some(false);
+        })
+        .unwrap();
+        let config = Config::get().await.unwrap();
+        let payload = "ok; touch injected #";
+        // (what follows `env`, whether a shebang quotes the value, whether a shell does)
+        let env_args = [
+            ("-S-i bash", true, true),
+            ("-SFOO=1 bash", true, true),
+            ("-- FOO=1 bash", true, true),
+            // A shell reads the quotes, but in a shebang `env -S` does.
+            ("-S 'FOO=1 bash'", false, true),
+            ("-Sbash", true, true),
+            ("-i -- bash", true, true),
+            ("-u X -C /tmp FOO=1 bash", true, true),
+            ("bash", true, true),
+            ("FOO=1 -i bash", false, false),
+            ("--frobnicate bash", false, false),
+        ];
+        // (shebang, task `shell`, `mise run --shell`, whether the value is quoted)
+        let mut cases = vec![];
+        for (args, in_shebang, in_shell) in env_args {
+            cases.push((
+                Some(format!("#!/usr/bin/env {args}")),
+                None,
+                None,
+                in_shebang,
+            ));
+            let shell = format!("env {args} -c");
+            cases.push((None, Some(shell.clone()), None, in_shell));
+            cases.push((None, None, Some(shell), in_shell));
+        }
+        for (shebang, task_shell, run_shell, quotes) in cases {
+            let case = format!("{shebang:?} {task_shell:?} {run_shell:?}");
+            let from_shebang = shebang.is_some();
+            let task = Task {
+                name: "t".into(),
+                shell: task_shell,
+                ..Default::default()
+            };
+            let shebang = shebang.map(|s| format!("{s}\n")).unwrap_or_default();
+            let scripts = vec![format!("{shebang}echo {{{{ arg(name='foo') }}}}")];
+            let parser = TaskScriptParser::new(None).with_run_shell(run_shell);
+            let (_, spec) = parser
+                .parse_run_scripts(&config, &task, &scripts, &Default::default())
+                .await
+                .unwrap();
+            let parsed = parser
+                .parse_run_scripts_with_args(
+                    &config,
+                    &task,
+                    &scripts,
+                    &Default::default(),
+                    &[payload.to_string()],
+                    &spec,
+                )
+                .await;
+            match parsed {
+                Ok(parsed) if quotes => assert_eq!(
+                    parsed[0],
+                    format!("{shebang}echo 'ok; touch injected #'"),
+                    "{case}"
+                ),
+                Err(err) if !quotes => {
+                    let what = if from_shebang { "shebang" } else { "shell" };
+                    let err = format!("{err:#}");
+                    assert!(
+                        err.contains(&format!("cannot tell which program its {what} `")),
+                        "{case}: {err}"
+                    );
+                }
+                parsed => panic!("{case}: {parsed:?}"),
+            }
+        }
     }
 
     /// The values are quoted for the shell `env` starts, however the shebang spells it. When mise
