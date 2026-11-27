@@ -2408,9 +2408,21 @@ fn is_cache_directory(dir: &Path) -> bool {
     if !std::fs::symlink_metadata(&tag).is_ok_and(|meta| meta.is_file()) {
         return false;
     }
-    let Ok(file) = std::fs::File::open(&tag) else {
+    let mut options = std::fs::OpenOptions::new();
+    options.read(true);
+    // O_NONBLOCK keeps a FIFO swapped in since the check above from blocking
+    // the open, and the descriptor is checked again below
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(nix::libc::O_NONBLOCK | nix::libc::O_NOFOLLOW);
+    }
+    let Ok(file) = options.open(&tag) else {
         return false;
     };
+    if !file.metadata().is_ok_and(|meta| meta.is_file()) {
+        return false;
+    }
     let mut head = Vec::with_capacity(CACHEDIR_TAG_SIGNATURE.len());
     file.take(CACHEDIR_TAG_SIGNATURE.len() as u64)
         .read_to_end(&mut head)
@@ -2426,7 +2438,12 @@ fn is_cache_directory(dir: &Path) -> bool {
 fn inside_cache_directory(owner: &TrackedEntry, path: &Path) -> bool {
     path.ancestors()
         .take_while(|ancestor| ancestor.starts_with(&owner.path) && *ancestor != owner.path)
-        .any(is_cache_directory)
+        // a symlink is captured as a link, so the cache its target may be
+        // does not decide whether it is excluded
+        .any(|ancestor| {
+            std::fs::symlink_metadata(ancestor).is_ok_and(|meta| meta.is_dir())
+                && is_cache_directory(ancestor)
+        })
 }
 
 /// Which `[history] exclude` rules cannot be used, each named with the
@@ -5157,6 +5174,27 @@ mod tests {
         let walk = set.walk().unwrap();
         assert!(walk.files.contains_key(&dir.join("keep.toml")));
         assert!(walk.caches.is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_link_to_a_tagged_cache_is_captured_as_a_link() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("project");
+        let cache = tmp.path().join("cache");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::create_dir_all(&cache).unwrap();
+        std::fs::write(
+            cache.join("CACHEDIR.TAG"),
+            "Signature: 8a477f597d28d172789f06886806bc55\n",
+        )
+        .unwrap();
+        let link = root.join("link");
+        std::os::unix::fs::symlink(&cache, &link).unwrap();
+        let mut set = TrackedSet::default();
+        set.push(entry(&root));
+        assert!(set.would_capture(&link).unwrap());
+        assert!(set.walk().unwrap().caches.is_empty());
     }
 
     #[test]
