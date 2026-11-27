@@ -36,6 +36,8 @@ assert "MISE_TRUSTED_CONFIG_PATHS=$PWD mise run -q selects" "true"
 # the files there, and the global files still follow the user's selection.
 mkdir ../other
 printf '[env]\nFROM_CI = "1"\n' >../other/mise.ci.toml
+# A set there named like an environment it was given does not expand again.
+printf 'env_sets.ci = ["elsewhere"]\n' >../other/.miserc.toml
 other="$(cd ../other && pwd)"
 assert_contains "MISE_TRUSTED_CONFIG_PATHS=$PWD:$other mise run -q elsewhere" "FROM_CI=1"
 assert_contains "MISE_TRUSTED_CONFIG_PATHS=$PWD:$other mise run -q elsewhere" "false"

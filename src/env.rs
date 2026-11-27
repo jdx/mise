@@ -269,10 +269,17 @@ pub fn should_truncate() -> bool {
 // python
 
 fn environment(args: &[String]) -> Vec<String> {
+    if let Some(names) = arg_environment(args) {
+        return miserc::expand_env_sets(names);
+    }
+    // A list a parent mise gave is already expanded, so it counts here as it
+    // is, even where a set has the name of one of its environments; see
+    // [`mise_env_for_child`].
+    if selection_from_parent().is_some() {
+        return env_var_environment().unwrap_or_default();
+    }
     // an empty MISE_ENV selects nothing, so only an absent selection falls back.
-    // A list a parent mise gave counts here as it is; see [`mise_env_for_child`].
-    let names = arg_environment(args)
-        .or_else(env_var_environment)
+    let names = env_var_environment()
         .or_else(|| miserc::get_env().cloned())
         .unwrap_or_default();
     miserc::expand_env_sets(names)
