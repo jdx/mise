@@ -203,15 +203,8 @@ impl SendOnceOptions {
         if self.error_for_status
             && !(self.allow_range_not_satisfiable
                 && response.status() == StatusCode::RANGE_NOT_SATISFIABLE)
-            && let Err(err) = response.error_for_status_ref().map_err(redact_error_url)
         {
-            return Err(match retry_after(&response) {
-                Some(wait) => {
-                    let message = err.to_string();
-                    Report::new(err).wrap_err(RetryAfter { wait, message })
-                }
-                None => err.into(),
-            });
+            check_status(&response)?;
         }
         Ok(response)
     }
@@ -424,6 +417,22 @@ impl std::fmt::Display for RetryAfter {
 fn retry_delay(backoff: Duration, err: &Report) -> Duration {
     err.downcast_ref::<RetryAfter>()
         .map_or(backoff, |retry_after| backoff.max(retry_after.wait))
+}
+
+/// The error for a response whose status is not a success, as a request through [`Client`]
+/// reports it: the URL in it has no credentials (see [`redact_error_url`]), and a 429 carries
+/// its `Retry-After`, which [`retry_async_with_retries`] waits out.
+pub fn check_status(response: &Response) -> Result<()> {
+    if let Err(err) = response.error_for_status_ref().map_err(redact_error_url) {
+        return Err(match retry_after(response) {
+            Some(wait) => {
+                let message = err.to_string();
+                Report::new(err).wrap_err(RetryAfter { wait, message })
+            }
+            None => err.into(),
+        });
+    }
+    Ok(())
 }
 
 /// The wait a 429 asked for, in delay-seconds form. An HTTP-date, which no
@@ -3761,7 +3770,7 @@ fn redact_query(query: &str) -> String {
 /// `err` with the URL it reports (`for url (...)`, the last hop after
 /// redirects) stripped of its credentials, as [`log_url`] shows URLs. The error
 /// keeps its kind and status, so retry decisions are unaffected.
-fn redact_error_url(mut err: reqwest::Error) -> reqwest::Error {
+pub fn redact_error_url(mut err: reqwest::Error) -> reqwest::Error {
     if let Some(url) = err.url_mut() {
         let _ = url.set_username("");
         let _ = url.set_password(None);

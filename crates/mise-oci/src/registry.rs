@@ -26,7 +26,7 @@ use crate::manifest::{
     MEDIA_TYPE_DOCKER_MANIFEST_LIST, MEDIA_TYPE_OCI_INDEX, MEDIA_TYPE_OCI_MANIFEST,
 };
 use mise_ui::progress_report::SingleReport;
-use mise_util::http::{HTTP, HTTP_UPLOAD, buffer_body, parse_json};
+use mise_util::http::{HTTP, HTTP_UPLOAD, buffer_body, check_status, parse_json, redact_error_url};
 
 /// A parsed registry reference.
 #[derive(Debug, Clone)]
@@ -521,16 +521,16 @@ async fn fetch_bearer_token(
             HeaderValue::from_str(&c.basic_auth_header())?,
         );
     }
-    let resp: TokenResponse = HTTP
-        .json_with_headers(url.as_str(), &headers)
-        .await
-        .wrap_err_with(|| match credential {
-            Some(c) => format!(
-                "fetching token from {realm} as {} (are the stored credentials still valid?)",
-                c.username
-            ),
-            None => format!("fetching anonymous token from {realm}"),
-        })?;
+    let resp: TokenResponse =
+        get_token(&url, &headers)
+            .await
+            .wrap_err_with(|| match credential {
+                Some(c) => format!(
+                    "fetching token from {realm} as {} (are the stored credentials still valid?)",
+                    c.username
+                ),
+                None => format!("fetching anonymous token from {realm}"),
+            })?;
     Ok(resp.token.or(resp.access_token))
 }
 
@@ -643,6 +643,37 @@ macro_rules! retry_transient {
             }
         }
     }};
+}
+
+/// Request a bearer token, retrying transient failures. The registry chose the URL, and the
+/// token that comes back is sent to the registry, so the request carries the registry login the
+/// caller put in `headers` or nothing: it goes out with the plain client, which adds no netrc
+/// login and no token for the host the URL names. Retries wait out a `429`'s `Retry-After`, and
+/// what they log shows no query value of the URL or of a redirect it led to.
+async fn get_token(url: &url::Url, headers: &HeaderMap) -> Result<TokenResponse> {
+    mise_util::http::retry_async_with_retries(
+        "GET",
+        url,
+        network::http_retries(&mise_settings::Settings::get()),
+        || get_token_once(url, headers),
+    )
+    .await
+}
+
+async fn get_token_once(url: &url::Url, headers: &HeaderMap) -> Result<TokenResponse> {
+    let resp = HTTP
+        .reqwest()?
+        .get(url.clone())
+        .headers(headers.clone())
+        .send()
+        .await
+        .map_err(redact_error_url)?;
+    check_status(&resp)?;
+    Ok(buffer_body(resp)
+        .await?
+        .json()
+        .await
+        .map_err(redact_error_url)?)
 }
 
 /// Download a blob (config or layer) into memory, refreshing auth on `401`
@@ -776,8 +807,8 @@ pub async fn pull_base_image(
 
     // Validate every registry-supplied digest up front — a malicious
     // registry could otherwise return `sha256:../../etc/passwd` and have it
-    // slip through the `blob_path().exists()` cache-check below (which
-    // bypasses the digest verification inside `write_blob_with_digest`).
+    // slip through the `reuse_base` skip below (which bypasses the digest
+    // verification inside `write_blob_with_digest`).
     crate::layout::validate_sha256_digest(&manifest.config.digest)?;
     for layer in &manifest.layers {
         crate::layout::validate_sha256_digest(&layer.digest)?;
@@ -795,8 +826,9 @@ pub async fn pull_base_image(
     let mpr = mise_ui::multi_progress_report::MultiProgressReport::get();
     for layer in &manifest.layers {
         let layer_url = format!("{base_url}/v2/{}/blobs/{}", r.repository, layer.digest);
-        let blob_path = layout.blob_path(&layer.digest);
-        if blob_path.exists() || reuse_base {
+        // A layer an earlier build left is reused only while it still hashes to its digest: the
+        // layout defaults to `./mise-oci`, which the repository the build runs in can ship.
+        if reuse_base || layout.has_blob(&layer.digest)? {
             continue;
         }
         let pr = mpr.add(&format!("pull {}", short_digest(&layer.digest)));
@@ -891,6 +923,10 @@ async fn resolve_manifest(
             .get("digest")
             .and_then(|d| d.as_str())
             .ok_or_else(|| eyre::eyre!("manifest entry missing digest"))?;
+        // Fetched by digest, the manifest is checked against it; a tag here would be trusted
+        // as served, and a path could leave the repository.
+        crate::layout::validate_sha256_digest(digest)
+            .wrap_err_with(|| format!("manifest index for {} names {digest:?}", r.repository))?;
         let manifest_url = format!("{base_url}/v2/{}/manifests/{digest}", r.repository);
         let accept = [MEDIA_TYPE_OCI_MANIFEST, MEDIA_TYPE_DOCKER_MANIFEST];
         let (body, _content_type) = fetch_manifest_json(session, &manifest_url, &accept).await?;
@@ -2376,6 +2412,58 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_base_layer_already_in_the_layout_is_reused_only_if_it_hashes_to_its_digest() {
+        let mut server = mockito::Server::new_async().await;
+        let reference = format!("{}/tools:base", server.host_with_port());
+        let layer = "genuine base layer";
+        let digest = sha256_digest(layer.as_bytes());
+        let config = serde_json::json!({
+            "architecture": "amd64", "os": "linux",
+            "rootfs": {"type": "layers", "diff_ids": [digest]}
+        })
+        .to_string();
+        let config_digest = sha256_digest(config.as_bytes());
+        let manifest = serde_json::json!({
+            "schemaVersion": 2,
+            "mediaType": MEDIA_TYPE_OCI_MANIFEST,
+            "config": {"mediaType": "application/vnd.oci.image.config.v1+json",
+                       "digest": config_digest, "size": config.len()},
+            "layers": [{"mediaType": "application/vnd.oci.image.layer.v1.tar",
+                        "digest": digest, "size": layer.len()}]
+        });
+        server
+            .mock("GET", "/v2/tools/manifests/base")
+            .with_header("content-type", MEDIA_TYPE_OCI_MANIFEST)
+            .with_body(manifest.to_string())
+            .create_async()
+            .await;
+        server
+            .mock("GET", format!("/v2/tools/blobs/{config_digest}").as_str())
+            .with_body(&config)
+            .create_async()
+            .await;
+        // fetched in place of the planted file, and not again once the genuine layer is there
+        let layer_get = server
+            .mock("GET", format!("/v2/tools/blobs/{digest}").as_str())
+            .with_body(layer)
+            .expect(1)
+            .create_async()
+            .await;
+
+        let td = tempfile::tempdir().unwrap();
+        let layout = ImageLayout::init(td.path()).unwrap();
+        // what a repository can ship in the default `./mise-oci`
+        std::fs::write(layout.blob_path(&digest), "planted base layer").unwrap();
+        for _ in 0..2 {
+            pull_base_image(&reference, &layout, None, None)
+                .await
+                .unwrap();
+            assert_eq!(layout.read_blob(&digest).unwrap(), layer.as_bytes());
+        }
+        layer_get.assert_async().await;
+    }
+
+    #[tokio::test]
     async fn a_blob_larger_than_its_descriptor_is_refused() {
         use sha2::{Digest, Sha256};
 
@@ -2830,6 +2918,36 @@ mod tests {
         token.assert_async().await;
     }
 
+    /// A token service that redirects to a signed URL and is rate limited there: the error the
+    /// retry logs hides the signature and keeps the wait the service asked for.
+    #[tokio::test]
+    async fn a_token_error_hides_the_signed_url_and_keeps_retry_after() {
+        let mut server = mockito::Server::new_async().await;
+        server
+            .mock("GET", "/token")
+            .with_status(302)
+            .with_header(
+                "location",
+                &format!("{}/signed?X-Amz-Signature=sig-1234", server.url()),
+            )
+            .create_async()
+            .await;
+        server
+            .mock("GET", mockito::Matcher::Regex("^/signed".to_string()))
+            .with_status(429)
+            .with_header("retry-after", "10")
+            .create_async()
+            .await;
+        let url = url::Url::parse(&format!("{}/token", server.url())).unwrap();
+
+        let err = get_token_once(&url, &HeaderMap::new()).await.unwrap_err();
+
+        let shown = format!("{err:#}");
+        assert!(!shown.contains("sig-1234"), "{shown}");
+        assert!(shown.contains("retry-after: 10s"), "{shown}");
+        assert!(mise_util::http::is_transient(&err));
+    }
+
     #[tokio::test]
     async fn pull_artifact_rejects_a_blob_that_does_not_match_its_digest() {
         let mut server = mockito::Server::new_async().await;
@@ -2903,6 +3021,58 @@ mod tests {
         .await
         .unwrap_err();
         assert!(format!("{err:#}").contains("digest mismatch"), "{err:#}");
+    }
+
+    #[tokio::test]
+    async fn pull_artifact_rejects_an_index_entry_that_is_not_a_digest() {
+        // An index pinned by digest names its manifests by digest too. An entry that names a
+        // tag would let the registry serve whatever that tag points at under the pin.
+        let mut server = mockito::Server::new_async().await;
+        let index = serde_json::json!({
+            "schemaVersion": 2,
+            "mediaType": MEDIA_TYPE_OCI_INDEX,
+            "manifests": [{
+                "mediaType": MEDIA_TYPE_OCI_MANIFEST,
+                "digest": "stable",
+                "size": 2,
+                "platform": {
+                    "architecture": crate::normalize_arch(std::env::consts::ARCH),
+                    "os": crate::normalize_os(std::env::consts::OS),
+                }
+            }]
+        })
+        .to_string();
+        let pinned = sha256_digest(index.as_bytes());
+        server
+            .mock("GET", "/v2/")
+            .with_status(200)
+            .create_async()
+            .await;
+        server
+            .mock(
+                "GET",
+                format!("/v2/tasks/catalog/manifests/{pinned}").as_str(),
+            )
+            .with_header("content-type", MEDIA_TYPE_OCI_INDEX)
+            .with_body(index)
+            .create_async()
+            .await;
+        let by_tag = server
+            .mock("GET", "/v2/tasks/catalog/manifests/stable")
+            .with_header("content-type", MEDIA_TYPE_OCI_MANIFEST)
+            .with_body("{}")
+            .expect(0)
+            .create_async()
+            .await;
+        let dest = tempfile::tempdir().unwrap();
+        let err = pull_artifact(
+            &format!("{}/tasks/catalog@{pinned}", server.host_with_port()),
+            &dest.path().join("out"),
+        )
+        .await
+        .unwrap_err();
+        assert!(format!("{err:#}").contains("stable"), "{err:#}");
+        by_tag.assert_async().await;
     }
 
     #[cfg(unix)]

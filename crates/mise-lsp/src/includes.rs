@@ -227,11 +227,26 @@ fn toml_files_below(dir: &Path, depth: usize, budget: &mut usize, out: &mut Incl
 
 /// The text of a config file, unless it is too big to be one.
 pub(crate) fn read_capped(path: &Path) -> Option<String> {
+    read_at_most(path, MAX_CONFIG_BYTES)
+}
+
+/// The text of a regular file of at most `limit` bytes. The size the file system reports is
+/// not enough: a file in `/proc` reports 0 and may never end, and a link in a checkout can point
+/// at one, so the read itself stops one byte past the limit.
+fn read_at_most(path: &Path, limit: u64) -> Option<String> {
+    use std::io::Read;
+    // checked before opening: opening a FIFO waits for a writer
     let meta = std::fs::metadata(path).ok()?;
-    if !meta.is_file() || meta.len() > MAX_CONFIG_BYTES {
+    if !meta.is_file() || meta.len() > limit {
         return None;
     }
-    std::fs::read_to_string(path).ok()
+    let mut text = String::new();
+    std::fs::File::open(path)
+        .ok()?
+        .take(limit + 1)
+        .read_to_string(&mut text)
+        .ok()?;
+    (text.len() as u64 <= limit).then_some(text)
 }
 
 fn read_includes(config: &Path) -> Option<Vec<String>> {
@@ -386,6 +401,26 @@ mod tests {
         let file = dir.join("mise.tasks.toml");
         std::fs::write(&file, "[build]\nrun = \"x\"\n").unwrap();
         (dir, file)
+    }
+
+    #[test]
+    fn a_file_is_read_up_to_the_limit() {
+        let dir = std::env::temp_dir().join(format!("mise-lsp-capped-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("tasks.toml");
+        std::fs::write(&file, "[build]\n").unwrap();
+        assert_eq!(read_at_most(&file, 8).as_deref(), Some("[build]\n"));
+        assert_eq!(read_at_most(&file, 7), None);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_file_that_reports_no_size_is_still_capped() {
+        // `/proc/self/status` says it holds 0 bytes and has about a kilobyte to read
+        let status = Path::new("/proc/self/status");
+        assert_eq!(std::fs::metadata(status).unwrap().len(), 0);
+        assert!(read_at_most(status, 1 << 16).is_some_and(|t| t.len() > 64));
+        assert_eq!(read_at_most(status, 64), None);
     }
 
     #[test]
