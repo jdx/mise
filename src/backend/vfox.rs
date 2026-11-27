@@ -245,15 +245,20 @@ fn is_tool_option_env_key(key: &str) -> bool {
 /// at or below the root of a trusted project config file and no directory
 /// below that root, down to `dir` itself, holds a `.git`. A repository cloned
 /// inside a trusted project is someone else's code, so the project's trust stops
-/// there. Global config does not vouch for a directory, and safe mode trusts
-/// none.
+/// there. Nor does it reach a directory the user ignored (`mise trust --ignore`
+/// or `ignored_config_paths`), or anything below one; only `trusted_config_paths`,
+/// which [`is_trusted`] checks, overrides a `mise trust --ignore`. Global config
+/// does not vouch for a directory, and safe mode trusts none.
 fn dir_is_trusted(config: &Config, dir: &Path) -> bool {
-    use crate::config::config_file::{is_path_trusted, is_trusted};
+    use crate::config::config_file::{is_ignored, is_path_trusted, is_trusted};
     if Settings::safe_mode() {
         return false;
     }
     if is_trusted(dir) {
         return true;
+    }
+    if is_ignored(dir) {
+        return false;
     }
     let Ok(dir) = dir.canonicalize() else {
         return false;
@@ -271,7 +276,7 @@ fn dir_is_trusted(config: &Config, dir: &Path) -> bool {
         let mut step = root;
         below.components().all(|component| {
             step.push(component);
-            step.join(".git").symlink_metadata().is_err()
+            step.join(".git").symlink_metadata().is_err() && !is_ignored(&step)
         })
     })
 }

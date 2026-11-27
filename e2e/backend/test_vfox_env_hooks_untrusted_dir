@@ -88,6 +88,14 @@ assert_contains "cd project/sub/clone && mise env" "/pipenv/2024.4.1/wrapper_bin
 assert_not_contains "cd project/sub/clone && mise env" "/clone/.venv"
 assert_not_contains "cd project/sub/clone/inner && mise env" "/inner/.venv"
 assert_not_contains "cd project/sub/worktree && mise env" "/worktree/.venv"
+# nor for a directory below its root that the user ignored, or anything in it
+make_repo project/ignored Pipfile
+make_repo project/ignored/deep Pipfile
+assert_contains "cd project/ignored/deep && mise env" "VIRTUAL_ENV=$PWD/project/ignored/deep/.venv"
+mise trust --ignore project/ignored
+assert_not_contains "cd project/ignored && mise env" "/project/ignored/.venv"
+assert_not_contains "cd project/ignored/deep && mise env" "/deep/.venv"
+assert_contains "cd project/sub && mise env" "VIRTUAL_ENV=$PWD/project/sub/.venv"
 
 # once trusted, the virtualenv is activated as before, except in safe mode
 mise trust pipenv-repo

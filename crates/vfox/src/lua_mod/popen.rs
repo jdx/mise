@@ -121,6 +121,7 @@ fn popen(
             .stdout
             .take()
             .map(|stdout| text_reader(stdout, binary)),
+        text_writes: cfg!(windows) && !binary,
         child: Some(child),
         closed: false,
     };
@@ -137,8 +138,24 @@ fn popen(
 struct PopenFile {
     stdin: Option<ChildStdin>,
     stdout: Option<Box<dyn BufRead + Send + Sync>>,
+    /// Whether writes go through [`lf_as_crlf`]: a pipe opened with `"w"`, not
+    /// `"wb"`, on Windows.
+    text_writes: bool,
     child: Option<Child>,
     closed: bool,
+}
+
+/// `bytes` as the Windows C runtime writes them to a text-mode stream: every
+/// `\n` goes out as `\r\n`, one that already follows a `\r` included.
+fn lf_as_crlf(bytes: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(bytes.len());
+    for &byte in bytes {
+        if byte == b'\n' {
+            out.push(b'\r');
+        }
+        out.push(byte);
+    }
+    out
 }
 
 /// The child's stdout as stock `io.popen` reads it. On Windows a pipe opened
@@ -398,7 +415,9 @@ impl UserData for PopenFile {
             |_, (file, values): (AnyUserData, Variadic<LuaValue>)| {
                 {
                     let mut this = file.borrow_mut::<PopenFile>()?;
-                    let stdin = this.open()?.stdin.as_mut().ok_or_else(|| {
+                    let this = this.open()?;
+                    let text_writes = this.text_writes;
+                    let stdin = this.stdin.as_mut().ok_or_else(|| {
                         LuaError::RuntimeError("file is not writable".to_string())
                     })?;
                     for value in values {
@@ -413,7 +432,11 @@ impl UserData for PopenFile {
                                 )));
                             }
                         };
-                        stdin.write_all(&bytes)?;
+                        if text_writes {
+                            stdin.write_all(&lf_as_crlf(&bytes))?;
+                        } else {
+                            stdin.write_all(&bytes)?;
+                        }
                     }
                 }
                 Ok(file)
@@ -738,5 +761,19 @@ mod tests {
             .unwrap();
         assert_eq!(default_pwd.trim(), detached.path().to_string_lossy());
         assert_eq!(chosen_pwd.trim(), chosen.path().to_string_lossy());
+    }
+}
+
+#[cfg(test)]
+mod text_mode_tests {
+    use super::lf_as_crlf;
+
+    #[test]
+    fn text_mode_writes_every_lf_as_crlf() {
+        assert_eq!(lf_as_crlf(b""), b"");
+        assert_eq!(lf_as_crlf(b"no newline"), b"no newline");
+        assert_eq!(lf_as_crlf(b"a\nb\n"), b"a\r\nb\r\n");
+        assert_eq!(lf_as_crlf(b"\n\n"), b"\r\n\r\n");
+        assert_eq!(lf_as_crlf(b"x\r\ny\rz"), b"x\r\r\ny\rz");
     }
 }

@@ -1449,6 +1449,41 @@ pub(crate) async fn configured_toolset_or_path_which(
     Ok(which_non_pristine_executable(bin))
 }
 
+/// Makes absolute the entries of `env`'s PATH that are one of `tool_paths`, the
+/// bin directories mise put there for a toolset. With a relative `MISE_DATA_DIR`
+/// those are relative to mise's working directory, and a command that starts
+/// somewhere else, as a plugin hook does from the home directory in a directory
+/// the user has not trusted, would not find them. Other relative entries came
+/// from the user's PATH or config and keep the meaning they had.
+fn absolutize_path_entries(
+    env: &mut BTreeMap<String, String>,
+    tool_paths: &[PathBuf],
+) -> eyre::Result<()> {
+    let relative: HashSet<&Path> = tool_paths
+        .iter()
+        .map(PathBuf::as_path)
+        .filter(|path| path.is_relative())
+        .collect();
+    let Some(path_val) = env.get(&*env::PATH_KEY).filter(|_| !relative.is_empty()) else {
+        return Ok(());
+    };
+    let paths: Vec<PathBuf> = env::split_paths(path_val)
+        .map(|path| {
+            if relative.contains(path.as_path()) {
+                std::path::absolute(&path).unwrap_or(path)
+            } else {
+                path
+            }
+        })
+        .collect();
+    let joined = env::join_paths(&paths)?;
+    env.insert(
+        env::PATH_KEY.to_string(),
+        joined.to_string_lossy().into_owned(),
+    );
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1461,6 +1496,24 @@ mod tests {
 
     fn names(list: &[&str]) -> Vec<String> {
         list.iter().map(|name| name.to_string()).collect()
+    }
+
+    #[test]
+    fn only_the_toolset_paths_are_made_absolute() {
+        let tool = PathBuf::from(".mise/installs/dummy/1.0.0/bin");
+        let user = PathBuf::from("node_modules/.bin");
+        let inherited = std::env::temp_dir();
+        let path = env::join_paths([&tool, &user, &inherited]).unwrap();
+        let mut env = BTreeMap::from([(
+            env::PATH_KEY.to_string(),
+            path.to_string_lossy().into_owned(),
+        )]);
+        absolutize_path_entries(&mut env, &[tool.clone(), inherited.clone()]).unwrap();
+        let paths: Vec<PathBuf> = env::split_paths(&env[&*env::PATH_KEY]).collect();
+        assert_eq!(
+            paths,
+            vec![std::path::absolute(&tool).unwrap(), user, inherited]
+        );
     }
 
     #[test]
@@ -6777,11 +6830,9 @@ pub trait Backend: Debug + Send + Sync {
         // hooks (e.g., MiseEnv Lua hooks). Those modules may depend on tools that
         // are not in the dependency toolset, causing "command not found" errors.
         // The dependency env only needs tool bin paths on PATH, not module outputs.
-        let mut env = self
-            .dependency_toolset(config)
-            .await?
-            .full_env_without_tools(config)
-            .await?;
+        let ts = self.dependency_toolset(config).await?;
+        let mut env = ts.full_env_without_tools(config).await?;
+        absolutize_path_entries(&mut env, &ts.list_paths(config).await)?;
 
         // Remove mise shims from PATH to prevent infinite shim recursion when a
         // dependency tool (e.g., go) is configured but not installed. Without this,
