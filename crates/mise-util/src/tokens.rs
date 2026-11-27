@@ -663,6 +663,10 @@ logins:
         }
     }
 
+    /// Assumes the host has a POSIX shell, the default inline shell, on PATH.
+    /// The direct check also needs an `env` the helper can run without the
+    /// shell, and is skipped when there is none; other PATH layouts are not
+    /// this test's concern.
     #[cfg(unix)]
     #[test]
     fn test_credential_command_does_not_inherit_git_dir() {
@@ -683,36 +687,17 @@ logins:
         {
             env.remove(key);
         }
-        // A relative entry in the caller's PATH would send `env` through the
-        // shell too, so the commands get only the absolute entries of the
-        // caller's PATH, which keeps tools found outside /usr/bin (Nix). The
-        // shell and `env` are first looked up in each entry of the whole PATH,
-        // relative ones made absolute, by the lookup the helper uses to run a
-        // command without the shell, and the first directory that has each
-        // leads the PATH, `env`'s first so the shell's cannot hide it.
+        // A relative entry in PATH sends even `env` through the shell, so the
+        // commands get the caller's PATH with each entry made absolute against
+        // the current directory, and nothing else changed.
         let caller_path = std::env::var_os("PATH").unwrap_or_default();
         let cwd = std::env::current_dir().unwrap();
-        let find = |program: &str| {
-            std::env::split_paths(&caller_path)
-                .map(|dir| cwd.join(dir))
-                .find(|dir| {
-                    crate::inline_command::direct_program(program, dir.as_os_str()).is_some()
-                })
-        };
-        let (shell, _) = credential_command_shell("true", "example.com").unwrap();
-        let found = [
-            Some("env"),
-            (!shell.contains('/')).then_some(shell.as_str()),
-        ]
-        .into_iter()
-        .flatten()
-        .filter_map(find);
-        let dirs: Vec<_> = found
-            .chain(std::env::split_paths(&caller_path).filter(|dir| dir.is_absolute()))
-            .collect();
-        let path = std::env::join_paths(dirs).unwrap();
+        let path =
+            std::env::join_paths(std::env::split_paths(&caller_path).map(|dir| cwd.join(dir)))
+                .unwrap();
         let path = path.as_os_str();
-        // Whether the helper can run `env` itself, decided on the PATH it gets.
+        // Whether the helper can run `env` itself, decided by its own lookup on
+        // the PATH it gets.
         let has_env = crate::inline_command::direct_program("env", path).is_some();
         // The first runs through the shell, the second without it. Only the
         // second needs a runnable `env` on that PATH.
