@@ -452,6 +452,17 @@ fn changed_validator_download_response() -> &'static str {
         "world"
     )
 }
+fn empty_validator_download_response() -> &'static str {
+    concat!(
+        "HTTP/1.1 206 Partial Content\r\n",
+        "Content-Length: 5\r\n",
+        "Content-Range: bytes 5-9/10\r\n",
+        "ETag: \r\n",
+        "Connection: close\r\n",
+        "\r\n",
+        "WORLD"
+    )
+}
 fn unquoted_validator_download_response() -> &'static str {
     concat!(
         "HTTP/1.1 206 Partial Content\r\n",

@@ -814,7 +814,7 @@ fn has_unusable_entity_tag(headers: &HeaderMap) -> bool {
     headers
         .get(ETAG)
         .and_then(|value| value.to_str().ok())
-        .is_some_and(|value| !value.is_empty() && !value.starts_with("W/") && !is_entity_tag(value))
+        .is_some_and(|value| !value.starts_with("W/") && !is_entity_tag(value))
 }
 
 fn is_strong_last_modified(value: &str, response_date: &str) -> bool {
