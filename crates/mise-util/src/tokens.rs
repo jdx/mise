@@ -690,17 +690,19 @@ logins:
         let dirs: Vec<_> = std::env::split_paths(&caller_path)
             .filter(|dir| dir.is_absolute())
             .collect();
-        if !dirs.iter().any(|dir| dir.join("env").is_file()) {
-            eprintln!("skipped: no absolute PATH entry holds `env`");
-            return;
-        }
+        let has_env = dirs.iter().any(|dir| dir.join("env").is_file());
         let path = std::env::join_paths(dirs).unwrap();
         let path = path.as_os_str();
-        // The first runs through the shell, the second without it.
+        // The first runs through the shell, the second without it. Only the
+        // second needs `env` on that PATH.
         for (cmd, direct) in [
             ("echo \"[$GIT_DIR][$GIT_WORK_TREE]\"", false),
             ("env", true),
         ] {
+            if direct && !has_env {
+                eprintln!("skipped the direct check: no absolute PATH entry holds `env`");
+                continue;
+            }
             let mut command =
                 credential_command_process_with_path("test-git-dir", cmd, "example.com", path)
                     .unwrap();
