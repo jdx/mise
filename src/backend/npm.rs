@@ -834,7 +834,8 @@ fn virtual_store_entry_links_dependencies(entry: &Path) -> bool {
 /// Skipping that `npm` is not enough. npm is usually a `#!/usr/bin/env node` script, so the
 /// child looks `node` up on the same PATH and finds the `node` shim next to the skipped
 /// `npm` (#16066). So this also removes from the child PATH in `env` every directory whose
-/// `npm` or `node` is this mise binary.
+/// `node` is this mise binary. A directory whose only mise entry is `npm` stays: a real
+/// `node` beside it may be the one npm needs, and we never run npm by bare name.
 #[cfg(unix)]
 fn npm_view_program(env: &mut BTreeMap<String, String>) -> eyre::Result<OsString> {
     npm_view_program_in(env, &std::env::current_dir()?)
@@ -866,14 +867,15 @@ fn npm_view_program_in(env: &mut BTreeMap<String, String>, cwd: &Path) -> eyre::
         };
         let candidate = dir.join("npm");
         let has_npm = candidate.is_file() && crate::file::is_spawnable(&candidate);
-        if reenters_mise_as_npm_or_node(&dir) {
-            if has_npm {
-                skipped_mise_shim.get_or_insert(candidate);
-            }
+        let npm_is_mise = has_npm && super::is_mise_binary(&candidate);
+        if npm_is_mise {
+            skipped_mise_shim.get_or_insert(candidate.clone());
+        }
+        if super::is_mise_binary(&dir.join("node")) {
             removed_any = true;
             continue;
         }
-        if has_npm && program.is_none() {
+        if has_npm && !npm_is_mise && program.is_none() {
             program = Some(candidate);
         }
         kept.push(entry);
@@ -888,20 +890,11 @@ fn npm_view_program_in(env: &mut BTreeMap<String, String>, cwd: &Path) -> eyre::
     match (program, skipped_mise_shim) {
         (Some(npm), _) => Ok(npm.into_os_string()),
         (None, Some(shim)) => Err(eyre::eyre!(
-            "npm.shell_out needs npm, but the only npm on PATH is in a mise shims directory ({}); running it would re-enter mise. Install node first (`mise install node`) or disable npm.shell_out.",
+            "npm.shell_out needs npm, but the only npm on PATH is a mise shim ({}); running it would re-enter mise. Install node first (`mise install node`) or disable npm.shell_out.",
             shim.display()
         )),
         (None, None) => Ok(OsString::from("npm")),
     }
-}
-
-/// Whether `dir`'s `npm` or `node` is this mise binary: a shims directory of another
-/// data dir, which `is_mise_dispatch_dir` does not recognize by location.
-#[cfg(unix)]
-fn reenters_mise_as_npm_or_node(dir: &Path) -> bool {
-    ["npm", "node"]
-        .iter()
-        .any(|name| super::is_mise_binary(&dir.join(name)))
 }
 
 #[cfg(test)]
@@ -3787,10 +3780,7 @@ mod tests {
         fake_mise_shim(shims.path());
         let mut env = npm_view_env(&[shims.path()]);
         let err = npm_view_program(&mut env).unwrap_err().to_string();
-        assert!(
-            err.contains("only npm on PATH is in a mise shims directory"),
-            "{err}"
-        );
+        assert!(err.contains("only npm on PATH is a mise shim"), "{err}");
     }
 
     #[cfg(unix)]
@@ -3858,6 +3848,24 @@ mod tests {
         let mut env = npm_view_env(&[shims.path(), node_bin.path()]);
         assert_eq!(npm_view_program(&mut env).unwrap(), npm.into_os_string());
         assert_eq!(child_path(&env), vec![node_bin.path().to_path_buf()]);
+    }
+
+    /// A shared bin dir (`/usr/local/bin`) can hold a mise `npm` shim beside a real `node`.
+    /// The shim is skipped, but the dir stays so the chosen npm can still find that node.
+    #[cfg(unix)]
+    #[test]
+    fn npm_view_program_keeps_a_dir_whose_only_mise_entry_is_npm() {
+        let shared = tempfile::tempdir().unwrap();
+        let sys_bin = tempfile::tempdir().unwrap();
+        fake_mise_shim(shared.path());
+        let node = shared.path().join("node");
+        std::fs::write(&node, "#!/bin/sh\n").unwrap();
+        crate::file::make_executable(&node).unwrap();
+        let npm = real_npm(sys_bin.path());
+        let mut env = npm_view_env(&[shared.path(), sys_bin.path()]);
+        let before = env.clone();
+        assert_eq!(npm_view_program(&mut env).unwrap(), npm.into_os_string());
+        assert_eq!(env, before);
     }
 
     #[cfg(unix)]
