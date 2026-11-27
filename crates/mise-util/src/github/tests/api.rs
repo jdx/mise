@@ -164,6 +164,70 @@ async fn test_release_lookup_encodes_the_tag_as_one_path_segment() {
     mock.assert_async().await;
 }
 
+/// The version and what is verified for it follow the release's tag, so a
+/// host answering a tag lookup with another release is refused, and the
+/// refusal is not cached: the second lookup asks the host again.
+#[tokio::test]
+async fn test_release_lookup_refuses_a_release_for_another_tag() {
+    let mut server = mockito::Server::new_async().await;
+    let repo = "owner/tag-mismatch-test";
+    let mock = server
+        .mock(
+            "GET",
+            format!("/repos/{repo}/releases/tags/3.27.1").as_str(),
+        )
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(serde_json::to_string(&make_release("3.0.0")).unwrap())
+        .expect(2)
+        .create_async()
+        .await;
+
+    for _ in 0..2 {
+        let err = get_release_for_url_with_versions_host(&server.url(), repo, "3.27.1", false)
+            .await
+            .unwrap_err();
+        assert!(
+            format!("{err:#}").contains("refusing GitHub release 3.0.0"),
+            "{err:#}"
+        );
+    }
+    mock.assert_async().await;
+}
+
+/// A release kept in the cache under another tag, as one written before the
+/// tag was checked can be, is refused like a fresh answer.
+#[tokio::test]
+async fn test_cached_release_for_another_tag_is_refused() {
+    let server = mockito::Server::new_async().await;
+    let repo = "owner/cached-tag-mismatch-test";
+    for use_versions_host in [false, true] {
+        let key = release_cache_key(&server.url(), repo, "3.27.1", use_versions_host);
+        {
+            let cache_group = get_release_cache(&key).await;
+            let cache = cache_group.get(&key).unwrap();
+            cache
+                .write(&GithubRelease {
+                    assets: vec![make_asset("tool-3.0.0.tar.gz")],
+                    ..make_release("3.0.0")
+                })
+                .unwrap();
+        }
+        let err = get_release_for_url_with_versions_host(
+            &server.url(),
+            repo,
+            "3.27.1",
+            use_versions_host,
+        )
+        .await
+        .unwrap_err();
+        assert!(
+            format!("{err:#}").contains("refusing GitHub release 3.0.0"),
+            "{err:#}"
+        );
+    }
+}
+
 /// An asset ID mise-versions supplied is asked about once. GitHub's answer is
 /// recorded, so a later install, offline included, still uses the API URL its
 /// download was kept under instead of falling back to the browser URL.

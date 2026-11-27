@@ -1,5 +1,50 @@
 # Changelog
 
+## [2026.11.14](https://github.com/jdx/mise/releases/tag/v2026.11.14) - 2026-11-24
+
+### 🚀 Features
+
+- **(task)** add cache.sandbox to confine a cached task to its sources and outputs by @jdx in [#16043](https://github.com/jdx/mise/pull/16043)
+
+### 📚 Documentation
+
+- **(security)** explain the mise threat model by @jdx in [#16046](https://github.com/jdx/mise/pull/16046)
+- **(security)** clarify vulnerability reporting expectations by @jdx in [#16045](https://github.com/jdx/mise/pull/16045)
+
+### ⚡ Performance
+
+- **(lockfile)** stop hashing absent key names for every lockfile entry by @jdx in [#16052](https://github.com/jdx/mise/pull/16052)
+- stop checking the same paths twice on every command by @jdx in [#16044](https://github.com/jdx/mise/pull/16044)
+- stop copying large futures on every command by @jdx in [#16050](https://github.com/jdx/mise/pull/16050)
+- read the environment less often per command by @jdx in [#16051](https://github.com/jdx/mise/pull/16051)
+
+### 📦️ Dependency Updates
+
+- update aube to v2.11.0 by @renovate[bot] in [#16049](https://github.com/jdx/mise/pull/16049)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (2)
+
+- [`h5i-dev/h5i`](https://github.com/h5i-dev/h5i)
+- [`mgantlett/nomos`](https://github.com/mgantlett/nomos)
+
+#### Updated Packages (13)
+
+- [`Alice39s/xmtr`](https://github.com/Alice39s/xmtr)
+- [`Epistates/treemd`](https://github.com/Epistates/treemd)
+- [`Latias94/merman`](https://github.com/Latias94/merman)
+- [`a-h/templ`](https://github.com/a-h/templ)
+- [`abemedia/stagelint`](https://github.com/abemedia/stagelint)
+- [`borghei/ink`](https://github.com/borghei/ink)
+- [`bronto-community/bronto-cli`](https://github.com/bronto-community/bronto-cli)
+- [`dagucloud/dagu`](https://github.com/dagucloud/dagu)
+- [`getanteon/anteon`](https://github.com/getanteon/anteon)
+- [`hairyhenderson/gomplate`](https://github.com/hairyhenderson/gomplate)
+- [`oras-project/oras`](https://github.com/oras-project/oras)
+- [`suzuki-shunsuke/ghcp`](https://github.com/suzuki-shunsuke/ghcp)
+- [`theseus-rs/postgresql-binaries`](https://github.com/theseus-rs/postgresql-binaries)
+
 ## [2026.11.13](https://github.com/jdx/mise/releases/tag/v2026.11.13) - 2026-11-23
 
 ### 🚀 Features

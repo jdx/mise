@@ -144,8 +144,9 @@ A recipe's GitHub artifact attestations are checked when the release has them.
 A release with none is installed on its other checks, unless the mise registry
 sets [`attestations_since`](/contributing/registry.html#required-attestations)
 on the tool's `aqua:` backend: from that version on, a missing attestation fails
-`mise install` and `mise lock` as a possible downgrade. Earlier versions, and
-versions that are not semantic versions, are unaffected.
+`mise install` and `mise lock` as a possible downgrade. A version of only
+dot-separated numbers, such as `0.72`, is placed by those numbers. Earlier
+versions, and channels or refs such as `nightly`, are unaffected.
 
 The SLSA signer fields are the exact Fulcio certificate URI subject and OIDC
 issuer. Packages whose recipe has no signer skip SLSA and may use another check.

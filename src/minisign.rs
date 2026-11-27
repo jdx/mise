@@ -1,6 +1,8 @@
 use crate::*;
 use minisign_verify::*;
+use std::io::Read;
 use std::iter::Iterator;
+use std::path::Path;
 use std::sync::LazyLock;
 
 pub static MISE_PUB_KEY: LazyLock<String> = LazyLock::new(|| {
@@ -25,7 +27,7 @@ pub fn verify(pub_key: &str, data: &[u8], sig: &str) -> Result<()> {
 /// archive from another's. minisign records `file:<name>` in the trusted comment, which the
 /// global signature covers, so a download host cannot change it. A trusted comment without a
 /// `file:` field (a custom `minisign -t` comment) names no file and is accepted.
-pub fn verify_file(pub_key: &str, data: &[u8], sig: &str, filename: &str) -> Result<()> {
+pub fn verify_for_file(pub_key: &str, data: &[u8], sig: &str, filename: &str) -> Result<()> {
     let public_key = PublicKey::from_base64(pub_key)?;
     let signature = Signature::decode(sig)?;
     public_key.verify(data, &signature, false)?;
@@ -49,6 +51,26 @@ fn signed_filename(trusted_comment: &str) -> Option<&str> {
     Some(name.rsplit(['/', '\\']).next().unwrap_or(name))
 }
 
+/// [`verify`] for the file at `path`, hashed in chunks so a file of any size
+/// is checked without being held in memory. Like `verify`, it accepts only a
+/// prehashed signature.
+pub fn verify_file(pub_key: &str, path: &Path, sig: &str) -> Result<()> {
+    let public_key = PublicKey::from_base64(pub_key)?;
+    let signature = Signature::decode(sig)?;
+    let mut verifier = public_key.verify_stream(&signature)?;
+    let mut file = std::fs::File::open(path)?;
+    let mut buf = vec![0; 64 * 1024];
+    loop {
+        let n = file.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+        verifier.update(&buf[..n]);
+    }
+    verifier.finalize()?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -63,7 +85,7 @@ mod tests {
 
     #[test]
     fn verify_file_accepts_the_signed_file_name() {
-        verify_file(
+        verify_for_file(
             &MISE_PUB_KEY,
             SHASUMS.as_bytes(),
             SHASUMS_SIG,
@@ -75,7 +97,7 @@ mod tests {
     #[test]
     fn verify_file_refuses_a_signature_made_for_another_file() {
         verify(&MISE_PUB_KEY, SHASUMS.as_bytes(), SHASUMS_SIG).unwrap();
-        let err = verify_file(
+        let err = verify_for_file(
             &MISE_PUB_KEY,
             SHASUMS.as_bytes(),
             SHASUMS_SIG,

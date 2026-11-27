@@ -80,14 +80,7 @@ pub fn build_system_packages_layer(
     }
     validate_host_requirements(manager)?;
 
-    let td = TempDir::with_prefix(format!("mise-oci-{}-rootfs-", manager.name())).wrap_err_with(
-        || {
-            format!(
-                "creating temp rootfs for {} system packages",
-                manager.name()
-            )
-        },
-    )?;
+    let td = create_rootfs_tempdir(manager)?;
     let rootfs = td.path().join("rootfs");
     file::create_dir_all(&rootfs)?;
     unpack_base_layers(layout, base_layers, &rootfs)?;
@@ -125,6 +118,24 @@ pub fn build_system_packages_layer(
         blob: layer::build_layer_from_dir_preserve_metadata(&diff_dir, "")?,
         manager: manager.name(),
     }))
+}
+
+/// The directory that holds the temporary rootfs and the package diff. Root unpacks the base
+/// image below it with the image's modes, set-uid and set-gid bits included, so it is closed to
+/// other users whatever the umask. The mode is on this directory and not on `rootfs`, which is
+/// `/` for the package scripts that run chrooted into it.
+fn create_rootfs_tempdir(manager: OciPackageManager) -> Result<TempDir> {
+    let prefix = format!("mise-oci-{}-rootfs-", manager.name());
+    let mut builder = tempfile::Builder::new();
+    builder.prefix(&prefix);
+    #[cfg(unix)]
+    builder.permissions(fs::Permissions::from_mode(0o700));
+    builder.tempdir().wrap_err_with(|| {
+        format!(
+            "creating temp rootfs for {} system packages",
+            manager.name()
+        )
+    })
 }
 
 fn validate_host_requirements(manager: OciPackageManager) -> Result<()> {
@@ -412,6 +423,20 @@ fn apt_install_into_rootfs(
     architecture: &str,
 ) -> Result<()> {
     let status = rootfs.join("var/lib/dpkg/status");
+    // mise creates these and hands them to the host's apt-get, so a symlink
+    // the base image planted on the way would put them on the host. apt also
+    // appends to its logs, so a symlink at one of them would write a host file
+    for path in [
+        status.clone(),
+        rootfs.join("var/cache/apt/archives/partial"),
+        rootfs.join("var/lib/apt/lists/partial"),
+        rootfs.join("var/log/apt/history.log"),
+        rootfs.join("var/log/apt/term.log"),
+        rootfs.join("var/log/apt/eipp.log.xz"),
+    ] {
+        reject_symlink_components(rootfs, &path)
+            .wrap_err("preparing apt state in the base image")?;
+    }
     if let Some(parent) = status.parent() {
         file::create_dir_all(parent)?;
     }
@@ -451,6 +476,10 @@ fn apt_install_into_rootfs(
 
 fn prepare_apt_rootfs(rootfs: &Path) -> Result<()> {
     let apt_dir = rootfs.join("etc/apt");
+    // the walk follows a symlink at its root or above it, and would rewrite
+    // the host directory the base image points it at
+    reject_symlink_components(rootfs, &apt_dir)
+        .wrap_err("rewriting apt configuration in the base image")?;
     for entry in WalkDir::new(&apt_dir)
         .follow_links(false)
         .sort_by_file_name()
@@ -626,9 +655,10 @@ fn clean_apk_transients(rootfs: &Path) -> Result<()> {
     remove_path(&log)
 }
 
-/// Reject a whiteout or cleanup target when it or any path component below
-/// `rootfs` is a symlink. OCI layers are untrusted, so following one while
-/// deleting could remove files outside the layer root.
+/// Reject a whiteout, cleanup or apt preparation target when it or any path
+/// component below `rootfs` is a symlink. OCI layers are untrusted, so
+/// following one while deleting or writing could change files outside the
+/// layer root.
 fn reject_symlink_components(rootfs: &Path, target: &Path) -> Result<()> {
     let relative = target
         .strip_prefix(rootfs)
@@ -641,10 +671,7 @@ fn reject_symlink_components(rootfs: &Path, target: &Path) -> Result<()> {
         current.push(component);
         match fs::symlink_metadata(&current) {
             Ok(metadata) if metadata.file_type().is_symlink() => {
-                bail!(
-                    "refusing cleanup through symlink component {}",
-                    current.display()
-                );
+                bail!("refusing to follow symlink component {}", current.display());
             }
             Ok(_) => {}
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(()),
@@ -989,6 +1016,16 @@ mod tests {
         assert!(apk_architecture("riscv64").is_err());
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn the_rootfs_holder_is_closed_to_other_users() {
+        for manager in [OciPackageManager::Apk, OciPackageManager::Apt] {
+            let td = create_rootfs_tempdir(manager).unwrap();
+            let mode = fs::metadata(td.path()).unwrap().permissions().mode();
+            assert_eq!(mode & 0o7777, 0o700, "{}", td.path().display());
+        }
+    }
+
     #[test]
     fn clean_apk_transients_removes_cache_and_log() {
         let td = TempDir::with_prefix("mise-oci-apk-clean-test-").unwrap();
@@ -1187,6 +1224,68 @@ mod tests {
             fs::read_to_string(outside.join("log/dpkg.log")).unwrap(),
             "outside"
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn apt_preparation_does_not_rewrite_through_a_symlinked_etc_apt() {
+        for link in ["etc/apt", "etc"] {
+            let td = TempDir::with_prefix("mise-oci-apt-prep-symlink-").unwrap();
+            let rootfs = td.path().join("rootfs");
+            let outside = td.path().join("outside");
+            let script = "echo deb x > /etc/apt/sources.list.d/x.list\n";
+            write_file(&outside.join("provision.sh"), script);
+            write_file(&outside.join("apt/provision.sh"), script);
+            file::create_dir_all(rootfs.join(link).parent().unwrap()).unwrap();
+            let target = if link == "etc" {
+                outside.clone()
+            } else {
+                outside.join("apt")
+            };
+            symlink(&target, rootfs.join(link)).unwrap();
+
+            let err = prepare_apt_install(&rootfs).unwrap_err();
+
+            assert!(format!("{err:#}").contains("symlink component"), "{err:#}");
+            for f in ["provision.sh", "apt/provision.sh"] {
+                assert_eq!(
+                    fs::read_to_string(outside.join(f)).unwrap(),
+                    script,
+                    "{link}"
+                );
+            }
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn apt_state_is_not_created_through_a_symlink() {
+        for link in [
+            "var/lib/dpkg/status",
+            "var/lib/dpkg",
+            "var/cache/apt",
+            "var/lib/apt",
+            "var/log/apt",
+            "var/log/apt/history.log",
+            "var/log/apt/term.log",
+            "var/log/apt/eipp.log.xz",
+        ] {
+            let td = TempDir::with_prefix("mise-oci-apt-state-symlink-").unwrap();
+            let rootfs = td.path().join("rootfs");
+            let outside = td.path().join("outside");
+            file::create_dir_all(rootfs.join("etc/apt")).unwrap();
+            file::create_dir_all(rootfs.join(link).parent().unwrap()).unwrap();
+            // dangling, so a write through it would create the target
+            symlink(&outside, rootfs.join(link)).unwrap();
+
+            let err = apt_install_into_rootfs(&rootfs, &[], "amd64").unwrap_err();
+
+            assert!(
+                format!("{err:#}").contains("symlink component"),
+                "{link}: {err:#}"
+            );
+            assert!(fs::symlink_metadata(&outside).is_err(), "{link}");
+        }
     }
 
     #[test]

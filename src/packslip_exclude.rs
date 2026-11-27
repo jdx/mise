@@ -26,16 +26,29 @@ struct Repo {
     exclude: PathBuf,
 }
 
-/// The git directory of the repository at `dot_git`, a `.git` directory or
-/// the file a submodule or linked worktree has instead. `None` for a linked
-/// worktree, whose `info/exclude` is not its own.
-fn own_git_dir(dot_git: &Path) -> Option<PathBuf> {
-    let git_dir = if dot_git.is_dir() {
-        dot_git.to_path_buf()
-    } else {
-        let text = std::fs::read_to_string(dot_git).ok()?;
+/// The git directory of the repository whose working tree is `root`: its
+/// `.git` directory, or the one a submodule's `.git` file names under an
+/// enclosing repository's `.git/modules`. `None` for a linked worktree, whose
+/// `info/exclude` is not its own, and for a `.git` that is a link or names a
+/// directory anywhere else: a tree that did not come from git, an unpacked
+/// archive for one, would otherwise choose where the block is written.
+fn own_git_dir(root: &Path) -> Option<PathBuf> {
+    let dot_git = root.join(".git");
+    let meta = dot_git.symlink_metadata().ok()?;
+    let git_dir = if meta.is_dir() {
+        dot_git
+    } else if meta.is_file() {
+        let text = std::fs::read_to_string(&dot_git).ok()?;
         let target = text.trim().strip_prefix("gitdir:")?.trim();
-        dot_git.parent()?.join(target)
+        let git_dir = dunce::canonicalize(root.join(target)).ok()?;
+        root.ancestors().skip(1).find(|up| {
+            let up_git = up.join(".git");
+            up_git.symlink_metadata().is_ok_and(|meta| meta.is_dir())
+                && git_dir.starts_with(up_git.join("modules"))
+        })?;
+        git_dir
+    } else {
+        return None;
     };
     (!git_dir.join("commondir").exists()).then_some(git_dir)
 }
@@ -47,7 +60,7 @@ fn repo_of(dir: &Path) -> Result<Option<Repo>> {
     let Some(root) = dir.ancestors().find(|p| p.join(".git").exists()) else {
         return Ok(None);
     };
-    let Some(git_dir) = own_git_dir(&root.join(".git")) else {
+    let Some(git_dir) = own_git_dir(root) else {
         return Ok(None);
     };
     let Ok(rel) = dir.strip_prefix(root) else {
@@ -146,12 +159,25 @@ pub(crate) fn exclude_links<'a>(
         entries.push(format!("{}/{}", repo.prefix, escape(state_file)?));
     }
     let (begin, end) = markers(&repo.prefix);
+    let lock_path = repo.exclude.with_extension("mise-lock");
+    // Git makes `info` and the file in it as a plain directory and file. A
+    // link at either, or at the lock, would take the block and the names in
+    // it to wherever the link points, so it is never written through.
+    for path in [
+        repo.exclude.parent(),
+        Some(&*repo.exclude),
+        Some(&*lock_path),
+    ] {
+        if let Some(path) = path.filter(|path| file::is_symlink_or_junction(path)) {
+            bail!("{} is a link", file::display_path(path));
+        }
+    }
     if let Some(parent) = repo.exclude.parent() {
         file::create_dir_all(parent)?;
     }
     // Two syncs, each for its own directory, would otherwise both read the
     // old file and the later write would drop the other's block.
-    let mut lock = fslock::LockFile::open(&repo.exclude.with_extension("mise-lock"))?;
+    let mut lock = fslock::LockFile::open(&lock_path)?;
     lock.lock()?;
     // Only a file that is not there is empty. One that cannot be read, for
     // instance because a pattern in it is not UTF-8, is somebody's rules, and
@@ -295,6 +321,81 @@ mod tests {
         exclude_links(&work.join("skills"), ["a"], ".mise-skills.json").unwrap();
         let text = std::fs::read_to_string(modules.join("info/exclude")).unwrap();
         assert!(text.contains("/skills/a\n"));
+    }
+
+    #[test]
+    fn a_git_file_naming_a_directory_elsewhere_is_left_alone() {
+        let elsewhere = tempfile::tempdir().unwrap();
+        let work = tempfile::tempdir().unwrap();
+        std::fs::write(
+            work.path().join(".git"),
+            format!("gitdir: {}\n", elsewhere.path().display()),
+        )
+        .unwrap();
+        // Nor one inside the tree, which is not where git keeps a submodule.
+        let nested = work.path().join("nested");
+        std::fs::create_dir_all(nested.join(".gd")).unwrap();
+        std::fs::write(nested.join(".git"), "gitdir: .gd\n").unwrap();
+        for dir in [work.path().join("skills"), nested.join("skills")] {
+            std::fs::create_dir_all(&dir).unwrap();
+            exclude_links(&dir, ["a"], ".mise-skills.json").unwrap();
+        }
+        assert!(!elsewhere.path().join("info").exists());
+        assert!(!nested.join(".gd/info").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_linked_git_directory_is_left_alone() {
+        let elsewhere = repo();
+        let work = tempfile::tempdir().unwrap();
+        std::os::unix::fs::symlink(elsewhere.path().join(".git"), work.path().join(".git"))
+            .unwrap();
+        let dir = work.path().join("skills");
+        std::fs::create_dir_all(&dir).unwrap();
+        exclude_links(&dir, ["a"], ".mise-skills.json").unwrap();
+        assert!(!elsewhere.path().join(".git/info").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_link_in_place_of_the_exclude_file_is_not_written_through() {
+        let outside = tempfile::tempdir().unwrap();
+        let theirs = outside.path().join("theirs");
+        std::fs::write(&theirs, "export EDITOR=vi\n").unwrap();
+        let dir = |root: &Path| root.join("app/.agents/skills");
+
+        // The file itself, to a file that is there and to one that is not.
+        for target in [&theirs, &outside.path().join("new")] {
+            let root = repo();
+            std::fs::create_dir_all(root.path().join(".git/info")).unwrap();
+            std::os::unix::fs::symlink(target, root.path().join(".git/info/exclude")).unwrap();
+            assert!(exclude_links(&dir(root.path()), ["a"], ".mise-skills.json").is_err());
+        }
+        // The directory it is in.
+        let root = repo();
+        std::os::unix::fs::symlink(outside.path(), root.path().join(".git/info")).unwrap();
+        assert!(exclude_links(&dir(root.path()), ["a"], ".mise-skills.json").is_err());
+        // The lock beside it.
+        let root = repo();
+        std::fs::create_dir_all(root.path().join(".git/info")).unwrap();
+        std::os::unix::fs::symlink(
+            outside.path().join("lock"),
+            root.path().join(".git/info/exclude.mise-lock"),
+        )
+        .unwrap();
+        assert!(exclude_links(&dir(root.path()), ["a"], ".mise-skills.json").is_err());
+        assert_eq!(exclude_of(root.path()), "");
+
+        assert_eq!(
+            std::fs::read_to_string(&theirs).unwrap(),
+            "export EDITOR=vi\n"
+        );
+        let left: Vec<_> = std::fs::read_dir(outside.path())
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect();
+        assert_eq!(left, ["theirs"]);
     }
 
     #[test]
