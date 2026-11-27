@@ -1395,15 +1395,15 @@ fn retain_omitted(
     for file in repo.ls_tree(parent)? {
         let located = roots.locate(&file.path);
         let Some(path) = located.path() else { continue };
-        if !omitted.iter().any(|omitted| path.starts_with(omitted))
+        let Some(entry) = tracked.entry_for(path) else {
+            continue;
+        };
+        if !omission_covers(&omitted, path, &entry.path)
             || !tracked.would_retain(path)?
             || repo.object_at(tree, &file.path)?.is_some()
         {
             continue;
         }
-        let Some(entry) = tracked.entry_for(path) else {
-            continue;
-        };
         if entry.tree_path(path)? != file.path {
             continue;
         }
@@ -1432,6 +1432,17 @@ fn retain_omitted(
         });
     }
     repo.compose(tree, &overlays)
+}
+
+/// Whether an omission keeps `path`'s saved version. Only an omission at
+/// or below the root of the entry owning `path` counts: a parent entry
+/// skipping a directory (a cache, say) that holds a separately tracked
+/// entry says nothing about that entry, whose own walk saw every file, so
+/// a file deleted there stays deleted.
+fn omission_covers(omitted: &[PathBuf], path: &Path, entry_root: &Path) -> bool {
+    omitted
+        .iter()
+        .any(|omitted| path.starts_with(omitted) && omitted.starts_with(entry_root))
 }
 
 /// The directories whose permissions a captured file carries: every
@@ -1646,6 +1657,26 @@ pub(crate) fn test_checkpoint(uuid: &str, snapshot: Option<&str>) -> Checkpoint 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_parent_omission_does_not_keep_a_tracked_descendants_deleted_file() {
+        let cache = PathBuf::from("/home/u/project/target");
+        let child = Path::new("/home/u/project/target/config");
+        let file = Path::new("/home/u/project/target/config/a.toml");
+        assert!(!omission_covers(std::slice::from_ref(&cache), file, child));
+        // under the entry that recorded it, the omission still keeps it
+        let parent = Path::new("/home/u/project");
+        let cached = Path::new("/home/u/project/target/out");
+        assert!(omission_covers(
+            std::slice::from_ref(&cache),
+            cached,
+            parent
+        ));
+        // and the child's own failed reads still count
+        let failed = PathBuf::from("/home/u/project/target/config/sub");
+        let below = Path::new("/home/u/project/target/config/sub/b.toml");
+        assert!(omission_covers(&[cache, failed], below, child));
+    }
 
     #[test]
     fn capture_notices_survive_a_metadata_cache_failure() -> Result<()> {
