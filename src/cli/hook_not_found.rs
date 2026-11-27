@@ -33,7 +33,7 @@ impl HookNotFound {
         if settings.not_found_auto_install {
             let mut ts = ToolsetBuilder::new().build(&config).await?;
             if ts
-                .install_missing_bin(&mut config, &self.bin)
+                .install_missing_bin(&mut config, &self.bin, false)
                 .await?
                 .is_some()
             {

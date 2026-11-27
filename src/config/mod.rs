@@ -5554,7 +5554,9 @@ fn expand_task_inputs(
 }
 
 /// Renders the templated `entries` a config declared. With `keep_failed`, an entry that does
-/// not render stays as written instead of failing the load.
+/// not render stays as written instead of failing the load, except a `@group:` reference: no
+/// group is named after the template, so it is left out rather than fail the task's load when
+/// its groups are expanded.
 fn render_task_input_entries(
     entries: &[String],
     config_root: &Path,
@@ -5566,14 +5568,20 @@ fn render_task_input_entries(
     let mut tera = crate::tera::get_tera(Some(config_root));
     entries
         .iter()
-        .map(|entry| {
+        .filter_map(|entry| {
             if !contains_template_syntax(entry) {
-                return Ok(entry.clone());
+                return Some(Ok(entry.clone()));
             }
             match render_str(&mut tera, entry, &tera_ctx) {
-                Ok(rendered) => Ok(rendered),
-                Err(_) if keep_failed => Ok(entry.clone()),
-                Err(err) => Err(err.into()),
+                Ok(rendered) => Some(Ok(rendered)),
+                Err(_) if keep_failed && entry.starts_with(TASK_INPUT_GROUP_PREFIX) => {
+                    debug!(
+                        "leaving out input group reference {entry:?}: it needs the context of a task that is not trusted"
+                    );
+                    None
+                }
+                Err(_) if keep_failed => Some(Ok(entry.clone())),
+                Err(err) => Some(Err(err.into())),
             }
         })
         .collect()

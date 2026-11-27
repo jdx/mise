@@ -55,3 +55,17 @@ assert_contains "mise trust --show" ": untrusted"
 assert_directory_exists "$MISE_DATA_DIR/installs/tiny/3.1.0"
 assert_directory_not_exists "$MISE_DATA_DIR/installs/tiny/3.0.0"
 ok "[trust] global config still auto-installs from an untrusted project"
+
+# A plain tool list loads without trust, but a mistyped command is no consent
+# to install what an untrusted one lists.
+rm mise.toml
+echo "tiny 3.0.0" >.tool-versions
+mise hook-not-found -s bash -- rtx-tiny </dev/null || true
+assert_contains "mise trust --show" ": untrusted"
+assert_directory_not_exists "$MISE_DATA_DIR/installs/tiny/3.0.0"
+ok "[trust] an untrusted .tool-versions is not installed on command-not-found"
+
+assert "mise trust ."
+mise hook-not-found -s bash -- rtx-tiny </dev/null
+assert_directory_exists "$MISE_DATA_DIR/installs/tiny/3.0.0"
+ok "[trust] a trusted .tool-versions still is"

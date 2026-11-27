@@ -291,11 +291,7 @@ impl Toolset {
                 .auto_install_disable_tools
                 .as_ref()
                 .is_none_or(|tools| !tools.contains(&tv.ba().short))
-            // A process that requires explicit trust (the `mise run` of a task hook, an MCP
-            // request) has no typed command behind it. A plain tool list loads without trust
-            // because it is inert until the user installs it, so nothing has consented to
-            // installing what an untrusted file lists.
-            && (!config::config_file::requires_explicit_trust() || requested_by_trusted_config(tv))
+            && may_install_unasked(tv, true)
     }
 
     /// sets the options on incoming requests to install to whatever is already in the toolset
@@ -1080,11 +1076,17 @@ impl Toolset {
         installed_version_ships_bin(config, &installed, tv, bin_name).await
     }
 
+    /// Installs the missing configured versions of the tools that provide `bin_name`. `typed`
+    /// says whether the user typed the command that wants the bin, as with a shim, rather than
+    /// the shell asking after a mistyped command: without a typed command, a tool an untrusted
+    /// file lists is not installed. See [`may_install_unasked`].
     pub async fn install_missing_bin(
         &mut self,
         config: &mut Arc<Config>,
         bin_name: &str,
+        typed: bool,
     ) -> Result<Option<Vec<ToolVersion>>> {
+        let may_install = |tv: &ToolVersion| may_install_unasked(tv, typed);
         // Registry bin metadata is the only provider signal available before a tool has ever
         // been installed. Prefer those configured providers, applying registry override order,
         // before falling back to executable discovery from existing installs.
@@ -1102,6 +1104,7 @@ impl Toolset {
             .await
             .into_iter()
             .filter(provides_bin)
+            .filter(may_install)
             .filter(|tv| match &Settings::get().auto_install_disable_tools {
                 Some(disable_tools) => !disable_tools.contains(&tv.ba().short),
                 None => true,
@@ -1149,6 +1152,7 @@ impl Toolset {
                 .await
                 .into_iter()
                 .filter(|tv| tv.ba() == &**plugin.ba())
+                .filter(may_install)
                 .filter(|tv| match &Settings::get().auto_install_disable_tools {
                     Some(disable_tools) => !disable_tools.contains(&tv.ba().short),
                     None => true,
@@ -1269,6 +1273,16 @@ fn scope_installs_dir(tr: &ToolRequest) -> Option<PathBuf> {
                 .then(|| Settings::get().system_installs_dir().to_path_buf())
         })
         .filter(|dir| dir != *crate::dirs::INSTALLS)
+}
+
+/// Whether a missing `tv` may be installed without asking. A plain tool list loads without
+/// trust because it is inert until the user installs it, so a command the user typed (`typed`)
+/// is the consent to install what an untrusted file lists. A process that requires explicit
+/// trust (the `mise run` of a task hook, an MCP request) has no typed command behind it, and
+/// neither has the shell's command-not-found handler: there only a trusted config's tools are
+/// installed.
+fn may_install_unasked(tv: &ToolVersion, typed: bool) -> bool {
+    (typed && !config::config_file::requires_explicit_trust()) || requested_by_trusted_config(tv)
 }
 
 /// Whether the config file that asked for `tv` is the user's own or one they trusted. A tool no
