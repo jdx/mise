@@ -118,3 +118,29 @@ rmdir .git
 echo 'tool-stubs = ["../outside-stub"]' >mise.lock
 assert_succeed "mise lock"
 assert_contains "cat mise.lock" "../outside-stub"
+
+# A subproject's stub shares the monorepo root's mise.lock, so the root config
+# that owns that lockfile needs trust too, not only the subproject.
+cd "$HOME/workdir" || exit 1
+mkdir -p mono/packages/a/bin
+cat >mono/mise.toml <<'TOML'
+monorepo_root = true
+
+[monorepo]
+lockfile = true
+config_roots = ["packages/*"]
+TOML
+echo '[tools]' >mono/packages/a/mise.toml
+cat >mono/packages/a/bin/plain <<'STUB'
+tool = "http:plain"
+version = "1.0.0"
+url = "file:///nonexistent/plain.tar.gz"
+STUB
+mise trust mono/packages/a/mise.toml
+# Run from outside the monorepo, where loading the config does not reach the root.
+mkdir -p elsewhere
+assert_fail_contains "cd elsewhere && MISE_EXPERIMENTAL=1 MISE_YES=0 mise generate tool-stub ../mono/packages/a/bin/plain --lock 2>&1" "not trusted"
+assert_fail "test -f mono/mise.lock"
+mise trust mono/mise.toml
+assert_succeed "cd elsewhere && MISE_EXPERIMENTAL=1 MISE_YES=0 mise generate tool-stub ../mono/packages/a/bin/plain --lock"
+assert_contains "cat mono/mise.lock" 'tool-stubs = ["packages/a/bin/plain"]'

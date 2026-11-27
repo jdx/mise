@@ -3115,6 +3115,30 @@ pub fn tool_stub_config(stub: &Path) -> Option<(PathBuf, Option<PathBuf>)> {
     })
 }
 
+/// The configs that must be trusted before a stub's lock data is written to the lockfile of
+/// `config_path` (from [`tool_stub_config`]): that config and, when it shares its monorepo
+/// root's lockfile, the root's base configs, which own that lockfile.
+pub fn tool_stub_lockfile_owners(config_path: &Path, monorepo_root: Option<&Path>) -> Vec<PathBuf> {
+    let mut owners = vec![config_path.to_path_buf()];
+    let (own_lockfile, _) = lockfile_path_for_config(config_path, None);
+    let (lockfile, _) = lockfile_path_for_config(config_path, monorepo_root);
+    if let Some(root) = monorepo_root
+        && lockfile != own_lockfile
+    {
+        owners.extend(
+            crate::config::config_paths_in_dir(root)
+                .into_iter()
+                .filter(|path| {
+                    path.extension().is_some_and(|ext| ext == "toml")
+                        && !is_local_config(path)
+                        && extract_env_from_config_path(path).is_none()
+                        && !crate::config::is_global_config(path)
+                }),
+        );
+    }
+    owners
+}
+
 fn resolve_tool_stub_path(stub: &Path) -> Option<PathBuf> {
     // The whole path, not only its last component: a stub reached through a
     // symlinked directory lives where that directory leads. Otherwise a
