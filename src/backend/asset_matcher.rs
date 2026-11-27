@@ -1692,12 +1692,14 @@ fn parse_checksum_line(line: &str) -> Option<ChecksumLine<'_>> {
     // directory with spaces in it is read whole. The separator is not counted
     // to the byte (one space, two, a tab), and spaces around the line are
     // dropped: a release asset's name never starts or ends with a space or
-    // `*`. A rest that starts with `:` is the value of a `Key : value` line,
-    // such as PowerShell `Format-List` output, and names no file.
+    // `*`. A rest that starts with `:` after a key that is not a hex digest
+    // is the value of a `Key : value` line, such as PowerShell `Format-List`
+    // output, and names no file; after a digest it is a path that starts with
+    // `:`.
     let (hash, name) = line.trim().split_once(char::is_whitespace)?;
     let name = name.trim_start();
     let name = name.strip_prefix('*').unwrap_or(name);
-    if name.is_empty() || name.starts_with(':') {
+    if name.is_empty() || (name.starts_with(':') && !hash.bytes().all(|b| b.is_ascii_hexdigit())) {
         return None;
     }
     Some(ChecksumLine {
@@ -4327,6 +4329,8 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-darwin.ta
                 format!("Hash : {LINUX_SHA256}\nPath : C:\\my builds\\tool linux.zip\n"),
                 false,
             ),
+            // after a digest, a rest that starts with `:` is a path
+            (format!("{LINUX_SHA256}  :dist/tool linux.zip\n"), true),
         ] {
             let result = parse_checksum_content(&content, asset, "sha256", "SHA256SUMS", false)
                 .unwrap_or_else(|e| panic!("{content:?}: {e:#}"));
