@@ -474,7 +474,9 @@ fn is_transient_go_network_failure(stderr: &str) -> bool {
 ///
 /// The token has to name the module and the version: the same words about a
 /// dependency, another module whose path merely ends the same way, or another
-/// version say nothing about the version that was asked for. A failed
+/// version say nothing about the version that was asked for. A token after a
+/// `requires` line is a dependency of a module Go found, even when its path
+/// leads the package path, such as a parent module at the same version. A failed
 /// verification is never a missing version, whatever else the output quotes:
 /// Go found the version and refused what it downloaded.
 fn is_missing_go_version(stderr: &str, package: &str, version: &str) -> bool {
@@ -491,11 +493,12 @@ fn is_missing_go_version(stderr: &str, package: &str, version: &str) -> bool {
         .any(|module| {
             let token = format!("{}@{version}: ", module.to_lowercase());
             stderr.match_indices(&token).any(|(i, _)| {
-                let at_boundary = stderr[..i]
-                    .chars()
-                    .next_back()
-                    .is_none_or(char::is_whitespace);
-                at_boundary && says_version_is_missing(&stderr[i + token.len()..], module, &version)
+                let before = &stderr[..i];
+                let at_boundary = before.chars().next_back().is_none_or(char::is_whitespace);
+                let required = before.contains(" requires\n");
+                at_boundary
+                    && !required
+                    && says_version_is_missing(&stderr[i + token.len()..], module, &version)
             })
         })
 }
@@ -1542,6 +1545,20 @@ mod tests {
             (
                 "go: example.com/tool@v1.2.3 requires\n\texample.com/tool-extras@v1.2.3: reading https://proxy.golang.org/example.com/tool-extras/@v/v1.2.3.info: 404 Not Found",
                 TOOL,
+                "v1.2.3",
+                false,
+            ),
+            // A parent module the tool requires at the same version is a
+            // dependency too, though its path leads the package path.
+            (
+                "go: example.com/tool/cmd/x@v1.2.3 requires\n\texample.com/tool@v1.2.3: invalid version: unknown revision v1.2.3",
+                "example.com/tool/cmd/x",
+                "v1.2.3",
+                false,
+            ),
+            (
+                "go: example.com/tool/cmd/x@v1.2.3 requires\n\texample.com/tool@v1.2.3: reading https://proxy.golang.org/example.com/tool/@v/v1.2.3.info: 404 Not Found\n\tserver response: not found: example.com/tool@v1.2.3: invalid version: unknown revision v1.2.3",
+                "example.com/tool/cmd/x",
                 "v1.2.3",
                 false,
             ),
