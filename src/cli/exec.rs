@@ -155,6 +155,11 @@ pub(crate) struct Exec {
     /// [experimental] Give the command every secret the project can inject, except file secrets
     #[usage(long, conflicts = "secrets", verbatim_doc_comment)]
     pub secrets_all: bool,
+
+    /// A native shim is completing a word, which installs nothing. Set before a
+    /// command wrapper rewrites `command`, which moves the completion arguments.
+    #[usage(skip)]
+    pub native_shim_completion: bool,
 }
 
 impl Exec {
@@ -234,6 +239,10 @@ impl Exec {
             ts = build(&config).await?;
         }
 
+        self.native_shim_completion = self
+            .command
+            .as_deref()
+            .is_some_and(super::shim::is_native_shim_completion);
         // A native Windows shim runs `mise x -- <name>` rather than mise as `<name>`, so its
         // command wrapper is applied here instead of by `handle_shim`.
         if self.tool.is_empty()
@@ -379,10 +388,7 @@ impl Exec {
         // would otherwise do this never gets the chance.
         if ts.has_lazy_declarations()
             && !program.contains(['/', '\\'])
-            && !self
-                .command
-                .as_deref()
-                .is_some_and(super::shim::is_native_shim_completion)
+            && !self.native_shim_completion
             && ts.has_missing_lazy_bin_provider(&config, &program).await?
         {
             ts.install_missing_lazy_bin(&mut config, &program).await?;

@@ -47,3 +47,17 @@ TOML
 __MISE_SHIM_PATH="$shim" mise x -- dummy __complete_word__ >/dev/null 2>&1 || true
 assert_directory_not_exists "$MISE_DATA_DIR/installs/dummy/2.0.0"
 assert_contains "__MISE_SHIM_PATH='$shim' mise x -- dummy 2>/dev/null" "This is Dummy 2.0.0!"
+
+# Completing through a command wrapper installs neither the wrapper's command nor the lazy tool
+# behind it, though the wrapper's args move the completion arguments.
+mise uninstall dummy@2.0.0
+cat >mise.toml <<TOML
+[tools]
+dummy = { version = "2.0.0", lazy = true, lazy_bins = ["dummy"] }
+
+[wrappers.dwrap]
+command = "dummy"
+args = ["--wrapped"]
+TOML
+__MISE_SHIM_PATH="$MISE_DATA_DIR/shims/dwrap" mise x -- dwrap __complete_word__ >/dev/null 2>&1 || true
+assert_directory_not_exists "$MISE_DATA_DIR/installs/dummy/2.0.0"
