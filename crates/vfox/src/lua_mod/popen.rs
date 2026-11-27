@@ -117,9 +117,11 @@ fn popen(
     };
     let file = PopenFile {
         stdin: child.stdin.take(),
-        stdout: child.stdout.take().map(BufReader::new),
+        stdout: child
+            .stdout
+            .take()
+            .map(|stdout| text_reader(stdout, binary)),
         child: Some(child),
-        binary,
         closed: false,
     };
     lua.create_userdata(file)?.into_lua_multi(lua)
@@ -134,11 +136,82 @@ fn popen(
 /// included, raises "attempt to use a closed file".
 struct PopenFile {
     stdin: Option<ChildStdin>,
-    stdout: Option<BufReader<ChildStdout>>,
+    stdout: Option<Box<dyn BufRead + Send + Sync>>,
     child: Option<Child>,
-    /// Opened with `"rb"` or `"wb"`.
-    binary: bool,
     closed: bool,
+}
+
+/// The child's stdout as stock `io.popen` reads it. On Windows a pipe opened
+/// without `"b"` is in text mode, where `\r\n` reads as `\n` before any read
+/// counts or splits the bytes.
+fn text_reader(stdout: ChildStdout, binary: bool) -> Box<dyn BufRead + Send + Sync> {
+    if cfg!(windows) && !binary {
+        Box::new(CrlfAsLf::new(stdout))
+    } else {
+        Box::new(BufReader::new(stdout))
+    }
+}
+
+/// Reads `\r\n` as `\n`, as the Windows C runtime reads a text-mode stream. A
+/// `\r` that ends one read of the inner reader waits for the next one.
+struct CrlfAsLf<R> {
+    inner: R,
+    buf: Vec<u8>,
+    pos: usize,
+    held_cr: bool,
+}
+
+impl<R> CrlfAsLf<R> {
+    fn new(inner: R) -> Self {
+        Self {
+            inner,
+            buf: Vec::new(),
+            pos: 0,
+            held_cr: false,
+        }
+    }
+}
+
+impl<R: Read> BufRead for CrlfAsLf<R> {
+    fn fill_buf(&mut self) -> std::io::Result<&[u8]> {
+        while self.pos == self.buf.len() {
+            let mut raw = [0; 8192];
+            let n = self.inner.read(&mut raw)?;
+            self.buf.clear();
+            self.pos = 0;
+            if n == 0 {
+                if std::mem::take(&mut self.held_cr) {
+                    self.buf.push(b'\r');
+                }
+                break;
+            }
+            for &byte in &raw[..n] {
+                if std::mem::take(&mut self.held_cr) && byte != b'\n' {
+                    self.buf.push(b'\r');
+                }
+                if byte == b'\r' {
+                    self.held_cr = true;
+                } else {
+                    self.buf.push(byte);
+                }
+            }
+        }
+        Ok(&self.buf[self.pos..])
+    }
+
+    fn consume(&mut self, amt: usize) {
+        self.pos = (self.pos + amt).min(self.buf.len());
+    }
+}
+
+impl<R: Read> Read for CrlfAsLf<R> {
+    fn read(&mut self, out: &mut [u8]) -> std::io::Result<usize> {
+        let buf = self.fill_buf()?;
+        let n = buf.len().min(out.len());
+        out[..n].copy_from_slice(&buf[..n]);
+        self.consume(n);
+        Ok(n)
+    }
 }
 
 impl PopenFile {
@@ -151,17 +224,11 @@ impl PopenFile {
         Ok(self)
     }
 
-    fn reader(&mut self) -> LuaResult<&mut BufReader<ChildStdout>> {
+    fn reader(&mut self) -> LuaResult<&mut Box<dyn BufRead + Send + Sync>> {
         self.open()?
             .stdout
             .as_mut()
             .ok_or_else(|| LuaError::RuntimeError("file is not readable".to_string()))
-    }
-
-    /// Whether reads drop the `\r` of a `\r\n`: stock `io.popen` opens the pipe
-    /// in text mode on Windows unless the mode asks for binary.
-    fn translates_crlf(&self) -> bool {
-        cfg!(windows) && !self.binary
     }
 
     fn close(&mut self) {
@@ -182,9 +249,6 @@ impl PopenFile {
         }
         if !keep_newline && line.last() == Some(&b'\n') {
             line.pop();
-            if self.translates_crlf() && line.last() == Some(&b'\r') {
-                line.pop();
-            }
         }
         Ok(Some(line))
     }
@@ -192,16 +256,6 @@ impl PopenFile {
     fn read_all(&mut self) -> LuaResult<Vec<u8>> {
         let mut all = Vec::new();
         self.reader()?.read_to_end(&mut all)?;
-        if self.translates_crlf() {
-            let mut text = Vec::with_capacity(all.len());
-            let mut bytes = all.iter().peekable();
-            while let Some(&byte) = bytes.next() {
-                if byte != b'\r' || bytes.peek() != Some(&&b'\n') {
-                    text.push(byte);
-                }
-            }
-            all = text;
-        }
         Ok(all)
     }
 
@@ -380,8 +434,10 @@ impl UserData for PopenFile {
 
 #[cfg(all(test, unix))]
 mod tests {
+    use super::CrlfAsLf;
     use crate::lua_mod::cmd;
     use mlua::Lua;
+    use std::io::{BufRead, Read};
     use std::path::Path;
 
     fn detached_lua(dir: &Path) -> Lua {
@@ -530,12 +586,14 @@ mod tests {
         assert_eq!(expected[2], "closed file");
     }
 
-    /// What `read("*n")` returns, then what is left unread, for each output.
+    /// What `read("*n")` returns, then what is left unread, for each output. An
+    /// exponent with no digits (`4e`) is left out: stock Lua leaves it to the C
+    /// library's `fscanf`, which reads it as `4` on glibc and as nothing elsewhere.
     fn number_reads(lua: &Lua) -> Vec<String> {
         lua.load(
             r#"
             local seen = {}
-            for _, out in ipairs({ "12foo", "  -3.5e2x", "0.5.5", "abc", "+7 8", "4e", "1e+2-3" }) do
+            for _, out in ipairs({ "12foo", "  -3.5e2x", "0.5.5", "abc", "+7 8", "1e+2-3" }) do
                 local h = io.popen("printf '%s' '" .. out .. "'")
                 local n = h:read("*n")
                 seen[#seen + 1] = tostring(n) .. "|" .. h:read("*a")
@@ -546,6 +604,41 @@ mod tests {
         )
         .eval()
         .unwrap()
+    }
+
+    /// Hands out one byte per read, so a `\r\n` is split between reads.
+    struct ByteAtATime<'a>(&'a [u8]);
+
+    impl Read for ByteAtATime<'_> {
+        fn read(&mut self, out: &mut [u8]) -> std::io::Result<usize> {
+            let Some((&first, rest)) = self.0.split_first() else {
+                return Ok(0);
+            };
+            if out.is_empty() {
+                return Ok(0);
+            }
+            out[0] = first;
+            self.0 = rest;
+            Ok(1)
+        }
+    }
+
+    #[test]
+    fn text_mode_reads_crlf_as_lf_before_counting() {
+        let raw = b"x\r\ny\r\r\nz\rw\r";
+        let mut all = Vec::new();
+        CrlfAsLf::new(ByteAtATime(raw))
+            .read_to_end(&mut all)
+            .unwrap();
+        assert_eq!(all, b"x\ny\r\nz\rw\r");
+
+        let mut reader = CrlfAsLf::new(ByteAtATime(raw));
+        let mut three = Vec::new();
+        (&mut reader).take(3).read_to_end(&mut three).unwrap();
+        assert_eq!(three, b"x\ny");
+        let mut line = Vec::new();
+        reader.read_until(b'\n', &mut line).unwrap();
+        assert_eq!(line, b"\r\n");
     }
 
     #[test]
