@@ -307,6 +307,10 @@ pub struct Walk {
     pub skipped: BTreeSet<usize>,
     /// Repositories found inside a tracked directory, skipped whole.
     pub nested: Vec<PathReason>,
+    /// Tagged cache directories found inside a tracked directory, skipped
+    /// whole. Not reported as omissions on every save, but recorded with
+    /// the checkpoint so a rollback never treats their files as deleted.
+    pub caches: Vec<PathReason>,
     pub incomplete: Vec<PathReason>,
     pub warnings: Vec<String>,
     /// Notices that claim selected contents were saved.
@@ -974,6 +978,11 @@ impl TrackedSet {
             .collect();
         let mut omitted = walk.omitted.clone();
         omitted.extend(self.invalid.iter().cloned());
+        // **A skipped cache is not an absence.** Recorded so a rollback
+        // to this checkpoint reads its files as omitted rather than
+        // deleted, even after the tag is gone and the directory is
+        // ordinary content.
+        omitted.extend(walk.caches.iter().cloned());
         Coverage {
             entries,
             exclude: self.exclude.clone(),
@@ -1156,6 +1165,10 @@ fn walk_entry(
         // a tagged cache directory (Cargo's `target/`, for one) holds
         // nothing worth restoring and is not entered at all
         if file_type.is_dir() && is_cache_directory(path) {
+            walk.caches.push(PathReason {
+                path: display_path(path),
+                reason: CACHE_DIRECTORY_REASON.into(),
+            });
             walker.skip_current_dir();
             continue;
         }
@@ -2288,7 +2301,7 @@ impl DropReason {
     fn as_str(self) -> &'static str {
         match self {
             Self::NestedRepository => "inside a nested repository",
-            Self::CacheDirectory => "inside a cache directory (CACHEDIR.TAG)",
+            Self::CacheDirectory => CACHE_DIRECTORY_REASON,
             Self::GlobalExclude => "excluded by [history] exclude",
             Self::EntryExclude => "excluded by the entry's exclude list",
             Self::NotIncluded => "not selected by the entry's include list",
@@ -2374,6 +2387,9 @@ fn node_modules_hint(
     ))
 }
 
+/// Why a tagged cache directory is left out of every capture.
+pub(crate) const CACHE_DIRECTORY_REASON: &str = "inside a cache directory (CACHEDIR.TAG)";
+
 /// The first bytes of a `CACHEDIR.TAG` file, from the Cache Directory
 /// Tagging Specification (<https://bford.info/cachedir/>).
 const CACHEDIR_TAG_SIGNATURE: &[u8] = b"Signature: 8a477f597d28d172789f06886806bc55";
@@ -2386,7 +2402,13 @@ const CACHEDIR_TAG_SIGNATURE: &[u8] = b"Signature: 8a477f597d28d172789f06886806b
 /// asks, so a file that merely has the name does not hide a directory.
 fn is_cache_directory(dir: &Path) -> bool {
     use std::io::Read;
-    let Ok(file) = std::fs::File::open(dir.join("CACHEDIR.TAG")) else {
+    let tag = dir.join("CACHEDIR.TAG");
+    // only a regular file is read: opening a FIFO with no writer blocks,
+    // and a walk must never hang on a name
+    if !std::fs::symlink_metadata(&tag).is_ok_and(|meta| meta.is_file()) {
+        return false;
+    }
+    let Ok(file) = std::fs::File::open(&tag) else {
         return false;
     };
     let mut head = Vec::with_capacity(CACHEDIR_TAG_SIGNATURE.len());
@@ -5088,11 +5110,53 @@ mod tests {
             Some("inside a cache directory (CACHEDIR.TAG)")
         );
         assert!(set.would_capture(&fake.join("keep.toml")).unwrap());
+        // the skip is recorded with the checkpoint, not reported as an
+        // omission, so a rollback after the tag is removed reads the cache's
+        // files as never saved rather than deleted
+        assert!(walk.omitted.is_empty());
+        let coverage = set.coverage(&walk);
+        std::fs::remove_file(target.join("CACHEDIR.TAG")).unwrap();
+        assert!(matches!(
+            crate::history::replay::classify_coverage(
+                &coverage,
+                &display_path(&target.join("debug/build.o"))
+            ),
+            crate::history::replay::PathState::Omitted(reason) if reason == CACHE_DIRECTORY_REASON
+        ));
+        std::fs::write(
+            target.join("CACHEDIR.TAG"),
+            "Signature: 8a477f597d28d172789f06886806bc55\n",
+        )
+        .unwrap();
         // tracking the cache directory itself captures it
         set.push(entry(&target));
         let walk = set.walk().unwrap();
         assert!(walk.files.contains_key(&target.join("debug/build.o")));
         assert!(set.would_capture(&target.join("debug/build.o")).unwrap());
+    }
+
+    /// A FIFO named `CACHEDIR.TAG` blocks whoever opens it while no writer
+    /// is present, so it is never opened, and the walk finishes.
+    #[cfg(unix)]
+    #[test]
+    fn a_fifo_named_cachedir_tag_is_not_read() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("project");
+        let dir = root.join("odd");
+        std::fs::create_dir_all(&dir).unwrap();
+        let fifo = dir.join("CACHEDIR.TAG");
+        let status = std::process::Command::new("mkfifo")
+            .arg(&fifo)
+            .status()
+            .unwrap();
+        assert!(status.success());
+        std::fs::write(dir.join("keep.toml"), "x").unwrap();
+        assert!(!is_cache_directory(&dir));
+        let mut set = TrackedSet::default();
+        set.push(entry(&root));
+        let walk = set.walk().unwrap();
+        assert!(walk.files.contains_key(&dir.join("keep.toml")));
+        assert!(walk.caches.is_empty());
     }
 
     #[test]
