@@ -49,28 +49,29 @@ pub(super) fn consents(signals: Signals) -> bool {
         && signals.owned_by_user
 }
 
-/// The commands a shell integration runs without the user typing a mise command: those that
-/// answer TAB completion or print the spec it reads, and `hook-not-found`, which the shell's
+/// Whether the parsed command is one the user may have typed: `None` until the command line is
+/// parsed, `Some(false)` for one a shell integration runs without the user typing a mise command.
+static TYPED_COMMAND: Mutex<Option<bool>> = Mutex::new(None);
+
+/// Records whether the parsed command is one the user may have typed. The command line decides
+/// it once global options are consumed, so `mise -q hook-not-found` counts as the shell's.
+///
+/// The shell runs some commands for its own integration: completion and `usage`, which answer
+/// TAB completion or print the spec it reads, and `hook-not-found`, which the shell's
 /// command-not-found handler runs with the terminal on all three descriptors when the user
 /// mistypes any command. Neither TAB nor a typo is consent. `hook-env`, which the prompt hook
-/// runs, is not listed because `trust_check` never asks for it and so never reaches this.
-const SHELL_RUN_COMMANDS: &[&str] = &[
-    "__complete_word__",
-    "__usage_complete_word",
-    "complete",
-    "completion",
-    "completions",
-    "hook-not-found",
-    "usage",
-];
+/// runs, needs no entry because `trust_check` never asks for it and so never reaches this.
+pub fn set_typed_command(typed: bool) {
+    *TYPED_COMMAND.lock().unwrap() = Some(typed);
+}
+
+/// Whether the shell, not the user, ran this mise. Before the command line is parsed nothing
+/// shows the user typed it: a tool stub, for one, loads config first.
+fn run_by_shell() -> bool {
+    env::__USAGE.is_some() || *TYPED_COMMAND.lock().unwrap() != Some(true)
+}
 
 fn read_signals(path: &Path, config_root: &Path) -> Signals {
-    let command = env::ARGS
-        .read()
-        .unwrap()
-        .get(1)
-        .cloned()
-        .unwrap_or_default();
     Signals {
         stdin_tty: std::io::stdin().is_terminal(),
         stdout_tty: console::user_attended(),
@@ -81,7 +82,7 @@ fn read_signals(path: &Path, config_root: &Path) -> Signals {
         // A shim's arguments belong to its tool, and a shim that is not mise itself runs
         // `mise x` with `__MISE_SHIM_PATH` naming itself: the user typed the tool's name.
         shim: *env::IS_RUNNING_AS_SHIM || env::MISE_SHIM_PATH.read().unwrap().is_some(),
-        run_by_shell: env::__USAGE.is_some() || SHELL_RUN_COMMANDS.contains(&command.as_str()),
+        run_by_shell: run_by_shell(),
         owned_by_user: root_owned_by_user(path, config_root),
     }
 }
@@ -92,14 +93,14 @@ fn read_signals(path: &Path, config_root: &Path) -> Signals {
 /// `.config/mise.toml` or `mise.prod.toml` another account left beside the user's own
 /// `mise.toml` must keep the prompt.
 fn root_owned_by_user(path: &Path, config_root: &Path) -> bool {
-    let loaded = crate::config::load_config_paths(&crate::config::DEFAULT_CONFIG_FILENAMES, false);
-    let mut covered: Vec<PathBuf> = loaded
-        .into_iter()
-        .filter(|other| super::config_trust_root(other) == config_root)
-        .collect();
+    let mut covered =
+        crate::config::load_config_paths(&crate::config::DEFAULT_CONFIG_FILENAMES, false);
     if config_root.is_dir() {
         covered.extend(crate::config::config_files_in_dir_for_any_env(config_root));
     }
+    // A `conf.d` folder has a trust root of its own, so the record for this root does not admit
+    // the fragments in it.
+    covered.retain(|other| super::config_trust_root(other) == config_root);
     owned_by_user(config_root)
         && std::iter::once(path)
             .chain(covered.iter().map(PathBuf::as_path))
@@ -174,18 +175,25 @@ fn untrust_argument(path: &Path) -> String {
     }
 }
 
-/// [`untrust_argument`] for `cmd.exe` and PowerShell, which do not expand `~` and do not both
-/// take single quotes: the full path, in double quotes when it needs any.
+/// [`untrust_argument`] for `cmd.exe` and PowerShell, which do not expand `~`: the full path, bare
+/// when it needs no quotes.
 #[cfg(windows)]
 fn untrust_argument(path: &Path) -> String {
     quote_for_windows(&path.display().to_string())
 }
 
+/// Double quotes keep a path literal in both `cmd.exe` and PowerShell unless it holds `$` or a
+/// backtick, which PowerShell expands in them, or `%` or `!`, which `cmd.exe` does. No one quoting
+/// keeps those literal in both, so such a path gets PowerShell's single quotes, the default shell's:
+/// `cmd.exe` then passes the quotes on and `mise untrust` fails on a path that does not exist,
+/// instead of acting on another one.
 #[cfg(any(windows, test))]
 fn quote_for_windows(shown: &str) -> String {
     let plain = |c: char| c.is_ascii_alphanumeric() || r"\/:._-".contains(c);
     if !shown.is_empty() && shown.chars().all(plain) {
         shown.to_string()
+    } else if shown.contains(['$', '`', '%', '!', '"']) {
+        format!("'{}'", shown.replace('\'', "''"))
     } else {
         format!("\"{shown}\"")
     }
@@ -281,6 +289,27 @@ mod tests {
         assert_eq!(
             quote_for_windows(r"C:\a&b\mise.toml"),
             r#""C:\a&b\mise.toml""#
+        );
+        // PowerShell expands these in double quotes; its single quotes keep them literal.
+        assert_eq!(
+            quote_for_windows(r"C:\work\$demo\mise.toml"),
+            r"'C:\work\$demo\mise.toml'"
+        );
+        assert_eq!(
+            quote_for_windows(r"C:\work\$(rm x)\mise.toml"),
+            r"'C:\work\$(rm x)\mise.toml'"
+        );
+        assert_eq!(
+            quote_for_windows(r"C:\work\a`b\mise.toml"),
+            r"'C:\work\a`b\mise.toml'"
+        );
+        assert_eq!(
+            quote_for_windows(r"C:\Jo's $x\mise.toml"),
+            r"'C:\Jo''s $x\mise.toml'"
+        );
+        assert_eq!(
+            quote_for_windows(r"C:\100%\mise.toml"),
+            r"'C:\100%\mise.toml'"
         );
     }
 

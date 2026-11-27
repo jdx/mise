@@ -52,6 +52,8 @@ pub(crate) mod tool_versions;
 mod typed_consent;
 mod unknown_key;
 
+pub use typed_consent::set_typed_command;
+
 #[derive(Debug, PartialEq)]
 pub(crate) enum ConfigFileType {
     MiseToml,

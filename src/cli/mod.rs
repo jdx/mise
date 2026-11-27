@@ -479,6 +479,17 @@ impl Commands {
         )
     }
 
+    /// Commands a shell integration runs without the user typing a mise command: completion and
+    /// `usage` answer TAB completion or print the spec it reads, and the command-not-found
+    /// handler runs `hook-not-found` when the user mistypes any command. Neither is consent to
+    /// trust the project.
+    fn is_run_by_shell_integration(&self) -> bool {
+        matches!(
+            self,
+            Self::Completion(_) | Self::HookNotFound(_) | Self::Usage(_)
+        )
+    }
+
     /// Shell integration runs on startup and every prompt, so it must not do
     /// an all-project tracked-config scan or mutate installed tools. Deferred
     /// cleanup will run on the next ordinary command instead. The cleanup also
@@ -1251,6 +1262,11 @@ impl Cli {
                     .task
                     .as_deref()
                     .is_some_and(|task| !matches!(task, "help" | "-h" | "--help")),
+        );
+        config_file::set_typed_command(
+            !cli.command
+                .as_ref()
+                .is_some_and(Commands::is_run_by_shell_integration),
         );
         // Validate --cd path BEFORE Settings processes it and changes the directory
         validate_cd_path(&cli.cd)?;

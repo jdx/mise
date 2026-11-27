@@ -71,13 +71,16 @@ forget_trust
 ok "[trust] an ignored directory is not trusted"
 
 # The shell's command-not-found handler runs mise on the terminal after a
-# mistyped command; nobody typed a mise command.
-output="$(on_pty 'mise hook-not-found -s bash -- nosuchbin')" || true
-# The prompt shows the handler reached the trust decision and did not take it.
-assert_contains_text "$output" "Trust them?"
-assert_not_contains_text "$output" "$notice"
-assert_untrusted
-forget_trust
+# mistyped command; nobody typed a mise command. A global option before the
+# command does not hide it.
+for cmd in 'mise hook-not-found -s bash -- nosuchbin' 'mise -q hook-not-found -s bash -- nosuchbin'; do
+  output="$(on_pty "$cmd")" || true
+  # The prompt shows the handler reached the trust decision and did not take it.
+  assert_contains_text "$output" "Trust them?"
+  assert_not_contains_text "$output" "$notice"
+  assert_untrusted
+  forget_trust
+done
 ok "[trust] the command-not-found handler does not trust the project"
 
 # Without a terminal nothing is trusted either.
@@ -108,6 +111,17 @@ if [ "$(id -u)" != 0 ]; then
   rm mise.prod.toml
   forget_trust
   ok "[trust] another account's config for another environment still asks"
+
+  # A conf.d folder is a trust root of its own, which the project's record
+  # does not admit, so another account's fragment there does not matter.
+  mkdir -p .mise/conf.d/git
+  ln -s /etc/passwd .mise/conf.d/git/mise.prod.toml
+  output="$(on_pty 'mise env')"
+  assert_contains_text "$output" "$notice"
+  assert_not_contains_text "$output" "Trust them?"
+  rm -r .mise
+  forget_trust
+  ok "[trust] another account's conf.d fragment does not keep the prompt"
 fi
 
 # Typed on a terminal: trusted, with a notice, and the config applies.
