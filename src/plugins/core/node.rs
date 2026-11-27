@@ -1130,7 +1130,6 @@ impl NodePlugin {
     }
 }
 
-#[derive(Debug)]
 struct BuildOpts {
     version: String,
     path: Vec<PathBuf>,
@@ -1145,6 +1144,29 @@ struct BuildOpts {
     binary_tarball_name: String,
     binary_tarball_path: PathBuf,
     binary_tarball_url: Url,
+}
+
+/// The URLs are written as text: `Url`'s own `Debug` prints the mirror login
+/// as separate fields, which the logger cannot tell from other text, while in
+/// a URL it redacts it.
+impl std::fmt::Debug for BuildOpts {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BuildOpts")
+            .field("version", &self.version)
+            .field("path", &self.path)
+            .field("install_path", &self.install_path)
+            .field("build_dir", &self.build_dir)
+            .field("configure_cmd", &self.configure_cmd)
+            .field("make_cmd", &self.make_cmd)
+            .field("make_install_cmd", &self.make_install_cmd)
+            .field("source_tarball_name", &self.source_tarball_name)
+            .field("source_tarball_path", &self.source_tarball_path)
+            .field("source_tarball_url", &self.source_tarball_url.as_str())
+            .field("binary_tarball_name", &self.binary_tarball_name)
+            .field("binary_tarball_path", &self.binary_tarball_path)
+            .field("binary_tarball_url", &self.binary_tarball_url.as_str())
+            .finish()
+    }
 }
 
 impl BuildOpts {
@@ -1399,6 +1421,32 @@ mod tests {
     use crate::config::settings::{SettingsNode, SettingsPartial};
     use crate::toolset::ToolSource;
     use confique::Layer;
+
+    #[test]
+    fn build_opts_trace_leaves_out_the_mirror_login() {
+        let url = Url::parse("https://ci:hunter2@mirror.example/v20.0.0/node.tar.gz").unwrap();
+        let opts = BuildOpts {
+            version: "20.0.0".into(),
+            path: vec![],
+            install_path: PathBuf::new(),
+            build_dir: PathBuf::new(),
+            configure_cmd: String::new(),
+            make_cmd: String::new(),
+            make_install_cmd: String::new(),
+            source_tarball_name: String::new(),
+            source_tarball_path: PathBuf::new(),
+            source_tarball_url: url.clone(),
+            binary_tarball_name: String::new(),
+            binary_tarball_path: PathBuf::new(),
+            binary_tarball_url: url,
+        };
+        let logged = mise_util::redactions::redact_output(&format!("{opts:#?}"));
+        assert!(!logged.contains("hunter2"), "{logged}");
+        assert!(
+            logged.contains("mirror.example/v20.0.0/node.tar.gz"),
+            "{logged}"
+        );
+    }
 
     struct NodeEnvResetGuard {
         vars: BTreeMap<String, String>,
