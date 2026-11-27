@@ -115,6 +115,7 @@ pub(crate) async fn handle_shim() -> Result<()> {
         allow_env: vec![],
         secrets: vec![],
         secrets_all: false,
+        native_shim_completion: false,
     };
     time!("shim exec");
     if let Some(wrapper) = wrapper {
@@ -303,7 +304,9 @@ pub(crate) async fn apply_native_shim_command_wrapper(
     if !same_command_name(shim_name, program) {
         return Ok(None);
     }
-    let Some(wrapper) = command_wrapper_for(config, ts, shim_name, &command[1..], true).await?
+    let install_command = !is_native_shim_completion(command);
+    let Some(wrapper) =
+        command_wrapper_for(config, ts, shim_name, &command[1..], install_command).await?
     else {
         return Ok(None);
     };
@@ -318,6 +321,35 @@ pub(crate) async fn apply_native_shim_command_wrapper(
             .map(|(key, value)| (key.clone(), value.clone()))
             .collect(),
     )))
+}
+
+/// Install the tool that provides `mise x -- <name>` run by a native shim.
+///
+/// `which_shim` never runs for such a shim, and `mise x` on its own installs every missing tool
+/// the config lists. A config that only lists tools loads without trust, so this installs no
+/// more than `which_shim` does: the configured tool that provides the command, and nothing
+/// while completing.
+pub(crate) async fn install_native_shim_command(
+    config: &mut Arc<Config>,
+    ts: &mut Toolset,
+    command: &[String],
+) -> Result<()> {
+    if env::MISE_SHIM_PATH.read().unwrap().is_none() || is_native_shim_completion(command) {
+        return Ok(());
+    }
+    let Some(program) = command.first() else {
+        return Ok(());
+    };
+    install_missing_wrapper_command(config, ts, command_name_without_exe_suffix(program)).await
+}
+
+/// Whether `mise x -- <command>` is a native shim completing a word, which installs nothing,
+/// as [`is_offline_completion`] keeps a shim that is mise itself from installing.
+pub(crate) fn is_native_shim_completion(command: &[String]) -> bool {
+    env::MISE_SHIM_PATH.read().unwrap().is_some()
+        && command.first().is_some_and(|program| {
+            is_offline_completion(command_name_without_exe_suffix(program), command)
+        })
 }
 
 /// The command wrapper configured for `shim_name`, with its command installed first when

@@ -167,6 +167,57 @@ impl RubyPlugin {
             .replace("{arch}", arch)
     }
 
+    /// Whether a locked URL is the precompiled archive of `version` for `platform`.
+    ///
+    /// `lock_info` records the source tarball instead when no precompiled build
+    /// exists, so a locked URL is not always an archive to install as it is.
+    #[cfg(not(windows))]
+    pub(super) fn is_precompiled_archive_url(
+        &self,
+        url: &str,
+        version: &str,
+        platform: &str,
+    ) -> bool {
+        let settings = Settings::get();
+        let source = &settings.ruby.precompiled_url;
+        if source.contains("://") {
+            // mise.lock records the URL without the login the template can carry.
+            crate::backend::static_helpers::is_lock_url(
+                Some(url),
+                &self.render_precompiled_url(source, version, platform),
+            )
+        } else {
+            // Release assets are matched by this name (`find_precompiled_asset_in_repo`).
+            // The install names the download after the URL's last segment, so
+            // that is the part compared, query and fragment included.
+            url.rsplit('/').next() == Some(format!("ruby-{version}.{platform}.tar.gz").as_str())
+        }
+    }
+
+    /// A locked precompiled `url` as it is downloaded. mise.lock records it without
+    /// the login a `ruby.precompiled_url` template carries, so the template's login
+    /// goes back on when the URL is on the template's server.
+    #[cfg(not(windows))]
+    pub(super) fn precompiled_download_url(
+        &self,
+        url: String,
+        version: &str,
+        platform: &str,
+    ) -> String {
+        let settings = Settings::get();
+        let source = &settings.ruby.precompiled_url;
+        if !source.contains("://") {
+            return url;
+        }
+        let template = self.render_precompiled_url(source, version, platform);
+        match (url::Url::parse(&url), url::Url::parse(&template)) {
+            (Ok(locked), Ok(base)) if !base.username().is_empty() || base.password().is_some() => {
+                crate::backend::static_helpers::with_login_of(locked, &base).to_string()
+            }
+            _ => url,
+        }
+    }
+
     /// Extract the build revision tag from existing lock_platforms URLs.
     ///
     /// URLs look like: `.../releases/download/3.3.11-1/ruby-3.3.11...`

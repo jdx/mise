@@ -2214,6 +2214,13 @@ impl UnifiedGitBackend {
             .lock_platforms
             .get(&platform_key)
             .is_some_and(|p| p.checksum.is_some());
+        // Whether that checksum stands for a download that was verified. The one a
+        // lockfile that is not trusted keeps has no URL until the asset is recorded
+        // below: it pins the bytes and replaces no check.
+        let lockfile_vouches = tv
+            .lock_platforms
+            .get(&platform_key)
+            .is_some_and(PlatformInfo::has_vouched_checksum);
         // Read before the asset's digest is recorded below.
         let pinned = pinned_checksum(tv, &platform_key, opts.raw());
         let platform_info = tv.lock_platforms.entry(platform_key).or_default();
@@ -2274,12 +2281,13 @@ impl UnifiedGitBackend {
         let settings = Settings::get();
         let force_verify = settings.force_provenance_verify();
         // `has_lockfile_integrity` also counts a checksum taken from the release API above;
-        // only a checksum the lockfile already had may stand in for verification.
-        if lockfile_has_checksum && has_lockfile_integrity && !force_verify {
+        // only a checksum the lockfile already had, and vouches for, may stand in for
+        // verification.
+        if lockfile_vouches && has_lockfile_integrity && !force_verify {
             // Still check that the recorded provenance type's setting is enabled —
             // disabling a verification setting with a provenance-bearing lockfile is a downgrade.
             self.ensure_provenance_setting_enabled(tv, &platform_key)?;
-        } else if !force_verify && locked_provenance.is_none() && lockfile_has_checksum {
+        } else if !force_verify && locked_provenance.is_none() && lockfile_vouches {
             debug!(
                 "skipping provenance detection for {} \
                  (lockfile has checksum but no provenance)",
@@ -2343,8 +2351,12 @@ impl UnifiedGitBackend {
             .cloned()
             .unwrap_or_default();
         let lockfile_has_checksum = artifact_info.checksum.is_some();
+        // Read before the URL is recorded below: a lockfile that is not trusted
+        // keeps the checksum without it, as a pin that replaces no check.
+        let lockfile_vouches = artifact_info.has_vouched_checksum();
         let required = self.registry_required_provenance(tv, opts);
-        let has_lockfile_integrity = artifact_info.has_checksum_and_provenance()
+        let has_lockfile_integrity = lockfile_vouches
+            && artifact_info.has_checksum_and_provenance()
             && locked_provenance_satisfies(artifact_info.provenance.as_ref(), required.as_ref());
         artifact_info.url = lock_url(&asset.url);
         artifact_info.url_api = lock_url_api(&asset.url_api);
@@ -2387,7 +2399,7 @@ impl UnifiedGitBackend {
             }
         } else if !Settings::get().force_provenance_verify()
             && expected_provenance.is_none()
-            && lockfile_has_checksum
+            && lockfile_vouches
         {
             debug!(
                 "skipping provenance detection for additional asset {} \

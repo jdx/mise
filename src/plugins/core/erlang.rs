@@ -124,6 +124,33 @@ impl ErlangPlugin {
         Ok(None)
     }
 
+    /// [`Self::precompiled_unavailable`] for a host that has precompiled builds, when the one for
+    /// this version could not be looked up.
+    #[cfg(any(linux, macos, windows))]
+    fn precompiled_lookup_failed(
+        &self,
+        tv: &ToolVersion,
+        reason: impl Into<String>,
+    ) -> Result<Option<ToolVersion>> {
+        let reason = reason.into();
+        // The source archive is another artifact, which the locked checksum does not cover, so
+        // a download host must not be able to choose it by failing the lookup of the build the
+        // lockfile pins.
+        if let Some(pin) = lock_pins_precompiled(&tv.lock_platforms, &self.get_platform_key()) {
+            let url = pin
+                .url
+                .as_deref()
+                .map(|url| format!(" ({url})"))
+                .unwrap_or_default();
+            bail!(
+                "precompiled erlang is not available: {reason}\n\
+                 mise.lock pins its checksum{url}; refusing to compile from source instead\n\
+                 set erlang.compile = true to build from source"
+            );
+        }
+        self.precompiled_unavailable(reason)
+    }
+
     fn release_tag(version: &str) -> String {
         format!("OTP-{version}")
     }
@@ -373,12 +400,15 @@ impl ErlangPlugin {
             )?;
             (url, checksum)
         } else {
-            match Self::linux_precompiled_lock_info(&tv.version, &PlatformTarget::from_current())
-                .await
-            {
+            let target = PlatformTarget::from_current();
+            // Nothing is published for this host, so it compiles whatever mise.lock pins
+            if let Err(e) = Self::linux_precompiled_base_url(&target) {
+                return self.precompiled_unavailable(e.to_string());
+            }
+            match Self::linux_precompiled_lock_info(&tv.version, &target).await {
                 Ok(info) => (info.url.unwrap(), info.checksum.unwrap()),
                 Err(e) => {
-                    return self.precompiled_unavailable(e.to_string());
+                    return self.precompiled_lookup_failed(&tv, e.to_string());
                 }
             }
         };
@@ -463,17 +493,19 @@ impl ErlangPlugin {
             let gh_release = match github::get_release("erlef/otp_builds", &release_tag).await {
                 Ok(release) => release,
                 Err(e) => {
-                    return self.precompiled_unavailable(format!(
-                        "failed to get release {release_tag}: {e}"
-                    ));
+                    return self.precompiled_lookup_failed(
+                        &tv,
+                        format!("failed to get release {release_tag}: {e}"),
+                    );
                 }
             };
             let asset = match gh_release.assets.iter().find(|a| a.name == tarball_name) {
                 Some(asset) => asset,
                 None => {
-                    return self.precompiled_unavailable(format!(
-                        "no asset found for {tarball_name} in {release_tag}"
-                    ));
+                    return self.precompiled_lookup_failed(
+                        &tv,
+                        format!("no asset found for {tarball_name} in {release_tag}"),
+                    );
                 }
             };
             (asset.browser_download_url.clone(), asset.digest.clone())
@@ -526,17 +558,19 @@ impl ErlangPlugin {
             let gh_release = match github::get_release("erlang/otp", &release_tag).await {
                 Ok(release) => release,
                 Err(e) => {
-                    return self.precompiled_unavailable(format!(
-                        "failed to get release {release_tag}: {e}"
-                    ));
+                    return self.precompiled_lookup_failed(
+                        &tv,
+                        format!("failed to get release {release_tag}: {e}"),
+                    );
                 }
             };
             let asset = match gh_release.assets.iter().find(|a| a.name == zip_name) {
                 Some(asset) => asset,
                 None => {
-                    return self.precompiled_unavailable(format!(
-                        "no asset found for {zip_name} in {release_tag}"
-                    ));
+                    return self.precompiled_lookup_failed(
+                        &tv,
+                        format!("no asset found for {zip_name} in {release_tag}"),
+                    );
                 }
             };
             (asset.browser_download_url.clone(), asset.digest.clone())
@@ -918,6 +952,22 @@ fn locked_platform_url(
         .and_then(|platform_info| platform_info.url.clone())
 }
 
+/// The mise.lock entry for this platform when it pins the checksum of a precompiled build.
+///
+/// A source build is a different artifact, so `set_lockfile_info` drops this pin and checks the
+/// archive against the digest resolved with it. That is right when the user asked for a source
+/// build, but a failed lookup of the pinned build must not be what selects it. The checksum is
+/// the pin: a lockfile that is not trusted keeps it and drops the URL.
+#[cfg(any(linux, macos, windows, test))]
+fn lock_pins_precompiled<'a>(
+    lock_platforms: &'a BTreeMap<String, PlatformInfo>,
+    platform_key: &str,
+) -> Option<&'a PlatformInfo> {
+    lock_platforms
+        .get(platform_key)
+        .filter(|pi| pi.install.is_none() && pi.checksum.is_some())
+}
+
 fn should_install_from_source(
     locked: bool,
     lock_platforms: &BTreeMap<String, PlatformInfo>,
@@ -1186,6 +1236,41 @@ mod tests {
             "linux-x64",
             None
         ));
+    }
+
+    #[test]
+    fn test_lock_pins_precompiled_only_for_a_pinned_precompiled_build() {
+        let url = "https://builds.hex.pm/builds/otp/amd64/ubuntu-24.04/OTP-28.3.tar.gz";
+        let mut lock_platforms = BTreeMap::from([(
+            "linux-x64".to_string(),
+            PlatformInfo {
+                url: Some(url.to_string()),
+                checksum: Some("sha256:abc".to_string()),
+                ..Default::default()
+            },
+        )]);
+        let pinned = |lock_platforms: &BTreeMap<String, PlatformInfo>, key| {
+            lock_pins_precompiled(lock_platforms, key).map(|pi| pi.url.clone())
+        };
+        assert_eq!(
+            pinned(&lock_platforms, "linux-x64"),
+            Some(Some(url.to_string()))
+        );
+        assert_eq!(pinned(&lock_platforms, "linux-arm64"), None);
+
+        // A lockfile that is not trusted keeps the checksum and drops the URL: still a pin
+        lock_platforms.get_mut("linux-x64").unwrap().url = None;
+        assert_eq!(pinned(&lock_platforms, "linux-x64"), Some(None));
+
+        // A platform locked as a source build still compiles
+        lock_platforms.get_mut("linux-x64").unwrap().install = Some("source".to_string());
+        assert_eq!(pinned(&lock_platforms, "linux-x64"), None);
+
+        let info = lock_platforms.get_mut("linux-x64").unwrap();
+        info.install = None;
+        info.url = Some(url.to_string());
+        info.checksum = None;
+        assert_eq!(pinned(&lock_platforms, "linux-x64"), None);
     }
 
     #[test]

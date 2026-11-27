@@ -866,38 +866,73 @@ fn basic_tool(version: &str, backend: &str) -> LockfileTool {
 #[test]
 fn untrusted_lockfile_may_confirm_a_backend_but_not_choose_one() {
     // the registry's backend for a shorthand, or the backend the tool key names
-    assert!(!locked_backend_needs_trust("shfmt", "aqua:mvdan/sh"));
-    assert!(!locked_backend_needs_trust("node", "core:node"));
+    assert!(!locked_backend_needs_trust(
+        "shfmt",
+        "aqua:mvdan/sh",
+        "3.10.0"
+    ));
+    assert!(!locked_backend_needs_trust("node", "core:node", "24.0.0"));
     assert!(!locked_backend_needs_trust(
         "github:acme/tool",
-        "github:acme/tool"
+        "github:acme/tool",
+        "1.0.0"
     ));
     // inline options need trust in a tool key, so they do in a lock entry
     assert!(locked_backend_needs_trust(
         "github:acme/tool",
-        "github:acme/tool[api_url=http://example.com/api/v3]"
+        "github:acme/tool[api_url=http://example.com/api/v3]",
+        "1.0.0"
     ));
     assert!(locked_backend_needs_trust(
         "shfmt",
-        "http:shfmt[url=http://example.com/shfmt.tar.gz,postinstall=id]"
+        "http:shfmt[url=http://example.com/shfmt.tar.gz,postinstall=id]",
+        "3.10.0"
     ));
     // a backend the registry never installs the tool from
     assert!(locked_backend_needs_trust(
         "shellcheck",
-        "cargo:https://example.com/shellcheck.git"
+        "cargo:https://example.com/shellcheck.git",
+        "0.10.0"
     ));
     assert!(locked_backend_needs_trust(
         "gron",
-        "ubi:http://example.com/gron.tar.gz"
+        "ubi:http://example.com/gron.tar.gz",
+        "0.7.1"
     ));
     assert!(locked_backend_needs_trust(
         "github:acme/tool",
-        "github:acme/other"
+        "github:acme/other",
+        "1.0.0"
+    ));
+    // a backend the registry lists for the tool behind the one it selects
+    assert!(locked_backend_needs_trust(
+        "shfmt",
+        "asdf:luizm/asdf-shfmt",
+        "3.10.0"
+    ));
+    assert!(locked_backend_needs_trust(
+        "shfmt",
+        "go:mvdan.cc/sh/v3/cmd/shfmt",
+        "3.10.0"
     ));
     // names that designate no tool
-    assert!(locked_backend_needs_trust("shfmt", ""));
-    assert!(locked_backend_needs_trust("shfmt", "asdf:"));
-    assert!(locked_backend_needs_trust("", "core:node"));
+    assert!(locked_backend_needs_trust("shfmt", "", "3.10.0"));
+    assert!(locked_backend_needs_trust("shfmt", "asdf:", "3.10.0"));
+    assert!(locked_backend_needs_trust("", "core:node", "24.0.0"));
+}
+
+/// With backends split by version, the one that serves the locked version is
+/// the registry's; the one it selects for other versions is not.
+#[test]
+fn untrusted_lockfile_confirms_the_backend_for_its_version() {
+    let hk = crate::registry::REGISTRY.get("hk").unwrap();
+    let selected = |version: &str| hk.backends_for_version(Some(version))[0];
+    let (old, new) = (selected("1.57.0"), selected("1.58.1"));
+    assert_ne!(old, new);
+    assert!(!locked_backend_needs_trust("hk", old, "1.57.0"));
+    assert!(locked_backend_needs_trust("hk", new, "1.57.0"));
+    assert!(!locked_backend_needs_trust("hk", new, "1.58.1"));
+    assert!(locked_backend_needs_trust("hk", old, "1.58.1"));
 }
 
 #[test]
@@ -935,6 +970,24 @@ backend = "asdf:"
     assert_eq!(lockfile.tools.keys().collect::<Vec<_>>(), vec!["shfmt"]);
     assert_eq!(lockfile.tools["shfmt"].len(), 1);
     assert_eq!(lockfile.tools["shfmt"][0].version, "3.11.0");
+}
+
+#[test]
+fn untrusted_lockfile_may_not_pin_a_version_that_needs_trust() {
+    let mut lockfile = Lockfile::default();
+    lockfile.tools.insert(
+        "cargo:https://github.com/o/r".to_string(),
+        vec![basic_tool(
+            "rev:refs/pull/1/head",
+            "cargo:https://github.com/o/r",
+        )],
+    );
+    lockfile.tools.insert(
+        "cargo:o/s".to_string(),
+        vec![basic_tool("tag:v1.0.0", "cargo:o/s")],
+    );
+    lockfile.drop_what_needs_trust(Path::new("mise.lock"));
+    assert_eq!(lockfile.tools.keys().collect::<Vec<_>>(), vec!["cargo:o/s"]);
 }
 
 #[test]
@@ -990,6 +1043,50 @@ fn untrusted_lockfile_keeps_pins_but_not_download_locations() {
     assert_eq!(extra.checksum.as_deref(), Some("sha256:def"));
     assert!(extra.url.is_empty());
     assert!(extra.url_api.is_none());
+}
+
+#[test]
+fn untrusted_lockfile_pins_a_download_without_vouching_for_it() {
+    let mut pinned = basic_tool("3.10.0", "aqua:mvdan/sh");
+    pinned.platforms.insert(
+        "linux-x64".to_string(),
+        PlatformInfo {
+            checksum: Some("sha256:abc".to_string()),
+            url: Some("http://example.com/shfmt".to_string()),
+            provenance: Some(ProvenanceType::Minisign),
+            additional_artifacts: vec![ArtifactInfo {
+                checksum: Some("sha256:def".to_string()),
+                url: "http://example.com/shfmt-extra.tar.gz".to_string(),
+                provenance: Some(ProvenanceType::GithubAttestations),
+                ..Default::default()
+            }],
+            ..Default::default()
+        },
+    );
+    let mut lockfile = Lockfile::default();
+    lockfile.tools.insert("shfmt".to_string(), vec![pinned]);
+
+    // As its trusted config reads it, the entry stands for a verified download.
+    let info = &lockfile.tools["shfmt"][0].platforms["linux-x64"];
+    assert!(info.has_vouched_checksum());
+    assert!(info.has_checksum_and_provenance());
+    assert!(info.additional_artifacts[0].has_vouched_checksum());
+    assert!(info.additional_artifacts[0].has_checksum_and_provenance());
+
+    lockfile.drop_what_needs_trust(Path::new("mise.lock"));
+
+    // Without trust it still pins the bytes, and says nothing of who checked them.
+    let info = &lockfile.tools["shfmt"][0].platforms["linux-x64"];
+    assert_eq!(info.checksum.as_deref(), Some("sha256:abc"));
+    assert!(info.is_pinned_without_url());
+    assert!(info.provenance.is_none());
+    assert!(!info.has_vouched_checksum());
+    assert!(!info.has_checksum_and_provenance());
+    let extra = &info.additional_artifacts[0];
+    assert_eq!(extra.checksum.as_deref(), Some("sha256:def"));
+    assert!(extra.provenance.is_none());
+    assert!(!extra.has_vouched_checksum());
+    assert!(!extra.has_checksum_and_provenance());
 }
 
 #[test]

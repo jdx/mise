@@ -1,0 +1,109 @@
+#!/usr/bin/env bash
+
+# A failed lookup of the Erlang build that mise.lock pins must not switch the
+# install to a kerl source build: the locked checksum says nothing about the
+# source archive, so the download hosts would choose what gets compiled.
+
+export MISE_LOCKFILE=1
+
+if [[ "$(uname -s)" != "Linux" ]]; then
+  echo "Skipping Linux-specific test on non-Linux OS"
+  exit 0
+fi
+if type -P ldd >/dev/null && ldd --version 2>&1 | grep -qi musl; then
+  echo "Skipping Erlang precompiled lockfile test on musl Linux"
+  exit 0
+fi
+
+detect_platform
+if [[ $MISE_PLATFORM_ARCH == arm64 ]]; then
+  BOB_ARCH=arm64
+else
+  BOB_ARCH=amd64
+fi
+
+UPSTREAM="$PWD/upstream"
+STAGE="$PWD/stage"
+MARKER="$STAGE/kerl-ran"
+BUILDS="$UPSTREAM/builds.hex.pm/builds/otp/$BOB_ARCH/ubuntu-24.04"
+SOURCE="$UPSTREAM/github.com/erlang/otp/releases/download/OTP-27.0"
+KERL="$UPSTREAM/raw.githubusercontent.com/kerl/kerl/4.4.0"
+mkdir -p "$BUILDS" "$SOURCE" "$KERL" "$STAGE/otp/bin" "$STAGE/otp_src_27.0"
+
+printf '#!/bin/sh\nexit 0\n' >"$STAGE/otp/Install"
+printf '#!/bin/sh\necho precompiled\n' >"$STAGE/otp/bin/erl"
+chmod +x "$STAGE/otp/Install" "$STAGE/otp/bin/erl"
+tar -C "$STAGE" -czf "$BUILDS/OTP-27.0.tar.gz" otp
+if command -v sha256sum >/dev/null 2>&1; then
+  BUILD_SHA=$(sha256sum "$BUILDS/OTP-27.0.tar.gz" | cut -d' ' -f1)
+else
+  BUILD_SHA=$(shasum -a 256 "$BUILDS/OTP-27.0.tar.gz" | cut -d' ' -f1)
+fi
+echo "OTP-27.0 0123abc 2024-05-20T00:00:00Z $BUILD_SHA" >"$BUILDS/builds.txt"
+
+tar -C "$STAGE" -czf "$SOURCE/otp_src_27.0.tar.gz" otp_src_27.0
+
+# Stands in for kerl, whose real build of OTP takes many minutes
+cat >"$KERL/kerl" <<KERL_EOF
+#!/bin/sh
+case "\$1" in
+list)
+  echo 27.0
+  ;;
+build-install)
+  touch "$MARKER"
+  mkdir -p "\$4/bin"
+  printf '#!/bin/sh\necho from-source\n' >"\$4/bin/erl"
+  chmod +x "\$4/bin/erl"
+  ;;
+esac
+KERL_EOF
+
+start_http_server --dir "$UPSTREAM"
+
+MISE_URL_REPLACEMENTS=""
+for host in builds.hex.pm api.github.com github.com raw.githubusercontent.com; do
+  MISE_URL_REPLACEMENTS+="\"https://$host\":\"http://127.0.0.1:$HTTP_PORT/$host\","
+done
+export MISE_URL_REPLACEMENTS="{${MISE_URL_REPLACEMENTS%,}}"
+export MISE_USE_VERSIONS_HOST=0
+export ImageOS=ubuntu24
+
+cat <<EOF >mise.toml
+[tools]
+erlang = "27.0"
+EOF
+
+assert_succeed "mise lock --platform $MISE_PLATFORM"
+assert_contains "cat mise.lock" "checksum = \"sha256:$BUILD_SHA\""
+assert_not_contains "cat mise.lock" 'install = "source"'
+cp mise.lock mise.lock.orig
+
+# builds.hex.pm stops listing the build that the lockfile pins
+echo "OTP-26.0 0123abc 2023-05-16T00:00:00Z $BUILD_SHA" >"$BUILDS/builds.txt"
+
+assert_fail "mise install" "mise.lock pins its checksum"
+assert_fail "test -e '$MARKER'"
+assert_succeed "diff mise.lock.orig mise.lock"
+
+# Safe mode does not trust the lockfile, so it keeps the checksum and drops the
+# URL. That checksum still pins the precompiled build.
+assert_fail "MISE_SAFE=1 mise install" "mise.lock pins its checksum;"
+assert_fail "test -e '$MARKER'"
+assert_succeed "diff mise.lock.orig mise.lock"
+
+# Without a pin the fallback still applies
+rm mise.lock
+assert_succeed "MISE_LOCKFILE=0 mise install"
+assert_succeed "test -e '$MARKER'"
+assert "MISE_LOCKFILE=0 mise exec -- erl" "from-source"
+
+# So it does on a host that no build is published for. An entry without
+# options, as older versions of mise wrote it, is read on every distribution.
+mise uninstall erlang@27.0
+rm "$MARKER"
+sed '/^\[tools\.erlang\.options\]$/,/^$/d' mise.lock.orig >mise.lock
+assert_not_contains "cat mise.lock" 'precompiled_os'
+assert_succeed "ImageOS=nobara-43 mise install"
+assert_succeed "test -e '$MARKER'"
+assert_contains "cat mise.lock" 'install = "source"'
