@@ -226,3 +226,26 @@ assert "mise install dummy@9.0.0"
 assert "MISE_EXPERIMENTAL=1 mise ls -C mono2/packages/a"
 cd other || exit 1
 assert_not_contains "mise prune --dry-run 2>&1" "dummy@9.0.0"
+
+# safe mode skips a task file outside its project, so it cannot tell which versions
+# that file's tasks need and prunes nothing
+cd .. || exit 1
+mkdir -p proj6
+cat >outside-tasks.toml <<'TOML'
+[outside]
+run = "true"
+tools.dummy = "10.0.0"
+TOML
+cat >proj6/mise.toml <<'TOML'
+[task_config]
+includes = ["../outside-tasks.toml"]
+TOML
+assert "mise trust proj6/mise.toml"
+assert "mise install dummy@10.0.0"
+assert "mise ls -C proj6"
+cd other || exit 1
+assert_not_contains "mise prune --dry-run 2>&1" "dummy@10.0.0"
+assert_contains "mise prune --dry-run 2>&1" "dummy@5.0.0"
+assert_contains "MISE_SAFE=1 mise prune --dry-run 2>&1" "not pruning: safe mode"
+assert_not_contains "MISE_SAFE=1 mise prune --dry-run 2>&1" "dummy@10.0.0"
+assert_not_contains "MISE_SAFE=1 mise prune --dry-run 2>&1" "dummy@5.0.0"
