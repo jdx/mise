@@ -19,7 +19,7 @@ use std::{
 /// and a trailing ` ci` token on the User-Agent, which the host's request logs
 /// record so CI traffic can be left out of usage counts.
 pub static VERSIONS_HOST_HEADERS: LazyLock<HeaderMap> =
-    LazyLock::new(|| versions_host_headers(ci_info::is_ci(), crate::user_agent::get()));
+    LazyLock::new(|| versions_host_headers(*crate::env::IS_CI, crate::user_agent::get()));
 
 fn versions_host_headers(ci: bool, user_agent: &str) -> HeaderMap {
     let mut headers = HeaderMap::new();
@@ -133,8 +133,6 @@ pub struct VersionsHostLogContext<'a> {
     tag: Option<&'a str>,
     digest: Option<&'a str>,
     page: Option<u32>,
-    full: Option<&'a str>,
-    version: Option<&'a str>,
 }
 
 impl<'a> VersionsHostLogContext<'a> {
@@ -146,8 +144,6 @@ impl<'a> VersionsHostLogContext<'a> {
             tag: None,
             digest: None,
             page: None,
-            full: None,
-            version: None,
         }
     }
 
@@ -159,8 +155,6 @@ impl<'a> VersionsHostLogContext<'a> {
             tag: Some(tag),
             digest: None,
             page: None,
-            full: None,
-            version: None,
         }
     }
 
@@ -172,8 +166,6 @@ impl<'a> VersionsHostLogContext<'a> {
             tag: None,
             digest: None,
             page: Some(page),
-            full: None,
-            version: None,
         }
     }
 
@@ -185,8 +177,6 @@ impl<'a> VersionsHostLogContext<'a> {
             tag: None,
             digest: None,
             page: Some(page),
-            full: None,
-            version: None,
         }
     }
 
@@ -198,8 +188,6 @@ impl<'a> VersionsHostLogContext<'a> {
             tag: None,
             digest: None,
             page: None,
-            full: None,
-            version: None,
         }
     }
 
@@ -211,21 +199,6 @@ impl<'a> VersionsHostLogContext<'a> {
             tag: None,
             digest: Some(digest),
             page: None,
-            full: None,
-            version: None,
-        }
-    }
-
-    pub fn install_track(tool: &'a str, full: &'a str, version: &'a str) -> Self {
-        Self {
-            endpoint: "install_track",
-            tool: Some(tool),
-            repo: None,
-            tag: None,
-            digest: None,
-            page: None,
-            full: Some(full),
-            version: Some(version),
         }
     }
 
@@ -246,15 +219,6 @@ impl<'a> VersionsHostLogContext<'a> {
         if let Some(page) = self.page {
             fields.push_str(&format!(" page={page}"));
         }
-        if let Some(full) = self.full {
-            fields.push_str(&format!(
-                " full={}",
-                log_value(&sanitize_full_for_log(full))
-            ));
-        }
-        if let Some(version) = self.version {
-            fields.push_str(&format!(" version={}", log_value(version)));
-        }
         fields
     }
 }
@@ -268,40 +232,6 @@ pub fn log_value(value: &str) -> String {
     } else {
         format!("{:?}", value)
     }
-}
-
-/// `full` for logs, with any URL credentials, query, and fragment removed
-/// (see [`sanitize_full`]).
-pub fn sanitize_full_for_log(full: &str) -> String {
-    sanitize_full(full).unwrap_or_else(|| "[redacted]".to_string())
-}
-
-/// `full` without URL credentials, query, or fragment, for logs and request
-/// URLs. The URL may follow a backend prefix (`http:https://…`) or be the
-/// whole value (`https://…`). `None` when `full` holds a `://` URL that cannot
-/// be parsed, so it cannot be cleaned and must not be sent.
-pub fn sanitize_full(full: &str) -> Option<String> {
-    fn strip(mut url: url::Url) -> url::Url {
-        let _ = url.set_username("");
-        let _ = url.set_password(None);
-        url.set_query(None);
-        url.set_fragment(None);
-        url
-    }
-    let with_host = |s: &str| url::Url::parse(s).ok().filter(|url| url.has_host());
-    if let Some((backend, value)) = full.split_once(':') {
-        // `full` is itself a URL: its scheme looks like a backend prefix.
-        if value.starts_with("//") {
-            return with_host(full).map(|url| strip(url).to_string());
-        }
-        if let Some(url) = with_host(value) {
-            return Some(format!("{backend}:{}", strip(url)));
-        }
-    }
-    if full.contains("://") {
-        return None;
-    }
-    Some(full.to_string())
 }
 
 pub fn log_versions_host_trace(ctx: VersionsHostLogContext<'_>, outcome: &str, extra: &str) {
@@ -1290,47 +1220,9 @@ mod tests {
 
     #[test]
     fn test_versions_host_log_context_fields_quotes_spaces() {
-        let fields =
-            VersionsHostLogContext::install_track("some tool", "github:jdx/mise", "1.2.3").fields();
         assert_eq!(
-            fields,
-            r#"endpoint=install_track tool="some tool" full=github:jdx/mise version=1.2.3"#
-        );
-    }
-
-    #[test]
-    fn test_versions_host_log_context_redacts_full_url_credentials() {
-        let fields = VersionsHostLogContext::install_track(
-            "private",
-            "github:https://user:token@example.com/org/repo?token=secret#frag",
-            "1.2.3",
-        )
-        .fields();
-        assert_eq!(
-            fields,
-            r#"endpoint=install_track tool=private full=github:https://example.com/org/repo version=1.2.3"#
-        );
-    }
-
-    #[test]
-    fn test_sanitize_full() {
-        assert_eq!(
-            sanitize_full("aqua:BurntSushi/ripgrep").unwrap(),
-            "aqua:BurntSushi/ripgrep"
-        );
-        assert_eq!(sanitize_full("npm:@scope/pkg").unwrap(), "npm:@scope/pkg");
-        assert_eq!(
-            sanitize_full("http:https://user:pass@example.com/a.tar.gz?token=x#f").unwrap(),
-            "http:https://example.com/a.tar.gz"
-        );
-        assert_eq!(
-            sanitize_full("https://user:pass@example.com/a.tar.gz?token=x").unwrap(),
-            "https://example.com/a.tar.gz"
-        );
-        assert_eq!(sanitize_full("http:https://user:pass@[bad/a"), None);
-        assert_eq!(
-            sanitize_full_for_log("http:https://user:pass@[bad/a"),
-            "[redacted]"
+            VersionsHostLogContext::version_list("some tool").fields(),
+            r#"endpoint=version_list tool="some tool""#
         );
     }
 

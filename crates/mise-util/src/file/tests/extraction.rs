@@ -918,6 +918,59 @@ fn test_extract_archive_refuses_a_bomb() {
     );
 }
 
+#[test]
+fn test_extract_budget_is_one_limit_for_all_its_archives() {
+    use confique::Layer;
+
+    let _lock = crate::testing::lock_ignoring_poison(&crate::testing::SETTINGS_LOCK);
+    let dir = tempfile::tempdir().unwrap();
+    // Two archives that each unpack to a bit over half the limit: each one
+    // is within its own limit, and the two together are not.
+    let unpack = |name: &str| {
+        let archive = dir.path().join(format!("{name}.tar.zst"));
+        let encoder = zstd::Encoder::new(File::create(&archive).unwrap(), 1).unwrap();
+        let mut builder = jdx_tar::Builder::new(encoder);
+        let mut header = jdx_tar::Header::new_gnu(EntryType::File);
+        header.set_size(EXTRACT_MIN_LIMIT / 2 + 1);
+        header.set_mode(0o755);
+        builder
+            .append_data(
+                &mut header,
+                name,
+                std::io::repeat(0).take(EXTRACT_MIN_LIMIT / 2 + 1),
+            )
+            .unwrap();
+        builder.into_inner().unwrap().finish().unwrap();
+        let unpacked = dir.path().join(format!("{name}-tree"));
+        extract_archive(
+            &archive,
+            &unpacked,
+            ExtractionFormat::TarZst,
+            &ExtractOptions::default(),
+        )
+        .unwrap();
+        (archive, unpacked)
+    };
+    let (a, a_tree) = unpack("a");
+    let (b, b_tree) = unpack("b");
+
+    let mut budget = ExtractBudget::default();
+    budget.add(&a, &a_tree).unwrap();
+    let err = budget.add(&b, &b_tree).unwrap_err();
+    assert!(format!("{err:#}").contains("extract_max_ratio"), "{err:#}");
+
+    // Unlimited, the two fit.
+    let mut settings = mise_settings::SettingsPartial::empty();
+    settings.extract_max_ratio = Some(0);
+    crate::testing::reset_settings(Some(settings));
+    let mut budget = ExtractBudget::default();
+    let result = budget
+        .add(&a, &a_tree)
+        .and_then(|()| budget.add(&b, &b_tree));
+    crate::testing::reset_settings(None);
+    result.unwrap();
+}
+
 /// `unzip` relies on the zip crate holding each entry to the size its central
 /// directory record declares; summing those sizes is its whole bound.
 #[test]

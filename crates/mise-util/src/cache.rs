@@ -66,6 +66,7 @@ pub struct CacheManagerBuilder {
     cache_keys: Vec<String>,
     fresh_duration: Option<Duration>,
     fresh_files: Vec<PathBuf>,
+    positional: bool,
 }
 
 static BASE_CACHE_KEYS: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
@@ -95,7 +96,18 @@ impl CacheManagerBuilder {
             cache_keys,
             fresh_files: vec![],
             fresh_duration: None,
+            positional: false,
         }
+    }
+
+    /// Write each struct as its fields in order, without their names. A file
+    /// written this way is smaller and reads faster when it holds many small
+    /// structs. Only for a type that skips and defaults no field, and that
+    /// holds nothing read back by its shape (a `toml::Value`, an untagged
+    /// enum): without names such a value can come back as something else.
+    pub fn with_positional_fields(mut self) -> Self {
+        self.positional = true;
+        self
     }
 
     pub fn with_fresh_duration(mut self, duration: Option<Duration>) -> Self {
@@ -143,6 +155,7 @@ impl CacheManagerBuilder {
             adopted_at: None,
             fresh_files: self.fresh_files,
             fresh_duration: self.fresh_duration,
+            positional: self.positional,
         }
     }
 }
@@ -155,6 +168,8 @@ where
     cache_file_path: PathBuf,
     fresh_duration: Option<Duration>,
     fresh_files: Vec<PathBuf>,
+    /// See [`CacheManagerBuilder::with_positional_fields`].
+    positional: bool,
     cache: Box<OnceCell<T>>,
     cache_async: Box<tokio::sync::OnceCell<T>>,
     /// Held while fetching, so concurrent callers of one cache wait for the
@@ -432,7 +447,12 @@ where
             .cache_file_path
             .with_extension(format!("part-{}", random_string(8)));
         let mut zlib = ZlibEncoder::new(File::create(&partial_path)?, Compression::fast());
-        zlib.write_all(&rmp_serde::to_vec_named(&val)?[..])?;
+        let bytes = if self.positional {
+            rmp_serde::to_vec(&val)?
+        } else {
+            rmp_serde::to_vec_named(&val)?
+        };
+        zlib.write_all(&bytes)?;
         // Finish compression and close the file before publishing it to readers.
         drop(zlib.finish()?);
         file::rename(&partial_path, &self.cache_file_path)?;
