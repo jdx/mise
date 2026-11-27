@@ -13,7 +13,6 @@ use serde_json::{Value as JsonValue, json};
 use std::collections::{HashMap, HashSet};
 use std::iter::once;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 
@@ -911,21 +910,13 @@ impl TaskScriptParser {
             }
             let shell = rendered_script_shell(script, task, self.run_shell.as_deref())?;
             let quoting = ArgQuoting::of(&shell);
-            // Set once a template function has put in a value that some shell quotes, which it
-            // quoted for `shell`. `true`, `false` and plain words go in as they are for every
-            // shell, so they do not tie the script to `shell`. A value with a space does, even
-            // when fish and POSIX quote it alike: an interpreter mise does not know may not read
-            // those quotes.
-            let quoted = Arc::new(AtomicBool::new(false));
+            // The values the template functions quoted for `shell`, checked once the script is
+            // rendered and the shell that runs it is known.
+            let quoted = Arc::new(Mutex::new(Vec::new()));
             let escape = {
                 let quoted = quoted.clone();
                 move |v: &usage::parse::ParseValue| {
-                    if ArgQuoting::ALL
-                        .into_iter()
-                        .any(|other| other.escape(v) != ArgQuoting::unquoted(v))
-                    {
-                        quoted.store(true, Ordering::Relaxed);
-                    }
+                    quoted.lock().unwrap().push(v.clone());
                     quoting.escape(v)
                 }
             };
@@ -982,9 +973,11 @@ impl TaskScriptParser {
             // The values were quoted for the shell the source picks, before rendering. A
             // template can render a shebang where there was none, or change one, and the script
             // then runs under a shell that reads that quoting otherwise.
-            if quoted.load(Ordering::Relaxed) {
+            let quoted = std::mem::take(&mut *quoted.lock().unwrap());
+            if !quoted.is_empty() {
                 let runs = rendered_script_shell(&rendered, task, self.run_shell.as_deref())?;
-                if ArgQuoting::of(&runs) != quoting {
+                let runs_quoting = ArgQuoting::of(&runs);
+                if quoted.iter().any(|v| !quoting.reads_alike(runs_quoting, v)) {
                     eyre::bail!(
                         "task {}: its script renders to run under {}, but arg(), option() and \
                          flag() quoted their values for {}. Write the shebang without a template.",
@@ -1195,7 +1188,22 @@ enum ArgQuoting {
 }
 
 impl ArgQuoting {
-    const ALL: [Self; 3] = [Self::Fish, Self::Posix, Self::Raw];
+    /// Whether `v`, quoted for `self`, reads the same in a script that `other` runs. fish and
+    /// POSIX shells read their own quoting, so the quoted text has to match. How a `Raw`
+    /// interpreter, such as Tcl, reads quotes is unknown, so with one on either side only a value
+    /// that neither side quotes, such as `true` or a plain word, is safe.
+    fn reads_alike(self, other: Self, v: &usage::parse::ParseValue) -> bool {
+        if self == other {
+            return true;
+        }
+        let (quoted, other_quoted) = (self.escape(v), other.escape(v));
+        if self == Self::Raw || other == Self::Raw {
+            let plain = Self::unquoted(v);
+            quoted == plain && other_quoted == plain
+        } else {
+            quoted == other_quoted
+        }
+    }
 
     /// The words of `v` joined with spaces and no quoting.
     fn unquoted(v: &usage::parse::ParseValue) -> String {
@@ -1240,14 +1248,37 @@ fn shell_name(shell: &[String]) -> &str {
     shell.first().map_or("no shell", String::as_str)
 }
 
+/// The program the kernel starts for the shebang on the first line of `script`, and its
+/// arguments. The kernel skips blanks after `#!`, and `env`, wherever it is installed
+/// (`#!/usr/bin/env bash`, `#! /bin/env -S bash -e`), runs the program that follows its options.
+/// Taking `env` for the program would quote nothing for the shell it starts.
 fn shell_from_shebang(script: &str) -> Option<Vec<String>> {
-    let shebang = script.lines().next()?.strip_prefix("#!")?;
-    let shebang = shebang.strip_prefix("/usr/bin/env -S").unwrap_or(shebang);
-    let shebang = shebang.strip_prefix("/usr/bin/env").unwrap_or(shebang);
-    let mut parts = shebang.split_whitespace();
-    let shell = parts.next()?;
-    let args = parts.map(|s| s.to_string()).collect_vec();
-    Some(once(shell.to_string()).chain(args).collect())
+    let mut parts = script
+        .lines()
+        .next()?
+        .strip_prefix("#!")?
+        .split_whitespace();
+    let mut shell = parts.next()?;
+    if Path::new(shell)
+        .file_name()
+        .is_some_and(|name| name == "env")
+    {
+        // Skip `env`'s options and `NAME=value` settings; `-u` and `-C` take a value.
+        loop {
+            let part = parts.next()?;
+            if matches!(part, "-u" | "--unset" | "-C" | "--chdir") {
+                parts.next()?;
+            } else if !part.starts_with('-') && !part.contains('=') {
+                shell = part;
+                break;
+            }
+        }
+    }
+    Some(
+        once(shell.to_string())
+            .chain(parts.map(str::to_string))
+            .collect(),
+    )
 }
 
 /// Whether a render error is a template reading a field of `env` that the context lacks.
@@ -1406,11 +1437,13 @@ mod tests {
         let rendered_bash_flag = "{{ '#!/usr/bin/env bash' }}\necho {{ flag(name='force') }}";
         let word = ["hello".to_string()];
         let force = ["--force".to_string()];
-        let rendered_tcl = "{{ '#!/usr/bin/env tclsh' }}\nputs {{ arg(name='words', var=true) }}";
+        let var_arg = "{{ arg(name='words', var=true) }}";
+        let rendered_tcl = format!("{{{{ '#!/usr/bin/env tclsh' }}}}\nputs {var_arg}");
+        let rendered_bash_words = format!("{{{{ '#!/usr/bin/env bash' }}}}\necho {var_arg}");
         let spaced = ["a b".to_string(), "c".to_string()];
         let words = ["a".to_string(), "c".to_string()];
         // (task shell, `mise run --shell`, script, args, refused)
-        let cases: [(_, _, String, &[String], _); 11] = [
+        let cases: [(_, _, String, &[String], _); 12] = [
             (None, Some("fish -c"), rendered_bash.clone(), &value, true),
             (
                 Some("fish -c"),
@@ -1441,9 +1474,11 @@ mod tests {
             ),
             (None, Some("fish -c"), rendered_bash_flag.into(), &[], false),
             (None, Some("fish -c"), rendered_bash.clone(), &word, false),
-            // fish and POSIX quote `a b` alike, but Tcl does not read those quotes.
-            (Some("bash -c"), None, rendered_tcl.into(), &spaced, true),
-            (Some("bash -c"), None, rendered_tcl.into(), &words, false),
+            // fish and POSIX quote `a b` alike, so switching between them keeps it whole.
+            (None, Some("fish -c"), rendered_bash_words, &spaced, false),
+            // Tcl does not read those quotes, but takes plain words as they are.
+            (None, Some("bash -c"), rendered_tcl.clone(), &spaced, true),
+            (None, Some("bash -c"), rendered_tcl, &words, false),
         ];
         for (task_shell, run_shell, script, args, refused) in cases {
             let task = Task {
@@ -1481,6 +1516,75 @@ mod tests {
                     assert!(parsed[0].starts_with("#!/usr/bin/env "), "{case}");
                 }
             }
+        }
+    }
+
+    #[test]
+    fn test_shell_from_shebang_looks_past_env() {
+        let bash_e = Some(vec!["bash".to_string(), "-e".to_string()]);
+        for (shebang, expected) in [
+            ("#!/usr/bin/env bash -e", bash_e.clone()),
+            ("#! /usr/bin/env bash -e", bash_e.clone()),
+            ("#!/usr/bin/env -S bash -e", bash_e.clone()),
+            ("#!/bin/env -S -u FOO X=1 bash -e", bash_e.clone()),
+            (
+                "#!\t/bin/bash -e",
+                Some(vec!["/bin/bash".into(), "-e".into()]),
+            ),
+            (
+                "#!/usr/local/bin/tclsh",
+                Some(vec!["/usr/local/bin/tclsh".into()]),
+            ),
+            // `env` with no program runs nothing, so no shell reads the script.
+            ("#!/usr/bin/env", None),
+            ("#!/usr/bin/env -S", None),
+            ("echo hi", None),
+        ] {
+            assert_eq!(shell_from_shebang(shebang), expected, "{shebang}");
+        }
+    }
+
+    /// The values are quoted for the shell `env` starts, however the shebang spells it.
+    #[tokio::test]
+    async fn test_task_parse_arg_quotes_for_the_shell_env_starts() {
+        let _guard = crate::test::SettingsGuard::lock();
+        Settings::override_with(|settings| {
+            settings.use_file_shell_for_executable_tasks = Some(false);
+        })
+        .unwrap();
+        let config = Config::get().await.unwrap();
+        let task = Task {
+            name: "t".into(),
+            ..Default::default()
+        };
+        let value = ["ok; touch injected #".to_string()];
+        for shebang in [
+            "#! /usr/bin/env bash",
+            "#!/bin/env bash",
+            "#!/usr/bin/env -S bash -e",
+        ] {
+            let scripts = vec![format!("{shebang}\necho {{{{ arg(name='foo') }}}}")];
+            let parser = TaskScriptParser::new(None);
+            let (_, spec) = parser
+                .parse_run_scripts(&config, &task, &scripts, &Default::default())
+                .await
+                .unwrap();
+            let parsed = parser
+                .parse_run_scripts_with_args(
+                    &config,
+                    &task,
+                    &scripts,
+                    &Default::default(),
+                    &value,
+                    &spec,
+                )
+                .await
+                .unwrap();
+            assert_eq!(
+                parsed[0],
+                format!("{shebang}\necho 'ok; touch injected #'"),
+                "{shebang}"
+            );
         }
     }
 
