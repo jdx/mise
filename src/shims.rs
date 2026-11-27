@@ -645,7 +645,10 @@ async fn add_plugin_shims(shims_dir: &Path, scope: ShimScope) -> Result<()> {
     // other excluded tools do (see `get_desired_shims`).
     let plugins = backend::list()
         .into_iter()
-        .chain(backend::list_installed_excluded_by_tool_filters());
+        .chain(backend::list_installed_excluded_by_tool_filters())
+        // A backend resolved earlier in this process can be cached in both lists, and two
+        // tasks writing the same plugin's shims would race.
+        .unique_by(|plugin| plugin.id().to_string());
     for plugin in plugins {
         let shims_dir = shims_dir.to_path_buf();
         let excluded = excluded.clone();

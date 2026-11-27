@@ -735,8 +735,19 @@ pub(crate) fn list_installed_excluded_by_tool_filters() -> BackendList {
     }
     install_state::list_tools()
         .values()
-        .filter(|ist| ist.full.is_some())
-        .flat_map(|ist| arg_to_backend(ist.clone().into()))
+        .filter_map(|ist| {
+            if ist.full.is_some() {
+                return arg_to_backend(ist.clone().into());
+            }
+            // Without manifest metadata an install is listed only through the seed of
+            // `build_tools`: a core tool, or a registry tool with idiomatic files.
+            CORE_PLUGINS.get(&ist.short).cloned().or_else(|| {
+                REGISTRY
+                    .get(ist.short.as_str())
+                    .filter(|rt| !rt.idiomatic_files.is_empty() && rt.is_supported_os())
+                    .and_then(|rt| arg_to_backend(rt.short.into()))
+            })
+        })
         .filter(|backend| {
             !tool_enabled(
                 enable_tools.as_ref(),

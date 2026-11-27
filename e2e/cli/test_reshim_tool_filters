@@ -40,6 +40,16 @@ assert "readlink $shimdir/dummy" "$(which mise)"
 MISE_DISABLE_TOOLS=dummy mise reshim --force
 assert "readlink $shimdir/dummy" "$(which mise)"
 
+# A core tool installed without manifest metadata keeps its shims too.
+core_install="$MISE_DATA_DIR/installs/node/20.0.0"
+mkdir -p "$core_install/bin"
+printf '#!/usr/bin/env bash\necho node\n' >"$core_install/bin/node"
+chmod +x "$core_install/bin/node"
+mise reshim
+assert "readlink $shimdir/node" "$(which mise)"
+MISE_ENABLE_TOOLS=dummy mise reshim --force
+assert "readlink $shimdir/node" "$(which mise)"
+
 # Uninstalling a tool still removes its shims.
 mise uninstall dummy@1.0.0
 MISE_DISABLE_TOOLS=dummy mise reshim
