@@ -268,12 +268,18 @@ trusts only that file.
 
 A command [typed in a terminal](#typed-in-a-terminal) in an untrusted monorepo
 root, or in a subproject below it, trusts the root the same way, so the trust
-covers every subproject config
-below it, including ones added later. The ownership check looks only at the
-root's own config files, not at the subprojects'. On a shared checkout, this
-means anyone who can write to the tree can add a subproject config that the
-root's trust covers, and it loads without asking. To avoid that, do not trust
-the root there, and run `mise trust` in each subproject you want instead.
+covers every subproject config below it, including ones added later. The
+ownership check looks only at the root's own config files, not at the
+subprojects'. On a shared checkout, this means anyone who can write to the tree
+can add a subproject config that the root's trust covers, and it loads without
+asking.
+
+Leaving the root untrusted does not prevent this. Even after `mise trust` in a
+subproject, the next command you type there trusts the untrusted root above it
+and prints the notice. To keep the root out, run `mise trust --ignore` on the
+root's config, then `mise trust` in each subproject you want. Alternatively,
+enable paranoid mode's `config` category. Typed commands then ask again, and
+trusting the root trusts only that file.
 
 ### Git worktrees
 
