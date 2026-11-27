@@ -297,10 +297,9 @@ fn write_manifest_to(path: &Path, manifest: &Manifest) -> Result<()> {
 /// A tool's own manifest, without credentials. A file that holds them is
 /// rewritten without them (best effort).
 fn read_tool_manifest_from(path: &Path) -> Option<ManifestTool> {
-    if !path.exists() {
-        return None;
-    }
-    match file::read_to_string(path) {
+    // Most tool directories have no manifest. The plain read fails cheaply
+    // for those, where `file::read_to_string` would build a report to drop.
+    match std::fs::read_to_string(path) {
         std::result::Result::Ok(body) if body.trim().is_empty() => None,
         std::result::Result::Ok(body) => match toml::from_str::<ManifestTool>(&body) {
             std::result::Result::Ok(m) if m.has_credentials() => {
@@ -427,15 +426,17 @@ fn load_plugins() -> MutexResult<InstallStatePlugins> {
 /// `tool_dir_name` keys the incomplete markers. Install writes them under the
 /// tool's short name, which a manifest can map to a differently named dir.
 fn scan_versions(dir: &Path, tool_dir_name: &str) -> Result<Vec<String>> {
-    if !dir.exists() {
-        return Ok(vec![]);
-    }
+    let entries = match dir.read_dir() {
+        std::result::Result::Ok(entries) => entries,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(vec![]),
+        Err(err) => return Err(err.into()),
+    };
     // One pass, deciding from the entry's own file type so a plain version
     // directory costs no syscalls beyond the incomplete-marker check. Only links
     // are resolved: a runtime symlink (`latest` -> `./1.2.3`) names another
     // version, and on Windows those are files, which are never kept anyway.
     let mut versions = vec![];
-    for entry in dir.read_dir()? {
+    for entry in entries {
         let entry = entry?;
         let Some(name) = entry.file_name().to_str().map(str::to_string) else {
             continue;
@@ -1333,10 +1334,18 @@ fn credential_named_dir(short: &str) -> Option<String> {
 /// Only that one directory directly under the installs directory is touched,
 /// symlinks are removed rather than followed, and a removal that fails is a
 /// warning: the install under the tool's own directory is what gets used.
+///
+/// `short` can come from a config file that is not trusted, and a directory
+/// name drops every separator of the name it was made from, so the name alone
+/// can just as well be the directory of another tool. Nothing is removed
+/// unless install state records the directory as this tool.
 pub(crate) fn remove_credential_named_installs(short: &str) {
     let Some(named) = credential_named_dir(short) else {
         return;
     };
+    if !dir_is_recorded_as(&dirs::INSTALLS, &named, short) {
+        return;
+    }
     let clean = crate::backend::tool_directory_name(short);
     let clean_dir = dirs::INSTALLS.join(&clean);
     remove_credential_named_installs_in(
@@ -1346,6 +1355,28 @@ pub(crate) fn remove_credential_named_installs(short: &str) {
         &[mise_util::dirs::shims(), mise_util::dirs::system_shims()],
         &|version| claim_complete_install(&clean, &clean_dir.join(version), version),
     );
+}
+
+/// Whether install state records the directory `dir_name` under `installs` as
+/// an install of `short`, in whichever spelling: by its own manifest, then the
+/// consolidated one, then legacy metadata, as a scan identifies a directory.
+/// One that nothing records is the tool its name says, so it never matches.
+fn dir_is_recorded_as(installs: &Path, dir_name: &str, short: &str) -> bool {
+    let dir = installs.join(dir_name);
+    // Usually there is no such directory, and then nothing is read.
+    if !dir.is_dir() {
+        return false;
+    }
+    let recorded = read_tool_manifest_from(&dir.join(".mise.backend.toml"))
+        .or_else(|| read_manifest_from(&installs.join(".mise-installs.toml")).remove(dir_name))
+        .map(|mt| mt.short)
+        .or_else(|| {
+            (installs == &**dirs::INSTALLS)
+                .then(|| read_legacy_backend_meta(dir_name))
+                .flatten()
+                .map(|(short, ..)| short)
+        });
+    recorded.is_some_and(|recorded| state_short(&recorded) == state_short(short))
 }
 
 /// Locks for the install of `version` under the tool's own directory, held
@@ -2610,6 +2641,58 @@ mod credential_tests {
         });
 
         assert!(elsewhere.join("1.0.0").is_dir());
+    }
+
+    /// A directory is the credential-named copy of a tool only when install
+    /// state records it as that tool. The name alone says nothing: a key from
+    /// any config file can be written so that it names the directory of
+    /// another tool (`://github@docker-compose` names `github-docker-compose`,
+    /// next to `docker-compose`).
+    #[test]
+    fn a_directory_recorded_as_another_tool_is_not_a_credential_named_copy() {
+        use super::dir_is_recorded_as;
+        let tmp = tempfile::tempdir().unwrap();
+        let installs = tmp.path();
+        let root = installs.join(".mise-installs.toml");
+
+        let key = "://github@docker-compose";
+        let named = credential_named_dir(key).unwrap();
+        assert_eq!(named, "github-docker-compose");
+        assert_eq!(crate::backend::tool_directory_name(key), "docker-compose");
+        assert!(!dir_is_recorded_as(installs, &named, key), "no directory");
+        std::fs::create_dir_all(installs.join(&named).join("2.29.1")).unwrap();
+        assert!(!dir_is_recorded_as(installs, &named, key), "no record");
+        std::fs::write(
+            &root,
+            format!("[{named}]\nshort = \"github:docker/compose\"\n"),
+        )
+        .unwrap();
+        assert!(!dir_is_recorded_as(installs, &named, key));
+        std::fs::write(
+            installs.join(&named).join(".mise.backend.toml"),
+            "short = \"github:docker/compose\"\n",
+        )
+        .unwrap();
+        assert!(!dir_is_recorded_as(installs, &named, key));
+
+        // What an older mise left behind for a tool it named with credentials,
+        // whether or not the record has been rewritten without them since.
+        let short = "cargo:https://bot:t0ken@host/acme/tool.git";
+        let other = "cargo:https://bot:t0ken@host/acme/other.git";
+        let named = credential_named_dir(short).unwrap();
+        std::fs::create_dir_all(installs.join(&named).join("1.0.0")).unwrap();
+        for recorded in [short, "cargo:https://host/acme/tool.git"] {
+            std::fs::write(&root, format!("[{named}]\nshort = \"{recorded}\"\n")).unwrap();
+            assert!(dir_is_recorded_as(installs, &named, short), "{recorded}");
+            assert!(!dir_is_recorded_as(installs, &named, other), "{recorded}");
+        }
+        std::fs::write(&root, "").unwrap();
+        std::fs::write(
+            installs.join(&named).join(".mise.backend.toml"),
+            format!("short = \"{short}\"\n"),
+        )
+        .unwrap();
+        assert!(dir_is_recorded_as(installs, &named, short));
     }
 
     /// These manifests live under the data directory, which is backed up and

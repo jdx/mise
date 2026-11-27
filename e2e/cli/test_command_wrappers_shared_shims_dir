@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+
+# `shims_dir` can be a directory mise shares with other commands, such as ~/.local/bin. A command
+# there that is not one of mise's shims is an ordinary command: a wrapper shim another project
+# left for its name passes the command on to it.
+export MISE_SHIMS_DIR="$HOME/shared-bin"
+mkdir -p "$MISE_SHIMS_DIR"
+cat >"$MISE_SHIMS_DIR/lefty" <<'EOF'
+#!/usr/bin/env bash
+echo shared-lefty
+EOF
+chmod +x "$MISE_SHIMS_DIR/lefty"
+
+mkdir -p "$HOME/other-project"
+cat >"$HOME/other-project/mise.toml" <<'EOF'
+[wrappers.lefty]
+command = "echo"
+args = ["wrapped-lefty"]
+
+[wrappers.dummy]
+command = "echo"
+args = ["wrapped-dummy"]
+EOF
+mise trust "$HOME/other-project/mise.toml"
+(cd "$HOME/other-project" && mise reshim)
+
+mise install dummy@1.0.0
+cat >mise.toml <<'EOF'
+[tools]
+dummy = "1.0.0"
+
+[wrappers.cargo]
+command = "echo"
+EOF
+mise reshim
+wrappers="$MISE_DATA_DIR/command-wrappers/bin"
+assert_succeed "test -e '$wrappers/lefty'"
+assert_succeed "test -L '$MISE_SHIMS_DIR/dummy'"
+assert "cat '$MISE_SHIMS_DIR/lefty' | tail -n1" "echo shared-lefty"
+export PATH="$MISE_SHIMS_DIR:$PATH"
+
+assert "mise x -- sh -c 'command -v lefty'" "$wrappers/lefty"
+assert "mise x -- sh -c lefty" "shared-lefty"
+assert "PATH='$wrappers:$PATH' lefty" "shared-lefty"
+
+# A mise shim in that directory still resolves the tool.
+assert "PATH='$wrappers:$PATH' dummy" "This is Dummy 1.0.0!"

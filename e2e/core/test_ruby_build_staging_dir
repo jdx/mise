@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+
+# ruby-build's install.sh runs in the directory mise fetched ruby-build into. That
+# must be a directory only the user can write to, not a fixed name in the system
+# temporary directory: there another local user can create the directory first
+# and replace install.sh before mise runs it.
+RUBY_BUILD_REPO="$HOME/ruby-build-repo"
+RUBY_BUILD_STAGING_LOG="$HOME/ruby-build-staging"
+
+mkdir -p "$RUBY_BUILD_REPO/bin"
+
+cat >"$RUBY_BUILD_REPO/install.sh" <<'SH'
+#!/bin/sh
+set -eu
+pwd >"$RUBY_BUILD_STAGING_LOG"
+mkdir -p "$PREFIX/bin"
+cp bin/ruby-build "$PREFIX/bin/ruby-build"
+chmod +x "$PREFIX/bin/ruby-build"
+SH
+
+cat >"$RUBY_BUILD_REPO/bin/ruby-build" <<'SH'
+#!/bin/sh
+set -eu
+
+case "${1:-}" in
+--version)
+  echo "ruby-build 99999999"
+  exit 0
+  ;;
+--definitions)
+  echo "3.3.0"
+  exit 0
+  ;;
+esac
+
+mkdir -p "$2/bin"
+printf '#!/bin/sh\necho "ruby %s"\n' "$1" >"$2/bin/ruby"
+chmod +x "$2/bin/ruby"
+SH
+
+git -C "$RUBY_BUILD_REPO" init -q
+git -C "$RUBY_BUILD_REPO" add .
+git -C "$RUBY_BUILD_REPO" -c user.name=mise -c user.email=mise@example.com commit -qm init
+
+export MISE_RUBY_COMPILE=1
+export MISE_RUBY_BUILD_REPO="file://$RUBY_BUILD_REPO"
+export RUBY_BUILD_STAGING_LOG
+
+# What another user could have left under the name mise used to stage in
+mkdir -p "$TMPDIR/mise-ruby-build"
+touch "$TMPDIR/mise-ruby-build/not-mine"
+
+mise install ruby@3.3.0
+assert_contains "cat '$RUBY_BUILD_STAGING_LOG'" "$MISE_CACHE_DIR/ruby/"
+assert_not_contains "cat '$RUBY_BUILD_STAGING_LOG'" "$TMPDIR"
+assert_succeed "test -e '$TMPDIR/mise-ruby-build/not-mine'"
+assert_directory_not_exists "$MISE_CACHE_DIR/ruby/mise-ruby-build"

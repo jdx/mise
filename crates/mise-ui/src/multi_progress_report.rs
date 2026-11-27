@@ -22,6 +22,27 @@ pub struct MultiProgressReport {
 struct ProgressPauseState {
     count: usize,
     resume_on_zero: bool,
+    /// Output that arrived while something else owned the terminal, printed in
+    /// order once the last suspension is released.
+    deferred: DeferredOutput,
+}
+
+/// Lines a parallel install printed while a prompt was open.
+///
+/// clx's `ProgressJob::println` does not honor a pause: it clears what it
+/// believes is the progress frame (the prompt, at that moment), writes the
+/// line, resumes rendering and redraws the frame. One `Compiling ...` line from
+/// a cargo build was enough to erase an open confirmation and let progress
+/// redraw over it for the rest of the prompt.
+#[derive(Default)]
+struct DeferredOutput(Vec<Box<dyn FnOnce() + Send>>);
+
+impl std::fmt::Debug for DeferredOutput {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("DeferredOutput")
+            .field(&self.0.len())
+            .finish()
+    }
 }
 
 impl ProgressPauseState {
@@ -59,6 +80,15 @@ impl Drop for ProgressPauseGuard {
 }
 
 static INSTANCE: Mutex<Option<Arc<MultiProgressReport>>> = Mutex::new(None);
+
+/// Print through [`MultiProgressReport::print_unless_paused`] when a report
+/// exists, and immediately otherwise.
+pub(crate) fn print_unless_paused(print: impl FnOnce() + Send + 'static) {
+    match MultiProgressReport::try_get() {
+        Some(report) => report.print_unless_paused(print),
+        None => print(),
+    }
+}
 
 impl MultiProgressReport {
     pub fn try_get() -> Option<Arc<Self>> {
@@ -164,10 +194,31 @@ impl MultiProgressReport {
         }
     }
 
+    /// Print a line of output now, or after the terminal is handed back.
+    ///
+    /// While a prompt (or an elevated child) holds a suspension, `print` is
+    /// queued and runs once the last suspension is released, so build output
+    /// from parallel installs never lands inside an open prompt. The lock is
+    /// held while printing so a prompt cannot start between the check and the
+    /// write, and queued lines stay ahead of anything printed after them.
+    pub(crate) fn print_unless_paused(&self, print: impl FnOnce() + Send + 'static) {
+        let mut state = self.pause_state.lock().unwrap();
+        if state.count == 0 {
+            print();
+        } else {
+            state.deferred.0.push(Box::new(print));
+        }
+    }
+
     fn resume_progress(&self) {
         let mut state = self.pause_state.lock().unwrap();
         if state.release() {
             progress::resume();
+        }
+        if state.count == 0 {
+            for print in std::mem::take(&mut state.deferred.0) {
+                print();
+            }
         }
     }
 
@@ -341,6 +392,41 @@ mod tests {
         assert!(!state.acquire(true));
         assert!(!state.release());
         assert!(state.release());
+    }
+
+    #[test]
+    fn output_is_held_until_every_pause_is_released() {
+        let report = Arc::new(MultiProgressReport {
+            quiet: false,
+            use_progress_ui: false,
+            pause_state: Mutex::new(ProgressPauseState::default()),
+            total_count: Mutex::new(0),
+            completed_count: Mutex::new(0),
+            header_job: Mutex::new(None),
+        });
+        let printed = Arc::new(Mutex::new(Vec::new()));
+        let print = |line: &'static str| {
+            let printed = printed.clone();
+            move || printed.lock().unwrap().push(line)
+        };
+
+        report.print_unless_paused(print("before"));
+        assert_eq!(*printed.lock().unwrap(), ["before"]);
+
+        let outer = report.pause_progress();
+        let inner = report.pause_progress();
+        report.print_unless_paused(print("during 1"));
+        report.print_unless_paused(print("during 2"));
+        drop(inner);
+        assert_eq!(*printed.lock().unwrap(), ["before"]);
+        drop(outer);
+        assert_eq!(*printed.lock().unwrap(), ["before", "during 1", "during 2"]);
+
+        report.print_unless_paused(print("after"));
+        assert_eq!(
+            *printed.lock().unwrap(),
+            ["before", "during 1", "during 2", "after"]
+        );
     }
 
     #[test]

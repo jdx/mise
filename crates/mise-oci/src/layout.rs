@@ -38,16 +38,13 @@ impl ImageLayout {
     }
 
     /// Write raw bytes as a blob. Returns the blob digest (as `sha256:...`).
-    /// Idempotent — if the blob already exists it is left untouched.
+    /// Idempotent — a blob already there with this content is left untouched.
     pub fn write_blob(&self, bytes: &[u8]) -> Result<(String, u64)> {
         let mut h = Sha256::new();
         h.update(bytes);
         let hex = crate::layer::hex_encode(&h.finalize());
         let digest = format!("sha256:{hex}");
-        let path = self.blob_path(&digest);
-        if !path.exists() {
-            file::write(&path, bytes)?;
-        }
+        self.store_blob(&digest, bytes)?;
         Ok((digest, bytes.len() as u64))
     }
 
@@ -70,10 +67,43 @@ impl ImageLayout {
         if actual != digest {
             eyre::bail!("blob digest mismatch: got {actual}, expected {digest}");
         }
+        self.store_blob(digest, bytes)
+    }
+
+    /// Whether the layout holds `digest` as a regular file whose content hashes to it.
+    ///
+    /// A file named after a digest proves nothing: the layout outlives a build and defaults to
+    /// `./mise-oci`, so it can hold an interrupted write or a file the repository the build runs
+    /// in ships. A check that skips a download because the blob is already there goes through
+    /// here.
+    pub(crate) fn has_blob(&self, digest: &str) -> Result<bool> {
+        validate_sha256_digest(digest)?;
         let path = self.blob_path(digest);
-        if !path.exists() {
-            file::write(&path, bytes)?;
+        // a symlink is never a blob, wherever it points
+        if !path.symlink_metadata().is_ok_and(|m| m.is_file()) {
+            return Ok(false);
         }
+        let actual = mise_util::hash::file_hash_prog::<Sha256>(&path, None)
+            .wrap_err_with(|| format!("hashing blob {}", path.display()))?;
+        Ok(digest.strip_prefix("sha256:") == Some(actual.as_str()))
+    }
+
+    /// Store `bytes`, which hash to `digest`. A blob already there with that content is kept;
+    /// anything else at the path (other content, a symlink) is replaced, never kept or written
+    /// through.
+    fn store_blob(&self, digest: &str, bytes: &[u8]) -> Result<()> {
+        if self.has_blob(digest)? {
+            return Ok(());
+        }
+        let path = self.blob_path(digest);
+        if path.symlink_metadata().is_ok() {
+            warn!(
+                "replacing {}: its content does not match its digest",
+                path.display()
+            );
+            file::remove_file(&path)?;
+        }
+        file::write(&path, bytes)?;
         Ok(())
     }
 
@@ -165,6 +195,58 @@ mod tests {
     fn accepts_valid_digest() {
         let d = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
         assert!(validate_sha256_digest(d).is_ok());
+    }
+
+    #[test]
+    fn a_file_named_after_a_digest_is_not_a_blob_until_it_hashes_to_it() {
+        let tmp = tempfile::tempdir().unwrap();
+        let layout = ImageLayout::init(tmp.path()).unwrap();
+        let bytes = b"genuine layer";
+        let digest = format!(
+            "sha256:{}",
+            crate::layer::hex_encode(&Sha256::digest(bytes))
+        );
+        let path = layout.blob_path(&digest);
+        assert!(!layout.has_blob(&digest).unwrap());
+
+        // a file with other content is replaced, not kept
+        std::fs::write(&path, b"planted layer").unwrap();
+        assert!(!layout.has_blob(&digest).unwrap());
+        layout.write_blob_with_digest(&digest, bytes).unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), bytes);
+        assert!(layout.has_blob(&digest).unwrap());
+
+        std::fs::write(&path, b"planted layer").unwrap();
+        assert_eq!(layout.write_blob(bytes).unwrap().0, digest);
+        assert_eq!(std::fs::read(&path).unwrap(), bytes);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_symlink_at_a_blob_path_is_replaced_not_followed() {
+        let tmp = tempfile::tempdir().unwrap();
+        let layout = ImageLayout::init(&tmp.path().join("layout")).unwrap();
+        let bytes = b"genuine layer";
+        let digest = format!(
+            "sha256:{}",
+            crate::layer::hex_encode(&Sha256::digest(bytes))
+        );
+        let path = layout.blob_path(&digest);
+
+        // neither a symlink to the right bytes nor a dangling one counts, and writing the blob
+        // leaves both targets alone
+        let same = tmp.path().join("same");
+        std::fs::write(&same, bytes).unwrap();
+        let absent = tmp.path().join("absent");
+        for target in [&same, &absent] {
+            let _ = std::fs::remove_file(&path);
+            std::os::unix::fs::symlink(target, &path).unwrap();
+            assert!(!layout.has_blob(&digest).unwrap());
+            layout.write_blob_with_digest(&digest, bytes).unwrap();
+            assert!(path.symlink_metadata().unwrap().is_file());
+            assert!(layout.has_blob(&digest).unwrap());
+        }
+        assert!(!absent.exists());
     }
 
     #[test]

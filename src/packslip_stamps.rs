@@ -19,15 +19,19 @@ use std::path::{Path, PathBuf};
 
 use eyre::{Result, WrapErr, bail, eyre};
 use itertools::Itertools;
+use packslip::forge;
 use packslip::model::{ReleaseListStatement, ReleaseRef};
 use packslip::sigstore::Policy;
 use serde::{Deserialize, Serialize};
 
-use crate::backend::packslip::{Pin, fetch_policy_text, pinned_key, verify_release_list};
-use crate::config::Settings;
+use crate::backend::backend_type::BackendType;
+use crate::backend::packslip::{
+    Pin, fetch_policy_text, pinned_key, project_name, verify_release_list,
+};
+use crate::config::{Config, Settings, SettingsExt, is_global_config};
 use crate::dirs;
 use crate::file;
-use crate::toolset::ToolVersionOptions;
+use crate::toolset::{ToolOptionSource, ToolVersionOptions};
 
 /// GitHub's OIDC issuer, for a stamper pinned by a workflow identity.
 const GITHUB_ISSUER: &str = "https://token.actions.githubusercontent.com";
@@ -94,6 +98,38 @@ pub(crate) fn trusts_vendor(opts: &ToolVersionOptions) -> bool {
     matches!(opts.get("trust"), Some("vendor"))
 }
 
+/// Whether a `[tools]` entry of global or system config exempts a project.
+/// `packslip.stampers` is the operator's policy, so safe mode takes the
+/// exemption from there only: the options of a request can be what an
+/// untrusted project wrote, in its `[tools]`, a `[tool_alias]`, a task or a
+/// monorepo subproject, and they lift that policy no more than the project's
+/// `[settings]` do. The entry has to set the option itself. It names the
+/// project as the forge resolves it ([`forge::same_project`]), so a github.com
+/// or gitlab.com repository matches in any letter case.
+async fn global_config_trusts_vendor(project: &str) -> Result<bool> {
+    let config = Config::get().await?;
+    for cf in config.config_files.values() {
+        if !is_global_config(cf.get_path()) {
+            continue;
+        }
+        for tr in cf.to_tool_request_set()?.tools.values().flatten() {
+            let set_by_entry = matches!(
+                tr.option_source("trust"),
+                Some(ToolOptionSource::Request | ToolOptionSource::InlineBackendArg)
+            );
+            if set_by_entry
+                && trusts_vendor(&tr.options())
+                && tr.ba().backend_type() == BackendType::Packslip
+                && project_name(&tr.ba().tool_name())
+                    .is_ok_and(|p| forge::same_project(&p, project))
+            {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
+}
+
 /// One stamp: a trusted host's entry for a version.
 #[derive(Debug, Clone)]
 pub(crate) struct Stamp {
@@ -152,8 +188,14 @@ impl Stamps {
         if let Some(by) = self.yanked.get(version) {
             return eyre!("packslip:{project}@{version} was withdrawn by {by}");
         }
+        // Safe mode takes the exemption from global config only, see `fetch`.
+        let options = if Settings::safe_mode() {
+            "the tool's `[tools]` entry in global config"
+        } else {
+            "the tool's options"
+        };
         eyre!(
-            "packslip:{project}@{version} carries no stamp from {}; mise installs only versions a trusted stamper lists. Set `trust = \"vendor\"` in the tool's options to take the vendor's own manifest instead",
+            "packslip:{project}@{version} carries no stamp from {}; mise installs only versions a trusted stamper lists. Set `trust = \"vendor\"` in {options} to take the vendor's own manifest instead",
             self.hosts.iter().join(", ")
         )
     }
@@ -165,6 +207,41 @@ impl Stamps {
 struct HostState {
     #[serde(default)]
     sequences: BTreeMap<String, u64>,
+}
+
+impl HostState {
+    /// The names whose sequences speak for `project`: every spelling of it the
+    /// forge resolves to the same repository ([`forge::same_project`]), so a
+    /// github.com or gitlab.com repository is one project in any letter case,
+    /// and a subpath or a name on another host compares exactly.
+    fn keys_of(&self, project: &str) -> Vec<String> {
+        self.sequences
+            .keys()
+            .filter(|key| forge::same_project(key, project))
+            .cloned()
+            .collect()
+    }
+
+    /// The highest sequence accepted for `project` under any of its spellings,
+    /// with the spelling it was accepted under.
+    fn highest_sequence(&self, project: &str) -> Option<(&str, u64)> {
+        self.sequences
+            .iter()
+            .filter(|(key, _)| forge::same_project(key, project))
+            .map(|(key, last)| (key.as_str(), *last))
+            .max_by_key(|(_, last)| *last)
+    }
+}
+
+/// How a refusal names the spelling a list was accepted under, when it is not
+/// the one asked for: a stamper serves its list at the spelling it published,
+/// so the user learns which name finds it.
+fn accepted_as(key: &str, project: &str) -> String {
+    if key == project {
+        String::new()
+    } else {
+        format!(" under {key}, the same repository in other letter case")
+    }
 }
 
 fn state_dir() -> PathBuf {
@@ -231,9 +308,10 @@ fn missing_list(host: &str, project: &str, url: &str) -> Result<()> {
 
 fn missing_list_in(dir: &Path, host: &str, project: &str, url: &str) -> Result<()> {
     let state = read_state(dir, host)?;
-    if let Some(last) = state.sequences.get(project) {
+    if let Some((key, last)) = state.highest_sequence(project) {
         bail!(
-            "{host} published a stamp list for {project} before (sequence {last}) but now answers 404 at {url}; refusing to treat that as no list, since it would drop the yanks that list carried"
+            "{host} published a stamp list for {project} before (sequence {last}{}) but now answers 404 at {url}; refusing to treat that as no list, since it would drop the yanks that list carried",
+            accepted_as(key, project)
         );
     }
     Ok(())
@@ -247,14 +325,26 @@ fn check_sequence_in(
 ) -> Result<()> {
     let mut state = read_state(dir, host)?;
     let sequence = list.predicate.sequence;
-    if let Some(&last) = state.sequences.get(project)
+    if let Some((key, last)) = state.highest_sequence(project)
         && sequence < last
     {
         bail!(
-            "the stamp list from {host} for {project} has sequence {sequence}, below the {last} already accepted; refusing what may be a rollback"
+            "the stamp list from {host} for {project} has sequence {sequence}, below the {last} already accepted{}; refusing what may be a rollback",
+            accepted_as(key, project)
         );
     }
-    if state.sequences.get(project) != Some(&sequence) {
+    // `sequence` is at least every entry of the project, so it replaces them
+    // all under this spelling.
+    let others = state
+        .keys_of(project)
+        .into_iter()
+        .filter(|key| key != project)
+        .collect_vec();
+    let mut changed = state.sequences.get(project) != Some(&sequence);
+    for key in others {
+        changed |= state.sequences.remove(&key).is_some();
+    }
+    if changed {
         state.sequences.insert(project.to_string(), sequence);
         write_state(dir, host, &state)?;
     }
@@ -262,13 +352,19 @@ fn check_sequence_in(
 }
 
 /// Fetch and verify every trusted host's list for a project. `None` when
-/// no stampers are configured or the tool trusts its vendor alone. A host
-/// that has no list for the project stamps nothing; one whose list fails
-/// to verify is an error, since silently ignoring it would let a broken
-/// host widen what another admits.
+/// no stampers are configured or the tool trusts its vendor alone, which
+/// safe mode accepts from global or system config only. A host that has
+/// no list for the project stamps nothing; one whose list fails to verify
+/// is an error, since silently ignoring it would let a broken host widen
+/// what another admits.
 pub(crate) async fn fetch(project: &str, opts: &ToolVersionOptions) -> Result<Option<Stamps>> {
     if trusts_vendor(opts) {
-        return Ok(None);
+        if !Settings::safe_mode() || global_config_trusts_vendor(project).await? {
+            return Ok(None);
+        }
+        debug!(
+            "packslip:{project}: ignoring trust = \"vendor\": global config does not set it for this tool and safe mode (MISE_SAFE=1) is on"
+        );
     }
     let stampers = stampers()?;
     if stampers.is_empty() {
@@ -486,6 +582,93 @@ mod tests {
         std::fs::write(d.join("seq.example.com.json"), b"{not json").unwrap();
         let err = check_sequence_in(d, host, project, &list(project, 9, &entries)).unwrap_err();
         assert!(err.to_string().contains("remove it"), "{err}");
+    }
+
+    #[test]
+    fn a_repository_in_other_letter_case_keeps_its_sequence() {
+        let dir = tempfile::tempdir().unwrap();
+        let d = dir.path();
+        let host = "case.example.com";
+        let entries = [("1.0.0", "https://x/p.json", false)];
+        check_sequence_in(
+            d,
+            host,
+            "github.com/o/r",
+            &list("github.com/o/r", 6, &entries),
+        )
+        .unwrap();
+        let err = check_sequence_in(
+            d,
+            host,
+            "github.com/O/R",
+            &list("github.com/O/R", 4, &entries),
+        )
+        .unwrap_err();
+        let accepted = "under github.com/o/r, the same repository in other letter case";
+        assert!(err.to_string().contains("rollback"), "{err}");
+        assert!(err.to_string().contains(accepted), "{err}");
+        let err = missing_list_in(d, host, "github.com/O/R", "https://case.example.com/x.json")
+            .unwrap_err();
+        assert!(err.to_string().contains("sequence 6"), "{err}");
+        assert!(err.to_string().contains(accepted), "{err}");
+        // Under the spelling it was accepted as, the refusal names no other.
+        let err = missing_list_in(d, host, "github.com/o/r", "https://case.example.com/y.json")
+            .unwrap_err();
+        assert!(!err.to_string().contains("other letter case"), "{err}");
+    }
+
+    #[test]
+    fn a_subpath_or_another_host_compares_exactly() {
+        let dir = tempfile::tempdir().unwrap();
+        let d = dir.path();
+        let host = "exact.example.com";
+        let entries = [("1.0.0", "https://x/p.json", false)];
+        for (project, other) in [
+            ("example.com/o/r", "example.com/O/R"),
+            ("github.com/o/r/tools/a", "github.com/O/R/Tools/A"),
+        ] {
+            check_sequence_in(d, host, project, &list(project, 6, &entries)).unwrap();
+            missing_list_in(d, host, other, "https://exact.example.com/y.json").unwrap();
+            check_sequence_in(d, host, other, &list(other, 1, &entries)).unwrap();
+        }
+        let state = read_state(d, host).unwrap();
+        assert_eq!(state.sequences.len(), 4, "{:?}", state.sequences);
+    }
+
+    #[test]
+    fn spellings_of_one_repository_collapse_to_the_highest_sequence() {
+        let dir = tempfile::tempdir().unwrap();
+        let d = dir.path();
+        let host = "collapse.example.com";
+        let mut state = HostState::default();
+        state.sequences.insert("github.com/o/r".into(), 5);
+        state.sequences.insert("github.com/O/R".into(), 8);
+        state.sequences.insert("github.com/o/other".into(), 2);
+        write_state(d, host, &state).unwrap();
+        let entries = [("1.0.0", "https://x/p.json", false)];
+        let err = check_sequence_in(
+            d,
+            host,
+            "github.com/o/r",
+            &list("github.com/o/r", 7, &entries),
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("below the 8"), "{err}");
+        check_sequence_in(
+            d,
+            host,
+            "github.com/o/R",
+            &list("github.com/o/R", 8, &entries),
+        )
+        .unwrap();
+        let state = read_state(d, host).unwrap();
+        assert_eq!(
+            state.sequences,
+            BTreeMap::from([
+                ("github.com/o/R".to_string(), 8),
+                ("github.com/o/other".to_string(), 2),
+            ])
+        );
     }
 
     #[test]
