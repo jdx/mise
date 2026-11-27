@@ -739,7 +739,15 @@ impl SPMBackend {
             install_artifactbundle_binaries(&tv.install_path(), binaries)?;
             Ok(true)
         })?;
-        file::remove_all(tv.cache_path())?;
+        // The bundle is installed and its lock entry kept by now, so failing to
+        // clear the cache must not send the caller to a source build that would
+        // leave the bundle's URL and checksum in mise.lock.
+        if let Err(err) = file::remove_all(tv.cache_path()) {
+            warn!(
+                "failed to remove {}: {err:#}",
+                file::display_path(tv.cache_path())
+            );
+        }
         Ok(installed)
     }
 }
