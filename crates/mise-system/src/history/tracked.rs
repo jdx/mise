@@ -778,6 +778,9 @@ impl TrackedSet {
         if inside_nested_repository(owner, path) {
             return Some(DropReason::NestedRepository);
         }
+        if inside_cache_directory(owner, path) {
+            return Some(DropReason::CacheDirectory);
+        }
         let judged = path != owner.path || kind == Kind::File;
         if judged && exclude.is_match(path, &owner.path) {
             return Some(DropReason::GlobalExclude);
@@ -863,6 +866,11 @@ impl TrackedSet {
                 continue;
             }
             walk_entry(set, index, entry, &exclude, &hard, &mut walk);
+        }
+        // counted before the credential guard below drops anything, so the
+        // hint reflects what the walk had to read
+        if let Some(hint) = node_modules_hint(&walk.files, &set.entries) {
+            walk.warnings.push(hint);
         }
         // Protected files are excluded from capture itself, never kept in
         // a hidden local-only history. Explicit encryption permits key files
@@ -1142,6 +1150,12 @@ fn walk_entry(
                 path: display_path(path),
                 reason,
             });
+            walker.skip_current_dir();
+            continue;
+        }
+        // a tagged cache directory (Cargo's `target/`, for one) holds
+        // nothing worth restoring and is not entered at all
+        if file_type.is_dir() && is_cache_directory(path) {
             walker.skip_current_dir();
             continue;
         }
@@ -2264,6 +2278,7 @@ impl ExclusionReasons<'_> {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum DropReason {
     NestedRepository,
+    CacheDirectory,
     GlobalExclude,
     EntryExclude,
     NotIncluded,
@@ -2273,6 +2288,7 @@ impl DropReason {
     fn as_str(self) -> &'static str {
         match self {
             Self::NestedRepository => "inside a nested repository",
+            Self::CacheDirectory => "inside a cache directory (CACHEDIR.TAG)",
             Self::GlobalExclude => "excluded by [history] exclude",
             Self::EntryExclude => "excluded by the entry's exclude list",
             Self::NotIncluded => "not selected by the entry's include list",
@@ -2302,6 +2318,93 @@ fn inside_nested_repository(owner: &TrackedEntry, path: &Path) -> bool {
     path.ancestors()
         .take_while(|ancestor| ancestor.starts_with(&owner.path) && *ancestor != owner.path)
         .any(|ancestor| ancestor.join(".git").exists())
+}
+
+/// How many files under `node_modules` directories a walk reads before it
+/// suggests excluding them.
+const NODE_MODULES_HINT_FILES: usize = 1000;
+
+/// A suggestion to exclude `node_modules` when a walk read many files from
+/// one, or `None`.
+///
+/// **A hint, not a default exclusion.** What a tracked directory holds is
+/// the user's to decide, and a rule mise adds on its own is a file that
+/// silently stops being saved. But a package tree is almost never meant
+/// to be in history, and reading it on every save is what makes every
+/// `mise dot` command slow, so the walk says so and names the fix.
+fn node_modules_hint(
+    files: &BTreeMap<PathBuf, (usize, Policy)>,
+    entries: &[TrackedEntry],
+) -> Option<String> {
+    let mut dirs: BTreeMap<PathBuf, usize> = BTreeMap::new();
+    for (path, (owner, _)) in files {
+        let Some(root) = entries.get(*owner).map(|entry| entry.path.as_path()) else {
+            continue;
+        };
+        let Ok(rel) = path.strip_prefix(root) else {
+            continue;
+        };
+        let mut dir = root.to_path_buf();
+        for component in rel.components() {
+            dir.push(component);
+            if component.as_os_str() == "node_modules" {
+                *dirs.entry(dir).or_default() += 1;
+                break;
+            }
+        }
+    }
+    let total: usize = dirs.values().sum();
+    if total < NODE_MODULES_HINT_FILES {
+        return None;
+    }
+    let mut largest: Vec<_> = dirs.into_iter().collect();
+    largest.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    let named: Vec<String> = largest
+        .iter()
+        .take(3)
+        .map(|(dir, _)| display_path(dir))
+        .collect();
+    let more = match largest.len().saturating_sub(named.len()) {
+        0 => String::new(),
+        n => format!(" and {n} more"),
+    };
+    Some(format!(
+        "{total} files are saved from node_modules directories ({}{more}), which slows every save; `mise dot exclude node_modules` skips them",
+        named.join(", ")
+    ))
+}
+
+/// The first bytes of a `CACHEDIR.TAG` file, from the Cache Directory
+/// Tagging Specification (<https://bford.info/cachedir/>).
+const CACHEDIR_TAG_SIGNATURE: &[u8] = b"Signature: 8a477f597d28d172789f06886806bc55";
+
+/// Whether `dir` declares itself a cache with a valid `CACHEDIR.TAG`.
+///
+/// Cargo's `target/`, and the caches of many other tools, carry the tag:
+/// everything in them can be regenerated, and they can hold hundreds of
+/// thousands of files. The signature is checked, as the specification
+/// asks, so a file that merely has the name does not hide a directory.
+fn is_cache_directory(dir: &Path) -> bool {
+    use std::io::Read;
+    let Ok(file) = std::fs::File::open(dir.join("CACHEDIR.TAG")) else {
+        return false;
+    };
+    let mut head = Vec::with_capacity(CACHEDIR_TAG_SIGNATURE.len());
+    file.take(CACHEDIR_TAG_SIGNATURE.len() as u64)
+        .read_to_end(&mut head)
+        .is_ok_and(|_| head == CACHEDIR_TAG_SIGNATURE)
+}
+
+/// Whether `path` lies in a tagged cache directory below `owner`'s root.
+///
+/// The same rule the walk applies when it decides whether to descend, so
+/// retention, listings and the watcher agree with what a capture holds.
+/// The root itself is not judged: tracking a cache directory directly
+/// captures it, as tracking a repository directly does.
+fn inside_cache_directory(owner: &TrackedEntry, path: &Path) -> bool {
+    path.ancestors()
+        .take_while(|ancestor| ancestor.starts_with(&owner.path) && *ancestor != owner.path)
+        .any(is_cache_directory)
 }
 
 /// Which `[history] exclude` rules cannot be used, each named with the
@@ -4949,6 +5052,76 @@ mod tests {
         assert!(walk.nested.is_empty());
         assert!(set.would_capture(&plugin.join("init.lua")).unwrap());
         assert!(!set.would_capture(&plugin.join(".git/HEAD")).unwrap());
+    }
+
+    #[test]
+    fn a_tagged_cache_directory_is_skipped_unless_tracked_directly() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("project");
+        let target = root.join("target");
+        let fake = root.join("not-a-cache");
+        std::fs::create_dir_all(target.join("debug")).unwrap();
+        std::fs::create_dir_all(&fake).unwrap();
+        std::fs::write(
+            target.join("CACHEDIR.TAG"),
+            "Signature: 8a477f597d28d172789f06886806bc55\n# cargo\n",
+        )
+        .unwrap();
+        std::fs::write(target.join("debug/build.o"), "obj").unwrap();
+        // a file with the name but not the signature marks nothing
+        std::fs::write(fake.join("CACHEDIR.TAG"), "not a tag").unwrap();
+        std::fs::write(fake.join("keep.toml"), "x").unwrap();
+        std::fs::write(root.join("config.toml"), "top").unwrap();
+        let mut set = TrackedSet::default();
+        set.push(entry(&root));
+        let walk = set.walk().unwrap();
+        assert!(walk.files.contains_key(&root.join("config.toml")));
+        assert!(walk.files.contains_key(&fake.join("keep.toml")));
+        assert!(!walk.files.keys().any(|path| path.starts_with(&target)));
+        // retention and listings agree with the walk
+        assert!(!set.would_capture(&target.join("debug/build.o")).unwrap());
+        assert!(!set.would_capture(&target.join("CACHEDIR.TAG")).unwrap());
+        assert_eq!(
+            set.exclusion_reasons()
+                .unwrap()
+                .of(&target.join("debug/build.o")),
+            Some("inside a cache directory (CACHEDIR.TAG)")
+        );
+        assert!(set.would_capture(&fake.join("keep.toml")).unwrap());
+        // tracking the cache directory itself captures it
+        set.push(entry(&target));
+        let walk = set.walk().unwrap();
+        assert!(walk.files.contains_key(&target.join("debug/build.o")));
+        assert!(set.would_capture(&target.join("debug/build.o")).unwrap());
+    }
+
+    #[test]
+    fn many_saved_node_modules_files_suggest_excluding_them() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("agent");
+        let mut set = TrackedSet::default();
+        set.push(entry(&root));
+        let owned = |path: PathBuf| (path, (0, set.entries[0].policy));
+        let mut files: BTreeMap<_, _> = (0..NODE_MODULES_HINT_FILES)
+            .map(|i| owned(root.join(format!("node_modules/pkg{i}/index.js"))))
+            .collect();
+        files.extend([owned(root.join("settings.json"))]);
+        let hint = node_modules_hint(&files, &set.entries).unwrap();
+        assert!(
+            hint.starts_with(&format!(
+                "{NODE_MODULES_HINT_FILES} files are saved from node_modules directories ({})",
+                display_path(&root.join("node_modules"))
+            )),
+            "{hint}"
+        );
+        assert!(hint.contains("`mise dot exclude node_modules`"));
+        // a nested package tree counts toward its outermost node_modules
+        files.pop_first();
+        files.extend([owned(root.join("node_modules/a/node_modules/b/index.js"))]);
+        assert!(node_modules_hint(&files, &set.entries).is_some());
+        // below the threshold, nothing is said
+        files.pop_first();
+        assert_eq!(node_modules_hint(&files, &set.entries), None);
     }
 
     #[test]

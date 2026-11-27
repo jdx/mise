@@ -1149,6 +1149,47 @@ impl Applying<'_> {
     }
 }
 
+/// Refuse a `--take-remote` or `--keep-local` path that no tracked entry
+/// covers and no conflict or recorded choice names, before the refresh.
+///
+/// **A mistyped path is answered before the slow part.** The refresh
+/// walks every tracked directory, and on a large setup that took over a
+/// minute only to end in "is not a conflict". A path outside every entry
+/// cannot become a conflict during the refresh, so it is refused now;
+/// one inside an entry is left to [`Pull::check_choices_are_conflicts`],
+/// which judges it against the refreshed status. The status read here
+/// may be stale, which only lets more through: a conflict it already
+/// lists is never refused.
+fn refuse_untracked_choices(
+    tracked: &TrackedSet,
+    status: &SyncStatus,
+    req: &ApplyRequest,
+    roots: &Roots,
+) -> Result<()> {
+    for path in req.take_remote.iter().chain(req.keep_local.iter()) {
+        let path = normalize_target(path);
+        if tracked.entry_for(&path).is_some() {
+            continue;
+        }
+        let located = |branch_path: &String| roots.locate(branch_path).path() == Some(&path);
+        let known = status
+            .conflicts
+            .iter()
+            .any(|conflict| located(&conflict.branch_path))
+            || status
+                .resolutions
+                .iter()
+                .any(|(branch_path, _)| located(branch_path));
+        if !known {
+            bail!(
+                "{} is not a conflict: no tracked entry covers it; `mise dot conflicts` lists the conflicts",
+                display_path(&path)
+            );
+        }
+    }
+    Ok(())
+}
+
 pub(crate) async fn apply_locked_with_scope(
     store: &Store,
     tracked: &TrackedSet,
@@ -1175,6 +1216,7 @@ pub(crate) async fn apply_locked_with_scope(
     // application. They cannot be reduced to this machine's selected paths.
     let mut inventory_tree = run::incoming_repository_tree(repo, tracked)?;
     let mut status = run::read_status(state_dir)?;
+    refuse_untracked_choices(tracked, &status, req, &Roots::current())?;
     if req.automatic && status.application_failure.is_some() {
         return Ok(ApplyOutcome {
             held: status.pending_applications.len().max(1),
@@ -1653,6 +1695,41 @@ pub fn resolution_advice(path: &str, reason: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_choice_outside_every_tracked_entry_is_refused_before_the_refresh() {
+        use crate::history::tracked::{Policy, TrackedEntry, TrackedSet};
+        use std::path::PathBuf;
+        let temp = tempfile::tempdir().unwrap();
+        let root = crate::history::tracked::normalize_target(&temp.path().join(".pi"));
+        let mut tracked = TrackedSet::default();
+        tracked.push(TrackedEntry::new(
+            root.clone(),
+            "track",
+            Policy::for_mode(crate::files::FileMode::Track),
+        ));
+        let status = super::SyncStatus::default();
+        let roots = super::Roots::current();
+        let request = |keep_local: PathBuf| super::ApplyRequest {
+            keep_local: vec![keep_local],
+            ..super::ApplyRequest::automatic()
+        };
+        // inside an entry: left to the check against the refreshed status
+        super::refuse_untracked_choices(
+            &tracked,
+            &status,
+            &request(root.join("agent-notes")),
+            &roots,
+        )
+        .unwrap();
+        // a mistyped path no entry covers is refused at once
+        let typo = temp.path().join("pi/agent-notes");
+        let err = super::refuse_untracked_choices(&tracked, &status, &request(typo), &roots)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("is not a conflict"), "{err}");
+        assert!(err.contains("no tracked entry covers it"), "{err}");
+    }
+
     #[test]
     fn staged_lookup_batches_checkouts_and_preserves_filename_boundaries() -> eyre::Result<()> {
         let temp = tempfile::tempdir()?;
