@@ -191,7 +191,10 @@ mise trusts the config's directory as `mise trust` would and prints
 ``mise trusted <dir> because you ran a mise command there. Undo with `mise untrust <file>`.``<!-- cli: skip -->
 once per directory, which `--quiet` hides. `<file>` is the config file whose
 directory was trusted; `mise untrust` without it acts on the nearest config
-only. When the project's settings then fail to load, mise removes the record
+only. mise quotes `<file>` for the shell `mise activate` set up. Without
+activation it cannot tell which shell you typed in, so it shows `<file>` only
+when the path needs no quoting, and otherwise prints the path and asks you to
+quote it for your shell. When the project's settings then fail to load, mise removes the record
 again and fails with the settings error, since every later command, `mise untrust`
 too, would fail on that setting. A directory on the ignore list or
 under `ignored_config_paths` stays ignored, and shell activation still skips
@@ -262,6 +265,15 @@ the repository. They stay trusted only while the root is: after
 covered it is gone, they need trust of their own again. See
 [Monorepo tasks](/tasks/monorepo.html). In paranoid mode, trusting the root
 trusts only that file.
+
+A command [typed in a terminal](#typed-in-a-terminal) in an untrusted monorepo
+root, or in a subproject below it, trusts the root the same way, so the trust
+covers every subproject config
+below it, including ones added later. The ownership check looks only at the
+root's own config files, not at the subprojects'. On a shared checkout, this
+means anyone who can write to the tree can add a subproject config that the
+root's trust covers, and it loads without asking. To avoid that, do not trust
+the root there, and run `mise trust` in each subproject you want instead.
 
 ### Git worktrees
 

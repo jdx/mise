@@ -184,10 +184,15 @@ pub(super) fn trust_typed_command(path: &Path, config_root: &Path) -> eyre::Resu
 /// `path` as the argument of the `mise untrust` that undoes this trust, quoted for the shell
 /// `MISE_SHELL` names, or `None` when no quoting is known to be safe there.
 ///
+/// Only `MISE_SHELL`, which `mise activate` sets for the shell it runs in, names that shell.
+/// `SHELL` is the login shell, and the user may have typed the command in another one, such as
+/// PowerShell started from bash, which cannot read bash's quoting.
+///
 /// `mise untrust` with no argument acts on the nearest config only, and one command can trust a
 /// parent project too, so the hint names the file whose root was trusted.
 fn untrust_argument(path: &Path) -> Option<String> {
-    quote_untrust_path(path, *env::MISE_SHELL, cfg!(windows))
+    let activated = env::var("MISE_SHELL").ok().and_then(|s| s.parse().ok());
+    quote_untrust_path(path, activated, cfg!(windows))
 }
 
 /// [`untrust_argument`] for a given shell and OS. The shell decides, not the OS: PowerShell runs
@@ -198,11 +203,7 @@ fn untrust_argument(path: &Path) -> Option<String> {
 /// - Bash and zsh, and fish for a path with no backslash (fish reads `\\` in single quotes), get
 ///   POSIX single quotes, which also keep a Windows path's backslashes. On Unix a path in the home
 ///   directory starts with an unquoted `~`, which expands only when it is not quoted.
-/// - With no shell named, Unix gets POSIX quotes. On Windows the shell may be `cmd.exe`, which
-///   takes no single quotes, or a PowerShell that is not activated: double quotes keep a path
-///   literal in both unless it holds `$`, a backtick or a double quote (curly ones included),
-///   which PowerShell reads in them, or `%` or `!`, which `cmd.exe` does.
-/// - Any other shell gets only a path with nothing to quote.
+/// - Any other shell, or none named, gets only a full path with nothing any shell reads in it.
 fn quote_untrust_path(
     path: &Path,
     shell: Option<crate::shell::ShellType>,
@@ -225,18 +226,13 @@ fn quote_untrust_path(
             None => shell_words::quote(&shown).into_owned(),
         }
     };
-    const READ_IN_DOUBLE_QUOTES: [char; 8] =
-        ['$', '`', '%', '!', '"', '\u{201c}', '\u{201d}', '\u{201e}'];
     match shell {
         Some(ShellType::Pwsh) => {
             bare(true).or_else(|| Some(format!("'{}'", crate::shell::pwsh_escape_sq(&full))))
         }
         Some(ShellType::Bash | ShellType::Zsh) => Some(posix()),
         Some(ShellType::Fish) if !full.contains('\\') => Some(posix()),
-        None if !windows => Some(posix()),
-        None => bare(true)
-            .or_else(|| (!full.contains(READ_IN_DOUBLE_QUOTES)).then(|| format!("\"{full}\""))),
-        Some(_) => bare(false),
+        _ => bare(false),
     }
 }
 
@@ -317,13 +313,15 @@ mod tests {
         }
     }
 
+    // Unix only: there the `~` form comes from `display_path`, which spells separators as the
+    // host does.
+    #[cfg(unix)]
     #[test]
     fn undo_hint_quotes_for_the_shell_on_unix() {
         use crate::shell::ShellType;
         let quote = |shown: &str, shell| quote_untrust_path(Path::new(shown), shell, false);
-        // Bash, zsh, fish and a shell mise does not know get POSIX single quotes.
+        // Bash, zsh and fish get POSIX single quotes.
         for shell in [
-            None,
             Some(ShellType::Bash),
             Some(ShellType::Zsh),
             Some(ShellType::Fish),
@@ -354,19 +352,24 @@ mod tests {
             quote("/tmp/app/mise.toml", Some(ShellType::Nu)).as_deref(),
             Some("/tmp/app/mise.toml")
         );
+        // With no shell named the user may be in any of them, PowerShell started from bash too,
+        // so only a path with nothing to quote is given.
+        assert_eq!(quote("/tmp/Jo's app/mise.toml", None), None);
+        assert_eq!(quote("/tmp/a$b/mise.toml", None), None);
+        assert_eq!(
+            quote("/tmp/app/mise.toml", None).as_deref(),
+            Some("/tmp/app/mise.toml")
+        );
     }
 
     #[test]
     fn undo_hint_quotes_for_the_shell_on_windows() {
         use crate::shell::ShellType;
         let quote = |shown: &str, shell| quote_untrust_path(Path::new(shown), shell, true);
-        for shell in [None, Some(ShellType::Pwsh)] {
-            assert_eq!(
-                quote(r"C:\work\app\mise.toml", shell).as_deref(),
-                Some(r"C:\work\app\mise.toml"),
-                "{shell:?}"
-            );
-        }
+        assert_eq!(
+            quote(r"C:\work\app\mise.toml", Some(ShellType::Pwsh)).as_deref(),
+            Some(r"C:\work\app\mise.toml")
+        );
         // Git Bash and MSYS2 read a bare backslash as an escape, so they get POSIX single quotes.
         for shell in [Some(ShellType::Bash), Some(ShellType::Zsh)] {
             assert_eq!(
@@ -381,30 +384,21 @@ mod tests {
             );
         }
         assert_eq!(quote(r"C:\work\mise.toml", Some(ShellType::Fish)), None);
-        // An unknown shell may be `cmd.exe` or PowerShell: double quotes keep these literal in both.
-        assert_eq!(
-            quote(r"C:\Users\Jo Smith\app\mise.toml", None).as_deref(),
-            Some(r#""C:\Users\Jo Smith\app\mise.toml""#)
-        );
-        assert_eq!(
-            quote(r"C:\a&b\mise.toml", None).as_deref(),
-            Some(r#""C:\a&b\mise.toml""#)
-        );
-        assert_eq!(
-            quote(r"C:\Jo's\mise.toml", None).as_deref(),
-            Some(r#""C:\Jo's\mise.toml""#)
-        );
-        // No quoting keeps these literal in both, so the path is left for the user to quote.
+        // With no shell named the user may be in `cmd.exe`, PowerShell or a Git Bash that is not
+        // activated, which reads a bare backslash as an escape, so the path is left for the user
+        // to quote.
         for shown in [
-            r"C:\work\$demo\mise.toml",
+            r"C:\work\app\mise.toml",
+            r"C:\Users\Jo Smith\app\mise.toml",
+            r"C:\Jo's\mise.toml",
             r"C:\work\$(rm x)\mise.toml",
-            r"C:\work\a`b\mise.toml",
-            r"C:\100%\mise.toml",
-            r"C:\wow!\mise.toml",
-            "C:\\a\u{201c}b\\mise.toml",
         ] {
             assert_eq!(quote(shown, None), None, "{shown}");
         }
+        assert_eq!(
+            quote("C:/work/app/mise.toml", None).as_deref(),
+            Some("C:/work/app/mise.toml")
+        );
         // PowerShell's single quotes keep everything literal but the single quotes it doubles,
         // typographic ones included.
         assert_eq!(

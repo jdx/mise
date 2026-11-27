@@ -89,7 +89,7 @@ for cmd in 'mise hook-env -s bash' 'mise -q hook-env -s bash'; do
   # script -e exits with the status of the command it ran.
   output="$(on_pty "$cmd")" || fail "$cmd failed: $output"
   # The warning shows the hook reached the untrusted config and did not trust it.
-  assert_contains_text "$output" "mise.toml is not trusted, run \`mise trust\` to enable it"
+  assert_contains_text "$output" 'mise.toml is not trusted, run `mise trust` to enable it'
   assert_not_contains_text "$output" "Trust them?"
   assert_not_contains_text "$output" "$notice"
   assert_untrusted
@@ -138,8 +138,9 @@ if [ "$(id -u)" != 0 ]; then
   ok "[trust] another account's conf.d fragment does not keep the prompt"
 fi
 
-# Typed on a terminal: trusted, with a notice, and the config applies.
-output="$(on_pty 'mise env')"
+# Typed on a terminal: trusted, with a notice, and the config applies. The
+# undo hint is quoted for the shell `mise activate` named.
+output="$(on_pty 'MISE_SHELL=bash mise env')"
 assert_contains_text "$output" "$notice"
 assert_contains_text "$output" "Undo with \`mise untrust $shown/mise.toml\`"
 assert_contains_text "$output" "TYPED_TRUST_TEST"
@@ -150,6 +151,7 @@ ok "[trust] a command typed on a terminal trusts the project"
 
 # One command can trust a parent project too. Each notice names the file whose
 # directory it trusted, so running every hint it printed undoes all of them.
+# With no shell named, the hint gives the full path.
 mkdir sub
 cat <<'EOF' >sub/mise.toml
 [env]
@@ -157,8 +159,8 @@ TYPED_TRUST_SUB = "1"
 EOF
 output="$(cd sub && on_pty 'mise env')"
 assert_contains_text "$output" "TYPED_TRUST_SUB"
-assert_contains_text "$output" "mise untrust $shown/mise.toml"
-assert_contains_text "$output" "mise untrust $shown/sub/mise.toml"
+assert_contains_text "$output" "mise untrust $PWD/mise.toml"
+assert_contains_text "$output" "mise untrust $PWD/sub/mise.toml"
 (cd sub && mise untrust "$PWD/../mise.toml" && mise untrust "$PWD/mise.toml")
 assert_untrusted
 assert_contains "cd sub && mise trust --show" "sub: untrusted"
