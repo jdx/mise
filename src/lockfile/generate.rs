@@ -401,11 +401,13 @@ fn can_reuse(info: &PlatformInfo, version: &str) -> bool {
         && info.url.as_deref().is_some_and(|url| {
             super::url_contradicts_version(version, url).is_none() && !has_login(url)
         })
+        && !info.url_api.as_deref().is_some_and(has_login)
         && info.signer.is_none()
         && info.additional_artifacts.iter().all(|artifact| {
             artifact.checksum.is_some()
                 && super::url_contradicts_version(version, &artifact.url).is_none()
                 && !has_login(&artifact.url)
+                && !artifact.url_api.as_deref().is_some_and(has_login)
         })
         && !Settings::get().force_provenance_verify()
 }
@@ -418,8 +420,10 @@ fn reusable_without_login(info: &PlatformInfo, version: &str) -> Option<Platform
     use crate::backend::static_helpers::lock_url;
     let mut info = info.clone();
     info.url = info.url.as_deref().map(lock_url);
+    info.url_api = info.url_api.as_deref().map(lock_url);
     for artifact in &mut info.additional_artifacts {
         artifact.url = lock_url(&artifact.url);
+        artifact.url_api = artifact.url_api.as_deref().map(lock_url);
     }
     can_reuse(&info, version).then_some(info)
 }
@@ -448,7 +452,11 @@ fn keep_pins_recorded_with_a_login(old: &PlatformInfo, new: &mut PlatformInfo) {
         _ => old.is_some() && old == new,
     };
     let old_has_login = old.url.as_deref().is_some_and(has_login)
-        || old.additional_artifacts.iter().any(|a| has_login(&a.url));
+        || old.url_api.as_deref().is_some_and(has_login)
+        || old
+            .additional_artifacts
+            .iter()
+            .any(|a| has_login(&a.url) || a.url_api.as_deref().is_some_and(has_login));
     if !old_has_login {
         return;
     }

@@ -616,8 +616,18 @@ impl CondaBackend {
                 );
             }
         }
+        if let Some(info) = tv.lock_platforms.get_mut(platform_key) {
+            Self::forget_locked_login(info);
+        }
 
         Ok(())
+    }
+
+    /// Leave the channel login out of the main package URL an older lockfile
+    /// recorded, as the dependencies' are, so the lockfile update does not
+    /// write it back. The package is the same, so its checksum stays.
+    fn forget_locked_login(info: &mut PlatformInfo) {
+        info.url = info.url.as_deref().map(lock_url);
     }
 
     fn make_bins_executable(install_path: &std::path::Path) -> Result<()> {
@@ -1338,6 +1348,23 @@ mod tests {
     use std::process::Command;
     use std::str::FromStr;
     use url::Url;
+
+    /// An older lockfile may hold the channel login in the main package URL;
+    /// a locked install leaves it out and keeps the checksum.
+    #[test]
+    fn locked_install_leaves_the_channel_login_out_of_the_main_package() {
+        let mut info = crate::lockfile::PlatformInfo {
+            url: Some("https://ci:token@conda.example/main/linux-64/tool-1.0-0.conda".to_string()),
+            checksum: Some("sha256:abcd".to_string()),
+            ..Default::default()
+        };
+        CondaBackend::forget_locked_login(&mut info);
+        assert_eq!(
+            info.url.as_deref(),
+            Some("https://conda.example/main/linux-64/tool-1.0-0.conda")
+        );
+        assert_eq!(info.checksum.as_deref(), Some("sha256:abcd"));
+    }
 
     /// The version can come from a plain tool list that loads without trust,
     /// so the match spec grammar must not apply to it.
