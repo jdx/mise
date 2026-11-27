@@ -684,8 +684,18 @@ logins:
             env.remove(key);
         }
         // A relative entry in the caller's PATH would send `env` through the
-        // shell too, so the commands get a PATH of absolute entries only.
-        let path = std::ffi::OsStr::new("/usr/bin:/bin");
+        // shell too, so the commands get only the absolute entries of the
+        // caller's PATH, which keeps tools found outside /usr/bin (Nix).
+        let caller_path = std::env::var_os("PATH").unwrap_or_default();
+        let dirs: Vec<_> = std::env::split_paths(&caller_path)
+            .filter(|dir| dir.is_absolute())
+            .collect();
+        if !dirs.iter().any(|dir| dir.join("env").is_file()) {
+            eprintln!("skipped: no absolute PATH entry holds `env`");
+            return;
+        }
+        let path = std::env::join_paths(dirs).unwrap();
+        let path = path.as_os_str();
         // The first runs through the shell, the second without it.
         for (cmd, direct) in [
             ("echo \"[$GIT_DIR][$GIT_WORK_TREE]\"", false),
