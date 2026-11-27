@@ -472,6 +472,11 @@ async fn test_download_restarts_when_partial_content_has_an_empty_etag() {
     restarts_when_partial_content_is(empty_validator_download_response()).await;
 }
 
+#[tokio::test(flavor = "current_thread")]
+async fn test_download_restarts_when_partial_content_has_a_future_last_modified() {
+    restarts_when_partial_content_is(future_last_modified_download_response()).await;
+}
+
 async fn restarts_when_partial_content_is(resumed: &'static str) {
     let _guard = set_test_http_retries(0);
     let (port, count, requests) = spawn_recording_server(vec![

@@ -777,17 +777,34 @@ fn response_validator(headers: &HeaderMap) -> Option<DownloadValidator> {
         .and_then(|value| value.to_str().ok())
         .filter(|value| is_strong_entity_tag(value))
         .map(|value| DownloadValidator::Etag(value.to_string()))
-        .or_else(|| {
-            let value = headers
-                .get(LAST_MODIFIED)
-                .and_then(|value| value.to_str().ok())
-                .filter(|value| !value.is_empty())?;
-            let response_date = headers.get(DATE)?.to_str().ok()?;
-            is_strong_last_modified(value, response_date).then(|| DownloadValidator::LastModified {
-                value: value.to_string(),
-                response_date: response_date.to_string(),
-            })
-        })
+        .or_else(|| last_modified_validator(headers))
+}
+
+fn last_modified_header(headers: &HeaderMap) -> Option<&str> {
+    headers
+        .get(LAST_MODIFIED)
+        .and_then(|value| value.to_str().ok())
+        .filter(|value| !value.is_empty())
+}
+
+fn last_modified_validator(headers: &HeaderMap) -> Option<DownloadValidator> {
+    let value = last_modified_header(headers)?;
+    let response_date = headers.get(DATE)?.to_str().ok()?;
+    is_strong_last_modified(value, response_date).then(|| DownloadValidator::LastModified {
+        value: value.to_string(),
+        response_date: response_date.to_string(),
+    })
+}
+
+/// Whether `headers` hold a Last-Modified date that is no validator (one still
+/// ahead of this clock, or with no `Date` to judge it by) and is not the date
+/// `saved` was recorded with. It may name another file, so a partial download
+/// is not resumed on it unless another validator confirms the saved one.
+fn has_rejected_last_modified(headers: &HeaderMap, saved: &DownloadValidator) -> bool {
+    last_modified_header(headers).is_some_and(|value| {
+        last_modified_validator(headers).is_none()
+            && !matches!(saved, DownloadValidator::LastModified { value: saved, .. } if saved == value)
+    })
 }
 
 /// Whether `value` is exactly one entity-tag (RFC 9110 section 8.8.3), weak
@@ -2195,6 +2212,9 @@ impl Client {
                         // not undo that.
                         || (has_unusable_entity_tag(resp.headers())
                             && !matches!(validator, Some(DownloadValidator::LastModified { .. })))
+                        // A date that is no validator confirms nothing either.
+                        || (validator.is_none()
+                            && has_rejected_last_modified(resp.headers(), &state.validator))
                     {
                         partial.clear()?;
                         if restarted_without_resume {

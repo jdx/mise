@@ -474,6 +474,18 @@ fn unquoted_validator_download_response() -> &'static str {
         "WORLD"
     )
 }
+fn future_last_modified_download_response() -> &'static str {
+    concat!(
+        "HTTP/1.1 206 Partial Content\r\n",
+        "Content-Length: 5\r\n",
+        "Content-Range: bytes 5-9/10\r\n",
+        "Last-Modified: Fri, 01 Jan 2100 00:00:00 GMT\r\n",
+        "Date: Fri, 01 Jan 2100 00:05:00 GMT\r\n",
+        "Connection: close\r\n",
+        "\r\n",
+        "WORLD"
+    )
+}
 fn full_download_response() -> &'static str {
     concat!(
         "HTTP/1.1 200 OK\r\n",
