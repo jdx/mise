@@ -491,7 +491,10 @@ impl ToolProgress for TtyToolProgress {
         }
         drop(rows);
         if failed {
-            self.header.println(&redact(&line));
+            // Through the queue like build output: a failure printed while
+            // another tool's prompt is open would erase that prompt.
+            let header = self.header.clone();
+            print_unless_paused(move || header.println(&redact(&line)));
         }
     }
 

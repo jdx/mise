@@ -862,8 +862,11 @@ impl ToolProgress for TextToolProgress {
         if let Some(error) = error {
             state.tools[self.index].message = first_line(error);
         }
-        if let Some(line) = state.finish_tool(self.index, outcome, Instant::now(), None) {
-            log::info!("{line}");
+        let line = state.finish_tool(self.index, outcome, Instant::now(), None);
+        // Released first: the heartbeat takes the pause lock before this one.
+        drop(state);
+        if let Some(line) = line {
+            print_unless_paused(move || log::info!("{line}"));
         }
     }
 
