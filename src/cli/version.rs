@@ -450,12 +450,15 @@ pub(crate) fn mise_release_key(version: &str) -> Result<(u32, u32, u32)> {
 fn select_eligible_release(index: &str, cutoff: jiff::Timestamp) -> Result<String> {
     let mut candidates = Vec::new();
     for line in index.lines().filter(|line| !line.trim().is_empty()) {
-        let fields = line.split_whitespace().collect::<Vec<_>>();
-        eyre::ensure!(fields.len() == 2, "invalid mise release index row");
-        let key = mise_release_key(fields[0])?;
-        let published = jiff::Timestamp::from_second(fields[1].parse()?)?;
+        let mut fields = line.split_whitespace();
+        let (Some(version), Some(published), None) = (fields.next(), fields.next(), fields.next())
+        else {
+            eyre::bail!("invalid mise release index row");
+        };
+        let key = mise_release_key(version)?;
+        let published = jiff::Timestamp::from_second(published.parse()?)?;
         if published <= cutoff {
-            candidates.push((key, fields[0].trim_start_matches('v')));
+            candidates.push((key, version.trim_start_matches('v')));
         }
     }
     candidates.sort_unstable_by_key(|(key, _)| *key);

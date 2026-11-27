@@ -14,7 +14,6 @@ export MISE_DATA_DIR=/test-home/.local/share/mise
 export MISE_STATE_DIR=/test-home/.local/state/mise
 export MISE_CACHE_DIR=/test-home/.cache/mise
 export MISE_YES=1 MISE_TRUSTED_CONFIG_PATHS=/work
-export MISE_USE_VERSIONS_HOST_TRACK=0
 cd /work
 mise --version
 nix --version

@@ -6,6 +6,7 @@ use std::time::SystemTime;
 use eyre::Result;
 
 use crate::backend::backend_type::BackendType;
+use crate::config::config_file::is_project_dir_trusted;
 use crate::config::env_directive::{EnvResolveOptions, EnvResults, ToolsFilter};
 use crate::config::{Config, Settings, SettingsExt};
 use crate::env::{PATH_KEY, WARN_ON_MISSING_REQUIRED_ENV};
@@ -15,7 +16,7 @@ use crate::path_env::PathEnv;
 use crate::toolset::Toolset;
 use crate::toolset::env_cache::{CachedEnv, compute_settings_hash, get_file_mtime};
 use crate::toolset::tool_request::ToolRequest;
-use crate::{env, file, github, parallel, uv};
+use crate::{dirs, env, file, github, parallel, uv};
 
 /// PATH with mise-managed install dirs filtered out. mise re-adds the current
 /// toolset's bin dirs below, so a stale `installs/<tool>/<ver>/bin` left on PATH
@@ -92,7 +93,13 @@ impl Toolset {
             path_env.mark_managed(farm);
         }
         for p in paths {
-            path_env.add(p);
+            // mise lists the wrapper directory as an entry of its own when the config has
+            // wrappers. A project's commands run with this PATH, so the wrappers lead it.
+            if p == *dirs::COMMAND_WRAPPERS {
+                path_env.add_command_wrappers();
+            } else {
+                path_env.add(p);
+            }
         }
         if shim_boundary.is_none() {
             for dir in shim_farms {
@@ -490,7 +497,18 @@ impl Toolset {
                     serde_json::to_string(&(tv.version.clone(), tv.request.options()))?,
                 ))
             })
-            .collect::<Result<_>>()?;
+            .collect::<Result<Vec<_>>>()?;
+        // A relative python `virtualenv` is activated only when the project is trusted, and
+        // `mise trust` changes none of the files above, so the answer is an input too. The
+        // name holds a space, which no backend id does.
+        let project_trust = config.project_root.as_deref().map(|root| {
+            (
+                "project trust".to_string(),
+                is_project_dir_trusted(config, root).to_string(),
+            )
+        });
+        let tool_versions: Vec<(String, String)> =
+            tool_versions.into_iter().chain(project_trust).collect();
 
         // Get settings hash
         let settings_hash = compute_settings_hash();
@@ -505,10 +523,9 @@ impl Toolset {
         // cache entry, which would leak the venv across directories.
         let mut uv_venv_inputs: Vec<(PathBuf, u64)> = Vec::new();
         if Settings::get().python.uv_venv_auto.should_source()
-            && let Some(uv_root) = uv::uv_root()
+            && let Some((uv_root, venv)) = uv::uv_project(config)
         {
             let lock = uv_root.join("uv.lock");
-            let venv = uv::uv_venv_path(config, &uv_root);
             let lock_mtime = get_file_mtime(&lock).unwrap_or(0);
             let venv_mtime = get_file_mtime(&venv).unwrap_or(0);
             uv_venv_inputs.push((lock, lock_mtime));

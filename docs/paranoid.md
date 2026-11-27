@@ -14,7 +14,7 @@ you need:
 | `config`     | Approval of every project config file, bound to its content. No automatic trust, including in CI. |
 | `env_files`  | Approval of the files that `env._.file`, `env._.source` and the `env_file` setting load.          |
 | `plugins`    | Refuses to install an unregistered community plugin by short name.                                |
-| `provenance` | Re-verifies provenance on every install and confirms a mise-versions "no attestations" answer.    |
+| `provenance` | Re-verifies provenance on every install and confirms mise-versions' "none" answers with GitHub.   |
 
 Paranoid mode does not sandbox the commands you approve; see
 [Sandboxing](/sandboxing.html).
@@ -213,10 +213,25 @@ Neither mode accepts "none" for a release the mise registry says must have
 attestations: a `github:` backend, or an `aqua:` backend whose recipe declares
 them, at or after the backend's
 [`attestations_since`](/contributing/registry.html#required-attestations)
-version. There a missing attestation fails the install and `mise lock`.
+version. There a missing attestation fails the install and `mise lock`. A
+release named by numbers alone (`v0.72`) is compared by those numbers; a channel
+or ref such as `nightly` is not compared and stays unaffected.
 
 In either mode, when mise-versions fails to answer (a timeout, a lost
 connection, or a `429` or `5xx` response), mise asks GitHub's attestation API
 instead and verifies what GitHub returns the same way.
 [`provenance_api_failures_fatal`](/configuration/settings.html#provenance_api_failures_fatal)
 then decides what happens if GitHub fails too.
+
+## Release lists from mise-versions
+
+A [packslip](/dev-tools/packslip-verification.html) project on GitHub can
+withdraw releases in a signed release list, which mise asks mise-versions for
+first. mise verifies any list it returns, but nothing signs the answer that a
+repository has none, and a project with no list withdraws nothing. Normal mode
+accepts that answer.
+
+The `provenance` category asks GitHub for the list instead, and GitHub's answer
+counts: a list there is verified and applied, and a `404` confirms there is
+none. When GitHub cannot be read, the command fails. This costs one request to
+`raw.githubusercontent.com` per project and command.

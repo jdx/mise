@@ -4,10 +4,13 @@ use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
 use crate::backend::options::{BackendOptions, is_falsey, is_truthy};
 use crate::backend::platform_target::PlatformTarget;
-use crate::backend::static_helpers::{ensure_plain_asset_name, ensure_plain_bin_name};
+use crate::backend::static_helpers::{
+    ensure_plain_asset_name, ensure_plain_bin_name, lookup_platform_key, read_archive_metadata,
+};
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings, SettingsExt};
 use crate::git::{CloneOptions, Git};
+use crate::hash::hash_to_str;
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
 use crate::lockfile::PlatformInfo;
@@ -19,7 +22,7 @@ use eyre::{Result, WrapErr, bail};
 use serde::Deserialize;
 use serde::Deserializer;
 use serde::de::{MapAccess, Visitor};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::{
     fmt::{self, Debug},
@@ -272,6 +275,20 @@ impl Backend for SPMBackend {
 
     fn remote_version_listing_tool_option_keys(&self) -> &'static [&'static str] {
         &["provider", "api_url", "artifactbundle_asset"]
+    }
+
+    /// The listing options set for this platform, as in
+    /// `platforms.<os>-<arch>.api_url`. The shared cache key covers only the
+    /// top-level keys, while listing reads the platform's value first, so a
+    /// list from another host gets its own entry.
+    async fn remote_version_cache_context(&self, config: &Arc<Config>) -> Result<Option<String>> {
+        let raw_opts = config.get_tool_opts_with_overrides(&self.ba).await?;
+        let platform_values: BTreeMap<&str, String> = self
+            .remote_version_listing_tool_option_keys()
+            .iter()
+            .filter_map(|key| lookup_platform_key(&raw_opts, key).map(|value| (*key, value)))
+            .collect();
+        Ok((!platform_values.is_empty()).then(|| hash_to_str(&platform_values)))
     }
 
     fn resolve_lockfile_options(
@@ -702,50 +719,70 @@ impl SPMBackend {
         )
         .await?;
 
-        let platform_key = self.get_platform_key();
-        // A bundle with no binary for this target is not what gets installed, so its
-        // URL and checksum must not end up in the lock entry of a source build.
-        let previous_lock_entry = tv.lock_platforms.get(&platform_key).cloned();
-        let platform_info = tv.lock_platforms.entry(platform_key.clone()).or_default();
-        platform_info.url = Some(asset.url.clone());
-        platform_info.url_api = asset.url_api.clone();
-        if platform_info.checksum.is_none() {
-            platform_info.checksum = asset.digest.clone();
-        }
-        self.verify_checksum(ctx, tv, &download_path)?;
-
-        ctx.pr.set_message(format!("extract {}", asset.name));
-        file::unzip(&download_path, &bundle_dir, &Default::default())?;
-
         let triples = swift_target_triples(ctx, self, tv).await?;
-        let binaries = artifactbundle_binaries(&bundle_dir, &triples)?;
-        let binaries = if binaries.is_empty() {
-            binaries
-        } else {
-            filter_artifactbundle_binaries(opts, binaries)?
-        };
-        if binaries.is_empty() {
-            file::remove_all(tv.cache_path())?;
-            match previous_lock_entry {
-                Some(entry) => tv.lock_platforms.insert(platform_key, entry),
-                None => tv.lock_platforms.remove(&platform_key),
-            };
-            return Ok(false);
-        }
+        let platform_key = self.get_platform_key();
+        let installed = with_artifactbundle_lock_entry(tv, &platform_key, &asset, |tv| {
+            self.verify_checksum(ctx, tv, &download_path)?;
 
-        let bin_path = tv.install_path().join("bin");
-        let artifact_bin_path = tv.install_path().join("artifactbundle").join("bin");
-        file::create_dir_all(&bin_path)?;
-        file::create_dir_all(&artifact_bin_path)?;
-        for binary in binaries {
-            let installed_binary = artifact_bin_path.join(&binary.name);
-            file::copy(&binary.path, &installed_binary)?;
-            file::make_executable(&installed_binary)?;
-            file::make_symlink(&installed_binary, &bin_path.join(&binary.name))?;
+            ctx.pr.set_message(format!("extract {}", asset.name));
+            file::unzip(&download_path, &bundle_dir, &Default::default())?;
+
+            let binaries = artifactbundle_binaries(&bundle_dir, &triples)?;
+            let binaries = if binaries.is_empty() {
+                binaries
+            } else {
+                filter_artifactbundle_binaries(opts, binaries)?
+            };
+            if binaries.is_empty() {
+                return Ok(false);
+            }
+            install_artifactbundle_binaries(&tv.install_path(), binaries)?;
+            Ok(true)
+        })?;
+        // The bundle is installed and its lock entry kept by now, so failing to
+        // clear the cache must not send the caller to a source build that would
+        // leave the bundle's URL and checksum in mise.lock.
+        if let Err(err) = file::remove_all(tv.cache_path()) {
+            warn!(
+                "failed to remove {}: {err:#}",
+                file::display_path(tv.cache_path())
+            );
         }
-        file::remove_all(tv.cache_path())?;
-        Ok(true)
+        Ok(installed)
     }
+}
+
+/// Records `asset` as the lock entry of `platform_key` while `install` runs,
+/// so the checksum check sees the bundle's URL and digest.
+///
+/// The entry stays only when `install` returns `Ok(true)`. On `Ok(false)` or an
+/// error the bundle is not what gets installed, and the caller builds from
+/// source or refuses. The entry from before, or no entry, is put back, so
+/// mise.lock never pins a bundle mise did not install.
+fn with_artifactbundle_lock_entry(
+    tv: &mut ToolVersion,
+    platform_key: &str,
+    asset: &ArtifactBundleReleaseAsset,
+    install: impl FnOnce(&mut ToolVersion) -> Result<bool>,
+) -> Result<bool> {
+    let previous_lock_entry = tv.lock_platforms.get(platform_key).cloned();
+    let platform_info = tv
+        .lock_platforms
+        .entry(platform_key.to_string())
+        .or_default();
+    platform_info.url = Some(asset.url.clone());
+    platform_info.url_api = asset.url_api.clone();
+    if platform_info.checksum.is_none() {
+        platform_info.checksum = asset.digest.clone();
+    }
+    let installed = install(tv);
+    if !matches!(installed, Ok(true)) {
+        match previous_lock_entry {
+            Some(entry) => tv.lock_platforms.insert(platform_key.to_string(), entry),
+            None => tv.lock_platforms.remove(platform_key),
+        };
+    }
+    installed
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -814,10 +851,13 @@ fn filter_executables(
     let Some(filter) = opts.filter_bins() else {
         return Ok(executables);
     };
+    // The package decides how many executables there are, so membership is
+    // checked in sets; the lists keep the order and the error text.
+    let available: HashSet<&str> = executables.iter().map(String::as_str).collect();
     let missing: Vec<&str> = filter
         .iter()
-        .filter(|b| !executables.contains(b))
-        .map(|s| s.as_str())
+        .map(String::as_str)
+        .filter(|b| !available.contains(b))
         .collect();
     if !missing.is_empty() {
         return Err(eyre::eyre!(
@@ -826,9 +866,10 @@ fn filter_executables(
             executables.join(", ")
         ));
     }
+    let selected: HashSet<&str> = filter.iter().map(String::as_str).collect();
     Ok(executables
         .into_iter()
-        .filter(|e| filter.contains(e))
+        .filter(|e| selected.contains(e.as_str()))
         .collect())
 }
 
@@ -903,7 +944,7 @@ impl GitProvider {
         target: Option<&PlatformTarget>,
     ) -> Result<Self> {
         let provider = opts.provider(target);
-        let kind = if ba.tool_name.contains("gitlab.com") {
+        let kind = if Self::is_gitlab_com_url(&ba.tool_name) {
             GitProviderKind::GitLab
         } else {
             match provider.to_lowercase().as_str() {
@@ -988,6 +1029,14 @@ impl GitProvider {
         url.set_username("").ok()?;
         url.set_password(None).ok()?;
         Some(url)
+    }
+
+    /// Whether the tool name is the URL of a repository on gitlab.com. Only the
+    /// host counts: a package on another forge can have `gitlab.com` in its
+    /// owner or repository name, and is not the gitlab.com project of that name.
+    fn is_gitlab_com_url(tool_name: &str) -> bool {
+        let name = tool_name.strip_prefix("spm:").unwrap_or(tool_name);
+        Url::parse(name).is_ok_and(|url| url.host_str() == Some("gitlab.com"))
     }
 
     /// When the tool name is a full URL pointing to a self-hosted instance,
@@ -1256,7 +1305,7 @@ fn artifactbundle_binaries(
     let mut binaries = vec![];
     let root = extract_dir.canonicalize()?;
     for bundle in artifactbundle_dirs(extract_dir)? {
-        let info = file::read_to_string(bundle.join("info.json"))?;
+        let info = read_archive_metadata(&bundle.join("info.json"))?;
         let manifest = serde_json::from_str::<ArtifactBundleInfo>(&info)
             .wrap_err("Failed to parse artifact bundle info.json")?;
         for (name, artifact) in manifest.artifacts {
@@ -1321,7 +1370,7 @@ fn artifactbundle_supports_target(
     );
     let musl = target.libc() == Some("musl");
     for bundle in artifactbundle_dirs(extract_dir)? {
-        let info = file::read_to_string(bundle.join("info.json"))?;
+        let info = read_archive_metadata(&bundle.join("info.json"))?;
         let manifest = serde_json::from_str::<ArtifactBundleInfo>(&info)
             .wrap_err("Failed to parse artifact bundle info.json")?;
         let supported = manifest
@@ -1391,7 +1440,11 @@ fn filter_artifactbundle_binaries(
     binaries: Vec<ArtifactBundleBinary>,
 ) -> eyre::Result<Vec<ArtifactBundleBinary>> {
     let names = binaries.iter().map(|b| b.name.clone()).collect::<Vec<_>>();
-    let filtered = filter_executables(opts, names)?;
+    // Without `filter_bins` this is every name the bundle lists, so each
+    // binary is looked up in a set, not in a scan of the list.
+    let filtered = filter_executables(opts, names)?
+        .into_iter()
+        .collect::<HashSet<_>>();
     Ok(binaries
         .into_iter()
         .filter(|b| filtered.contains(&b.name))
@@ -1526,6 +1579,42 @@ struct ArtifactBundleArtifact {
 struct ArtifactBundleVariant {
     path: String,
     supported_triples: Vec<String>,
+}
+
+/// Copies the bundle's executables into `artifactbundle/bin` and links each
+/// name into `bin`.
+///
+/// info.json can list one file under any number of names. Each file is copied
+/// once and its other names link to that copy, so the install takes no more
+/// space than the unpacked bundle, which `extract_max_ratio` bounds.
+fn install_artifactbundle_binaries(
+    install_path: &Path,
+    binaries: Vec<ArtifactBundleBinary>,
+) -> Result<()> {
+    let bin_path = install_path.join("bin");
+    let artifact_bin_path = install_path.join("artifactbundle").join("bin");
+    file::create_dir_all(&bin_path)?;
+    file::create_dir_all(&artifact_bin_path)?;
+    // A name that several bundles of the zip list goes to the last of them.
+    let mut sources = BTreeMap::new();
+    for binary in binaries {
+        sources.insert(binary.name, binary.path.canonicalize()?);
+    }
+    let mut copies: BTreeMap<PathBuf, PathBuf> = BTreeMap::new();
+    for (name, source) in sources {
+        let installed_binary = match copies.get(&source) {
+            Some(copy) => copy.clone(),
+            None => {
+                let copy = artifact_bin_path.join(&name);
+                file::copy(&source, &copy)?;
+                file::make_executable(&copy)?;
+                copies.insert(source, copy.clone());
+                copy
+            }
+        };
+        file::make_symlink(&installed_binary, &bin_path.join(&name))?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -1674,6 +1763,29 @@ mod tests {
             GitProvider::from_ba(&get_ba("https://github.com/org/Tool.git".to_string(), None)),
             GitProvider {
                 api_url: github::API_URL.to_string(),
+                kind: GitProviderKind::GitHub
+            }
+        );
+
+        // `gitlab.com` in an owner or repository name is not the host
+        for tool in [
+            "https://github.com/acme/gitlab.com-sync.git",
+            "https://github.com/gitlab.com/Tool.git",
+            "acme/gitlab.com-sync",
+        ] {
+            assert_eq!(
+                GitProvider::from_ba(&get_ba(tool.to_string(), None)),
+                GitProvider::default(),
+                "{tool}"
+            );
+        }
+        assert_eq!(
+            GitProvider::from_ba(&get_ba(
+                "https://github.acme.com/org/gitlab.com-sync.git".to_string(),
+                None
+            )),
+            GitProvider {
+                api_url: "https://github.acme.com/api/v3".to_string(),
                 kind: GitProviderKind::GitHub
             }
         );
@@ -2534,6 +2646,109 @@ mod tests {
         assert!(binaries.is_empty());
     }
 
+    #[test]
+    fn artifactbundle_info_json_is_read_up_to_a_limit() {
+        let tmp = tempfile::tempdir().unwrap();
+        let bundle = tmp.path().join("tool.artifactbundle");
+        file::create_dir_all(bundle.join("bin")).unwrap();
+        file::write(bundle.join("bin/tool"), "").unwrap();
+        let info = r#"{"schemaVersion": "1.0", "artifacts": {"tool": {"version": "1.0.0",
+            "type": "executable", "variants": [{"path": "bin/tool",
+            "supportedTriples": ["arm64-apple-macosx"]}]}}}"#;
+        let limit = crate::backend::static_helpers::ARCHIVE_METADATA_LIMIT as usize;
+        let triples = ["arm64-apple-macosx".to_string()];
+
+        file::write(
+            bundle.join("info.json"),
+            format!("{info}{}", " ".repeat(limit - info.len())),
+        )
+        .unwrap();
+        assert_eq!(
+            artifactbundle_binaries(tmp.path(), &triples).unwrap().len(),
+            1
+        );
+
+        file::write(
+            bundle.join("info.json"),
+            format!("{info}{}", " ".repeat(limit + 1 - info.len())),
+        )
+        .unwrap();
+        let err = artifactbundle_binaries(tmp.path(), &triples).unwrap_err();
+        assert!(
+            format!("{err:#}").contains("larger than 1 MiB"),
+            "unexpected error: {err:#}"
+        );
+    }
+
+    #[test]
+    fn artifactbundle_lock_entry_stays_only_for_an_installed_bundle() {
+        let asset = ArtifactBundleReleaseAsset {
+            name: "tool.artifactbundle.zip".to_string(),
+            url: "https://example.com/tool.artifactbundle.zip".to_string(),
+            url_api: None,
+            digest: Some("sha256:bundle".to_string()),
+        };
+        let earlier = PlatformInfo {
+            url: Some("https://example.com/earlier.artifactbundle.zip".to_string()),
+            checksum: Some("sha256:earlier".to_string()),
+            ..Default::default()
+        };
+        // An info.json over the metadata limit is one of the errors the caller
+        // answers with a source build.
+        let tmp = tempfile::tempdir().unwrap();
+        let bundle = tmp.path().join("tool.artifactbundle");
+        file::create_dir_all(&bundle).unwrap();
+        let limit = crate::backend::static_helpers::ARCHIVE_METADATA_LIMIT as usize;
+        file::write(bundle.join("info.json"), " ".repeat(limit + 1)).unwrap();
+        let oversized =
+            || artifactbundle_binaries(tmp.path(), &["x86_64-unknown-linux-gnu".to_string()]);
+
+        type Outcome<'a> = Box<dyn Fn() -> Result<bool> + 'a>;
+        let cases: Vec<(
+            &str,
+            Option<PlatformInfo>,
+            Outcome<'_>,
+            Option<PlatformInfo>,
+        )> = vec![
+            (
+                "error keeps the earlier entry",
+                Some(earlier.clone()),
+                Box::new(|| oversized().map(|_| true)),
+                Some(earlier.clone()),
+            ),
+            (
+                "error leaves no entry",
+                None,
+                Box::new(|| oversized().map(|_| true)),
+                None,
+            ),
+            (
+                "no binary keeps the earlier entry",
+                Some(earlier.clone()),
+                Box::new(|| Ok(false)),
+                Some(earlier.clone()),
+            ),
+            (
+                "installed bundle is recorded",
+                None,
+                Box::new(|| Ok(true)),
+                Some(PlatformInfo {
+                    url: Some(asset.url.clone()),
+                    checksum: asset.digest.clone(),
+                    ..Default::default()
+                }),
+            ),
+        ];
+        for (name, before, outcome, after) in cases {
+            let mut tv = tool_version("1.2.3");
+            if let Some(before) = before {
+                tv.lock_platforms.insert("linux-x64".to_string(), before);
+            }
+            let _ = with_artifactbundle_lock_entry(&mut tv, "linux-x64", &asset, |_| outcome());
+            assert_eq!(tv.lock_platforms.get("linux-x64"), after.as_ref(), "{name}");
+        }
+    }
+
     fn executable_bundle_info(name: &str, path: &str) -> String {
         serde_json::json!({
             "schemaVersion": "1.0",
@@ -2657,6 +2872,50 @@ mod tests {
         assert_eq!(binaries[0].name, "tool");
     }
 
+    /// One file listed under many names is installed once, so the names in
+    /// info.json cannot multiply the space the unpacked bundle takes.
+    #[cfg(unix)]
+    #[test]
+    fn test_install_artifactbundle_binaries_copies_each_file_once() {
+        let tmp = tempfile::tempdir().unwrap();
+        let bundle = tmp.path().join("extract/tool.artifactbundle");
+        file::create_dir_all(bundle.join("bin")).unwrap();
+        file::write(bundle.join("bin/tool"), "tool").unwrap();
+        file::write(bundle.join("bin/other"), "other").unwrap();
+        let binary = |name: &str, path: &str| ArtifactBundleBinary {
+            name: name.to_string(),
+            path: bundle.join(path),
+        };
+        let install = tmp.path().join("install");
+
+        install_artifactbundle_binaries(
+            &install,
+            vec![
+                binary("tool", "bin/tool"),
+                binary("alias", "bin/tool"),
+                binary("respelled", "bin/../bin/tool"),
+                binary("other", "bin/other"),
+                // a name that a later bundle lists again is that bundle's
+                binary("alias", "bin/other"),
+            ],
+        )
+        .unwrap();
+
+        let copies = std::fs::read_dir(install.join("artifactbundle/bin")).unwrap();
+        assert_eq!(copies.count(), 2);
+        for (name, content) in [
+            ("tool", "tool"),
+            ("respelled", "tool"),
+            ("alias", "other"),
+            ("other", "other"),
+        ] {
+            let link = install.join("bin").join(name);
+            assert!(link.is_symlink(), "{name}");
+            assert_eq!(file::read_to_string(&link).unwrap(), content, "{name}");
+            assert!(file::is_executable(&link), "{name}");
+        }
+    }
+
     #[test]
     fn test_artifactbundle_binaries_uses_first_matching_variant() {
         let tmp = tempfile::tempdir().unwrap();
@@ -2752,6 +3011,21 @@ mod tests {
     }
 
     #[test]
+    fn test_filter_artifactbundle_binaries_keeps_all_without_filter_bins() {
+        let binaries = ["b", "a", "b"]
+            .into_iter()
+            .map(|name| ArtifactBundleBinary {
+                name: name.to_string(),
+                path: PathBuf::from("/tmp").join(name),
+            })
+            .collect::<Vec<_>>();
+        let opts = ToolVersionOptions::default();
+        let opts = SpmOptions::new(&opts);
+        let filtered = filter_artifactbundle_binaries(&opts, binaries.clone()).unwrap();
+        assert_eq!(filtered, binaries);
+    }
+
+    #[test]
     fn test_parse_filter_bins() {
         assert_eq!(filter_bins(&ToolVersionOptions::default()), None);
 
@@ -2819,5 +3093,47 @@ mod tests {
         let msg = err.to_string();
         assert!(msg.contains("does-not-exist"), "got: {msg}");
         assert!(msg.contains("swiftly"), "got: {msg}");
+    }
+
+    /// A per-platform listing option selects its own cache entry, since
+    /// listing reads it before the top-level value the shared key covers.
+    #[tokio::test]
+    async fn per_platform_listing_options_key_the_version_cache() {
+        let config = Config::get().await.unwrap();
+        let (os, arch) = crate::backend::static_helpers::platform_aliases().remove(0);
+        let backend = |opts: Option<ToolVersionOptions>| {
+            SPMBackend::from_arg(BackendArg::new_raw(
+                "spm".to_string(),
+                Some("acme/tool".to_string()),
+                "acme/tool".to_string(),
+                opts,
+                BackendResolution::new(true),
+            ))
+        };
+        let nested = |api_url: &str| {
+            let mut platform = toml::Table::new();
+            platform.insert("api_url".into(), api_url.into());
+            let mut platforms = toml::Table::new();
+            platforms.insert(format!("{os}-{arch}"), platform.into());
+            opts_with("platforms", platforms.into())
+        };
+        let context = async |opts| {
+            backend(opts)
+                .remote_version_cache_context(&config)
+                .await
+                .unwrap()
+        };
+
+        assert_eq!(context(None).await, None);
+        let acme = context(Some(nested("https://github.acme.com/api/v3"))).await;
+        let other = context(Some(nested("https://github.other.com/api/v3"))).await;
+        assert!(acme.is_some());
+        assert_ne!(acme, other);
+        let flat = context(Some(opts_with(
+            &format!("platforms_{os}_{arch}_api_url"),
+            "https://github.acme.com/api/v3".into(),
+        )))
+        .await;
+        assert_eq!(flat, acme);
     }
 }
