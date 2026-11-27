@@ -108,7 +108,7 @@ impl ToolVersions {
         let mapped = lines_map(raw, &s);
         cf.unmapped_templates = !mapped;
         let raw = if mapped { raw } else { s.as_str() };
-        let (pre, plugins) = Self::parse_lines(s.lines().zip(raw.lines()));
+        let (pre, plugins) = Self::parse_lines(file_lines(&s).zip(file_lines(raw)));
         cf.pre = Mutex::new(pre);
         cf.plugins = Mutex::new(plugins);
         cf.populate_toolset()?;
@@ -143,9 +143,11 @@ impl ToolVersions {
                 kept.push('\n');
                 continue;
             }
-            let raw_tool = raw_line.split_once('#').map_or(raw_line, |(tool, _)| tool);
+            let (raw_tool, post) = match comment_start(raw_line) {
+                Some(i) => (&raw_line[..i], &raw_line[i + 1..]),
+                None => (raw_line, ""),
+            };
             let raw = (raw_line != line).then(|| raw_tool.trim_end().to_string());
-            let post = raw_line.split_once('#').map_or("", |(_, post)| post);
             let (line, _) = line.split_once('#').unwrap_or((line, ""));
             let mut parts = line.split_whitespace();
             if let Some(plugin) = parts.next() {
@@ -365,27 +367,60 @@ fn lines_map(raw: &str, rendered: &str) -> bool {
         && raw.lines().all(expressions_close)
 }
 
+/// The lines of a file as `lines_map` counts them: split at each `\n`, with a
+/// last line after the final line break, which is empty unless the file does not
+/// end with one. Pairing the rendered and the raw lines this way keeps a last
+/// template with no line break that renders to nothing.
+fn file_lines(s: &str) -> impl Iterator<Item = &str> {
+    s.split('\n')
+        .map(|line| line.strip_suffix('\r').unwrap_or(line))
+}
+
+/// Where the comment of a line as written starts: its first `#` outside a
+/// `{{ ... }}` expression, so `node {{ "20# note" }}` has none.
+fn comment_start(line: &str) -> Option<usize> {
+    let mut i = 0;
+    while i < line.len() {
+        let rest = &line[i..];
+        if let Some(inner) = rest.strip_prefix("{{") {
+            match expression_end(inner) {
+                Some(end) => i += 2 + end,
+                // an expression that does not close leaves the file unmapped, so
+                // this line is the rendered one: its first `#` starts the comment
+                None => return rest.find('#').map(|j| i + j),
+            }
+        } else if rest.starts_with('#') {
+            return Some(i);
+        } else {
+            i += rest.chars().next().map_or(1, char::len_utf8);
+        }
+    }
+    None
+}
+
+/// The length of a `{{ ... }}` expression after its `{{`, through its `}}`,
+/// skipping a `}}` in a quoted string; None when it does not close.
+fn expression_end(rest: &str) -> Option<usize> {
+    let mut quote = None;
+    for (i, c) in rest.char_indices() {
+        match quote {
+            Some(q) if c == q => quote = None,
+            Some(_) => {}
+            None if matches!(c, '"' | '\'' | '`') => quote = Some(c),
+            None if rest[i..].starts_with("}}") => return Some(i + 2),
+            None => {}
+        }
+    }
+    None
+}
+
 /// Whether every `{{` on a line has its `}}` on the same line, outside quotes.
 fn expressions_close(line: &str) -> bool {
     let mut rest = line;
     while let Some(open) = rest.find("{{") {
         rest = &rest[open + 2..];
-        let mut quote = None;
-        let mut close = None;
-        for (i, c) in rest.char_indices() {
-            match quote {
-                Some(q) if c == q => quote = None,
-                Some(_) => {}
-                None if matches!(c, '"' | '\'' | '`') => quote = Some(c),
-                None if rest[i..].starts_with("}}") => {
-                    close = Some(i);
-                    break;
-                }
-                None => {}
-            }
-        }
-        match close {
-            Some(i) => rest = &rest[i + 2..],
+        match expression_end(rest) {
+            Some(end) => rest = &rest[end..],
             None => return false,
         }
     }
@@ -607,7 +642,7 @@ mod tests {
 
     /// A file parsed from its text as written and the text it rendered to.
     fn parsed(raw: &str, rendered: &str) -> ToolVersions {
-        let (pre, plugins) = ToolVersions::parse_lines(rendered.lines().zip(raw.lines()));
+        let (pre, plugins) = ToolVersions::parse_lines(file_lines(rendered).zip(file_lines(raw)));
         ToolVersions {
             pre: Mutex::new(pre),
             plugins: Mutex::new(plugins),
@@ -709,6 +744,52 @@ mod tests {
         );
         tv.remove_tool(&node).unwrap();
         assert_eq!(tv.dump().unwrap(), "python 3.12\n{{ env.EXTRA }}\n");
+    }
+
+    /// A last line with no line break pairs with what it rendered to, even when
+    /// that is nothing.
+    #[test]
+    fn a_last_template_without_a_line_break_is_kept() {
+        let node: Arc<BackendArg> = Arc::new("node".into());
+        let (raw, rendered) = ("node 18.0.0\n{{ env.EXTRA }}", "node 18.0.0\n");
+        assert!(lines_map(raw, rendered));
+        let tv = parsed(raw, rendered);
+        tv.replace_versions(
+            &node,
+            vec![ToolRequest::new_version_for_test(
+                node.clone(),
+                "20.0.0",
+                ToolSource::Unknown,
+            )],
+        )
+        .unwrap();
+        assert_eq!(tv.dump().unwrap(), "nodejs 20.0.0\n{{ env.EXTRA }}\n");
+    }
+
+    /// A `#` inside a `{{ ... }}` expression does not start the comment of the
+    /// line as written, so saving another tool leaves the expression as it is.
+    #[test]
+    fn a_hash_inside_a_template_is_not_a_comment() {
+        let python: Arc<BackendArg> = Arc::new("python".into());
+        let tv = parsed(
+            "node {{ \"20# note\" }}\nruby {{ \"3\" }} # pinned\npython 3.11\n",
+            "node 20# note\nruby 3 # pinned\npython 3.11\n",
+        );
+        tv.replace_versions(
+            &python,
+            vec![ToolRequest::new_version_for_test(
+                python.clone(),
+                "3.12",
+                ToolSource::Unknown,
+            )],
+        )
+        .unwrap();
+        assert_eq!(
+            tv.dump().unwrap(),
+            "node {{ \"20# note\" }}\nruby {{ \"3\" }} # pinned\npython 3.12\n"
+        );
+        assert_eq!(comment_start("node {{ \"}}#\" }} # c"), Some(17));
+        assert_eq!(comment_start("node 20 # {{ open"), Some(8));
     }
 
     /// `dump` relies on `post` to terminate each line, and `trim_end` only ever
