@@ -308,8 +308,17 @@ mod tests {
         assert!(body_requires_trust(
             "spm:https://evil.example/o/r.git latest\n"
         ));
+        assert!(body_requires_trust(
+            "core:spm:https://evil.example/o/r.git latest\n"
+        ));
+        assert!(body_requires_trust(
+            "core:core:spm:https://evil.example/o/r.git latest\n"
+        ));
         assert!(!body_requires_trust(
             "spm:https://github.com/o/r.git latest\n"
+        ));
+        assert!(!body_requires_trust(
+            "core:spm:https://github.com/o/r.git latest\n"
         ));
         assert!(body_requires_trust("node path:./local\n"));
         assert!(body_requires_trust("node 20 path:./local # x\n"));

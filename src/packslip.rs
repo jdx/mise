@@ -7,7 +7,7 @@
 
 pub mod completions;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -289,11 +289,13 @@ pub(crate) async fn download_file(
 }
 
 /// Fetch a document a packslip names — a manifest or a signed release list —
-/// with the same fallback [`download_file`] uses.
+/// with the same fallback [`download_file`] uses. It fails once more than
+/// [`MAX_MANIFEST_BYTES`] has arrived.
 pub(crate) async fn fetch_text(url: &str) -> Result<String> {
     let reason = match HTTP_FETCH
         .get_text_request(url)
         .headers(&headers_for(url)?)
+        .max_bytes(MAX_MANIFEST_BYTES as usize)
         .send()
         .await
     {
@@ -307,6 +309,7 @@ pub(crate) async fn fetch_text(url: &str) -> Result<String> {
     HTTP_FETCH
         .get_text_request(&api_url)
         .headers(&headers_for(&api_url)?)
+        .max_bytes(MAX_MANIFEST_BYTES as usize)
         .send()
         .await
 }
@@ -690,7 +693,9 @@ fn into_place(staging: &Path, dir: &Path, built: Result<()>) -> Result<()> {
 ///
 /// The listings decide how deep the tree goes, so it is walked from a list
 /// of directories still to fetch rather than by recursion, whose nested
-/// futures would all be polled on one stack.
+/// futures would all be polled on one stack. They do not decide how long
+/// the walk runs: it fails once they name more than
+/// [`MAX_REPO_DIR_ENTRIES`] entries.
 async fn fetch_repo_dir(
     repo: &str,
     commit: &str,
@@ -699,14 +704,23 @@ async fn fetch_repo_dir(
     pr: &dyn SingleReport,
 ) -> Result<()> {
     let mut dirs = vec![(rel.to_string(), dest.to_path_buf())];
+    let mut listed = 0;
     while let Some((rel, dest)) = dirs.pop() {
-        fetch_repo_dir_entries(repo, commit, &rel, &dest, pr, &mut dirs).await?;
+        fetch_repo_dir_entries(repo, commit, &rel, &dest, pr, &mut dirs, &mut listed).await?;
     }
     Ok(())
 }
 
+/// Most entries, files and directories together, the listings of one
+/// [`fetch_repo_dir`] may name. The commit pins the files, not the listings:
+/// a directory one of them invents is never looked up anywhere else, so
+/// without a limit mise-versions could keep the walk going for as long as it
+/// keeps answering. A genuine skill is a handful of files.
+const MAX_REPO_DIR_ENTRIES: usize = 1024;
+
 /// One directory of [`fetch_repo_dir`]: its files are downloaded into
-/// `dest`, and its subdirectories added to `dirs`.
+/// `dest`, and its subdirectories added to `dirs`. `listed` counts the
+/// entries of every directory listed so far.
 async fn fetch_repo_dir_entries(
     repo: &str,
     commit: &str,
@@ -714,8 +728,13 @@ async fn fetch_repo_dir_entries(
     dest: &Path,
     pr: &dyn SingleReport,
     dirs: &mut Vec<(String, PathBuf)>,
+    listed: &mut usize,
 ) -> Result<()> {
     let listing = github::list_repo_dir(repo, commit, rel).await?;
+    *listed += listing.entries.len();
+    if *listed > MAX_REPO_DIR_ENTRIES {
+        bail!("the listings of {repo} name more than {MAX_REPO_DIR_ENTRIES} files and directories");
+    }
     file::create_dir_all(dest)?;
     for entry in listing.entries {
         let name = entry.name;
@@ -1667,35 +1686,88 @@ pub(crate) fn completion_sources(
     // Select per identity before considering source order. A completion
     // for one executable must never hide or complete another executable.
     let selected = selected_resources(statement, artifact);
-    completion_sources_among(&selected, statement, install_path, shell, artifact, tool)
+    let by_bin = resources_by_bin(statement, &selected);
+    let described = completion_bin(statement, tool).and_then(|bin| by_bin.get(bin));
+    completion_sources_among(
+        described.map_or(&[], Vec::as_slice),
+        install_path,
+        shell,
+        artifact,
+    )
 }
 
-/// [`completion_sources`] given the statement's [`selected_resources`].
-/// What is selected does not depend on the executable asked about, so a
+/// The statement's [`selected_resources`] under the executable each
+/// describes: the one an entry names or, where it names none, the release's
+/// only one. An entry that describes no executable is left out. Neither the
+/// selection nor the grouping depends on the executable asked about, and the
+/// vendor decides how long the lists of executables and resources are, so a
 /// caller asking about every executable of a release, as the prompt hook
-/// does, selects once rather than once for each.
-pub(crate) fn completion_sources_among(
-    selected: &[&Resource],
-    statement: &Statement,
+/// does, reads them here once rather than once for each.
+pub(crate) fn resources_by_bin<'a>(
+    statement: &'a Statement,
+    selected: &[&'a Resource],
+) -> BTreeMap<&'a str, Vec<&'a Resource>> {
+    let sole_bin = statement.sole_bin();
+    let mut by_bin: BTreeMap<_, Vec<_>> = BTreeMap::new();
+    for r in selected {
+        if let Some(bin) = r.bin.as_deref().or(sole_bin) {
+            by_bin.entry(bin).or_default().push(*r);
+        }
+    }
+    by_bin
+}
+
+/// The executables of a release that have a completion for `shell`: the names
+/// `artifact` puts on PATH, or every artifact's when none is selected. What is
+/// selected, and which executable each entry describes, does not depend on
+/// the executable, so both are worked out once for the release, and each name
+/// is asked about once however many entries put it on PATH. The prompt hook
+/// asks this for every installed release on every directory change.
+pub(crate) fn completed_commands<'a>(
+    statement: &'a Statement,
     install_path: &Path,
     shell: &str,
     artifact: Option<&Artifact>,
-    tool: Option<&str>,
+) -> BTreeSet<&'a str> {
+    let selected = selected_resources(statement, artifact);
+    let by_bin = resources_by_bin(statement, &selected);
+    statement
+        .predicate
+        .artifacts
+        .iter()
+        .filter(|candidate| artifact.is_none_or(|selected| candidate.name == selected.name))
+        .flat_map(|a| &a.bin)
+        .map(|bin| bin.name.as_str())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        // The name is one of the statement's own, so the entries that
+        // describe it are the ones listed under it.
+        .filter(|name| {
+            by_bin.get(name).is_some_and(|described| {
+                !completion_sources_among(described, install_path, shell, artifact).is_empty()
+            })
+        })
+        .collect()
+}
+
+/// [`completion_sources`] given the resources that describe the executable
+/// asked about, as [`resources_by_bin`] lists them.
+pub(crate) fn completion_sources_among(
+    described: &[&Resource],
+    install_path: &Path,
+    shell: &str,
+    artifact: Option<&Artifact>,
 ) -> Vec<CompletionSource> {
-    let bin = completion_bin(statement, tool);
-    let describes =
-        |r: &&Resource| r.bin.as_deref().or_else(|| statement.sole_bin()) == bin && bin.is_some();
     let completion_entries = applicable(
-        selected.iter().copied().filter(describes).filter(|r| {
+        described.iter().copied().filter(|r| {
             r.kind == "completion"
                 && (r.shell.as_deref() == Some(shell) || r.shells.iter().any(|s| s == shell))
         }),
         artifact,
     );
-    let mut spec_entries: Vec<_> = selected
+    let mut spec_entries: Vec<_> = described
         .iter()
         .copied()
-        .filter(describes)
         .filter(|r| r.kind == "cli-spec")
         .collect();
     // The specification ranks the static sources of a spec as it ranks a
@@ -2224,6 +2296,25 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_fetch_text_refuses_a_document_larger_than_a_manifest() {
+        let _config = crate::config::Config::get().await.unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/packslip.sigstore.json")
+            .with_status(200)
+            .with_body(" ".repeat(MAX_MANIFEST_BYTES as usize + 1))
+            .create_async()
+            .await;
+        let url = format!("{}/packslip.sigstore.json", server.url());
+        let err = fetch_text(&url).await.unwrap_err();
+        assert!(
+            err.to_string().contains("is larger than 4.0 MiB"),
+            "{err:#}"
+        );
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
     async fn test_fetch_text_surfaces_the_failure_of_a_url_with_no_github_fallback() {
         // Nothing but a github.com release download has an API asset endpoint to
         // retry at, so the original error is what the caller sees.
@@ -2287,6 +2378,46 @@ mod tests {
             .unwrap();
         let notes = dir.path().join(rel).join("notes.md");
         assert_eq!(file::read_to_string(notes).unwrap(), "notes");
+    }
+
+    #[tokio::test]
+    async fn test_fetch_repo_dir_stops_when_the_listings_never_end() {
+        use crate::config::SettingsExt;
+        use crate::config::settings::SettingsPartial;
+        use confique::Layer;
+        let _config = crate::config::Config::get().await.unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let _settings = crate::test::SettingsGuard::lock();
+        let mut settings = SettingsPartial::empty();
+        settings.url_replacements = Some(indexmap::indexmap! {
+            "https://api.github.com".to_string() => server.url(),
+        });
+        Settings::reset(Some(settings));
+        // Every directory holds more directories and never a file, which is
+        // the one thing the commit could contradict.
+        const WIDTH: usize = 32;
+        let body = (0..WIDTH)
+            .map(|i| format!(r#"{{"name":"d{i}","type":"dir"}}"#))
+            .join(",");
+        let listings = server
+            .mock(
+                "GET",
+                mockito::Matcher::Regex("^/repos/o/r/contents/skill".into()),
+            )
+            .with_body(format!("[{body}]"))
+            .expect(MAX_REPO_DIR_ENTRIES / WIDTH + 1)
+            .create_async()
+            .await;
+        let dir = tempfile::tempdir().unwrap();
+        let pr = crate::ui::progress_report::QuietReport::new();
+        let err = fetch_repo_dir("o/r", "c", "skill", &dir.path().join("skill"), &pr)
+            .await
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("files and directories"),
+            "expected the entry limit, got {err:#}"
+        );
+        listings.assert_async().await;
     }
 
     #[test]
@@ -2452,6 +2583,89 @@ mod tests {
             started.elapsed() < std::time::Duration::from_secs(5),
             "selecting {} resources took {:?}",
             entries.len(),
+            started.elapsed()
+        );
+    }
+
+    #[test]
+    fn an_entry_without_bin_is_not_matched_by_walking_the_executables_again() {
+        // Which executable an entry with no `bin` describes is the same for
+        // every entry, so an answer about one executable reads the list of
+        // executables a fixed number of times, not once per such entry.
+        // Walking the executables for each of these entries costs one answer
+        // ICONS * BINS steps, seconds in a debug build; reading them once
+        // costs milliseconds.
+        const ICONS: usize = 10_000;
+        const BINS: usize = 5_000;
+        let mut entries: Vec<String> = (0..ICONS)
+            .map(|i| format!(r#"{{"kind":"icon","archive":"icons/{i}.png"}}"#))
+            .collect();
+        entries.push(
+            r#"{"kind":"completion","bin":"u","shells":["zsh"],"exec":["u","{shell}"]}"#.into(),
+        );
+        let mut s = statement_with(&format!("[{}]", entries.join(",")));
+        let bins = (0..BINS).map(|i| packslip::model::Bin::new(format!("bin/b{i}")));
+        s.predicate.artifacts[0].bin.extend(bins);
+        s.validate().unwrap();
+        let artifact = &s.predicate.artifacts[0];
+        let root = Path::new("/unused");
+        let started = std::time::Instant::now();
+        let answer = completion_sources(&s, root, "zsh", Some(artifact), Some("u"));
+        let elapsed = started.elapsed();
+        assert_eq!(answer.len(), 1, "{answer:?}");
+        assert!(
+            elapsed < std::time::Duration::from_millis(500),
+            "asking about one of {} executables took {elapsed:?}",
+            artifact.bin.len(),
+        );
+    }
+
+    #[test]
+    fn resources_are_listed_under_the_executable_they_describe() {
+        // With several executables an entry without `bin` describes none.
+        let two = statement_with(
+            r#"[{"kind":"icon","archive":"i.png"},{"kind":"completion","bin":"t","shells":["zsh"],"exec":["t","{shell}"]}]"#,
+        );
+        let selected = selected_resources(&two, Some(&two.predicate.artifacts[0]));
+        let by_bin = resources_by_bin(&two, &selected);
+        assert_eq!(by_bin.keys().copied().collect::<Vec<_>>(), ["t"]);
+        assert_eq!(by_bin["t"].len(), 1);
+        assert_eq!(by_bin["t"][0].kind, "completion");
+
+        // With one, it describes that one.
+        let mut one = two.clone();
+        one.predicate.artifacts[0].bin.retain(|bin| bin.name == "t");
+        let selected = selected_resources(&one, Some(&one.predicate.artifacts[0]));
+        let by_bin = resources_by_bin(&one, &selected);
+        assert_eq!(by_bin.keys().copied().collect::<Vec<_>>(), ["t"]);
+        assert_eq!(by_bin["t"].len(), 2);
+    }
+
+    #[test]
+    fn asking_about_every_executable_reads_the_lists_once() {
+        // The vendor decides how many executables and resources a release
+        // lists, and the prompt hook asks about each executable on every
+        // directory change: no answer may cost a scan of either list.
+        const LISTED: usize = 20_000;
+        let mut entries: Vec<String> = (0..LISTED)
+            .map(|i| format!(r#"{{"kind":"icon","archive":"icons/{i}.png"}}"#))
+            .collect();
+        entries.push(
+            r#"{"kind":"completion","bin":"u","shells":["zsh"],"exec":["u","{shell}"]}"#.into(),
+        );
+        let mut s = statement_with(&format!("[{}]", entries.join(",")));
+        let bins = (0..LISTED).map(|i| packslip::model::Bin::new(format!("bin/b{i}")));
+        s.predicate.artifacts[0].bin.extend(bins);
+        s.validate().unwrap();
+        let artifact = &s.predicate.artifacts[0];
+        let root = Path::new("/unused");
+        let started = std::time::Instant::now();
+        let completed = completed_commands(&s, root, "zsh", Some(artifact));
+        assert_eq!(completed.into_iter().collect::<Vec<_>>(), ["u"]);
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(30),
+            "asking about {} executables took {:?}",
+            artifact.bin.len(),
             started.elapsed()
         );
     }

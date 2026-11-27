@@ -63,7 +63,7 @@ impl std::fmt::Debug for SecretValue {
 pub(crate) fn is_interactive() -> bool {
     console::user_attended_stderr()
         && std::io::stdin().is_terminal()
-        && !ci_info::is_ci()
+        && !*mise_util::env::IS_CI
         && crate::env::__USAGE.is_none()
 }
 
