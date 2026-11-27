@@ -1433,12 +1433,15 @@ refresh_expires_at = "2099-01-01T00:00:00Z"
 
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
+        let (started_tx, mut started) = tokio::sync::oneshot::channel();
         tokio::spawn(async move {
             if let Ok((mut sock, _)) = listener.accept().await {
                 let mut buf = [0u8; 4096];
                 let _ = sock.read(&mut buf).await;
                 let head = "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\nconnection: close\r\n\r\n";
-                let _ = sock.write_all(head.as_bytes()).await;
+                if sock.write_all(head.as_bytes()).await.is_ok() {
+                    let _ = started_tx.send(());
+                }
                 // A byte every 10ms keeps restarting the client's idle read timeout.
                 while sock.write_all(b" ").await.is_ok() {
                     tokio::time::sleep(Duration::from_millis(10)).await;
@@ -1474,7 +1477,17 @@ refresh_expires_at = "2099-01-01T00:00:00Z"
         .await
         .expect("http_timeout did not end the refresh");
 
-        assert!(result.is_err());
+        // The server was sending the body, and the deadline is what ended it.
+        started
+            .try_recv()
+            .expect("the server started sending the reply");
+        let err = result.unwrap_err();
+        assert!(
+            err.chain().any(|cause| cause
+                .downcast_ref::<reqwest::Error>()
+                .is_some_and(reqwest::Error::is_timeout)),
+            "{err:#}"
+        );
         // The cache lock was released, and the cached token is untouched.
         let cache = read_cache().unwrap();
         assert_eq!(

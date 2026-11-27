@@ -160,7 +160,17 @@ pub(crate) fn credential_command_process(
     cmd: &str,
     host: &str,
 ) -> Option<std::process::Command> {
-    let path_without_shims = path_env_without_shims();
+    credential_command_process_with_path(provider, cmd, host, &path_env_without_shims())
+}
+
+/// [`credential_command_process`] with the `PATH` the command runs with, which
+/// also decides whether it can run without the shell.
+fn credential_command_process_with_path(
+    provider: &str,
+    cmd: &str,
+    host: &str,
+    path_without_shims: &std::ffi::OsStr,
+) -> Option<std::process::Command> {
     let (program, args) = match credential_command_shell(cmd, host) {
         Some(command) => command,
         None => {
@@ -181,7 +191,7 @@ pub(crate) fn credential_command_process(
         command = c;
     }
     command
-        .env("PATH", &path_without_shims)
+        .env("PATH", path_without_shims)
         .env("GIT_TERMINAL_PROMPT", "0")
         .env("MISE_CREDENTIAL_HOST", host)
         .env("MISE_CREDENTIAL_PROVIDER", provider);
@@ -673,13 +683,17 @@ logins:
         {
             env.remove(key);
         }
+        // A relative entry in the caller's PATH would send `env` through the
+        // shell too, so the commands get a PATH of absolute entries only.
+        let path = std::ffi::OsStr::new("/usr/bin:/bin");
         // The first runs through the shell, the second without it.
         for (cmd, direct) in [
             ("echo \"[$GIT_DIR][$GIT_WORK_TREE]\"", false),
             ("env", true),
         ] {
             let mut command =
-                credential_command_process("test-git-dir", cmd, "example.com").unwrap();
+                credential_command_process_with_path("test-git-dir", cmd, "example.com", path)
+                    .unwrap();
             assert_eq!(
                 std::path::Path::new(command.get_program()).file_name() == Some("env".as_ref()),
                 direct,
