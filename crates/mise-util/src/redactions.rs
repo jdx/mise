@@ -184,6 +184,14 @@ const TAB_OR_NEWLINE: [char; 3] = ['\t', '\n', '\r'];
 static URL_QUERY: LazyLock<regex::Regex> =
     LazyLock::new(|| regex::Regex::new(r#"(://[^\s?#'"]*)\?([^\s#'"]*)"#).unwrap());
 
+/// [`URL_QUERY`] for redaction, where an apostrophe ends a URL only when what
+/// follows cannot go on with it: whitespace, a quote, or the end. In
+/// `bob's.tgz?token=t` and `token=it's` it is part of the URL, so neither
+/// the query nor the rest of the credential is left out.
+static REDACT_URL_QUERY: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r#"(://(?:[^\s?#'"]|'[^\s?#'"])*'?)\?((?:[^\s#'"]|'[^\s#'"])*)"#).unwrap()
+});
+
 /// The query of a text that starts with a URL, or with a name that holds one
 /// (`cargo:https://...`). There raw whitespace and quotes are part of the URL:
 /// a URL parser percent-encodes them in a path or query, and the request is
@@ -305,7 +313,8 @@ fn strip_credential_params_of(url_query: &regex::Regex, text: &str) -> Option<St
 /// with the [`Redactor`]. Unlike [`strip_credential_query_params`], which is
 /// for stored names, this marks where a credential was for a reader.
 ///
-/// A value runs to the next `&`, `#`, quote or whitespace, so what is glued to
+/// A value runs to the next `&`, `#`, quote or whitespace (an apostrophe
+/// followed by more of the URL is part of it), so what is glued to
 /// the URL goes with it (the version of `cargo:https://host/r?token=t@1.0`): an
 /// unencoded `@` can be part of a token. A control character cannot be part of
 /// a URL, so the terminal style that ends a styled URL is kept.
@@ -349,7 +358,7 @@ fn url_credential_spans(text: &str, whitespace_ends_url: bool) -> Vec<(usize, us
         masked.replace_range(start..end, &"x".repeat(end - start));
     }
     let url_query: &regex::Regex = if whitespace_ends_url {
-        &URL_QUERY
+        &REDACT_URL_QUERY
     } else {
         &ARG_URL_QUERY
     };
@@ -412,12 +421,20 @@ fn userinfo_spans(text: &str, whitespace_ends_url: bool) -> Vec<(usize, usize)> 
 /// spells a parameter name (`token`) still leaves its value marked, and a
 /// registered secret that holds a whole URL is still matched whole.
 pub fn redact_output(text: &str) -> String {
-    redact_output_with(&GLOBAL_REDACTOR.lock().unwrap(), text)
+    redact_output_with(&GLOBAL_REDACTOR.lock().unwrap(), text, true)
 }
 
-fn redact_output_with(redactor: &Redactor, text: &str) -> String {
+/// [`redact_output`] for one command-line argument, which is one URL:
+/// whitespace and quotes are part of it, as in
+/// [`redact_url_credentials_in_arg`]. For arguments that mise stores (task
+/// reports, task history) or prints outside the logger.
+pub fn redact_output_in_arg(arg: &str) -> String {
+    redact_output_with(&GLOBAL_REDACTOR.lock().unwrap(), arg, false)
+}
+
+fn redact_output_with(redactor: &Redactor, text: &str, whitespace_ends_url: bool) -> String {
     let mut spans = redactor.match_spans(text.as_bytes());
-    spans.extend(url_credential_spans(text, true));
+    spans.extend(url_credential_spans(text, whitespace_ends_url));
     replace_spans(text, spans)
 }
 
@@ -889,7 +906,7 @@ mod tests {
     #[test]
     fn test_redact_output_merges_urls_and_registered_secrets() {
         let redact = |secret: &str, text: &str| {
-            redact_output_with(&Redactor::new([secret.to_string()]), text)
+            redact_output_with(&Redactor::new([secret.to_string()]), text, true)
         };
         // A secret that spells a parameter name leaves its value marked.
         let out = redact("token", "https://host/t?token=OTHER_SECRET");
@@ -911,9 +928,50 @@ mod tests {
         let out = redact("[redacted]", "https://u:p@host/t?token=TOKEN");
         assert!(!out.contains("TOKEN") && !out.contains("u:p"), "{out}");
         assert_eq!(
-            redact_output_with(&Redactor::default(), "https://u:p@host/t?token=TOKEN"),
+            redact_output_with(&Redactor::default(), "https://u:p@host/t?token=TOKEN", true),
             "https://[redacted]@host/t?token=[redacted]"
         );
+    }
+
+    #[test]
+    fn test_redact_output_in_arg_matches_a_secret_that_is_the_whole_url() {
+        let redact = |secret: &str, arg: &str| {
+            redact_output_with(&Redactor::new([secret.to_string()]), arg, false)
+        };
+        let url = "https://private.host/repo?token=TOKEN&path=HIDDEN";
+        assert_eq!(redact(url, url), "[redacted]");
+        assert_eq!(redact(url, &format!("--from={url}")), "--from=[redacted]");
+        // A space is part of the one URL an argument holds.
+        assert_eq!(
+            redact("unrelated", "https://host/t?auth=Bearer LIVE_KEY&x=1"),
+            "https://host/t?auth=[redacted]&x=1"
+        );
+    }
+
+    #[test]
+    fn test_redact_url_credentials_past_an_apostrophe_in_the_url() {
+        for (input, expected) in [
+            (
+                "GET https://host/bob's.tgz?token=LIVE_KEY failed",
+                "GET https://host/bob's.tgz?token=[redacted] failed",
+            ),
+            (
+                "GET https://host/t?token=LIVE'KEY&v=1 failed",
+                "GET https://host/t?token=[redacted]&v=1 failed",
+            ),
+            // Quotes around the URL in a message still end it.
+            (
+                "could not fetch 'https://host/t?token=LIVE_KEY' (404)",
+                "could not fetch 'https://host/t?token=[redacted]' (404)",
+            ),
+        ] {
+            assert_eq!(redact_url_credentials(input), expected, "{input}");
+            assert_eq!(
+                redact_output_with(&Redactor::default(), input, true),
+                expected,
+                "{input}"
+            );
+        }
     }
 
     #[test]

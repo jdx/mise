@@ -1434,7 +1434,6 @@ impl Run {
         let telemetry = self.telemetry.clone();
         let run_report = self.run_report.clone();
         let task_history = self.task_history.clone();
-        let history_config = config.clone();
         let result = if let Some(timeout) = timeout {
             let run = self.parallelize_tasks(config, execution_tasks, previewed_tools);
             tokio::pin!(run);
@@ -1452,9 +1451,9 @@ impl Run {
                     }
                     // History is marked cancelled first too, in memory; the arguments are
                     // redacted with every secret registered so far.
-                    let cancelled = task_history.as_ref().map(|history| {
-                        history.take_cancelled(|arg| history_arg(&history_config, arg))
-                    });
+                    let cancelled = task_history
+                        .as_ref()
+                        .map(|history| history.take_cancelled(history_arg));
                     RUN_TIMED_OUT.store(true, Ordering::SeqCst);
                     crate::cmd::CmdLineRunner::terminate_all().await;
                     if let (Some(history), Some(runs)) = (task_history, cancelled) {
@@ -1886,7 +1885,7 @@ impl Run {
             // this one answer, so they never disagree about a run.
             let stopped = cancelled || (ctrlc::is_cancelled() && !panicked);
             if let (Some(history), Some(id)) = (&this.task_history, history_run) {
-                finish_task_run(history, &ctx.config, &task, id, &result, panicked, stopped).await;
+                finish_task_run(history, &task, id, &result, panicked, stopped).await;
             }
             if let (Some(report), Some(id)) = (&this.run_report, report_id) {
                 let (status, exit_code) = report_status(&result, panicked, stopped);
@@ -2314,20 +2313,19 @@ fn start_task_run(
     Some(history.start(&task.name, task.args.clone(), env_resolved))
 }
 
-/// Task arguments as history stores them: URL credentials removed, as terminal output does,
-/// then the registered secrets.
-fn history_args(config: &Config, task: &Task) -> Vec<String> {
-    task.args.iter().map(|a| history_arg(config, a)).collect()
+/// Task arguments as history stores them: URL credentials and registered secrets removed, as
+/// terminal output does, both found in the argument as written.
+fn history_args(task: &Task) -> Vec<String> {
+    task.args.iter().map(|a| history_arg(a)).collect()
 }
 
-fn history_arg(config: &Config, arg: &str) -> String {
-    config.redact(&mise_util::redactions::redact_url_credentials_in_arg(arg))
+fn history_arg(arg: &str) -> String {
+    mise_util::redactions::redact_output_in_arg(arg)
 }
 
 /// Record how a started task ended.
 async fn finish_task_run(
     history: &Arc<crate::task::task_history::TaskHistory>,
-    config: &Config,
     task: &Task,
     id: crate::task::task_history::PendingRunId,
     result: &Result<crate::task::task_executor::TaskRunOutcome>,
@@ -2336,7 +2334,7 @@ async fn finish_task_run(
 ) {
     let (status, exit_code) = history_status(result, panicked, cancelled);
     // Redacted again now that the task's own env has registered its secrets.
-    let args = history_args(config, task);
+    let args = history_args(task);
     let history = history.clone();
     // The write takes a file lock, so it stays off the async workers.
     if let Err(err) =
@@ -2475,6 +2473,22 @@ fn render_usage_help(spec: &usage::Spec, args: &[String]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// History matches a secret that is a whole URL in the argument as
+    /// written, before its query token is marked.
+    #[test]
+    fn history_hides_an_argument_that_is_a_registered_url() {
+        let url = "https://history-host-3b9a.example/private?token=T&path=HIDDEN";
+        {
+            let mut redactor = mise_util::redactions::GLOBAL_REDACTOR.lock().unwrap();
+            *redactor = redactor.with_additional([url.to_string()]);
+        }
+        assert_eq!(history_arg(url), "[redacted]");
+        assert_eq!(
+            history_arg("https://other.example/x?token=T&ref=main"),
+            "https://other.example/x?token=[redacted]&ref=main"
+        );
+    }
 
     #[test]
     fn test_panic_payload_message_from_static_str() {
