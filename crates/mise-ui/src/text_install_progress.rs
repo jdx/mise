@@ -6,7 +6,7 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use super::install_progress::{InstallProgress, ToolProgress};
-use super::multi_progress_report::MultiProgressReport;
+use super::multi_progress_report::{MultiProgressReport, print_unless_paused};
 use super::progress_report::{ProgressIcon, SingleReport};
 use super::style;
 
@@ -902,9 +902,11 @@ impl SingleReport for TextToolProgress {
         // The lock is released first: a child can emit a lot of these, and they
         // must not serialize behind another tool's status update.
         let prefix = self.state.lock().unwrap().tools[self.index].prefix.clone();
-        for line in message.lines() {
-            log::info!("{prefix} {line}");
-        }
+        print_unless_paused(move || {
+            for line in message.lines() {
+                log::info!("{prefix} {line}");
+            }
+        });
     }
 
     fn start_operations(&self, count: usize) {

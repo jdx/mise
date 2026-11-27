@@ -8,6 +8,7 @@ use std::sync::LazyLock as Lazy;
 use std::sync::OnceLock;
 
 use crate::ctrlc;
+use crate::multi_progress_report::print_unless_paused;
 use crate::style;
 // Text here reaches the terminal through clx or stderr, not the logger, so it is
 // redacted the way the logger would.
@@ -92,7 +93,8 @@ impl ProgressReport {
 
 impl SingleReport for ProgressReport {
     fn println(&self, message: String) {
-        self.job.println(&redact_output(&message));
+        let job = self.job.clone();
+        print_unless_paused(move || job.println(&redact_output(&message)));
     }
 
     fn set_message(&self, message: String) {
@@ -180,14 +182,14 @@ impl VerboseReport {
 
 impl SingleReport for VerboseReport {
     fn println(&self, message: String) {
-        safe_eprintln!("{}", redact_output(&message));
+        print_unless_paused(move || safe_eprintln!("{}", redact_output(&message)));
     }
     fn set_process_output(&self, message: String) {
         // Not set_message: its dedup collapses repeated phase text, which would
         // silently drop a child's repeated stdout lines now that
         // `shows_process_output` suppresses the failure replay.
         let prefix = pad_prefix(self.pad, &self.prefix);
-        log::info!("{prefix} {message}");
+        print_unless_paused(move || log::info!("{prefix} {message}"));
     }
     fn set_detail(&self, detail: String) {
         // One line per change, folded with the phase, the way this reporter
