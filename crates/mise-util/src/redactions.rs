@@ -321,64 +321,104 @@ pub fn redact_url_credentials_in_arg(arg: &str) -> Cow<'_, str> {
 }
 
 fn redact_credentials(text: &str, whitespace_ends_url: bool) -> Cow<'_, str> {
-    let userinfo = redact_userinfo(text, whitespace_ends_url);
+    let spans = url_credential_spans(text, whitespace_ends_url);
+    if spans.is_empty() {
+        Cow::Borrowed(text)
+    } else {
+        Cow::Owned(replace_spans(text, spans))
+    }
+}
+
+/// The byte ranges of `text` that [`redact_url_credentials`] replaces: the
+/// userinfo of every URL and the value of every credential query parameter.
+/// As ranges of the text as written, they merge with the matches of
+/// registered secrets ([`redact_output`]).
+fn url_credential_spans(text: &str, whitespace_ends_url: bool) -> Vec<(usize, usize)> {
+    if !text.contains("://") {
+        return vec![];
+    }
+    let mut spans = userinfo_spans(text, whitespace_ends_url);
+    if !text.contains('?') {
+        return spans;
+    }
+    // The queries are read with each userinfo masked, as if it were already
+    // redacted, so a quote or space in a password does not hide the query
+    // after it. The mask has the userinfo's length, so offsets stay the same.
+    let mut masked = text.to_string();
+    for &(start, end) in &spans {
+        masked.replace_range(start..end, &"x".repeat(end - start));
+    }
     let url_query: &regex::Regex = if whitespace_ends_url {
         &URL_QUERY
     } else {
         &ARG_URL_QUERY
     };
-    match redact_query_credentials(url_query, &userinfo) {
-        Some(redacted) => Cow::Owned(redacted),
-        None => userinfo,
-    }
-}
-
-/// `text` with the values of the credential parameters of the queries
-/// `url_query` finds in it replaced, or `None` when it finds none.
-fn redact_query_credentials(url_query: &regex::Regex, text: &str) -> Option<String> {
-    if !text.contains("://") || !text.contains('?') {
-        return None;
-    }
-    let mut changed = false;
-    let out = url_query.replace_all(text, |captures: &regex::Captures<'_>| {
-        let query = &captures[2];
+    for captures in url_query.captures_iter(&masked) {
+        let Some(query) = captures.get(2) else {
+            continue;
+        };
+        let mut pos = query.start();
+        let query = query.as_str();
         // A URL parser drops a tab or newline, so what follows one is still
         // part of the query; another control character, such as the escape
         // that starts a terminal style, ends it.
-        let (query, rest) = query.split_at(
-            query
-                .find(|c: char| c.is_control() && !TAB_OR_NEWLINE.contains(&c))
-                .unwrap_or(query.len()),
-        );
-        let pairs = query
-            .split('&')
-            .map(|pair| {
-                let (name, value) = pair.split_once('=').unwrap_or((pair, ""));
-                if matches!(value, "" | "[redacted]")
-                    || !is_credential_query_param(&query_param_name(name))
-                {
-                    return pair.to_string();
-                }
-                changed = true;
-                format!("{name}=[redacted]")
+        let query = &query[..query
+            .find(|c: char| c.is_control() && !TAB_OR_NEWLINE.contains(&c))
+            .unwrap_or(query.len())];
+        for pair in query.split('&') {
+            if let Some((name, value)) = pair.split_once('=')
+                && !matches!(value, "" | "[redacted]")
+                && is_credential_query_param(&query_param_name(name))
+            {
+                let value_start = pos + name.len() + 1;
+                spans.push((value_start, value_start + value.len()));
+            }
+            pos += pair.len() + 1;
+        }
+    }
+    spans
+}
+
+/// The byte range of the userinfo of every `scheme://` URL in `text`, as
+/// [`redact_url_userinfo`] finds it.
+fn userinfo_spans(text: &str, whitespace_ends_url: bool) -> Vec<(usize, usize)> {
+    let mut spans = vec![];
+    let mut offset = 0;
+    while let Some(i) = text[offset..].find("://") {
+        let start = offset + i + 3;
+        let tail = &text[start..];
+        let end = tail
+            .find(|c: char| {
+                matches!(c, '/' | '?' | '#') || (whitespace_ends_url && c.is_whitespace())
             })
-            .collect::<Vec<_>>();
-        format!("{}?{}{rest}", &captures[1], pairs.join("&"))
-    });
-    changed.then(|| out.into_owned())
+            .unwrap_or(tail.len());
+        // The userinfo is everything before the authority's last `@`, so an
+        // unencoded `@` in a password is covered.
+        match tail[..end].rfind('@').filter(|&at| at > 0) {
+            Some(at) => {
+                spans.push((start, start + at));
+                offset = start + at;
+            }
+            None => offset = start,
+        }
+    }
+    spans
 }
 
 /// Text that mise writes to the terminal or a file, redacted the way the logger
-/// redacts every record: the credentials of every URL
-/// ([`redact_url_credentials`]), then registered secrets. URLs go first, while
-/// the names of their parameters are intact: a registered secret that spells
-/// one (`token`) would otherwise hide the name that marks its value.
+/// redacts every record: registered secrets and the credentials of every URL
+/// ([`redact_url_credentials`]). Both are found in the text as written and
+/// replaced together, so neither hides the other: a registered secret that
+/// spells a parameter name (`token`) still leaves its value marked, and a
+/// registered secret that holds a whole URL is still matched whole.
 pub fn redact_output(text: &str) -> String {
     redact_output_with(&GLOBAL_REDACTOR.lock().unwrap(), text)
 }
 
 fn redact_output_with(redactor: &Redactor, text: &str) -> String {
-    redactor.redact(&redact_url_credentials(text))
+    let mut spans = redactor.match_spans(text.as_bytes());
+    spans.extend(url_credential_spans(text, true));
+    replace_spans(text, spans)
 }
 
 /// `value` with every string in it, keys included, redacted the way the
@@ -847,11 +887,41 @@ mod tests {
     }
 
     #[test]
-    fn test_redact_output_redacts_urls_before_registered_secrets() {
-        let redactor = Redactor::new(["token".to_string()]);
-        let out = redact_output_with(&redactor, "https://host/t?token=OTHER_SECRET");
+    fn test_redact_output_merges_urls_and_registered_secrets() {
+        let redact = |secret: &str, text: &str| {
+            redact_output_with(&Redactor::new([secret.to_string()]), text)
+        };
+        // A secret that spells a parameter name leaves its value marked.
+        let out = redact("token", "https://host/t?token=OTHER_SECRET");
         assert!(!out.contains("OTHER_SECRET"), "{out}");
         assert!(!out.contains("token"), "{out}");
+        // A secret that holds a whole URL is matched whole.
+        let out = redact(
+            "https://host/private?token=TOKEN&path=HIDDEN",
+            "GET https://host/private?token=TOKEN&path=HIDDEN failed",
+        );
+        assert_eq!(out, "GET [redacted] failed");
+        // A secret with a space, which ends a URL in free text.
+        let out = redact(
+            "Bearer LIVE_KEY",
+            "https://host/t?auth=Bearer LIVE_KEY done",
+        );
+        assert_eq!(out, "https://host/t?auth=[redacted] done");
+        // A secret equal to the marker.
+        let out = redact("[redacted]", "https://u:p@host/t?token=TOKEN");
+        assert!(!out.contains("TOKEN") && !out.contains("u:p"), "{out}");
+        assert_eq!(
+            redact_output_with(&Redactor::default(), "https://u:p@host/t?token=TOKEN"),
+            "https://[redacted]@host/t?token=[redacted]"
+        );
+    }
+
+    #[test]
+    fn test_redact_url_credentials_after_a_quote_in_the_password() {
+        assert_eq!(
+            redact_url_credentials("https://u:p'w@host/t?token=TOKEN"),
+            "https://[redacted]@host/t?token=[redacted]"
+        );
     }
 
     #[test]
