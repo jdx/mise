@@ -834,6 +834,20 @@ exec "$MISE_BIN" tool-stub "$0" "$@"
         }
         let content = file::read_to_string(&real_stub)?;
         let mut stub = ToolStubFile::from_content(&self.output, content.clone())?;
+        // A stub without `tool` or `bin` takes them from its file name. A run through the link
+        // names them after the link, but the lock data is recorded for the target, which its
+        // Windows launcher, a run of the target and `mise lock` all name after the target, so
+        // no one lock fits both.
+        let as_target = ToolStubFile::from_content(&real_stub, content.clone())?;
+        if stub.tool_name != as_target.tool_name || stub.bin != as_target.bin {
+            bail!(
+                "cannot lock tool stub {} through a link: the stub takes its tool or bin from its file name, and {} is named differently\n\
+                hint: lock {} itself, or set `tool` and `bin` in the stub",
+                display_path(&self.output),
+                display_path(&real_stub),
+                display_path(&real_stub)
+            );
+        }
         if Settings::safe_mode() && stub.has_tool_options() {
             bail!(
                 "cannot lock tool stub {} in safe mode: its tool options apply only outside safe mode\n\
