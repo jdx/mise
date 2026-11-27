@@ -1454,10 +1454,13 @@ pub(crate) async fn configured_toolset_or_path_which(
 /// those are relative to mise's working directory, and a command that starts
 /// somewhere else, as a plugin hook does from the home directory in a directory
 /// the user has not trusted, would not find them. Other relative entries came
-/// from the user's PATH or config and keep the meaning they had.
+/// from the user's PATH or config and keep the meaning they had. An entry whose
+/// absolute form cannot go on PATH, because the working directory holds the PATH
+/// separator, stays relative: a command in that directory still finds it.
 fn absolutize_path_entries(
     env: &mut BTreeMap<String, String>,
     tool_paths: &[PathBuf],
+    absolute: impl Fn(PathBuf) -> std::io::Result<PathBuf>,
 ) -> eyre::Result<()> {
     let relative: HashSet<&Path> = tool_paths
         .iter()
@@ -1469,10 +1472,15 @@ fn absolutize_path_entries(
     };
     let paths: Vec<PathBuf> = env::split_paths(path_val)
         .map(|path| {
-            if relative.contains(path.as_path()) {
-                std::path::absolute(&path).unwrap_or(path)
-            } else {
-                path
+            if !relative.contains(path.as_path()) {
+                return path;
+            }
+            match absolute(path.clone()) {
+                Ok(absolute) if env::join_paths([&absolute]).is_ok() => absolute,
+                _ => {
+                    debug!("keeping {} relative on PATH", path.display());
+                    path
+                }
             }
         })
         .collect();
@@ -1508,12 +1516,35 @@ mod tests {
             env::PATH_KEY.to_string(),
             path.to_string_lossy().into_owned(),
         )]);
-        absolutize_path_entries(&mut env, &[tool.clone(), inherited.clone()]).unwrap();
+        absolutize_path_entries(
+            &mut env,
+            &[tool.clone(), inherited.clone()],
+            std::path::absolute,
+        )
+        .unwrap();
         let paths: Vec<PathBuf> = env::split_paths(&env[&*env::PATH_KEY]).collect();
         assert_eq!(
             paths,
             vec![std::path::absolute(&tool).unwrap(), user, inherited]
         );
+    }
+
+    #[test]
+    fn a_tool_path_that_cannot_go_on_path_absolute_stays_relative() {
+        let tool = PathBuf::from(".mise/installs/dummy/1.0.0/bin");
+        let mut env = BTreeMap::from([(
+            env::PATH_KEY.to_string(),
+            tool.to_string_lossy().into_owned(),
+        )]);
+        // a working directory that PATH cannot hold: Windows quotes an entry with
+        // a `;` in it, so only a `"` is refused there
+        let sep = if cfg!(windows) { "\"" } else { ":" };
+        let cwd = std::env::temp_dir().join(format!("a{sep}b"));
+        absolutize_path_entries(&mut env, std::slice::from_ref(&tool), |path| {
+            Ok(cwd.join(path))
+        })
+        .unwrap();
+        assert_eq!(env[&*env::PATH_KEY], tool.to_string_lossy());
     }
 
     #[test]
@@ -6832,7 +6863,7 @@ pub trait Backend: Debug + Send + Sync {
         // The dependency env only needs tool bin paths on PATH, not module outputs.
         let ts = self.dependency_toolset(config).await?;
         let mut env = ts.full_env_without_tools(config).await?;
-        absolutize_path_entries(&mut env, &ts.list_paths(config).await)?;
+        absolutize_path_entries(&mut env, &ts.list_paths(config).await, std::path::absolute)?;
 
         // Remove mise shims from PATH to prevent infinite shim recursion when a
         // dependency tool (e.g., go) is configured but not installed. Without this,

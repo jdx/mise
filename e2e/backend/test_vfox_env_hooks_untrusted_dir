@@ -95,6 +95,9 @@ assert_contains "cd project/ignored/deep && mise env" "VIRTUAL_ENV=$PWD/project/
 mise trust --ignore project/ignored
 assert_not_contains "cd project/ignored && mise env" "/project/ignored/.venv"
 assert_not_contains "cd project/ignored/deep && mise env" "/deep/.venv"
+# only the virtualenv is withheld; pipenv itself is still on PATH
+assert_contains "cd project/ignored && mise env" "$(dirname "$PIPENV")"
+assert_contains "cd project/ignored/deep && mise env" "$(dirname "$PIPENV")"
 assert_contains "cd project/sub && mise env" "VIRTUAL_ENV=$PWD/project/sub/.venv"
 
 # once trusted, the virtualenv is activated as before, except in safe mode
