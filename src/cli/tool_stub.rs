@@ -41,8 +41,13 @@ impl BinPathCache {
         hasher.update(path.as_os_str().as_encoded_bytes());
         hasher.update([0]);
         hasher.update(content);
-        if let Some((lockfile, _)) = crate::lockfile::lockfile_path_for_tool_stub(stub_path)
-            && let Ok(lock) = std::fs::read(&lockfile)
+        // Read like `Lockfile::read` reads it: only when lockfiles are on, and only a regular
+        // file, with the bounded reader, since a lockfile name that is a pipe or a device
+        // would never finish reading.
+        if crate::config::Settings::get().lockfile_enabled()
+            && let Some((lockfile, _)) = crate::lockfile::lockfile_path_for_tool_stub(stub_path)
+            && lockfile.is_file()
+            && let Ok(lock) = file::read_config_to_string(&lockfile)
         {
             hasher.update([0]);
             hasher.update(lockfile.as_os_str().as_encoded_bytes());
@@ -654,5 +659,22 @@ mod tests {
         )
         .unwrap();
         assert_ne!(locked, key_on_disk(&stub).unwrap());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn cache_key_skips_a_lockfile_that_is_not_a_regular_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join(".test.mise.toml"), "[tools]\n").unwrap();
+        let stub = tmp.path().join("bin/scan");
+        write_stub(&stub, "latest");
+        let unlocked = key_on_disk(&stub).unwrap();
+        // reading a pipe with no writer would never return
+        let status = std::process::Command::new("mkfifo")
+            .arg(tmp.path().join("mise.lock"))
+            .status()
+            .unwrap();
+        assert!(status.success());
+        assert_eq!(unlocked, key_on_disk(&stub).unwrap());
     }
 }
