@@ -44,7 +44,7 @@ walkdir = "2"
 [target.'cfg(unix)'.dependencies]
 mise-brew-metadata = { path = "../mise-brew-metadata", version = "0.1" }
 mise-brew-relocation = { path = "../mise-brew-relocation", version = "0.1" }
-nix = { version = "0.31", features = [
+nix = { version = "0.32", features = [
   "dir",
   "fs",
   "hostname",

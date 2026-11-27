@@ -21,7 +21,10 @@ use crate::{
     platform::detect_libc,
 };
 use crate::{
-    backend::{Backend, GitHubReleaseInfo, VersionInfo, platform_target::PlatformTarget},
+    backend::{
+        Backend, GitHubReleaseInfo, VersionInfo, normalize_idiomatic_contents,
+        platform_target::PlatformTarget,
+    },
     config::{Config, Settings},
     platform::Platform,
 };
@@ -46,12 +49,19 @@ impl BunPlugin {
 
     /// The release directory for `version`. The version is encoded as part of one path segment:
     /// it can come from a config file or a version list, and a `/` or `%2e%2e` in it would
-    /// otherwise move the download to another path on github.com.
+    /// otherwise move the download to another path on github.com. A leading `v` (`v1.2.3`, as
+    /// `setup-bun` accepts) is dropped, since the tag already has one.
     fn release_url(version: &str) -> String {
+        let version = version.strip_prefix('v').unwrap_or(version);
         format!(
             "https://github.com/oven-sh/bun/releases/download/bun-v{}",
             urlencoding::encode(version)
         )
+    }
+
+    /// The checksum list Bun publishes next to `version`'s release assets.
+    fn shasums_url(version: &str) -> String {
+        format!("{}/SHASUMS256.txt", Self::release_url(version))
     }
 
     fn bun_bin(&self, tv: &ToolVersion) -> PathBuf {
@@ -89,10 +99,7 @@ impl BunPlugin {
         // Without a checksum in the lockfile, take the one Bun publishes in
         // SHASUMS256.txt so verify_checksum compares the zip against it instead
         // of only recording what was downloaded.
-        let shasums_url = format!(
-            "https://github.com/oven-sh/bun/releases/download/bun-v{}/SHASUMS256.txt",
-            tv.version
-        );
+        let shasums_url = Self::shasums_url(&tv.version);
         let platform_info = tv
             .lock_platforms
             .entry(self.get_platform_key())
@@ -198,6 +205,12 @@ impl Backend for BunPlugin {
         Some(crate::backend::OptionSpec::warn_only(&[]))
     }
 
+    /// `.bun-version` may spell the version `v1.2.3`, as `oven-sh/setup-bun` accepts.
+    async fn _parse_idiomatic_file(&self, path: &Path) -> Result<Vec<String>> {
+        let contents = file::read_to_string(path)?;
+        Ok(parse_bun_version_file(&contents))
+    }
+
     async fn security_info(&self) -> Vec<crate::backend::SecurityFeature> {
         use crate::backend::SecurityFeature;
 
@@ -293,7 +306,7 @@ impl Backend for BunPlugin {
         let url = format!("{release_url}/{filename}");
 
         // Fetch SHASUMS256.txt to get checksum without downloading the zip
-        let shasums_url = format!("{release_url}/SHASUMS256.txt");
+        let shasums_url = Self::shasums_url(version);
         let checksum = fetch_checksum_from_shasums(&shasums_url, &filename).await;
 
         Ok(PlatformInfo {
@@ -535,9 +548,37 @@ fn bun_bin_name() -> &'static str {
     if cfg!(windows) { "bun.exe" } else { "bun" }
 }
 
+fn parse_bun_version_file(contents: &str) -> Vec<String> {
+    normalize_idiomatic_contents(contents)
+        .split_whitespace()
+        .map(|v| v.strip_prefix('v').unwrap_or(v).to_string())
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bun_version_file_drops_a_leading_v() {
+        assert_eq!(parse_bun_version_file("v1.4.4\n"), vec!["1.4.4"]);
+        assert_eq!(parse_bun_version_file("1.4.4\n"), vec!["1.4.4"]);
+        assert_eq!(parse_bun_version_file("latest"), vec!["latest"]);
+    }
+
+    #[test]
+    fn release_url_accepts_v_prefixed_versions() {
+        for version in ["1.4.4", "v1.4.4"] {
+            assert_eq!(
+                BunPlugin::release_url(version),
+                "https://github.com/oven-sh/bun/releases/download/bun-v1.4.4"
+            );
+            assert_eq!(
+                BunPlugin::shasums_url(version),
+                "https://github.com/oven-sh/bun/releases/download/bun-v1.4.4/SHASUMS256.txt"
+            );
+        }
+    }
 
     #[test]
     fn release_url_keeps_the_version_in_one_segment() {

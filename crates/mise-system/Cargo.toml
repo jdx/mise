@@ -85,7 +85,7 @@ core-foundation = "0.10"
 core-foundation-sys = "0.8"
 
 [target.'cfg(unix)'.dependencies]
-nix = { version = "0.31", features = [
+nix = { version = "0.32", features = [
   "dir",
   "feature",
   "fs",

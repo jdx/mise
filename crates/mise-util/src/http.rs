@@ -203,15 +203,8 @@ impl SendOnceOptions {
         if self.error_for_status
             && !(self.allow_range_not_satisfiable
                 && response.status() == StatusCode::RANGE_NOT_SATISFIABLE)
-            && let Err(err) = response.error_for_status_ref().map_err(redact_error_url)
         {
-            return Err(match retry_after(&response) {
-                Some(wait) => {
-                    let message = err.to_string();
-                    Report::new(err).wrap_err(RetryAfter { wait, message })
-                }
-                None => err.into(),
-            });
+            check_status(&response)?;
         }
         Ok(response)
     }
@@ -424,6 +417,22 @@ impl std::fmt::Display for RetryAfter {
 fn retry_delay(backoff: Duration, err: &Report) -> Duration {
     err.downcast_ref::<RetryAfter>()
         .map_or(backoff, |retry_after| backoff.max(retry_after.wait))
+}
+
+/// The error for a response whose status is not a success, as a request through [`Client`]
+/// reports it: the URL in it has no credentials (see [`redact_error_url`]), and a 429 carries
+/// its `Retry-After`, which [`retry_async_with_retries`] waits out.
+pub fn check_status(response: &Response) -> Result<()> {
+    if let Err(err) = response.error_for_status_ref().map_err(redact_error_url) {
+        return Err(match retry_after(response) {
+            Some(wait) => {
+                let message = err.to_string();
+                Report::new(err).wrap_err(RetryAfter { wait, message })
+            }
+            None => err.into(),
+        });
+    }
+    Ok(())
 }
 
 /// The wait a 429 asked for, in delay-seconds form. An HTTP-date, which no
@@ -1325,6 +1334,7 @@ impl Client {
             retries: crate::network::http_retries(&Settings::get()),
             allow_html: false,
             host_auth: true,
+            max_bytes: MAX_BODY_BYTES,
         }
     }
 
@@ -2829,6 +2839,7 @@ pub struct TextRequest<'a> {
     retries: i64,
     allow_html: bool,
     host_auth: bool,
+    max_bytes: usize,
 }
 
 impl TextRequest<'_> {
@@ -2859,6 +2870,14 @@ impl TextRequest<'_> {
         self
     }
 
+    /// Fail once the decoded body passes `limit` bytes instead of
+    /// [`MAX_BODY_BYTES`], for a document that is much smaller when genuine
+    /// and is parsed before anything has verified it.
+    pub fn max_bytes(mut self, limit: usize) -> Self {
+        self.max_bytes = limit;
+        self
+    }
+
     pub async fn send(mut self) -> Result<String> {
         ensure!(
             !crate::network::offline(&Settings::get()),
@@ -2872,6 +2891,7 @@ impl TextRequest<'_> {
             HeaderMap::new()
         };
         headers.extend(self.extra_headers.clone());
+        let max_bytes = self.max_bytes;
         let text = self
             .client
             .send_with_retries(
@@ -2884,7 +2904,7 @@ impl TextRequest<'_> {
                     error_for_status: true,
                 },
                 |resp| async move {
-                    Ok(buffer_body(resp)
+                    Ok(buffer_body_with_limit(resp, max_bytes)
                         .await?
                         .text()
                         .await
@@ -3828,7 +3848,7 @@ fn redact_query(query: &str) -> String {
 /// `err` with the URL it reports (`for url (...)`, the last hop after
 /// redirects) stripped of its credentials, as [`log_url`] shows URLs. The error
 /// keeps its kind and status, so retry decisions are unaffected.
-fn redact_error_url(mut err: reqwest::Error) -> reqwest::Error {
+pub fn redact_error_url(mut err: reqwest::Error) -> reqwest::Error {
     if let Some(url) = err.url_mut() {
         let _ = url.set_username("");
         let _ = url.set_password(None);

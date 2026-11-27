@@ -14,6 +14,7 @@ use std::time::{Duration, Instant};
 use clx::progress::{ProgressJob, ProgressJobBuilder, ProgressJobDoneBehavior, ProgressStatus};
 
 use super::install_progress::{InstallProgress, ToolProgress};
+use super::multi_progress_report::print_unless_paused;
 use super::progress_report::{ProgressIcon, SingleReport};
 use super::style;
 use super::text_install_progress::{
@@ -490,7 +491,10 @@ impl ToolProgress for TtyToolProgress {
         }
         drop(rows);
         if failed {
-            self.header.println(&redact(&line));
+            // Through the queue like build output: a failure printed while
+            // another tool's prompt is open would erase that prompt.
+            let header = self.header.clone();
+            print_unless_paused(move || header.println(&redact(&line)));
         }
     }
 
@@ -516,9 +520,12 @@ impl SingleReport for TtyToolProgress {
 
     fn println(&self, message: String) {
         let prefix = self.state.lock().unwrap().tools[self.index].prefix.clone();
-        for line in message.lines() {
-            self.header.println(&redact(&format!("{prefix} {line}")));
-        }
+        let header = self.header.clone();
+        print_unless_paused(move || {
+            for line in message.lines() {
+                header.println(&redact(&format!("{prefix} {line}")));
+            }
+        });
     }
 
     fn start_operations(&self, count: usize) {
