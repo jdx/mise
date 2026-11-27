@@ -239,10 +239,14 @@ async fn track_install_async(tool: &str, full: &str, version: &str) -> eyre::Res
 /// The static install beacon. Every value is a query parameter. `full` has
 /// its inline options, which can hold secrets, and any URL credentials, query,
 /// and fragment removed first because request URLs are logged, and is left out
-/// when it cannot be cleaned.
+/// when it cannot be cleaned. A `[` still in it after that opens options the
+/// parser did not take apart, such as ones with text after the `]`, so such a
+/// `full` is left out too.
 fn track_install_url(tool: &str, full: &str, version: &str, os: &str, arch: &str) -> String {
     let full = crate::args::split_bracketed_opts(full).map_or(full, |(name, _)| name);
-    let full = sanitize_full(full)
+    let full = (!full.contains('['))
+        .then(|| sanitize_full(full))
+        .flatten()
         .map(|full| format!("&full={}", urlencoding::encode(&full)))
         .unwrap_or_default();
     format!(
@@ -343,6 +347,19 @@ mod tests {
                 "x64"
             ),
             "https://mise-versions.jdx.dev/t?tool=foo&full=github%3Aacme%2Ffoo&version=1.0.0&os=linux&arch=x64"
+        );
+    }
+    #[test]
+    fn test_track_install_url_omits_full_with_options_it_cannot_split() {
+        assert_eq!(
+            track_install_url(
+                "foo",
+                "github:acme/foo[install_env=SECRET]suffix",
+                "1.0.0",
+                "linux",
+                "x64"
+            ),
+            "https://mise-versions.jdx.dev/t?tool=foo&version=1.0.0&os=linux&arch=x64"
         );
     }
     #[test]

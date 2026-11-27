@@ -1554,7 +1554,13 @@ pub mod unix {
             let (connection, _) = tokio::time::timeout(Duration::from_secs(5), listener.accept())
                 .await
                 .unwrap();
-            let evicted = served.remove(1).await.unwrap().unwrap_err();
+            // Bounded, so evicting another connection fails here instead of
+            // waiting on one whose client sends nothing.
+            let evicted = tokio::time::timeout(Duration::from_secs(5), served.remove(1))
+                .await
+                .expect("the oldest connection without the capability is evicted")
+                .unwrap()
+                .unwrap_err();
             assert_eq!(evicted.kind(), std::io::ErrorKind::ConnectionAborted);
             // A request that arrives on it after that is refused.
             assert!(!proofs.remove(1).prove());
