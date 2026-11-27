@@ -366,7 +366,7 @@ fn url_credential_spans(text: &str, whitespace_ends_url: bool) -> Vec<(usize, us
         let Some(query) = captures.get(2) else {
             continue;
         };
-        let mut pos = query.start();
+        let pos = query.start();
         let query = query.as_str();
         // A URL parser drops a tab or newline, so what follows one is still
         // part of the query; another control character, such as the escape
@@ -374,18 +374,43 @@ fn url_credential_spans(text: &str, whitespace_ends_url: bool) -> Vec<(usize, us
         let query = &query[..query
             .find(|c: char| c.is_control() && !TAB_OR_NEWLINE.contains(&c))
             .unwrap_or(query.len())];
-        for pair in query.split('&') {
+        for (offset, pair) in query_pairs(query) {
             if let Some((name, value)) = pair.split_once('=')
                 && !matches!(value, "" | "[redacted]")
                 && is_credential_query_param(&query_param_name(name))
             {
-                let value_start = pos + name.len() + 1;
+                let value_start = pos + offset + name.len() + 1;
                 spans.push((value_start, value_start + value.len()));
             }
-            pos += pair.len() + 1;
         }
     }
     spans
+}
+
+/// The `name=value` pairs of `query`, each with its byte offset in it, for
+/// redaction. The query of a URL inside the query is read too: in one argument
+/// (`https://a/x?ref=main https://b/y?token=t`) or a parameter
+/// (`?next=https://b/y?token=t`), the `?` after a `://` starts the pairs of
+/// that URL, which would otherwise be part of the value of `ref` or `next`.
+/// What comes before that `?` stays the value of the pair it is in.
+fn query_pairs(query: &str) -> Vec<(usize, &str)> {
+    let mut pairs = vec![];
+    let mut pos = 0;
+    for pair in query.split('&') {
+        let mut start = pos;
+        let mut rest = pair;
+        while let Some(question) = rest
+            .find("://")
+            .and_then(|scheme| rest[scheme..].find('?').map(|q| scheme + q))
+        {
+            pairs.push((start, &rest[..question]));
+            start += question + 1;
+            rest = &rest[question + 1..];
+        }
+        pairs.push((start, rest));
+        pos += pair.len() + 1;
+    }
+    pairs
 }
 
 /// The byte range of the userinfo of every `scheme://` URL in `text`, as
@@ -930,6 +955,51 @@ mod tests {
         assert_eq!(
             redact_output_with(&Redactor::default(), "https://u:p@host/t?token=TOKEN", true),
             "https://[redacted]@host/t?token=[redacted]"
+        );
+    }
+
+    #[test]
+    fn test_redact_every_url_in_one_argument() {
+        // Each URL in one argument keeps its token out, wherever the second
+        // one starts: after a space (an argument is one URL, so the space is
+        // part of the first query) or in a parameter of the first.
+        for (input, expected) in [
+            (
+                "https://a.example/x?ref=main https://b.example/y?token=SECOND",
+                "https://a.example/x?ref=main https://b.example/y?token=[redacted]",
+            ),
+            (
+                "https://a.example/x?private_token=FIRST&ref=main https://b.example/y?token=SECOND",
+                "https://a.example/x?private_token=[redacted]&ref=main https://b.example/y?token=[redacted]",
+            ),
+            (
+                "--urls=https://a.example/x?access_token=FIRST&v=1,https://b.example/y?v=2&api_key=SECOND",
+                "--urls=https://a.example/x?access_token=[redacted]&v=1,https://b.example/y?v=2&api_key=[redacted]",
+            ),
+            (
+                "https://a.example/x?next=https://b.example/y?token=SECOND&sig=FIRST",
+                "https://a.example/x?next=https://b.example/y?token=[redacted]&sig=[redacted]",
+            ),
+            (
+                "https://a.example/x?next=https://b.example/y?n=https://c.example/z?token=THIRD",
+                "https://a.example/x?next=https://b.example/y?n=https://c.example/z?token=[redacted]",
+            ),
+        ] {
+            for redacted in [
+                redact_url_credentials_in_arg(input).into_owned(),
+                redact_output_with(&Redactor::default(), input, false),
+            ] {
+                assert_eq!(redacted, expected, "{input}");
+                for token in ["FIRST", "SECOND", "THIRD"] {
+                    assert!(!redacted.contains(token), "{redacted}");
+                }
+                assert_eq!(redact_url_credentials_in_arg(&redacted), redacted);
+            }
+        }
+        // Free text reads the same URL in a parameter.
+        assert_eq!(
+            redact_url_credentials("see https://a.example/x?next=https://b.example/y?token=SECOND"),
+            "see https://a.example/x?next=https://b.example/y?token=[redacted]"
         );
     }
 
