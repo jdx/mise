@@ -86,18 +86,9 @@ fn env_reads_match(
     reads: &BTreeMap<String, Option<String>>,
     env: &indexmap::IndexMap<String, String>,
 ) -> bool {
-    reads.iter().all(|(key, seen)| {
-        let current = env.get(key).or_else(|| {
-            if cfg!(windows) {
-                env.iter()
-                    .find(|(k, _)| k.eq_ignore_ascii_case(key))
-                    .map(|(_, v)| v)
-            } else {
-                None
-            }
-        });
-        current.map(|value| hash_sha256_to_str(value)) == *seen
-    })
+    reads
+        .iter()
+        .all(|(key, seen)| get_env_var(env, key).map(|value| hash_sha256_to_str(value)) == *seen)
 }
 
 /// Whether `version` can name a plugin alias like `recommended`. Pinned
@@ -172,6 +163,20 @@ fn lua_sources_fingerprint(plugin_path: &Path) -> String {
         .collect();
     sources.sort_by(|a, b| a.0.cmp(&b.0));
     hash_to_str(&sources)
+}
+
+/// The value of `key` in `env`, matching the name case-insensitively on
+/// Windows, where environment names are.
+fn get_env_var<'a>(env: &'a indexmap::IndexMap<String, String>, key: &str) -> Option<&'a String> {
+    env.get(key).or_else(|| {
+        if cfg!(windows) {
+            env.iter()
+                .find(|(k, _)| k.eq_ignore_ascii_case(key))
+                .map(|(_, v)| v)
+        } else {
+            None
+        }
+    })
 }
 
 fn remove_env_var(env: &mut indexmap::IndexMap<String, String>, key: &str) {
@@ -314,15 +319,14 @@ fn withhold_untrusted_dirs(
         (Ok(a), Ok(b)) => a == b,
         _ => false,
     };
-    let pwd_ok = match (env.get("PWD"), trusted_cwd) {
+    let pwd_ok = match (get_env_var(env, "PWD"), trusted_cwd) {
         (Some(pwd), Some(cwd)) => same_dir(Path::new(pwd), cwd),
         _ => false,
     };
     if !pwd_ok {
         remove_env_var(env, "PWD");
     }
-    if env
-        .get("MISE_PROJECT_ROOT")
+    if get_env_var(env, "MISE_PROJECT_ROOT")
         .is_some_and(|root| !dir_is_trusted(config, Path::new(root)))
     {
         remove_env_var(env, "MISE_PROJECT_ROOT");
