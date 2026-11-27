@@ -1718,22 +1718,28 @@ impl Lockfile {
         })
     }
 
-    /// Put back the entries `previous` holds for `short` at versions this
-    /// lockfile no longer has. For a tool whose new pin was withheld, this
-    /// keeps what the lockfile recorded, which generation dropped because the
-    /// tool was still selected.
+    /// Put back the entries `previous` holds for `short` that this lockfile no
+    /// longer has. For a tool whose new pin was withheld, this keeps what the
+    /// lockfile recorded, which generation dropped because the tool was still
+    /// selected. An entry is its version and options, the key the lockfile
+    /// keeps entries apart by, so a variant of a version that is still locked
+    /// with other options comes back too.
     pub fn restore_missing_versions(&mut self, previous: &Lockfile, short: &str) {
         let Some(entries) = previous.tools_for(short) else {
             return;
         };
         let key = crate::toolset::install_state::state_short(short).into_owned();
-        let present: BTreeSet<String> = self
+        let present: BTreeSet<(String, BTreeMap<String, String>)> = self
             .tools
             .get(&key)
-            .map(|have| have.iter().map(|entry| entry.version.clone()).collect())
+            .map(|have| {
+                have.iter()
+                    .map(|entry| (entry.version.clone(), entry.options.clone()))
+                    .collect()
+            })
             .unwrap_or_default();
         for entry in entries {
-            if present.contains(&entry.version) {
+            if present.contains(&(entry.version.clone(), entry.options.clone())) {
                 continue;
             }
             // Generation dropped the shared package records this entry's

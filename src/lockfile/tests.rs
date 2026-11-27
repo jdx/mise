@@ -6030,6 +6030,35 @@ fn untrusted_lockfile_keeps_a_registry_only_aube_graph() {
 }
 
 #[test]
+fn restore_missing_versions_brings_back_a_variant_with_other_options() {
+    // Two tasks lock `http:widget` 1.0.0 with different options. Generation kept the one the
+    // visible task requests; the one only a skipped task requests must come back as well.
+    let plain = basic_tool("1.0.0", "http:widget");
+    let mut variant = basic_tool("1.0.0", "http:widget");
+    variant.options.insert(
+        "url".to_string(),
+        "https://example.com/other.tar.gz".to_string(),
+    );
+    let mut previous = Lockfile::default();
+    previous.tools.insert(
+        "http:widget".to_string(),
+        vec![plain.clone(), variant.clone()],
+    );
+    let mut current = Lockfile::default();
+    current
+        .tools
+        .insert("http:widget".to_string(), vec![plain.clone()]);
+
+    current.restore_missing_versions(&previous, "http:widget");
+    current.restore_missing_versions(&previous, "http:widget");
+
+    let entries = &current.tools["http:widget"];
+    assert_eq!(entries.len(), 2, "{entries:?}");
+    assert!(entries.iter().any(|e| e.options == plain.options));
+    assert!(entries.iter().any(|e| e.options == variant.options));
+}
+
+#[test]
 fn restore_missing_versions_brings_back_conda_package_records() {
     let path = std::env::temp_dir().join("test_restore_conda_records.lock");
     std::fs::write(
