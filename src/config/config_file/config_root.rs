@@ -104,16 +104,44 @@ pub(crate) fn linked_project(path: &Path) -> Option<PathBuf> {
     let project = outer_project(&path);
     path.ancestors()
         .take_while(|p| *p != project && p.starts_with(&project))
-        .any(Path::is_symlink)
+        .any(is_link)
         .then_some(project)
+}
+
+/// Whether `path` is a link: a symlink, or on Windows a directory junction too, which
+/// `Path::is_symlink` does not report, which needs no administrator rights to make, and which
+/// `canonicalize` follows like a symlink.
+pub(crate) fn is_link(path: &Path) -> bool {
+    path.is_symlink() || is_junction(path)
+}
+
+/// Whether `path` is a directory junction (`mklink /J`). `read_link` reads the two name-surrogate
+/// reparse points, symlinks and junctions, and fails on the others, such as a cloud file's.
+#[cfg(windows)]
+fn is_junction(path: &Path) -> bool {
+    use std::os::windows::fs::MetadataExt;
+    const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
+    path.symlink_metadata()
+        .is_ok_and(|m| m.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0)
+        && std::fs::read_link(path).is_ok()
+}
+
+#[cfg(not(windows))]
+fn is_junction(_path: &Path) -> bool {
+    false
 }
 
 /// [`linked_project`] for a lockfile, which sits beside the config that owns it: a link that the
 /// config would be reached through also leads to its lockfile.
+///
+/// Every config that may own the lockfile is asked, and the outermost project wins. The project
+/// is the boundary the lockfile's directory must resolve inside, so a candidate whose own root
+/// is a linked directory must not narrow it to that directory.
 pub(crate) fn linked_lockfile_project(lockfile: &Path) -> Option<PathBuf> {
     ["mise.toml", "config.toml"]
         .into_iter()
-        .find_map(|name| linked_project(&lockfile.with_file_name(name)))
+        .filter_map(|name| linked_project(&lockfile.with_file_name(name)))
+        .min_by_key(|project| project.components().count())
 }
 
 pub fn config_root(path: &Path) -> PathBuf {
@@ -423,6 +451,32 @@ mod tests {
             linked_lockfile_project(&dot_mise.join(".mise/mise.lock")),
             Some(dot_mise.clone())
         );
+
+        // `.mise` is the link, and the config inside what it leads to is a link too: the
+        // boundary stays the project that holds `.mise`, not `.mise` itself
+        let nested = root.join("nested");
+        let shared = root.join("shared");
+        std::fs::create_dir_all(&nested).unwrap();
+        std::fs::create_dir_all(&shared).unwrap();
+        std::fs::write(other.join("real.toml"), "").unwrap();
+        symlink(other.join("real.toml"), shared.join("mise.toml")).unwrap();
+        symlink(other.join("real.toml"), shared.join("config.toml")).unwrap();
+        symlink(&shared, nested.join(".mise")).unwrap();
+        assert_eq!(
+            linked_lockfile_project(&nested.join(".mise/mise.lock")),
+            Some(nested.clone())
+        );
+    }
+
+    #[test]
+    fn a_symlink_is_a_link_and_a_directory_is_not() {
+        let temp = tempfile::tempdir().unwrap();
+        let dir = temp.path().join("dir");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::os::unix::fs::symlink(&dir, temp.path().join("link")).unwrap();
+        assert!(is_link(&temp.path().join("link")));
+        assert!(!is_link(&dir));
+        assert!(!is_link(&temp.path().join("missing")));
     }
 
     /// A file task grouped in a subdirectory shares its project's root.
@@ -589,5 +643,48 @@ mod tests {
             println!("{p}");
             assert_eq!(config_root(Path::new(p)), PathBuf::from("/foo/mise"));
         }
+    }
+}
+
+#[cfg(all(test, windows))]
+mod windows_tests {
+    use super::*;
+
+    /// A junction is not a symlink to `Path::is_symlink`, but `canonicalize` follows it, so a
+    /// junction in a project counts as a link the way a symlink does.
+    #[test]
+    fn a_junction_is_a_link_and_a_directory_is_not() {
+        let temp = tempfile::tempdir().unwrap();
+        let dir = temp.path().join("dir");
+        let junction = temp.path().join("junction");
+        std::fs::create_dir_all(&dir).unwrap();
+        let status = std::process::Command::new("cmd")
+            .arg("/C")
+            .arg("mklink")
+            .arg("/J")
+            .arg(&junction)
+            .arg(&dir)
+            .status()
+            .unwrap();
+        assert!(status.success(), "mklink /J failed");
+        assert!(!junction.is_symlink());
+        assert!(is_link(&junction));
+        assert!(!is_link(&dir));
+
+        let project = temp.path().join("project");
+        std::fs::create_dir_all(&project).unwrap();
+        let status = std::process::Command::new("cmd")
+            .arg("/C")
+            .arg("mklink")
+            .arg("/J")
+            .arg(project.join(".config"))
+            .arg(&dir)
+            .status()
+            .unwrap();
+        assert!(status.success(), "mklink /J failed");
+        assert_eq!(
+            linked_project(&project.join(".config/mise.toml")),
+            Some(project.absolutize().unwrap().to_path_buf())
+        );
     }
 }

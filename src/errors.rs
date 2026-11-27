@@ -116,7 +116,7 @@ fn outermost_link(path: &Path, project: &Path) -> PathBuf {
     let project = std::path::absolute(project).unwrap_or_else(|_| project.to_path_buf());
     path.ancestors()
         .take_while(|p| *p != project && p.starts_with(&project))
-        .filter(|p| p.is_symlink())
+        .filter(|p| crate::config::config_file::config_root::is_link(p))
         .last()
         .unwrap_or(&path)
         .to_path_buf()

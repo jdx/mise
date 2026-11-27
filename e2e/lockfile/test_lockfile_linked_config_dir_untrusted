@@ -42,3 +42,14 @@ assert_contains "cat inside/config/mise.lock" "@generated"
 mise trust clone
 assert_succeed "$lock"
 assert_contains "cat api/mise.lock" "@generated"
+
+# A trusted parent whose own link leads to the same directory does not vouch for a child
+# checkout that links there too: only the project that holds the link decides.
+mkdir -p shared outer/sub
+cp api/mise.toml shared/mise.toml
+cp api/mise.toml shared/config.toml
+ln -s ../shared outer/.config
+ln -s ../../shared outer/sub/.mise
+mise trust outer
+assert_fail_contains "mise -C outer/sub lock --platform linux-x64 2>&1" "reached through a symlink inside"
+assert_succeed "test ! -e shared/mise.lock"
