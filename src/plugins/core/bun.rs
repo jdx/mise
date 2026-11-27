@@ -59,6 +59,11 @@ impl BunPlugin {
         )
     }
 
+    /// The checksum list Bun publishes next to `version`'s release assets.
+    fn shasums_url(version: &str) -> String {
+        format!("{}/SHASUMS256.txt", Self::release_url(version))
+    }
+
     fn bun_bin(&self, tv: &ToolVersion) -> PathBuf {
         tv.install_path().join("bin").join(bun_bin_name())
     }
@@ -94,10 +99,7 @@ impl BunPlugin {
         // Without a checksum in the lockfile, take the one Bun publishes in
         // SHASUMS256.txt so verify_checksum compares the zip against it instead
         // of only recording what was downloaded.
-        let shasums_url = format!(
-            "https://github.com/oven-sh/bun/releases/download/bun-v{}/SHASUMS256.txt",
-            tv.version
-        );
+        let shasums_url = Self::shasums_url(&tv.version);
         let platform_info = tv
             .lock_platforms
             .entry(self.get_platform_key())
@@ -304,7 +306,7 @@ impl Backend for BunPlugin {
         let url = format!("{release_url}/{filename}");
 
         // Fetch SHASUMS256.txt to get checksum without downloading the zip
-        let shasums_url = format!("{release_url}/SHASUMS256.txt");
+        let shasums_url = Self::shasums_url(version);
         let checksum = fetch_checksum_from_shasums(&shasums_url, &filename).await;
 
         Ok(PlatformInfo {
@@ -570,6 +572,10 @@ mod tests {
             assert_eq!(
                 BunPlugin::release_url(version),
                 "https://github.com/oven-sh/bun/releases/download/bun-v1.4.4"
+            );
+            assert_eq!(
+                BunPlugin::shasums_url(version),
+                "https://github.com/oven-sh/bun/releases/download/bun-v1.4.4/SHASUMS256.txt"
             );
         }
     }
