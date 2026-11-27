@@ -911,21 +911,22 @@ impl TaskScriptParser {
             }
             let shell = rendered_script_shell(script, task, self.run_shell.as_deref())?;
             let quoting = ArgQuoting::of(&shell);
-            // Set once a template function has put in a value quoted for `shell` that another
-            // shell would quote otherwise. `true`, `false` and plain words read the same in all
-            // of them, so they do not tie the script to `shell`.
+            // Set once a template function has put in a value that some shell quotes, which it
+            // quoted for `shell`. `true`, `false` and plain words go in as they are for every
+            // shell, so they do not tie the script to `shell`. A value with a space does, even
+            // when fish and POSIX quote it alike: an interpreter mise does not know may not read
+            // those quotes.
             let quoted = Arc::new(AtomicBool::new(false));
             let escape = {
                 let quoted = quoted.clone();
                 move |v: &usage::parse::ParseValue| {
-                    let escaped = quoting.escape(v);
                     if ArgQuoting::ALL
                         .into_iter()
-                        .any(|other| other.escape(v) != escaped)
+                        .any(|other| other.escape(v) != ArgQuoting::unquoted(v))
                     {
                         quoted.store(true, Ordering::Relaxed);
                     }
-                    escaped
+                    quoting.escape(v)
                 }
             };
             let mut tera = self.get_tera();
@@ -1196,6 +1197,14 @@ enum ArgQuoting {
 impl ArgQuoting {
     const ALL: [Self; 3] = [Self::Fish, Self::Posix, Self::Raw];
 
+    /// The words of `v` joined with spaces and no quoting.
+    fn unquoted(v: &usage::parse::ParseValue) -> String {
+        match v {
+            usage::parse::ParseValue::MultiString(values) => values.join(" "),
+            _ => v.to_string(),
+        }
+    }
+
     fn of(shell: &[String]) -> Self {
         let Some(program) = shell.first() else {
             return Self::Raw;
@@ -1397,8 +1406,11 @@ mod tests {
         let rendered_bash_flag = "{{ '#!/usr/bin/env bash' }}\necho {{ flag(name='force') }}";
         let word = ["hello".to_string()];
         let force = ["--force".to_string()];
+        let rendered_tcl = "{{ '#!/usr/bin/env tclsh' }}\nputs {{ arg(name='words', var=true) }}";
+        let spaced = ["a b".to_string(), "c".to_string()];
+        let words = ["a".to_string(), "c".to_string()];
         // (task shell, `mise run --shell`, script, args, refused)
-        let cases: [(_, _, String, &[String], _); 9] = [
+        let cases: [(_, _, String, &[String], _); 11] = [
             (None, Some("fish -c"), rendered_bash.clone(), &value, true),
             (
                 Some("fish -c"),
@@ -1429,6 +1441,9 @@ mod tests {
             ),
             (None, Some("fish -c"), rendered_bash_flag.into(), &[], false),
             (None, Some("fish -c"), rendered_bash.clone(), &word, false),
+            // fish and POSIX quote `a b` alike, but Tcl does not read those quotes.
+            (Some("bash -c"), None, rendered_tcl.into(), &spaced, true),
+            (Some("bash -c"), None, rendered_tcl.into(), &words, false),
         ];
         for (task_shell, run_shell, script, args, refused) in cases {
             let task = Task {
@@ -1463,7 +1478,7 @@ mod tests {
                 Err(err) => panic!("{case}: {err:#}"),
                 Ok(parsed) => {
                     assert!(!refused, "{case}: {parsed:?}");
-                    assert!(parsed[0].starts_with("#!/usr/bin/env bash\n"), "{case}");
+                    assert!(parsed[0].starts_with("#!/usr/bin/env "), "{case}");
                 }
             }
         }
