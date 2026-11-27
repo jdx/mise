@@ -2318,11 +2318,13 @@ pub(crate) fn monorepo_lockfile_root_from_dir(dir: &Path) -> Option<PathBuf> {
     let mut config_files = ConfigMap::new();
     for ancestor in all_dirs_from(dir).unwrap_or_default() {
         for path in config_paths_in_dir(&ancestor) {
-            // The same committed layers the stub's lockfile is chosen from.
+            // The same committed layers the stub's lockfile is chosen from. A config
+            // `ignored_config_paths` names never loads, so it declares no root either.
             if path.extension().is_none_or(|ext| ext != "toml")
                 || lockfile::is_local_config(&path)
                 || lockfile::extract_env_from_config_path(&path).is_some()
                 || is_global_config(&path)
+                || config_file::is_config_ignored_via_setting(&path)
                 || (paranoid && !config_file::is_path_trusted(&path))
             {
                 continue;

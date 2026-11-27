@@ -42,6 +42,11 @@ for paranoid in config 1; do
   assert_succeed "MISE_PARANOID=$paranoid MISE_YES=0 mise lock"
   assert_succeed "test -e $HOME/stub-option-ran"
   rm "$HOME/stub-option-ran"
+  # a link to the stub from outside the project, such as one on PATH, is the trusted stub
+  mkdir -p "$HOME/linkbin"
+  ln -sf "$PWD/bin/widget" "$HOME/linkbin/widget"
+  assert_succeed "MISE_PARANOID=$paranoid MISE_YES=0 mise generate tool-stub $HOME/linkbin/widget --lock"
+  rm -f "$HOME/stub-option-ran"
   MISE_PARANOID=$paranoid mise trust --untrust bin/widget
   MISE_PARANOID=$paranoid mise trust --untrust mise.toml
   cp mise.lock.orig mise.lock
@@ -144,3 +149,15 @@ assert_fail "test -f mono/mise.lock"
 mise trust mono/mise.toml
 assert_succeed "cd elsewhere && MISE_EXPERIMENTAL=1 MISE_YES=0 mise generate tool-stub ../mono/packages/a/bin/plain --lock"
 assert_contains "cat mono/mise.lock" 'tool-stubs = ["packages/a/bin/plain"]'
+
+# In paranoid mode each root config needs trust of its own, but one that
+# ignored_config_paths names never loads, so it owns nothing.
+echo '[env]' >mono/.mise.toml
+for f in mono/mise.toml mono/packages/a/mise.toml mono/packages/a/bin/plain; do
+  MISE_PARANOID=config mise trust "$f"
+done
+# Outside the work directory, whose `mise` project above holds a config of its own.
+mkdir -p "$HOME/outside"
+lock_plain="cd $HOME/outside && MISE_PARANOID=config MISE_EXPERIMENTAL=1 MISE_YES=0 mise generate tool-stub $PWD/mono/packages/a/bin/plain --lock"
+assert_fail_contains "$lock_plain 2>&1" "mono/.mise.toml are not trusted"
+assert_succeed "MISE_IGNORED_CONFIG_PATHS=$PWD/mono/.mise.toml && export MISE_IGNORED_CONFIG_PATHS && $lock_plain"

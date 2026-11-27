@@ -817,10 +817,14 @@ exec "$MISE_BIN" tool-stub "$0" "$@"
         for owner in lockfile::tool_stub_lockfile_owners(&config_path, monorepo_root.as_deref()) {
             trust_check(&owner)?;
         }
+        // Trust is checked on the stub a link leads to, as `mise lock` finds it, and that file
+        // is the one read: a link to a project's stub (say on PATH) is not a file of the
+        // directory the link sits in. The name it was given still names its tool, as in a run.
+        let real_stub = dunce::canonicalize(&self.output)?;
         if Settings::get().paranoid.config() {
-            trust_check(&self.output)?;
+            trust_check(&real_stub)?;
         }
-        let mut stub = ToolStubFile::from_file(&self.output)?;
+        let mut stub = ToolStubFile::from_content(&self.output, file::read_to_string(&real_stub)?)?;
         if Settings::safe_mode() && stub.has_tool_options() {
             bail!(
                 "cannot lock tool stub {} in safe mode: its tool options apply only outside safe mode\n\

@@ -3117,7 +3117,9 @@ pub fn tool_stub_config(stub: &Path) -> Option<(PathBuf, Option<PathBuf>)> {
 
 /// The configs that must be trusted before a stub's lock data is written to the lockfile of
 /// `config_path` (from [`tool_stub_config`]): that config and, when it shares its monorepo
-/// root's lockfile, the root's base configs, which own that lockfile.
+/// root's lockfile, the root's base configs, which own that lockfile. A root config that
+/// `ignored_config_paths` names is not one of them: it never loads, and the monorepo root is
+/// found without it.
 pub fn tool_stub_lockfile_owners(config_path: &Path, monorepo_root: Option<&Path>) -> Vec<PathBuf> {
     let mut owners = vec![config_path.to_path_buf()];
     let (own_lockfile, _) = lockfile_path_for_config(config_path, None);
@@ -3133,6 +3135,7 @@ pub fn tool_stub_lockfile_owners(config_path: &Path, monorepo_root: Option<&Path
                         && !is_local_config(path)
                         && extract_env_from_config_path(path).is_none()
                         && !crate::config::is_global_config(path)
+                        && !crate::config::config_file::is_config_ignored_via_setting(path)
                 }),
         );
     }
