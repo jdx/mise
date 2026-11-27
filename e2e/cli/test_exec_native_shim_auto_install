@@ -49,8 +49,15 @@ assert_directory_not_exists "$MISE_DATA_DIR/installs/dummy/2.0.0"
 assert_contains "__MISE_SHIM_PATH='$shim' mise x -- dummy 2>/dev/null" "This is Dummy 2.0.0!"
 
 # Completing through a command wrapper installs neither the wrapper's command nor the lazy tool
-# behind it, though the wrapper's args move the completion arguments.
+# behind it, though the wrapper's args move the completion arguments. A stand-in `dummy` shows
+# that the wrapper still runs, with its args and the completion arguments.
 mise uninstall dummy@2.0.0
+mkdir -p "$HOME/stand-in"
+cat >"$HOME/stand-in/dummy" <<'SH'
+#!/bin/sh
+echo "stand-in $*"
+SH
+chmod +x "$HOME/stand-in/dummy"
 cat >mise.toml <<TOML
 [tools]
 dummy = { version = "2.0.0", lazy = true, lazy_bins = ["dummy"] }
@@ -59,5 +66,5 @@ dummy = { version = "2.0.0", lazy = true, lazy_bins = ["dummy"] }
 command = "dummy"
 args = ["--wrapped"]
 TOML
-__MISE_SHIM_PATH="$MISE_DATA_DIR/shims/dwrap" mise x -- dwrap __complete_word__ >/dev/null 2>&1 || true
+assert_contains "PATH='$HOME/stand-in':\$PATH __MISE_SHIM_PATH='$MISE_DATA_DIR/shims/dwrap' mise x -- dwrap __complete_word__ 2>/dev/null" "stand-in --wrapped __complete_word__"
 assert_directory_not_exists "$MISE_DATA_DIR/installs/dummy/2.0.0"
