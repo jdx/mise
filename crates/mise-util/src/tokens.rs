@@ -685,12 +685,27 @@ logins:
         }
         // A relative entry in the caller's PATH would send `env` through the
         // shell too, so the commands get only the absolute entries of the
-        // caller's PATH, which keeps tools found outside /usr/bin (Nix).
+        // caller's PATH, which keeps tools found outside /usr/bin (Nix). The
+        // shell and `env` are looked up first in the whole PATH, relative
+        // entries included, and their directories added as absolute ones, so
+        // the filtering changes only what the helper inherits.
         let caller_path = std::env::var_os("PATH").unwrap_or_default();
-        let dirs: Vec<_> = std::env::split_paths(&caller_path)
+        let cwd = std::env::current_dir().unwrap();
+        let find = |program: &str| {
+            std::env::split_paths(&caller_path)
+                .map(|dir| cwd.join(dir))
+                .find(|dir| dir.join(program).is_file())
+        };
+        let (shell, _) = credential_command_shell("true", "example.com").unwrap();
+        let mut dirs: Vec<_> = std::env::split_paths(&caller_path)
             .filter(|dir| dir.is_absolute())
             .collect();
-        let has_env = dirs.iter().any(|dir| dir.join("env").is_file());
+        if !shell.contains('/') {
+            dirs.extend(find(&shell));
+        }
+        let env_dir = find("env");
+        let has_env = env_dir.is_some();
+        dirs.extend(env_dir);
         let path = std::env::join_paths(dirs).unwrap();
         let path = path.as_os_str();
         // The first runs through the shell, the second without it. Only the
@@ -700,7 +715,7 @@ logins:
             ("env", true),
         ] {
             if direct && !has_env {
-                eprintln!("skipped the direct check: no absolute PATH entry holds `env`");
+                eprintln!("skipped the direct check: no PATH entry holds `env`");
                 continue;
             }
             let mut command =
