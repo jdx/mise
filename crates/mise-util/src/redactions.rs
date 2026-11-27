@@ -342,7 +342,14 @@ fn redact_query_credentials(url_query: &regex::Regex, text: &str) -> Option<Stri
     let mut changed = false;
     let out = url_query.replace_all(text, |captures: &regex::Captures<'_>| {
         let query = &captures[2];
-        let (query, rest) = query.split_at(query.find(char::is_control).unwrap_or(query.len()));
+        // A URL parser drops a tab or newline, so what follows one is still
+        // part of the query; another control character, such as the escape
+        // that starts a terminal style, ends it.
+        let (query, rest) = query.split_at(
+            query
+                .find(|c: char| c.is_control() && !TAB_OR_NEWLINE.contains(&c))
+                .unwrap_or(query.len()),
+        );
         let pairs = query
             .split('&')
             .map(|pair| {
@@ -361,15 +368,17 @@ fn redact_query_credentials(url_query: &regex::Regex, text: &str) -> Option<Stri
     changed.then(|| out.into_owned())
 }
 
-/// Text that mise writes to the terminal or a file without going through the
-/// logger, redacted the way the logger redacts every record: registered secrets,
-/// then the credentials of every URL ([`redact_url_credentials`]).
+/// Text that mise writes to the terminal or a file, redacted the way the logger
+/// redacts every record: the credentials of every URL
+/// ([`redact_url_credentials`]), then registered secrets. URLs go first, while
+/// the names of their parameters are intact: a registered secret that spells
+/// one (`token`) would otherwise hide the name that marks its value.
 pub fn redact_output(text: &str) -> String {
-    let text = redact_global(text);
-    match redact_url_credentials(&text) {
-        Cow::Borrowed(_) => text,
-        Cow::Owned(redacted) => redacted,
-    }
+    redact_output_with(&GLOBAL_REDACTOR.lock().unwrap(), text)
+}
+
+fn redact_output_with(redactor: &Redactor, text: &str) -> String {
+    redactor.redact(&redact_url_credentials(text))
 }
 
 /// `value` with every string in it, keys included, redacted the way the
@@ -811,6 +820,38 @@ mod tests {
             redact_url_credentials_in_arg("https://u:p w@host/my tool?token=TO KEN&v=1"),
             "https://[redacted]@host/my tool?token=[redacted]&v=1"
         );
+        // A URL parser drops a tab or newline, so the query goes on after one;
+        // a terminal style still ends it.
+        for (input, expected) in [
+            (
+                "https://host/t?x=1&\ttoken=TOKEN",
+                "https://host/t?x=1&\ttoken=[redacted]",
+            ),
+            (
+                "https://host/t?x=1&\ntoken=TOKEN&v=1",
+                "https://host/t?x=1&\ntoken=[redacted]&v=1",
+            ),
+            (
+                "https://host/t?token=TO\r\nKEN&v=1",
+                "https://host/t?token=[redacted]&v=1",
+            ),
+            (
+                "https://host/t?token=TOKEN\u{1b}[0m done",
+                "https://host/t?token=[redacted]\u{1b}[0m done",
+            ),
+        ] {
+            let redacted = redact_url_credentials_in_arg(input);
+            assert_eq!(redacted, expected, "{input:?}");
+            assert!(!redacted.contains("TOKEN"));
+        }
+    }
+
+    #[test]
+    fn test_redact_output_redacts_urls_before_registered_secrets() {
+        let redactor = Redactor::new(["token".to_string()]);
+        let out = redact_output_with(&redactor, "https://host/t?token=OTHER_SECRET");
+        assert!(!out.contains("OTHER_SECRET"), "{out}");
+        assert!(!out.contains("token"), "{out}");
     }
 
     #[test]

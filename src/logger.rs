@@ -75,13 +75,12 @@ impl log::Log for Logger {
 
         // Redact once for all outputs (Aho-Corasick makes this efficient)
         let args = record.args().to_string();
-        // Not Config::redact: the global redactor is seeded with inherited
-        // secrets, so records logged before Config loads are redacted too.
-        let args = mise_util::redactions::redact_global(&args);
         // Credentials embedded in a URL are never registered as secrets, so
         // `DEBUG GET https://user:token@host` and `DEBUG ARGS:` would print them,
         // in the userinfo or in a query parameter such as `?private_token=`.
-        let args = mise_util::redactions::redact_url_credentials(&args);
+        // Not Config::redact: the global redactor is seeded with inherited
+        // secrets, so records logged before Config loads are redacted too.
+        let args = mise_util::redactions::redact_output(&args);
 
         if will_log_file && let Some(log_file) = &self.log_file {
             let mut log_file = log_file.lock().unwrap();
