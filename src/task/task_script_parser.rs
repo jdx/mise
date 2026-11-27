@@ -911,13 +911,21 @@ impl TaskScriptParser {
             }
             let shell = rendered_script_shell(script, task, self.run_shell.as_deref())?;
             let quoting = ArgQuoting::of(&shell);
-            // Set once a template function has quoted a value, which it did for `shell`.
+            // Set once a template function has put in a value quoted for `shell` that another
+            // shell would quote otherwise. `true`, `false` and plain words read the same in all
+            // of them, so they do not tie the script to `shell`.
             let quoted = Arc::new(AtomicBool::new(false));
             let escape = {
                 let quoted = quoted.clone();
                 move |v: &usage::parse::ParseValue| {
-                    quoted.store(true, Ordering::Relaxed);
-                    quoting.escape(v)
+                    let escaped = quoting.escape(v);
+                    if ArgQuoting::ALL
+                        .into_iter()
+                        .any(|other| other.escape(v) != escaped)
+                    {
+                        quoted.store(true, Ordering::Relaxed);
+                    }
+                    escaped
                 }
             };
             let mut tera = self.get_tera();
@@ -1186,6 +1194,8 @@ enum ArgQuoting {
 }
 
 impl ArgQuoting {
+    const ALL: [Self; 3] = [Self::Fish, Self::Posix, Self::Raw];
+
     fn of(shell: &[String]) -> Self {
         let Some(program) = shell.first() else {
             return Self::Raw;
@@ -1384,23 +1394,43 @@ mod tests {
         let rendered_bash = format!("{{{{ '#!/usr/bin/env bash' }}}}\n{arg}");
         let templated_bash = format!("#!/usr/bin/env {{{{ 'bash' }}}}\n{arg}");
         let static_bash = format!("#!/usr/bin/env bash\n{arg}");
-        // (task shell, `mise run --shell`, script, refused)
-        let cases = [
-            (None, Some("fish -c"), rendered_bash.clone(), true),
-            (Some("fish -c"), None, rendered_bash.clone(), cfg!(unix)),
-            (None, Some("fish -c"), templated_bash.clone(), true),
+        let rendered_bash_flag = "{{ '#!/usr/bin/env bash' }}\necho {{ flag(name='force') }}";
+        let word = ["hello".to_string()];
+        let force = ["--force".to_string()];
+        // (task shell, `mise run --shell`, script, args, refused)
+        let cases: [(_, _, String, &[String], _); 9] = [
+            (None, Some("fish -c"), rendered_bash.clone(), &value, true),
+            (
+                Some("fish -c"),
+                None,
+                rendered_bash.clone(),
+                &value,
+                cfg!(unix),
+            ),
+            (None, Some("fish -c"), templated_bash.clone(), &value, true),
             // The same quoting either way.
-            (Some("bash -c"), None, rendered_bash.clone(), false),
-            (None, Some("fish -c"), static_bash, false),
+            (Some("bash -c"), None, rendered_bash.clone(), &value, false),
+            (None, Some("fish -c"), static_bash, &value, false),
             // No value was quoted.
             (
                 None,
                 Some("fish -c"),
                 "{{ '#!/usr/bin/env bash' }}\necho hi".into(),
+                &[],
                 false,
             ),
+            // A boolean flag and a plain word read the same in every shell.
+            (
+                None,
+                Some("fish -c"),
+                rendered_bash_flag.into(),
+                &force,
+                false,
+            ),
+            (None, Some("fish -c"), rendered_bash_flag.into(), &[], false),
+            (None, Some("fish -c"), rendered_bash.clone(), &word, false),
         ];
-        for (task_shell, run_shell, script, refused) in cases {
+        for (task_shell, run_shell, script, args, refused) in cases {
             let task = Task {
                 name: "t".into(),
                 shell: task_shell.map(str::to_string),
@@ -1418,11 +1448,7 @@ mod tests {
                     &task,
                     &scripts,
                     &Default::default(),
-                    if script.contains("arg(") {
-                        &value[..]
-                    } else {
-                        &[]
-                    },
+                    args,
                     &spec,
                 )
                 .await;
