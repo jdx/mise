@@ -761,7 +761,9 @@ pub async fn generate(
         );
         candidate.bind_request(&short, &specifier, &version, &options);
         for (key, mut value) in conda {
-            if let Some(old) = candidate.get_conda_package(&platform.to_key(), &key) {
+            // `previous`, not `candidate`: another tool that shares the
+            // package may already have written it there without the login.
+            if let Some(old) = previous.get_conda_package(&platform.to_key(), &key) {
                 keep_conda_pin_recorded_with_a_login(old, &mut value);
             }
             candidate.set_conda_package(&platform.to_key(), &key, value);
