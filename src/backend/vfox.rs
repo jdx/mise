@@ -273,6 +273,9 @@ fn dir_is_trusted(config: &Config, dir: &Path) -> bool {
         let Ok(below) = dir.strip_prefix(&root) else {
             return false;
         };
+        if is_ignored(&root) {
+            return false;
+        }
         let mut step = root;
         below.components().all(|component| {
             step.push(component);
