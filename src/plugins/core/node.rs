@@ -216,10 +216,12 @@ impl NodePlugin {
         }
         ctx.pr.next_operation();
         ctx.pr.set_message(format!("extract {tarball_name}"));
-        file::remove_all(&opts.build_dir)?;
+        let staging = opts.staging_dir();
+        file::remove_all(staging)?;
+        file::create_dir_all(staging)?;
         file::untar(
             &opts.source_tarball_path,
-            opts.build_dir.parent().unwrap(),
+            staging,
             ExtractionFormat::TarGz,
             &ExtractOptions {
                 pr: Some(ctx.pr.as_ref()),
@@ -230,6 +232,8 @@ impl NodePlugin {
         self.exec_configure(ctx, opts, tv)?;
         self.exec_make(ctx, opts, tv)?;
         self.exec_make_install(ctx, opts, tv)?;
+        // `always_keep_download` keeps the source tarball, not the build tree made from it
+        file::remove_all(staging)?;
         Ok(())
     }
 
@@ -248,10 +252,9 @@ impl NodePlugin {
             return Ok(());
         }
         let patches = plugins::core::fetch_patch_contents(&sources).await?;
-        file::create_dir_all(&*env::MISE_TMP_DIR)?;
         for (source, patch) in sources.iter().zip(patches) {
             ctx.pr.set_message(format!("patch {source}"));
-            let patch_file = env::MISE_TMP_DIR.join(format!(
+            let patch_file = opts.staging_dir().join(format!(
                 "node-v{}-{}.patch",
                 opts.version,
                 hash::hash_to_str(source)
@@ -1144,6 +1147,12 @@ struct BuildOpts {
 }
 
 impl BuildOpts {
+    /// The directory the source tarball is extracted into, which holds the build tree and the
+    /// patches applied to it and nothing else.
+    fn staging_dir(&self) -> &Path {
+        self.build_dir.parent().unwrap()
+    }
+
     async fn new(ctx: &InstallContext, tv: &ToolVersion) -> Result<Self> {
         let v = &tv.version;
         let install_path = tv.install_path();
@@ -1212,7 +1221,7 @@ impl BuildOpts {
         Ok(Self {
             version: v.clone(),
             path: ctx.ts.list_paths(&ctx.config).await,
-            build_dir: env::MISE_TMP_DIR.join(format!("node-v{v}")),
+            build_dir: source_build_dir(&tv.cache_path(), v),
             configure_cmd: settings.node.configure_cmd(&install_path),
             make_cmd: settings.node.make_cmd(),
             make_install_cmd: settings.node.make_install_cmd(),
@@ -1313,6 +1322,19 @@ fn slug(v: &str) -> String {
     } else {
         format!("node-v{v}-{}-{}", os(), arch(&settings))
     }
+}
+
+/// Where a source build of `v` is extracted and compiled: under the version's cache directory,
+/// which only this user writes to and which every install of the version clears. `MISE_TMP_DIR`
+/// defaults to a fixed name in the system temporary directory, where whoever created it first
+/// can swap the tree between build steps.
+///
+/// Not the download directory: a download is saved there under the last segment of its URL,
+/// which a locked URL can make anything, so any name for the build tree there could be that of
+/// a kept download, which clearing the tree would delete, and a tree a failed build left could
+/// pass for a download.
+fn source_build_dir(cache_path: &Path, v: &str) -> PathBuf {
+    cache_path.join("source-build").join(format!("node-v{v}"))
 }
 
 fn source_tarball_name(v: &str) -> String {
@@ -1572,6 +1594,18 @@ mod tests {
         let musl = mirror_url_for(&node, "node-v24.14.0-linux-x64-musl.tar.gz");
         assert_eq!(glibc.as_str(), "https://corp.example/node/");
         assert_eq!(musl.as_str(), "https://corp.example/node/");
+    }
+
+    /// The source tarball is saved in the download directory under the last segment of its URL,
+    /// which a locked URL can make anything, so the build tree, which is removed before
+    /// extracting and after installing, is in the version's cache directory instead.
+    #[test]
+    fn test_source_build_dir_is_in_the_version_cache() {
+        let cache_path = Path::new("/cache/node/22.0.0");
+        let build_dir = source_build_dir(cache_path, "22.0.0");
+        assert!(build_dir.ends_with("node-v22.0.0"));
+        let staging = build_dir.parent().unwrap();
+        assert_eq!(staging, cache_path.join("source-build"));
     }
 
     #[test]
