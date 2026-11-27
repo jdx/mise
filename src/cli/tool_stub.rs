@@ -28,8 +28,12 @@ impl BinPathCache {
     /// `content` is the text the stub was read as. A run hashes the text it parsed, so an entry
     /// saved after the install names the stub that was installed for, even when the file
     /// changed meanwhile.
+    ///
+    /// The stub's mise.lock is hashed too: it can pin the version a stub's request resolves
+    /// to, and `mise lock --bump` or `mise generate tool-stub --lock` change that pin without
+    /// touching the stub.
     fn cache_key(stub_path: &Path, content: &[u8]) -> Result<Option<String>> {
-        if !stub_path.is_file() {
+        if !Self::is_cacheable(stub_path) {
             return Ok(None);
         }
         let path = std::path::absolute(stub_path)?;
@@ -37,7 +41,26 @@ impl BinPathCache {
         hasher.update(path.as_os_str().as_encoded_bytes());
         hasher.update([0]);
         hasher.update(content);
+        if let Some((lockfile, _)) = crate::lockfile::lockfile_path_for_tool_stub(stub_path)
+            && let Ok(lock) = std::fs::read(&lockfile)
+        {
+            hasher.update([0]);
+            hasher.update(lockfile.as_os_str().as_encoded_bytes());
+            hasher.update([0]);
+            hasher.update(lock);
+        }
         Ok(Some(hex::encode(hasher.finalize())))
+    }
+
+    /// Whether the stub at `stub_path` can be read again to find its entry: a regular file
+    /// that is not a file descriptor such as `/dev/stdin`. Stdin redirected from a file is a
+    /// regular file, but on macOS reading it moves the offset the later parse reads from, and
+    /// two stubs redirected in would share one key.
+    fn is_cacheable(stub_path: &Path) -> bool {
+        let is_fd = |path: &Path| path.starts_with("/dev") || path.starts_with("/proc");
+        stub_path.is_file()
+            && !std::path::absolute(stub_path).is_ok_and(|path| is_fd(&path))
+            && !stub_path.canonicalize().is_ok_and(|path| is_fd(&path))
     }
 
     fn cache_file_path(cache_key: &str) -> PathBuf {
@@ -502,7 +525,7 @@ pub(crate) async fn short_circuit_stub(args: &[String]) -> Result<()> {
         return Ok(());
     }
 
-    if !potential_stub_path.is_file() {
+    if !BinPathCache::is_cacheable(potential_stub_path) {
         return Ok(());
     }
     let content = file::read(potential_stub_path)?;
@@ -591,5 +614,45 @@ mod tests {
 
         // a directory, or a pipe that cannot be read twice, has no entry
         assert_eq!(None, BinPathCache::cache_key(tmp.path(), b"").unwrap());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn cache_key_skips_file_descriptors() {
+        let tmp = tempfile::tempdir().unwrap();
+        let stub = tmp.path().join("bin/scan");
+        write_stub(&stub, "1.0.0");
+        let file = std::fs::File::open(&stub).unwrap();
+        let fd = std::path::PathBuf::from(format!("/dev/fd/{}", {
+            use std::os::fd::AsRawFd;
+            file.as_raw_fd()
+        }));
+        assert!(fd.is_file());
+        assert!(!BinPathCache::is_cacheable(&fd));
+        assert!(BinPathCache::is_cacheable(&stub));
+    }
+
+    #[test]
+    fn cache_key_changes_with_the_stubs_lockfile() {
+        let tmp = tempfile::tempdir().unwrap();
+        // The test harness overrides the config filenames.
+        std::fs::write(tmp.path().join(".test.mise.toml"), "[tools]\n").unwrap();
+        let stub = tmp.path().join("bin/scan");
+        write_stub(&stub, "latest");
+        let unlocked = key_on_disk(&stub).unwrap();
+        std::fs::write(
+            tmp.path().join("mise.lock"),
+            "[[tools.dummy]]\nversion = \"1.0.0\"\n",
+        )
+        .unwrap();
+        let locked = key_on_disk(&stub).unwrap();
+        assert_ne!(unlocked, locked);
+        // a bump rewrites only the lockfile
+        std::fs::write(
+            tmp.path().join("mise.lock"),
+            "[[tools.dummy]]\nversion = \"2.0.0\"\n",
+        )
+        .unwrap();
+        assert_ne!(locked, key_on_disk(&stub).unwrap());
     }
 }
