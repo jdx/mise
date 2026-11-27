@@ -86,7 +86,10 @@ ok "[trust] the command-not-found handler does not trust the project"
 # The prompt hook runs before every prompt on the terminal: it neither asks nor
 # trusts, with or without a global option before the command.
 for cmd in 'mise hook-env -s bash' 'mise -q hook-env -s bash'; do
-  output="$(on_pty "$cmd")" || true
+  # script -e exits with the status of the command it ran.
+  output="$(on_pty "$cmd")" || fail "$cmd failed: $output"
+  # The warning shows the hook reached the untrusted config and did not trust it.
+  assert_contains_text "$output" "mise.toml is not trusted, run \`mise trust\` to enable it"
   assert_not_contains_text "$output" "Trust them?"
   assert_not_contains_text "$output" "$notice"
   assert_untrusted
