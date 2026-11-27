@@ -297,11 +297,17 @@ fn placing(err: std::io::Error, dest: &Path) -> eyre::Report {
 
 /// Write `contents` to `path` so a reader never sees a partial file. The
 /// rename into place is retried while Windows briefly refuses to replace the
-/// entry, which it does while another process has it open.
+/// entry, which it does while another process has it open. The file stays
+/// owner-only on Unix, as `tempfile` creates it: entries hold full download
+/// URLs, which can carry private query tokens.
 fn write_atomic(path: &Path, contents: &[u8]) -> Result<()> {
+    use std::io::Write;
+
     let parent = path.parent().expect("index paths have a parent");
     file::create_dir_all(parent)?;
-    file::write_atomic_unsynced(path, contents)
+    let mut tmp = tempfile::NamedTempFile::new_in(parent)?;
+    tmp.write_all(contents)?;
+    file::persist_atomic(tmp, path)
 }
 
 /// What kept a download: how to find it again.

@@ -798,6 +798,11 @@ fn test_an_unreadable_pin_entry_keeps_its_urls() {
     store("first", first, &pin);
     let (_, hex) = pin.split_once(':').unwrap();
     let entry = cache.path().join("pins/sha256").join(format!("{hex}.json"));
+    // Entries hold full URLs, which can carry private tokens.
+    assert_eq!(
+        std::fs::metadata(&entry).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
     std::fs::set_permissions(&entry, std::fs::Permissions::from_mode(0o000)).unwrap();
     if std::fs::read(&entry).is_ok() {
         // Permissions don't stop root from reading it.
