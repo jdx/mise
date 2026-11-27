@@ -1,0 +1,25 @@
+name: link-discussions
+
+# Comments on the discussions a merged pull request references, and closes the
+# ones it fixes. See jdx/workflows for the workflow implementation.
+
+on:
+  # A merged pull request from a fork only gets a write token under
+  # pull_request_target, which the shared workflow needs to comment on and
+  # close discussions. It reads the pull request body through the API and
+  # never checks out or runs its code.
+  # jactionlint ignore=dangerous-triggers
+  pull_request_target:
+    types: [closed]
+
+permissions: {}
+
+jobs:
+  link-discussions:
+    if: github.event.pull_request.merged == true
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+      discussions: write
+    uses: jdx/workflows/.github/workflows/link-discussions.yml@5209f775cc466a4df9d8a75b400a15632b11062c
