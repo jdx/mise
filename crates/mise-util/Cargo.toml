@@ -50,7 +50,7 @@ indexmap = { version = "2", features = ["serde"] }
 indoc = "2"
 itertools = "0.15"
 jdx-tar = "1"
-jiff = "1.0"
+jiff = "1"
 jsonc-parser = { version = "0.34", features = ["cst", "serde", "serde_json"] }
 junction = "2"
 log = "0.4"

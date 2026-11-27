@@ -173,7 +173,7 @@ clx = "3"
 indoc = "2"
 itertools = "0.15"
 jdx-tar = "1"
-jiff = "1.0"
+jiff = "1"
 # rattler and packslip still take and return jiff 0.2 timestamps.
 jiff_0_2 = { package = "jiff", version = "0.2" }
 junction = "2"
