@@ -140,7 +140,10 @@ release can no longer be found. When the entry has a `checksum`, the download
 must match it. An entry without one is checked against the digest the release
 lists for that archive, when it lists one and the locked `url` is the release's
 own download URL. A locked `url` that points anywhere else, such as a mirror,
-gets no check unless the entry has a `checksum`.
+gets no checksum check unless the entry has a `checksum`. Without one, the
+archive must still pass the configured repository's GitHub artifact attestation
+check when
+[`ruby.github_attestations`](/lang/ruby.html#ruby.github_attestations) is on.
 
 To move to the newest build of the same version, delete the Ruby entry from
 `mise.lock`, or every Ruby platform `url`, then run:
