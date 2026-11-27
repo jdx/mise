@@ -52,7 +52,7 @@ pub(crate) mod tool_versions;
 mod typed_consent;
 mod unknown_key;
 
-pub use typed_consent::set_typed_command;
+pub use typed_consent::{CommandOrigin, set_command_origin};
 
 #[derive(Debug, PartialEq)]
 pub(crate) enum ConfigFileType {
@@ -819,7 +819,10 @@ pub fn trust_check(path: &Path) -> eyre::Result<()> {
     if *REQUIRE_EXPLICIT_TRUST {
         Err(UntrustedConfig(path.into()))?
     }
-    if cmd != "hook-env" && !strict && !is_ignored(&config_root) && !is_ignored(path) {
+    // The prompt hook neither asks nor trusts. The parsed command catches `mise -q hook-env`;
+    // argv[1] covers config loaded before the command line is parsed.
+    let prompt_hook = cmd == "hook-env" || typed_consent::is_prompt_hook();
+    if !prompt_hook && !strict && !is_ignored(&config_root) && !is_ignored(path) {
         if typed_consent::trust_typed_command(path, &config_root)? {
             return Ok(());
         }

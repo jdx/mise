@@ -83,6 +83,17 @@ for cmd in 'mise hook-not-found -s bash -- nosuchbin' 'mise -q hook-not-found -s
 done
 ok "[trust] the command-not-found handler does not trust the project"
 
+# The prompt hook runs before every prompt on the terminal: it neither asks nor
+# trusts, with or without a global option before the command.
+for cmd in 'mise hook-env -s bash' 'mise -q hook-env -s bash'; do
+  output="$(on_pty "$cmd")" || true
+  assert_not_contains_text "$output" "Trust them?"
+  assert_not_contains_text "$output" "$notice"
+  assert_untrusted
+  forget_trust
+done
+ok "[trust] the prompt hook does not trust the project"
+
 # Without a terminal nothing is trusted either.
 assert_fail "MISE_YES=0 mise env </dev/null" "not trusted"
 assert_untrusted

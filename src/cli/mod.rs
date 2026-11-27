@@ -1,3 +1,4 @@
+use crate::config::config_file::CommandOrigin;
 use crate::config::settings::SettingsPartial;
 use crate::config::{Config, Settings, SettingsExt, config_file};
 use crate::task::TaskOutput;
@@ -479,15 +480,16 @@ impl Commands {
         )
     }
 
-    /// Commands a shell integration runs without the user typing a mise command: completion and
-    /// `usage` answer TAB completion or print the spec it reads, and the command-not-found
-    /// handler runs `hook-not-found` when the user mistypes any command. Neither is consent to
-    /// trust the project.
-    fn is_run_by_shell_integration(&self) -> bool {
-        matches!(
-            self,
-            Self::Completion(_) | Self::HookNotFound(_) | Self::Usage(_)
-        )
+    /// Who ran this command, as far as trust is concerned: a shell integration runs some without
+    /// the user typing a mise command, and none of those is consent to trust the project.
+    fn command_origin(&self) -> CommandOrigin {
+        match self {
+            Self::HookEnv(_) => CommandOrigin::PromptHook,
+            Self::Completion(_) | Self::HookNotFound(_) | Self::Usage(_) => {
+                CommandOrigin::ShellIntegration
+            }
+            _ => CommandOrigin::Typed,
+        }
     }
 
     /// Shell integration runs on startup and every prompt, so it must not do
@@ -1263,10 +1265,10 @@ impl Cli {
                     .as_deref()
                     .is_some_and(|task| !matches!(task, "help" | "-h" | "--help")),
         );
-        config_file::set_typed_command(
-            !cli.command
+        config_file::set_command_origin(
+            cli.command
                 .as_ref()
-                .is_some_and(Commands::is_run_by_shell_integration),
+                .map_or(CommandOrigin::Typed, Commands::command_origin),
         );
         // Validate --cd path BEFORE Settings processes it and changes the directory
         validate_cd_path(&cli.cd)?;
