@@ -31,7 +31,7 @@ walkdir = "2"
 which = "8"
 
 [target.'cfg(unix)'.dependencies]
-nix = { version = "0.31", features = [
+nix = { version = "0.32", features = [
   "dir",
   "feature",
   "fs",

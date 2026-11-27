@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# Editing one tool in a .tool-versions keeps the templates of the other lines:
+# a token a line reads from the environment is not written into the file.
+
+export RELEASES_TOKEN=s3cr3t
+cat <<'EOF_TV' >.tool-versions
+# {{ env.RELEASES_TOKEN }}
+http:my-tool[url=https://releases.example.com/{{ env.RELEASES_TOKEN }}/my-tool.tar.gz] 1.0.0
+dummy 1.0.0
+EOF_TV
+mise trust .tool-versions
+mise use --path .tool-versions --pin dummy@2.0.0
+assert_contains "cat .tool-versions" "# {{ env.RELEASES_TOKEN }}"
+assert_contains "cat .tool-versions" "http:my-tool[url=https://releases.example.com/{{ env.RELEASES_TOKEN }}/my-tool.tar.gz] 1.0.0"
+assert_contains "cat .tool-versions" "dummy"
+assert_contains "cat .tool-versions" "2.0.0"
+assert_not_contains "cat .tool-versions" "s3cr3t"
+
+# A file with a template tag cannot be mapped back line by line, so it is not written
+cat <<'EOF_TV' >.tool-versions
+{% if true %}dummy 1.0.0{% endif %}
+EOF_TV
+mise trust .tool-versions
+assert_fail "mise use --path .tool-versions --pin dummy@2.0.0" "Edit the file by hand"
+assert "cat .tool-versions" "{% if true %}dummy 1.0.0{% endif %}"

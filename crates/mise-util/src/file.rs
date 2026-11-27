@@ -2469,12 +2469,45 @@ const EXTRACT_MIN_LIMIT: u64 = if cfg!(test) {
 /// more than 10 times their size, while 1 GiB of zeroes is under 1 KiB of
 /// bzip2, so without a bound a small download could fill the disk.
 fn extract_limit(input: &Path) -> Result<u64> {
+    Ok(extract_limit_for_size(input.metadata()?.len()))
+}
+
+/// [`extract_limit`] for `size` bytes of input.
+fn extract_limit_for_size(size: u64) -> u64 {
     let ratio = Settings::get().extract_max_ratio;
     if ratio <= 0 {
-        return Ok(u64::MAX);
+        return u64::MAX;
     }
-    let size = input.metadata()?.len();
-    Ok(size.saturating_mul(ratio as u64).max(EXTRACT_MIN_LIMIT))
+    size.saturating_mul(ratio as u64).max(EXTRACT_MIN_LIMIT)
+}
+
+/// One [`extract_limit`] for all the archives of an install whose number its
+/// input chooses, such as one per binary a crate names. Each archive is
+/// already held to its own limit while it is unpacked; the budget holds them
+/// together to the limit of a single archive of their combined size.
+#[derive(Debug, Default)]
+pub struct ExtractBudget {
+    archives: u64,
+    unpacked: u64,
+}
+
+impl ExtractBudget {
+    /// Counts `archive` and the tree it was just unpacked to, and fails once
+    /// the archives counted so far have unpacked to more than their limit.
+    pub fn add(&mut self, archive: &Path, unpacked: &Path) -> Result<()> {
+        self.archives = self.archives.saturating_add(archive.metadata()?.len());
+        for entry in WalkDir::new(unpacked) {
+            let entry = entry?;
+            if entry.file_type().is_file() {
+                self.unpacked = self.unpacked.saturating_add(entry.metadata()?.len());
+            }
+        }
+        let limit = extract_limit_for_size(self.archives);
+        if self.unpacked > limit {
+            return Err(extract_limit_error(limit).into());
+        }
+        Ok(())
+    }
 }
 
 fn extract_limit_error(limit: u64) -> std::io::Error {

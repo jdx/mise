@@ -4684,7 +4684,7 @@ fn load_aliases(config_files: &ConfigMap) -> Result<AliasMap> {
                 alias.backend = Some(full);
             }
             for (from, to) in plugin_aliases.versions {
-                if ignore_path_versions && config_file::version_requires_trust(&to) {
+                if ignore_path_versions && config_file::is_path_version(&to) {
                     debug!(
                         "ignoring tool alias version {from} = {to} in {}: safe mode (MISE_SAFE=1)",
                         display_path(config_file.get_path())
