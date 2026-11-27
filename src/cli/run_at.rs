@@ -130,10 +130,17 @@ fn check_trust(worktree: &Path, subdir: &Path, rev: &str) -> Result<()> {
         .collect::<Vec<_>>();
     for dir in dirs.iter().rev() {
         for file in crate::config::config_paths_in_dir(dir) {
+            let shown = file.strip_prefix(worktree).unwrap_or(&file).display();
+            // Trust is looked up by the resolved path, so a config that is a symlink at REV to
+            // a trusted file outside the worktree would pass, and let REV's submodules be fetched.
+            if let Ok(real) = file.canonicalize()
+                && !real.starts_with(worktree)
+            {
+                bail!("mise run --at: {shown} at {rev} leads outside the worktree");
+            }
             if !file.is_file() || config_file::is_path_trusted(&file) {
                 continue;
             }
-            let shown = file.strip_prefix(worktree).unwrap_or(&file).display();
             if Settings::get().paranoid.config() {
                 bail!(
                     "mise run --at: {shown} at {rev} is not trusted. Paranoid mode ties trust to a \

@@ -173,6 +173,19 @@ git branch escape-to-trusted "$(git commit-tree "$(git write-tree)" -p with-dep-
 unset GIT_INDEX_FILE
 assert_fail "mise -C escape run --at escape-to-trusted hi" "not a directory inside the worktree"
 assert_fail "git config --get submodule.dep.url"
+# Nor through a config that is a symlink at REV to a config the user trusted.
+link=$(printf %s "$(dirname "$PWD")/trusted-outside/mise.toml" | git hash-object -w --stdin)
+export GIT_INDEX_FILE="$PWD/../config-to-trusted.index"
+git read-tree with-dep-file-task
+git update-index --add --cacheinfo "120000,$link,mise.toml"
+git branch config-to-trusted "$(git commit-tree "$(git write-tree)" -p with-dep-file-task -m six)"
+unset GIT_INDEX_FILE
+assert_fail "mise run --at config-to-trusted hi" "leads outside the worktree"
+assert_fail "git config --get submodule.dep.url"
+# Paranoid mode trusts a file by its resolved path and contents, which the link's target has.
+MISE_PARANOID=1 mise trust ../trusted-outside/mise.toml
+assert_fail "MISE_PARANOID=1 mise run --at config-to-trusted hi" "leads outside the worktree"
+assert_fail "git config --get submodule.dep.url"
 assert "git worktree list --porcelain | grep -c '^worktree '" "1"
 assert_empty "ls -A $MISE_STATE_DIR/run-at"
 mise trust
