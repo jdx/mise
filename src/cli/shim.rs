@@ -1,12 +1,13 @@
 //! Running mise as a shim: find which tool the shim stands for and hand off to `mise exec`.
 
-use crate::cli::exec::Exec;
+use crate::cli::exec::{Exec, ExecExtras, exec_program};
 use crate::config::{
     CommandWrapper, CommandWrapperOptions, Config, Settings, command_wrapper_source,
     insert_config_file_template_vars, load_command_wrappers,
 };
 use crate::file::display_path;
 use crate::request_exit;
+use crate::sandbox::SandboxConfig;
 use crate::shims::*;
 use crate::toolset::{ResolveOptions, Toolset, ToolsetBuilder};
 use crate::{env, file};
@@ -14,7 +15,7 @@ use color_eyre::eyre::{Result, bail};
 use itertools::Itertools;
 #[cfg(windows)]
 use path_absolutize::Absolutize;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
@@ -26,6 +27,8 @@ enum ShimCommand {
     Tool(PathBuf),
     Wrapper(CommandWrapper),
     SystemFallback(PathBuf),
+    /// What a `PATH` lookup finds behind a wrapper-directory shim this project has no wrapper for.
+    PathLookup(PathBuf),
 }
 
 pub(crate) async fn handle_shim() -> Result<()> {
@@ -63,8 +66,10 @@ pub(crate) async fn handle_shim() -> Result<()> {
     let (mut command, mut ts) = which_shim(&mut config, &env::MISE_BIN_NAME, &args).await?;
     // A due `auto_update` upgrades this shim's tool before it runs, so look
     // the binary up again to launch the new version. Never while completing.
+    // Nor for a shim that only passes the command on: the binary it runs is not this shim's tool.
     let shim_name = command_name_without_exe_suffix(&env::MISE_BIN_NAME);
-    if !is_offline_completion(shim_name, &args)
+    if !matches!(command, ShimCommand::PathLookup(_))
+        && !is_offline_completion(shim_name, &args)
         && super::tool_update::update_before_launch(&config, &ts, shim_name).await
     {
         config = Config::reset().await?;
@@ -77,6 +82,11 @@ pub(crate) async fn handle_shim() -> Result<()> {
             #[cfg(unix)]
             fallback_chain.record(bin_name, &file::canonicalize_or_self(&bin))?;
             (bin, None)
+        }
+        ShimCommand::PathLookup(bin) => {
+            #[cfg(unix)]
+            fallback_chain.record(bin_name, &file::canonicalize_or_self(&bin))?;
+            return pass_on(bin, args).await;
         }
     };
     args[0] = bin.to_string_lossy().to_string();
@@ -124,6 +134,25 @@ pub(crate) async fn handle_shim() -> Result<()> {
     } else {
         exec.run_with_toolset(config, ts).await?;
     }
+    Err(request_exit(0))
+}
+
+/// Runs what a wrapper-directory shim passes its command on to as if the shim were not there:
+/// with the arguments and the environment the shim was given. That environment is the caller's,
+/// so it holds a task's `_.path` and env or the tools of a `mise x tool@version`; the one mise
+/// would build for this directory holds neither.
+async fn pass_on(bin: PathBuf, args: Vec<String>) -> Result<()> {
+    time!("shim pass on");
+    exec_program(
+        bin,
+        args.into_iter().skip(1),
+        BTreeMap::new(),
+        BTreeSet::new(),
+        &SandboxConfig::default(),
+        false,
+        &ExecExtras::default(),
+    )
+    .await?;
     Err(request_exit(0))
 }
 
@@ -180,19 +209,72 @@ async fn missing_version_may_provide(
 }
 
 /// Whether this process was started through a shim in the command-wrappers dir: by its path when
-/// it has one, otherwise the first `PATH` entry that holds `bin_name`.
-fn invoked_from_wrapper_dir(bin_name: &str) -> bool {
+/// it has one, otherwise the first entry of `path` that holds `bin_name`.
+fn invoked_from_wrapper_dir(bin_name: &str, path: &[PathBuf]) -> bool {
     let argv0 = Path::new(&*env::ARGV0);
     if let Some(dir) = argv0.parent().filter(|dir| !dir.as_os_str().is_empty()) {
         return file::is_command_wrapper_dir(dir);
     }
-    env::PATH
-        .iter()
-        .find(|dir| {
-            let bin = dir.join(bin_name);
-            bin.is_file() && file::is_executable(&bin)
-        })
-        .is_some_and(|dir| file::is_command_wrapper_dir(dir))
+    first_on_path(bin_name, path.iter())
+        .is_some_and(|bin| bin.parent().is_some_and(file::is_command_wrapper_dir))
+}
+
+/// The first `bin_name` a lookup on `dirs` finds, looked up as the platform does it. On Windows
+/// that is with the `PATHEXT` extensions: a shim run as `cargo` is the file `cargo.exe`, and a
+/// file named `cargo` with no extension is not a command.
+fn first_on_path<'a>(bin_name: &str, dirs: impl Iterator<Item = &'a PathBuf>) -> Option<PathBuf> {
+    let path = std::env::join_paths(dirs).ok()?;
+    let cwd = crate::dirs::CWD.clone().unwrap_or_default();
+    which::which_in_all(bin_name, Some(path), cwd).ok()?.next()
+}
+
+/// The first `bin_name` on this process's `PATH` outside the command-wrappers directories: what a
+/// `PATH` lookup finds when a shim in those directories is not there. Only asked for a command
+/// this project does not wrap.
+///
+/// Every project shares the wrapper directory, and it leads the `PATH` mise gives a project with
+/// wrappers. A shim another project left there must not decide what runs here, so it passes the
+/// command on to whatever comes next: a directory the user lists before the shims, a task's
+/// `_.path`, a tool's own directory.
+///
+/// The lookup repeats the one that reached the shim, see [`looked_up_name`].
+///
+/// None when that is one of mise's shims, or nothing: the command then resolves as it does
+/// through mise's ordinary shim.
+fn bin_behind_wrapper_dirs(bin_name: &str) -> Option<PathBuf> {
+    // `env::PATH` is this `PATH` without what a parent mise added, the wrapper directory and
+    // the tool directories included, so it is not what the lookup ran on.
+    let bin = first_on_path(
+        looked_up_name(bin_name),
+        env::PATH_NON_PRISTINE
+            .iter()
+            .filter(|dir| !file::is_command_wrapper_dir(dir)),
+    )?;
+    let mise_bin = file::canonicalize_or_self(&env::MISE_BIN);
+    let is_mise_shim = is_shim_file(&bin)
+        || file::is_active_mise_shim(&bin)
+        || file::canonicalize_cached(&bin).is_some_and(|bin| bin == mise_bin);
+    (!is_mise_shim).then_some(bin)
+}
+
+/// The name the lookup that reached this shim was for, where `bin_name` is the shim's file name
+/// as it was started. It only differs from `bin_name` on Windows, where `cargo` and `cargo.exe`
+/// are two lookups: `cargo` runs the first `cargo.exe`, `cargo.cmd` and so on that `PATH` holds,
+/// directory by directory, and `cargo.exe` runs the first file of that name.
+///
+/// A shim started by a bare name was started by the name its caller looked up, which `cmd` and
+/// a program that spawns `cargo` pass on as they got it. A shim started by its path was not:
+/// PowerShell passes the path of the file it found for either name. That is taken for a lookup
+/// of `cargo`, the usual one, so a `cargo.exe` typed in PowerShell runs what `cargo` does.
+fn looked_up_name(bin_name: &str) -> &str {
+    let started_by_path = Path::new(&*env::ARGV0)
+        .parent()
+        .is_some_and(|dir| !dir.as_os_str().is_empty());
+    if started_by_path {
+        command_name_without_exe_suffix(bin_name)
+    } else {
+        bin_name
+    }
 }
 
 /// Apply the command wrapper for `mise x -- <name>` run by a native Windows shim.
@@ -399,6 +481,15 @@ async fn which_shim(
         trace!("shim[{bin_name}] WRAPPER command: {}", wrapper.command());
         return Ok((ShimCommand::Wrapper(wrapper), ts));
     }
+    // No wrapper here, so a shim in the wrapper directory is another project's: pass the command
+    // on. `mise x -- <name>` never picks such a shim, so this is a lookup on `PATH`.
+    if !is_active_command_wrapper(shim_name)
+        && invoked_from_wrapper_dir(bin_name, &env::PATH_NON_PRISTINE)
+        && let Some(bin) = bin_behind_wrapper_dirs(bin_name)
+    {
+        trace!("shim[{bin_name}] PATH {bin}", bin = display_path(&bin));
+        return Ok((ShimCommand::PathLookup(bin), ts));
+    }
     // A configured tool may intentionally override an executable bundled by another installed
     // tool (for example, a pinned npm overrides Node's npm). Install a missing provider declared
     // by the registry before resolving an incidental installed provider.
@@ -481,7 +572,7 @@ async fn which_shim(
     // A wrapper shim left by another project must not turn a plain command into an error.
     // Only when no missing tool version could provide this command: that must still fail.
     // Installed tools were tried above.
-    let inactive_wrapper = invoked_from_wrapper_dir(bin_name)
+    let inactive_wrapper = invoked_from_wrapper_dir(bin_name, &env::PATH)
         && !missing_version_may_provide(config, &ts, shim_name, bin_name).await;
     if Settings::get().not_found_system_fallback || inactive_wrapper {
         let mise_bin = file::canonicalize_or_self(&env::MISE_BIN);

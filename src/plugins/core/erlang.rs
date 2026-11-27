@@ -934,11 +934,12 @@ fn should_install_from_source(
 }
 
 fn parse_hex_build_checksum(builds: &str, release_tag: &str) -> Result<String> {
+    // The fourth field of each record for the tag; no copy of other words
     let matching = builds
         .lines()
         .filter_map(|line| {
-            let parts = line.split_whitespace().collect::<Vec<_>>();
-            (parts.first() == Some(&release_tag)).then_some(parts)
+            let mut parts = line.split_whitespace();
+            (parts.next() == Some(release_tag)).then(|| parts.nth(2))
         })
         .collect::<Vec<_>>();
 
@@ -950,7 +951,6 @@ fn parse_hex_build_checksum(builds: &str, release_tag: &str) -> Result<String> {
     }
 
     let checksum = matching[0]
-        .get(3)
         .ok_or_else(|| eyre::eyre!("Hex OTP build record for {release_tag} has no checksum"))?;
     if !regex!(r"^[0-9a-f]{64}$").is_match(checksum) {
         bail!("invalid Hex OTP checksum for {release_tag}: {checksum}");
