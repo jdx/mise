@@ -6041,9 +6041,6 @@ aqua:jqlang/jq asdf:mise-plugins/asdf-jq
     example "mise registry --backend aqua" help="List the tools that have an aqua backend"
     example "mise registry --json" help="Print the registry as JSON"
 }
-cmd render-help hide=#true help="[internal] Generate docs files from the CLI and the registry" effect=write {
-    flag "-h --help" help="Print help" action=help builtin=#true
-}
 cmd reshim help="Create shims for executables provided by installed tools" effect=write {
     long_help #"""
 Create shims for executables provided by installed tools
@@ -8046,9 +8043,8 @@ cmd trust help="Mark a config file as trusted" effect=write {
 Mark a config file as trusted
 
 Trust lets mise load the parts of a config file that can run code or change
-your environment. A mise command you type in a terminal trusts the project's
-config for you and says so. Otherwise mise prompts, skips the file, or fails
-with an untrusted-config error when it cannot prompt.
+your environment. Without it, mise prompts, skips the file, or fails with an
+untrusted-config error when it cannot prompt.
 
 A file with no template syntax that contains only `min_version`, `[tools]`
 entries with plain version strings (or arrays of them), and `[tasks]` in

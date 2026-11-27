@@ -97,6 +97,17 @@ if [ "$(id -u)" != 0 ]; then
   rm -r .config
   forget_trust
   ok "[trust] another account's config file in the directory still asks"
+
+  # The record also admits config for an environment this command did not
+  # select, which would load as soon as that environment is.
+  ln -s /etc/passwd mise.prod.toml
+  output="$(on_pty 'mise env')" || true
+  assert_contains_text "$output" "Trust them?"
+  assert_not_contains_text "$output" "$notice"
+  assert_untrusted
+  rm mise.prod.toml
+  forget_trust
+  ok "[trust] another account's config for another environment still asks"
 fi
 
 # Typed on a terminal: trusted, with a notice, and the config applies.
@@ -126,15 +137,14 @@ assert_contains "cd sub && mise trust --show" "sub: untrusted"
 forget_trust
 ok "[trust] the notice for each trusted directory says how to undo it"
 
-# The notice is printed once the trust is saved, so a project whose settings
-# then fail to load still says it was trusted.
+# A project whose settings fail to load once trusted keeps no record: every
+# command, `mise untrust` too, would fail on that setting.
 cat <<'EOF' >sub/mise.toml
 [settings]
 versions_host_exclude = ["["]
 EOF
 output="$(cd sub && on_pty 'mise env')" || true
-assert_contains_text "$output" "mise untrust $shown/sub/mise.toml"
-# Every command now fails on that setting, `mise trust --show` too, so look for
-# the record itself.
-assert_contains "ls $MISE_STATE_DIR/trusted-configs" "sub-"
-ok "[trust] the notice is printed when the project's settings fail to load"
+assert_contains_text "$output" "versions_host_exclude"
+assert_not_contains_text "$output" "mise untrust $shown/sub/mise.toml"
+assert_not_contains "ls $MISE_STATE_DIR/trusted-configs 2>/dev/null || true" "sub-"
+ok "[trust] a project whose settings fail to load is not left trusted"

@@ -86,20 +86,36 @@ fn read_signals(path: &Path, config_root: &Path) -> Signals {
     }
 }
 
-/// Whether the user owns `path`, its trust root, and every other config file this command loads
-/// from that root. The trust record names the root, so it admits all of those files, including
-/// ones loaded after `path`: a `.config/mise.toml` another account left beside the user's own
+/// Whether the user owns `path`, its trust root, and every other config file the record for that
+/// root admits. The record names the root, so it admits all of those files, including ones
+/// loaded after `path` and ones for a `MISE_ENV` this command did not select: a
+/// `.config/mise.toml` or `mise.prod.toml` another account left beside the user's own
 /// `mise.toml` must keep the prompt.
 fn root_owned_by_user(path: &Path, config_root: &Path) -> bool {
     let loaded = crate::config::load_config_paths(&crate::config::DEFAULT_CONFIG_FILENAMES, false);
-    let covered = loaded
-        .iter()
-        .filter(|other| super::config_trust_root(other) == config_root)
-        .map(PathBuf::as_path);
-    [path, config_root]
+    let mut covered: Vec<PathBuf> = loaded
         .into_iter()
-        .chain(covered)
-        .all(owned_by_user)
+        .filter(|other| super::config_trust_root(other) == config_root)
+        .collect();
+    if config_root.is_dir() {
+        covered.extend(crate::config::config_files_in_dir_for_any_env(config_root));
+    }
+    owned_by_user(config_root)
+        && std::iter::once(path)
+            .chain(covered.iter().map(PathBuf::as_path))
+            .all(|file| owned_below(config_root, file))
+}
+
+/// Whether the user owns `file` and each directory between `root` and it. A `.config` that
+/// another account made a link to the user's own directory would otherwise pass on the file
+/// it leads to.
+fn owned_below(root: &Path, file: &Path) -> bool {
+    owned_by_user(file)
+        && file
+            .ancestors()
+            .skip(1)
+            .take_while(|dir| *dir != root && dir.starts_with(root))
+            .all(owned_by_user)
 }
 
 /// Whether `path` and, when it is a symlink, what it points at both belong to the effective user.
@@ -122,39 +138,56 @@ fn owned_by_user(_path: &Path) -> bool {
 /// Trusts `config_root` when the command consents for the user, and says so once per root.
 /// `Ok(false)` leaves the decision to the prompt.
 ///
-/// The notice is printed once the record is saved, before the settings reload: a project whose
-/// `[settings]` then fail to load still has the record, and the user is told about it.
+/// A project whose `[settings]` fail to load once trusted keeps no record: every later command,
+/// `mise untrust` too, would fail on that setting at startup, so the user could not undo it.
 pub(super) fn trust_typed_command(path: &Path, config_root: &Path) -> eyre::Result<bool> {
     if !consents(read_signals(path, config_root)) {
         return Ok(false);
     }
     static NOTIFIED: Mutex<Option<HashSet<PathBuf>>> = Mutex::new(None);
-    super::trust_then_reload_settings(config_root, || {
-        if NOTIFIED
-            .lock()
-            .unwrap()
-            .get_or_insert_with(HashSet::new)
-            .insert(config_root.to_path_buf())
-        {
-            info!(
-                "trusted {} because you ran a mise command there. Undo with `mise untrust {}`.",
-                style::epath(config_root),
-                untrust_argument(path)
-            );
-        }
-    })?;
+    super::trust_and_reload_settings_or_roll_back(config_root)?;
+    if NOTIFIED
+        .lock()
+        .unwrap()
+        .get_or_insert_with(HashSet::new)
+        .insert(config_root.to_path_buf())
+    {
+        info!(
+            "trusted {} because you ran a mise command there. Undo with `mise untrust {}`.",
+            style::epath(config_root),
+            untrust_argument(path)
+        );
+    }
     Ok(true)
 }
 
 /// `path` as the argument of the `mise untrust` that undoes this trust, quoted for a shell.
 /// `mise untrust` with no argument acts on the nearest config only, and one command can trust a
 /// parent project too, so the hint names the file whose root was trusted.
+#[cfg(not(windows))]
 fn untrust_argument(path: &Path) -> String {
     let shown = mise_util::file::display_path(path);
     match shown.strip_prefix("~/") {
         // `~` expands only when it is not quoted.
         Some(rest) => format!("~/{}", shell_words::quote(rest)),
         None => shell_words::quote(&shown).into_owned(),
+    }
+}
+
+/// [`untrust_argument`] for `cmd.exe` and PowerShell, which do not expand `~` and do not both
+/// take single quotes: the full path, in double quotes when it needs any.
+#[cfg(windows)]
+fn untrust_argument(path: &Path) -> String {
+    quote_for_windows(&path.display().to_string())
+}
+
+#[cfg(any(windows, test))]
+fn quote_for_windows(shown: &str) -> String {
+    let plain = |c: char| c.is_ascii_alphanumeric() || r"\/:._-".contains(c);
+    if !shown.is_empty() && shown.chars().all(plain) {
+        shown.to_string()
+    } else {
+        format!("\"{shown}\"")
     }
 }
 
@@ -232,6 +265,38 @@ mod tests {
         ];
         for (name, signals) in failing {
             assert!(!consents(signals), "{name} must not consent");
+        }
+    }
+
+    #[test]
+    fn windows_hint_quotes_only_paths_that_need_it() {
+        assert_eq!(
+            quote_for_windows(r"C:\work\app\mise.toml"),
+            r"C:\work\app\mise.toml"
+        );
+        assert_eq!(
+            quote_for_windows(r"C:\Users\Jo Smith\app\mise.toml"),
+            r#""C:\Users\Jo Smith\app\mise.toml""#
+        );
+        assert_eq!(
+            quote_for_windows(r"C:\a&b\mise.toml"),
+            r#""C:\a&b\mise.toml""#
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn ownership_checks_each_directory_below_the_root() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join(".config")).unwrap();
+        let own = dir.path().join(".config").join("mise.toml");
+        std::fs::write(&own, "").unwrap();
+        assert!(owned_below(dir.path(), &own));
+        // Measured from `/`, the path passes through a directory such as `/tmp` or `/home` that
+        // belongs to root, so it fails there although the user owns the file and its parent.
+        if !nix::unistd::geteuid().is_root() {
+            assert!(owned_by_user(&own) && owned_by_user(own.parent().unwrap()));
+            assert!(!owned_below(Path::new("/"), &own));
         }
     }
 
