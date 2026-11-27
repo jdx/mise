@@ -8598,6 +8598,11 @@ async fn load_task_sources_from_configs(
                 },
             )
             .await?;
+            // Before the input groups render: a task that is the user's own renders them
+            // with its `vars` (see `apply_task_config_inputs`).
+            if is_global || is_global_task_include_path(&p) {
+                mark_tasks_as_global(&mut loaded);
+            }
             for task in &mut loaded {
                 task.remote_include = remote.clone();
                 // Both task kinds are reachable only because some config's
@@ -8608,9 +8613,6 @@ async fn load_task_sources_from_configs(
                 apply_task_config_cache_default(task, &task_config.cache);
                 apply_task_config_rust_cache_default(task, &task_config.rust_cache);
                 task_config.environment.apply(task)?;
-            }
-            if is_global || is_global_task_include_path(&p) {
-                mark_tasks_as_global(&mut loaded);
             }
             file_tasks.extend(loaded);
         }
