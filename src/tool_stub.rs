@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use crate::backend::static_helpers::lookup_platform_key;
+use crate::backend::static_helpers::{list_available_platforms_with_key, lookup_platform_key};
 use crate::config::env_directive::EnvValue;
 use crate::file;
 use crate::hash;
@@ -93,6 +93,16 @@ fn has_http_backend_config(opts: &indexmap::IndexMap<String, toml::Value>) -> bo
     false
 }
 
+/// Whether `platform` is written the way mise names the platform it runs on (see
+/// `Settings::os` and `Settings::arch`): `macos` rather than `darwin`, `x64` rather than `amd64`
+/// or `x86_64`, `arm64` rather than `aarch64`.
+fn is_canonical_platform_key(platform: &str) -> bool {
+    let Some((os, arch)) = platform.split_once('-') else {
+        return false;
+    };
+    os != "darwin" && !matches!(arch, "amd64" | "x86_64" | "aarch64")
+}
+
 /// Extract TOML content from a bootstrap script's comment block
 /// Looks for content between `# MISE_TOOL_STUB:` and `# :MISE_TOOL_STUB` markers
 fn extract_toml_from_bootstrap(content: &str) -> Option<String> {
@@ -170,6 +180,39 @@ impl ToolStubFile {
         Ok(stub)
     }
 
+    /// The `bin` the stub names for `platform` (an `os-arch` key such as `linux-x64`) in its
+    /// `[platforms.<platform>]` table. A run on that platform uses it before the top-level `bin`.
+    pub fn platform_bin(&self, platform: &str) -> Option<&str> {
+        self.opts
+            .get("platforms")?
+            .as_table()?
+            .get(platform)?
+            .as_table()?
+            .get("bin")?
+            .as_str()
+    }
+
+    /// Whether every platform the stub downloads for has its own `bin`, so a run never uses the
+    /// top-level `bin`, which defaults to the stub's file name. Only an `http:` stub without a
+    /// top-level `url` lists the platforms it supports: any other runs on platforms it does not
+    /// name. A platform's `url` may be written under an alias such as `darwin-arm64`, but a run
+    /// looks its `bin` up only under the name mise gives the platform (`macos-arm64`), so an alias
+    /// counts as a platform without its own `bin`.
+    pub fn sets_bin_for_every_platform(&self) -> bool {
+        if !self.tool_name.starts_with("http:") || self.opts.contains_key("url") {
+            return false;
+        }
+        let opts = ToolVersionOptions {
+            opts: self.opts.clone().into(),
+            ..Default::default()
+        };
+        let platforms = list_available_platforms_with_key(&opts, "url");
+        !platforms.is_empty()
+            && platforms.iter().all(|platform| {
+                is_canonical_platform_key(platform) && self.platform_bin(platform).is_some()
+            })
+    }
+
     // Create a ToolRequest directly using ToolVersionOptions
     /// Whether the stub sets tool options beyond the tool, version, binary and
     /// platforms it runs on.
@@ -225,5 +268,44 @@ impl ToolStubFile {
         };
 
         ToolRequest::new_with_options(backend_arg.into(), &version, options, source)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn stub(content: &str) -> ToolStubFile {
+        ToolStubFile::from_content(Path::new("/bin/stub"), content.to_string()).unwrap()
+    }
+
+    #[test]
+    fn test_sets_bin_for_every_platform() {
+        let every = r#"
+tool = "http:t"
+[platforms.linux-x64]
+url = "https://example.com/l.tar.gz"
+bin = "t"
+[platforms.macos-arm64]
+url = "https://example.com/m.tar.gz"
+bin = "t"
+"#;
+        assert!(stub(every).sets_bin_for_every_platform());
+
+        let missing = every.replacen("bin = \"t\"\n", "", 1);
+        assert!(!stub(&missing).sets_bin_for_every_platform());
+
+        // a top-level url serves platforms the stub does not name
+        let top_level_url = format!("url = \"https://example.com/a.tar.gz\"\n{every}");
+        assert!(!stub(&top_level_url).sets_bin_for_every_platform());
+
+        // a run on macOS looks the bin up under macos-arm64, not darwin-arm64
+        let alias = every.replace("macos-arm64", "darwin-arm64");
+        assert!(!stub(&alias).sets_bin_for_every_platform());
+
+        let not_http = every.replace("http:t", "github:o/t");
+        assert!(!stub(&not_http).sets_bin_for_every_platform());
+
+        assert!(!stub("tool = \"http:t\"\n").sets_bin_for_every_platform());
     }
 }

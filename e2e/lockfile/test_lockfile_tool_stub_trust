@@ -80,6 +80,42 @@ STUB
 ln -sf "$PWD/bin/named" "$HOME/linkbin/alias"
 assert_succeed "MISE_YES=0 mise generate tool-stub $HOME/linkbin/alias --lock"
 assert_contains "cat mise.lock" '[[tools."http:named"]]'
+# So does one that names `tool` and a `bin` for every platform it downloads for:
+# a run never uses the top-level `bin` its file name supplies.
+cat >bin/multi <<'STUB'
+tool = "http:multi"
+version = "1.0.0"
+
+[platforms.linux-x64]
+url = "file:///nonexistent/multi-linux.tar.gz"
+bin = "multi"
+
+[platforms.macos-arm64]
+url = "file:///nonexistent/multi-macos.tar.gz"
+bin = "multi"
+STUB
+ln -sf "$PWD/bin/multi" "$HOME/linkbin/multi-alias"
+assert_succeed "MISE_YES=0 mise generate tool-stub $HOME/linkbin/multi-alias --lock"
+assert_contains "cat mise.lock" '[[tools."http:multi"]]'
+assert_contains "cat mise.lock" "nonexistent/multi-linux"
+cp mise.lock mise.lock.via-link
+assert_succeed "MISE_YES=0 mise generate tool-stub bin/multi --lock"
+assert "diff mise.lock mise.lock.via-link"
+# Without one platform's `bin`, a run there names it after the link.
+cat >bin/partial <<'STUB'
+tool = "http:partial"
+version = "1.0.0"
+
+[platforms.linux-x64]
+url = "file:///nonexistent/partial-linux.tar.gz"
+bin = "partial"
+
+[platforms.macos-arm64]
+url = "file:///nonexistent/partial-macos.tar.gz"
+STUB
+ln -sf "$PWD/bin/partial" "$HOME/linkbin/partial-alias"
+assert_fail_contains "MISE_YES=0 mise generate tool-stub $HOME/linkbin/partial-alias --lock 2>&1" "hint: lock ~/workdir/proj/bin/partial itself"
+assert_not_contains "cat mise.lock" "http:partial"
 
 # Task tools with options need trust; a plain version does not.
 cd ../tasks || exit 1

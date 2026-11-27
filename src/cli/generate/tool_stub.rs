@@ -837,9 +837,12 @@ exec "$MISE_BIN" tool-stub "$0" "$@"
         // A stub without `tool` or `bin` takes them from its file name. A run through the link
         // names them after the link, but the lock data is recorded for the target, which its
         // Windows launcher, a run of the target and `mise lock` all name after the target, so
-        // no one lock fits both.
+        // no one lock fits both. A top-level `bin` taken from the file name does not matter
+        // when every platform the stub downloads for names its own.
         let as_target = ToolStubFile::from_content(&real_stub, content.clone())?;
-        if stub.tool_name != as_target.tool_name || stub.bin != as_target.bin {
+        if stub.tool_name != as_target.tool_name
+            || (stub.bin != as_target.bin && !as_target.sets_bin_for_every_platform())
+        {
             bail!(
                 "cannot lock tool stub {} through a link: the stub takes its tool or bin from its file name, and {} is named differently\n\
                 hint: lock {} itself, or set `tool` and `bin` in the stub",

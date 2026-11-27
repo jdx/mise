@@ -237,11 +237,8 @@ fn resolve_platform_specific_bin(stub: &ToolStubFile, stub_path: &Path) -> Strin
     let platform_key = get_current_platform_key();
 
     // Check for platform-specific bin field: platforms.{platform}.bin
-    if let Some(toml::Value::Table(platforms)) = stub.opts.get("platforms")
-        && let Some(toml::Value::Table(platform)) = platforms.get(&platform_key)
-        && let Some(toml::Value::String(bin)) = platform.get("bin")
-    {
-        return bin.clone();
+    if let Some(bin) = stub.platform_bin(&platform_key) {
+        return bin.to_string();
     }
 
     // Fall back to global bin field
