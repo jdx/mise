@@ -760,6 +760,24 @@ pub fn persist_atomic(mut temporary: tempfile::NamedTempFile, path: &Path) -> Re
     unreachable!("atomic persist retry loop should always return");
 }
 
+/// Runs `op`, retrying for about a second while Windows refuses the path as
+/// locked (`ERROR_ACCESS_DENIED` / `ERROR_SHARING_VIOLATION`), as it does
+/// while antivirus scans a file or another writer is replacing it. Elsewhere
+/// `op` runs once.
+pub fn retry_transient_lock<T>(mut op: impl FnMut() -> std::io::Result<T>) -> std::io::Result<T> {
+    const RETRIES: u32 = 20;
+
+    for attempt in 0..RETRIES {
+        match op() {
+            Err(err) if should_retry_atomic_persist(&err) => {
+                std::thread::sleep(Duration::from_millis(5 * u64::from(attempt + 1)));
+            }
+            result => return result,
+        }
+    }
+    op()
+}
+
 #[cfg(windows)]
 fn should_retry_atomic_persist(err: &std::io::Error) -> bool {
     err.kind() == std::io::ErrorKind::PermissionDenied
