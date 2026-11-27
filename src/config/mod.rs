@@ -3697,7 +3697,7 @@ pub fn is_override_config(path: &Path) -> bool {
 /// config spelled where discovery found it is not, and neither is a real file
 /// the user linked into their global config (a dotfiles checkout): that file
 /// is global config because the user made it so.
-pub(crate) fn is_project_link_to_global_config(path: &Path) -> bool {
+pub fn is_project_link_to_global_config(path: &Path) -> bool {
     discovered_global_config(path)
         .is_some_and(|global| global != path && !path.canonicalize().is_ok_and(|real| real == path))
 }

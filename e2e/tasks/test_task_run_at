@@ -186,6 +186,18 @@ assert_fail "git config --get submodule.dep.url"
 MISE_PARANOID=1 mise trust ../trusted-outside/mise.toml
 assert_fail "MISE_PARANOID=1 mise run --at config-to-trusted hi" "leads outside the worktree"
 assert_fail "git config --get submodule.dep.url"
+# A config that is a link at REV to the user's global config is that config, which
+# mise loads from where it is. The run goes on, but the link, trusted as global
+# config, gives REV's submodules no trust.
+printf '[env]\nRUN_AT_GLOBAL = "1"\n' >"$MISE_CONFIG_DIR/config.toml"
+link=$(printf %s "$MISE_CONFIG_DIR/config.toml" | git hash-object -w --stdin)
+export GIT_INDEX_FILE="$PWD/../config-to-global.index"
+git read-tree with-dep-file-task
+git update-index --add --cacheinfo "120000,$link,mise.toml"
+git branch config-to-global "$(git commit-tree "$(git write-tree)" -p with-dep-file-task -m seven)"
+unset GIT_INDEX_FILE
+assert_fail "mise run --at config-to-global hi" "are not initialized"
+assert_fail "git config --get submodule.dep.url"
 assert "git worktree list --porcelain | grep -c '^worktree '" "1"
 assert_empty "ls -A $MISE_STATE_DIR/run-at"
 mise trust
@@ -194,6 +206,9 @@ assert_contains "mise run --at with-dep --at-setup 'cat dep/version.txt' hi" "su
 # The trusted root config gives its tasks to a directory with no config of its own,
 # and its trust lets the submodules be initialized for them too.
 assert_contains "mise -C pkg run --at with-dep --at-setup 'cat ../dep/version.txt' hi" "sub-v2"
+# The project's own trust still counts where its config links to global config.
+# The setup fails unless the submodule was initialized.
+assert_contains "mise run --at config-to-global --at-setup 'cat dep/version.txt' hi" "file-task"
 
 # Paranoid mode binds trust to a path and its contents, so config in the
 # worktree, a new path on every run, is never trusted.

@@ -131,6 +131,12 @@ fn check_trust(worktree: &Path, subdir: &Path, rev: &str) -> Result<()> {
     for dir in dirs.iter().rev() {
         for file in crate::config::config_paths_in_dir(dir) {
             let shown = file.strip_prefix(worktree).unwrap_or(&file).display();
+            // A link to global or system config is that config, which discovery loads from
+            // where it found it and skips here, as the child will. It gives the directory no
+            // trust: [`submodules_allowed`] does not count it either.
+            if crate::config::is_project_link_to_global_config(&file) {
+                continue;
+            }
             // Trust is looked up by the resolved path, so a config that is a symlink at REV to
             // a trusted file outside the worktree would pass, and let REV's submodules be fetched.
             if let Ok(real) = file.canonicalize()
@@ -195,13 +201,23 @@ fn check_inside(
 /// REV has and that is not trusted. It passes a revision with no config, or with only file
 /// tasks, so it cannot decide this alone; the tasks of such a revision are refused later by the
 /// child. Only the directories that exist before the submodules do are asked, and
-/// [`check_inside`] has kept them inside the worktree.
+/// [`check_inside`] has kept them inside the worktree. A `mise.toml` that is a link to global
+/// or system config would be trusted as that config, whose trust is not REV's, so for such a
+/// link only the directory's own trust counts, as it would with no `mise.toml` there.
 fn submodules_allowed(worktree: &Path, subdir: &Path) -> bool {
     subdir
         .ancestors()
         .map(|sub| worktree.join(sub))
         .filter(|dir| dir.is_dir())
-        .any(|dir| config_file::is_path_trusted(&dir.join("mise.toml")))
+        .any(|dir| {
+            let config = dir.join("mise.toml");
+            if crate::config::is_project_link_to_global_config(&config) {
+                // Paranoid mode trusts files by their contents, and no directory that way.
+                !Settings::get().paranoid.config() && config_file::is_trusted(&dir)
+            } else {
+                config_file::is_path_trusted(&config)
+            }
+        })
 }
 
 /// `MISE_CEILING_PATHS` for the `--at-setup` command and the tasks: the user's own ceilings and
