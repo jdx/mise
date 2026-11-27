@@ -5152,6 +5152,40 @@ mod tests {
         assert!(set.would_capture(&target.join("debug/build.o")).unwrap());
     }
 
+    #[test]
+    fn a_cache_omission_does_not_cover_a_separately_tracked_entry_inside_it() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("project");
+        let target = root.join("target");
+        let settings = target.join("settings");
+        std::fs::create_dir_all(&settings).unwrap();
+        std::fs::write(
+            target.join("CACHEDIR.TAG"),
+            "Signature: 8a477f597d28d172789f06886806bc55\n",
+        )
+        .unwrap();
+        std::fs::write(target.join("build.o"), "obj").unwrap();
+        std::fs::write(settings.join("a.toml"), "a").unwrap();
+        let mut set = TrackedSet::default();
+        set.push(entry(&root));
+        set.push(entry(&settings));
+        let walk = set.walk().unwrap();
+        assert!(walk.files.contains_key(&settings.join("a.toml")));
+        let coverage = set.coverage(&walk);
+        let classify =
+            |path: &Path| crate::history::replay::classify_coverage(&coverage, &display_path(path));
+        // the skipped cache contents stay omitted
+        assert!(matches!(
+            classify(&target.join("build.o")),
+            crate::history::replay::PathState::Omitted(_)
+        ));
+        // a file the settings entry did not hold is absent from it
+        assert!(matches!(
+            classify(&settings.join("new.toml")),
+            crate::history::replay::PathState::Absent
+        ));
+    }
+
     /// A FIFO named `CACHEDIR.TAG` blocks whoever opens it while no writer
     /// is present, so it is never opened, and the walk finishes.
     #[cfg(unix)]
