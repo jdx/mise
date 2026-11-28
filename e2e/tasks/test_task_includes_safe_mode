@@ -197,6 +197,9 @@ assert "mise install dummy@1.0.0"
 assert "mise ls -C remote-proj"
 assert_contains "MISE_SAFE=1 mise -C other prune --dry-run 2>&1" 'not pruning: safe mode (MISE_SAFE=1) skipped the remote task include `git::https://example.invalid'
 assert_not_contains "MISE_SAFE=1 mise -C other prune --dry-run 2>&1" "dummy@1.0.0"
+# Without experimental the include loads in no mode, so skipping it hides nothing.
+assert_not_contains "MISE_EXPERIMENTAL=0 MISE_SAFE=1 mise -C other prune --dry-run 2>&1" "not pruning"
+assert_contains "MISE_EXPERIMENTAL=0 MISE_SAFE=1 mise -C other prune --dry-run 2>&1" "dummy@1.0.0"
 rm -r remote-proj other
 
 echo "=== and task files a monorepo's projects share ==="

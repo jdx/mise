@@ -441,8 +441,9 @@ impl PlatformSelection {
     }
 }
 
-/// The platforms [`generate`] leaves out of `tools` on purpose, with the same
-/// backend variants it skips: those a request's `os` option excludes.
+/// The platform records [`generate`] leaves out of `tools` on purpose, with the same
+/// backend variants it skips: those a request's `os` option excludes. Each names the entry
+/// the request would have locked there, with its backend and options.
 pub fn os_excluded_platforms(
     tools: &[Tool],
     platforms: &[Platform],
@@ -456,7 +457,15 @@ pub fn os_excluded_platforms(
                 continue;
             }
             for platform in backend.platform_variants_for(tv, platform) {
-                excluded.insert((short.clone(), tv.version.clone(), platform.to_key()));
+                let options = backend
+                    .lockfile_options(&tv.request, &PlatformTarget::new(platform.clone()))?;
+                excluded.insert(super::ExcludedPlatform {
+                    tool: short.clone(),
+                    version: tv.version.clone(),
+                    backend: ba.stored_full(),
+                    options,
+                    platform: platform.to_key(),
+                });
             }
         }
     }
@@ -2108,8 +2117,11 @@ mod tests {
         .unwrap();
         let excluded = os_excluded_platforms(&tools, &platforms).unwrap();
         assert_eq!(
-            excluded,
-            BTreeSet::from([("fixture".into(), "1.0".into(), "macos-arm64".into())])
+            excluded
+                .iter()
+                .map(|record| (record.backend.as_str(), record.platform.as_str()))
+                .collect::<Vec<_>>(),
+            [("http:fixture", "macos-arm64")]
         );
         let mut restored = generated.clone();
         restored.restore_missing_versions(&previous(), "fixture", &excluded);
@@ -2125,6 +2137,53 @@ mod tests {
                 .platforms
                 .contains_key("macos-arm64")
         );
+
+        // The exclusion is the visible request's entry. A skipped task's pin of the same
+        // version with other options, or from another backend, keeps its row.
+        let mut with_variants = previous();
+        for (backend, options) in [
+            (
+                "http:fixture",
+                BTreeMap::from([("bin".to_string(), "other".to_string())]),
+            ),
+            (
+                "http:elsewhere",
+                BTreeMap::from([("bin".to_string(), "x".to_string())]),
+            ),
+        ] {
+            with_variants.set_platform_info(
+                "fixture",
+                "1.0",
+                Some(backend),
+                &options,
+                "macos-arm64",
+                PlatformInfo {
+                    checksum: Some("sha256:variant".into()),
+                    ..Default::default()
+                },
+            );
+        }
+        let mut restored = generate(
+            &with_variants,
+            &tools,
+            &platforms,
+            false,
+            PlatformSelection::Default,
+            2,
+            &[],
+        )
+        .await
+        .unwrap();
+        restored.restore_missing_versions(&with_variants, "fixture", &excluded);
+        let entries = restored.tools_for("fixture").unwrap();
+        assert_eq!(entries.len(), 3, "{entries:?}");
+        for entry in entries {
+            assert_eq!(
+                entry.platforms.contains_key("macos-arm64"),
+                !entry.options.is_empty(),
+                "{entry:?}"
+            );
+        }
 
         // Excluded from every target, the tool has no entry, and gets none back.
         let tools = fixture_with_os("windows");
