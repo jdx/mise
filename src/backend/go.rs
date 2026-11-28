@@ -239,6 +239,15 @@ impl Backend for GoBackend {
                                 eyre!("module proxy could not be reached for {mod_path}@{version}")
                             });
                         }
+                        // The date stays unknown, as it was when listing read
+                        // the same answer, and `go list` is not sent to read it
+                        // again with no limit on its size.
+                        ProxyVersionInfoResult::TooLarge => {
+                            return Err(eyre!(
+                                "module proxy answered with more than {} KiB for {mod_path}@{version}",
+                                GO_PROXY_VERSION_INFO_MAX_BYTES / 1024
+                            ));
+                        }
                     }
                 }
                 // A private module under the default `proxy,direct` GOPROXY is
@@ -279,6 +288,17 @@ impl Backend for GoBackend {
         // module proxy and fails when it does not exist.
         let version = version.strip_prefix('v').unwrap_or(version);
         Ok(versions::SemVer::new(version).map(|_| version.to_string()))
+    }
+
+    /// A name that is not a Go package path never installs, and saying so takes
+    /// no request. An exact pin reaches `--dry-run` without a version lookup,
+    /// which would otherwise be the first thing to refuse it.
+    async fn verify_install_feasible(
+        &self,
+        _ctx: &InstallContext,
+        _tv: &ToolVersion,
+    ) -> eyre::Result<()> {
+        self.module_candidates().map(|_| ())
     }
 
     async fn install_version_(
@@ -688,6 +708,9 @@ impl GoBackend {
                             }
                             ProxyVersionInfoResult::NotFound => continue,
                             ProxyVersionInfoResult::Error => return Ok(None),
+                            // Like an oversized list: `go list` would read it
+                            // again with no limit.
+                            ProxyVersionInfoResult::TooLarge => return Ok(Some(vec![])),
                         }
                     }
                     // `@v/list` is unordered, so sort before fetching metadata:
@@ -711,6 +734,7 @@ impl GoBackend {
                         }
                         ProxyVersionInfoResult::NotFound => continue,
                         ProxyVersionInfoResult::Error => return Ok(None),
+                        ProxyVersionInfoResult::TooLarge => return Ok(Some(vec![])),
                     }
                 }
                 ProxyListResult::NotFound => continue,
@@ -913,7 +937,9 @@ impl GoBackend {
                 ProxyVersionInfoResult::NotFound => {}
                 // A failing proxy is not a missing module: leave the report to
                 // the version-list path.
-                ProxyVersionInfoResult::Error => return LatestOutcome::Unresolved,
+                ProxyVersionInfoResult::Error | ProxyVersionInfoResult::TooLarge => {
+                    return LatestOutcome::Unresolved;
+                }
             }
         }
         LatestOutcome::NotFound
@@ -982,72 +1008,51 @@ async fn go_list(go: &OsStr, args: &[&str], env: &BTreeMap<String, String>) -> R
     if std::fs::read_to_string(&go_mod).ok().as_deref() != Some(GO_META_MOD) {
         crate::file::write_atomic(&go_mod, GO_META_MOD)?;
     }
-    let mut cmd = match std::env::current_dir() {
-        Ok(cwd) => {
-            let (program, search) = spawn_outside_cwd(go, env, &cwd);
-            let mut cmd = tokio::process::Command::new(program);
-            cmd.env_clear().envs(env);
-            if let Some(search) = search {
-                cmd.env("PATH", search);
-            }
-            cmd
-        }
-        Err(_) => {
-            let mut cmd = tokio::process::Command::new(go);
-            cmd.env_clear().envs(env);
-            cmd
-        }
+    // `go` itself is found here, against the directory mise runs in, as the
+    // user's shell would find it. What `go` starts in turn (`git` and the
+    // other version-control tools it fetches modules with) comes from a PATH
+    // of the absolute entries alone: a relative entry names a directory in
+    // whatever checkout mise runs in, and Go refuses to run a tool found
+    // through one.
+    let program = match std::env::current_dir() {
+        Ok(cwd) => program_outside_cwd(go, env, &cwd),
+        Err(_) => go.to_os_string(),
     };
+    let mut cmd = tokio::process::Command::new(program);
+    cmd.env_clear().envs(env);
+    if let Some((key, search)) = absolute_search_path(env) {
+        cmd.env(key, search);
+    }
     cmd.current_dir(&dir);
     crate::cmd::cmd_read_async_command(cmd, &go.to_string_lossy(), args).await
 }
 
-/// The program to spawn, and the PATH to give it in place of `env`'s, so that
-/// a child run in another directory starts the executable `program` names in
-/// `cwd`. The child searches its PATH for a bare name after it changes
-/// directory, so a relative or empty entry would otherwise be read against
-/// the new directory instead of `cwd`.
-///
-/// On unix each entry is made absolute against `cwd` and a bare name is left
-/// for the OS to find there, which goes on past an entry it cannot execute (a
-/// file on a `noexec` mount, say) as it always has. Where that PATH cannot be
-/// written (a `cwd` with the separator in it) and on Windows, the name is
-/// looked up here instead.
-fn spawn_outside_cwd(
-    program: &OsStr,
-    env: &BTreeMap<String, String>,
-    cwd: &std::path::Path,
-) -> (std::ffi::OsString, Option<std::ffi::OsString>) {
-    let search = if cfg!(unix) {
-        absolute_search_path(env, cwd)
-    } else {
-        None
-    };
-    let program = program_outside_cwd(program, env, cwd, search.is_some());
-    (program, search)
+/// `env`'s PATH entry, whatever the case of its name (Windows reads `Path`).
+fn search_path(env: &BTreeMap<String, String>) -> Option<(&String, &String)> {
+    env.iter().find(|(key, _)| key.eq_ignore_ascii_case("PATH"))
 }
 
-/// `env`'s PATH with each entry joined to `cwd`, or `None` without a PATH or
-/// when the joined entries cannot form one.
-fn absolute_search_path(
-    env: &BTreeMap<String, String>,
-    cwd: &std::path::Path,
-) -> Option<std::ffi::OsString> {
-    let search = env.get("PATH")?;
-    std::env::join_paths(std::env::split_paths(search).map(|dir| cwd.join(dir))).ok()
+/// `env`'s PATH variable and its value without the relative and empty
+/// entries, or `None` when `env` has no PATH. An empty entry means the
+/// current directory to a POSIX search.
+fn absolute_search_path(env: &BTreeMap<String, String>) -> Option<(&String, std::ffi::OsString)> {
+    let (key, search) = search_path(env)?;
+    let absolute = std::env::split_paths(search).filter(|dir| dir.is_absolute());
+    // Entries split from one PATH join back into one; were that to fail, no
+    // entry is passed on rather than every one.
+    let search = std::env::join_paths(absolute).unwrap_or_default();
+    Some((key, search))
 }
 
 /// `program` as a path that names the same executable once the child runs in
 /// another directory: a relative `program` would be read against the new
-/// directory instead of `cwd`. A bare name is returned as it is when
-/// `os_searches` says the child gets a PATH that is already absolute;
-/// otherwise it is looked up in `env`'s PATH read against `cwd`, and a bare
-/// name found in no entry is returned as it is, for the child to report.
+/// directory instead of `cwd`. A bare name is looked up in `env`'s PATH read
+/// against `cwd`, and one found in no entry is returned as it is, for the
+/// child to report.
 fn program_outside_cwd(
     program: &OsStr,
     env: &BTreeMap<String, String>,
     cwd: &std::path::Path,
-    os_searches: bool,
 ) -> std::ffi::OsString {
     let path = std::path::Path::new(program);
     if path.is_absolute() {
@@ -1056,14 +1061,7 @@ fn program_outside_cwd(
     if path.components().count() > 1 {
         return cwd.join(path).into_os_string();
     }
-    if os_searches {
-        return program.to_os_string();
-    }
-    let Some(search) = env
-        .iter()
-        .find(|(key, _)| key.eq_ignore_ascii_case("PATH"))
-        .map(|(_, value)| value)
-    else {
+    let Some((_, search)) = search_path(env) else {
         return program.to_os_string();
     };
     let names = crate::file::executable_names(&program.to_string_lossy());
@@ -1210,6 +1208,10 @@ enum ProxyVersionInfoResult {
     Found(GoModuleVersionMetadata),
     NotFound,
     Error,
+    /// A proxy answered with more than `GO_PROXY_VERSION_INFO_MAX_BYTES`. Not
+    /// an error to retry through `go list`, which would read the same answer
+    /// from the same proxy with no limit.
+    TooLarge,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -1295,6 +1297,7 @@ async fn query_proxy_version_metadata(
     proxies: &[GoProxy],
     endpoint: &str,
 ) -> ProxyVersionInfoResult {
+    let mut too_large = false;
     for proxy in proxies {
         let url = format!("{}/{}", proxy.url, endpoint);
         match HTTP_FETCH
@@ -1314,15 +1317,26 @@ async fn query_proxy_version_metadata(
                     .is_some_and(|s| {
                         s == reqwest::StatusCode::NOT_FOUND || s == reqwest::StatusCode::GONE
                     });
+                too_large |= crate::http::BodyTooLarge::is_cause_of(&e);
 
                 if is_not_found_or_gone || proxy.fall_through == FallThrough::OnAnyError {
                     continue;
                 }
-                return ProxyVersionInfoResult::Error;
+                // An oversized answer, here or from an earlier proxy, is kept
+                // through a later error, as the version list keeps a refusal.
+                return if too_large {
+                    ProxyVersionInfoResult::TooLarge
+                } else {
+                    ProxyVersionInfoResult::Error
+                };
             }
         }
     }
-    ProxyVersionInfoResult::NotFound
+    if too_large {
+        ProxyVersionInfoResult::TooLarge
+    } else {
+        ProxyVersionInfoResult::NotFound
+    }
 }
 
 /// Parse the effective GOPROXY setting into ordered proxy endpoints.
@@ -1478,7 +1492,12 @@ async fn fetch_proxy_version_infos(
             Ok((version, ProxyVersionInfoResult::Found(info))) => {
                 times.insert(version, info.time);
             }
-            Ok((version, ProxyVersionInfoResult::NotFound | ProxyVersionInfoResult::Error)) => {
+            Ok((
+                version,
+                ProxyVersionInfoResult::NotFound
+                | ProxyVersionInfoResult::Error
+                | ProxyVersionInfoResult::TooLarge,
+            )) => {
                 times.insert(version, None);
             }
             Err(e) => warn!("proxy version info task panicked: {e}"),
@@ -1508,112 +1527,79 @@ mod tests {
         let work = tempfile::tempdir().unwrap();
         let cwd = work.path();
         let env_with = |path: &str| BTreeMap::from([("PATH".to_string(), path.to_string())]);
-        let resolve = |program: &str| {
-            let (program, search) =
-                spawn_outside_cwd(OsStr::new(program), &env_with("sdk/go/bin"), cwd);
-            assert!(search.is_some());
-            std::path::PathBuf::from(program)
+        let resolve = |program: &str, path: &str| {
+            std::path::PathBuf::from(program_outside_cwd(
+                OsStr::new(program),
+                &env_with(path),
+                cwd,
+            ))
         };
-        let search = |path: &str| {
-            let search = absolute_search_path(&env_with(path), cwd).unwrap();
-            std::env::split_paths(&search).collect::<Vec<_>>()
-        };
-
-        // A bare name is left for the OS to look up, a relative path is read
-        // against the directory mise runs in, and an absolute one is kept.
-        assert_eq!(resolve("go"), std::path::PathBuf::from("go"));
-        assert_eq!(resolve("sdk/go/bin/go"), cwd.join("sdk/go/bin/go"));
-        assert_eq!(
-            resolve("/usr/bin/go"),
-            std::path::PathBuf::from("/usr/bin/go")
-        );
-        // Each PATH entry is made absolute against that directory, the empty
-        // one too, which POSIX reads as the current directory.
-        assert_eq!(
-            search("/usr/bin:sdk/go/bin::"),
-            [
-                std::path::PathBuf::from("/usr/bin"),
-                cwd.join("sdk/go/bin"),
-                cwd.to_path_buf(),
-                cwd.to_path_buf(),
-            ]
-        );
-        assert_eq!(absolute_search_path(&BTreeMap::new(), cwd), None);
-
-        // Spawned from another directory, the child finds the `go` under the
-        // relative entry, and goes past an earlier one it may not execute,
-        // like a file on a `noexec` mount. Only its owner's execute bit is
-        // clear, which stops the owner but not root.
+        // Each `go` prints its mode and the PATH it was given.
         let script = |dir: &str, mode: u32| {
             let dir = cwd.join(dir);
             std::fs::create_dir_all(&dir).unwrap();
             let go = dir.join("go");
-            std::fs::write(&go, format!("#!/bin/sh\necho {mode:o}\n")).unwrap();
+            std::fs::write(&go, format!("#!/bin/sh\necho \"{mode:o} $PATH\"\n")).unwrap();
             std::fs::set_permissions(&go, std::fs::Permissions::from_mode(mode)).unwrap();
         };
         script("denied", 0o011);
         script("sdk/go/bin", 0o755);
+
+        // A relative path is read against the directory mise runs in, and an
+        // absolute one is kept.
+        assert_eq!(
+            resolve("sdk/go/bin/go", "/nonexistent"),
+            cwd.join("sdk/go/bin/go")
+        );
+        assert_eq!(
+            resolve("/usr/bin/go", "sdk/go/bin"),
+            std::path::PathBuf::from("/usr/bin/go")
+        );
+        // A bare name is looked up there, the way execvp would, past a `go`
+        // this user may not execute (like one on a `noexec` mount). Only its
+        // owner's execute bit is clear, which stops the owner but not root.
         let path = if nix::unistd::geteuid().is_root() {
-            "sdk/go/bin"
+            "sdk/go/bin:/usr/bin:"
         } else {
-            "denied:sdk/go/bin"
+            "denied:sdk/go/bin:/usr/bin:"
         };
+        let program = resolve("go", path);
+        assert_eq!(program, cwd.join("sdk/go/bin/go"));
+        // Found nowhere, it is left for the child to report.
+        assert_eq!(resolve("go", "sdk/none"), std::path::PathBuf::from("go"));
+
+        // What `go` starts searches only the absolute entries: the relative
+        // ones, and the empty one POSIX reads as the current directory, would
+        // name directories in the checkout mise was started in.
+        let search = |path: &str| {
+            let env = env_with(path);
+            let (key, search) = absolute_search_path(&env).unwrap();
+            assert_eq!(key, "PATH");
+            search
+        };
+        assert_eq!(
+            std::env::split_paths(&search("/usr/bin:sdk/go/bin::/opt/go/bin")).collect::<Vec<_>>(),
+            [
+                std::path::PathBuf::from("/usr/bin"),
+                std::path::PathBuf::from("/opt/go/bin"),
+            ]
+        );
+        assert_eq!(search("sdk/go/bin:."), "");
+        assert_eq!(absolute_search_path(&BTreeMap::new()), None);
+
+        // Spawned from another directory with that PATH, the `go` found here
+        // runs, and sees no relative entry.
         let elsewhere = tempfile::tempdir().unwrap();
-        let (program, search) = spawn_outside_cwd(OsStr::new("go"), &env_with(path), cwd);
         let output = std::process::Command::new(program)
             .env_clear()
-            .env("PATH", search.unwrap())
+            .env("PATH", search(path))
             .current_dir(elsewhere.path())
             .output()
             .unwrap();
-        assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "755");
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn go_list_program_is_found_here_when_path_cannot_be_made_absolute() {
-        use std::os::unix::ffi::OsStrExt;
-        use std::os::unix::fs::PermissionsExt;
-
-        let env = BTreeMap::from([("PATH".to_string(), "/nonexistent:sdk/go/bin".to_string())]);
-        // A directory that is not UTF-8 still makes a PATH, passed on as is.
-        let bytes = std::path::Path::new(OsStr::from_bytes(b"/work/\xff"));
-        let (program, search) = spawn_outside_cwd(OsStr::new("go"), &env, bytes);
-        assert_eq!(program, "go");
         assert_eq!(
-            std::env::split_paths(&search.unwrap()).collect::<Vec<_>>(),
-            [
-                std::path::PathBuf::from("/nonexistent"),
-                bytes.join("sdk/go/bin"),
-            ]
+            String::from_utf8_lossy(&output.stdout).trim(),
+            "755 /usr/bin"
         );
-
-        // One with the separator in it cannot, so `go` is found in it here
-        // and spawned by its absolute path, with the PATH left alone.
-        let work = tempfile::tempdir().unwrap();
-        let cwd = work.path().join("a:b");
-        let bin = cwd.join("sdk/go/bin");
-        std::fs::create_dir_all(&bin).unwrap();
-        std::fs::write(bin.join("go"), "#!/bin/sh\n").unwrap();
-        std::fs::set_permissions(bin.join("go"), std::fs::Permissions::from_mode(0o755)).unwrap();
-        let (program, search) = spawn_outside_cwd(OsStr::new("go"), &env, &cwd);
-        assert_eq!(std::path::PathBuf::from(program), bin.join("go"));
-        assert_eq!(search, None);
-        // Like the OS, the lookup goes past a `go` this user may not execute,
-        // here one with only someone else's execute bits, which root ignores.
-        if !nix::unistd::geteuid().is_root() {
-            let denied = cwd.join("denied");
-            std::fs::create_dir_all(&denied).unwrap();
-            std::fs::write(denied.join("go"), "#!/bin/sh\n").unwrap();
-            std::fs::set_permissions(denied.join("go"), std::fs::Permissions::from_mode(0o011))
-                .unwrap();
-            let env = BTreeMap::from([("PATH".to_string(), "denied:sdk/go/bin".to_string())]);
-            let (program, _) = spawn_outside_cwd(OsStr::new("go"), &env, &cwd);
-            assert_eq!(std::path::PathBuf::from(program), bin.join("go"));
-        }
-        // Found nowhere, it is left for the child to report, as before.
-        let env = BTreeMap::from([("PATH".to_string(), "sdk/none".to_string())]);
-        assert_eq!(spawn_outside_cwd(OsStr::new("go"), &env, &cwd).0, "go");
     }
 
     #[cfg(windows)]
@@ -1627,9 +1613,14 @@ mod tests {
         }
         let env = BTreeMap::from([("Path".to_string(), "scripts;sdk".to_string())]);
         assert_eq!(
-            std::path::PathBuf::from(spawn_outside_cwd(OsStr::new("go"), &env, cwd).0),
+            std::path::PathBuf::from(program_outside_cwd(OsStr::new("go"), &env, cwd)),
             cwd.join("sdk").join("go.exe")
         );
+        // The PATH `go` is given keeps its name and only its absolute entries.
+        let env = BTreeMap::from([("Path".to_string(), r"scripts;C:\Go\bin;;sdk".to_string())]);
+        let (key, search) = absolute_search_path(&env).unwrap();
+        assert_eq!(key, "Path");
+        assert_eq!(search, r"C:\Go\bin");
     }
 
     #[test]
@@ -2043,7 +2034,9 @@ mod tests {
         ));
         let refused =
             query_proxy_version_metadata(&proxies, "example.com/tool/@v/v1.0.1.info").await;
-        assert!(matches!(refused, ProxyVersionInfoResult::Error));
+        // Kept apart from other failures, so the date stays unknown instead
+        // of being asked of `go list`, which has no such limit.
+        assert!(matches!(refused, ProxyVersionInfoResult::TooLarge));
         small.assert_async().await;
         large.assert_async().await;
     }

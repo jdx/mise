@@ -59,6 +59,8 @@ assert "cat victim" "keep"
 assert_fail "grep -- -debug-trace '$HOME/go-invocations'"
 
 assert_fail "mise install 'go:-debug-trace=victim@1.2.3'" "is not a Go package path"
+# A dry run of the same exact pin, which asks for no version list, says so too.
+assert_fail "mise install --dry-run 'go:-debug-trace=victim@1.2.3'" "is not a Go package path"
 assert "cat victim" "keep"
 assert_fail "grep -- -debug-trace '$HOME/go-invocations'"
 

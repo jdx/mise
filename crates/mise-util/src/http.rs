@@ -2978,6 +2978,35 @@ pub async fn buffer_body(resp: Response) -> Result<Response> {
     buffer_body_with_limit(resp, MAX_BODY_BYTES).await
 }
 
+/// The error [`buffer_body_with_limit`] fails with when a body passes its
+/// limit, so a caller can tell a server that sent too much from one that
+/// could not be reached. It can sit anywhere in the error's chain.
+#[derive(Debug)]
+pub struct BodyTooLarge {
+    url: String,
+    limit: usize,
+}
+
+impl BodyTooLarge {
+    /// Whether `err` is, or was caused by, a body over its limit.
+    pub fn is_cause_of(err: &eyre::Report) -> bool {
+        err.chain().any(|cause| cause.is::<Self>())
+    }
+}
+
+impl std::fmt::Display for BodyTooLarge {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "response body from {} is larger than {}",
+            self.url,
+            bytesize::ByteSize::b(self.limit as u64).display().iec()
+        )
+    }
+}
+
+impl std::error::Error for BodyTooLarge {}
+
 /// Reads the decoded body chunk by chunk, failing once it passes `limit`, and
 /// returns the response with the body buffered, ready for `json()`, `text()`
 /// or `bytes()`. Those collect whatever the server sends, so call this first.
@@ -2985,11 +3014,10 @@ pub async fn buffer_body(resp: Response) -> Result<Response> {
 /// transport error, so neither is retried.
 pub async fn buffer_body_with_limit(mut resp: Response, limit: usize) -> Result<Response> {
     let too_large = |url: &Url| {
-        eyre!(
-            "response body from {} is larger than {}",
-            log_url(url),
-            bytesize::ByteSize::b(limit as u64).display().iec()
-        )
+        eyre::Report::new(BodyTooLarge {
+            url: log_url(url).into_owned(),
+            limit,
+        })
     };
     if resp
         .content_length()
