@@ -780,13 +780,15 @@ pub async fn generate(
             entry.provenance = verified.or(recorded);
         }
     }
-    for short in unpinnable {
-        match previous.tools_for(&short) {
+    for short in &unpinnable {
+        match previous.tools_for(short) {
             Some(previous_entries) => {
-                candidate.tools.insert(short, previous_entries.clone());
+                candidate
+                    .tools
+                    .insert(short.clone(), previous_entries.clone());
             }
             None => {
-                candidate.tools.remove(&short);
+                candidate.tools.remove(short);
             }
         }
     }
@@ -812,6 +814,14 @@ pub async fn generate(
     } else {
         tools.to_vec()
     };
+    // A package whose pins disagree keeps its previous entries, graphs included.
+    let aube_tools = aube_tools
+        .into_iter()
+        .filter(|(_, tv)| {
+            let short = crate::toolset::install_state::state_short(&tv.ba().short);
+            !unpinnable.iter().any(|skipped| *skipped == short)
+        })
+        .collect_vec();
     Box::pin(populate_aube_locks(
         &mut candidate,
         &aube_tools,
