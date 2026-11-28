@@ -260,7 +260,6 @@ async fn verify_attestation_uncached(
         api_url.unwrap_or(crate::github::API_URL),
         resolve_token_for_wrapper(api_url),
     )?;
-    let asked = std::time::SystemTime::now();
     let result = mise_sigstore::verify_github_attestation_with_base_url_and_digest(
         mise_sigstore::GithubAttestationRequest {
             artifact_path,
@@ -277,7 +276,7 @@ async fn verify_attestation_uncached(
     .await;
     let result = accept_renamed_repository(owner, repo, api_url, result).await;
     if let Some(kept) = &confirming {
-        kept.settle(&result, asked);
+        kept.settle(&result);
     }
     result.map_err(|err| {
         rejection_stands(
@@ -386,7 +385,6 @@ pub async fn verify_attestation_with_predicate_type(
         }
     }
     let client = attestation_client(api_url.unwrap_or(crate::github::API_URL))?;
-    let asked = std::time::SystemTime::now();
     let result = match client
         .fetch_attestations(FetchParams {
             owner: owner.to_string(),
@@ -415,7 +413,7 @@ pub async fn verify_attestation_with_predicate_type(
         )),
     };
     if let Some(kept) = &confirming {
-        kept.settle(&result, asked);
+        kept.settle(&result);
     }
     result
 }
@@ -470,12 +468,13 @@ pub async fn detect_attestations(
         match detect_with_mirror(owner, repo, digest, None).await {
             MirrorVerdict::Done(found) => return found,
             MirrorVerdict::AskGithub => {}
-            MirrorVerdict::ConfirmWithGithub(err) => rejected = Some(err),
+            MirrorVerdict::ConfirmWithGithub(err) => {
+                rejected = Some((err, probed_records(owner, repo, digest)));
+            }
             MirrorVerdict::RetryGithub(err) => mirror_err = Some(err),
         }
     }
 
-    let asked = std::time::SystemTime::now();
     let found = async {
         let (base_url, token) = routed_api_url(api_url, resolve_token_for_wrapper(Some(api_url)))
             .map_err(DetectError::SourceCreation)?;
@@ -491,13 +490,19 @@ pub async fn detect_attestations(
         Ok(!attestations.is_empty())
     }
     .await;
-    github_probe_verdict(found, rejected, owner, repo, digest, None, asked)
+    github_probe_verdict(found, rejected, None)
 }
 
-/// GitHub's answer to a probe, `found`, from a request made at `asked`,
-/// once mise-versions' answer was `rejected`
-/// ([`MirrorVerdict::ConfirmWithGithub`]): GitHub confirming that there are
-/// no attestations settles every record kept for the artifact
+/// The records kept for `owner/repo` at `digest`, read before GitHub is
+/// asked to confirm a probe ([`github_probe_verdict`]).
+fn probed_records(owner: &str, repo: &str, digest: &str) -> KeptRejection {
+    KeptRejection::for_probe(&format!("{owner}/{repo}"), &sha256_digest(digest))
+}
+
+/// GitHub's answer to a probe, `found`, once mise-versions' answer was
+/// `rejected` ([`MirrorVerdict::ConfirmWithGithub`]), with the artifact's
+/// records as they were before GitHub was asked: GitHub confirming that
+/// there are no attestations settles every one of them
 /// ([`KeptRejection::settle_artifact`]), unless the lookup was filtered by
 /// `predicate_type`, which leaves attestations of other types unasked for.
 /// The rejection stands when GitHub cannot answer ([`rejection_stands`]).
@@ -506,21 +511,16 @@ pub async fn detect_attestations(
 /// too ([`verify_with_mirror`]).
 fn github_probe_verdict(
     found: Result<bool, DetectError>,
-    rejected: Option<AttestationError>,
-    owner: &str,
-    repo: &str,
-    digest: &str,
+    rejected: Option<(AttestationError, KeptRejection)>,
     predicate_type: Option<&str>,
-    asked: std::time::SystemTime,
 ) -> Result<bool, DetectError> {
-    let Some(rejected) = rejected else {
+    let Some((rejected, records)) = rejected else {
         return found;
     };
     match found {
         Ok(found) => {
             if !found && predicate_type.is_none() {
-                KeptRejection::for_probe(&format!("{owner}/{repo}"), &sha256_digest(digest))
-                    .settle_artifact(asked);
+                records.settle_artifact();
             }
             Ok(found)
         }
@@ -562,12 +562,13 @@ pub async fn detect_attestations_with_predicate_type(
         match detect_with_mirror(owner, repo, digest, Some(predicate_type)).await {
             MirrorVerdict::Done(found) => return found,
             MirrorVerdict::AskGithub => {}
-            MirrorVerdict::ConfirmWithGithub(err) => rejected = Some(err),
+            MirrorVerdict::ConfirmWithGithub(err) => {
+                rejected = Some((err, probed_records(owner, repo, digest)));
+            }
             MirrorVerdict::RetryGithub(err) => mirror_err = Some(err),
         }
     }
 
-    let asked = std::time::SystemTime::now();
     let found = async {
         let client = attestation_client(api_url).map_err(DetectError::SourceCreation)?;
         let attestations = client
@@ -585,15 +586,7 @@ pub async fn detect_attestations_with_predicate_type(
         Ok(!attestations.is_empty())
     }
     .await;
-    github_probe_verdict(
-        found,
-        rejected,
-        owner,
-        repo,
-        digest,
-        Some(predicate_type),
-        asked,
-    )
+    github_probe_verdict(found, rejected, Some(predicate_type))
 }
 
 /// Whether mise-versions saying an artifact has no attestations is taken as
@@ -734,18 +727,56 @@ enum KeptAnswer {
     /// GitHub's attestations verified the artifact.
     Present,
     /// GitHub has no attestations of the policy's predicate type for it.
-    Absent,
+    Absent {
+        /// The generation of the records when GitHub was asked: another
+        /// policy's record up to it was there before GitHub answered.
+        cutoff: u64,
+        /// The rejection this answer replaced, and its generation. It
+        /// settles the rejection for this policy only: GitHub said nothing
+        /// about attestations of other types.
+        rejected: Option<(String, u64)>,
+    },
 }
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 struct KeptRecord {
     answer: KeptAnswer,
-    /// When it was written, in nanoseconds since the Unix epoch.
-    written_at: u64,
+    /// The generation it was written at ([`KeptRecords::generation`]).
+    generation: u64,
+}
+
+impl KeptRecord {
+    /// Why this record has another policy, or the probe, have GitHub
+    /// confirm a "none" from mise-versions, and the generation of that
+    /// evidence.
+    fn evidence(&self) -> Option<(KeptEvidence<'_>, u64)> {
+        match &self.answer {
+            KeptAnswer::Rejected(rejection) => {
+                Some((KeptEvidence::Rejected(rejection), self.generation))
+            }
+            KeptAnswer::Present => Some((KeptEvidence::Present, self.generation)),
+            KeptAnswer::Absent { rejected, .. } => rejected
+                .as_ref()
+                .map(|(rejection, generation)| (KeptEvidence::Rejected(rejection), *generation)),
+        }
+    }
+}
+
+enum KeptEvidence<'a> {
+    Rejected(&'a str),
+    Present,
 }
 
 /// An artifact's records, by policy.
-type KeptRecords = std::collections::BTreeMap<String, KeptRecord>;
+#[derive(Clone, Default, serde::Serialize, serde::Deserialize)]
+struct KeptRecords {
+    /// The last generation given out: each change, made under the lock,
+    /// takes the next one, so a record's generation says which changes it
+    /// came after, whatever the clocks say. The file is kept when it holds
+    /// no records, so that the count never starts again.
+    generation: u64,
+    by_policy: std::collections::BTreeMap<String, KeptRecord>,
+}
 
 /// The records kept for one artifact once a set of attestations
 /// mise-versions served for it was rejected, one per policy, in one file.
@@ -764,19 +795,22 @@ type KeptRecords = std::collections::BTreeMap<String, KeptRecord>;
 /// the rejection stands when GitHub cannot answer ([`rejection_stands`]).
 /// A verification reads its own policy's record first; with none of its
 /// own, any other policy's counts, since the lock-time probe may have just
-/// had GitHub find attestations, and so does one written after GitHub found
-/// none for its own. The probe ([`detect_with_mirror`]) has no policy and
-/// reads them all.
+/// had GitHub find attestations. After GitHub found none for its own, so
+/// does one written after GitHub was asked. The probe
+/// ([`detect_with_mirror`]) has no policy and reads them all.
 ///
 /// Answers settle records ([`KeptRejection::settle`]): a set from
 /// mise-versions that verifies drops its policy's record; GitHub verifying
 /// records that attestations are present, and GitHub finding none of a
 /// predicate type records that for the policy, leaving other types'
-/// records as they are. Only GitHub finding no attestations at all, in an
-/// unfiltered lookup, settles every policy's record. GitHub's answer
-/// settles only records written before it was asked, and the file is
-/// changed under a lock, so a rejection another command writes meanwhile
-/// stays.
+/// records as they are, and the rejection it replaces for the probe and
+/// other policies. Only GitHub finding no attestations at all, in an
+/// unfiltered lookup, settles every policy's record.
+///
+/// An answer settles only the records it has seen
+/// ([`KeptRejection::covers`]): those there when the `KeptRejection` was
+/// made, before mise-versions or GitHub was asked, and those it wrote
+/// itself. A record another command writes meanwhile stays.
 struct KeptRejection {
     full: String,
     /// The file holding the artifact's records.
@@ -786,6 +820,10 @@ struct KeptRejection {
     /// Whether the policy names a predicate type, so that GitHub's "none"
     /// for it says nothing about attestations of other types.
     typed: bool,
+    /// The generation of the records when this was made.
+    seen: u64,
+    /// The generation of the last change this made, or 0.
+    written: std::sync::atomic::AtomicU64,
 }
 
 impl KeptRejection {
@@ -797,7 +835,7 @@ impl KeptRejection {
         predicate_type: Option<&str>,
     ) -> Self {
         let digest = format!("sha256:{artifact_digest}");
-        Self {
+        Self::seeing(Self {
             full: full.to_string(),
             key: Self::artifact_key(full, &digest),
             policy: Some(crate::hash::hash_to_str(&(
@@ -806,18 +844,34 @@ impl KeptRejection {
                 predicate_type,
             ))),
             typed: predicate_type.is_some(),
-        }
+            seen: 0,
+            written: Default::default(),
+        })
     }
 
     /// The records for `full` at `digest` (`sha256:<hex>`), as the lock-time
     /// probe, which has no policy, reads them.
     fn for_probe(full: &str, digest: &str) -> Self {
-        Self {
+        Self::seeing(Self {
             full: full.to_string(),
             key: Self::artifact_key(full, digest),
             policy: None,
             typed: false,
-        }
+            seen: 0,
+            written: Default::default(),
+        })
+    }
+
+    fn seeing(mut self) -> Self {
+        self.seen = self.records().generation;
+        self
+    }
+
+    /// Whether the record at `generation` was there when this was made, or
+    /// this wrote it.
+    fn covers(&self, generation: u64) -> bool {
+        generation <= self.seen
+            || generation == self.written.load(std::sync::atomic::Ordering::Relaxed)
     }
 
     fn artifact_key(full: &str, digest: &str) -> String {
@@ -838,14 +892,14 @@ impl KeptRejection {
     fn records(&self) -> KeptRecords {
         let cache = self.cache();
         if !cache.has_fresh_value() {
-            return KeptRecords::new();
+            return KeptRecords::default();
         }
         cache.get_cached().unwrap_or_else(|err| {
             debug!(
                 "failed to read the attestation answers kept for {}: {err:#}",
                 self.full
             );
-            KeptRecords::new()
+            KeptRecords::default()
         })
     }
 
@@ -853,34 +907,47 @@ impl KeptRejection {
     /// mise-versions, if it has to.
     fn load(&self) -> Option<AttestationError> {
         let records = self.records();
-        let own = self.policy.as_ref().and_then(|policy| records.get(policy));
-        let record = match own {
-            Some(own) if !matches!(own.answer, KeptAnswer::Absent) => own,
-            // GitHub's "none" for this policy stands unless another policy's
-            // record was written since.
-            own => records.values().find(|record| {
-                !matches!(record.answer, KeptAnswer::Absent)
-                    && own.is_none_or(|own| record.written_at > own.written_at)
-            })?,
+        let own = self
+            .policy
+            .as_ref()
+            .and_then(|policy| records.by_policy.get(policy));
+        let evidence = match own.map(|own| &own.answer) {
+            Some(KeptAnswer::Rejected(rejection)) => KeptEvidence::Rejected(rejection),
+            Some(KeptAnswer::Present) => KeptEvidence::Present,
+            // GitHub's "none" for this policy stands, unless another
+            // policy's record came after GitHub was asked.
+            own => {
+                let cutoff = match own {
+                    Some(KeptAnswer::Absent { cutoff, .. }) => Some(*cutoff),
+                    _ => None,
+                };
+                records
+                    .by_policy
+                    .iter()
+                    .filter(|(policy, _)| Some(*policy) != self.policy.as_ref())
+                    .filter_map(|(_, record)| record.evidence())
+                    .find(|(_, generation)| cutoff.is_none_or(|cutoff| *generation > cutoff))?
+                    .0
+            }
         };
         let full = &self.full;
-        let why = match &record.answer {
-            KeptAnswer::Rejected(rejection) => format!(
+        let why = match evidence {
+            KeptEvidence::Rejected(rejection) => format!(
                 "attestations mise-versions served for {full} were rejected, and nothing has settled this artifact since: {rejection}"
             ),
-            KeptAnswer::Present => format!(
+            KeptEvidence::Present => format!(
                 "GitHub's attestations for {full} verified this artifact, and mise-versions does not have them"
             ),
-            KeptAnswer::Absent => return None,
         };
         Some(AttestationError::Verification(why))
     }
 
     /// Change the artifact's records under a lock, so that concurrent
-    /// commands keep each other's. One lock serves every artifact: it is
-    /// held only to read and write one small file, and leaves no lock file
-    /// behind per artifact. Whether the change was written.
-    fn update(&self, change: impl FnOnce(&mut KeptRecords)) -> bool {
+    /// commands keep each other's, and give the change the next generation,
+    /// which `change` receives. One lock serves every artifact: it is held
+    /// only to read and write one small file, and leaves no lock file behind
+    /// per artifact. Whether the change was written.
+    fn update(&self, change: impl FnOnce(&mut KeptRecords, u64)) -> bool {
         let lock = crate::lock_file::LockFile::at(&kept_answers_lock_path()).lock();
         let _lock = match lock {
             Ok(lock) => lock,
@@ -893,20 +960,19 @@ impl KeptRejection {
             }
         };
         let mut records = self.records();
-        change(&mut records);
-        let mut cache = self.cache();
-        let written = if records.is_empty() {
-            cache.clear()
-        } else {
-            cache.write(&records)
-        };
-        if let Err(err) = &written {
+        records.generation += 1;
+        let generation = records.generation;
+        change(&mut records, generation);
+        if let Err(err) = self.cache().write(&records) {
             debug!(
                 "failed to keep the attestation answers for {}: {err:#}",
                 self.full
             );
+            return false;
         }
-        written.is_ok()
+        self.written
+            .store(generation, std::sync::atomic::Ordering::Relaxed);
+        true
     }
 
     /// Record that a set mise-versions served was rejected under this
@@ -915,25 +981,33 @@ impl KeptRejection {
         let Some(policy) = &self.policy else {
             return false;
         };
-        let record = KeptRecord {
-            answer: KeptAnswer::Rejected(rejection.to_string()),
-            written_at: nanos_since_epoch(std::time::SystemTime::now()),
-        };
-        self.update(|records| {
-            records.insert(policy.clone(), record);
+        let answer = KeptAnswer::Rejected(rejection.to_string());
+        self.update(|records, generation| {
+            records
+                .by_policy
+                .insert(policy.clone(), KeptRecord { answer, generation });
         })
     }
 
     /// Record mise-versions' `verdict`: a verification drops this policy's
-    /// record, and a rejection replaces it.
+    /// record, if it has seen it, and a rejection replaces it.
     fn record(&self, verdict: &MirrorVerdict) {
         match verdict {
             MirrorVerdict::Done(Ok(_)) => {
-                if let Some(policy) = &self.policy
-                    && self.records().contains_key(policy)
-                {
-                    self.update(|records| {
-                        records.remove(policy);
+                let Some(policy) = &self.policy else {
+                    return;
+                };
+                let seen = |records: &KeptRecords| {
+                    records
+                        .by_policy
+                        .get(policy)
+                        .is_some_and(|record| self.covers(record.generation))
+                };
+                if seen(&self.records()) {
+                    self.update(|records, _| {
+                        if seen(records) {
+                            records.by_policy.remove(policy);
+                        }
                     });
                 }
             }
@@ -944,64 +1018,82 @@ impl KeptRejection {
         }
     }
 
-    /// GitHub's `result`, from a request made at `asked`, once it was asked
-    /// to confirm the artifact ([`MirrorVerdict::ConfirmWithGithub`]).
-    fn settle(&self, result: &AttestationResult<bool>, asked: std::time::SystemTime) {
+    /// GitHub's `result`, once it was asked to confirm the artifact
+    /// ([`MirrorVerdict::ConfirmWithGithub`]). This is made before GitHub
+    /// is asked.
+    fn settle(&self, result: &AttestationResult<bool>) {
         match result {
-            Ok(_) => self.settle_policy(KeptAnswer::Present, asked),
+            Ok(_) => self.settle_policy(|_| KeptAnswer::Present),
             Err(AttestationError::NoAttestations) if self.typed => {
-                self.settle_policy(KeptAnswer::Absent, asked)
+                self.settle_policy(|previous| KeptAnswer::Absent {
+                    cutoff: self.seen,
+                    rejected: previous.and_then(|previous| match &previous.answer {
+                        KeptAnswer::Rejected(rejection) => {
+                            Some((rejection.clone(), previous.generation))
+                        }
+                        KeptAnswer::Absent { rejected, .. } => rejected.clone(),
+                        KeptAnswer::Present => None,
+                    }),
+                })
             }
-            Err(AttestationError::NoAttestations) => self.settle_artifact(asked),
+            Err(AttestationError::NoAttestations) => self.settle_artifact(),
             Err(_) => {}
         }
     }
 
-    /// Replace this policy's record with GitHub's `answer`, unless the
-    /// record was written after GitHub was asked.
-    fn settle_policy(&self, answer: KeptAnswer, asked: std::time::SystemTime) {
+    /// Replace this policy's record with GitHub's answer, made from the
+    /// record it replaces, unless that record came after GitHub was asked.
+    fn settle_policy(&self, answer: impl FnOnce(Option<&KeptRecord>) -> KeptAnswer) {
         let Some(policy) = &self.policy else {
             return;
         };
-        let asked = nanos_since_epoch(asked);
-        let record = KeptRecord {
-            answer,
-            written_at: nanos_since_epoch(std::time::SystemTime::now()),
-        };
-        self.update(|records| {
-            if records
-                .get(policy)
-                .is_none_or(|kept| kept.written_at <= asked)
-            {
-                records.insert(policy.clone(), record);
+        self.update(|records, generation| {
+            let previous = records.by_policy.get(policy);
+            if previous.is_none_or(|previous| self.covers(previous.generation)) {
+                let answer = answer(previous);
+                records
+                    .by_policy
+                    .insert(policy.clone(), KeptRecord { answer, generation });
             }
         });
     }
 
-    /// GitHub, asked at `asked` without a predicate type, has no
-    /// attestations for the artifact: every record written before then is
-    /// settled.
-    fn settle_artifact(&self, asked: std::time::SystemTime) {
-        let asked = nanos_since_epoch(asked);
-        if self
+    /// GitHub, asked without a predicate type, has no attestations for the
+    /// artifact: every record, and every rejection a typed "none" kept, from
+    /// before GitHub was asked is settled.
+    fn settle_artifact(&self) {
+        let carried = |record: &KeptRecord| match &record.answer {
+            KeptAnswer::Absent {
+                rejected: Some((_, generation)),
+                ..
+            } => self.covers(*generation),
+            _ => false,
+        };
+        let any_seen = self
             .records()
+            .by_policy
             .values()
-            .any(|record| record.written_at <= asked)
-        {
-            self.update(|records| records.retain(|_, record| record.written_at > asked));
+            .any(|record| self.covers(record.generation) || carried(record));
+        if !any_seen {
+            return;
         }
+        self.update(|records, _| {
+            records
+                .by_policy
+                .retain(|_, record| !self.covers(record.generation));
+            for record in records.by_policy.values_mut() {
+                if carried(record)
+                    && let KeptAnswer::Absent { rejected, .. } = &mut record.answer
+                {
+                    *rejected = None;
+                }
+            }
+        });
     }
 }
 
 fn kept_answers_lock_path() -> std::path::PathBuf {
     attestations_cache_dir().join("attestation-answers.lock")
-}
-
-fn nanos_since_epoch(time: std::time::SystemTime) -> u64 {
-    time.duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |since| {
-            u64::try_from(since.as_nanos()).unwrap_or(u64::MAX)
-        })
 }
 
 /// The verdict on attestations from mise-versions for `full` that verify but
@@ -2863,10 +2955,9 @@ mod tests {
             rejection_stands(AttestationError::Api("503".to_string()), Some(err)),
             AttestationError::Verification(_)
         ));
-        kept.settle(
-            &Err(AttestationError::Api("503".to_string())),
-            std::time::SystemTime::now(),
-        );
+        // asked before GitHub is, as `verify_attestation` does
+        let confirming = || KeptRejection::new(&full, &digest, &tags, None, None);
+        confirming().settle(&Err(AttestationError::Api("503".to_string())));
         assert!(kept.load().is_some());
 
         // another policy (another release's tag) has GitHub confirm too:
@@ -2889,10 +2980,7 @@ mod tests {
         ));
 
         // GitHub confirming that there are none settles the artifact
-        kept.settle(
-            &Err(AttestationError::NoAttestations),
-            std::time::SystemTime::now(),
-        );
+        confirming().settle(&Err(AttestationError::NoAttestations));
         assert!(kept.load().is_none());
         assert!(matches!(
             verify_with_mirror(Path::new("unread"), owner, repo, &tags, None, None, &digest).await,
@@ -2920,7 +3008,6 @@ mod tests {
         let full = format!("{owner}/{repo}");
         let digest = "8".repeat(64);
         let slsa = "https://slsa.dev/provenance/v1";
-        let now = std::time::SystemTime::now;
         KeptRejection::new(&full, &digest, &["v0.9.0".to_string()], None, None).record(
             &MirrorVerdict::Done(Err(AttestationError::Verification(
                 "made for refs/tags/v0.9.0".to_string(),
@@ -2934,18 +3021,8 @@ mod tests {
         else {
             panic!("the rejection was not read by a typed probe");
         };
-        assert!(
-            !github_probe_verdict(
-                Ok(false),
-                Some(rejection),
-                owner,
-                repo,
-                &digest,
-                Some(slsa),
-                now()
-            )
-            .unwrap()
-        );
+        let probed = || probed_records(owner, repo, &digest);
+        assert!(!github_probe_verdict(Ok(false), Some((rejection, probed())), Some(slsa)).unwrap());
         let MirrorVerdict::ConfirmWithGithub(rejection) =
             detect_with_mirror(owner, repo, &digest, None).await
         else {
@@ -2958,7 +3035,7 @@ mod tests {
         let tags = vec!["v1.0.0".to_string()];
         let typed = KeptRejection::new(&full, &digest, &tags, Some("release.yml"), Some(slsa));
         assert!(typed.load().is_some());
-        typed.settle(&Err(AttestationError::NoAttestations), now());
+        typed.settle(&Err(AttestationError::NoAttestations));
         assert!(typed.load().is_none());
         assert!(matches!(
             verify_with_mirror(
@@ -2979,7 +3056,6 @@ mod tests {
                 .is_some()
         );
         // a rejection written since, under another policy, counts again
-        std::thread::sleep(std::time::Duration::from_millis(2));
         let later = KeptRejection::new(&full, &digest, &["v0.8.0".to_string()], None, None);
         assert!(later.keep(&AttestationError::WorkflowMismatch(
             "release.yml".to_string()
@@ -2991,10 +3067,7 @@ mod tests {
         // the unfiltered probe has GitHub find attestations, and the
         // verification under another tag and signer, which has nothing kept
         // for its own policy, has GitHub confirm mise-versions' "none"
-        assert!(
-            github_probe_verdict(Ok(true), Some(rejection), owner, repo, &digest, None, now())
-                .unwrap()
-        );
+        assert!(github_probe_verdict(Ok(true), Some((rejection, probed())), None).unwrap());
         let verdict = verify_with_mirror(
             Path::new("unread"),
             owner,
@@ -3018,7 +3091,7 @@ mod tests {
 
         // GitHub confirming, unfiltered, that there are none settles it
         KeptRejection::new(&full, &digest, &tags, Some("release.yml"), None)
-            .settle(&Err(AttestationError::NoAttestations), now());
+            .settle(&Err(AttestationError::NoAttestations));
         assert!(matches!(
             detect_with_mirror(owner, repo, &digest, None).await,
             MirrorVerdict::Done(Ok(false))
@@ -3051,19 +3124,21 @@ mod tests {
                 "made for refs/tags/v0.9.0".to_string(),
             ))),
         );
-        let now = std::time::SystemTime::now;
+        let probed = |digest: &str| probed_records(owner, repo, digest);
 
         // the probe matches no policy, with or without a predicate type, and
         // reads the digest in either spelling
-        for (probed, predicate_type) in [
+        for (probed_digest, predicate_type) in [
             (digest.clone(), None),
             (format!("sha256:{digest}"), None),
             (digest.clone(), Some("https://slsa.dev/provenance/v1")),
         ] {
             let MirrorVerdict::ConfirmWithGithub(rejection) =
-                detect_with_mirror(owner, repo, &probed, predicate_type).await
+                detect_with_mirror(owner, repo, &probed_digest, predicate_type).await
             else {
-                panic!("an empty mirror erased the rejection for {probed} ({predicate_type:?})");
+                panic!(
+                    "an empty mirror erased the rejection for {probed_digest} ({predicate_type:?})"
+                );
             };
             assert!(
                 rejection.to_string().contains("refs/tags/v0.9.0"),
@@ -3074,12 +3149,8 @@ mod tests {
             // is not written without provenance
             let err = github_probe_verdict(
                 Err(DetectError::Fetch(AttestationError::Api("503".to_string()))),
-                Some(rejection),
-                owner,
-                repo,
-                &probed,
+                Some((rejection, probed(&probed_digest))),
                 predicate_type,
-                now(),
             )
             .unwrap_err();
             let DetectError::Fetch(err) = err else {
@@ -3100,10 +3171,7 @@ mod tests {
         else {
             panic!("the rejection was not kept");
         };
-        assert!(
-            github_probe_verdict(Ok(true), Some(rejection), owner, repo, &digest, None, now())
-                .unwrap()
-        );
+        assert!(github_probe_verdict(Ok(true), Some((rejection, probed(&digest))), None).unwrap());
         let MirrorVerdict::ConfirmWithGithub(rejection) =
             detect_with_mirror(owner, repo, &digest, None).await
         else {
@@ -3113,16 +3181,7 @@ mod tests {
         // GitHub confirming that there are none settles it for probes, and
         // for the verification under the policy that rejected the set
         assert!(
-            !github_probe_verdict(
-                Ok(false),
-                Some(rejection),
-                owner,
-                repo,
-                &digest,
-                None,
-                now()
-            )
-            .unwrap()
+            !github_probe_verdict(Ok(false), Some((rejection, probed(&digest))), None).unwrap()
         );
         assert!(matches!(
             detect_with_mirror(owner, repo, &digest, None).await,
@@ -3153,7 +3212,6 @@ mod tests {
         let _cache = temp_cache();
         let full = "acme/verified-after-rejection";
         let digest = "7".repeat(64);
-        let now = std::time::SystemTime::now;
         let kept = KeptRejection::new(full, &digest, &[], None, None);
         let other = KeptRejection::new(full, &digest, &["v2.0.0".to_string()], None, None);
         let probe = KeptRejection::for_probe(full, &format!("sha256:{digest}"));
@@ -3166,7 +3224,7 @@ mod tests {
 
         // GitHub verifies: attestations are present, which the probe and
         // the other policy still read
-        kept.settle(&Ok(true), now());
+        kept.settle(&Ok(true));
         for kept in [&kept, &other, &probe] {
             assert!(
                 kept.load()
@@ -3191,31 +3249,31 @@ mod tests {
 
     /// GitHub's answer settles only records written before it was asked: a
     /// rejection another command writes while the request is in flight
-    /// stays.
+    /// stays, for the policy that asked as for the probe.
     #[test]
     fn test_a_rejection_written_while_github_answers_stays() {
         let _settings = SettingsGuard::new(None);
         let _cache = temp_cache();
         let full = "acme/raced";
         let digest = "9".repeat(64);
-        let kept = KeptRejection::new(full, &digest, &[], None, None);
-        let typed = KeptRejection::new(
-            full,
-            &digest,
-            &[],
-            None,
-            Some("https://slsa.dev/provenance/v1"),
-        );
+        let slsa = "https://slsa.dev/provenance/v1";
+        let untyped = || KeptRejection::new(full, &digest, &[], None, None);
+        let typed = || KeptRejection::new(full, &digest, &[], None, Some(slsa));
         let rejection = || AttestationError::Verification("made by evil/tool".to_string());
 
-        let asked = std::time::SystemTime::now();
-        std::thread::sleep(std::time::Duration::from_millis(2));
-        assert!(kept.keep(&rejection()));
-        assert!(typed.keep(&rejection()));
-        kept.settle(&Err(AttestationError::NoAttestations), asked);
-        typed.settle(&Ok(true), asked);
-        typed.settle(&Err(AttestationError::NoAttestations), asked);
-        for kept in [&kept, &typed] {
+        // made before GitHub is asked, as `verify_attestation` and the probe
+        // make them
+        let asking = untyped();
+        let asking_typed = typed();
+        let probing = KeptRejection::for_probe(full, &format!("sha256:{digest}"));
+        // another command's rejections, written while GitHub answers
+        assert!(untyped().keep(&rejection()));
+        assert!(typed().keep(&rejection()));
+        asking.settle(&Err(AttestationError::NoAttestations));
+        probing.settle_artifact();
+        asking_typed.settle(&Ok(true));
+        asking_typed.settle(&Err(AttestationError::NoAttestations));
+        for kept in [untyped(), typed()] {
             assert!(
                 kept.load()
                     .is_some_and(|err| err.to_string().contains("evil/tool")),
@@ -3224,12 +3282,94 @@ mod tests {
         }
 
         // asked after it was written, GitHub settles it
-        kept.settle(
-            &Err(AttestationError::NoAttestations),
-            std::time::SystemTime::now(),
+        untyped().settle(&Err(AttestationError::NoAttestations));
+        assert!(untyped().load().is_none());
+        assert!(typed().load().is_none());
+    }
+
+    /// GitHub finding none of a predicate type settles its policy only
+    /// against records it had seen: another policy's rejection written while
+    /// GitHub answered still has the typed policy ask, and the rejection the
+    /// typed "none" replaces still has the probe and other policies ask.
+    #[test]
+    fn test_a_typed_none_settles_only_what_it_saw_and_its_own_policy() {
+        let _settings = SettingsGuard::new(None);
+        let _cache = temp_cache();
+        let full = "acme/typed-none";
+        let digest = "a".repeat(64);
+        let slsa = "https://slsa.dev/provenance/v1";
+        let typed = || KeptRejection::new(full, &digest, &[], None, Some(slsa));
+        let other = || KeptRejection::new(full, &digest, &["v2.0.0".to_string()], None, None);
+        let probe = || KeptRejection::for_probe(full, &format!("sha256:{digest}"));
+        let rejection = |why: &str| AttestationError::Verification(why.to_string());
+
+        // a rejection under another policy, written while GitHub answers a
+        // typed verification that has nothing of its own kept
+        let asking = typed();
+        assert!(other().keep(&rejection("made by evil/tool")));
+        asking.settle(&Err(AttestationError::NoAttestations));
+        assert!(
+            typed()
+                .load()
+                .is_some_and(|err| err.to_string().contains("evil/tool")),
+            "a typed none hid a rejection written while GitHub answered"
         );
-        assert!(kept.load().is_none());
-        assert!(typed.load().is_none());
+        // the next typed "none", asked after it, settles it for that policy
+        typed().settle(&Err(AttestationError::NoAttestations));
+        assert!(typed().load().is_none());
+        other().record(&MirrorVerdict::Done(Ok(true)));
+        assert!(probe().load().is_none());
+
+        // the typed policy's own rejection, settled by GitHub's typed "none",
+        // still has the probe and an unfiltered verification ask
+        assert!(typed().keep(&rejection("made for refs/tags/v0.9.0")));
+        typed().settle(&Err(AttestationError::NoAttestations));
+        assert!(typed().load().is_none());
+        for kept in [probe(), other()] {
+            assert!(
+                kept.load()
+                    .is_some_and(|err| err.to_string().contains("refs/tags/v0.9.0")),
+                "a typed none dropped the rejection for other types"
+            );
+        }
+        // another typed "none" keeps it too
+        typed().settle(&Err(AttestationError::NoAttestations));
+        assert!(probe().load().is_some());
+        // GitHub finding none at all settles it
+        probe().settle_artifact();
+        assert!(probe().load().is_none());
+        assert!(other().load().is_none());
+    }
+
+    /// A set from mise-versions that verifies drops only a rejection it had
+    /// seen: one another command writes for the same policy meanwhile stays.
+    #[test]
+    fn test_a_mirror_verification_keeps_a_rejection_written_meanwhile() {
+        let _settings = SettingsGuard::new(None);
+        let _cache = temp_cache();
+        let full = "acme/verified-meanwhile";
+        let digest = "b".repeat(64);
+        let kept = || KeptRejection::new(full, &digest, &[], None, None);
+
+        let verifying = kept();
+        assert!(kept().keep(&AttestationError::Verification(
+            "made by evil/tool".to_string()
+        )));
+        verifying.record(&MirrorVerdict::Done(Ok(true)));
+        assert!(
+            kept().load().is_some(),
+            "a verification dropped a rejection it had not seen"
+        );
+
+        // a verification that saw it drops it, as does one that wrote it
+        kept().record(&MirrorVerdict::Done(Ok(true)));
+        assert!(kept().load().is_none());
+        let rejecting = kept();
+        assert!(rejecting.keep(&AttestationError::WorkflowMismatch(
+            "release.yml".to_string()
+        )));
+        rejecting.record(&MirrorVerdict::Done(Ok(true)));
+        assert!(kept().load().is_none());
     }
 
     #[test]
