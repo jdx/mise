@@ -226,7 +226,14 @@ fn links_guarded(resolved_root: &Path, file: &Path) -> bool {
                 current = PathBuf::from("/");
                 continue;
             }
+            // `..` is an entry of `current` too, read like any other, so `current` is checked
+            // the same way before it is left: every directory the lookup reads an entry from
+            // has to be guarded, also one a link's target only passes through.
             Step::Up => {
+                let above_root = current != resolved_root && resolved_root.starts_with(&current);
+                if !above_root && !entries_guarded(&current) {
+                    return false;
+                }
                 current.pop();
                 continue;
             }
@@ -853,19 +860,23 @@ mod tests {
         // A relative link whose `..` is resolved from where it points.
         symlink("../hop/link", root.join("config.toml")).unwrap();
         let relative = root.join("config.toml");
+        // A link whose target enters `hop` and leaves it again with `..`.
+        symlink("../hop/../shared/mise.toml", root.join("mise.local.toml")).unwrap();
+        let through = root.join("mise.local.toml");
+        let files = [&via_link, &via_dir, &relative, &through];
 
         mode(&hop, 0o755);
-        for file in [&via_link, &via_dir, &relative] {
+        for file in files {
             assert!(owned_below(&root, file), "{}", file.display());
         }
         // Anyone may replace the links in `hop`, though none is on the final path.
         mode(&hop, 0o777);
-        for file in [&via_link, &via_dir, &relative] {
+        for file in files {
             assert!(!owned_below(&root, file), "{}", file.display());
         }
         // Sticky: only the user, who owns the links, may replace them.
         mode(&hop, 0o1777);
-        for file in [&via_link, &via_dir, &relative] {
+        for file in files {
             assert!(owned_below(&root, file), "{}", file.display());
         }
         mode(&hop, 0o755);
