@@ -67,7 +67,7 @@ impl Which {
                 if self.version {
                     miseprintln!("{}", tv.version);
                 } else if self.plugin {
-                    miseprintln!("{p}");
+                    miseprintln!("{}", crate::toolset::install_state::state_short(p.id()));
                 } else {
                     let path = p.which(&config, &tv, &bin_name).await?;
                     miseprintln!("{}", path.unwrap().display());

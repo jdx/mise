@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+
+# When `go list` reports more than 100,000 versions of a module, mise lists
+# nothing for it, and does not go on to list a parent module's versions as the
+# tool's.
+
+{
+  printf '{"Path":"example.com/tool/cmd/x","Versions":['
+  seq 0 100000 | sed 's/.*/"v1.0.&"/' | paste -sd,
+  printf ']}\n'
+} >"$HOME/too-many.json"
+
+cat >"$HOME/bin/go" <<'GO'
+#!/usr/bin/env bash
+if [[ ${!#} == example.com/tool/cmd/x ]]; then
+	cat "$HOME/too-many.json"
+else
+	echo '{"Path":"example.com/tool","Versions":["v1.0.0"]}'
+fi
+GO
+chmod +x "$HOME/bin/go"
+export PATH="$HOME/bin:$PATH"
+export GOPROXY=direct MISE_USE_VERSIONS_HOST=0
+
+assert_contains "mise ls-remote go:example.com/tool/cmd/x 2>&1" "more than 100000 versions"
+assert_empty "mise ls-remote go:example.com/tool/cmd/x"

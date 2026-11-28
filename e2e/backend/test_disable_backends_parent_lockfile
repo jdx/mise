@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 export MISE_EXPERIMENTAL=1
-export MISE_DISABLE_BACKENDS=asdf,vfox,ubi
+export MISE_DISABLE_BACKENDS=asdf,vfox
 
 detect_platform
 

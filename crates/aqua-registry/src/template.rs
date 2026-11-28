@@ -67,6 +67,11 @@ impl Value for SemVerValue {
     }
 }
 
+/// The longest string a template may render to, and the longest result of `replace`. Registry
+/// templates build file names, paths and URLs, and chained `replace` calls grow a value
+/// exponentially, so a registry entry of a few hundred bytes could otherwise ask for terabytes.
+const MAX_RENDERED_LEN: usize = 64 * 1024;
+
 pub(crate) fn render(tmpl: &str, ctx: &Context) -> Result<String> {
     let mut result = String::new();
     let mut in_tag = false;
@@ -92,6 +97,11 @@ pub(crate) fn render(tmpl: &str, ctx: &Context) -> Result<String> {
         } else {
             result.push(c);
         }
+        // Checked after every append, so literal text counts toward the limit as a tag's
+        // output does
+        if result.len() > MAX_RENDERED_LEN {
+            bail!("template renders to more than {MAX_RENDERED_LEN} bytes");
+        }
         i += 1;
     }
     Ok(result)
@@ -114,10 +124,11 @@ fn lex(code: &str) -> Result<Vec<Token<'_>>> {
     let mut tokens = vec![];
     let mut code = code.trim();
     while !code.is_empty() {
-        if code.starts_with(" ") {
+        // Stop as soon as the tag is too long to parse, without storing the rest of its tokens
+        check_token_budget(&tokens)?;
+        if code.starts_with(char::is_whitespace) {
             let end = code
-                .chars()
-                .enumerate()
+                .char_indices()
                 .find(|(_, c)| !c.is_whitespace())
                 .map(|(i, _)| i);
             if let Some(end) = end {
@@ -166,6 +177,8 @@ fn lex(code: &str) -> Result<Vec<Token<'_>>> {
                 code = &code[first_end..];
 
                 while let Some(end) = dotted_identifier_end(code) {
+                    // A chain such as `.A.B.C...` adds tokens without returning to the outer loop
+                    check_token_budget(&tokens)?;
                     tokens.push(Token::Dot);
                     tokens.push(Token::Ident(&code[1..end]));
                     code = &code[end..];
@@ -177,8 +190,7 @@ fn lex(code: &str) -> Result<Vec<Token<'_>>> {
         } else {
             // Check if it's an identifier (alphanumeric starting with letter)
             let end = code
-                .chars()
-                .enumerate()
+                .char_indices()
                 .find(|(_, c)| !c.is_alphanumeric() && *c != '_' && *c != '-')
                 .map(|(i, _)| i)
                 .unwrap_or(code.len());
@@ -193,7 +205,15 @@ fn lex(code: &str) -> Result<Vec<Token<'_>>> {
             }
         }
     }
+    check_token_budget(&tokens)?;
     Ok(tokens)
+}
+
+fn check_token_budget(tokens: &[Token]) -> Result<()> {
+    if tokens.len() > MAX_TAG_TOKENS {
+        bail!("template expression has more than {MAX_TAG_TOKENS} tokens");
+    }
+    Ok(())
 }
 
 fn dotted_identifier_end(code: &str) -> Option<usize> {
@@ -212,8 +232,17 @@ fn identifier_len(code: &str) -> usize {
         .unwrap_or(code.len())
 }
 
+/// The most tokens one `{{ }}` tag may have. Parsing, evaluating and dropping an expression
+/// recurse once per level of nesting, and an expression cannot nest deeper than it has tokens, so
+/// this bound keeps a registry template from overflowing the stack. The longest tag in the aqua
+/// registry has 25.
+const MAX_TAG_TOKENS: usize = 256;
+
 /// Parse tokens into an AST
 fn parse_tokens(tokens: &[Token]) -> Result<Expr> {
+    if tokens.len() > MAX_TAG_TOKENS {
+        bail!("template expression has more than {MAX_TAG_TOKENS} tokens");
+    }
     let mut tokens = tokens.iter().peekable();
     parse_pipe(&mut tokens)
 }
@@ -401,6 +430,14 @@ static FUNCTION_REGISTRY: LazyLock<HashMap<&'static str, TemplateFn>> = LazyLock
         let from = args[0].as_string();
         let to = args[1].as_string();
         let text = args[2].as_string();
+        // One call can multiply the length of its input by the length of `to`, so the size is
+        // checked before the result is built
+        let matches = text.matches(from.as_str()).count();
+        let len =
+            (text.len() - matches * from.len()).saturating_add(matches.saturating_mul(to.len()));
+        if len > MAX_RENDERED_LEN {
+            bail!("replace produces more than {MAX_RENDERED_LEN} bytes");
+        }
         Ok(Box::new(StringValue(text.replace(&from, &to))) as Box<dyn Value>)
     });
 

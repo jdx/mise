@@ -39,3 +39,16 @@ rm .node-version
 rm mise.toml
 truncate -s 17M mise.toml
 assert_fail "mise ls" "not reading ~/workdir/mise.toml: it is larger than 16 MiB"
+
+# The config commands read the file themselves instead of loading it, and TAB
+# offers the keys they would read. Both are held to the same limit. This file is
+# valid TOML just over it, padded with real newlines rather than sparse zeros so
+# that only the limit stops it from being read.
+rm mise.toml
+printf '[env]\nFOO_KEY = "1"\n' >mise.toml
+assert_contains "mise __complete_word__ --shell bash --line 'mise config get env.'" "env.FOO_KEY"
+head -c $((16 * 1024 * 1024)) /dev/zero | tr '\0' '\n' >>mise.toml
+assert_fail "mise config get" "not reading ~/workdir/mise.toml: it is larger than 16 MiB"
+assert_fail "mise config explain" "not reading ~/workdir/mise.toml: it is larger than 16 MiB"
+assert_fail "mise config set env.BAR 1" "not reading ~/workdir/mise.toml: it is larger than 16 MiB"
+assert_not_contains "mise __complete_word__ --shell bash --line 'mise config get env.'" "FOO_KEY"

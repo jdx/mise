@@ -18,8 +18,9 @@ is the command, and `usage`, since arguments use `#USAGE` lines. mise warns
 about those four and ignores them. A header that sets a property to a value of
 the wrong type gets a warning and that property is ignored, so one broken
 script does not stop the other tasks loading. A bad `confirm`, `lock`, `cache`,
-`deny_*` or `allow_unix` value is an error instead, so a typo cannot remove a
-confirmation prompt, a lock, or a sandbox restriction such as `cache.sandbox`.
+`extends`, `deny_*` or `allow_*` value is an error instead, so a typo cannot
+remove a confirmation prompt, a lock, or a sandbox restriction such as
+`cache.sandbox` or an allow list, which turns on its matching deny.
 A header line that is not valid TOML, such as `#MISE deny_net=` with no value,
 is an error for every property.
 To share properties between tasks, use [task templates](/tasks/templates.html).
@@ -412,6 +413,13 @@ depends = [
 ]
 run = "npm test"
 ```
+
+This task renders the templates in those values, and the dependency gets the
+result as text: a value such as <code v-pre>"{{ cwd }}"</code> stays the
+directory name even when the name looks like a template. The same holds for
+the `env` of a `run` entry and for the env a task passes to the tasks its
+`run` entries start. `$VAR` references in a `VAR=value` prefix or an entry's
+`env` table are expanded once, in the task that receives them.
 
 #### Passing parent task arguments to dependencies
 

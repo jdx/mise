@@ -71,6 +71,9 @@ workflows:
     '.github/workflows/registry.yml': []
     '.github/workflows/release-alpine.yml':
         - 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1'
+    '.github/workflows/release-notes-preview.yml':
+        - 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1'
+        - 'jdx/mise-action@90f833d396d0cc3674b631d2d225e306476c303a'
     '.github/workflows/release-plz.yml':
         - 'actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9'
         - 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1'

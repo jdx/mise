@@ -294,7 +294,7 @@ impl Toolset {
     }
 
     /// sets the options on incoming requests to install to whatever is already in the toolset
-    /// this handles the use-case where you run `mise use ubi:cilium/cilium-cli` (without CLi options)
+    /// this handles the use-case where you run `mise use github:cilium/cilium-cli` (without CLi options)
     /// but this tool has options inside mise.toml
     pub(super) fn init_request_options(&self, requests: &mut Vec<ToolRequest>) {
         for tr in requests {
@@ -354,6 +354,9 @@ impl Toolset {
         // key, rather than just their backend, so that private runtimes are not
         // returned to callers such as `mise use` and persisted as user tools.
         let private_dependency_keys = self.add_private_install_dependencies(&mut versions)?;
+        for request in &versions {
+            crate::backend::npm::ensure_node_option_unlocked(config, request, opts.locked)?;
+        }
         ensure_compatible_install_requests(&versions)?;
         ensure_safe_install_options(&versions)?;
 
@@ -624,15 +627,14 @@ impl Toolset {
         let mut private_dependency_keys = HashSet::new();
         let mut next = 0;
         while next < versions.len() {
-            // Only the PyPI selector owns a private runtime. Do not inspect
-            // every backend's install metadata here: an ordinary unknown tool
-            // must continue through the installer so its failure is rendered
-            // as `Failed to install <tool>`, rather than escaping this setup
-            // phase without install context.
-            let mut dependencies =
-                crate::backend::pipx::selected_python_dependency(&versions[next])?
-                    .into_iter()
-                    .collect_vec();
+            // Only a runtime selector (pipx `python`, npm `node`) owns a private
+            // runtime. Do not inspect every backend's install metadata here: an
+            // ordinary unknown tool must continue through the installer so its
+            // failure is rendered as `Failed to install <tool>`, rather than
+            // escaping this setup phase without install context.
+            let mut dependencies = crate::backend::selected_runtime_dependency(&versions[next])?
+                .into_iter()
+                .collect_vec();
             // A selector-owned runtime is resolved in the consumer's source
             // scope, but its installer options still come from the effective
             // configured runtime request. Apply those before duplicate and

@@ -1454,7 +1454,14 @@ pub async fn prunable_tools_with_sources(
                 .into_iter()
                 .map(move |tv| ((key.clone(), tv.install_path()), (p.clone(), tv)))
         })
-        .collect::<BTreeMap<((String, String), PathBuf), (Arc<dyn Backend>, ToolVersion)>>();
+        .collect::<PruneCandidates>();
+
+    // Every installation, before any is spared, so the ones that end up kept for
+    // any reason can keep the Node they are bound to (see `keep_nodes_of_kept`).
+    let installed = to_delete
+        .values()
+        .map(|(_, tv)| tv.clone())
+        .collect::<Vec<_>>();
 
     if !tools.is_empty() {
         to_delete.retain(|_, (_, tv)| tools.contains(&tv.ba()));
@@ -1531,11 +1538,48 @@ pub async fn prunable_tools_with_sources(
         !kept
     });
 
+    keep_nodes_of_kept(&installed, &mut to_delete, &mut needed)?;
+
     Ok(PrunableTools {
         to_delete: to_delete.into_values().collect(),
         needed,
         running,
     })
+}
+
+/// Installations prune may remove, keyed by their retention key and install path.
+type PruneCandidates = BTreeMap<((String, String), PathBuf), (Arc<dyn Backend>, ToolVersion)>;
+
+/// An `npm:` installation that prune keeps for any reason — a tracked config, a
+/// stub, `prune.exclude`, a tool not named on the command line, a running process
+/// — still runs on the Node its launchers name, so that Node is kept too. Runs
+/// last because only then is it known which installations stay.
+fn keep_nodes_of_kept(
+    installed: &[ToolVersion],
+    to_delete: &mut PruneCandidates,
+    needed: &mut NeededVersions,
+) -> Result<()> {
+    let deleting = to_delete
+        .keys()
+        .map(|(_, path)| path.clone())
+        .collect::<HashSet<_>>();
+    let mut kept_nodes = NeededVersions::new();
+    for tv in installed {
+        let path = tv.install_path();
+        if !deleting.contains(&path) {
+            keep_bound_node(tv, &path, &mut kept_nodes)?;
+        }
+    }
+    if kept_nodes.is_empty() {
+        return Ok(());
+    }
+    to_delete.retain(|(key, _), (_, tv)| {
+        !kept_nodes.contains_key(key) && !kept_nodes.contains_key(&needed_key(tv))
+    });
+    for (key, sources) in kept_nodes {
+        needed.entry(key).or_default().extend(sources);
+    }
+    Ok(())
 }
 
 async fn is_version_satisfied(
@@ -1765,7 +1809,8 @@ fn resolve_receipt_python(python: &Path) -> PathBuf {
     }
 }
 
-/// The mise Python installation a receipt's interpreter belongs to.
+/// The mise installation a receipt's runtime belongs to (a selected Python, or the Node an
+/// `npm:` tool is bound to).
 #[derive(Debug, PartialEq)]
 enum ReceiptPython {
     /// An identity-layout installation directory.
@@ -1814,6 +1859,61 @@ fn receipt_legacy_install_name(resolved: &Path, installs: &Path) -> Option<Strin
     let name = resolved.strip_prefix(&root).ok()?.components().next()?;
     let name = name.as_os_str().to_str()?;
     root.join(name).is_dir().then(|| name.to_string())
+}
+
+/// An `npm:` tool with a `node` option runs the Node it was installed with, which can be
+/// older than the one its request resolves to now. Keep that one until the tool is
+/// reinstalled and bound to another.
+fn keep_bound_node(tv: &ToolVersion, source: &Path, needed: &mut NeededVersions) -> Result<()> {
+    if tv.ba().backend_type() != crate::backend::backend_type::BackendType::Npm {
+        return Ok(());
+    }
+    let node_ba = BackendArg::from("node");
+    let system_installs = Settings::get().system_installs_dir().to_path_buf();
+    let identity_installs = crate::install_layout::resolver::installs_of(&node_ba);
+    let roots = [
+        node_ba.installs_path().to_path_buf(),
+        system_installs.join(node_ba.tool_dir_name()),
+    ];
+    // Prune keeps this version's user and system copies under one key, and each copy's
+    // launchers name the Node it was bound to, so keep the Node of every copy.
+    let install_path = tv.install_path();
+    let mut copies = vec![install_path.clone()];
+    // System installs use `<tool>/<version>` even when the user copy has an identity
+    // directory, so name the system copy the way `system_copy_of` does.
+    let system_copy = system_installs
+        .join(tv.ba().tool_dir_name())
+        .join(tv.tv_pathname());
+    if system_copy != install_path {
+        copies.push(system_copy);
+    }
+    for copy in copies {
+        // Launchers name the bound Node directly, so prune must not guess when the record
+        // of which one cannot be read: deleting that Node would break the tool.
+        let Some(bound) =
+            crate::backend::npm::BoundNode::read(&copy).wrap_err("cannot safely prune")?
+        else {
+            continue;
+        };
+        let key =
+            match receipt_python_install(&bound.node, &bound.version, &identity_installs, &roots) {
+                Some(ReceiptPython::Identity(dir)) => {
+                    let Some(dir_name) = crate::install_layout::resolver::dir_name_of(&dir) else {
+                        bail!(
+                            "cannot safely prune: {} is bound to an unkeyable Node installation {}",
+                            tv.ba().short,
+                            dir.display()
+                        );
+                    };
+                    (String::new(), dir_name)
+                }
+                Some(ReceiptPython::Legacy(name)) => (node_ba.short.to_string(), name),
+                // A Node that is gone, or outside mise's installs, has nothing left to keep.
+                None => continue,
+            };
+        needed.entry(key).or_default().insert(source.to_path_buf());
+    }
+    Ok(())
 }
 
 /// The interpreter and version a receipt records, or `None` for one that names
@@ -1870,6 +1970,7 @@ async fn collect_needed_versions(
             .or_default()
             .insert(source.to_path_buf());
         keep_uv_python_variants(&tv, source, needed)?;
+        keep_bound_node(&tv, source, needed)?;
         for runtime in
             crate::install_context::install_dependency_declarations(&tv.request).versioned()
         {

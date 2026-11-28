@@ -179,11 +179,6 @@ version = "1.2.3"
 url = "https://artifacts.example.com/internal-cli-{{ version }}.tar.gz"
 headers = { Authorization = "Bearer {{ env.ARTIFACTS_TOKEN }}" }
 `,
-  "tools.<ubi:…>": toml`
-[tools."ubi:goreleaser/goreleaser"]
-version = "latest"
-exe = "goreleaser"
-`,
   "tools.<aqua:…>": toml`
 [tools]
 "aqua:BurntSushi/ripgrep" = "latest"
@@ -1845,7 +1840,6 @@ const platformOptions: Record<
     linux: '"tool-*-linux-amd64.tar.gz"',
     macos: '"tool-*-darwin-arm64.tar.gz"',
   },
-  ubi: { repository: "owner/tool", key: "bin_path", linux: '"bin"' },
   http: {
     repository: "my-tool",
     key: "url",

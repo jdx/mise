@@ -127,6 +127,11 @@ fn installed_skip_reason(
     if mode == InstallMode::Upgrade && cask.version == "latest" {
         return Ok(Some("skipped: cask version is latest"));
     }
+    if previous.is_some_and(|receipt| receipt.version == cask.version)
+        && command_wrapper_needs_repair(cask, artifacts)?
+    {
+        return Ok(None);
+    }
     if version.is_some_and(|version| should_skip_installed(cask, version, mode))
         && declared_apps_are_owned(cask, artifacts, previous)?
     {
@@ -950,11 +955,16 @@ impl BrewCaskManager {
             record_cask_action(cask.manager, &mut journal, &format!("artifact[{index}]"))?;
         }
         // Postflight hooks receive the caskroom as staged_path and may modify
-        // the binary payload there before its artifacts are linked.
+        // the executable payload there before its artifacts are linked.
         if artifacts
             .binaries
             .iter()
             .any(|binary| payload_backed_binary(&stage, binary))
+            || artifacts.command_wrappers.iter().any(|wrapper| {
+                staged_command_wrapper_executable(&stage, &appdir, &cask, wrapper).is_some_and(
+                    |path| path.is_file() && path_starts_with_resolved_root(&path, &stage),
+                )
+            })
         {
             durabilize_stage_payload(&stage, &tmp_caskroom, &artifacts.apps)?;
         }
@@ -1435,6 +1445,125 @@ fn declared_app_cask(name: &str, spec: &crate::options::AppSpec) -> Result<Cask>
     })
 }
 
+/// Build a `macos-app` install from an official Homebrew cask.
+///
+/// The cask supplies the version, download, checksum and app; the install is
+/// still a `macos-app` one, recorded under mise's state directory, so it works
+/// when the Homebrew prefix belongs to someone else.
+async fn cask_backed_app_cask(name: &str, token: &str) -> Result<Cask> {
+    let request = PackageRequest {
+        name: token.to_string(),
+        version: None,
+        tap_url: None,
+        desired: super::super::PackageDesiredState::Present,
+    };
+    // `provision_ruby: false`: only official casks are accepted, and those are
+    // published as JSON, so there is no Ruby to evaluate.
+    let cask = fetch_cask(&request, false)
+        .await
+        .wrap_err_with(|| format!("macos-app:{name}: failed to read cask '{token}'"))?;
+    app_cask_from_homebrew(name, cask)
+}
+
+/// Check that a fetched cask installs nothing but app bundles from a verified
+/// download, and turn it into a `macos-app` install of `name`.
+///
+/// Everything else a cask can do (link binaries into the prefix, run a pkg
+/// installer or install hooks, pull in dependencies) is what makes brew-cask
+/// need the prefix, or what `macos-app` does not support, so such a cask is
+/// refused rather than installed in part.
+fn app_cask_from_homebrew(name: &str, cask: Cask) -> Result<Cask> {
+    validate_cask_path_component("package name", name)?;
+    let token = cask.token.as_str();
+    let refuse = |reason: &str| {
+        eyre!("macos-app:{name}: cask '{token}' {reason}; install it with brew-cask instead")
+    };
+    let artifacts = cask_artifacts(&cask)?;
+    let mut extras = Vec::new();
+    if !artifacts.binaries.is_empty() || !artifacts.command_wrappers.is_empty() {
+        extras.push("binaries");
+    }
+    if !artifacts.pkgs.is_empty() || !artifacts.installers.is_empty() {
+        extras.push("installers");
+    }
+    if !artifacts.generic.is_empty() {
+        extras.push("files outside an app bundle");
+    }
+    if !artifacts.fonts.is_empty() {
+        extras.push("fonts");
+    }
+    if !artifacts.completions.is_empty() || !artifacts.generated_completions.is_empty() {
+        extras.push("shell completions");
+    }
+    if !artifacts.preflight_steps.is_empty()
+        || !artifacts.postflight_steps.is_empty()
+        || has_lifecycle_hook(&cask, "preflight")
+        || has_lifecycle_hook(&cask, "postflight")
+    {
+        extras.push("install steps");
+    }
+    if !extras.is_empty() {
+        return Err(refuse(&format!(
+            "installs {} as well as an app",
+            extras.join(", ")
+        )));
+    }
+    if artifacts.apps.is_empty() {
+        return Err(refuse("installs no app bundle"));
+    }
+    if !cask.depends_on.formula.is_empty() || !cask.depends_on.cask.is_empty() {
+        return Err(refuse("depends on other casks or formulae"));
+    }
+    // `no_check` makes the shared fetcher skip verification; `macos-app` never
+    // installs an unverified download, whoever declared it.
+    let Some(sha256) = cask
+        .sha256
+        .as_deref()
+        .filter(|sha| sha.len() == 64 && sha.chars().all(|c| c.is_ascii_hexdigit()))
+    else {
+        return Err(refuse("publishes no checksum for its download"));
+    };
+    if cask.url.ends_with(".git") {
+        return Err(refuse("downloads a git repository, which has no checksum"));
+    }
+    if cask.version == "latest" {
+        return Err(refuse("publishes no version"));
+    }
+    validate_cask_path_component("version", &cask.version)?;
+    // Only the app entries are kept. The cask's uninstall and zap stanzas are
+    // Homebrew's to run; `macos-app` removes the bundle it installed, as it does
+    // for a declared download.
+    let app_entries = cask
+        .artifacts
+        .iter()
+        .filter(|artifact| artifact_type(artifact) == "app")
+        .cloned()
+        .collect();
+    Ok(Cask {
+        token: name.to_string(),
+        aliases: Vec::new(),
+        old_tokens: Vec::new(),
+        version: cask.version.clone(),
+        // Kept from the cask, as brew-cask does: an app that updates itself is
+        // left alone at install, and upgraded only when it is behind the cask.
+        auto_updates: cask.auto_updates,
+        url: cask.url.clone(),
+        url_specs: cask.url_specs.clone(),
+        sha256: Some(sha256.to_string()),
+        artifacts: app_entries,
+        depends_on: Default::default(),
+        // Conflicts name Homebrew tokens, which mean nothing among `macos-app`
+        // records keyed by the config's own names.
+        conflicts_with: Default::default(),
+        ruby_source_path: None,
+        ruby_source_checksum: None,
+        tap_git_head: None,
+        raw_base: None,
+        manager: CaskManager::MacosApp,
+        appdir: None,
+    })
+}
+
 /// Download cask archives concurrently before the serial install loop runs.
 ///
 /// Placement cannot be parallelised: it mounts DMGs, writes into the app
@@ -1468,9 +1597,13 @@ async fn resolve_cask_for(
 ) -> Result<Cask> {
     let mut cask = if let Some(spec) = manager_options.macos_app_spec(&req.name) {
         declared_app_cask(&req.name, spec)?
+    } else if !manager.uses_homebrew_caskroom()
+        && let Some(token) = manager_options.macos_app_cask(&req.name)
+    {
+        cask_backed_app_cask(&req.name, token).await?
     } else if !manager.uses_homebrew_caskroom() {
         bail!(
-            "macos-app:{}: no inline declaration found; macos-app entries require url, sha256, artifact, and an explicit version",
+            "macos-app:{}: no declaration found; macos-app entries require a cask, or url, sha256, artifact, and an explicit version",
             req.name
         );
     } else {
@@ -4574,6 +4707,45 @@ fn expand_command_wrapper_content(value: &str, appdir: &Path) -> String {
 fn expand_command_wrapper_value(value: &str, appdir: &Path, cask: &Cask) -> String {
     let staged_path = caskroom_version_dir(cask.manager, &cask.token, &cask.version);
     expand_cask_template(value, &staged_path, appdir, Some(&cask.version))
+}
+
+fn staged_command_wrapper_executable(
+    root: &Path,
+    appdir: &Path,
+    cask: &Cask,
+    wrapper: &CommandWrapperArtifact,
+) -> Option<PathBuf> {
+    let executable = expand_command_wrapper_value(wrapper.executable.as_deref()?, appdir, cask);
+    generated_caskroom_artifact(root, cask, &executable)
+}
+
+fn command_wrapper_needs_repair(cask: &Cask, artifacts: &CaskArtifacts) -> Result<bool> {
+    // Repair reruns the whole install. Only do this automatically for
+    // wrapper-only casks. Informational and uninstall stanzas do not run
+    // during installation.
+    if artifacts.command_wrappers.is_empty()
+        || cask.artifacts.iter().any(|artifact| {
+            !matches!(
+                artifact_type(artifact).as_str(),
+                "command_wrapper"
+                    | "caveats"
+                    | "uninstall"
+                    | "uninstall_preflight"
+                    | "uninstall_preflight_steps"
+                    | "uninstall_postflight"
+                    | "uninstall_postflight_steps"
+                    | "zap"
+            )
+        })
+    {
+        return Ok(false);
+    }
+    let appdir = cask_appdir_for(cask, &artifacts.apps)?;
+    let caskroom = caskroom_version_dir(cask.manager, &cask.token, &cask.version);
+    Ok(artifacts.command_wrappers.iter().any(|wrapper| {
+        staged_command_wrapper_executable(&caskroom, &appdir, cask, wrapper)
+            .is_some_and(|path| !path.is_file())
+    }))
 }
 
 fn find_binary_source(

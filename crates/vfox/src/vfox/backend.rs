@@ -20,7 +20,7 @@ impl Vfox {
         tool: &str,
         options: IndexMap<String, toml::Value>,
     ) -> Result<BackendListVersionsResponse> {
-        let plugin = self.get_sdk_with_env(sdk)?;
+        let plugin = self.get_sdk_detached(sdk)?;
         let ctx = BackendListVersionsContext {
             tool: tool.to_string(),
             options,
@@ -33,7 +33,7 @@ impl Vfox {
         sdk: &str,
         query: String,
     ) -> Result<Option<Vec<BackendTool>>> {
-        let plugin = self.get_sdk_with_env(sdk)?;
+        let plugin = self.get_sdk_detached(sdk)?;
         if !plugin
             .get_metadata()?
             .hooks
@@ -49,7 +49,7 @@ impl Vfox {
     }
 
     pub async fn backend_list_tools(&self, sdk: &str) -> Result<Option<Vec<BackendTool>>> {
-        let plugin = self.get_sdk_with_env(sdk)?;
+        let plugin = self.get_sdk_detached(sdk)?;
         if !plugin.get_metadata()?.hooks.contains("backend_list_tools") {
             return Ok(None);
         }
@@ -68,12 +68,13 @@ impl Vfox {
         download_path: PathBuf,
         options: IndexMap<String, toml::Value>,
     ) -> Result<()> {
-        let plugin = self.get_sdk_with_env(sdk)?;
+        let plugin = self.get_sdk_detached(sdk)?;
+        // The hook's commands do not run in mise's working directory.
         let ctx = BackendInstallContext {
             tool: tool.to_string(),
             version: version.to_string(),
-            install_path,
-            download_path,
+            install_path: std::path::absolute(install_path)?,
+            download_path: std::path::absolute(download_path)?,
             options,
         };
         plugin.backend_install(ctx).await?;
@@ -91,16 +92,17 @@ impl Vfox {
         download_path: PathBuf,
         options: IndexMap<String, toml::Value>,
     ) -> Result<()> {
-        let plugin = self.get_sdk_with_env(sdk)?;
+        let plugin = self.get_sdk_detached(sdk)?;
         if !plugin.get_metadata()?.hooks.contains("backend_uninstall") {
             return Ok(());
         }
+        // The hook's commands do not run in mise's working directory.
         plugin
             .backend_uninstall(BackendUninstallContext {
                 tool: tool.to_string(),
                 version: version.to_string(),
-                install_path,
-                download_path,
+                install_path: std::path::absolute(install_path)?,
+                download_path: std::path::absolute(download_path)?,
                 options,
             })
             .await
@@ -115,10 +117,12 @@ impl Vfox {
         options: IndexMap<String, toml::Value>,
     ) -> Result<Vec<EnvKey>> {
         let plugin = self.get_sdk_with_env(sdk)?;
+        // Outside a trusted directory the hook's commands do not run in mise's
+        // working directory.
         let ctx = BackendExecEnvContext {
             tool: tool.to_string(),
             version: version.to_string(),
-            install_path,
+            install_path: std::path::absolute(install_path)?,
             options,
         };
         let response = plugin.backend_exec_env(ctx).await?;

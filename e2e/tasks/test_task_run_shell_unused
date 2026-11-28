@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+
+# `mise run --shell` is read only for a script that runs under it: a script with a shebang
+# runs under its shebang, even when the `--shell` given cannot be parsed.
+
+cat <<'EOF' >mise.toml
+[tasks.shebang]
+run = """
+#!/usr/bin/env bash
+printf '[%s]\\n' {{arg(name="word")}}
+"""
+
+[tasks.plain]
+run = "echo plain"
+EOF
+
+assert "mise run --shell \"'\" shebang -- \"it's\" 2>/dev/null" "[it's]"
+assert_fail "mise run --shell \"'\" plain"
+# A blank `--shell` names no shell.
+assert_fail "mise run --shell ' ' plain" "inline shell is empty"

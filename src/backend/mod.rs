@@ -85,7 +85,6 @@ pub(crate) mod s3;
 pub(crate) mod spinel;
 pub(crate) mod spm;
 pub mod static_helpers;
-pub(crate) mod ubi;
 pub(crate) mod version_list;
 pub(crate) mod vfox;
 
@@ -231,6 +230,15 @@ pub async fn list_remote_versions_across_ranges(
 /// later backend, and platform or settings filtering can select one too. Compare against the declared first backend
 /// rather than the filtered `RegistryTool::backends()` list, so a client-side filter
 /// promoting another backend does not make it inherit the published list.
+/// The runtime a tool's own option selects for it (`python` for pipx, `node` for npm). It is
+/// installed as that tool's private dependency instead of being taken from the active toolset.
+pub(crate) fn selected_runtime_dependency(request: &ToolRequest) -> Result<Option<ToolRequest>> {
+    if let Some(python) = pipx::selected_python_dependency(request)? {
+        return Ok(Some(python));
+    }
+    npm::selected_node_dependency(request)
+}
+
 pub(crate) fn backend_arg_is_preferred_registry_backend(ba: &BackendArg) -> bool {
     let full = ba.full_without_opts();
     REGISTRY
@@ -442,6 +450,38 @@ fn listing_option_digest(opts: &ToolVersionOptions, version_listing_opt_keys: &[
         })
         .collect();
     hash::hash_to_str(&values)
+}
+
+/// Drops the bin paths of `tv` that cannot be an entry of PATH, with a warning.
+///
+/// Backends discover bin paths from what is on disk in the install directory,
+/// and a directory shipped in a tool's archive may have the PATH separator in
+/// its name (`linux:x64/bin`). Such a path cannot go on PATH: joining it fails
+/// for the whole list, and splitting it yields directories the tool never
+/// listed, one of them relative.
+pub(crate) fn retain_path_entries(tv: &ToolVersion, paths: &mut Vec<PathBuf>) {
+    paths.retain(|path| match path_entry_error(path) {
+        None => true,
+        Some(err) => {
+            warn!("ignoring bin path {} of {tv}: {err}", display_path(path));
+            false
+        }
+    });
+}
+
+/// Why `path` cannot be one entry of PATH, if it cannot. Joining is not enough
+/// on Windows: `join_paths` quotes an entry that holds `;` and accepts it, but
+/// what adds the path to PATH later splits it unquoted. So the path must also
+/// split back into exactly itself.
+fn path_entry_error(path: &Path) -> Option<String> {
+    if let Err(err) = std::env::join_paths([path]) {
+        return Some(err.to_string());
+    }
+    let mut entries = std::env::split_paths(path.as_os_str());
+    match (entries.next(), entries.next()) {
+        (Some(only), None) if only == path => None,
+        _ => Some("path contains the PATH separator".to_string()),
+    }
 }
 
 /// Remaps a backend-discovered path from the concrete install dir to the
@@ -799,7 +839,14 @@ pub fn get(ba: &BackendArg) -> Option<ABackend> {
     if ba.has_registry_version() {
         return arg_to_backend(ba.clone());
     }
-    if (ba.explicit_opts().is_some() || ba.has_explicit_backend())
+    // An explicit backend that does not resolve, such as an unknown or removed
+    // prefix, has no backend. The cached tool with the same short name is a
+    // different backend, and answering with it would install the wrong tool
+    // instead of letting `BackendArg::backend` report the selection.
+    if ba.has_explicit_backend() {
+        return arg_to_backend(ba.clone());
+    }
+    if ba.explicit_opts().is_some()
         && let Some(backend) = arg_to_backend(ba.clone())
     {
         return Some(backend);
@@ -924,6 +971,32 @@ fn backend_list_denial(
     }
 }
 
+/// The error for a tool `short` (such as `ubi:owner/repo[exe=rg]`) that names a
+/// backend mise has removed, with the backend that replaces it.
+pub fn removed_backend_error(short: &str) -> Option<String> {
+    // The message repeats the identifier, so drop URL credentials from it.
+    let short = install_state::state_short(short);
+    let short = short.as_ref();
+    let (backend, tool) = short.split_once(':')?;
+    if backend != "ubi" {
+        return None;
+    }
+    let tool = crate::args::split_bracketed_opts(tool).map_or(tool, |(name, _)| name);
+    let replacement = if tool.contains("://") {
+        // The http backend downloads its `url` option, not the tool name.
+        format!(
+            "an http: tool that sets url and a version, such as \
+             \"http:<name>\" = {{ version = \"1.0.0\", url = \"{tool}\" }},"
+        )
+    } else {
+        format!("github:{tool} (gitlab:{tool} for a GitLab project)")
+    };
+    Some(format!(
+        "{short}: the ubi backend was removed from mise. Use {replacement} instead. \
+         See https://mise.jdx.dev/dev-tools/backends/ubi.html for how ubi options map to it"
+    ))
+}
+
 pub fn arg_to_backend(ba: BackendArg) -> Option<ABackend> {
     // `asdf:` selects a backend and names no tool in it. The plugin types assert a name.
     if ba.tool_name.trim().is_empty() {
@@ -948,7 +1021,6 @@ pub fn arg_to_backend(ba: BackendArg) -> Option<ABackend> {
         BackendType::Spm => Some(Arc::new(spm::SPMBackend::from_arg(ba))),
         BackendType::Http => Some(Arc::new(http::HttpBackend::from_arg(ba))),
         BackendType::S3 => Some(Arc::new(s3::S3Backend::from_arg(ba))),
-        BackendType::Ubi => Some(Arc::new(ubi::UbiBackend::from_arg(ba))),
         BackendType::Vfox => Some(Arc::new(vfox::VfoxBackend::from_arg(ba, None))),
         BackendType::VfoxBackend(plugin_name) => {
             // The name is joined onto the plugins directory, where its Lua is loaded from.
@@ -974,7 +1046,6 @@ pub(crate) fn install_time_option_keys_for_type(backend_type: &BackendType) -> V
         BackendType::Github | BackendType::Gitlab | BackendType::Forgejo => {
             github::install_time_option_keys()
         }
-        BackendType::Ubi => ubi::install_time_option_keys(),
         BackendType::Cargo => cargo::install_time_option_keys(),
         BackendType::Go => go::install_time_option_keys(),
         BackendType::Npm => npm::install_time_option_keys(),
@@ -1489,6 +1560,49 @@ pub(crate) async fn configured_toolset_or_path_which(
     Ok(which_non_pristine_executable(bin))
 }
 
+/// Makes absolute the entries of `env`'s PATH that are one of `tool_paths`, the
+/// bin directories mise put there for a toolset. With a relative `MISE_DATA_DIR`
+/// those are relative to mise's working directory, and a command that starts
+/// somewhere else, as a plugin hook does from the home directory in a directory
+/// the user has not trusted, would not find them. Other relative entries came
+/// from the user's PATH or config and keep the meaning they had. An entry whose
+/// absolute form cannot go on PATH, because the working directory holds the PATH
+/// separator, stays relative: a command in that directory still finds it.
+fn absolutize_path_entries(
+    env: &mut BTreeMap<String, String>,
+    tool_paths: &[PathBuf],
+    absolute: impl Fn(PathBuf) -> std::io::Result<PathBuf>,
+) -> eyre::Result<()> {
+    let relative: HashSet<&Path> = tool_paths
+        .iter()
+        .map(PathBuf::as_path)
+        .filter(|path| path.is_relative())
+        .collect();
+    let Some(path_val) = env.get(&*env::PATH_KEY).filter(|_| !relative.is_empty()) else {
+        return Ok(());
+    };
+    let paths: Vec<PathBuf> = env::split_paths(path_val)
+        .map(|path| {
+            if !relative.contains(path.as_path()) {
+                return path;
+            }
+            match absolute(path.clone()) {
+                Ok(absolute) if env::join_paths([&absolute]).is_ok() => absolute,
+                _ => {
+                    debug!("keeping {} relative on PATH", path.display());
+                    path
+                }
+            }
+        })
+        .collect();
+    let joined = env::join_paths(&paths)?;
+    env.insert(
+        env::PATH_KEY.to_string(),
+        joined.to_string_lossy().into_owned(),
+    );
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1501,6 +1615,69 @@ mod tests {
 
     fn names(list: &[&str]) -> Vec<String> {
         list.iter().map(|name| name.to_string()).collect()
+    }
+
+    #[test]
+    fn removed_ubi_backend_names_its_replacement() {
+        let msg = removed_backend_error("ubi:BurntSushi/ripgrep[exe=rg]").unwrap();
+        assert!(msg.contains("Use github:BurntSushi/ripgrep ("), "{msg}");
+        assert!(
+            msg.contains("gitlab:BurntSushi/ripgrep for a GitLab"),
+            "{msg}"
+        );
+        assert!(msg.contains("/dev-tools/backends/ubi.html"), "{msg}");
+        let msg = removed_backend_error("ubi:https://example.com/tool.tar.gz").unwrap();
+        assert!(
+            msg.contains(r#"url = "https://example.com/tool.tar.gz""#),
+            "{msg}"
+        );
+        assert!(!msg.contains("http:https:"), "{msg}");
+        assert!(!msg.contains("gitlab:"), "{msg}");
+        let msg = removed_backend_error("ubi:https://user:secret@example.com/tool.tar.gz").unwrap();
+        assert!(!msg.contains("secret"), "{msg}");
+        assert_eq!(removed_backend_error("github:BurntSushi/ripgrep"), None);
+        assert_eq!(removed_backend_error("ripgrep"), None);
+    }
+
+    #[test]
+    fn only_the_toolset_paths_are_made_absolute() {
+        let tool = PathBuf::from(".mise/installs/dummy/1.0.0/bin");
+        let user = PathBuf::from("node_modules/.bin");
+        let inherited = std::env::temp_dir();
+        let path = env::join_paths([&tool, &user, &inherited]).unwrap();
+        let mut env = BTreeMap::from([(
+            env::PATH_KEY.to_string(),
+            path.to_string_lossy().into_owned(),
+        )]);
+        absolutize_path_entries(
+            &mut env,
+            &[tool.clone(), inherited.clone()],
+            std::path::absolute,
+        )
+        .unwrap();
+        let paths: Vec<PathBuf> = env::split_paths(&env[&*env::PATH_KEY]).collect();
+        assert_eq!(
+            paths,
+            vec![std::path::absolute(&tool).unwrap(), user, inherited]
+        );
+    }
+
+    #[test]
+    fn a_tool_path_that_cannot_go_on_path_absolute_stays_relative() {
+        let tool = PathBuf::from(".mise/installs/dummy/1.0.0/bin");
+        let mut env = BTreeMap::from([(
+            env::PATH_KEY.to_string(),
+            tool.to_string_lossy().into_owned(),
+        )]);
+        // a working directory that PATH cannot hold: Windows quotes an entry with
+        // a `;` in it, so only a `"` is refused there
+        let sep = if cfg!(windows) { "\"" } else { ":" };
+        let cwd = std::env::temp_dir().join(format!("a{sep}b"));
+        absolutize_path_entries(&mut env, std::slice::from_ref(&tool), |path| {
+            Ok(cwd.join(path))
+        })
+        .unwrap();
+        assert_eq!(env[&*env::PATH_KEY], tool.to_string_lossy());
     }
 
     #[test]
@@ -1709,6 +1886,49 @@ mod tests {
             reader.join().expect("reader panicked during reset");
         }
         assert!(reads_during_reset > 0, "no reader ran while resetting");
+    }
+
+    #[tokio::test]
+    async fn test_get_does_not_answer_an_unresolved_explicit_backend_from_the_cache() {
+        let _settings = crate::test::SettingsGuard::lock();
+        load_tools().await.unwrap();
+        // The core tool is cached under its short name.
+        assert!(get(&BackendArg::from("node")).is_some());
+        let ba = BackendArg::new("node".to_string(), Some("bogus:owner/repo".to_string()));
+        assert!(ba.has_explicit_backend());
+        assert!(
+            get(&ba).is_none(),
+            "an explicit backend that does not resolve got the cached core node"
+        );
+        let Err(err) = ba.backend() else {
+            panic!("an unresolved backend has no backend");
+        };
+        assert_eq!(
+            err.to_string(),
+            "node is set to backend 'bogus:owner/repo', which mise could not resolve"
+        );
+        // The message must not repeat URL credentials.
+        let ba = BackendArg::new(
+            "node".to_string(),
+            Some("bogus:https://user:hunter2@example.com/tool".to_string()),
+        );
+        let Err(err) = ba.backend() else {
+            panic!("an unresolved backend has no backend");
+        };
+        let msg = err.to_string();
+        assert!(msg.contains("example.com/tool"), "{msg}");
+        assert!(!msg.contains("hunter2"), "{msg}");
+    }
+
+    #[tokio::test]
+    async fn test_unresolved_explicit_backend_does_not_take_the_short_names_plugin() {
+        let _settings = crate::test::SettingsGuard::lock();
+        load_tools().await.unwrap();
+        // `tiny` is an installed asdf plugin, which the plain short resolves to.
+        assert_eq!(BackendArg::from("tiny").backend_type(), BackendType::Asdf);
+        let ba = BackendArg::new("tiny".to_string(), Some("bogus:owner/repo".to_string()));
+        assert_eq!(ba.backend_type(), BackendType::Unknown);
+        assert!(get(&ba).is_none());
     }
 
     fn create_test_backend_arg(tool: &str) -> Arc<BackendArg> {
@@ -2447,6 +2667,53 @@ mod tests {
         assert_eq!(tool("packslip:jdx/fnox", true), None);
         // The registry entry itself inherits that option, so it keeps its list.
         assert_eq!(tool("fnox", true), Some("fnox"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_retain_path_entries_drops_path_with_separator() {
+        let backend = BackendArg::new_raw(
+            "path-entries".into(),
+            None,
+            "path-entries".into(),
+            None,
+            BackendResolution::new(false),
+        );
+        let request = ToolRequest::new(Arc::new(backend), "1.0.0", ToolSource::Argument).unwrap();
+        let tv = ToolVersion::new(request, "1.0.0".into());
+
+        // `linux:x64` is one directory of the archive, not two PATH entries
+        let with_separator = PathBuf::from("/installs/path-entries/1.0.0/linux:x64/bin");
+        let plain = PathBuf::from("/installs/path-entries/1.0.0/extras/bin");
+        // `;` is an ordinary character of a unix path
+        let with_semicolon = PathBuf::from("/installs/path-entries/1.0.0/linux;x64/bin");
+        let mut paths = vec![with_separator, plain.clone(), with_semicolon.clone()];
+        retain_path_entries(&tv, &mut paths);
+        assert_eq!(paths, vec![plain, with_semicolon]);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn test_retain_path_entries_drops_path_with_separator() {
+        let backend = BackendArg::new_raw(
+            "path-entries".into(),
+            None,
+            "path-entries".into(),
+            None,
+            BackendResolution::new(false),
+        );
+        let request = ToolRequest::new(Arc::new(backend), "1.0.0", ToolSource::Argument).unwrap();
+        let tv = ToolVersion::new(request, "1.0.0".into());
+
+        // `join_paths` quotes and accepts this one, but splitting it gives
+        // `C:\install\linux` and a relative `x64\bin`.
+        let with_separator = PathBuf::from(r"C:\install\linux;x64\bin");
+        let quoted = PathBuf::from(r#"C:\install\"linux"\bin"#);
+        // `:` after the drive letter is not a separator on Windows
+        let plain = PathBuf::from(r"C:\install\extras\bin");
+        let mut paths = vec![with_separator, quoted, plain.clone()];
+        retain_path_entries(&tv, &mut paths);
+        assert_eq!(paths, vec![plain]);
     }
 
     #[test]
@@ -4349,6 +4616,15 @@ pub trait Backend: Debug + Send + Sync {
         false
     }
 
+    /// Whether a version with at least two dots, such as "1.2.3", names one
+    /// release as written. Prefer-offline commands (`exec`, `hook-env`) then use
+    /// it without listing remote versions when nothing installed matches it.
+    /// Return `false` for a backend whose dotted versions can still be prefixes
+    /// of several releases, so those commands resolve them like `mise install`.
+    fn dotted_version_names_a_release(&self, _version: &str) -> bool {
+        true
+    }
+
     /// Whether `version` names a rolling release channel (e.g. zig's "master")
     /// rather than a concrete version. Cheap (no network). Channels are re-resolved
     /// to a concrete version like "latest" so `mise upgrade`/`outdated` can track
@@ -4717,7 +4993,9 @@ pub trait Backend: Debug + Send + Sync {
             }
         };
         let filter = !self.include_prereleases(selection_opts);
-        let versions = self.fuzzy_match_filter(versions, query, filter);
+        let versions = self
+            .match_request(config, versions, query, selection_opts, filter)
+            .await?;
         let mut versions = self.version_order(selection_opts)?.order(versions);
         // Every caller that resolves a request — `latest`, a prefix, a partial
         // version — takes the last entry of this list, so the cutoff has to be
@@ -4733,6 +5011,37 @@ pub trait Backend: Debug + Send + Sync {
             .await?;
         }
         Ok(versions)
+    }
+
+    /// The versions a request names by something other than a version prefix, such as a
+    /// Java id converted from `.sdkmanrc`, among those listed for `selection_opts`. `None`
+    /// matches the request as a prefix, with [`Backend::fuzzy_match_filter`].
+    async fn versions_named_by(
+        &self,
+        _config: &Arc<Config>,
+        _query: &str,
+        _selection_opts: &ToolVersionOptions,
+    ) -> eyre::Result<Option<HashSet<String>>> {
+        Ok(None)
+    }
+
+    /// The listed versions a request matches: those [`Backend::versions_named_by`]
+    /// gives, or else those it matches as a prefix.
+    async fn match_request(
+        &self,
+        config: &Arc<Config>,
+        versions: Vec<String>,
+        query: &str,
+        selection_opts: &ToolVersionOptions,
+        filter_prereleases: bool,
+    ) -> eyre::Result<Vec<String>> {
+        let named = self
+            .versions_named_by(config, query, selection_opts)
+            .await?;
+        Ok(match named {
+            Some(named) => versions.into_iter().filter(|v| named.contains(v)).collect(),
+            None => self.fuzzy_match_filter(versions, query, filter_prereleases),
+        })
     }
 
     /// Remote versions the release-age cutoff excluded, in listing order.
@@ -4778,11 +5087,14 @@ pub trait Backend: Debug + Send + Sync {
             })
             .collect();
         let matched: HashSet<String> = self
-            .fuzzy_match_filter(
+            .match_request(
+                config,
                 hidden.iter().map(|v| v.version.clone()).collect(),
                 query,
+                &opts,
                 !self.include_prereleases(&opts),
             )
+            .await?
             .into_iter()
             .collect();
         // `latest` resolution falls back to the whole date-filtered list when
@@ -6228,7 +6540,8 @@ pub trait Backend: Debug + Send + Sync {
         // Use the backend's list_bin_paths to get the correct binary directories
         // instead of hardcoding install_path/bin, which may not match the actual
         // binary location for backends like aqua.
-        let bin_paths = self.list_bin_paths(&ctx.config, &tv_exact).await?;
+        let mut bin_paths = self.list_bin_paths(&ctx.config, &tv_exact).await?;
+        retain_path_entries(&tv_exact, &mut bin_paths);
         let mut path_env = PathEnv::new();
         for p in bin_paths {
             path_env.add(p);
@@ -6347,6 +6660,11 @@ pub trait Backend: Debug + Send + Sync {
     }
 
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion>;
+
+    /// Record provenance for backends that also create links in their version slots.
+    fn record_user_link(&self, _link: &Path) -> Result<()> {
+        Ok(())
+    }
     async fn uninstall_version(
         &self,
         config: &Arc<Config>,
@@ -6843,11 +7161,9 @@ pub trait Backend: Debug + Send + Sync {
         // hooks (e.g., MiseEnv Lua hooks). Those modules may depend on tools that
         // are not in the dependency toolset, causing "command not found" errors.
         // The dependency env only needs tool bin paths on PATH, not module outputs.
-        let mut env = self
-            .dependency_toolset(config)
-            .await?
-            .full_env_without_tools(config)
-            .await?;
+        let ts = self.dependency_toolset(config).await?;
+        let mut env = ts.full_env_without_tools(config).await?;
+        absolutize_path_entries(&mut env, &ts.list_paths(config).await, std::path::absolute)?;
 
         // Remove mise shims from PATH to prevent infinite shim recursion when a
         // dependency tool (e.g., go) is configured but not installed. Without this,
@@ -6872,6 +7188,9 @@ pub trait Backend: Debug + Send + Sync {
     ) -> eyre::Result<BTreeMap<String, String>> {
         let dependencies = ctx.dependency_context(&tv.request).await?;
         let mut env = dependencies.base_env_for_install(&ctx.config).await?;
+        // Install hooks also start in the home directory, so a relative
+        // `MISE_DATA_DIR` needs the same fix as `dependency_env`.
+        absolutize_path_entries(&mut env, &dependencies.paths, std::path::absolute)?;
         self.remove_dependency_shims(&mut env)?;
         Ok(env)
     }
@@ -7695,7 +8014,7 @@ mod latest_version_tests {
         }
 
         /// Declare tool options that shape this backend's version listing, the way the real
-        /// github/spm/ubi/http/s3 backends do.
+        /// github/spm/http/s3 backends do.
         fn with_listing_keys(mut self, listing_keys: &'static [&'static str]) -> Self {
             self.listing_keys = listing_keys;
             self
@@ -10390,7 +10709,6 @@ mod option_spec_tests {
             (BackendType::S3, &["tool_s3_options"]),
             (BackendType::Spinel, &["tool_spinel_options"]),
             (BackendType::Spm, &["tool_spm_options"]),
-            (BackendType::Ubi, &["tool_ubi_options"]),
         ] {
             let documented: Vec<String> = defs
                 .iter()

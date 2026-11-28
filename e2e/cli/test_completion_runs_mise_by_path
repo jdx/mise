@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+
+# Completers run in the directory where TAB was pressed. They start the mise that answers the
+# completion by its path, never whatever a bare "mise" finds there or on PATH.
+cat >mise.toml <<'EOF'
+[tasks.build]
+description = "Build it"
+run = 'true'
+EOF
+
+real_mise="$(command -v mise)"
+mkdir -p stub
+cat >stub/mise <<EOF
+#!/bin/sh
+touch "$PWD/stub-ran"
+EOF
+chmod +x stub/mise
+
+complete_with_stub() {
+  PATH="$PWD/stub:$PATH" "$real_mise" __complete_word__ --shell powershell --line "$1"
+}
+
+assert_contains_text "$(complete_with_stub 'mise b')" "build"
+assert_contains_text "$(complete_with_stub 'mise run ')" "build"
+assert_contains_text "$(complete_with_stub 'mise settings set exp')" "experimental"
+assert_fail "ls stub-ran"

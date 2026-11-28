@@ -165,6 +165,13 @@ jobs:
       # Enable the mise Cargo wrapper for unit tests and E2E rebuilds.
       MBX_DISABLE: "0"
       MBX_CACHE_DIR: ${{ github.workspace }}/.mbx-cache
+      # One mbx for the whole job: the copy the action installs, which builds
+      # the bootstrap binary before mise exists. mbx points build scripts at a
+      # C compiler shim (HOST_CC) under a directory named after its own install
+      # path, so a second copy from mise.toml gives the Cargo wrapper a
+      # different HOST_CC. The cc build scripts (aws-lc-sys, ring, zstd-sys, ...)
+      # then rerun, and everything built on them is compiled again.
+      MISE_DISABLE_TOOLS: mr-boxington
       # Keep the bootstrap binary at target/debug/mise with either backend.
       MBX_TARGET_VIEWS: "0"
       MISE_CARGO_BUILD_COMMAND: cargo build
@@ -208,27 +215,6 @@ jobs:
       # The CI profile fails ordinary tests after one second and explicitly
       # budgeted full-command-graph tests after two seconds.
       - run: mise run test:unit-ci
-        if: ${{ !(inputs.trusted && github.event_name == 'push' && github.ref == 'refs/heads/main') }}
-      # On main the same run goes through jouet so its timing is recorded. The
-      # `jouet-cost` job in test.yml pushes the timings, so this job needs no write token.
-      # `--display human` streams the output, and the baseline rerun is off so a
-      # failure stays a failure.
-      - name: Test with jouet
-        if: ${{ inputs.trusted && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-        env:
-          JOUET_TEST_BASELINE: "off"
-        run: |
-          mise x -- jouet test --display human --cmd -- mise run test:unit-ci
-      - name: Bundle jouet timings
-        if: ${{ always() && inputs.trusted && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-        run: git bundle create "$RUNNER_TEMP/cost-${{ github.job }}-${{ strategy.job-index }}.bundle" refs/notes/jouet-cost || true
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: ${{ always() && inputs.trusted && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-        continue-on-error: true
-        with:
-          name: jouet-cost-${{ github.job }}-${{ strategy.job-index }}
-          path: ${{ runner.temp }}/cost-${{ github.job }}-${{ strategy.job-index }}.bundle
-          if-no-files-found: ignore
       # The full E2E suite runs on Linux. Tests whose filenames contain `macos`
       # are also discovered and exercised here for platform-specific coverage.
       - run: mise run test:e2e macos

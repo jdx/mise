@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+
+# The xonsh script names each variable in a Python string literal, so a name from an env file
+# stays a string whatever it holds. xonsh is not needed: the script is run by Python with a
+# stand-in for `xonsh.built_ins.XSH`.
+if ! command -v python3 >/dev/null 2>&1; then
+  exit 0
+fi
+
+cat >env.json <<'JSON'
+{
+  "'+__import__(\"os\").system(\"touch marker\")+'": "1",
+  "A:B": "2",
+  "with space\r": "3",
+  "GOOD": "kept"
+}
+JSON
+cat >mise.toml <<'TOML'
+[env]
+_.file = "env.json"
+TOML
+
+mkdir -p stub/xonsh
+cat >stub/xonsh/built_ins.py <<'PY'
+class _Env(dict):
+    pass
+
+
+class _XSH:
+    env = _Env()
+
+
+XSH = _XSH()
+PY
+touch stub/xonsh/__init__.py
+cat >run.py <<'PY'
+import json
+import sys
+
+sys.path.insert(0, "stub")
+from xonsh.built_ins import XSH  # noqa: E402
+
+exec(sys.stdin.read())
+print(json.dumps({k: v for k, v in sorted(XSH.env.items()) if k != "PATH"}))
+PY
+
+mise env -s xonsh >script.xsh
+assert "python3 run.py <script.xsh" '{"'"'"'+__import__(\"os\").system(\"touch marker\")+'"'"'": "1", "A:B": "2", "GOOD": "kept", "with space\r": "3"}'
+assert_fail "ls marker"

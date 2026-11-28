@@ -1203,6 +1203,66 @@ fn rejects_command_wrapper_invalid_environment_name() {
 }
 
 #[test]
+#[cfg(target_os = "macos")]
+fn missing_wrapper_executable_does_not_reinstall_self_updating_app() -> Result<()> {
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
+    let tmp = tempfile::tempdir()?;
+    let _guard = BrewPrefixGuard::set(tmp.path());
+    let mut cask = test_cask("self-updating", "1.0.0");
+    cask.auto_updates = true;
+    cask.artifacts = vec![
+        serde_json::json!({
+            "app": ["Example.app"],
+            "target": "$HOMEBREW_PREFIX/Applications/Example.app"
+        }),
+        serde_json::json!({
+            "command_wrapper": ["example", {"executable": "{{staged_path}}/bin/example"}]
+        }),
+    ];
+    let artifacts = cask_artifacts(&cask)?;
+    let caskroom = caskroom_version_dir(cask.manager, &cask.token, &cask.version);
+    let appdir = cask_appdir_for(&cask, &artifacts.apps)?;
+    file::create_dir_all(appdir.join("Example.app"))?;
+    let wrapper = &artifacts.command_wrappers[0];
+    stage_command_wrapper(&caskroom, &appdir, &cask, wrapper)?;
+    link_command_wrapper(&caskroom, wrapper)?;
+    write_receipt_with_flight_targets(
+        &caskroom,
+        &cask,
+        &artifacts,
+        &[],
+        &BTreeMap::new(),
+        &[],
+        &[],
+    )?;
+
+    let request = PackageRequest {
+        name: cask.token.clone(),
+        version: None,
+        tap_url: None,
+        desired: crate::PackageDesiredState::Present,
+    };
+    assert_eq!(
+        package_state(&request, &cask)?,
+        PackageState::InstalledAutoUpdates {
+            version: cask.version.clone(),
+        }
+    );
+    let receipt = read_receipt(&caskroom)?.unwrap();
+    assert_eq!(
+        installed_skip_reason(
+            &cask,
+            &artifacts,
+            Some(&receipt),
+            Some(&cask.version),
+            InstallMode::Install
+        )?,
+        Some("already installed")
+    );
+    Ok(())
+}
+
+#[test]
 #[cfg(unix)]
 fn stages_command_wrapper_with_args_env_and_expanded_paths() -> Result<()> {
     let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
@@ -7369,6 +7429,50 @@ fn cask_prune_force_removes_a_self_updated_cask() -> Result<()> {
 }
 
 #[test]
+fn cask_prune_force_preserves_pkg_casks() -> Result<()> {
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
+    let tmp = tempfile::tempdir()?;
+    let _guard = BrewPrefixGuard::set(tmp.path());
+    let state_dir = tmp.path().join("state");
+    let cask = test_cask("example", "1.0.0");
+    let version_dir = caskroom_version_dir(CaskManager::BrewCask, &cask.token, &cask.version);
+    file::create_dir_all(&version_dir)?;
+    write_receipt_with_flight_targets(
+        &version_dir,
+        &cask,
+        &CaskArtifacts {
+            pkgs: vec![PkgArtifact {
+                source: "Example.pkg".to_string(),
+                choices: Vec::new(),
+            }],
+            pkg_ids: vec!["com.example.pkg".to_string()],
+            ..Default::default()
+        },
+        &[],
+        &BTreeMap::new(),
+        &[],
+        &[],
+    )?;
+
+    for force in [false, true] {
+        let plan = cask_prune_plan_from_tokens(&BTreeSet::new(), &state_dir, force)?;
+        assert!(plan.remove.is_empty());
+        assert_eq!(plan.skipped.len(), 1);
+        let skipped = &plan.skipped[0];
+        assert_eq!(skipped.token, cask.token);
+        assert!(!skipped.forceable);
+        assert!(
+            skipped
+                .reason
+                .contains("the vendor's uninstall instructions")
+        );
+        assert_eq!(apply_cask_prune_plan_in(&plan, false, &state_dir)?, 0);
+        assert!(read_receipt(&version_dir)?.is_some());
+    }
+    Ok(())
+}
+
+#[test]
 fn cask_prune_force_keeps_a_link_that_now_points_elsewhere() -> Result<()> {
     let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
@@ -10622,6 +10726,105 @@ fn declared_app_cask_populates_only_the_fields_an_app_install_reads() -> Result<
     assert_eq!(artifacts.apps.len(), 1);
     assert_eq!(artifacts.apps[0].source, "Nuvio.app");
     Ok(())
+}
+
+/// An app-only cask shaped like the published Homebrew metadata for Figma.
+fn app_only_cask() -> Cask {
+    let mut cask = test_cask("figma", "126.11.11");
+    cask.url = "https://desktop.figma.com/mac-arm/Figma-126.11.11.zip".to_string();
+    cask.sha256 =
+        Some("d52d56de2bf91e5e5d6feb2215c14d49a009a2cee9a3e5708e24f54f514bc2cc".to_string());
+    cask.auto_updates = true;
+    cask.raw_base = Some(HOMEBREW_CASK_RAW.to_string());
+    cask.aliases = vec!["figma-desktop".to_string()];
+    cask.conflicts_with.cask = vec!["figma@beta".to_string()];
+    cask.artifacts = vec![
+        serde_json::json!({ "uninstall": [{ "quit": "com.figma.agent" }] }),
+        serde_json::json!({ "app": ["Figma.app"], "target": "/Applications/Figma.app" }),
+        serde_json::json!({ "zap": [{ "trash": ["~/Library/Application Support/Figma"] }] }),
+    ];
+    cask
+}
+
+#[test]
+fn cask_backed_app_installs_the_casks_app_as_macos_app() -> Result<()> {
+    let cask = app_cask_from_homebrew("design", app_only_cask())?;
+
+    // Recorded under the config's name and mise's own state, never the Caskroom.
+    assert_eq!(cask.token, "design");
+    assert_eq!(cask.manager, CaskManager::MacosApp);
+    assert!(!cask.manager.uses_homebrew_caskroom());
+    assert!(cask.aliases.is_empty());
+    assert!(cask.conflicts_with.cask.is_empty());
+    assert!(cask.raw_base.is_none());
+    // The download comes from the cask, verified by its checksum.
+    assert_eq!(cask.version, "126.11.11");
+    assert_eq!(
+        cask.url,
+        "https://desktop.figma.com/mac-arm/Figma-126.11.11.zip"
+    );
+    assert_eq!(
+        cask.sha256.as_deref(),
+        Some("d52d56de2bf91e5e5d6feb2215c14d49a009a2cee9a3e5708e24f54f514bc2cc")
+    );
+    // A self-updating app is treated as brew-cask treats it.
+    assert!(cask.auto_updates);
+    // Only the app is kept, so the uninstall stanza cannot block pruning.
+    assert_eq!(cask.artifacts.len(), 1);
+    let artifacts = cask_artifacts(&cask)?;
+    assert_eq!(artifacts.apps.len(), 1);
+    assert_eq!(artifacts.apps[0].source, "Figma.app");
+    assert!(cask_prune_blocker(&cask, &artifacts).is_none());
+    Ok(())
+}
+
+#[test]
+fn cask_backed_app_refuses_casks_that_install_more_than_an_app() {
+    let mut with_binary = app_only_cask();
+    with_binary.artifacts.push(serde_json::json!({
+        "binary": ["$APPDIR/Figma.app/Contents/MacOS/figma"]
+    }));
+    let err = app_cask_from_homebrew("figma", with_binary).unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("installs binaries as well as an app"),
+        "{err}"
+    );
+    assert!(err.to_string().contains("brew-cask"), "{err}");
+
+    let mut with_hook = app_only_cask();
+    with_hook
+        .artifacts
+        .push(serde_json::json!({ "postflight": null }));
+    let err = app_cask_from_homebrew("figma", with_hook).unwrap_err();
+    assert!(err.to_string().contains("install steps"), "{err}");
+
+    let mut no_app = app_only_cask();
+    no_app.artifacts = vec![serde_json::json!({ "font": ["Example.ttf"] })];
+    let err = app_cask_from_homebrew("figma", no_app).unwrap_err();
+    assert!(err.to_string().contains("fonts"), "{err}");
+}
+
+#[test]
+fn cask_backed_app_refuses_unverifiable_or_dependent_casks() {
+    let mut no_check = app_only_cask();
+    no_check.sha256 = Some("no_check".to_string());
+    let err = app_cask_from_homebrew("figma", no_check).unwrap_err();
+    assert!(err.to_string().contains("no checksum"), "{err}");
+
+    let mut missing = app_only_cask();
+    missing.sha256 = None;
+    assert!(app_cask_from_homebrew("figma", missing).is_err());
+
+    let mut dependent = app_only_cask();
+    dependent.depends_on.cask = vec!["other".to_string()];
+    let err = app_cask_from_homebrew("figma", dependent).unwrap_err();
+    assert!(err.to_string().contains("depends on"), "{err}");
+
+    let mut traversing = app_only_cask();
+    traversing.version = "../1".to_string();
+    assert!(app_cask_from_homebrew("figma", traversing).is_err());
+    assert!(app_cask_from_homebrew("../escape", app_only_cask()).is_err());
 }
 
 #[test]

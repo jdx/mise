@@ -31,8 +31,11 @@ differ by platform.
 The rest of the Lua 5.1 standard library behaves as usual, except that the
 `debug` library is not loaded and `require` searches only the plugin's
 directories (see [Loading your own code](#loading-your-own-code)). `io.popen`
-always uses the environment of the mise process rather than the hook
-environment, so run commands with `cmd.exec` instead.
+runs its command in the [hook environment](#hook-environment) in hooks that
+have one, like `os.execute`. There, and in hooks whose commands run in your
+home directory (see [hook environment](#hook-environment)), the handle it
+returns has the `read`, `lines`, `write`, `flush` and `close` methods, and
+`io.type` and `io.close` accept it, but `io.input` and `io.output` do not.
 
 ### `RUNTIME` {#runtime}
 
@@ -94,13 +97,37 @@ hooks, mise removes its shims directory from that `PATH`, so a hook cannot reach
 another tool through its shim. Package manager plugin hooks keep it; see
 [package manager plugins](/package-plugin-development.html#mise-plugin-toml).
 
-`os.getenv`, `os.execute`, `cmd.exec` and `cmd.stream` use this
+`os.getenv`, `os.execute`, `io.popen`, `cmd.exec` and `cmd.stream` use this
 environment. Values you pass in the `env` option of `cmd.exec` or `cmd.stream`
 are merged over it.
 
 `ParseLegacyFile`, `BackendListTools` and `BackendSearchTools` get no hook
 environment: in them, `os.getenv` and commands see the environment of the mise
 process, including values set with [`env.setenv`](#environment-module).
+
+Commands that hooks listing versions, installing or uninstalling start
+(`os.execute`, `io.popen`, `cmd.exec` and `cmd.stream`) run in your home
+directory, not in the directory you ran mise from, and without `GIT_DIR`,
+`GIT_WORK_TREE` and the other variables that point git at a repository. A
+project mise happens to run in can be untrusted, and a `git ls-remote` there
+would follow that repository's git config. Pass the `cwd` option of `cmd.exec`
+or `cmd.stream` to run a command in a directory of your choice.
+
+Environment hooks such as `EnvKeys` run commands in the current directory only
+when you have trusted it: with `mise trust <dir>`, or because it is at or below
+the root of a trusted project config file. A directory with a `.git` entry below
+that root starts another repository, so the project's trust does not reach it or
+the directories under it. Elsewhere, and
+always in [safe mode](/security.html#safe-mode), their commands run in your home
+directory, the hook sees no `PWD`, and `MISE_PROJECT_ROOT` is removed unless it
+names a trusted directory. A hook that finds a project from the current
+directory, such as a `Pipfile` whose virtualenv it activates, therefore finds
+none until you trust that directory.
+
+An environment hook may run `mise` itself, for example `mise which python3`.
+That mise resolves the same tools, so it skips the environment hooks of the
+plugins whose hooks started it, and treats their tools as if those hooks had
+returned nothing.
 
 ## metadata.lua {#metadata}
 

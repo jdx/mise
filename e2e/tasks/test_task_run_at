@@ -38,6 +38,9 @@ run = "exit 7"
 
 [tasks.setup-check]
 run = "cat setup.txt"
+
+[tasks.holder-mode]
+run = "ls -ld .. | cut -c1-10"
 EOF
 # A hook kept in the repository, and a directory that is a symlink out of it.
 mkdir -p .githooks ../outside
@@ -105,13 +108,28 @@ assert_fail "mise run --at HEAD~1 fail"
 assert 'mise run --at HEAD~1 fail || echo exit=$?' "exit=7"
 assert_fail "mise run --at no-such-rev hi" "is not a commit"
 
+# Config above the worktree is not REV's and is not looked up: neither in the
+# temporary directory nor in the state directory that holds the worktrees.
+# Both of these are untrusted and would stop the run.
+mkdir -p "$MISE_TMP_DIR"
+cat <<'TOML' >"$MISE_TMP_DIR/mise.toml"
+[env]
+ABOVE_WORKTREE = "1"
+TOML
+cp "$MISE_TMP_DIR/mise.toml" "$MISE_STATE_DIR/mise.toml"
+assert "mise run --at HEAD~1 hi" "version-one"
+rm "$MISE_TMP_DIR/mise.toml" "$MISE_STATE_DIR/mise.toml"
+
+# Only the user can enter the directory holding the worktree.
+assert "mise run --at HEAD~1 holder-mode" "drwx------"
+
 # The user's checkout is untouched and every temporary worktree is gone.
 assert_empty "git status --porcelain"
 assert "git log -1 --format=%s" "two"
 assert "cat mise.toml" '[tasks.hi]
 run = "echo version-two"'
 assert "git worktree list --porcelain | grep -c '^worktree '" "1"
-assert_empty "ls -A $MISE_TMP_DIR/run-at"
+assert_empty "ls -A $MISE_STATE_DIR/run-at"
 
 # A config at REV is refused, before anything runs, when the main checkout is
 # not trusted. `--yes` (MISE_YES=1 here) does not trust it either.
@@ -120,10 +138,95 @@ assert_fail "mise run --at HEAD~1 --at-setup 'touch \$MISE_RUN_AT_SOURCE/../setu
 assert_fail "test -e ../setup-ran"
 assert_fail "mise run --at HEAD~1 hi" "shares the trust of the repository's main checkout"
 assert_fail "MISE_YES=1 mise run --yes --at HEAD~1 hi" "is not trusted"
+# Nor are submodules that only REV names fetched before or instead of the
+# refusal: their URLs are REV's to choose, and fetching registers them in the
+# repository's config. Not for a REV with config, and not for one with only a
+# file task, which the trust check before the tasks does not see.
+printf '[submodule "dep"]\n\tpath = dep\n\turl = %s\n' "$(dirname "$PWD")/sub" >>.gitmodules
+git update-index --add --cacheinfo "160000,$(git -C sub rev-parse HEAD),dep"
+git add .gitmodules
+git commit -qm three
+git branch with-dep
+git rm -q mise.toml
+mkdir -p mise-tasks
+printf '#!/usr/bin/env bash\necho file-task\n' >mise-tasks/hi
+chmod +x mise-tasks/hi
+git add mise-tasks/hi
+git commit -qm four
+git branch with-dep-file-task
+git reset -q --hard HEAD~2
+assert_fail "mise run --at with-dep hi" "is not trusted"
+assert_fail "git config --get submodule.dep.url"
+assert_fail "mise run --at with-dep-file-task hi" "are not initialized"
+assert_fail "git config --get submodule.dep.url"
+# Nor through a directory that is a symlink at REV to a project the user trusted:
+# that project's trust is not REV's.
+mkdir ../trusted-outside
+printf '[tasks.hi]\nrun = "echo outside"\n' >../trusted-outside/mise.toml
+mise trust ../trusted-outside/mise.toml
+link=$(printf %s "$(dirname "$PWD")/trusted-outside" | git hash-object -w --stdin)
+export GIT_INDEX_FILE="$PWD/../escape-to-trusted.index"
+git read-tree with-dep-file-task
+git rm --cached -rq escape
+git update-index --add --cacheinfo "120000,$link,escape"
+git branch escape-to-trusted "$(git commit-tree "$(git write-tree)" -p with-dep-file-task -m five)"
+unset GIT_INDEX_FILE
+assert_fail "mise -C escape run --at escape-to-trusted hi" "not a directory inside the worktree"
+assert_fail "git config --get submodule.dep.url"
+# Nor through a config that is a symlink at REV to a config the user trusted.
+link=$(printf %s "$(dirname "$PWD")/trusted-outside/mise.toml" | git hash-object -w --stdin)
+export GIT_INDEX_FILE="$PWD/../config-to-trusted.index"
+git read-tree with-dep-file-task
+git update-index --add --cacheinfo "120000,$link,mise.toml"
+git branch config-to-trusted "$(git commit-tree "$(git write-tree)" -p with-dep-file-task -m six)"
+unset GIT_INDEX_FILE
+assert_fail "mise run --at config-to-trusted hi" "leads outside the worktree"
+assert_fail "git config --get submodule.dep.url"
+# Paranoid mode trusts a file by its resolved path and contents, which the link's target has.
+MISE_PARANOID=1 mise trust ../trusted-outside/mise.toml
+assert_fail "MISE_PARANOID=1 mise run --at config-to-trusted hi" "leads outside the worktree"
+assert_fail "git config --get submodule.dep.url"
+# A config that is a link at REV to the user's global config is that config, which
+# mise loads from where it is. The run goes on, but the link, trusted as global
+# config, gives REV's submodules no trust.
+printf '[env]\nRUN_AT_GLOBAL = "1"\n' >"$MISE_CONFIG_DIR/config.toml"
+link=$(printf %s "$MISE_CONFIG_DIR/config.toml" | git hash-object -w --stdin)
+export GIT_INDEX_FILE="$PWD/../config-to-global.index"
+git read-tree with-dep-file-task
+git update-index --add --cacheinfo "120000,$link,mise.toml"
+git branch config-to-global "$(git commit-tree "$(git write-tree)" -p with-dep-file-task -m seven)"
+unset GIT_INDEX_FILE
+assert_fail "mise run --at config-to-global hi" "are not initialized"
+assert_fail "git config --get submodule.dep.url"
+# Paranoid mode initializes no submodules, not even for config in the worktree
+# that `trusted_config_paths` trusts by its path, which REV chose.
+assert_contains "MISE_PARANOID=1 MISE_TRUSTED_CONFIG_PATHS='$MISE_STATE_DIR' mise run --at with-dep hi 2>&1" "are not initialized in paranoid mode"
+assert_contains "MISE_PARANOID=1 MISE_TRUSTED_CONFIG_PATHS='$MISE_STATE_DIR' mise run --at with-dep hi" "version-two"
+assert_fail "git config --get submodule.dep.url"
+# A conf.d folder is trusted on its own, without the directory it is in, and
+# that trust lets the submodules be initialized for its tasks.
+mkdir -p mise/conf.d/build
+printf '[tasks.built]\nrun = "echo built"\n' >mise/conf.d/build/mise.toml
+export GIT_INDEX_FILE="$PWD/../conf-d.index"
+git read-tree with-dep-file-task
+git update-index --force-remove mise-tasks/hi
+git update-index --add mise/conf.d/build/mise.toml
+git branch conf-d "$(git commit-tree "$(git write-tree)" -p with-dep-file-task -m eight)"
+unset GIT_INDEX_FILE
+mise trust mise/conf.d/build
+assert_contains "mise run --at conf-d --at-setup 'cat dep/version.txt' built" "sub-v2"
+assert_contains "mise run --at conf-d built" "built"
 assert "git worktree list --porcelain | grep -c '^worktree '" "1"
-assert_empty "ls -A $MISE_TMP_DIR/run-at"
+assert_empty "ls -A $MISE_STATE_DIR/run-at"
 mise trust
 assert "mise run --at HEAD~1 hi" "version-one"
+assert_contains "mise run --at with-dep --at-setup 'cat dep/version.txt' hi" "sub-v2"
+# The trusted root config gives its tasks to a directory with no config of its own,
+# and its trust lets the submodules be initialized for them too.
+assert_contains "mise -C pkg run --at with-dep --at-setup 'cat ../dep/version.txt' hi" "sub-v2"
+# The project's own trust still counts where its config links to global config.
+# The setup fails unless the submodule was initialized.
+assert_contains "mise run --at config-to-global --at-setup 'cat dep/version.txt' hi" "file-task"
 
 # Paranoid mode binds trust to a path and its contents, so config in the
 # worktree, a new path on every run, is never trusted.
@@ -131,4 +234,4 @@ assert_fail "MISE_PARANOID=1 mise run --at HEAD~1 hi" "Paranoid mode"
 # The `config` category alone does it.
 assert_fail "MISE_PARANOID=config mise run --at HEAD~1 hi" "Paranoid mode"
 assert "git worktree list --porcelain | grep -c '^worktree '" "1"
-assert_empty "ls -A $MISE_TMP_DIR/run-at"
+assert_empty "ls -A $MISE_STATE_DIR/run-at"

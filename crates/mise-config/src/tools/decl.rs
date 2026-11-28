@@ -196,31 +196,6 @@ pub struct ToolForgejoOptions {
 }
 
 #[derive(JsonSchema)]
-pub struct ToolUbiOptions {
-    /// name of the executable inside the archive to extract
-    pub exe: Option<String>,
-    /// name to give the extracted executable
-    pub rename_exe: Option<String>,
-    /// substring to match release filenames when several match the os and arch
-    pub matching: Option<String>,
-    /// regex release filenames must match before os and arch matching
-    pub matching_regex: Option<String>,
-    /// forge used to fetch releases and assets
-    #[schemars(extend("enum" = ["github", "gitlab"]))]
-    pub provider: Option<String>,
-    /// provider api base url, for self-hosted instances
-    pub api_url: Option<String>,
-    /// regex release tags must match to be listed as versions
-    pub tag_regex: Option<String>,
-    /// extract every file in the archive instead of only the binary
-    #[serde(default)]
-    #[schemars(schema_with = "refs::tool_bool")]
-    pub extract_all: Option<bool>,
-    /// directory in the install containing binaries, used with extract_all
-    pub bin_path: Option<String>,
-}
-
-#[derive(JsonSchema)]
 pub struct ToolHttpOptions {
     /// download url, tera templated, http(s) or file://; required for each platform
     pub url: Option<String>,
@@ -365,6 +340,8 @@ pub struct ToolNpmOptions {
     pub bun_args: Option<String>,
     /// extra arguments for npm installs (shell-split)
     pub npm_args: Option<String>,
+    /// mise-managed Node version this tool's executables always run on (embedded aube only)
+    pub node: Option<String>,
 }
 
 #[derive(JsonSchema)]

@@ -105,15 +105,56 @@ fn furthest(
 
 /// A key as it is written in a path: as is, unless its name would not split back into itself,
 /// such as the task `build.sh`, which TOML quotes.
+///
+/// No control character is left in it: the path is printed by `config explain` and offered as
+/// a completion, and its names come from a file that need not be trusted.
 pub(super) fn quote_key(name: &str) -> String {
     let plain = !name.is_empty()
         && !name.contains(['.', '"', '\'', '\\'])
         && !name.contains(|c: char| c.is_whitespace() || c.is_control());
     if plain {
-        name.to_string()
-    } else {
-        toml_edit::Key::new(name).display_repr().into_owned()
+        return name.to_string();
     }
+    let quoted = toml_edit::Key::new(name).display_repr().into_owned();
+    // TOML only asks for U+0000 to U+001F and U+007F to be escaped, and a literal string has
+    // no escapes. That leaves U+0080 to U+009F as they are, of which U+009B is `ESC [` in one
+    // character, and a tab wherever a `"` in the name made the string a literal one.
+    if quoted.contains(char::is_control) {
+        escape_key(name)
+    } else {
+        quoted
+    }
+}
+
+/// `value` as pretty JSON with no raw control character inside a string. serde_json escapes
+/// U+0000 to U+001F and leaves U+007F to U+009F as they are, of which U+009B is `ESC [`, so
+/// those are written as `\u00XX` here. They occur only inside strings, so the text decodes to
+/// the same value.
+pub(super) fn json_text<T: serde::Serialize>(value: &T) -> serde_json::Result<String> {
+    let json = serde_json::to_string_pretty(value)?;
+    let mut out = String::with_capacity(json.len());
+    for c in json.chars() {
+        if ('\u{7f}'..='\u{9f}').contains(&c) {
+            out.push_str(&format!("\\u{:04X}", c as u32));
+        } else {
+            out.push(c);
+        }
+    }
+    Ok(out)
+}
+
+/// `name` as a TOML basic string, with every control character written as `\uXXXX`.
+fn escape_key(name: &str) -> String {
+    let mut quoted = String::from('"');
+    for c in name.chars() {
+        match c {
+            '"' | '\\' => quoted.extend(['\\', c]),
+            c if c.is_control() => quoted.push_str(&format!("\\u{:04X}", c as u32)),
+            c => quoted.push(c),
+        }
+    }
+    quoted.push('"');
+    quoted
 }
 
 /// Candidates for a dotted key being typed as `prefix`, against the TOML at `file`.
@@ -192,7 +233,7 @@ fn first_line(description: &str) -> String {
 
 /// The keys the table at `path` already has in `file`.
 fn file_keys(file: Option<&Path>, path: &[String]) -> Vec<String> {
-    let Some(content) = file.and_then(|file| std::fs::read_to_string(file).ok()) else {
+    let Some(content) = file.and_then(|file| crate::file::read_config_to_string(file).ok()) else {
         return vec![];
     };
     let Ok(mut value) = content.parse::<toml::Table>().map(toml::Value::Table) else {
@@ -309,6 +350,16 @@ mod tests {
     }
 
     #[test]
+    fn a_file_over_the_config_limit_is_not_read() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("mise.toml");
+        let body = "[env]\nFOO = \"1\"\n";
+        let padding = crate::file::CONFIG_FILE_LIMIT as usize + 1 - body.len();
+        std::fs::write(&file, format!("{body}{}", "\n".repeat(padding))).unwrap();
+        assert_eq!(values("env.", Some(&file)), vec!["env._"]);
+    }
+
+    #[test]
     fn values_are_not_completed_as_keys() {
         assert!(candidates("tools.node=", None).is_empty());
     }
@@ -351,6 +402,49 @@ mod tests {
         }
         assert_eq!(quote_key("build"), "build");
         assert_eq!(quote_key("build.sh"), r#""build.sh""#);
+    }
+
+    #[test]
+    fn a_quoted_key_has_no_control_character() {
+        // TOML quoting alone leaves the C1 controls and, in a literal string, a tab.
+        for name in [
+            "a\u{1}b",
+            "a\tb",
+            "a\t\"b",
+            "a\u{7f}b",
+            "a\u{85}b",
+            "a\u{9b}2J\u{9b}8m",
+            "a\u{9b}\"b",
+            "a\u{9b}'b\\",
+        ] {
+            let quoted = quote_key(name);
+            assert!(!quoted.contains(char::is_control), "{quoted:?}");
+            let path = format!("tasks.{quoted}");
+            assert_eq!(split_path(&path), ["tasks", name], "{path:?}");
+        }
+        assert_eq!(quote_key("a\u{9b}2J"), r#""a\u009B2J""#);
+
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("mise.toml");
+        std::fs::write(&file, "[tasks.\"a\\u009b2J\"]\nrun = \"true\"\n").unwrap();
+        assert_eq!(values("tasks.", Some(&file)), [r#"tasks."a\u009B2J""#]);
+    }
+
+    #[test]
+    fn json_text_escapes_c1_controls_and_reads_back_the_same() {
+        let value = serde_json::json!({
+            "path": ["tasks", "a\u{9b}2J\u{85}\u{7f}\u{1b}b", "\u{a0}é"],
+        });
+        let text = json_text(&value).unwrap();
+        assert!(
+            !text.contains(|c: char| c.is_control() && c != '\n'),
+            "{text:?}"
+        );
+        assert!(text.contains(r#""a\u009B2J\u0085\u007F\u001bb""#), "{text}");
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&text).unwrap(),
+            value
+        );
     }
 
     #[test]

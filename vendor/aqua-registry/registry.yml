@@ -5625,6 +5625,75 @@ packages:
             files:
               - name: ki
                 src: ki/bin/ki.bat
+  - type: http
+    repo_owner: Kotlin
+    repo_name: kotlin-lsp
+    description: Official Kotlin Language Server by JetBrains
+    version_prefix: kotlin-lsp/v
+    version_source: github_tag
+    files:
+      - name: kotlin-lsp
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("< 262.8190.0")
+        no_asset: true
+      - version_constraint: "true"
+        url: https://download.jetbrains.com/language-server/kotlin-server/{{.SemVer}}/kotlin-server-{{.SemVer}}.tar.gz
+        format: tar.gz
+        append_ext: false
+        checksum:
+          type: http
+          url: https://download.jetbrains.com/language-server/kotlin-server/{{.SemVer}}/kotlin-server-{{.SemVer}}.tar.gz.sha256
+          algorithm: sha256
+        files:
+          - name: kotlin-lsp
+            src: kotlin-server-{{.SemVer}}/bin/intellij-server
+        overrides:
+          - goos: linux
+            goarch: arm64
+            url: https://download.jetbrains.com/language-server/kotlin-server/{{.SemVer}}/kotlin-server-{{.SemVer}}-aarch64.tar.gz
+            checksum:
+              type: http
+              url: https://download.jetbrains.com/language-server/kotlin-server/{{.SemVer}}/kotlin-server-{{.SemVer}}-aarch64.tar.gz.sha256
+              algorithm: sha256
+          - goos: darwin
+            goarch: amd64
+            url: https://download.jetbrains.com/language-server/kotlin-server/{{.SemVer}}/kotlin-server-{{.SemVer}}.sit
+            format: zip
+            checksum:
+              type: http
+              url: https://download.jetbrains.com/language-server/kotlin-server/{{.SemVer}}/kotlin-server-{{.SemVer}}.sit.sha256
+              algorithm: sha256
+          - goos: darwin
+            goarch: arm64
+            url: https://download.jetbrains.com/language-server/kotlin-server/{{.SemVer}}/kotlin-server-{{.SemVer}}-aarch64.sit
+            format: zip
+            checksum:
+              type: http
+              url: https://download.jetbrains.com/language-server/kotlin-server/{{.SemVer}}/kotlin-server-{{.SemVer}}-aarch64.sit.sha256
+              algorithm: sha256
+          - goos: windows
+            goarch: amd64
+            url: https://download.jetbrains.com/language-server/kotlin-server/{{.SemVer}}/kotlin-server-{{.SemVer}}.win.zip
+            format: zip
+            checksum:
+              type: http
+              url: https://download.jetbrains.com/language-server/kotlin-server/{{.SemVer}}/kotlin-server-{{.SemVer}}.win.zip.sha256
+              algorithm: sha256
+            files:
+              - name: kotlin-lsp
+                src: bin/intellij-server
+          - goos: windows
+            goarch: arm64
+            url: https://download.jetbrains.com/language-server/kotlin-server/{{.SemVer}}/kotlin-server-{{.SemVer}}-aarch64.win.zip
+            format: zip
+            checksum:
+              type: http
+              url: https://download.jetbrains.com/language-server/kotlin-server/{{.SemVer}}/kotlin-server-{{.SemVer}}-aarch64.win.zip.sha256
+              algorithm: sha256
+            files:
+              - name: kotlin-lsp
+                src: bin/intellij-server
   - type: github_release
     repo_owner: Kotlin
     repo_name: ktfmt
@@ -8214,32 +8283,6 @@ packages:
           asset: spotify-tui-{{.OS}}.sha256
           algorithm: sha256
   - type: github_release
-    repo_owner: RoseSecurity
-    repo_name: Kuzco
-    description: Kuzco reviews your Terraform resources, compares them to the provider schema to detect unused parameters, and uses AI to suggest improvements
-    files:
-      - name: kuzco
-    version_constraint: "false"
-    version_overrides:
-      - version_constraint: "true"
-        asset: Kuzco_{{.OS}}_{{.Arch}}.{{.Format}}
-        files:
-          - name: kuzco
-            src: Kuzco
-        format: tar.gz
-        replacements:
-          amd64: x86_64
-          darwin: Darwin
-          linux: Linux
-          windows: Windows
-        checksum:
-          type: github_release
-          asset: Kuzco_{{trimV .Version}}_checksums.txt
-          algorithm: sha256
-        overrides:
-          - goos: windows
-            format: zip
-  - type: github_release
     repo_owner: RyuyaIshibashi
     repo_name: aws-s3-siggy
     files:
@@ -9101,6 +9144,12 @@ packages:
     overrides:
       - goos: linux
         format: tar.gz
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("< 0.11.0")
+      - version_constraint: "true"
+        github_artifact_attestations:
+          signer_workflow: Songmu/ghch/.github/workflows/release-build.yaml
   - type: github_release
     repo_owner: Songmu
     repo_name: ghg
@@ -9114,6 +9163,12 @@ packages:
     overrides:
       - goos: linux
         format: tar.gz
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.3.2")
+      - version_constraint: "true"
+        github_artifact_attestations:
+          signer_workflow: Songmu/ghg/.github/workflows/release-build.yaml
   - type: github_release
     repo_owner: Songmu
     repo_name: gitsemvers
@@ -9142,6 +9197,12 @@ packages:
     overrides:
       - goos: darwin
         format: zip
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 1.0.1")
+      - version_constraint: "true"
+        github_artifact_attestations:
+          signer_workflow: Songmu/gocredits/.github/workflows/release-build.yaml
   - type: github_release
     repo_owner: Songmu
     repo_name: godzil
@@ -9154,6 +9215,12 @@ packages:
     files:
       - name: godzil
         src: godzil_{{.Version}}_{{.OS}}_{{.Arch}}/godzil
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("< 0.23.0")
+      - version_constraint: "true"
+        github_artifact_attestations:
+          signer_workflow: Songmu/godzil/.github/workflows/release-build.yaml
   - type: github_release
     repo_owner: Songmu
     repo_name: gotesplit
@@ -9182,6 +9249,12 @@ packages:
     overrides:
       - goos: linux
         format: tar.gz
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("< 0.12.0")
+      - version_constraint: "true"
+        github_artifact_attestations:
+          signer_workflow: Songmu/goxz/.github/workflows/release-build.yaml
   - type: github_release
     repo_owner: Songmu
     repo_name: horenso
@@ -9198,6 +9271,12 @@ packages:
     overrides:
       - goos: linux
         format: tar.gz
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("< 0.11.0")
+      - version_constraint: "true"
+        github_artifact_attestations:
+          signer_workflow: Songmu/horenso/.github/workflows/release-build.yaml
   - type: github_release
     repo_owner: Songmu
     repo_name: laminate
@@ -9324,6 +9403,22 @@ packages:
     version_overrides:
       - version_constraint: semver("<= 0.0.1")
         no_asset: true
+      - version_constraint: semver("<= 0.0.7")
+        asset: r2sync_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        checksum:
+          type: github_release
+          asset: SHA256SUMS
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            format: tar.gz
+        supported_envs:
+          - linux
+          - darwin
+        files:
+          - name: r2sync
+            src: r2sync_{{.Version}}_{{.OS}}_{{.Arch}}/r2sync
       - version_constraint: "true"
         asset: r2sync_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
         format: zip
@@ -9340,6 +9435,8 @@ packages:
         files:
           - name: r2sync
             src: r2sync_{{.Version}}_{{.OS}}_{{.Arch}}/r2sync
+        github_artifact_attestations:
+          signer_workflow: Songmu/r2sync/.github/workflows/release-build.yaml
   - type: github_release
     repo_owner: Songmu
     repo_name: tagpr
@@ -9359,6 +9456,12 @@ packages:
       type: github_release
       asset: SHA256SUMS
       algorithm: sha256
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 1.20.3")
+      - version_constraint: "true"
+        github_artifact_attestations:
+          signer_workflow: Songmu/tagpr/.github/workflows/release-build.yaml
   - type: github_release
     repo_owner: Songmu
     repo_name: timeout
@@ -12560,6 +12663,232 @@ packages:
           asset: "{{.Asset}}.sha"
           algorithm: sha256
   - type: github_release
+    repo_owner: adoptium
+    repo_name: temurin21-binaries
+    description: Eclipse Temurin JDK 21
+    search_words:
+      - jdk
+      - openjdk
+    version_filter: Version matches "^jdk-21\\.[\\d.]+\\+\\d+$"
+    version_prefix: jdk-
+    asset: OpenJDK21U-jdk_{{.Arch}}_{{.OS}}_hotspot_{{.SemVer | replace "+" "_"}}.{{.Format}}
+    format: tar.gz
+    # Windows ARM64 builds are published days or weeks after each release, so always use the x64 build.
+    windows_arm_emulation: true
+    replacements:
+      amd64: x64
+      arm64: aarch64
+      darwin: mac
+    checksum:
+      type: github_release
+      asset: "{{.Asset}}.sha256.txt"
+      algorithm: sha256
+    files:
+      - name: jar
+        src: "{{.Version}}/bin/{{.FileName}}"
+      - name: jarsigner
+        src: "{{.Version}}/bin/{{.FileName}}"
+      - name: java
+        src: "{{.Version}}/bin/{{.FileName}}"
+      - name: javac
+        src: "{{.Version}}/bin/{{.FileName}}"
+      - name: javadoc
+        src: "{{.Version}}/bin/{{.FileName}}"
+      - name: javap
+        src: "{{.Version}}/bin/{{.FileName}}"
+      - name: jcmd
+        src: "{{.Version}}/bin/{{.FileName}}"
+      - name: jconsole
+        src: "{{.Version}}/bin/{{.FileName}}"
+      - name: jdb
+        src: "{{.Version}}/bin/{{.FileName}}"
+      - name: jdeprscan
+        src: "{{.Version}}/bin/{{.FileName}}"
+      - name: jdeps
+        src: "{{.Version}}/bin/{{.FileName}}"
+      - name: jfr
+        src: "{{.Version}}/bin/{{.FileName}}"
+      - name: jhsdb
+        src: "{{.Version}}/bin/{{.FileName}}"
+      - name: jimage
+        src: "{{.Version}}/bin/{{.FileName}}"
+      - name: jinfo
+        src: "{{.Version}}/bin/{{.FileName}}"
+      - name: jlink
+        src: "{{.Version}}/bin/{{.FileName}}"
+      - name: jmap
+        src: "{{.Version}}/bin/{{.FileName}}"
+      - name: jmod
+        src: "{{.Version}}/bin/{{.FileName}}"
+      - name: jpackage
+        src: "{{.Version}}/bin/{{.FileName}}"
+      - name: jps
+        src: "{{.Version}}/bin/{{.FileName}}"
+      - name: jrunscript
+        src: "{{.Version}}/bin/{{.FileName}}"
+      - name: jshell
+        src: "{{.Version}}/bin/{{.FileName}}"
+      - name: jstack
+        src: "{{.Version}}/bin/{{.FileName}}"
+      - name: jstat
+        src: "{{.Version}}/bin/{{.FileName}}"
+      - name: jstatd
+        src: "{{.Version}}/bin/{{.FileName}}"
+      - name: jwebserver
+        src: "{{.Version}}/bin/{{.FileName}}"
+      - name: keytool
+        src: "{{.Version}}/bin/{{.FileName}}"
+      - name: rmiregistry
+        src: "{{.Version}}/bin/{{.FileName}}"
+      - name: serialver
+        src: "{{.Version}}/bin/{{.FileName}}"
+    overrides:
+      - goos: linux
+        variants:
+          - key: libc
+            value: glibc
+      - goos: linux
+        variants:
+          - key: libc
+            value: musl
+        replacements:
+          linux: alpine-linux
+      - goos: darwin
+        files:
+          - name: jar
+            src: "{{.Version}}/Contents/Home/bin/{{.FileName}}"
+          - name: jarsigner
+            src: "{{.Version}}/Contents/Home/bin/{{.FileName}}"
+          - name: java
+            src: "{{.Version}}/Contents/Home/bin/{{.FileName}}"
+          - name: javac
+            src: "{{.Version}}/Contents/Home/bin/{{.FileName}}"
+          - name: javadoc
+            src: "{{.Version}}/Contents/Home/bin/{{.FileName}}"
+          - name: javap
+            src: "{{.Version}}/Contents/Home/bin/{{.FileName}}"
+          - name: jcmd
+            src: "{{.Version}}/Contents/Home/bin/{{.FileName}}"
+          - name: jconsole
+            src: "{{.Version}}/Contents/Home/bin/{{.FileName}}"
+          - name: jdb
+            src: "{{.Version}}/Contents/Home/bin/{{.FileName}}"
+          - name: jdeprscan
+            src: "{{.Version}}/Contents/Home/bin/{{.FileName}}"
+          - name: jdeps
+            src: "{{.Version}}/Contents/Home/bin/{{.FileName}}"
+          - name: jfr
+            src: "{{.Version}}/Contents/Home/bin/{{.FileName}}"
+          - name: jhsdb
+            src: "{{.Version}}/Contents/Home/bin/{{.FileName}}"
+          - name: jimage
+            src: "{{.Version}}/Contents/Home/bin/{{.FileName}}"
+          - name: jinfo
+            src: "{{.Version}}/Contents/Home/bin/{{.FileName}}"
+          - name: jlink
+            src: "{{.Version}}/Contents/Home/bin/{{.FileName}}"
+          - name: jmap
+            src: "{{.Version}}/Contents/Home/bin/{{.FileName}}"
+          - name: jmod
+            src: "{{.Version}}/Contents/Home/bin/{{.FileName}}"
+          - name: jpackage
+            src: "{{.Version}}/Contents/Home/bin/{{.FileName}}"
+          - name: jps
+            src: "{{.Version}}/Contents/Home/bin/{{.FileName}}"
+          - name: jrunscript
+            src: "{{.Version}}/Contents/Home/bin/{{.FileName}}"
+          - name: jshell
+            src: "{{.Version}}/Contents/Home/bin/{{.FileName}}"
+          - name: jstack
+            src: "{{.Version}}/Contents/Home/bin/{{.FileName}}"
+          - name: jstat
+            src: "{{.Version}}/Contents/Home/bin/{{.FileName}}"
+          - name: jstatd
+            src: "{{.Version}}/Contents/Home/bin/{{.FileName}}"
+          - name: jwebserver
+            src: "{{.Version}}/Contents/Home/bin/{{.FileName}}"
+          - name: keytool
+            src: "{{.Version}}/Contents/Home/bin/{{.FileName}}"
+          - name: rmiregistry
+            src: "{{.Version}}/Contents/Home/bin/{{.FileName}}"
+          - name: serialver
+            src: "{{.Version}}/Contents/Home/bin/{{.FileName}}"
+      - goos: windows
+        format: zip
+        files:
+          - name: jabswitch
+            src: "{{.Version}}/bin/{{.FileName}}"
+          - name: jaccessinspector
+            src: "{{.Version}}/bin/{{.FileName}}"
+          - name: jaccesswalker
+            src: "{{.Version}}/bin/{{.FileName}}"
+          - name: jar
+            src: "{{.Version}}/bin/{{.FileName}}"
+          - name: jarsigner
+            src: "{{.Version}}/bin/{{.FileName}}"
+          - name: java
+            src: "{{.Version}}/bin/{{.FileName}}"
+          - name: javac
+            src: "{{.Version}}/bin/{{.FileName}}"
+          - name: javadoc
+            src: "{{.Version}}/bin/{{.FileName}}"
+          - name: javap
+            src: "{{.Version}}/bin/{{.FileName}}"
+          - name: javaw
+            src: "{{.Version}}/bin/{{.FileName}}"
+          - name: jcmd
+            src: "{{.Version}}/bin/{{.FileName}}"
+          - name: jconsole
+            src: "{{.Version}}/bin/{{.FileName}}"
+          - name: jdb
+            src: "{{.Version}}/bin/{{.FileName}}"
+          - name: jdeprscan
+            src: "{{.Version}}/bin/{{.FileName}}"
+          - name: jdeps
+            src: "{{.Version}}/bin/{{.FileName}}"
+          - name: jfr
+            src: "{{.Version}}/bin/{{.FileName}}"
+          - name: jhsdb
+            src: "{{.Version}}/bin/{{.FileName}}"
+          - name: jimage
+            src: "{{.Version}}/bin/{{.FileName}}"
+          - name: jinfo
+            src: "{{.Version}}/bin/{{.FileName}}"
+          - name: jlink
+            src: "{{.Version}}/bin/{{.FileName}}"
+          - name: jmap
+            src: "{{.Version}}/bin/{{.FileName}}"
+          - name: jmod
+            src: "{{.Version}}/bin/{{.FileName}}"
+          - name: jpackage
+            src: "{{.Version}}/bin/{{.FileName}}"
+          - name: jps
+            src: "{{.Version}}/bin/{{.FileName}}"
+          - name: jrunscript
+            src: "{{.Version}}/bin/{{.FileName}}"
+          - name: jshell
+            src: "{{.Version}}/bin/{{.FileName}}"
+          - name: jstack
+            src: "{{.Version}}/bin/{{.FileName}}"
+          - name: jstat
+            src: "{{.Version}}/bin/{{.FileName}}"
+          - name: jstatd
+            src: "{{.Version}}/bin/{{.FileName}}"
+          - name: jwebserver
+            src: "{{.Version}}/bin/{{.FileName}}"
+          - name: keytool
+            src: "{{.Version}}/bin/{{.FileName}}"
+          - name: kinit
+            src: "{{.Version}}/bin/{{.FileName}}"
+          - name: klist
+            src: "{{.Version}}/bin/{{.FileName}}"
+          - name: ktab
+            src: "{{.Version}}/bin/{{.FileName}}"
+          - name: rmiregistry
+            src: "{{.Version}}/bin/{{.FileName}}"
+          - name: serialver
+            src: "{{.Version}}/bin/{{.FileName}}"
+  - type: github_release
     repo_owner: aduros
     repo_name: wasm4
     description: Build retro games using WebAssembly for a fantasy console
@@ -14368,7 +14697,7 @@ packages:
         overrides:
           - goos: windows
             format: zip
-      - version_constraint: "true"
+      - version_constraint: semver("<0.120.0")
         asset: grype_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
         windows_arm_emulation: true
@@ -14386,6 +14715,28 @@ packages:
               - https://token.actions.githubusercontent.com
               - --signature
               - https://github.com/anchore/grype/releases/download/{{.Version}}/grype_{{trimV .Version}}_checksums.txt.sig
+              - --certificate-github-workflow-repository
+              - anchore/grype
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: grype_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: grype_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+          cosign:
+            bundle:
+              type: github_release
+              asset: grype_{{trimV .Version}}_checksums.txt.sigstore.json
+            opts:
+              - --certificate-identity
+              - https://github.com/anchore/grype/.github/workflows/release.yaml@refs/heads/main
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
               - --certificate-github-workflow-repository
               - anchore/grype
         overrides:
@@ -15852,6 +16203,32 @@ packages:
     description: Renovate alternative specific to aqua-registry. Overcome Renovate's scalability issue
     version_constraint: "false"
     version_overrides:
+      - version_constraint: semver("<= 0.1.5-1")
+        asset: aqua-registry-updater_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: aqua-registry-updater_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+          cosign:
+            opts:
+              - --certificate-identity-regexp
+              - "https://github\\.com/suzuki-shunsuke/go-release-workflow/\\.github/workflows/release\\.yaml@.*"
+              - --certificate-oidc-issuer
+              - "https://token.actions.githubusercontent.com"
+              - --signature
+              - https://github.com/aquaproj/aqua-registry-updater/releases/download/{{.Version}}/aqua-registry-updater_{{trimV .Version}}_checksums.txt.sig
+              - --certificate
+              - https://github.com/aquaproj/aqua-registry-updater/releases/download/{{.Version}}/aqua-registry-updater_{{trimV .Version}}_checksums.txt.pem
+              - --certificate-github-workflow-repository
+              - aquaproj/aqua-registry-updater
+              - --certificate-github-workflow-ref
+              - refs/tags/{{.Version}}
+        slsa_provenance:
+          type: github_release
+          asset: aqua-registry-updater_{{.OS}}_{{.Arch}}.tar.gz.intoto.jsonl
+        supported_envs:
+          - linux/amd64
       - version_constraint: semver("<= 0.1.8")
         asset: aqua-registry-updater_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
@@ -15878,6 +16255,8 @@ packages:
           asset: aqua-registry-updater_{{.OS}}_{{.Arch}}.tar.gz.intoto.jsonl
         supported_envs:
           - linux/amd64
+        github_artifact_attestations:
+          signer_workflow: suzuki-shunsuke/go-release-workflow/.github/workflows/release.yaml
       - version_constraint: "true"
         asset: aqua-registry-updater_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
@@ -15900,6 +16279,8 @@ packages:
               - refs/tags/{{.Version}}
         supported_envs:
           - linux/amd64
+        github_artifact_attestations:
+          signer_workflow: suzuki-shunsuke/go-release-workflow/.github/workflows/release.yaml
   - type: github_release
     repo_owner: aquaproj
     repo_name: ar2
@@ -16026,6 +16407,8 @@ packages:
         slsa_provenance:
           type: github_release
           asset: multiple.intoto.jsonl
+        github_artifact_attestations:
+          signer_workflow: suzuki-shunsuke/go-release-workflow/.github/workflows/release.yaml
       - version_constraint: semver("<= 0.1.5")
         asset: registry-tool_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
@@ -16035,6 +16418,32 @@ packages:
           type: github_release
           asset: registry-tool_{{trimV .Version}}_checksums.txt
           algorithm: sha256
+      - version_constraint: semver("<= 0.3.0")
+        asset: registry-tool_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: aqua-registry
+        checksum:
+          type: github_release
+          asset: registry-tool_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+          cosign:
+            opts:
+              - --certificate-oidc-issuer
+              - "https://token.actions.githubusercontent.com"
+              - --certificate-identity-regexp
+              - "https://github\\.com/suzuki-shunsuke/go-release-workflow/\\.github/workflows/release\\.yaml@.*"
+              - --certificate
+              - https://github.com/aquaproj/registry-tool/releases/download/{{.Version}}/registry-tool_{{trimV .Version}}_checksums.txt.pem
+              - --signature
+              - https://github.com/aquaproj/registry-tool/releases/download/{{.Version}}/registry-tool_{{trimV .Version}}_checksums.txt.sig
+              - --certificate-github-workflow-repository
+              - aquaproj/registry-tool
+              - --certificate-github-workflow-ref
+              - refs/tags/{{.Version}}
+        slsa_provenance:
+          type: github_release
+          asset: multiple.intoto.jsonl
       - version_constraint: semver("<= 0.3.6")
         asset: registry-tool_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
@@ -16061,6 +16470,8 @@ packages:
         slsa_provenance:
           type: github_release
           asset: multiple.intoto.jsonl
+        github_artifact_attestations:
+          signer_workflow: suzuki-shunsuke/go-release-workflow/.github/workflows/release.yaml
       - version_constraint: semver("<= 0.5.4")
         asset: argd_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
@@ -16084,6 +16495,8 @@ packages:
         slsa_provenance:
           type: github_release
           asset: multiple.intoto.jsonl
+        github_artifact_attestations:
+          signer_workflow: suzuki-shunsuke/go-release-workflow/.github/workflows/release.yaml
       - version_constraint: semver("<= 0.5.9")
         asset: argd_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
@@ -16107,6 +16520,8 @@ packages:
         slsa_provenance:
           type: github_release
           asset: multiple.intoto.jsonl
+        github_artifact_attestations:
+          signer_workflow: suzuki-shunsuke/go-release-workflow/.github/workflows/release.yaml
       - version_constraint: "true"
         asset: argd_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
@@ -16127,6 +16542,8 @@ packages:
               - aquaproj/registry-tool
               - --certificate-github-workflow-ref
               - refs/tags/{{.Version}}
+        github_artifact_attestations:
+          signer_workflow: suzuki-shunsuke/go-release-workflow/.github/workflows/release.yaml
   - type: github_release
     repo_owner: aquasecurity
     repo_name: chain-bench
@@ -18472,6 +18889,106 @@ packages:
               - name: uvx
         github_artifact_attestations:
           signer_workflow: astral-sh/uv/.github/workflows/release.yml
+  - type: github_release
+    repo_owner: ataraxy-labs
+    repo_name: sem
+    description: Semantic version control => entity-level diffs, blame, and impact analysis on top of git. 28 languages via tree-sitter. Built for coding agents
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.3.16"
+        no_asset: true
+      - version_constraint: Version == "v0.3.17"
+        asset: sem-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+        overrides:
+          - goos: darwin
+            replacements:
+              amd64: amd64
+          - goos: windows
+            format: zip
+        supported_envs:
+          - linux
+          - darwin/arm64
+          - windows/amd64
+      - version_constraint: semver("<= 0.3.6")
+        no_asset: true
+      - version_constraint: semver("<= 0.3.10")
+        asset: sem-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        overrides:
+          - goos: linux
+            replacements:
+              amd64: x86_64
+        supported_envs:
+          - linux/amd64
+          - darwin/arm64
+      - version_constraint: semver("<= 0.3.15")
+        asset: sem-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+        overrides:
+          - goos: darwin
+            replacements:
+              amd64: amd64
+          - goos: windows
+            format: zip
+        supported_envs:
+          - linux
+          - darwin/arm64
+          - windows/amd64
+      - version_constraint: semver("<= 0.5.0")
+        asset: sem-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            replacements:
+              amd64: amd64
+        supported_envs:
+          - linux
+          - darwin/arm64
+          - windows/amd64
+      - version_constraint: semver("<= 0.5.2")
+        no_asset: true
+      - version_constraint: semver("<= 0.13.0")
+        asset: sem-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            replacements:
+              amd64: amd64
+        supported_envs:
+          - linux
+          - darwin/arm64
+          - windows/amd64
+      - version_constraint: "true"
+        asset: sem-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
   - type: github_release
     repo_owner: atc0005
     repo_name: send2teams
@@ -30080,6 +30597,22 @@ packages:
           darwin: apple-darwin
           linux: unknown-linux-gnu
           windows: pc-windows-msvc
+      - version_constraint: semver("< 0.15.1")
+        asset: eksup-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        files:
+          - name: eksup
+            src: "{{.AssetWithoutExt}}/eksup"
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip
       - version_constraint: "true"
         asset: eksup-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
         format: tar.gz
@@ -30096,6 +30629,8 @@ packages:
         overrides:
           - goos: windows
             format: zip
+        github_artifact_attestations:
+          signer_workflow: clowdhaus/eksup/.github/workflows/release.yaml
   - type: github_release
     repo_owner: cnosuke
     repo_name: kushi
@@ -32506,6 +33041,15 @@ packages:
           type: github_release
           asset: "{{.Asset}}.sha256"
           algorithm: sha256
+        cosign:
+          bundle:
+            type: github_release
+            asset: "{{.Asset}}.sigstore.json"
+          opts:
+            - --certificate-identity-regexp
+            - ^https://github\.com/cplieger/ci/\.github/workflows/docker-release\.yaml@
+            - --certificate-oidc-issuer
+            - https://token.actions.githubusercontent.com
   - type: github_release
     repo_owner: crate-ci
     repo_name: committed
@@ -32871,6 +33415,16 @@ packages:
         overrides:
           - goos: windows
             format: zip
+      - version_constraint: semver("< 4.34.0")
+        asset: diun_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
       - version_constraint: "true"
         asset: diun_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
@@ -32878,6 +33432,15 @@ packages:
           type: github_release
           asset: checksums.txt
           algorithm: sha256
+        cosign:
+          bundle:
+            type: github_release
+            asset: diun_{{trimV .Version}}_{{.OS}}_{{.Arch}}.sigstore.json
+          opts:
+            - --certificate-identity-regexp
+            - ^https://github\.com/docker/github-builder/\.github/workflows/bake\.yml@
+            - --certificate-oidc-issuer
+            - https://token.actions.githubusercontent.com
         overrides:
           - goos: windows
             format: zip
@@ -36817,10 +37380,13 @@ packages:
         asset: direnv.{{.OS}}-{{.Arch}}
         format: raw
         windows_arm_emulation: true
-      - version_constraint: "true"
+      - version_constraint: semver("<= 2.37.1")
         asset: direnv.{{.OS}}-{{.Arch}}
         format: raw
         complete_windows_ext: false
+      - version_constraint: "true"
+        asset: direnv.{{.OS}}-{{.Arch}}
+        format: raw
   - type: github_release
     repo_owner: dispatchrun
     repo_name: wzprof
@@ -51498,6 +52064,39 @@ packages:
           - goos: windows
             format: zip
   - type: github_release
+    repo_owner: gumlet
+    repo_name: cli
+    description: Command line interface for Gumlet
+    files:
+      - name: gumlet
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 1.2.1")
+        asset: gumlet_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+        overrides:
+          - goos: windows
+            format: zip
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+      - version_constraint: "true"
+        asset: gumlet_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+        overrides:
+          - goos: windows
+            format: zip
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+  - type: github_release
     repo_owner: guptarohit
     repo_name: asciigraph
     description: Go package to make lightweight ASCII line graph ╭┈╯ in command line apps with no other dependencies
@@ -58041,6 +58640,41 @@ packages:
         windows_arm_emulation: true
         complete_windows_ext: false
   - type: github_release
+    repo_owner: jnsahaj
+    repo_name: lumen
+    description: Beautiful git diff viewer, generate commits with AI, get summary of changes, all from the CLI
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 2.4.0")
+        asset: lumen.{{.Format}}
+        format: tar.gz
+        supported_envs:
+          - darwin/arm64
+      - version_constraint: semver("<= 2.30.0")
+        asset: lumen-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+        supported_envs:
+          - darwin
+      - version_constraint: "true"
+        asset: lumen-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin
+  - type: github_release
     repo_owner: joehillen
     repo_name: sysz
     description: An fzf  terminal UI for systemctl
@@ -61246,6 +61880,19 @@ packages:
       type: github_release
       asset: checksums.txt
       algorithm: sha256
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("< 3.0.0")
+      - version_constraint: "true"
+        cosign:
+          bundle:
+            type: github_release
+            asset: packslip.sigstore.json
+          opts:
+            - --certificate-identity
+            - https://github.com/kayac/ecspresso/.github/workflows/tagpr-release.yml@refs/heads/v3
+            - --certificate-oidc-issuer
+            - https://token.actions.githubusercontent.com
   - type: github_release
     repo_owner: kayac
     repo_name: go-katsubushi
@@ -67901,6 +68548,41 @@ packages:
     repo_owner: loov
     repo_name: goda
     description: Go Dependency Analysis toolkit
+  - type: github_release
+    repo_owner: losfair
+    repo_name: zeroserve
+    description: Zero-config, fast `io_uring`-based HTTPS server
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.2.12-alpha.12")
+        asset: zeroserve-{{.Arch}}-{{.OS}}
+        format: raw
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+        supported_envs:
+          - linux
+      - version_constraint: "true"
+        asset: zeroserve-{{.Arch}}-{{.OS}}
+        format: raw
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+        checksum:
+          type: github_release
+          asset: SHA256SUMS
+          algorithm: sha256
+          cosign:
+            opts:
+              - --certificate-identity-regexp
+              - "^https://github\\.com/losfair/zeroserve/\\.github/workflows/.+\\.ya?ml@refs/tags/\\Q{{.Version}}\\E$"
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
+            bundle:
+              type: github_release
+              asset: SHA256SUMS.sigstore.json
+        supported_envs:
+          - linux
   - type: github_release
     repo_owner: lotabout
     repo_name: rargs
@@ -75709,21 +76391,6 @@ packages:
     supported_envs:
       - darwin
   - type: github_release
-    repo_owner: nishanths
-    repo_name: license
-    description: Command line license text generator
-    version_constraint: "false"
-    version_overrides:
-      - version_constraint: semver("<= 3.0.0")
-        no_asset: true
-      - version_constraint: "true"
-        asset: license-{{.Version}}-{{.OS}}-{{.Arch}}
-        format: raw
-        checksum:
-          type: github_release
-          asset: SHA256SUMS.txt
-          algorithm: sha256
-  - type: github_release
     repo_owner: nklmilojevic
     repo_name: sofka
     description: "A Kubernetes TUI, reimagined in Rust - built on kube-rs and ratatui, async-first from the ground up"
@@ -82024,6 +82691,31 @@ packages:
           asset: SHA256SUMS
           algorithm: sha256
   - type: github_release
+    repo_owner: plumlang
+    repo_name: plumlang
+    description: Small, fast, memory-safe programming language with a plain-English syntax
+    version_constraint: "false"
+    files:
+      - name: plum
+        src: "{{.AssetWithoutExt}}/plum"
+    version_overrides:
+      - version_constraint: "true"
+        asset: plum-{{trimV .Version}}-{{.OS}}-universal.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          darwin: macos
+        checksum:
+          type: github_release
+          asset: SHA256SUMS
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            asset: plum-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+          - goos: windows
+            format: zip
+            asset: plum-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+  - type: github_release
     repo_owner: pluveto
     repo_name: upgit
     description: Another upload hub that supports clipboard. It works well with Typora, Snipaste, VSCode
@@ -82340,14 +83032,6 @@ packages:
         supported_envs:
           - linux
           - darwin
-  - type: github_release
-    repo_owner: porter-dev
-    repo_name: porter
-    asset: porter_{{.Version}}_{{title .OS}}_x86_64.zip
-    description: Kubernetes powered PaaS that runs in your own cloud
-    supported_envs:
-      - darwin
-      - linux
   - type: github_content
     repo_owner: postfinance
     repo_name: kubectl-sudo
@@ -83730,25 +84414,6 @@ packages:
         files:
           - name: pulumi
             src: pulumi/pulumi
-  - type: github_release
-    repo_owner: pulumi
-    repo_name: tf2pulumi
-    asset: tf2pulumi-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
-    format: tar.gz
-    description: A tool to convert Terraform projects to Pulumi TypeScript programs
-    replacements:
-      amd64: x64
-    overrides:
-      - goos: windows
-        format: zip
-    supported_envs:
-      - darwin
-      - linux
-      - amd64
-    checksum:
-      type: github_release
-      asset: tf2pulumi_{{trimV .Version}}_checksums.txt
-      algorithm: sha256
   - type: github_release
     repo_owner: purpleclay
     repo_name: dns53
@@ -92260,7 +92925,7 @@ packages:
     repo_owner: slok
     repo_name: sloth
     description: Easy and simple Prometheus SLO (service level objectives) generator
-    version_filter: not Version startsWith "sloth-helm-chart-"
+    version_filter: not (Version startsWith "sloth-helm-chart-")
     version_constraint: "false"
     version_overrides:
       - version_constraint: "true"
@@ -102452,7 +103117,7 @@ packages:
     version_overrides:
       - version_constraint: semver("<= 0.2.0")
         no_asset: true
-      - version_constraint: "true"
+      - version_constraint: semver("<= 0.5.12")
         asset: kestrel-nvr-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
         format: zip
         windows_arm_emulation: true
@@ -102464,6 +103129,41 @@ packages:
           algorithm: sha256
         github_artifact_attestations:
           signer_workflow: timmo001/kestrel/.github/workflows/desktop.yml
+        files:
+          - name: kestrel
+            src: kestrel-nvr-{{.Version}}-{{.OS}}-{{.Arch}}/bin/kestrel.cmd
+        overrides:
+          - goos: linux
+            format: tar.gz
+            replacements:
+              arm64: aarch64
+            files:
+              - name: kestrel
+                src: kestrel-nvr-{{.Version}}-{{.OS}}-{{.Arch}}/bin/kestrel
+        supported_envs:
+          - linux
+          - windows/amd64
+      - version_constraint: "true"
+        asset: kestrel-nvr-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+        checksum:
+          type: github_release
+          asset: SHA256SUMS
+          algorithm: sha256
+          cosign:
+            bundle:
+              type: github_release
+              asset: kestrel-nvr-{{trimV .Version}}.sigstore.json
+            opts:
+              - --certificate-identity
+              - https://github.com/timmo001/kestrel/.github/workflows/build.yml@refs/tags/{{.Version}}
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
+        github_artifact_attestations:
+          signer_workflow: timmo001/kestrel/.github/workflows/build.yml
         files:
           - name: kestrel
             src: kestrel-nvr-{{.Version}}-{{.OS}}-{{.Arch}}/bin/kestrel.cmd

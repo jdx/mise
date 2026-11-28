@@ -354,6 +354,11 @@ These are skipped without an error, so resolution commands keep working:
 - Project `[shell_alias]`.
 - The commands in a project task's usage spec that shell completion would run.
 - Project `[wrappers]` and the `rust` tool's `mr_boxington` option.
+- The options of a vfox tool that project config declares, in the plugin's
+  environment hooks, and the current directory: those hooks run their commands
+  in your home directory, so the `pipenv` and `poetry` plugins activate no
+  virtualenv. Outside safe mode the same holds in a directory you have not
+  trusted. See [the hook environment](/plugin-lua-modules.html#hook-environment).
 - Your credentials, for hosts project config chooses: a project `api_url` gets
   no GitHub, GitLab or Forgejo token, unless global config names the same
   scheme, host and port, or it is that forge's own public API over https
@@ -514,6 +519,13 @@ Versions without a release date are not filtered. When mise installs one it
 warns that the cutoff could not be checked, so you know that version was not held
 back. Switch to a backend that reports dates, or exclude the tool to silence the
 warning.
+
+A version that comes from a git tag rather than a release, such as an `aqua:`
+package with the `github_tag` version source, is dated by the committer date of
+the tagged commit. Whoever pushes the tag sets that date, so a new tag on a
+backdated commit passes the cutoff at once. To avoid picking up a new tag
+automatically, review a version first, then pin it exactly or record it in
+[`mise.lock`](/dev-tools/mise-lock.html).
 
 Backends other than `npm:` and `pypi:` can hold back the tool's own version, but
 not the dependencies its installer or compiler fetches. See the

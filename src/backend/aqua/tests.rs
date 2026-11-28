@@ -496,7 +496,7 @@ fn test_listed_tag_check_never_needs_the_github_api_for_url_packages() {
     assert_eq!(
         backend.listed_tag_check(&content, "v1.2.3", "linux", "amd64"),
         ListedTagCheck::ArtifactUrl(
-            "https://raw.githubusercontent.com/owner/repo/v1.2.3/bin/tool".into()
+            "https://raw.githubusercontent.com/owner/repo/refs/tags/v1.2.3/bin/tool".into()
         )
     );
 
@@ -672,7 +672,7 @@ async fn test_private_github_download_without_api_url_uses_browser_url() {
 #[test]
 fn test_private_github_probe_uses_api_url() {
     let browser_url = "https://github.com/owner/repo/archive/refs/tags/v1.0.0.tar.gz";
-    let api_url = "https://api.github.com/repos/owner/repo/tarball/v1.0.0";
+    let api_url = "https://api.github.com/repos/owner/repo/tarball/refs/tags/v1.0.0";
 
     assert_eq!(
         select_github_probe_url(true, browser_url, Some(api_url)),
@@ -742,7 +742,7 @@ fn test_github_archive_api_url() {
 
     assert_eq!(
         backend.github_archive_api_url(&pkg, "feature/private"),
-        "https://api.github.com/repos/owner/repo/tarball/feature%2Fprivate"
+        "https://api.github.com/repos/owner/repo/tarball/refs/tags/feature%2Fprivate"
     );
 }
 
@@ -759,7 +759,7 @@ fn test_github_content_api_url() {
 
     assert_eq!(
         backend.github_content_api_url(&pkg, "feature/private"),
-        "https://api.github.com/repos/owner/repo/contents/bin/tool%20name?ref=feature%2Fprivate"
+        "https://api.github.com/repos/owner/repo/contents/bin/tool%20name?ref=refs%2Ftags%2Ffeature%2Fprivate"
     );
 }
 
@@ -2076,7 +2076,7 @@ fn github_archive_and_content_urls_keep_the_version_in_the_repo() {
     );
     assert_eq!(
         backend.github_content_url(&pkg, "3.0.0"),
-        "https://raw.githubusercontent.com/npryce/adr-tools/3.0.0/src/adr"
+        "https://raw.githubusercontent.com/npryce/adr-tools/refs/tags/3.0.0/src/adr"
     );
     let hostile =
         "1/%2e%2e/%2e%2e/%2e%2e/%2e%2e/%2e%2e/%2e%2e/evil/payload/releases/download/v1/adr.tar.gz#";
@@ -2093,6 +2093,44 @@ fn github_archive_and_content_urls_keep_the_version_in_the_repo() {
         assert_eq!(parsed.fragment(), None, "{url}");
         assert_eq!(parsed.query(), None, "{url}");
     }
+}
+
+#[test]
+fn github_archive_and_content_urls_name_a_tag() {
+    let backend = AquaBackend::from_arg(BackendArg::new(
+        "tool".to_string(),
+        Some("aqua:owner/repo".to_string()),
+    ));
+    let mut pkg = AquaPackage::default();
+    pkg.repo_owner = "owner".to_string();
+    pkg.repo_name = "repo".to_string();
+    pkg.path = Some("bin/tool".to_string());
+    // GitHub resolves a commit id, a branch or a full ref in the ref position too, including the
+    // head of an unmerged pull request, so every URL names the version as a tag
+    for version in ["ebb3b317a1738e60631cfaf2392f9e97f537f861", "main"] {
+        assert_eq!(
+            backend.github_archive_url(&pkg, version),
+            format!("https://github.com/owner/repo/archive/refs/tags/{version}.tar.gz")
+        );
+        assert_eq!(
+            backend.github_archive_api_url(&pkg, version),
+            format!("https://api.github.com/repos/owner/repo/tarball/refs/tags/{version}")
+        );
+        assert_eq!(
+            backend.github_content_url(&pkg, version),
+            format!("https://raw.githubusercontent.com/owner/repo/refs/tags/{version}/bin/tool")
+        );
+        assert_eq!(
+            backend.github_content_api_url(&pkg, version),
+            format!(
+                "https://api.github.com/repos/owner/repo/contents/bin/tool?ref=refs%2Ftags%2F{version}"
+            )
+        );
+    }
+    assert_eq!(
+        backend.github_content_url(&pkg, "refs/pull/7/head"),
+        "https://raw.githubusercontent.com/owner/repo/refs/tags/refs/pull/7/head/bin/tool"
+    );
 }
 
 #[test]
