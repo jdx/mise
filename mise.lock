@@ -605,56 +605,6 @@ url = "https://github.com/jdx/jactionlint/releases/download/v2.6.0/jactionlint_2
 url_api = "https://api.github.com/repos/jdx/jactionlint/releases/assets/740516065"
 provenance = "github-attestations"
 
-[[tools.jouet]]
-version = "0.0.5"
-backend = "packslip:github.com/jdx/jouet"
-specifiers = ["v0.0.5"]
-
-[tools.jouet."platforms.linux-arm64"]
-checksum = "sha256:daa436027a33f07f88246379c57e95dc3ef2bb05db40a7f160b0f77268373488"
-url = "https://github.com/jdx/jouet/releases/download/v0.0.5/jouet-aarch64-unknown-linux-gnu.tar.gz"
-signer = "sigstore-oidc:https://github.com/jdx/jouet/.github/workflows/release.yml"
-
-[tools.jouet."platforms.linux-arm64-musl"]
-checksum = "sha256:755501a2fc01728570abf01ffc80ce1c7e243cb0e03b74c09dd9e5d34e5026b7"
-url = "https://github.com/jdx/jouet/releases/download/v0.0.5/jouet-aarch64-unknown-linux-musl.tar.gz"
-signer = "sigstore-oidc:https://github.com/jdx/jouet/.github/workflows/release.yml"
-
-[tools.jouet."platforms.linux-x64"]
-checksum = "sha256:ee580e5f85c0145c73b2ac25d227ba651247a58883c4135039fed489adfd7e0a"
-url = "https://github.com/jdx/jouet/releases/download/v0.0.5/jouet-x86_64-unknown-linux-gnu.tar.gz"
-signer = "sigstore-oidc:https://github.com/jdx/jouet/.github/workflows/release.yml"
-
-[tools.jouet."platforms.linux-x64-baseline"]
-checksum = "sha256:ee580e5f85c0145c73b2ac25d227ba651247a58883c4135039fed489adfd7e0a"
-url = "https://github.com/jdx/jouet/releases/download/v0.0.5/jouet-x86_64-unknown-linux-gnu.tar.gz"
-signer = "sigstore-oidc:https://github.com/jdx/jouet/.github/workflows/release.yml"
-
-[tools.jouet."platforms.linux-x64-musl"]
-checksum = "sha256:daee411fd3bde271f85404cb9d7ae0485dbc5f6ed96e99dd201e682d32c0b331"
-url = "https://github.com/jdx/jouet/releases/download/v0.0.5/jouet-x86_64-unknown-linux-musl.tar.gz"
-signer = "sigstore-oidc:https://github.com/jdx/jouet/.github/workflows/release.yml"
-
-[tools.jouet."platforms.linux-x64-musl-baseline"]
-checksum = "sha256:daee411fd3bde271f85404cb9d7ae0485dbc5f6ed96e99dd201e682d32c0b331"
-url = "https://github.com/jdx/jouet/releases/download/v0.0.5/jouet-x86_64-unknown-linux-musl.tar.gz"
-signer = "sigstore-oidc:https://github.com/jdx/jouet/.github/workflows/release.yml"
-
-[tools.jouet."platforms.macos-arm64"]
-checksum = "sha256:83ee1fd9608ad515dbdd49971feb97e99bc80aa069880094951d00c9c49b849b"
-url = "https://github.com/jdx/jouet/releases/download/v0.0.5/jouet-aarch64-apple-darwin.tar.gz"
-signer = "sigstore-oidc:https://github.com/jdx/jouet/.github/workflows/release.yml"
-
-[tools.jouet."platforms.windows-x64"]
-checksum = "sha256:6f98ff2a58d18a4543ca76741552164ef19216c91dfb3f700d238924b4a87ba8"
-url = "https://github.com/jdx/jouet/releases/download/v0.0.5/jouet-x86_64-pc-windows-msvc.zip"
-signer = "sigstore-oidc:https://github.com/jdx/jouet/.github/workflows/release.yml"
-
-[tools.jouet."platforms.windows-x64-baseline"]
-checksum = "sha256:6f98ff2a58d18a4543ca76741552164ef19216c91dfb3f700d238924b4a87ba8"
-url = "https://github.com/jdx/jouet/releases/download/v0.0.5/jouet-x86_64-pc-windows-msvc.zip"
-signer = "sigstore-oidc:https://github.com/jdx/jouet/.github/workflows/release.yml"
-
 [[tools.jq]]
 version = "1.8.2"
 backend = "aqua:jqlang/jq"
