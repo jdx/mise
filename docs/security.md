@@ -201,16 +201,19 @@ when all of these hold:
   captured, such as `$(mise env)` in a prompt or `eval "$(mise env)"` in a
   shell startup file, still asks.
 - Paranoid mode's `config` category is off.
-- mise is not running as a shim, as the `mise x` a shim runs, for shell
-  completion, or for the shell's command-not-found handler after you mistype a
-  command.
+- mise is not running as a shim, as the `mise x` a shim runs, as a
+  [tool stub](/dev-tools/tool-stubs.html), for shell completion, or for the
+  shell's command-not-found handler after you mistype a command. Running a
+  tool that a shim or stub provides is not a mise command.
 - On Unix systems such as Linux and macOS, you own the config file and its
   directory, every other config file the trust would cover in that directory,
   including ones for another `MISE_ENV` such as `mise.prod.toml`, each
   directory between that directory and those files, and the target of each one
   that is a symlink. A config file another account left in a shared directory,
-  such as a `.config/mise.toml` beside your own `mise.toml`, still asks.
-  Windows does not check ownership.
+  such as a `.config/mise.toml` beside your own `mise.toml`, still asks. So does
+  a symlink whose target sits below a directory that neither you nor root
+  owns, or that another account can write to and that is not sticky like
+  `/tmp`: that account could replace the target after the trust is recorded. Windows does not check ownership.
 
 mise cannot tell a command you typed from one a program started on the same
 terminal, so a mise command run from a script or a Makefile target you start

@@ -63,6 +63,10 @@ pub enum CommandOrigin {
     ShellIntegration,
     /// `hook-env`, which the prompt hook runs before every prompt: it neither trusts nor asks.
     PromptHook,
+    /// `tool-stub`, which a stub's `#!/usr/bin/env -S mise tool-stub` line runs when the user runs
+    /// the tool the stub names, from whatever directory they are in. As with a shim, the user typed
+    /// the tool's name, not a mise command, so the prompt still asks.
+    ToolStub,
 }
 
 /// `None` until the command line is parsed.
@@ -131,6 +135,9 @@ fn root_owned_by_user(path: &Path, config_root: &Path) -> bool {
 /// The system resolves a `..` after a symlink from the link's target, not from the directory
 /// that holds the link, so `link/../mise.toml` can open another file than the `mise.toml` its
 /// lexical form names. A path whose two forms lead to different files keeps the prompt.
+///
+/// The directories the system passes through can differ from the written ones too, when a link
+/// leads elsewhere: [`resolved_path_guarded`] checks those.
 fn owned_below(root: &Path, file: &Path) -> bool {
     use path_absolutize::Absolutize;
     let (Ok(lexical_root), Ok(lexical_file)) = (root.absolutize(), file.absolutize()) else {
@@ -147,6 +154,51 @@ fn owned_below(root: &Path, file: &Path) -> bool {
             .skip(1)
             .take_while(|dir| *dir != &*root && dir.starts_with(&root))
             .all(owned_by_user)
+        && resolved_path_guarded(&root, &file)
+}
+
+/// Whether no other account can replace `file` through a directory on the path the system
+/// resolves it to. A link checks itself and its target, but whoever may write a directory on the
+/// way to the target can rename that file away and put their own in its place after the trust
+/// is recorded. A linked `.config` leads into another directory the same way.
+///
+/// Inside the resolved root the directories are checked as the written ones are. A root reached
+/// through a link, and a file that resolves outside its root, also pass through directories up to
+/// `/`: each has to belong to the user or to root, and no other account may replace what is in
+/// it. A sticky directory such as `/tmp` lets nobody but an entry's owner rename it.
+fn resolved_path_guarded(root: &Path, file: &Path) -> bool {
+    let (Ok(resolved_root), Ok(target)) = (root.canonicalize(), file.canonicalize()) else {
+        return false;
+    };
+    if !target.starts_with(&resolved_root) {
+        return target.ancestors().skip(1).all(entries_guarded);
+    }
+    target
+        .ancestors()
+        .skip(1)
+        .take_while(|dir| *dir != resolved_root.as_path())
+        .all(owned_by_user)
+        && (resolved_root.as_path() == root || resolved_root.ancestors().all(entries_guarded))
+}
+
+/// Whether only the user, or root, can replace an entry of directory `dir`: it belongs to one
+/// of them, and is sticky or writable by nobody else.
+#[cfg(unix)]
+fn entries_guarded(dir: &Path) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    let uid = nix::unistd::geteuid();
+    let Ok(meta) = dir.metadata() else {
+        return false;
+    };
+    (meta.uid() == uid.as_raw() || meta.uid() == 0)
+        && (meta.mode() & 0o1000 != 0
+            || !writable_by_others(meta.mode(), meta.gid(), private_group(uid)))
+}
+
+/// See the Unix [`owned_by_user`]: ownership does not gate this on Windows.
+#[cfg(not(unix))]
+fn entries_guarded(_dir: &Path) -> bool {
+    true
 }
 
 /// Whether `path` and, when it is a symlink, what it points at both belong to the effective user,
@@ -278,6 +330,10 @@ fn quote_untrust_path(
             return shell_words::quote(&full).into_owned();
         }
         let shown = mise_util::file::display_path(path);
+        // The home directory itself: `'~'` would name a directory called `~`.
+        if shown == "~" {
+            return shown;
+        }
         match shown.strip_prefix("~/") {
             Some(rest) => format!("~/{}", shell_words::quote(rest)),
             None => shell_words::quote(&shown).into_owned(),
@@ -417,6 +473,27 @@ mod tests {
             quote("/tmp/app/mise.toml", None).as_deref(),
             Some("/tmp/app/mise.toml")
         );
+    }
+
+    // A trusted root in the home directory, such as the one a `.node-version` there names, is
+    // shown as `~`, which the shell expands only when it is not quoted.
+    #[cfg(unix)]
+    #[test]
+    fn undo_hint_leaves_the_home_directory_unquoted() {
+        use crate::shell::ShellType;
+        let home = &*crate::dirs::HOME;
+        for shell in [ShellType::Bash, ShellType::Zsh, ShellType::Fish] {
+            assert_eq!(
+                quote_untrust_path(home, Some(shell), false).as_deref(),
+                Some("~"),
+                "{shell:?}"
+            );
+            assert_eq!(
+                quote_untrust_path(&home.join("Jo's app"), Some(shell), false).as_deref(),
+                Some(r"~/'Jo'\''s app'"),
+                "{shell:?}"
+            );
+        }
     }
 
     #[test]
@@ -594,5 +671,71 @@ mod tests {
         if !nix::unistd::geteuid().is_root() {
             assert!(!owned_by_user(Path::new("/")));
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn ownership_checks_the_directories_a_link_leads_through() {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = |path: &Path, mode| {
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).unwrap()
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path().canonicalize().unwrap();
+        let (root, shared) = (base.join("proj"), base.join("shared"));
+        std::fs::create_dir_all(root.join("inside").join("sub")).unwrap();
+        std::fs::create_dir_all(shared.join("sub")).unwrap();
+        let (own, nested) = (
+            shared.join("mise.toml"),
+            shared.join("sub").join("mise.toml"),
+        );
+        std::fs::write(&own, "").unwrap();
+        std::fs::write(&nested, "").unwrap();
+        mode(&own, 0o644);
+        let link = root.join("mise.toml");
+        std::os::unix::fs::symlink(&own, &link).unwrap();
+        // A linked `.config` leads through `shared` too.
+        let linked_dir = root.join(".config");
+        std::os::unix::fs::symlink(shared.join("sub"), &linked_dir).unwrap();
+        let through_dir = linked_dir.join("mise.toml");
+
+        mode(&shared, 0o755);
+        assert!(owned_below(&root, &link));
+        assert!(owned_below(&root, &through_dir));
+        // The user owns the link and the file, but anyone may replace the file in `shared`.
+        mode(&shared, 0o777);
+        assert!(owned_by_user(&link) && owned_by_user(&own));
+        assert!(!owned_below(&root, &link));
+        assert!(!owned_below(&root, &through_dir));
+        // Sticky, only the file's owner may rename or remove it.
+        mode(&shared, 0o1777);
+        assert!(owned_below(&root, &link));
+        mode(&shared, 0o755);
+
+        // A link to a file elsewhere in the root is checked from the root down, as written.
+        let inner = root.join("inside").join("sub").join("mise.toml");
+        std::fs::write(&inner, "").unwrap();
+        let inner_link = root.join("config.toml");
+        std::os::unix::fs::symlink(&inner, &inner_link).unwrap();
+        assert!(owned_below(&root, &inner_link));
+        mode(&root.join("inside"), 0o777);
+        assert!(!owned_below(&root, &inner_link));
+        mode(&root.join("inside"), 0o755);
+
+        // A root reached through a link passes through the directories its target is in.
+        let linked_root = base.join("linked");
+        std::os::unix::fs::symlink(&root, &linked_root).unwrap();
+        let plain = root.join("inside").join("mise.toml");
+        std::fs::write(&plain, "").unwrap();
+        assert!(owned_below(
+            &linked_root,
+            &linked_root.join("inside").join("mise.toml")
+        ));
+        mode(&base, 0o777);
+        assert!(!owned_below(
+            &linked_root,
+            &linked_root.join("inside").join("mise.toml")
+        ));
+        mode(&base, 0o700);
     }
 }
