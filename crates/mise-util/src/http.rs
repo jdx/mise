@@ -577,6 +577,28 @@ impl InvocationScratch {
         })
     }
 
+    /// Whether this claim still holds its folder. Cache pruning and `mise cache clear` can
+    /// delete the folder or its lock file under a long-running process. A lost lock file
+    /// is put back and locked again, so later sweeps keep treating the folder as live and
+    /// the downloads already staged in it stay usable. A lost folder cannot be restored.
+    fn still_held(&mut self, root: &Path) -> Result<bool> {
+        if !self.dir.is_dir() {
+            return Ok(false);
+        }
+        if self.lock_path.exists() {
+            return Ok(true);
+        }
+        // Under the claims lock, like a claim, so no sweep sees the new lock file unlocked.
+        let mut claims = fslock::LockFile::open(&root.join(CLAIMS_LOCK))?;
+        claims.lock()?;
+        let mut lock = fslock::LockFile::open(&self.lock_path)?;
+        if !lock.try_lock()? {
+            return Ok(false);
+        }
+        self.lock = lock;
+        Ok(true)
+    }
+
     fn remove(self) {
         let removed = remove_scratch_dir(&self.dir);
         // Windows cannot delete a file another handle has open, so unlock first.
@@ -605,12 +627,21 @@ const UNLOCKED_SCRATCH_MAX_AGE: Duration = Duration::from_secs(24 * 60 * 60);
 /// download nothing.
 fn invocation_scratch() -> Result<PathBuf> {
     let mut scratch = INVOCATION_SCRATCH.lock().unwrap();
-    if let Some(scratch) = &*scratch {
-        return Ok(scratch.dir.clone());
-    }
     // Not TEMP: a download under a deep TEMP passes MAX_PATH on Windows,
     // and a lockfile must not depend on where TEMP points.
     let root = crate::dirs::CACHE.join("invocation-downloads");
+    if let Some(held) = scratch.as_mut() {
+        if held.still_held(&root)? {
+            return Ok(held.dir.clone());
+        }
+        debug!(
+            "download staging {} was removed, claiming a new folder",
+            display_path(&held.dir)
+        );
+        if let Some(lost) = scratch.take() {
+            lost.remove();
+        }
+    }
     file::create_dir_all(&root)?;
     let claimed = InvocationScratch::claim(&root, UNLOCKED_SCRATCH_MAX_AGE)?;
     let dir = claimed.dir.clone();

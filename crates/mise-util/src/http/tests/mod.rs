@@ -1174,3 +1174,27 @@ async fn test_locked_mode_keeps_only_pinned_downloads() {
 
     *cas::TEST_ROOT.lock().unwrap() = None;
 }
+
+// Unix only: Windows does not let anything delete a lock file this process holds open.
+#[cfg(unix)]
+#[test]
+fn a_claim_survives_its_folder_or_lock_file_being_pruned() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    let mut held = InvocationScratch::claim(root, Duration::from_secs(3600)).unwrap();
+    std::fs::write(held.dir.join("artifact"), "x").unwrap();
+
+    // The lock file is put back, so a sweep still sees the folder as live.
+    std::fs::remove_file(&held.lock_path).unwrap();
+    assert!(held.still_held(root).unwrap());
+    assert!(held.lock_path.exists());
+    let other = InvocationScratch::claim(root, Duration::ZERO).unwrap();
+    assert!(held.dir.join("artifact").exists());
+
+    // A deleted folder cannot be restored, so the claim is reported lost.
+    std::fs::remove_dir_all(&held.dir).unwrap();
+    assert!(!held.still_held(root).unwrap());
+
+    held.remove();
+    other.remove();
+}
