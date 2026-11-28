@@ -477,26 +477,63 @@ impl Vfox {
 /// Fails if a symlink under `root` points outside of it. Each target is resolved component
 /// by component, following every link on the way, so chains and links through linked
 /// directories are checked; components that do not exist are taken as written.
+///
+/// A link that needs more than 40 links to resolve is refused, like the kernel refuses to
+/// open it. The work for the whole tree is bounded by [`LINK_CHECK_STEPS`]; a tree that
+/// needs more is refused.
 pub(crate) fn ensure_symlinks_stay_within(root: &Path) -> Result<()> {
+    ensure_symlinks_stay_within_steps(root, LINK_CHECK_STEPS)
+}
+
+/// The work one [`ensure_symlinks_stay_within`] call may do, counted in path components
+/// walked, queued or looked up and directory entries visited. An ordinary link costs a
+/// few dozen, so a tree with hundreds of thousands of links fits; a crafted one whose
+/// links make every check walk thousands of components does not.
+const LINK_CHECK_STEPS: u64 = 20_000_000;
+
+fn ensure_symlinks_stay_within_steps(root: &Path, mut steps: u64) -> Result<()> {
     if std::fs::symlink_metadata(root)?.file_type().is_symlink() {
         return Err(format!("the archive's top-level entry is a symlink: {root:?}").into());
     }
+    let over_budget = || -> crate::error::VfoxError {
+        format!(
+            "the symlinks in {root:?} take too long to check (more than {LINK_CHECK_STEPS} steps), so the archive is refused"
+        )
+        .into()
+    };
     let real_root = root.canonicalize()?;
     let mut dirs = vec![root.to_path_buf()];
     while let Some(dir) = dirs.pop() {
         for entry in std::fs::read_dir(&dir)? {
             let path = entry?.path();
+            if !spend_link_check_steps(&mut steps, 1) {
+                return Err(over_budget());
+            }
             let kind = std::fs::symlink_metadata(&path)?.file_type();
             if kind.is_dir() {
                 dirs.push(path);
             } else if kind.is_symlink() {
                 let target = std::fs::read_link(&path)?;
-                let base = path.parent().unwrap().canonicalize()?;
-                if !link_target_stays_within(&real_root, root, &base, &target) {
-                    return Err(format!(
-                        "symlink {path:?} points outside of the install directory: {target:?}"
-                    )
-                    .into());
+                let parent = path.parent().unwrap_or(root);
+                if !spend_link_check_steps(&mut steps, parent.components().count()) {
+                    return Err(over_budget());
+                }
+                let base = parent.canonicalize()?;
+                match link_target_stays_within(&real_root, root, &base, &target, &mut steps) {
+                    LinkCheck::Inside => {}
+                    LinkCheck::Outside => {
+                        return Err(format!(
+                            "symlink {path:?} points outside of the install directory: {target:?}"
+                        )
+                        .into());
+                    }
+                    LinkCheck::TooManyLinks => {
+                        return Err(format!(
+                            "symlink {path:?} in the install directory resolves through more than 40 links: {target:?}"
+                        )
+                        .into());
+                    }
+                    LinkCheck::OverBudget => return Err(over_budget()),
                 }
             }
         }
@@ -504,12 +541,50 @@ pub(crate) fn ensure_symlinks_stay_within(root: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Takes `n` steps from the budget of [`ensure_symlinks_stay_within`], and reports
+/// whether there were enough.
+fn spend_link_check_steps(steps: &mut u64, n: usize) -> bool {
+    match steps.checked_sub(n as u64) {
+        Some(left) => {
+            *steps = left;
+            true
+        }
+        None => {
+            *steps = 0;
+            false
+        }
+    }
+}
+
+/// The outcome of [`link_target_stays_within`].
+enum LinkCheck {
+    Inside,
+    Outside,
+    /// Resolving the target follows more than 40 different links.
+    TooManyLinks,
+    /// The step budget of [`ensure_symlinks_stay_within`] ran out.
+    OverBudget,
+}
+
 /// Resolves `target` as seen from the directory `base` (already real), following every
 /// link on the way, and reports whether each step stays under `root` (the real path of
 /// the tree, which is `given_root` as the caller spelled it). Components that do not
-/// exist are taken as written. A chain of links that loops without leaving `root` is
-/// harmless, so the walk stops after `MAX_LINKS` links and accepts it.
-fn link_target_stays_within(root: &Path, given_root: &Path, base: &Path, target: &Path) -> bool {
+/// exist are taken as written.
+///
+/// A link met again with the same rest of the path still to walk is a loop: the walk
+/// would repeat forever, and the kernel refuses such a path. Its name is then taken as
+/// written and the rest of the path is still checked, because resolvers that look up one
+/// component at a time end up there. `target` is the target of a link, which counts as
+/// the first link followed: more than 40 different links in all is
+/// [`LinkCheck::TooManyLinks`], as the kernel refuses to open a path that follows more
+/// than 40. The work is charged to `steps`.
+fn link_target_stays_within(
+    root: &Path,
+    given_root: &Path,
+    base: &Path,
+    target: &Path,
+    steps: &mut u64,
+) -> LinkCheck {
     use std::collections::VecDeque;
     use std::path::Component;
     const MAX_LINKS: usize = 40;
@@ -520,9 +595,19 @@ fn link_target_stays_within(root: &Path, given_root: &Path, base: &Path, target:
     };
     let mut current = base.to_path_buf();
     let mut pending = parts(target);
-    let mut followed = 0;
+    if !spend_link_check_steps(steps, pending.len()) {
+        return LinkCheck::OverBudget;
+    }
+    // Each link followed, with what was left to walk after it.
+    let mut followed: Vec<(PathBuf, VecDeque<PathBuf>)> = vec![];
     while let Some(part) = pending.pop_front() {
-        match Path::new(&part).components().next().unwrap() {
+        if !spend_link_check_steps(steps, 1) {
+            return LinkCheck::OverBudget;
+        }
+        let Some(component) = part.components().next() else {
+            continue;
+        };
+        match component {
             Component::Prefix(_) | Component::RootDir => {
                 // An absolute path stays inside only if it names the tree's root, by
                 // either spelling; walk the rest from the root rather than through the
@@ -532,9 +617,12 @@ fn link_target_stays_within(root: &Path, given_root: &Path, base: &Path, target:
                     .into_iter()
                     .find_map(|root| absolute.strip_prefix(root).ok())
                 else {
-                    return false;
+                    return LinkCheck::Outside;
                 };
                 pending = parts(rest);
+                if !spend_link_check_steps(steps, pending.len()) {
+                    return LinkCheck::OverBudget;
+                }
                 current = root.to_path_buf();
             }
             Component::CurDir => {}
@@ -543,14 +631,32 @@ fn link_target_stays_within(root: &Path, given_root: &Path, base: &Path, target:
             }
             Component::Normal(name) => {
                 let candidate = current.join(name);
+                // The lookup walks every component of the path.
+                if !spend_link_check_steps(steps, candidate.components().count()) {
+                    return LinkCheck::OverBudget;
+                }
                 match std::fs::read_link(&candidate) {
                     Ok(link) => {
-                        followed += 1;
-                        if followed > MAX_LINKS {
-                            return true;
+                        // Comparing against the links followed so far.
+                        if !spend_link_check_steps(steps, (followed.len() + 1) * pending.len()) {
+                            return LinkCheck::OverBudget;
                         }
-                        for part in link.components().rev() {
-                            pending.push_front(PathBuf::from(part.as_os_str()));
+                        if followed
+                            .iter()
+                            .any(|(seen, rest)| *seen == candidate && *rest == pending)
+                        {
+                            current = candidate;
+                        } else if followed.len() + 1 == MAX_LINKS {
+                            return LinkCheck::TooManyLinks;
+                        } else {
+                            let link_parts = link.components().count();
+                            if !spend_link_check_steps(steps, pending.len() + link_parts) {
+                                return LinkCheck::OverBudget;
+                            }
+                            followed.push((candidate, pending.clone()));
+                            for part in link.components().rev() {
+                                pending.push_front(PathBuf::from(part.as_os_str()));
+                            }
                         }
                     }
                     Err(_) => current = candidate,
@@ -558,10 +664,10 @@ fn link_target_stays_within(root: &Path, given_root: &Path, base: &Path, target:
             }
         }
         if !current.starts_with(root) {
-            return false;
+            return LinkCheck::Outside;
         }
     }
-    true
+    LinkCheck::Inside
 }
 
 /// The name prefix of the directory an archive is extracted into before it is moved to
@@ -837,5 +943,93 @@ mod tests {
         let install_dir = temp.path().join("installs/tool-abcd1234");
         assert!(Vfox::test().extract(&archive, &install_dir).is_err());
         assert!(!install_dir.exists());
+    }
+
+    /// An extracted tree with `bin/tool` and the given links, as `untar` leaves it.
+    #[cfg(unix)]
+    fn tree_with_links(temp: &Path, links: &[(&str, &str)]) -> PathBuf {
+        let root = temp.join("installs/tool-abcd1234");
+        std::fs::create_dir_all(root.join("bin")).unwrap();
+        std::fs::write(root.join("bin/tool"), "tool").unwrap();
+        for (path, target) in links {
+            std::os::unix::fs::symlink(target, root.join(path)).unwrap();
+        }
+        root
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn checking_symlinks_refuses_a_chain_of_more_than_40_links() {
+        // The kernel gives up after 40 links, so a resolver that keeps going can be led
+        // to a path the check never saw.
+        // The link itself is the first of the links followed.
+        for (hops, refused_as) in [
+            (39, "points outside of"),
+            (40, "more than 40 links"),
+            (100, "more than 40 links"),
+        ] {
+            let temp = tempfile::tempdir().unwrap();
+            let escape = format!("{}../../outside", "d/".repeat(hops));
+            let root = tree_with_links(temp.path(), &[("d", "."), ("escape", &escape)]);
+            let err = ensure_symlinks_stay_within(&root).unwrap_err().to_string();
+            assert!(err.contains(refused_as), "{hops}: {err}");
+        }
+
+        let temp = tempfile::tempdir().unwrap();
+        let through = format!("{}bin/tool", "d/".repeat(39));
+        let root = tree_with_links(temp.path(), &[("d", "."), ("tool", &through)]);
+        ensure_symlinks_stay_within(&root).unwrap();
+
+        let temp = tempfile::tempdir().unwrap();
+        let through = format!("{}bin/tool", "d/".repeat(40));
+        let root = tree_with_links(temp.path(), &[("d", "."), ("tool", &through)]);
+        let err = ensure_symlinks_stay_within(&root).unwrap_err().to_string();
+        assert!(err.contains("more than 40 links"), "{err}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn checking_symlinks_checks_the_path_after_a_loop() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = tree_with_links(
+            temp.path(),
+            &[("a", "b"), ("b", "a"), ("escape", "a/../../outside")],
+        );
+        let err = ensure_symlinks_stay_within(&root).unwrap_err().to_string();
+        assert!(err.contains("points outside of"), "{err}");
+
+        let temp = tempfile::tempdir().unwrap();
+        let root = tree_with_links(temp.path(), &[("a", "b"), ("b", "a"), ("through", "a/x")]);
+        ensure_symlinks_stay_within(&root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn checking_symlinks_bounds_the_work_for_one_tree() {
+        // Ten links that each walk 200 components to the next, reached from twenty places.
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("tool");
+        std::fs::create_dir_all(root.join("bin")).unwrap();
+        std::fs::create_dir_all(root.join("x")).unwrap();
+        std::fs::create_dir_all(root.join("s")).unwrap();
+        std::fs::write(root.join("bin/tool"), "tool").unwrap();
+        let detour = "x/../".repeat(200);
+        for i in 0..10 {
+            let next = if i == 9 {
+                "bin/tool".to_string()
+            } else {
+                format!("L{}", i + 1)
+            };
+            std::os::unix::fs::symlink(format!("{detour}{next}"), root.join(format!("L{i}")))
+                .unwrap();
+        }
+        for i in 0..20 {
+            std::os::unix::fs::symlink("../L0", root.join(format!("s/{i}"))).unwrap();
+        }
+        ensure_symlinks_stay_within(&root).unwrap();
+        let err = ensure_symlinks_stay_within_steps(&root, 100_000)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("take too long to check"), "{err}");
     }
 }
