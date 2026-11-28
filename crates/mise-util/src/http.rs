@@ -3997,10 +3997,13 @@ fn github_relay_socket(url: &Url) -> Option<std::ffi::OsString> {
 /// starts with its authority. The URL parser reads the authority of an `http`,
 /// `https`, `ws`, `wss` or `ftp` URL after any run of `/` and `\` that follows
 /// the colon, so `https:////user:password@host/` and `https:\user:password@host/`
-/// both name `host`; other schemes need `//`.
-fn split_replacement(replacement: &str) -> (Option<&str>, &str, &str) {
+/// both name `host`; other schemes need `//`. That holds only where the
+/// replacement starts the URL (`at_url_start`): written after the start, as a
+/// hostname rule's is, `https:secret@mirror.example` is a login and a host.
+fn split_replacement(replacement: &str, at_url_start: bool) -> (Option<&str>, &str, &str) {
     const AUTHORITY_END: [char; 4] = ['/', '\\', '?', '#'];
-    let (scheme, rest) = match (special_scheme(replacement), replacement.split_once("//")) {
+    let special = special_scheme(replacement).filter(|_| at_url_start);
+    let (scheme, rest) = match (special, replacement.split_once("//")) {
         (Some((scheme, rest)), _) => (Some(scheme), rest.trim_start_matches(['/', '\\'])),
         (None, Some((scheme, rest)))
             if !scheme.contains(AUTHORITY_END) && !scheme.contains('@') =>
@@ -4065,7 +4068,9 @@ fn ambiguous_replacement_authority(replacement: &str) -> bool {
 fn replacement_credentials(replacement: &str) -> Option<&str> {
     let replacement = trim_url_start(replacement);
     let parsed = without_url_tabs(replacement);
-    let (_, authority, rest) = split_replacement(&parsed);
+    // Read as the start of a URL, which finds a login in the most spellings: a
+    // replacement written further in still has one in its authority.
+    let (_, authority, rest) = split_replacement(&parsed, true);
     if !authority
         .rsplit_once('@')
         .is_some_and(|(userinfo, _)| !userinfo.is_empty())
@@ -4114,10 +4119,12 @@ fn without_url_tabs(url: &str) -> String {
 /// userinfo and is on the scheme, host and port that `server` names. `server`
 /// is the rule's [`replacement_credentials`] with any regex captures expanded;
 /// a capture that brought more than a piece of the scheme or authority has
-/// moved the credentials somewhere else.
-fn credentials_in_place(server: &str, url: &Url) -> bool {
+/// moved the credentials somewhere else. `at_url_start` is whether the rule
+/// matched at the start of the URL, so that the replacement starts the result
+/// and a leading `https:` is its scheme rather than a login.
+fn credentials_in_place(server: &str, url: &Url, at_url_start: bool) -> bool {
     let server = without_url_tabs(trim_url_start(server));
-    let (scheme, authority, rest) = split_replacement(&server);
+    let (scheme, authority, rest) = split_replacement(&server, at_url_start);
     let scheme = scheme.unwrap_or(url.scheme());
     rest.is_empty()
         && Url::parse(&format!("{scheme}://{authority}/")).is_ok_and(|named| {
@@ -4189,7 +4196,8 @@ pub fn apply_url_replacements(url: &mut Url) {
                             regex.captures(&url_string).is_some_and(|captures| {
                                 let mut expanded = String::new();
                                 captures.expand(server, &mut expanded);
-                                credentials_in_place(&expanded, &new_url)
+                                let at_url_start = captures.get(0).is_some_and(|m| m.start() == 0);
+                                credentials_in_place(&expanded, &new_url, at_url_start)
                             })
                         })
                     {
@@ -4224,8 +4232,9 @@ pub fn apply_url_replacements(url: &mut Url) {
                     // Only proceed if the URL actually changed
                     if new_url_string != url_string
                         && let Ok(new_url) = new_url_string.parse::<Url>()
-                        && replacement_credentials(replacement)
-                            .is_none_or(|server| credentials_in_place(server, &new_url))
+                        && replacement_credentials(replacement).is_none_or(|server| {
+                            credentials_in_place(server, &new_url, url_string.starts_with(pattern))
+                        })
                     {
                         *url = new_url;
                         restore_same_host_userinfo(&original, url);

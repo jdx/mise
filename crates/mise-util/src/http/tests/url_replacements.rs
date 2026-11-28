@@ -366,6 +366,26 @@ fn test_replacement_credentials_are_found_in_every_spelling_of_the_server() {
     }
 }
 
+/// A hostname rule's replacement lands after the URL's own `https://`, so a
+/// mirror login whose username is `https` is a login there, not a scheme.
+#[test]
+fn test_hostname_rule_login_named_like_a_scheme_is_a_login() {
+    for (key, replacement) in [
+        ("github.com", "https:secret@mirror.example.com"),
+        (r"regex:github\.com", "https:secret@mirror.example.com"),
+    ] {
+        let mut rules = IndexMap::new();
+        rules.insert(key.to_string(), replacement.to_string());
+        assert_eq!(
+            rewritten(&rules, "https://github.com/owner/repo"),
+            "https://https:secret@mirror.example.com/owner/repo",
+            "{key}"
+        );
+        let elsewhere = "https://evil.example/?u=github.com";
+        assert_eq!(rewritten(&rules, elsewhere), elsewhere, "{key}");
+    }
+}
+
 /// Without a special scheme, only `//` introduces an authority, so a replacement
 /// with more slashes or a backslash there names no server for its login, and
 /// would put it in the query or path of whatever URL the key matched. Such a
