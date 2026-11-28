@@ -170,13 +170,6 @@ pass_line() {
   grep -E 'not marked as slow|Slow test not marked' "$log" >&2 || true
 }
 
-LOG_DIR="$(mktemp -d "${TMPDIR:-/tmp}/mise-e2e-logs.XXXXXX")"
-
-# Docker slots: see docker_slot_container_name in helpers.sh. Killing a
-# `docker exec` client does not stop what it runs, so removing the containers is
-# what stops the tests of an interrupted run.
-DOCKER_REUSE=0
-DOCKER_SLOT_ROOT=
 case "${MISE_E2E_DOCKER_REUSE:-1}" in
   0 | 1) ;;
   *)
@@ -184,6 +177,14 @@ case "${MISE_E2E_DOCKER_REUSE:-1}" in
     exit 1
     ;;
 esac
+
+LOG_DIR="$(mktemp -d "${TMPDIR:-/tmp}/mise-e2e-logs.XXXXXX")"
+
+# Docker slots: see docker_slot_container_name in helpers.sh. Killing a
+# `docker exec` client does not stop what it runs, so removing the containers is
+# what stops the tests of an interrupted run.
+DOCKER_REUSE=0
+DOCKER_SLOT_ROOT=
 if [[ ${MISE_E2E_DOCKER:-0} == 1 && ${MISE_E2E_DOCKER_REUSE:-1} == 1 ]] && ((${#RUN_FILES[@]} > 0)); then
   DOCKER_REUSE=1
   MISE_E2E_DOCKER_RUN_ID="$$"

@@ -36,9 +36,14 @@ resolve_mise_bin() {
 # With MISE_E2E_DOCKER=1, run_all_tests gives each running test a slot number
 # (MISE_E2E_DOCKER_SLOT) that no other running test holds, and run_test runs the
 # test with `docker exec` in the slot's container, started by the first test to
-# use it. The slot's host directories, which back /tmp, /root and /home, are in
-# $MISE_E2E_DOCKER_SLOT_ROOT/<slot>; $MISE_E2E_DOCKER_RUN_ID tells the
-# containers of one run_all_tests process from those of another.
+# use it. The host directories that back a container's /tmp, /root and /home are
+# in a directory of its own below $MISE_E2E_DOCKER_SLOT_ROOT/<slot>;
+# $MISE_E2E_DOCKER_RUN_ID tells the containers of one run_all_tests process from
+# those of another.
+
+docker_e2e_image() {
+  printf '%s\n' "${MISE_E2E_DOCKER_IMAGE:-ghcr.io/jdx/mise:e2e}"
+}
 
 docker_slot_container_name() {
   printf 'mise-e2e-%s-%s\n' "$MISE_E2E_DOCKER_RUN_ID" "$1"
@@ -149,7 +154,9 @@ docker_slot_reset() {
 
 # Removes the container and its host directories, whatever state they are in.
 # What the test created in the directories is emptied from inside first: it can
-# belong to root, whom the host user cannot delete from.
+# belong to root, whom the host user cannot delete from. That fails when the
+# container is no longer running, and then the directories stay until
+# docker_slots_teardown; the slot's next container gets new ones either way.
 docker_slot_discard() {
   local container="$1" slot_dir="$2"
   docker exec --user root "$container" bash -c "$DOCKER_SLOT_KILL_SCRIPT" >/dev/null 2>&1 || true
@@ -178,4 +185,11 @@ docker_slots_teardown() {
     done
   fi
   rm -rf "$slot_root" 2>/dev/null || true
+  # What is left is root's, from a container that died before it could be
+  # emptied from inside. A container that mounts the directories can remove it.
+  if [[ -e $slot_root ]]; then
+    docker run --rm -v "$slot_root:/slots" "$(docker_e2e_image)" \
+      find /slots -mindepth 1 -delete >/dev/null 2>&1 || true
+    rm -rf "$slot_root" 2>/dev/null || true
+  fi
 }

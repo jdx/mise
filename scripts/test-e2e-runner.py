@@ -481,8 +481,9 @@ echo "output after the hang"
 FAKE_DOCKER = r"""#!/usr/bin/env bash
 # Logs each call, one line per call with every argument cut at its first line,
 # and answers the few calls the e2e scripts make. A `docker run` or `docker exec`
-# of a test fails when the test's name contains "fail". `docker ps` lists the
-# containers named in the file $DOCKER_LIVE.
+# of a test fails when the test's name contains "fail", and the reset of a
+# container exits with $DOCKER_RESET_STATUS. `docker ps` lists the containers
+# named in the file $DOCKER_LIVE.
 line=""
 for arg in "$@"; do line+="${arg%%$'\n'*} "; done
 echo "$line" >>"$DOCKER_LOG"
@@ -501,12 +502,65 @@ case "$1" in
       case "$arg" in
         stat) printf '1000:1000\n1000:1000\n1000:1000\n'; exit 0 ;;
         ls) printf 'core\nnull\n'; exit 0 ;;
+        tmp_owner=*) exit "${DOCKER_RESET_STATUS:-0}" ;;
         /mise-src/e2e/run_test) [[ $last != *fail* ]]; exit $? ;;
       esac
     done
     ;;
 esac
 exit 0
+"""
+
+# Logs each call as the fake does, then runs the real docker.
+LOGGING_DOCKER = r"""#!/usr/bin/env bash
+line=""
+for arg in "$@"; do line+="${arg%%$'\n'*} "; done
+echo "$line" >>"$DOCKER_LOG"
+exec "$REAL_DOCKER" "$@"
+"""
+
+# The header of a Linux executable, which is as far as the runner's check that
+# the mise under test is one reads. The fake docker never runs the file.
+ELF_HEADER = (
+    b"\x7fELF\x02\x01\x01\x00" + bytes(8) + b"\x02\x00\x3e\x00\x01\x00\x00\x00" + bytes(40)
+)
+
+# What a test leaves behind in every place a container lets it write to, and a
+# process that ignores SIGTERM.
+LEAVE_THINGS = """
+mkdir -p /tmp/left/dir /root/left/dir /home/left/dir
+touch /tmp/left/dir/file /tmp/.left /root/left/dir/file /home/left/dir/file /dev/shm/left
+chmod 700 /tmp
+chown nobody /home
+setsid bash -c 'trap "" TERM; exec -a e2e-left sleep 300' >/dev/null 2>&1 &
+"""
+
+# Fails if the container is not as a new one is.
+EXPECT_NEW_CONTAINER = """
+for path in /tmp/left /tmp/.left /root/left /home/left /dev/shm/left; do
+  [[ ! -e $path ]] || { echo "$path is still there"; exit 1; }
+done
+[[ $(stat -c %a:%u /tmp) == 1777:$(stat -c %u /root) ]] || { echo "/tmp is $(stat -c %a:%u /tmp)"; exit 1; }
+[[ $(stat -c %u /home) == "$(stat -c %u /root)" ]] || { echo "/home belongs to $(stat -c %u /home)"; exit 1; }
+for cmdline in /proc/[0-9]*/cmdline; do
+  arg0=
+  IFS= read -r -d '' arg0 <"$cmdline" 2>/dev/null || true
+  [[ $arg0 != e2e-left ]] || { echo "a process of the last test is still running"; exit 1; }
+done
+"""
+
+# Kills the process that keeps the container alive, as an out-of-memory kill
+# can, so the harness cannot empty the container's directories from inside.
+KILL_CONTAINER = """
+for cmdline in /proc/[0-9]*/cmdline; do
+  arg0=
+  IFS= read -r -d '' arg0 <"$cmdline" 2>/dev/null || true
+  if [[ $arg0 == mise-e2e-keeper ]]; then
+    pid=${cmdline#/proc/}
+    kill -9 "${pid%/cmdline}"
+  fi
+done
+sleep 30
 """
 
 # A run_test that only says which slot it got, and fails if another running
@@ -527,10 +581,38 @@ fi
 
 
 class E2EDockerSlotTests(unittest.TestCase):
-    """Container reuse in Docker mode, with a fake `docker` that logs its calls."""
+    """Container reuse in Docker mode, with a fake `docker` that logs its calls.
+    The `test_real_*` tests run real containers; see `real_docker`."""
 
-    def setup_tree(self, root, scripts, run_test=None):
-        """Lay out e2e/ with the runner, a Linux binary and the fake docker.
+    def real_docker(self):
+        """The docker, the Linux mise and the image to run real containers with. Without a
+        docker, the e2e image or a Linux build of mise the test is skipped,
+        unless MISE_E2E_RUNNER_DOCKER=1 says they have to be there, as CI does."""
+
+        def missing(what):
+            if os.environ.get("MISE_E2E_RUNNER_DOCKER") == "1":
+                self.fail(f"MISE_E2E_RUNNER_DOCKER=1, but {what}")
+            self.skipTest(what)
+
+        docker = shutil.which("docker")
+        if docker is None:
+            missing("docker is not installed")
+        image = os.environ.get("MISE_E2E_DOCKER_IMAGE", "ghcr.io/jdx/mise:e2e")
+        inspect = subprocess.run([docker, "image", "inspect", image], capture_output=True)
+        if inspect.returncode != 0:
+            missing(f"the image {image} is not available")
+        target = Path(os.environ.get("CARGO_TARGET_DIR", ROOT / "target"))
+        binary = Path(os.environ.get("MISE_E2E_BIN", target / "debug" / "mise")).resolve()
+        if not binary.is_file():
+            missing(f"there is no mise build at {binary}")
+        with binary.open("rb") as file:
+            if file.read(4) != ELF_HEADER[:4]:
+                missing(f"{binary} is not a Linux build of mise")
+        return docker, binary, image
+
+    def setup_tree(self, root, scripts, run_test=None, real=None):
+        """Lay out e2e/ with the runner, a Linux binary and the fake docker, or
+        with `real`, the docker and the mise that `real_docker` returned.
         Returns the environment to run it in."""
         e2e = root / "e2e"
         e2e.mkdir()
@@ -546,15 +628,19 @@ class E2EDockerSlotTests(unittest.TestCase):
         (root / "scripts" / "get-version.sh").write_text("echo test\n")
         for name, script in scripts.items():
             (e2e / name).write_text(f"#!/usr/bin/env bash\n{script}\n")
+        if real is not None:
+            # The container mounts the tree, and `nobody` has to read it there.
+            root.chmod(0o755)
         # The runner checks that the mise under test is a Linux binary.
         binary = root / "bin" / "mise"
         binary.parent.mkdir()
-        shutil.copy(shutil.which("true"), binary)
+        binary.write_bytes(ELF_HEADER)
+        binary.chmod(0o755)
         fake = root / "fakebin" / "docker"
         fake.parent.mkdir()
-        fake.write_text(FAKE_DOCKER)
+        fake.write_text(FAKE_DOCKER if real is None else LOGGING_DOCKER)
         fake.chmod(0o755)
-        for name in ("counts", "hosttmp"):
+        for name in ("counts", "hosttmp", "tmp"):
             (root / name).mkdir()
         env = {
             key: value
@@ -567,20 +653,26 @@ class E2EDockerSlotTests(unittest.TestCase):
             MISE_E2E_BIN=str(binary),
             MISE_E2E_DOCKER="1",
             MISE_E2E_HOST_TMP=str(root / "hosttmp"),
+            TMPDIR=str(root / "tmp"),
             COUNTS=str(root / "counts"),
             DOCKER_LOG=str(root / "docker.log"),
             DOCKER_LIVE=str(root / "live"),
             E2E_RETRY_WAIT_SECONDS="0",
         )
+        if real is not None:
+            docker, mise, image = real
+            env.update(
+                REAL_DOCKER=docker, MISE_E2E_BIN=str(mise), MISE_E2E_DOCKER_IMAGE=image
+            )
         return env
 
-    def run_runner(self, scripts, stub=False, jobs="1", **settings):
+    def run_runner(self, scripts, stub=False, jobs="1", real=None, **settings):
         """Run e2e/run_all_tests with MISE_E2E_DOCKER=1 on `scripts`, a dict of
         test name to script, with the real run_test or one that only records its
         slot. Returns the result and the docker calls."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            env = self.setup_tree(root, scripts, SLOT_RUN_TEST if stub else None)
+            env = self.setup_tree(root, scripts, SLOT_RUN_TEST if stub else None, real)
             env.update(E2E_JOBS=jobs, **settings)
             result = subprocess.run(
                 ["bash", str(root / "e2e" / "run_all_tests"), *scripts],
@@ -588,7 +680,7 @@ class E2EDockerSlotTests(unittest.TestCase):
                 env=env,
                 capture_output=True,
                 text=True,
-                timeout=60,
+                timeout=60 if real is None else 300,
             )
             log = root / "docker.log"
             calls = log.read_text().splitlines() if log.exists() else []
@@ -603,6 +695,7 @@ class E2EDockerSlotTests(unittest.TestCase):
             self.slot_root = next(iter(lines("slot-root")), None)
             self.slot_root_exists = bool(self.slot_root) and Path(self.slot_root).exists()
             self.leftover = sorted(p.name for p in (root / "hosttmp").iterdir())
+            self.tmp_left = sorted(p.name for p in (root / "tmp").iterdir())
             return result, calls
 
     @staticmethod
@@ -646,6 +739,7 @@ class E2EDockerSlotTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("MISE_E2E_DOCKER_REUSE must be 0 or 1", result.stderr)
         self.assertEqual(self.seen, [])
+        self.assertEqual(self.tmp_left, [])
 
     def test_container_is_reused(self):
         result, calls = self.run_runner({"test_a": "", "test_b": ""})
@@ -688,6 +782,55 @@ class E2EDockerSlotTests(unittest.TestCase):
         # The container that passed its test was reset, not removed.
         first_reset = next(i for i, c in enumerate(calls) if "tmp_owner" in c)
         self.assertLess(first_reset, failing)
+
+    def test_container_that_cannot_be_reset_is_discarded(self):
+        result, calls = self.run_runner(
+            {"test_a": "", "test_b": ""}, DOCKER_RESET_STATUS="4"
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        starts = [i for i, c in enumerate(calls) if c.startswith("run -d ")]
+        self.assertEqual(len(starts), 2, calls)
+        removals = [i for i, c in enumerate(calls) if c.startswith("rm -f mise-e2e-")]
+        self.assertTrue(any(starts[0] < i < starts[1] for i in removals), calls)
+        # The two containers do not share the directories behind /tmp.
+        mounts = [
+            next(arg for arg in calls[i].split() if arg.endswith(":/tmp")) for i in starts
+        ]
+        self.assertNotEqual(mounts[0], mounts[1])
+
+    def test_real_container_is_clean_for_the_next_test(self):
+        real = self.real_docker()
+        result, calls = self.run_runner(
+            {
+                "test_1_leaves_things": LEAVE_THINGS,
+                "test_2_new_container": EXPECT_NEW_CONTAINER,
+                "test_3_leaves_things": "# e2e:non-root\ntouch /tmp/left /home/left",
+                "test_4_new_container": EXPECT_NEW_CONTAINER,
+            },
+            real=real,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(len(self.starts(calls)), 1, calls)
+        self.assertEqual(len(self.exec_calls(calls)), 4, calls)
+        self.assertEqual(self.leftover, [])
+
+    def test_real_dead_container_leaves_nothing_to_the_next_one(self):
+        real = self.real_docker()
+        result, calls = self.run_runner(
+            {
+                "test_1_leaves_things": LEAVE_THINGS + KILL_CONTAINER,
+                "test_2_new_container": EXPECT_NEW_CONTAINER,
+            },
+            real=real,
+            E2E_MAX_ATTEMPTS="1",
+        )
+        output = result.stdout + result.stderr
+        self.assertEqual(result.returncode, 1, output)
+        self.assertNotIn("is still there", output)
+        self.assertNotIn("test_2_new_container failed", output)
+        self.assertEqual(len(self.starts(calls)), 2, calls)
+        # What root left in the dead container's directories is gone too.
+        self.assertEqual(self.leftover, [])
 
     def test_failed_attempt_is_retried_in_a_new_container(self):
         result, calls = self.run_runner({"test_fail": ""}, E2E_MAX_ATTEMPTS="2")

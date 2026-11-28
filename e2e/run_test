@@ -513,8 +513,13 @@ run_in_slot_container() {
   docker_test_args "$mise_bin"
 
   if [[ ! -f $slot_dir/container ]]; then
-    local host_tmp host_root host_home
-    docker_make_host_dirs "$slot_dir"
+    local host_tmp host_root host_home mounts
+    # New directories for every container, not the slot's last ones: when a
+    # container dies, what its test left in them cannot be removed from inside,
+    # and the host user cannot remove root's files.
+    mkdir -p "$slot_dir"
+    mounts="$(mktemp -d "$slot_dir/mounts.XXXXXX")"
+    docker_make_host_dirs "$mounts"
     if ! docker run -d --init --read-only \
       --name "$container" \
       --label mise-e2e=1 \
@@ -555,8 +560,8 @@ run_in_slot_container() {
 }
 
 run_in_docker() {
-  local image="${MISE_E2E_DOCKER_IMAGE:-ghcr.io/jdx/mise:e2e}"
-  local mise_bin
+  local image mise_bin
+  image="$(docker_e2e_image)"
   mise_bin="$(resolve_mise_bin)"
 
   if ! file "$mise_bin" | grep -q "ELF"; then
