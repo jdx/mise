@@ -562,7 +562,7 @@ impl Backend for PIPXBackend {
     }
 
     fn get_dependencies_for(&self, opts: &ToolVersionOptions) -> eyre::Result<Vec<&str>> {
-        if PipxOptions::new(opts).has_uv_only_options()? {
+        if PipxOptions::new(&opts.literal()).has_uv_only_options()? {
             Ok(vec!["uv", "python"])
         } else {
             self.get_dependencies()

@@ -456,7 +456,8 @@ fn safe_mode_options(request: &crate::toolset::ToolRequest) -> Option<ToolOption
         {
             ToolOptions::default()
         }
-        _ => request.explicit_options(),
+        // as plain text, like `tool_options_for_tv` gives them
+        _ => request.explicit_options().literal(),
     })
 }
 

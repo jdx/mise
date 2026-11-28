@@ -261,6 +261,14 @@ impl<'a> HttpOptions<'a> {
             .platform_string_for_target("checksum_url", target)
     }
 
+    /// Whether `mise lock` evaluates `checksum_expr` for `target`: only when no
+    /// checksum is pinned for it and a checksum source names the manifest.
+    fn lock_evaluates_checksum_expr(&self, target: &PlatformTarget) -> bool {
+        self.checksum_expr().is_some()
+            && self.checksum_for_target(target).is_none()
+            && self.checksum_url_for_target(target).is_some()
+    }
+
     fn format_for_target(&self, target: &PlatformTarget) -> Option<String> {
         self.plain().platform_string_for_target("format", target)
     }
@@ -1555,8 +1563,11 @@ impl Backend for HttpBackend {
         };
 
         // Refused here, since a checksum that cannot be resolved still writes a url-only
-        // entry.
-        if let Some(expr) = opts.checksum_expr() {
+        // entry, but only where `resolve_lock_checksum` would evaluate it: a platform
+        // with a pinned checksum, or with no checksum source, never reads the manifest.
+        if opts.lock_evaluates_checksum_expr(target)
+            && let Some(expr) = opts.checksum_expr()
+        {
             self.ensure_safe_expr("checksum_expr", expr)?;
         }
         let mut checksum = self.resolve_lock_checksum(&opts, tv, target, &url).await;
@@ -2201,6 +2212,28 @@ mod tests {
             template_string_for_target(template, &tv, &win),
             "sentinel_0.40.0_windows_amd64.zip"
         );
+    }
+
+    #[test]
+    fn lock_evaluates_checksum_expr_only_for_unpinned_platforms() {
+        let raw: ToolVersionOptions = toml::from_str(
+            r#"
+            checksum_url = "https://example.invalid/SHASUMS"
+            checksum_expr = "body"
+
+            [platforms.linux-x64]
+            checksum = "sha256:abc"
+            "#,
+        )
+        .unwrap();
+        let opts = HttpOptions::new(&raw);
+        let target = |key: &str| PlatformTarget::new(crate::platform::Platform::parse(key).unwrap());
+        // a pinned platform never reads the manifest, so safe mode need not refuse it
+        assert!(!opts.lock_evaluates_checksum_expr(&target("linux-x64")));
+        assert!(opts.lock_evaluates_checksum_expr(&target("macos-arm64")));
+        let no_source: ToolVersionOptions =
+            toml::from_str(r#"checksum_expr = "body""#).unwrap();
+        assert!(!HttpOptions::new(&no_source).lock_evaluates_checksum_expr(&target("linux-x64")));
     }
 
     #[test]
