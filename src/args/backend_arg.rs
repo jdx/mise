@@ -482,6 +482,11 @@ impl BackendArg {
             bail!(
                 "'{self}' does not name a tool: write the tool after the backend, as in 'asdf:<tool>'"
             );
+        } else if let Some(full) = self.unresolved_explicit_full() {
+            // A lockfile entry or install manifest named this backend for a
+            // short that may well be in the registry, so the registry is not
+            // what failed.
+            bail!("{self} is set to backend '{full}', which mise could not resolve");
         } else if let Some((plugin_name, tool_name)) = self.short.split_once(':') {
             // Check if the plugin exists first
             if let Some(plugin_type) = install_state::get_plugin_type(plugin_name) {
@@ -543,6 +548,18 @@ impl BackendArg {
             }
             bail!("{msg}");
         }
+    }
+
+    /// The backend identifier, without options, that an explicit selection
+    /// under a plain short (`node` → `bogus:owner/repo`) names. A short that
+    /// spells the backend itself is reported by the plugin checks instead.
+    fn unresolved_explicit_full(&self) -> Option<String> {
+        if !self.has_explicit_backend() || self.short.contains(':') {
+            return None;
+        }
+        let full = self.full();
+        let name = split_bracketed_opts(&full).map_or(full.as_str(), |(name, _)| name);
+        name.contains(':').then(|| name.to_string())
     }
 
     pub fn backend_type(&self) -> BackendType {

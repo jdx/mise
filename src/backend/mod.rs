@@ -1730,7 +1730,13 @@ mod tests {
             get(&ba).is_none(),
             "an explicit backend that does not resolve got the cached core node"
         );
-        assert!(ba.backend().is_err());
+        let Err(err) = ba.backend() else {
+            panic!("an unresolved backend has no backend");
+        };
+        assert_eq!(
+            err.to_string(),
+            "node is set to backend 'bogus:owner/repo', which mise could not resolve"
+        );
     }
 
     fn create_test_backend_arg(tool: &str) -> Arc<BackendArg> {
