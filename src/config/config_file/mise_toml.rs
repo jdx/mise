@@ -534,8 +534,10 @@ fn drops_unverified_url<'a>(
     dropped.iter().any(|k| is_checksum_option(k)) && !kept.any(|k| is_checksum_option(k))
 }
 
+/// Whether option `key` is one the http backend checks a download against. `checksum_expr` is
+/// not: without a `checksum_url` it has no file to read.
 fn is_checksum_option(key: &str) -> bool {
-    key.starts_with("checksum")
+    crate::backend::http::CHECKSUM_SOURCES.contains(&key)
 }
 
 fn warn_unverified_url(tool: &str, at: &str) {
@@ -2381,10 +2383,13 @@ impl ConfigFile for MiseToml {
         let contents = self.dump()?;
         super::symlink_check_before_write(&self.path)?;
         trust_check_before_write(&self.path)?;
-        if let Some(parent) = self.path.parent() {
+        // The trust prompt can wait on the user while the checkout changes, so where the file
+        // leads is checked again, and the write goes to the destination that passed.
+        let destination = super::checked_write_destination(&self.path)?;
+        if let Some(parent) = destination.parent() {
             create_dir_all(parent)?;
         }
-        file::write_atomic(&self.path, contents)?;
+        file::write_atomic(&destination, contents)?;
         super::note_saved(&self.path);
         trust_after_write(&self.path)?;
         Ok(())
@@ -3498,6 +3503,34 @@ mod tests {
         assert_eq!(parse("platforms_linux_url"), None);
         assert_eq!(parse("platforms_linux_x64_bin"), None);
         assert_eq!(parse("checksum_url"), None);
+    }
+
+    #[test]
+    fn a_checksum_expr_is_no_checksum_without_its_checksum_url() {
+        let keys = |keys: &[&str]| keys.iter().map(|k| k.to_string()).collect::<Vec<_>>();
+        // The expression reads the file at `checksum_url`: with that dropped, the url is unchecked.
+        let kept = keys(&["url", "checksum_expr"]);
+        assert!(super::drops_unverified_url(
+            &keys(&["checksum_url"]),
+            kept.iter()
+        ));
+        // Dropping only the expression leaves the checksum file to check the download against.
+        let kept = keys(&["url", "checksum_url"]);
+        assert!(!super::drops_unverified_url(
+            &keys(&["checksum_expr"]),
+            kept.iter()
+        ));
+
+        // A platform whose only checksum option left is an expression loses its url.
+        let mut o: indexmap::IndexMap<String, toml::Value> = toml::from_str::<toml::Table>(
+            r#"platforms = { linux-x64 = { url = "l", checksum_expr = "e" }, macos-arm64 = { url = "m", checksum_url = "c" } }"#,
+        )
+        .unwrap()
+        .into_iter()
+        .collect();
+        let removed = super::drop_unverified_platform_urls(&mut o, &[], vec![], true);
+        assert_eq!(removed, ["platforms.linux-x64.url"]);
+        assert!(o["platforms"]["macos-arm64"].get("url").is_some());
     }
 
     #[test]

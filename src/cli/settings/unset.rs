@@ -56,14 +56,20 @@ pub(super) fn unset(key: &str, local: bool, override_file: bool) -> Result<()> {
     } else {
         vec![config::global_config_path()]
     };
-    // Parse and validate every affected layer before changing any of them.
+    // Parse and validate every affected layer, and check where each one leads, before changing
+    // any of them.
     let updates = paths
         .iter()
         .map(|path| remove_from_file(key, path).map(|contents| (path, contents)))
         .collect::<Result<Vec<_>>>()?;
+    for (path, contents) in &updates {
+        if contents.is_some() {
+            crate::config::config_file::symlink_check_before_write(path)?;
+        }
+    }
     for (path, contents) in updates {
         if let Some(contents) = contents {
-            file::write(path, contents)?;
+            super::write_settings_file(path, &contents)?;
         }
     }
     Ok(())

@@ -1625,7 +1625,19 @@ pub fn trust_check_before_write(path: &Path) -> Result<()> {
 /// was trusted before this command started. A project's link to global config, a link into the
 /// state directory, and a link out of the root whose target does not exist are never followed,
 /// so a write never creates a file outside the project.
+///
+/// A writer that asks a question before it writes, such as a trust prompt, checks again with
+/// [`checked_write_destination`] after the answer, as the links can change while it waits.
 pub fn symlink_check_before_write(path: &Path) -> Result<()> {
+    checked_write_destination(path).map(drop)
+}
+
+/// [`symlink_check_before_write`], returning the file the check approved: `path` in its
+/// directory resolved, or the file its link leads to. Writing there rather than to `path` goes to
+/// the destination this check saw even if a link changes afterwards. That narrows the window to
+/// the write itself but does not close it: mise opens the file by its path, not through a
+/// directory it holds open.
+pub fn checked_write_destination(path: &Path) -> Result<PathBuf> {
     // The directory is resolved from the absolute path: a bare file name such as `mise.toml`
     // has an empty parent, which does not resolve.
     let abs = path.absolutize()?;
@@ -1639,7 +1651,10 @@ pub fn symlink_check_before_write(path: &Path) -> Result<()> {
     // and neither is one that would create a global config file that does not exist yet.
     let to_global = || config::write_reaches_global_config_through_link(&abs);
     if !path.is_symlink() && !dir_leads_out && !to_global() {
-        return Ok(());
+        return Ok(match (dir, abs.file_name()) {
+            (Some(dir), Some(name)) => dir.join(name),
+            _ => abs.to_path_buf(),
+        });
     }
     let target = file::atomic_write_target(path)?;
     let through = if path.is_symlink() {
@@ -1647,11 +1662,11 @@ pub fn symlink_check_before_write(path: &Path) -> Result<()> {
     } else {
         "a linked directory"
     };
-    let refuse = |why: &str| -> Result<()> {
+    let refuse = |why: &str| -> Result<PathBuf> {
         Err(eyre!(
             "refusing to write {} through {through} to {}: {why}. Write the file it links to directly, or replace the link with a regular file",
-            display_path(path),
-            display_path(&target)
+            style::display_path_escaped(path),
+            style::display_path_escaped(&target)
         ))
     };
     let unresolved = target
@@ -1675,11 +1690,8 @@ pub fn symlink_check_before_write(path: &Path) -> Result<()> {
     let in_root = !dir_leads_out
         && (root.is_some_and(|root| target.starts_with(root))
             || dir.is_some_and(|dir| target.starts_with(dir)));
-    if in_root {
-        return Ok(());
-    }
-    if config::is_global_config_write(path) {
-        return Ok(());
+    if in_root || config::is_global_config_write(path) {
+        return Ok(target);
     }
     if !target.exists() {
         return refuse("the link leaves the config's directory and its target does not exist");
@@ -1694,13 +1706,13 @@ pub fn symlink_check_before_write(path: &Path) -> Result<()> {
     // project's links lead: the prompt names the directory, not the files its links reach.
     let project = config_trust_root(path);
     if is_path_trusted(path) && !trusted_by_this_command(&project) {
-        return Ok(());
+        return Ok(target);
     }
     Err(eyre!(
         "refusing to write {} through {through} to {}: the link leaves the project, and mise follows such a link only for a project that was trusted before this command. Check where the link leads, run `mise trust` in {} and run the command again, or replace the link with a regular file",
-        display_path(path),
-        display_path(&target),
-        display_path(&project)
+        style::display_path_escaped(path),
+        style::display_path_escaped(&target),
+        style::display_path_escaped(&project)
     ))
 }
 
@@ -1767,8 +1779,8 @@ fn script_link_check(script: &Path, root: &Path, follow_own_link: bool) -> Resul
     let refuse = |why: &str| -> Result<PathBuf> {
         Err(eyre!(
             "refusing to {verb} task {} through {through} to {}: {why}",
-            display_path(&script),
-            display_path(&target)
+            style::display_path_escaped(&script),
+            style::display_path_escaped(&target)
         ))
     };
     if root
@@ -1792,7 +1804,7 @@ fn script_link_check(script: &Path, root: &Path, follow_own_link: bool) -> Resul
     }
     refuse(&format!(
         "the link leaves the project, and mise follows such a link only for a project that was trusted before this command. Check where the link leads, run `mise trust` in {} and run the command again, or replace the link",
-        display_path(&root)
+        style::display_path_escaped(&root)
     ))
 }
 
@@ -2519,6 +2531,30 @@ mod tests {
             detect_config_file_with_settings(Path::new("/foo/bar/mise.toml"), &settings).await,
             ConfigFileDetection::Recognized(ConfigFileType::MiseToml)
         ));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_write_goes_to_the_destination_its_check_approved() {
+        use std::os::unix::fs::symlink;
+        let dir = tempfile::tempdir().unwrap();
+        let project = dir.path().canonicalize().unwrap().join("proj");
+        std::fs::create_dir_all(project.join("config")).unwrap();
+        std::fs::write(project.join("config/real.toml"), "").unwrap();
+        symlink("config/real.toml", project.join("mise.toml")).unwrap();
+        // A link that stays in the project: the write goes to the file it leads to, so a link
+        // swapped in afterwards is not what it writes through.
+        assert_eq!(
+            checked_write_destination(&project.join("mise.toml")).unwrap(),
+            project.join("config/real.toml")
+        );
+        // A regular file: its own path, in its directory resolved.
+        std::fs::write(project.join("mise.local.toml"), "").unwrap();
+        symlink(&project, dir.path().join("alias")).unwrap();
+        assert_eq!(
+            checked_write_destination(&dir.path().join("alias/mise.local.toml")).unwrap(),
+            project.join("mise.local.toml")
+        );
     }
 
     #[test]
