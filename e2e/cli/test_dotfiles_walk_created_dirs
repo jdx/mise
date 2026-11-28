@@ -142,3 +142,10 @@ chmod 555 "$MISE_STATE_DIR/dotfiles"
 assert_fail_contains "mise dot apply --yes" "cannot record what mise creates under"
 chmod 755 "$MISE_STATE_DIR/dotfiles"
 assert_fail "test -e $HOME/t/new"
+
+# so is a target the apply would create
+rm -rf "$HOME/t"
+chmod 555 "$MISE_STATE_DIR/dotfiles"
+assert_fail_contains "mise dot apply --yes" "cannot record what mise creates under"
+chmod 755 "$MISE_STATE_DIR/dotfiles"
+assert_fail "test -e $HOME/t"
