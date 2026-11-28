@@ -47,6 +47,16 @@ assert_fail_contains "mise x dotnet[runtime=invalid]@8.0.12 -- true" "Invalid ru
 # An already-active SDK ahead of the shims must not shadow the SDK being validated.
 rm -f global.json
 export MISE_DOTNET_ISOLATED=1 MISE_ACTIVATE_AGGRESSIVE=0
+assert "mise ls dotnet --json | jq -r '.[] | select(.version == \"8.0.408\") | .installed'" "false"
+assert_contains "mise install --dry-run dotnet@8.0.408 2>&1" "would install"
 mise install dotnet@8.0.408
 sdk8="$(mise where dotnet@8.0.408)"
+test ! -L "$sdk8"
 PATH="$sdk8:$MISE_DATA_DIR/shims:$PATH" DOTNET_ROOT="$sdk8" assert_contains "mise install dotnet@9.0.100 && mise x dotnet@9.0.100 -- dotnet --version" "9.0.100"
+
+# Switching back to shared mode must install the SDK into the shared root.
+export MISE_DOTNET_ISOLATED=0
+assert "mise ls dotnet --json | jq -r '.[] | select(.version == \"9.0.100\") | .installed'" "false"
+assert_contains "mise install --dry-run dotnet@9.0.100 2>&1" "would install"
+assert_contains "mise install dotnet@9.0.100 && mise x dotnet@9.0.100 -- dotnet --version" "9.0.100"
+assert_contains "mise install --dry-run dotnet@9.0.100 2>&1" "already installed"

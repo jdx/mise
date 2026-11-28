@@ -18,6 +18,8 @@ use crate::config::{Config, Settings};
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::parallel;
+use crate::runtime_symlinks::is_runtime_symlink;
+use crate::toolset::install_state;
 use crate::toolset::{ToolRequest, ToolVersion, ToolVersionOptions, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{dirs, env, file, plugins};
@@ -207,6 +209,57 @@ impl Backend for DotnetPlugin {
         Ok(vec![sdk.version])
     }
 
+    fn is_version_installed(
+        &self,
+        _config: &Arc<Config>,
+        tv: &ToolVersion,
+        check_symlink: bool,
+    ) -> bool {
+        if matches!(tv.request, ToolRequest::System { .. }) {
+            return true;
+        }
+        let install_path = tv.install_path();
+        if (check_symlink && is_runtime_symlink(&install_path))
+            || (install_state::is_incomplete(tv.ba(), &tv.state_key())
+                && !crate::backend::is_active_postinstall_install(tv, &install_path))
+        {
+            return false;
+        }
+        // An explicit path is user-managed and carries no concrete SDK version.
+        if matches!(tv.request, ToolRequest::Path { .. }) {
+            return install_path.exists();
+        }
+        if !install_path.join(DOTNET_BIN).is_file() {
+            return false;
+        }
+
+        let matches_mode = if Self::is_isolated() {
+            !file::is_symlink_or_junction(&install_path)
+        } else {
+            file::is_symlink_to(&install_path, &dotnet_root())
+        };
+        if !matches_mode {
+            return false;
+        }
+
+        let raw_opts = tv.request.options();
+        let opts = DotnetOptions::new(&raw_opts);
+        let runtime_exists = |framework| {
+            install_path
+                .join("shared")
+                .join(framework)
+                .join(&tv.version)
+                .is_dir()
+        };
+        if opts.runtime().is_some() {
+            return opts.runtime_framework_name().is_some_and(runtime_exists);
+        }
+        install_path.join("sdk").join(&tv.version).is_dir()
+            // Directory listings reconstruct requests without the original runtime option.
+            || (tv.request.source().is_unknown()
+                && RUNTIME_FRAMEWORKS.iter().any(|(_, framework)| runtime_exists(framework)))
+    }
+
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
         let isolated = Self::is_isolated();
         let install_dir = if isolated {
@@ -334,13 +387,16 @@ impl Backend for DotnetPlugin {
     }
 }
 
+const RUNTIME_FRAMEWORKS: &[(&str, &str)] = &[
+    ("dotnet", "Microsoft.NETCore.App"),
+    ("aspnetcore", "Microsoft.AspNetCore.App"),
+    ("windowsdesktop", "Microsoft.WindowsDesktop.App"),
+];
+
 fn runtime_framework_name(runtime: &str) -> Option<&'static str> {
-    match runtime {
-        "dotnet" => Some("Microsoft.NETCore.App"),
-        "aspnetcore" => Some("Microsoft.AspNetCore.App"),
-        "windowsdesktop" => Some("Microsoft.WindowsDesktop.App"),
-        _ => None,
-    }
+    RUNTIME_FRAMEWORKS
+        .iter()
+        .find_map(|&(name, framework)| (name == runtime).then_some(framework))
 }
 
 fn sdk_list_contains_version(lines: &[String], version: &str) -> bool {
