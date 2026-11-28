@@ -140,7 +140,7 @@ fn sweep_removes_staging_of_dead_processes_and_keeps_live_ones() {
     let root = tempfile::tempdir().unwrap();
     let root = root.path();
     // A live process: its lock is held, so its folder must survive.
-    let live = InvocationScratch::claim(root).unwrap();
+    let live = InvocationScratch::claim(root, Duration::from_secs(3600)).unwrap();
     std::fs::write(live.dir.join("artifact"), b"live").unwrap();
     // A process that was killed or replaced by `exec()`: its lock file and folder
     // remain, but nothing holds the lock.
@@ -166,6 +166,32 @@ fn sweep_removes_staging_of_dead_processes_and_keeps_live_ones() {
     live.remove();
     assert!(!dir.exists());
     assert!(!lock_path.exists());
+}
+
+#[test]
+fn concurrent_claims_never_sweep_a_live_folder() {
+    let root = tempfile::tempdir().unwrap();
+    let root = root.path().to_path_buf();
+    let threads: Vec<_> = (0..8)
+        .map(|_| {
+            let root = root.clone();
+            std::thread::spawn(move || {
+                for _ in 0..25 {
+                    // Each claim sweeps. Without claims and sweeps taking turns, one
+                    // could take another's lock file before its owner locked it and
+                    // delete the folder the owner then made.
+                    let scratch = InvocationScratch::claim(&root, Duration::ZERO).unwrap();
+                    std::fs::write(scratch.dir.join("artifact"), b"x").unwrap();
+                    std::thread::yield_now();
+                    assert!(scratch.dir.join("artifact").exists());
+                    scratch.remove();
+                }
+            })
+        })
+        .collect();
+    for thread in threads {
+        thread.join().unwrap();
+    }
 }
 
 #[test]

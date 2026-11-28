@@ -45,5 +45,5 @@ assert_directory_not_exists "$STAGING/pdead"
 assert_fail "test -e '$STAGING/pdead.lock'"
 assert_directory_not_exists "$STAGING/.tmpold"
 assert_directory_exists "$STAGING/.tmpnew"
-# Nothing of this run is left behind.
-assert "find '$STAGING' -mindepth 1 -not -path '$STAGING/.tmpnew' | wc -l | tr -d ' '" "0"
+# Nothing of this run is left behind but the lock that claims and sweeps take turns on.
+assert "find '$STAGING' -mindepth 1 -not -path '$STAGING/.tmpnew' -not -name .claims | wc -l | tr -d ' '" "0"

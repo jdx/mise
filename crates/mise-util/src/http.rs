@@ -546,32 +546,35 @@ struct InvocationScratch {
 }
 
 impl InvocationScratch {
-    fn claim(root: &Path) -> Result<Self> {
-        for _ in 0..5 {
-            let lock_path = tempfile::Builder::new()
-                .prefix("p")
-                .suffix(".lock")
-                .tempfile_in(root)?
-                .into_temp_path()
-                .keep()?;
-            let mut lock = fslock::LockFile::open(&lock_path)?;
-            // A sweeping process may have locked the new file, taking it for a dead
-            // owner's, and deleted it before we locked it: start over with a new name.
-            if !lock.try_lock()? || !lock_path.exists() {
-                continue;
-            }
-            let dir = scratch_dir_for(&lock_path);
-            std::fs::create_dir(&dir)?;
-            return Ok(Self {
-                dir,
-                lock_path,
-                lock,
-            });
-        }
-        bail!(
-            "could not claim a download staging folder in {}",
-            display_path(root)
-        )
+    /// Claims a new folder, then deletes what dead processes left.
+    fn claim(root: &Path, unlocked_max_age: Duration) -> Result<Self> {
+        // Claims and sweeps take turns. A sweep that ran while a claim sat between
+        // creating its lock file and locking it would take the new file for a dead
+        // owner's: it could delete the file and, through a handle it still held to it,
+        // the folder the owner then created. Folders are only ever claimed under this
+        // lock, so whatever lock a sweep can take here belongs to a dead process.
+        let mut claims = fslock::LockFile::open(&root.join(CLAIMS_LOCK))?;
+        claims.lock()?;
+        let lock_path = tempfile::Builder::new()
+            .prefix("p")
+            .suffix(".lock")
+            .tempfile_in(root)?
+            .into_temp_path()
+            .keep()?;
+        let mut lock = fslock::LockFile::open(&lock_path)?;
+        ensure!(
+            lock.try_lock()?,
+            "could not lock {}",
+            display_path(&lock_path)
+        );
+        let dir = scratch_dir_for(&lock_path);
+        std::fs::create_dir(&dir)?;
+        sweep_abandoned_scratch(root, unlocked_max_age);
+        Ok(Self {
+            dir,
+            lock_path,
+            lock,
+        })
     }
 
     fn remove(self) {
@@ -583,6 +586,10 @@ impl InvocationScratch {
 }
 
 static INVOCATION_SCRATCH: Mutex<Option<InvocationScratch>> = Mutex::new(None);
+
+/// Held while a process claims a staging folder or sweeps abandoned ones. It is not a
+/// folder and has no `.lock` extension, so sweeps pass over it.
+const CLAIMS_LOCK: &str = ".claims";
 
 /// Folders with no lock file beside them were left by mise versions that staged
 /// downloads straight under `invocation-downloads`. Such a version may still be running,
@@ -601,8 +608,7 @@ fn invocation_scratch() -> Result<PathBuf> {
     // and a lockfile must not depend on where TEMP points.
     let root = crate::dirs::CACHE.join("invocation-downloads");
     file::create_dir_all(&root)?;
-    let claimed = InvocationScratch::claim(&root)?;
-    sweep_abandoned_scratch(&root, UNLOCKED_SCRATCH_MAX_AGE);
+    let claimed = InvocationScratch::claim(&root, UNLOCKED_SCRATCH_MAX_AGE)?;
     let dir = claimed.dir.clone();
     *scratch = Some(claimed);
     Ok(dir)
@@ -621,7 +627,8 @@ fn remove_scratch_dir(dir: &Path) {
 }
 
 /// Deletes the staging folders of processes that ended without cleaning up: those whose
-/// lock nobody holds, and lockless ones older than `unlocked_max_age`.
+/// lock nobody holds, and lockless ones older than `unlocked_max_age`. Only call it with
+/// [`CLAIMS_LOCK`] held, so no folder is between being named and being locked.
 fn sweep_abandoned_scratch(root: &Path, unlocked_max_age: Duration) {
     let Ok(entries) = std::fs::read_dir(root) else {
         return;

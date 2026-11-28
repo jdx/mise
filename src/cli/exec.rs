@@ -989,6 +989,9 @@ where
         ));
     }
     env::remove_var(env::MISE_SHIM_PATH_ENV);
+    // `exec()` runs no destructors, so the guard in `main` would never delete them. Before
+    // the sandbox, which can take away mise's own write access to the cache.
+    crate::http::release_invocation_downloads();
     // Apply sandbox (Landlock/seccomp on Linux, sandbox-exec on macOS)
     let args_str: Vec<String> = args
         .iter()
@@ -1001,8 +1004,6 @@ where
             return Err(err);
         }
     };
-    // `exec()` runs no destructors, so the guard in `main` would never delete them.
-    crate::http::release_invocation_downloads();
     if let Some(sandboxed) = sandboxed {
         // macOS: exec through sandbox-exec
         let err = exec::Command::new(&sandboxed.program)
