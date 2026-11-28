@@ -138,7 +138,9 @@ jobs:
               keep_self_hosted "Could not list the $status test runs"
             listed+="$page"$'\n'
           done
-          runs=$(printf '%s' "$listed" | sort | head -n "$MAX_RUNS" | cut -f2 | grep -E '^[0-9]+$')
+          # Keep the run ids before counting: a status with no runs leaves an empty
+          # line, which sorts first and would take one of the MAX_RUNS places.
+          runs=$(printf '%s' "$listed" | sort | cut -f2 | grep -E '^[0-9]+$' | head -n "$MAX_RUNS")
 
           # A run created earlier can queue its Windows jobs later, so the oldest
           # queued job is the minimum over the runs, not the first one found.
