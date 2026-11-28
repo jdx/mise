@@ -2098,8 +2098,10 @@ mod tests {
 
     use super::*;
 
-    /// A new file counts at the rank discovery gives its filename, so a loaded
-    /// `mise.local.toml` beside a new `mise.toml` still wins over it.
+    /// A new file counts at the rank discovery gives its filename, so a loaded file that
+    /// ranks higher in the same directory, as `mise.local.toml` does over `mise.toml`, still
+    /// wins over it. The tests' config filenames rank `test.config.toml` above
+    /// `.test.mise.toml`.
     #[test]
     fn a_new_file_counts_below_a_higher_ranked_file_in_its_directory() {
         let dir = tempfile::tempdir().unwrap();
@@ -2107,7 +2109,7 @@ mod tests {
         let local: Arc<dyn ConfigFile> = Arc::new(
             MiseToml::from_str(
                 &format!("[tools]\nnode = [{node}]\npython = \"3\"\n"),
-                &dir.path().join("mise.local.toml"),
+                &dir.path().join("test.config.toml"),
             )
             .unwrap(),
         );
@@ -2118,7 +2120,7 @@ mod tests {
         let new: Arc<dyn ConfigFile> = Arc::new(
             MiseToml::from_str(
                 "[tools]\nnode = \"1\"\nruby = \"3\"\n",
-                &dir.path().join("mise.toml"),
+                &dir.path().join(".test.mise.toml"),
             )
             .unwrap(),
         );

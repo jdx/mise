@@ -2881,12 +2881,15 @@ pub(crate) fn glob_in_dir(dir: &Path, pattern: &str) -> Result<Vec<PathBuf>> {
             _ => return crate_glob(),
         };
         let component = component.as_ref();
-        // `glob::glob` also matches `.` and `..` for a component that starts with a dot,
-        // which a directory listing never returns.
-        if component.contains("**") || component.starts_with('.') {
+        if component.contains("**") {
             return crate_glob();
         }
         if component.contains(['*', '?', '[']) {
+            // `glob::glob` also matches `.` and `..` for a wildcard that starts with a dot,
+            // which a directory listing never returns.
+            if component.starts_with('.') {
+                return crate_glob();
+            }
             let matcher = glob::Pattern::new(component)?;
             let mut next = vec![];
             for base in &current {
@@ -4061,16 +4064,24 @@ pub(crate) fn override_config_rank(path: &Path) -> Option<usize> {
 }
 
 /// Where `path` ranks among the config files discovery reads from `root`, lowest first, as
-/// [`DEFAULT_CONFIG_FILENAMES`] orders them. The file need not exist yet.
-pub(crate) fn config_filename_precedence(root: &Path, path: &Path) -> Option<usize> {
-    DEFAULT_CONFIG_FILENAMES.iter().rposition(|candidate| {
-        let candidate = root.join(candidate);
-        if is_glob_pattern(&candidate.to_string_lossy()) {
-            glob::Pattern::new(&candidate.to_string_lossy()).is_ok_and(|g| g.matches_path(path))
-        } else {
-            candidate == path
-        }
-    })
+/// [`DEFAULT_CONFIG_FILENAMES`] orders them. Files one pattern matches rank by name, a later
+/// name higher, as discovery reads them. The file need not exist yet.
+pub(crate) fn config_filename_precedence(root: &Path, path: &Path) -> Option<(usize, PathBuf)> {
+    let escaped_root = glob::Pattern::escape(&root.to_string_lossy());
+    DEFAULT_CONFIG_FILENAMES
+        .iter()
+        .enumerate()
+        .rev()
+        .find_map(|(i, candidate)| {
+            if is_glob_pattern(candidate) {
+                let pattern = Path::new(&escaped_root).join(candidate);
+                glob::Pattern::new(&pattern.to_string_lossy())
+                    .is_ok_and(|g| g.matches_path(path))
+                    .then(|| (i, path.to_path_buf()))
+            } else {
+                (root.join(candidate) == path).then(|| (i, PathBuf::new()))
+            }
+        })
 }
 
 pub(crate) fn system_config_files() -> IndexSet<PathBuf> {
