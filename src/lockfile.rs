@@ -1531,8 +1531,10 @@ fn merge_additional_artifacts(
     merged
 }
 
-/// A URL that holds a login `mise.lock` leaves out. Its `Debug` output
-/// leaves the login out too.
+/// A URL `mise lock` downloads an artifact from in place of the one
+/// `mise.lock` records: one that holds a login `mise.lock` leaves out, or the
+/// URL the install downloads the artifact from. Its `Debug` output leaves the
+/// login out.
 #[derive(Clone, PartialEq, Eq)]
 pub struct LoginUrl(String);
 
@@ -1540,6 +1542,11 @@ impl LoginUrl {
     /// `url`, when it holds a login.
     pub(crate) fn of(url: &str) -> Option<Self> {
         (crate::backend::static_helpers::lock_url(url) != url).then(|| Self(url.to_string()))
+    }
+
+    /// `url`, with or without a login.
+    pub(crate) fn new(url: &str) -> Self {
+        Self(url.to_string())
     }
 
     pub(crate) fn as_str(&self) -> &str {
@@ -1590,8 +1597,9 @@ pub struct PlatformInfo {
     #[serde(skip)]
     pub download_headers: Option<DownloadHeaders>,
     /// `url` with the login it is recorded without, from the config that
-    /// resolved it. Used only to download the artifact for its checksum;
-    /// never written.
+    /// resolved it, or the URL the install downloads the artifact from instead
+    /// (a forge on a custom API downloads from `url_api`). Used only to
+    /// download the artifact for its checksum; never written.
     #[serde(skip)]
     pub download_url: Option<LoginUrl>,
     /// `url_api` with the login it is recorded without, as `download_url` is

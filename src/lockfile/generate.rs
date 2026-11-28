@@ -3176,6 +3176,93 @@ mod tests {
         }
     }
 
+    /// A forge on a custom API installs from the API URL, so its entry names
+    /// that URL as both download URLs. The replaced weak pin is then checked
+    /// against the API attachment, which the install and `lock_urls_of` hash,
+    /// even when the browser URL serves other bytes with no sign-in page.
+    #[tokio::test]
+    async fn a_replaced_weak_pin_on_a_custom_api_is_checked_against_the_api_attachment() {
+        let mut server = mockito::Server::new_async().await;
+        let mut browser = Vec::new();
+        let mut api = Vec::new();
+        for name in ["custom-main", "custom-extra"] {
+            let path = format!("/download/{name}.tar.gz");
+            browser.push(
+                server
+                    .mock("HEAD", path.as_str())
+                    .with_header("content-type", "application/octet-stream")
+                    .expect(0)
+                    .create_async()
+                    .await,
+            );
+            browser.push(
+                server
+                    .mock("GET", path.as_str())
+                    .with_body("other bytes")
+                    .expect(0)
+                    .create_async()
+                    .await,
+            );
+            api.push(
+                server
+                    .mock("GET", format!("/api/v1/assets/{name}").as_str())
+                    .match_header("authorization", "token secret")
+                    .with_body("artifact")
+                    .create_async()
+                    .await,
+            );
+        }
+        let urls = |name: &str| {
+            (
+                format!("{}/download/{name}.tar.gz", server.url()),
+                format!("{}/api/v1/assets/{name}", server.url()),
+            )
+        };
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert("authorization", "token secret".parse().unwrap());
+        let headers = Some(DownloadHeaders::Client(headers));
+        let install_url = |url: &str| Some(crate::lockfile::LoginUrl::new(url));
+        let (main_url, main_api) = urls("custom-main");
+        let (extra_url, extra_api) = urls("custom-extra");
+        let md5 = format!("md5:{ARTIFACT_MD5}");
+        let sha256 = format!("sha256:{ARTIFACT_SHA256}");
+        let old = PlatformInfo {
+            url: Some(main_url.clone()),
+            url_api: Some(main_api.clone()),
+            checksum: Some(md5.clone()),
+            additional_artifacts: vec![crate::lockfile::ArtifactInfo {
+                url: extra_url.clone(),
+                url_api: Some(extra_api.clone()),
+                checksum: Some(md5.clone()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let refreshed = PlatformInfo {
+            checksum: Some(sha256.clone()),
+            download_url: install_url(&main_api),
+            download_url_api: install_url(&main_api),
+            download_headers: headers.clone(),
+            additional_artifacts: vec![crate::lockfile::ArtifactInfo {
+                url: extra_url,
+                url_api: Some(extra_api.clone()),
+                checksum: Some(sha256),
+                download_url: install_url(&extra_api),
+                download_url_api: install_url(&extra_api),
+                download_headers: headers,
+                ..Default::default()
+            }],
+            ..old.clone()
+        };
+
+        check_replaced_weak_pins(&old, &refreshed, &[])
+            .await
+            .unwrap();
+        for mock in browser.iter().chain(&api) {
+            mock.assert_async().await;
+        }
+    }
+
     /// An additional artifact sends the headers its backend resolved it with,
     /// as the main one does, both when its md5 pin recorded with a login is
     /// replaced and when an artifact with no checksum is hashed.

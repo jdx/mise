@@ -566,6 +566,29 @@ fn lock_url_api(url_api: &str) -> Option<String> {
     (!url_api.is_empty()).then(|| lock_url(url_api))
 }
 
+/// The URLs `mise lock` downloads `asset` from to complete its checksum or
+/// check a replaced md5 or sha1 pin: the lock entry's `download_url` and
+/// `download_url_api`, which name the file [`asset_download_url`] gives the
+/// install, as [`lock_urls_of`] hashes it. On a custom API that is the API
+/// URL alone, so neither check can hash the browser URL instead. On a public
+/// forge the browser URL stays first, as the install prefers it (#14465), and
+/// only the logins the recorded URLs leave out are added.
+fn lock_download_urls(
+    asset: &ReleaseAsset,
+) -> (
+    Option<crate::lockfile::LoginUrl>,
+    Option<crate::lockfile::LoginUrl>,
+) {
+    if !asset.url_api.is_empty() && !is_public_forge_api_url(&asset.url_api) {
+        let api = crate::lockfile::LoginUrl::new(&asset.url_api);
+        return (Some(api.clone()), Some(api));
+    }
+    (
+        crate::lockfile::LoginUrl::of(&asset.url),
+        crate::lockfile::LoginUrl::of(&asset.url_api),
+    )
+}
+
 /// The `url`, `url_api` and checksum `mise lock` records for `asset`. With no
 /// checksum, or an md5 or sha1 one, an asset whose URLs hold a login is hashed
 /// now, downloaded as the install downloads it: from [`asset_download_url`],
@@ -1603,14 +1626,15 @@ impl Backend for UnifiedGitBackend {
                     let (url, url_api, checksum) =
                         lock_urls_of(&additional, |url| self.forge_headers(url, &opts.api_url()))
                             .await?;
+                    let (download_url, download_url_api) = lock_download_urls(&additional);
                     additional_artifacts.push(ArtifactInfo {
                         checksum_source,
                         checksum,
                         url,
                         url_api,
                         download_headers,
-                        download_url: crate::lockfile::LoginUrl::of(&additional.url),
-                        download_url_api: crate::lockfile::LoginUrl::of(&additional.url_api),
+                        download_url,
+                        download_url_api,
                         provenance: additional_provenance,
                         ..Default::default()
                     });
@@ -1629,11 +1653,12 @@ impl Backend for UnifiedGitBackend {
                 let checksum_source = locked_digest_source(&asset, primary_downloaded);
                 let (url, url_api, checksum) =
                     lock_urls_of(&asset, |url| self.forge_headers(url, &opts.api_url())).await?;
+                // Where `mise lock` downloads the asset again to check a replaced
+                // md5 or sha1 pin, with the logins the entry leaves out.
+                let (download_url, download_url_api) = lock_download_urls(&asset);
                 Ok(PlatformInfo {
-                    // With the logins `mise lock` checks a replaced md5 or sha1
-                    // pin through, downloading the asset again.
-                    download_url: crate::lockfile::LoginUrl::of(&asset.url),
-                    download_url_api: crate::lockfile::LoginUrl::of(&asset.url_api),
+                    download_url,
+                    download_url_api,
                     download_headers,
                     checksum_source,
                     url: Some(url),
@@ -4346,6 +4371,63 @@ mod tests {
         // GitHub's own digest.
         let direct = "https://api.github.com/repos/acme/c/releases/assets/9102";
         assert_eq!(locked_digest_source(&asset(direct), false), None);
+    }
+
+    /// `mise lock` checks a replaced weak pin, or completes a checksum, by
+    /// downloading the file the install downloads: on a custom API the API
+    /// URL, even with no login to add; on github.com the browser URL first.
+    #[test]
+    fn test_lock_download_urls_name_the_file_the_install_downloads() {
+        let asset = |url: &str, url_api: &str| ReleaseAsset {
+            name: "c.tar.gz".to_string(),
+            url: url.to_string(),
+            url_api: url_api.to_string(),
+            digest: None,
+            release_tag: None,
+        };
+        let urls = |asset: &ReleaseAsset| {
+            let (url, url_api) = lock_download_urls(asset);
+            (
+                url.map(|u| u.as_str().to_string()),
+                url_api.map(|u| u.as_str().to_string()),
+            )
+        };
+        let some = |url: &str| Some(url.to_string());
+
+        let forgejo_api = "https://forge.example/api/v1/repos/o/r/releases/1/assets/2";
+        let custom = asset(
+            "https://forge.example/o/r/releases/download/v1/c",
+            forgejo_api,
+        );
+        assert_eq!(urls(&custom), (some(forgejo_api), some(forgejo_api)));
+        let with_login = "https://ci:token@forge.example/api/v1/repos/o/r/releases/1/assets/2";
+        let custom = asset(
+            "https://forge.example/o/r/releases/download/v1/c",
+            with_login,
+        );
+        assert_eq!(urls(&custom), (some(with_login), some(with_login)));
+
+        let public = asset(
+            "https://github.com/o/r/releases/download/v1/c",
+            "https://api.github.com/repos/o/r/releases/assets/3",
+        );
+        assert_eq!(urls(&public), (None, None));
+        let public_login = asset(
+            "https://github.com/o/r/releases/download/v1/c",
+            "https://x-access-token:t@api.github.com/repos/o/r/releases/assets/3",
+        );
+        assert_eq!(
+            urls(&public_login),
+            (
+                None,
+                some("https://x-access-token:t@api.github.com/repos/o/r/releases/assets/3")
+            )
+        );
+        let direct = asset("https://ci:token@files.example/c.tar.gz", "");
+        assert_eq!(
+            urls(&direct),
+            (some("https://ci:token@files.example/c.tar.gz"), None)
+        );
     }
 
     #[test]
