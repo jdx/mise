@@ -76,7 +76,16 @@ impl Heads {
                 {
                     remote.clone()
                 } else {
-                    repo.commit_tree(tree, vec![local, remote], "merge origin dotfiles")?
+                    let incoming = crate::history::checkpoint::describe_trees(
+                        repo,
+                        &repo.output_tree_of(local)?,
+                        tree,
+                    )?;
+                    let message = match incoming {
+                        Some(incoming) => format!("merge origin dotfiles: {incoming}"),
+                        None => "merge origin dotfiles".to_string(),
+                    };
+                    repo.commit_tree(tree, vec![local, remote], &message)?
                 }
             }
         };
@@ -233,6 +242,14 @@ mod tests {
         assert_eq!(history.len(), 4);
         assert!(history.contains(&local) && history.contains(&remote) && history.contains(&base));
         assert_eq!(repo.output_tree_of(&candidate.commit).unwrap(), merged);
+        assert_eq!(
+            repo.history_messages()
+                .unwrap()
+                .iter()
+                .find(|(commit, _)| *commit == candidate.commit)
+                .and_then(|(_, message)| message.lines().next()),
+            Some("merge origin dotfiles: edited ~/.zshrc")
+        );
     }
 
     #[test]
