@@ -217,13 +217,15 @@ pub fn ensure_edit_keeps_tool_request_count(
         .map(|(p, cf)| (p.as_path(), if p == path { edited } else { cf }))
         .collect();
     if !loaded {
-        // Files from the highest priority down: a closer file wins over the new one, which
-        // wins over the files in its own directory and above it.
+        // Files from the highest priority down: an override or closer file wins over the new
+        // one, which wins over the files in its own directory and above it.
         let at = files
             .iter()
             .position(|(p, cf)| {
-                crate::config::is_global_config(p)
-                    || root.starts_with(discovered_from(p, cf.as_ref()))
+                // an override file outranks every project file, the new one included
+                !crate::config::is_override_config(p)
+                    && (crate::config::is_global_config(p)
+                        || root.starts_with(discovered_from(p, cf.as_ref())))
             })
             .unwrap_or(files.len());
         files.insert(at, (path, edited));
