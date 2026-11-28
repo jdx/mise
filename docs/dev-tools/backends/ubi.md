@@ -54,6 +54,9 @@ works.
    `mise install --force <tool>` instead. Its old installation is in the
    directory the registry's backend installs to (`installs/gh` for `gh`), and
    without `--force` mise would keep the version ubi installed there.
+   `--force` replaces only the versions your config selects. Other versions
+   ubi installed in that directory stay there; delete them with
+   `mise prune <tool>`, which keeps the versions a config still uses.
 
 4. If you use a lockfile, run `mise lock` to write entries for the new tool.
    The old installation of a `ubi:owner/repo` tool stays in mise's data
