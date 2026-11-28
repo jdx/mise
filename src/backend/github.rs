@@ -484,7 +484,7 @@ fn ensure_registry_provenance(
 /// (a private repository). A custom API (GitHub Enterprise, a self-hosted
 /// GitLab or Forgejo) is used directly.
 async fn asset_download_url(asset: &ReleaseAsset) -> String {
-    release_file_url(&asset.url, &asset.url_api).await
+    release_file_url(&asset.url, &asset.url_api, None).await
 }
 
 /// Downloads a release's checksum files from where the install download would get
@@ -497,24 +497,55 @@ struct ForgeChecksumSource<'a> {
 
 impl asset_matcher::ChecksumSource for ForgeChecksumSource<'_> {
     async fn fetch_text(&self, file: &Asset) -> Result<String> {
-        let url = release_file_url(&file.url, &file.url_api).await;
-        let headers = if self.backend.is_gitlab() {
-            gitlab::get_headers(&url, &self.api_url)?
-        } else if self.backend.is_forgejo() {
-            forgejo::get_headers(&url, &self.api_url)?
-        } else {
-            github::get_headers(&url, &self.api_url)?
+        // Before the headers: finding a forge token can refresh it over the
+        // network, and the download would be refused offline anyway.
+        eyre::ensure!(!Settings::get().offline(), "offline mode is enabled");
+        let forge_headers = |url: &str| {
+            if self.backend.is_gitlab() {
+                gitlab::get_headers(url, &self.api_url)
+            } else if self.backend.is_forgejo() {
+                forgejo::get_headers(url, &self.api_url)
+            } else {
+                github::get_headers(url, &self.api_url)
+            }
         };
-        HTTP.get_text_request(url).headers(&headers).send().await
+        // The probe that picks between the browser and API URLs carries the
+        // same forge headers as the request, and nothing added by host.
+        let url = release_file_url(&file.url, &file.url_api, Some(&forge_headers)).await;
+        let headers = forge_headers(&url)?;
+        // The release chooses this URL, and a GitLab or Forgejo release link can
+        // point anywhere. The response is recorded as the asset's checksum (in
+        // `mise.lock`, or a mismatch error), so the request carries only the
+        // forge headers above: the GitHub token the shared client adds by host
+        // would read a private GitHub file for the release's author. A netrc
+        // login follows the tool's scope, as for the release's assets.
+        HTTP.get_text_request(url)
+            .without_host_auth()
+            .headers(&headers)
+            .send()
+            .await
     }
 }
 
+/// Builds the forge headers for a request to a URL.
+type ForgeHeaders<'a> = dyn Fn(&str) -> Result<reqwest::header::HeaderMap> + Sync + 'a;
+
 /// [`asset_download_url`] for any file in a release, such as a checksum file.
-async fn release_file_url(url: &str, url_api: &str) -> String {
+/// With `probe_headers`, the probe of the browser URL carries only the headers
+/// it builds for that URL, not the credentials the HTTP client adds by host
+/// alone.
+async fn release_file_url(
+    url: &str,
+    url_api: &str,
+    probe_headers: Option<&ForgeHeaders<'_>>,
+) -> String {
     if url_api.is_empty() {
         url.to_string()
     } else if is_public_forge_api_url(url_api) {
-        github::pick_reachable_asset_url(url, url_api).await
+        match probe_headers {
+            Some(headers) => github::pick_reachable_release_link_url(url, url_api, headers).await,
+            None => github::pick_reachable_asset_url(url, url_api).await,
+        }
     } else {
         debug!(
             "Since the tool resides on a custom GitHub/GitLab API ({:?}), the asset download will be performed using the given API instead of browser URL download",
@@ -6430,6 +6461,77 @@ platforms.macos-arm64.url = 'https://example.com/{{ version }}/tool-darwin-arm64
         );
         api.assert_async().await;
         browser.assert_async().await;
+    }
+
+    /// A GitLab release link can point anywhere, such as at the contents API of
+    /// a GitHub Enterprise Server, where the GitHub token reads by host alone.
+    /// The checksum file ends up in `mise.lock`, so it is fetched with the
+    /// release forge's own headers only.
+    #[test]
+    fn test_checksum_file_a_release_links_elsewhere_gets_no_github_token() {
+        use crate::config::settings::SettingsPartial;
+        use confique::Layer;
+
+        struct GithubTokenGuard;
+        impl Drop for GithubTokenGuard {
+            fn drop(&mut self) {
+                *crate::github::test_support::TOKENS_FILE_OVERRIDE
+                    .write()
+                    .unwrap() = None;
+            }
+        }
+
+        let _settings = crate::test::SettingsGuard::lock();
+        let mut partial = SettingsPartial::empty();
+        partial.github.enterprise_hosts = Some(vec!["127.0.0.1".to_string()]);
+        Settings::reset(Some(partial));
+        let tokens = std::collections::HashMap::from([(
+            "127.0.0.1".to_string(),
+            "ghp_operator".to_string(),
+        )]);
+        *crate::github::test_support::TOKENS_FILE_OVERRIDE
+            .write()
+            .unwrap() = Some(tokens);
+        let _token = GithubTokenGuard;
+
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(async {
+                let mut server = mockito::Server::new_async().await;
+                let path = "/api/v3/repos/owner/private/contents/SHA256SUMS";
+                let linked = server
+                    .mock("GET", path)
+                    .match_header("authorization", mockito::Matcher::Missing)
+                    .with_body(format!("{} tool-linux.tar.gz\n", "c".repeat(64)))
+                    .expect(1)
+                    .create_async()
+                    .await;
+                let assets = vec![
+                    Asset::new("tool-linux.tar.gz", "https://gitlab.example/tool"),
+                    Asset::new("SHA256SUMS", format!("{}{path}", server.url())),
+                ];
+                let source = ForgeChecksumSource {
+                    backend: &create_test_gitlab_backend(),
+                    api_url: "https://gitlab.example/api/v4".to_string(),
+                };
+                // A project tool's scope, so a developer's netrc entry for
+                // 127.0.0.1 cannot add an Authorization header of its own.
+                let fetch = ChecksumFetcher::new(&assets);
+                let result = mise_util::untrusted_hosts::with_tool_scope(
+                    false,
+                    fetch.fetch_checksum_for("tool-linux.tar.gz", &source),
+                )
+                .await
+                .unwrap()
+                .expect("checksum is found");
+                assert_eq!(
+                    result.to_string_formatted(),
+                    format!("sha256:{}", "c".repeat(64))
+                );
+                linked.assert_async().await;
+            });
     }
 
     /// An asset with no API URL, such as one on a public project's release

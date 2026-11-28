@@ -427,11 +427,141 @@ fn test_apply_netrc_overrides_existing_auth_when_url_redirected() {
 }
 
 #[test]
-fn test_cross_host_replacement_clears_credentials_without_netrc() {
+fn test_apply_netrc_leaves_a_url_login_alone() {
+    // A replacement rule's `user:pass@` login, which reqwest sends as
+    // Authorization, is not replaced by netrc for the mirror.
+    let original: Url = "https://public.example.com/file".parse().unwrap();
+    let redirected: Url = "https://user:pw@mirror.internal/file".parse().unwrap();
+    let out = apply_netrc_credentials(
+        HeaderMap::new(),
+        &original,
+        &redirected,
+        basic_netrc_headers(),
+    );
+    assert!(auth_value(&out).is_empty());
+    // nor is a login the user wrote into the URL itself
+    let url: Url = "https://user:pw@example.com/file".parse().unwrap();
+    let out = apply_netrc_credentials(HeaderMap::new(), &url, &url, basic_netrc_headers());
+    assert!(auth_value(&out).is_empty());
+    // but a URL with only a user name takes the password from netrc
+    let url: Url = "https://user@example.com/file".parse().unwrap();
+    let out = apply_netrc_credentials(HeaderMap::new(), &url, &url, basic_netrc_headers());
+    assert_eq!(auth_value(&out), vec!["Basic bmV0cmM=".to_string()]);
+}
+
+#[test]
+fn netrc_entry_is_used_only_for_the_user_a_url_names() {
+    let basic = |login: &str, password: &str| {
+        let credentials = BASE64_STANDARD.encode(format!("{login}:{password}"));
+        Some(HeaderValue::from_str(&format!("Basic {credentials}")).unwrap())
+    };
+    let url: Url = "https://example.com/file".parse().unwrap();
+    assert_eq!(netrc_authorization(&url, "user", "pw"), basic("user", "pw"));
+    let url: Url = "https://user@example.com/file".parse().unwrap();
+    assert_eq!(netrc_authorization(&url, "user", "pw"), basic("user", "pw"));
+    assert_eq!(netrc_authorization(&url, "other", "pw"), None);
+    let url: Url = "https://a%40b@example.com/file".parse().unwrap();
+    assert_eq!(netrc_authorization(&url, "a@b", "pw"), basic("a@b", "pw"));
+    // The name is compared decoded, however the URL encodes it.
+    let url: Url = "https://%75ser@example.com/file".parse().unwrap();
+    assert_eq!(netrc_authorization(&url, "user", "pw"), basic("user", "pw"));
+    assert_eq!(netrc_authorization(&url, "%75ser", "pw"), None);
+    // A name that does not decode takes no entry.
+    let url: Url = "https://%FF@example.com/file".parse().unwrap();
+    assert_eq!(url.username(), "%FF");
+    assert_eq!(netrc_authorization(&url, "%FF", "pw"), None);
+    assert_eq!(netrc_authorization(&url, "\u{FFFD}", "pw"), None);
+    // `+` in a user name is a plus sign, not a space.
+    let url: Url = "https://user+tag@example.com/file".parse().unwrap();
+    assert_eq!(
+        netrc_authorization(&url, "user+tag", "pw"),
+        basic("user+tag", "pw")
+    );
+    // A URL that has its own password keeps it.
+    let url: Url = "https://user:other@example.com/file".parse().unwrap();
+    assert_eq!(netrc_authorization(&url, "user", "pw"), None);
+}
+
+/// Credentials stay with the host and port they were written for. A scheme
+/// change between the default ports keeps them, so the downgrade check refuses
+/// the request rather than sending it without them.
+#[test]
+fn credentials_stay_only_on_the_host_and_port_they_were_written_for() {
+    for (original, rewritten, kept) in [
+        (
+            "https://api.example.com/f",
+            "https://api.example.com/mirror/f",
+            true,
+        ),
+        (
+            "https://api.example.com/f",
+            "https://api.example.com:443/f",
+            true,
+        ),
+        (
+            "https://api.example.com/f",
+            "http://api.example.com/f",
+            true,
+        ),
+        (
+            "https://api.example.com/f",
+            "https://api.example.com:8443/f",
+            false,
+        ),
+        (
+            "http://api.example.com:3000/f",
+            "http://api.example.com:4000/f",
+            false,
+        ),
+        (
+            "http://api.example.com:3000/f",
+            "http://api.example.com/f",
+            false,
+        ),
+        (
+            "https://user:pw@api.example.com/f",
+            "https://user:pw@api.example.com:8443/f",
+            false,
+        ),
+        (
+            "https://api.example.com/f",
+            "https://mirror.example.com/f",
+            false,
+        ),
+    ] {
+        let original: Url = original.parse().unwrap();
+        let url: Url = rewritten.parse().unwrap();
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            AUTHORIZATION,
+            HeaderValue::from_static("Bearer origin-token"),
+        );
+        headers.insert("x-api-key", HeaderValue::from_static("secret"));
+
+        clear_cross_host_credentials(&mut headers, &original, &url);
+
+        assert_eq!(
+            headers.contains_key(AUTHORIZATION),
+            kept,
+            "{original} -> {rewritten}"
+        );
+        assert_eq!(
+            headers.contains_key("x-api-key"),
+            kept,
+            "{original} -> {rewritten}"
+        );
+    }
+}
+
+/// The login on a URL rewritten for another server is the one the rule wrote,
+/// since `apply_url_replacements` leaves the URL's own login behind, so it stays
+/// even when it equals the original URL's login.
+#[test]
+fn test_cross_host_replacement_clears_headers_and_keeps_the_rule_login() {
     let original: Url = "https://user:password@public.example.com/file"
         .parse()
         .unwrap();
-    let mut redirected: Url = "https://user:password@mirror.internal/file"
+    let redirected: Url = "https://user:password@mirror.internal/file"
         .parse()
         .unwrap();
     let mut headers = HeaderMap::new();
@@ -439,13 +569,11 @@ fn test_cross_host_replacement_clears_credentials_without_netrc() {
     headers.insert("x-api-key", HeaderValue::from_static("secret"));
     headers.insert("x-request-id", HeaderValue::from_static("keep-me"));
 
-    clear_cross_host_credentials(&mut headers, &original, &mut redirected);
+    clear_cross_host_credentials(&mut headers, &original, &redirected);
 
     assert!(!headers.contains_key(AUTHORIZATION));
     assert!(!headers.contains_key("x-api-key"));
     assert_eq!(headers["x-request-id"], "keep-me");
-    assert!(redirected.username().is_empty());
-    assert!(redirected.password().is_none());
 }
 
 #[test]
@@ -647,6 +775,170 @@ fn forward_rules_keep_only_listed_headers_on_listed_https_hosts() {
     );
     assert_eq!(real["x-api-key"], "secret");
     assert!(!real.contains_key("x-other-token"));
+}
+
+/// The steps `send_once_inner` takes for a request to `api.example.com` that is sent
+/// to `sent_to` and then redirected to the host a forward rule names.
+fn redirected_headers(headers: &HeaderMap, sent_to: &str) -> HeaderMap {
+    let original = Url::parse("https://api.example.com/release").unwrap();
+    let url = Url::parse(sent_to).unwrap();
+    let (headers, forward_rules) = split_forward_rules(headers);
+    let mut final_headers = headers.clone();
+    clear_cross_host_credentials(&mut final_headers, &original, &url);
+    let redirect_rules = forward_rules.scoped_to(&final_headers);
+    let mut final_headers =
+        apply_netrc_credentials(final_headers, &original, &url, basic_netrc_headers());
+    redirect_rules.retain_for(
+        &mut final_headers,
+        &url,
+        &Url::parse("https://cdn.example.com/blob").unwrap(),
+    );
+    final_headers
+}
+
+#[test]
+fn forward_rules_do_not_pass_to_netrc_credentials_of_a_replacement_host() {
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        AUTHORIZATION,
+        HeaderValue::from_static("Bearer origin-token"),
+    );
+    let (rule_name, rule_value) =
+        forward_rule_header(&AUTHORIZATION, &["cdn.example.com".to_string()]).unwrap();
+    headers.insert(rule_name, rule_value);
+
+    // The rule was written for the origin's token, which the replacement dropped, so
+    // the mirror's netrc login stays on the mirror.
+    let redirected = redirected_headers(&headers, "https://mirror.internal/release");
+    assert!(!redirected.contains_key(AUTHORIZATION), "{redirected:?}");
+}
+
+#[test]
+fn forward_rules_still_carry_a_header_the_request_kept() {
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        AUTHORIZATION,
+        HeaderValue::from_static("Bearer origin-token"),
+    );
+    let (rule_name, rule_value) =
+        forward_rule_header(&AUTHORIZATION, &["cdn.example.com".to_string()]).unwrap();
+    headers.insert(rule_name, rule_value);
+
+    // Without a replacement the token is still there, so the rule still carries it.
+    let redirected = redirected_headers(&headers, "https://api.example.com/release");
+    assert_eq!(redirected[AUTHORIZATION], "Bearer origin-token");
+}
+
+/// A GitHub API URL gets the user's token on the strength of its host alone.
+/// `without_host_auth` is for a URL a third party chose, and sends none.
+#[tokio::test(flavor = "multi_thread")]
+async fn text_request_without_host_auth_sends_no_forge_token() {
+    /// Holds the lock the token override needs and clears the override in `Drop`.
+    struct TokenOverride {
+        _lock: std::sync::MutexGuard<'static, ()>,
+    }
+    impl Drop for TokenOverride {
+        fn drop(&mut self) {
+            *crate::github::test_support::TOKENS_FILE_OVERRIDE
+                .write()
+                .unwrap() = None;
+        }
+    }
+
+    let (port, _, requests) = spawn_recording_server(vec![ok_response(), ok_response()]).await;
+    let settings_lock = crate::testing::lock_ignoring_poison(&crate::testing::SETTINGS_LOCK);
+    let github_env_lock = crate::testing::lock_ignoring_poison(&crate::github::TEST_ENV_LOCK);
+    // The loopback server stands in for an Enterprise Server the user listed,
+    // whose `/api/v3` URLs get the token from any caller.
+    let mut settings = mise_settings::SettingsPartial::empty();
+    settings.github.enterprise_hosts = Some(vec!["127.0.0.1".to_string()]);
+    crate::testing::reset_settings(Some(settings));
+    let _settings = SettingsGuard {
+        _lock: settings_lock,
+    };
+    let mut tokens = std::collections::HashMap::new();
+    tokens.insert("127.0.0.1".to_string(), "ghp_operator".to_string());
+    *crate::github::test_support::TOKENS_FILE_OVERRIDE
+        .write()
+        .unwrap() = Some(tokens);
+    let _token = TokenOverride {
+        _lock: github_env_lock,
+    };
+
+    let url = format!("http://127.0.0.1:{port}/api/v3/repos/owner/private/contents/key");
+    let client = Client::new(Duration::from_secs(3), ClientKind::Http).unwrap();
+    client.get_text_request(&url).send().await.unwrap();
+    client
+        .get_text_request(&url)
+        .without_host_auth()
+        .send()
+        .await
+        .unwrap();
+
+    let requests = requests.lock().unwrap();
+    let with_host_auth = requests[0].to_ascii_lowercase();
+    let without_host_auth = requests[1].to_ascii_lowercase();
+    assert!(
+        with_host_auth.contains("authorization: bearer ghp_operator"),
+        "{with_host_auth}"
+    );
+    // Only the forge token is checked: a developer's netrc may hold a login for
+    // the loopback host, which `without_host_auth` does not turn off.
+    assert!(
+        !without_host_auth.contains("ghp_operator")
+            && !without_host_auth.contains("authorization: bearer"),
+        "{without_host_auth}"
+    );
+    // the Contents API media type stays, so the file comes back as text, not JSON
+    for request in [&with_host_auth, &without_host_auth] {
+        assert!(
+            request.contains("accept: application/vnd.github.raw"),
+            "{request}"
+        );
+    }
+}
+
+/// On a host a project tool's URL named, no GitHub token is looked up, so a
+/// token that cannot be sent in a header does not fail the request either.
+#[test]
+fn host_auth_headers_resolve_no_token_for_a_denied_host() {
+    /// Clears the token override and the denied hosts in `Drop`.
+    struct Cleanup {
+        _lock: std::sync::MutexGuard<'static, ()>,
+    }
+    impl Drop for Cleanup {
+        fn drop(&mut self) {
+            *crate::github::test_support::TOKENS_FILE_OVERRIDE
+                .write()
+                .unwrap() = None;
+            crate::untrusted_hosts::reset();
+        }
+    }
+
+    let settings_lock = crate::testing::lock_ignoring_poison(&crate::testing::SETTINGS_LOCK);
+    let github_env_lock = crate::testing::lock_ignoring_poison(&crate::github::TEST_ENV_LOCK);
+    let mut settings = mise_settings::SettingsPartial::empty();
+    settings.github.enterprise_hosts = Some(vec!["ghe.denied.invalid".to_string()]);
+    crate::testing::reset_settings(Some(settings));
+    let _settings = SettingsGuard {
+        _lock: settings_lock,
+    };
+    let mut tokens = std::collections::HashMap::new();
+    tokens.insert("ghe.denied.invalid".to_string(), "bad\ntoken".to_string());
+    *crate::github::test_support::TOKENS_FILE_OVERRIDE
+        .write()
+        .unwrap() = Some(tokens);
+    let _cleanup = Cleanup {
+        _lock: github_env_lock,
+    };
+
+    let url = Url::parse("https://ghe.denied.invalid/api/v3/repos/o/r/releases/assets/1").unwrap();
+    // the token is resolved, and fails, while the host is not denied
+    assert!(host_auth_headers(&url).is_err());
+    crate::untrusted_hosts::deny_netrc_for_url("https://ghe.denied.invalid/tool.tar.gz");
+    let headers = host_auth_headers(&url).unwrap();
+    assert!(!headers.contains_key(AUTHORIZATION));
+    assert_eq!(headers["accept"], "application/octet-stream");
 }
 
 #[test]

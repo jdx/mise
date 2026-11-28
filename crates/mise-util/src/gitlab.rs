@@ -421,7 +421,7 @@ pub fn get_headers<U: IntoUrl>(url: U, api_url: &str) -> Result<HeaderMap> {
     }
     let lookup_host = url.host_str().unwrap_or("gitlab.com");
 
-    if let Some((token, _source)) = resolve_token(lookup_host) {
+    if let Some((token, _source)) = resolve_token_inner(lookup_host, Some(&url)) {
         headers.insert(
             reqwest::header::AUTHORIZATION,
             tokens::bearer_header("GitLab", &token)?,
@@ -484,8 +484,17 @@ pub mod test_support {
 /// 5. glab CLI token (from `config.yml`)
 /// 6. `git credential fill` (if enabled)
 pub fn resolve_token(host: &str) -> Option<(String, TokenSource)> {
-    // A host that project config named in safe mode; see `untrusted_hosts`.
-    if crate::untrusted_hosts::forge_token_denied(host) {
+    resolve_token_inner(host, None)
+}
+
+/// [`resolve_token`] for a request to `url`, when the caller has one.
+fn resolve_token_inner(host: &str, url: Option<&url::Url>) -> Option<(String, TokenSource)> {
+    // An origin that project config named in safe mode; see `untrusted_hosts`.
+    let forge = crate::untrusted_hosts::Forge::GitLab;
+    if match url {
+        Some(url) => crate::untrusted_hosts::forge_token_denied_at(forge, url),
+        None => crate::untrusted_hosts::forge_token_denied(forge, host),
+    } {
         return None;
     }
     if crate::testing::in_tests()
@@ -532,7 +541,7 @@ pub fn resolve_token(host: &str) -> Option<(String, TokenSource)> {
 
     // 6. git credential fill
     if settings.gitlab.use_git_credentials
-        && let Some(token) = tokens::get_git_credential_token("gitlab", host)
+        && let Some(token) = tokens::get_git_credential_token("gitlab", host, url)
     {
         return Some((token, TokenSource::GitCredential));
     }
