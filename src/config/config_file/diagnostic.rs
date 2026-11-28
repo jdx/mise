@@ -124,10 +124,21 @@ pub(crate) fn may_quote(path: &Path) -> bool {
 /// reaches back to the deepest directory the file shares with the working
 /// directory. The working directory comes from the OS already resolved, so the
 /// directories it shares hold no link the project put there.
+///
+/// A task include can name a file outside `root` by an absolute path, whose
+/// directories a walk down from `root` never reaches, so the walk starts at the
+/// deepest directory the file shares with `root`. A file that shares none with
+/// it is not quoted.
 pub(crate) fn may_quote_below(path: &Path, root: &Path) -> bool {
-    file::path_stays_within(path, *dirs::CONFIG)
+    if file::path_stays_within(path, *dirs::CONFIG)
         || file::path_stays_within(path, *dirs::SYSTEM_CONFIG)
-        || !reached_through_link(path, &discovery_root(path, root))
+    {
+        return true;
+    }
+    let Some(root) = root.ancestors().find(|dir| path.starts_with(dir)) else {
+        return false;
+    };
+    !reached_through_link(path, &discovery_root(path, root))
 }
 
 /// The shallower of `root` and the deepest ancestor `path` shares with the
@@ -388,6 +399,28 @@ mod tests {
             assert!(!report.contains("s3cr3t"), "{report}");
             assert!(report.contains(LINKED_DETAILS_HIDDEN), "{report}");
         }
+    }
+
+    /// A task include can name a file outside the project by an absolute path:
+    /// the directories it shares with the project are where the check starts.
+    #[test]
+    fn a_file_outside_the_root_is_checked_from_what_it_shares_with_it() {
+        let tmp = tempfile::tempdir().unwrap();
+        let tmp = tmp.path().canonicalize().unwrap();
+        let (home, project, shared) = (tmp.join("home"), tmp.join("project"), tmp.join("shared"));
+        for dir in [&home, &project, &shared] {
+            std::fs::create_dir_all(dir).unwrap();
+        }
+        std::fs::write(shared.join("tasks.toml"), BODY).unwrap();
+        symlink(&home, shared.join("linked")).unwrap();
+
+        assert!(may_quote_below(&shared.join("tasks.toml"), &project));
+        assert!(!may_quote_below(
+            &shared.join("linked/tasks.toml"),
+            &project
+        ));
+        // no directory in common, so where the file comes from is unknown
+        assert!(!may_quote_below(Path::new("tasks.toml"), &project));
     }
 
     #[test]
