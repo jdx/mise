@@ -289,6 +289,28 @@ fn needs_trust(ctr: &Path) -> bool {
     }
 }
 
+/// Warns about each root an untrust or ignore acted on that `trusted_config_paths` still trusts.
+/// A nested root can be listed there without its project. One inside a root already named is
+/// covered by that warning.
+fn warn_trusted_via_settings(roots: &[PathBuf]) {
+    let mut warned: Vec<PathBuf> = vec![];
+    for root in roots {
+        let root = root.canonicalize().unwrap_or_else(|_| root.clone());
+        if warned.iter().any(|w| root.starts_with(w))
+            || !Settings::get()
+                .trusted_config_paths()
+                .any(|p| root.starts_with(p))
+        {
+            continue;
+        }
+        warn!(
+            "{} is trusted via settings so it will still be trusted.",
+            display_path(&root)
+        );
+        warned.push(root);
+    }
+}
+
 pub(super) fn untrust_config_file(
     config_file: Option<PathBuf>,
     named_file: bool,
@@ -327,16 +349,7 @@ pub(super) fn untrust_config_file(
         info!("untrusted {}", display_path(&root));
     }
     let cfr = roots[0].canonicalize()?;
-
-    let trusted_via_settings = Settings::get()
-        .trusted_config_paths()
-        .any(|p| cfr.starts_with(p));
-    if trusted_via_settings {
-        warn!(
-            "{} is trusted via settings so it will still be trusted.",
-            display_path(&cfr)
-        );
-    }
+    warn_trusted_via_settings(&roots);
 
     if !Settings::get().paranoid.config()
         && let Some(main_path) = crate::git::main_checkout_equivalent(&cfr)
@@ -422,17 +435,7 @@ impl Trust {
         for root in &roots {
             info!("ignored {}", display_path(&root.canonicalize()?));
         }
-        let cfr = roots[0].canonicalize()?;
-
-        let trusted_via_settings = Settings::get()
-            .trusted_config_paths()
-            .any(|p| cfr.starts_with(p));
-        if trusted_via_settings {
-            warn!(
-                "{} is trusted via settings so it will still be trusted.",
-                display_path(&cfr)
-            );
-        }
+        warn_trusted_via_settings(&roots);
         Ok(())
     }
     fn trust(&self) -> Result<()> {

@@ -33,3 +33,18 @@ assert_contains "MISE_TRUSTED_CONFIG_PATHS=$DIR mise env" "PROJECT=trusted-via-s
 # `--show` lists the config's trust root (the directory), so match
 # "project: trusted"; note "project: untrusted" does not contain this substring.
 assert_contains "MISE_TRUSTED_CONFIG_PATHS=$DIR mise trust --show" "project: trusted"
+
+# A nested config root listed there on its own, without the project, is named
+# when untrusting or ignoring the project, since it keeps loading.
+mkdir -p .config/mise
+cat <<EOF2 >.config/mise/mise.toml
+[env]
+NESTED = "nested"
+EOF2
+NESTED_DIR="$DIR/.config/mise"
+assert_contains "MISE_TRUSTED_CONFIG_PATHS=$NESTED_DIR mise trust --untrust 2>&1" ".config/mise is trusted via settings"
+assert_contains "MISE_TRUSTED_CONFIG_PATHS=$NESTED_DIR mise trust --ignore 2>&1" ".config/mise is trusted via settings"
+# Listing the project names only the project.
+output="$(MISE_TRUSTED_CONFIG_PATHS=$DIR mise trust --ignore 2>&1)"
+assert_contains_text "$output" "project is trusted via settings"
+assert_not_contains_text "$output" ".config/mise is trusted via settings"

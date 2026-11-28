@@ -43,6 +43,18 @@ rm "$MISE_CONFIG_DIR"
 ln -s "$PWD/dotfiles/mise" "$MISE_CONFIG_DIR"
 lock_global_in dotfiles/mise dotfiles/mise/mise.lock
 
+# The lockfile there is itself a link out of the checkout. It is still the
+# lockfile of the global config that mise loaded from the checkout.
+mkdir -p generated
+for mode in "" "MISE_SAFE=1" "MISE_PARANOID=1"; do
+  rm -f generated/mise.lock dotfiles/mise/mise.lock
+  touch generated/mise.lock
+  ln -s "$PWD/generated/mise.lock" dotfiles/mise/mise.lock
+  assert_succeed "cd dotfiles && $mode mise lock --global --platform linux-x64"
+  assert_contains "cat generated/mise.lock" "@generated"
+done
+rm dotfiles/mise/mise.lock
+
 # The checkout keeps the config dir at `.config/mise`, which is also a project
 # config path when mise runs at the top of the checkout.
 write_config stow/.config/mise/config.toml

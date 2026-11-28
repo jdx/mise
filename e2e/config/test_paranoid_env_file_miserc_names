@@ -39,6 +39,12 @@ OTHER_TEST = "{{ exec(command='echo loaded') }}"
 EOS
 assert_contains "cd ~/other && MISE_OVERRIDE_CONFIG_FILENAMES=project.toml mise trust project.toml 2>&1" "trusted ~/other"
 assert_contains "cd ~/other && MISE_OVERRIDE_CONFIG_FILENAMES=project.toml mise env" "OTHER_TEST=loaded"
+# Also when the file is named from outside its directory, and for the default filename.
+assert "mise untrust ~/other"
+output="$(cd ~ && MISE_DEFAULT_CONFIG_FILENAME=project.toml mise trust other/project.toml 2>&1)"
+assert_contains_text "$output" "trusted ~/other"
+assert_not_contains_text "$output" "trusted ~/other/project.toml"
+assert_contains "cd ~/other && MISE_DEFAULT_CONFIG_FILENAME=project.toml mise env" "OTHER_TEST=loaded"
 
 # A directory is still the project under whatever names are in effect.
 echo 'override_config_filenames = ["mise.toml", ".env"]' >.miserc.toml

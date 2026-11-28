@@ -2714,24 +2714,16 @@ const LOCAL_CONFIG_FILENAMES: [&str; 10] = [
     ".mise.local.toml",
 ];
 
-/// Whether `path` is found under one of mise's own config filenames, or under a name that the
-/// `MISE_OVERRIDE_*_FILENAMES` and `MISE_DEFAULT_*_FILENAME` environment variables set. A name
-/// that only a `.miserc.toml` adds does not count: a project's `.miserc.toml` loads before
-/// anything is trusted, so it must not decide what an approval of a file covers.
-pub(crate) fn has_own_config_filename(path: &Path) -> bool {
-    let escape = |s: &str| glob::Pattern::escape(s);
-    let mut names: Vec<String> = [".tool-versions"]
-        .into_iter()
-        .chain(MISE_CONFIG_FILENAMES)
-        .chain(LOCAL_CONFIG_FILENAMES)
-        .map(String::from)
-        .collect();
+/// The config filenames that the `MISE_OVERRIDE_*_FILENAMES` and `MISE_DEFAULT_*_FILENAME`
+/// environment variables set, without the ones a `.miserc.toml` adds.
+fn user_config_filenames() -> Vec<String> {
+    let mut names = vec![];
     for var in [
         "MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES",
         "MISE_OVERRIDE_CONFIG_FILENAMES",
     ] {
         if let Ok(value) = std::env::var(var) {
-            names.extend(value.split(':').filter(|s| !s.is_empty()).map(escape));
+            names.extend(value.split(':').filter(|s| !s.is_empty()).map(String::from));
         }
     }
     for var in [
@@ -2739,9 +2731,34 @@ pub(crate) fn has_own_config_filename(path: &Path) -> bool {
         "MISE_DEFAULT_CONFIG_FILENAME",
     ] {
         if let Ok(value) = std::env::var(var) {
-            names.push(escape(&value));
+            names.push(value);
         }
     }
+    names
+}
+
+/// Whether `path` is found under one of mise's own config filenames, or under a name that the
+/// `MISE_OVERRIDE_*_FILENAMES` and `MISE_DEFAULT_*_FILENAME` environment variables set. A name
+/// that only a `.miserc.toml` adds does not count: a project's `.miserc.toml` loads before
+/// anything is trusted, so it must not decide what an approval of a file covers.
+pub(crate) fn has_own_config_filename(path: &Path) -> bool {
+    let user_names = user_config_filenames();
+    // A name the user set counts wherever the file is: the search below only looks in the
+    // working directory and the ones above it, and would miss `child/project.toml`.
+    if path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| user_names.iter().any(|user| user == name))
+    {
+        return true;
+    }
+    let mut names: Vec<String> = [".tool-versions"]
+        .into_iter()
+        .chain(MISE_CONFIG_FILENAMES)
+        .chain(LOCAL_CONFIG_FILENAMES)
+        .map(String::from)
+        .collect();
+    names.extend(user_names.iter().map(|name| glob::Pattern::escape(name)));
     let Ok(path) = path.absolutize() else {
         return false;
     };

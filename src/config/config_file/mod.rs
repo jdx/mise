@@ -1169,8 +1169,12 @@ fn is_trusted_without_config_paths(
 ///
 /// `canonical` has no symlinks, and so neither has any of its ancestors: each one's record name
 /// is derived from it as it is, and only a directory that has a marker is checked further.
+///
+/// The search starts above the root `canonical` belongs to: its parent when it is a directory, a
+/// project trusted as one, and its grandparent when it is a file, which lies in its root.
 fn trusted_monorepo_ancestor(canonical: &Path) -> bool {
-    canonical.ancestors().skip(2).any(|dir| {
+    let own_levels = if canonical.is_dir() { 1 } else { 2 };
+    canonical.ancestors().skip(own_levels).any(|dir| {
         let record = dirs::TRUSTED_CONFIGS.join(record_name(dir));
         (with_appended_extension(&record, "monorepo").exists() || has_legacy_monorepo_marker(dir))
             && is_trusted_with(dir, false)
@@ -2963,6 +2967,31 @@ mod hashed_path_filename_tests {
         assert!(!trusted_monorepo_ancestor(&canonical));
         assert!(!remove_monorepo_markers(&mono, &current).unwrap());
 
+        untrust(&mono).unwrap();
+    }
+
+    /// A project directory trusted as a whole, as a config linked into it is, looks for the
+    /// monorepo root from its parent: a project right below the root is still in it.
+    #[test]
+    fn a_project_directory_right_below_a_monorepo_root_is_in_it() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mono = tmp.path().canonicalize().unwrap().join("mono");
+        let app = mono.join("app");
+        std::fs::create_dir_all(&app).unwrap();
+        std::fs::write(mono.join("mise.toml"), "monorepo_root = true\n").unwrap();
+        trust(&mono).unwrap();
+        let marker =
+            with_appended_extension(&dirs::TRUSTED_CONFIGS.join(record_name(&mono)), "monorepo");
+        file::write(&marker, "").unwrap();
+
+        assert!(trusted_monorepo_ancestor(&app));
+        assert!(!trusted_monorepo_ancestor(&mono));
+        // A file is looked up from above its own directory, the root it lies in.
+        std::fs::write(mono.join("mise.local.toml"), "").unwrap();
+        assert!(!trusted_monorepo_ancestor(&mono.join("mise.local.toml")));
+        assert!(trusted_monorepo_ancestor(&app.join("mise.toml")));
+
+        file::remove_file(&marker).unwrap();
         untrust(&mono).unwrap();
     }
 }
