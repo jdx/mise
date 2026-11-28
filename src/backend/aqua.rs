@@ -4781,10 +4781,26 @@ pub(crate) fn is_install_time_option_key(key: &str) -> bool {
 #[cfg(test)]
 mod tests;
 
+// A monorepo can fill the first tag page entirely with tags from other components.
+fn list_all_github_tags(pkg: &AquaPackage) -> bool {
+    pkg.version_prefix
+        .iter()
+        .chain(
+            pkg.version_overrides
+                .iter()
+                .filter_map(|rule| rule.version_prefix.as_ref()),
+        )
+        .any(|prefix| prefix.contains('/'))
+}
+
 async fn get_tags(pkg: &AquaPackage) -> Result<Vec<String>> {
     if pkg.version_source.as_deref() == Some("github_tag") {
         // Names only: resolving a tag needs no dates.
-        return github::list_tags(&format!("{}/{}", pkg.repo_owner, pkg.repo_name)).await;
+        return github::list_tags(
+            &format!("{}/{}", pkg.repo_owner, pkg.repo_name),
+            list_all_github_tags(pkg),
+        )
+        .await;
     }
     Ok(get_tags_with_release_dates(pkg)
         .await?
@@ -4886,9 +4902,11 @@ async fn get_tags_with_release_dates(
         // already has; the rest stay `None` and are dated one at a time by
         // `fetch_version_created_at`, since a commit lookup per tag is thousands
         // of requests for a repository like aws/aws-cli.
-        let tags =
-            github::list_tags_with_known_dates(&format!("{}/{}", pkg.repo_owner, pkg.repo_name))
-                .await?;
+        let tags = github::list_tags_with_known_dates(
+            &format!("{}/{}", pkg.repo_owner, pkg.repo_name),
+            list_all_github_tags(pkg),
+        )
+        .await?;
         return Ok(tags.into_iter().map(|t| (t.name, t.date, None)).collect());
     }
     let repo = format!("{}/{}", pkg.repo_owner, pkg.repo_name);
@@ -5711,6 +5729,22 @@ mod lock_candidate_tests {
         prefixed_get.assert_async().await;
         assert_eq!(url, format!("{}/tool-v1.2.3", server.url()));
         assert_eq!(version, "v1.2.3");
+    }
+
+    #[test]
+    fn namespaced_aqua_tags_request_all_pages() {
+        let mut pkg = AquaPackage::default();
+        pkg.version_prefix = Some("v".into());
+        assert!(!list_all_github_tags(&pkg));
+
+        pkg.version_prefix = Some("kotlin-lsp/v".into());
+        assert!(list_all_github_tags(&pkg));
+
+        pkg.version_prefix = None;
+        let mut version_override = AquaPackage::default();
+        version_override.version_prefix = Some("cli/v".into());
+        pkg.version_overrides.push(version_override);
+        assert!(list_all_github_tags(&pkg));
     }
 
     #[test]
