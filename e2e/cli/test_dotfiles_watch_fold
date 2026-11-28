@@ -50,3 +50,16 @@ assert commits "$((base + 4))"
 echo five >~/.fold-b
 assert_succeed 'mise dot watch --once'
 assert commits "$((base + 5))"
+
+# a description written for the checkpoint before (an annotation commit
+# between it and the autosave) does not stop the next autosave folding
+assert_succeed 'mise dot history describe latest "tweaked fold-b"'
+assert commits "$((base + 6))"
+echo six >~/.fold-a
+assert_succeed 'mise dot watch --once'
+assert commits "$((base + 7))"
+echo seven >~/.fold-a
+assert_succeed 'mise dot watch --once'
+assert commits "$((base + 7))"
+assert subject "edited ~/.fold-a"
+assert "saved .fold-a" "seven"

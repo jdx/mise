@@ -31,6 +31,8 @@ const DESCRIPTION_PATHS: usize = 6;
 const DESCRIPTION_MAX: usize = 200;
 /// The most paths a `changes` record lists.
 const CHANGES_MAX: usize = 2000;
+/// Annotation commits a fold looks through to find the checkpoint before.
+const MAX_FOLD_ANNOTATIONS: usize = 64;
 
 /// What a caller wants captured.
 #[derive(Clone, Debug, Default)]
@@ -929,8 +931,21 @@ impl Store {
         let (Some(before), [parent]) = (older.last(), parents.as_slice()) else {
             return Ok(None);
         };
-        if *parent != before.commit {
-            return Ok(None);
+        // a description or label written since (`history.describe_command`,
+        // `mise dot label`) is an empty annotation commit in between, which
+        // the replacement keeps as its parent
+        let mut parent = parent.clone();
+        let mut annotations = 0;
+        while parent != before.commit {
+            annotations += 1;
+            if annotations > MAX_FOLD_ANNOTATIONS || repo.read_annotation(&parent)?.is_none() {
+                return Ok(None);
+            }
+            let mut above = repo.parents_of(&parent)?;
+            if above.len() != 1 {
+                return Ok(None);
+            }
+            parent = above.remove(0);
         }
         let Some(base) =
             store::read_meta_cache_in(&self.state_dir, &before.uuid)?.and_then(|checkpoint| {

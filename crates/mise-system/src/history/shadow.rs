@@ -2309,7 +2309,6 @@ impl HistoryRepo {
         self.update_history_head(&commit, Some(&head))
     }
 
-    #[cfg(test)]
     pub(crate) fn read_annotation(
         &self,
         commit: &str,
