@@ -246,8 +246,10 @@ fn is_tool_option_env_key(key: &str) -> bool {
 /// below that root, down to `dir` itself, holds a `.git`. A repository cloned
 /// inside a trusted project is someone else's code, so the project's trust stops
 /// there. Nor does it reach a directory below that root that the user ignored
-/// (`mise trust --ignore` or `ignored_config_paths`, matched against `dir` as
-/// given and against each directory the walk resolves), or anything below one;
+/// (`mise trust --ignore`, or `ignored_config_paths` matched against each
+/// directory the walk resolves and against `dir` and its parents as given, so
+/// a pattern naming a symlink covers what is reached through it), or anything
+/// below one;
 /// only a `trusted_config_paths` entry for the directory itself, which
 /// [`is_trusted`] checks, overrides a `mise trust --ignore` there. The root is
 /// as trusted as its config: `is_path_trusted` refuses a root that
@@ -264,10 +266,7 @@ fn dir_is_trusted(config: &Config, dir: &Path) -> bool {
     if is_trusted(dir) {
         return true;
     }
-    // Before resolving symlinks: a pattern can name the link, not its target.
-    if is_ignored_via_setting(dir) {
-        return false;
-    }
+    let written = dir;
     let Ok(dir) = dir.canonicalize() else {
         return false;
     };
@@ -282,6 +281,18 @@ fn dir_is_trusted(config: &Config, dir: &Path) -> bool {
             return false;
         };
         if is_ignored_via_setting(&root) {
+            return false;
+        }
+        // Also as written, before symlinks resolve: a pattern can name a link to
+        // a directory in the project, which the walk below meets only by its
+        // target, and the link ignores everything reached through it.
+        let ignored_as_written = written.ancestors().any(|step| {
+            is_ignored_via_setting(step)
+                && step
+                    .canonicalize()
+                    .is_ok_and(|step| step.starts_with(&root))
+        });
+        if ignored_as_written {
             return false;
         }
         let mut step = root;

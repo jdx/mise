@@ -116,6 +116,11 @@ ln -s real-poetry project/poetry-link
 linked="MISE_PROJECT_ROOT=$PWD/project/poetry-link"
 assert_contains "cd project/sub && $linked mise env" "/poetry-link/.venv"
 assert_not_contains "cd project/sub && MISE_IGNORED_CONFIG_PATHS='$PWD/project/poetry-lin?' $linked mise env" "/poetry-link/.venv"
+# and so does everything reached through that symlink
+make_repo project/real-poetry/deep pyproject.toml
+linked_deep="MISE_PROJECT_ROOT=$PWD/project/poetry-link/deep"
+assert_contains "cd project/sub && $linked_deep mise env" "/poetry-link/deep/.venv"
+assert_not_contains "cd project/sub && MISE_IGNORED_CONFIG_PATHS='$PWD/project/poetry-lin?' $linked_deep mise env" "/poetry-link/deep/.venv"
 
 # once trusted, the virtualenv is activated as before, except in safe mode
 mise trust pipenv-repo
