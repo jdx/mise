@@ -110,11 +110,15 @@ jobs:
       # how long the oldest job still queued for the label has waited. A failed
       # request, an empty result or a parse failure ends the step without an
       # override, which leaves the self-hosted decision above.
+      # So does a request that stalls: the step's own time limit fails the step,
+      # which continue-on-error passes over, where the job's limit would cancel
+      # the job and skip every job that needs it.
       # Only API data is used here; nothing from the checkout runs with this token.
       - name: Check Windows queue depth
         id: windows-queue
         if: ${{ inputs.trusted && vars.WINDOWS_SELF_HOSTED == 'true' }}
         continue-on-error: true
+        timeout-minutes: 2
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
