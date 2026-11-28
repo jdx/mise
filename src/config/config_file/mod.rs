@@ -1641,11 +1641,22 @@ pub fn checked_write_destination(path: &Path) -> Result<PathBuf> {
     // directory's `.mise` linked to `.config/mise` does, so that case is never waved through,
     // and neither is one that would create a global config file that does not exist yet.
     let to_global = || config::write_reaches_global_config_through_link(&abs);
+    // Trust records live in the state directory. When it is inside the project, a directory link
+    // that stays in the project can still lead into it, so no destination there is accepted.
+    let state_dir = file::desymlink_path(&dirs::STATE);
     if !path.is_symlink() && !dir_leads_out && !to_global() {
-        return Ok(match (dir, abs.file_name()) {
+        let destination = match (dir, abs.file_name()) {
             (Some(dir), Some(name)) => dir.join(name),
             _ => abs.to_path_buf(),
-        });
+        };
+        if destination.starts_with(&state_dir) {
+            return Err(eyre!(
+                "refusing to write {} to {}: it is in mise's state directory. Write the config somewhere else, or replace the linked directory with a regular one",
+                style::display_path_escaped(path),
+                style::display_path_escaped(&destination)
+            ));
+        }
+        return Ok(destination);
     }
     let target = file::atomic_write_target(path)?;
     let through = if path.is_symlink() {
@@ -1663,7 +1674,6 @@ pub fn checked_write_destination(path: &Path) -> Result<PathBuf> {
     let unresolved = target
         .components()
         .any(|c| matches!(c, std::path::Component::ParentDir));
-    let state_dir = file::desymlink_path(&dirs::STATE);
     if unresolved || target.starts_with(&state_dir) {
         return refuse("the target is in mise's state directory or cannot be resolved");
     }
