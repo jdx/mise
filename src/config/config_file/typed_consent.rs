@@ -123,24 +123,64 @@ fn root_owned_by_user(path: &Path, config_root: &Path) -> bool {
 /// Whether the user owns `file` and each directory between `root` and it. A `.config` that
 /// another account made a link to the user's own directory would otherwise pass on the file
 /// it leads to.
+///
+/// Both paths are made absolute and their `..` resolved the way [`super::config_root`] does for
+/// `root`: a relative `file`, such as the one `mise set --file .config/custom.toml` names, would
+/// otherwise never start with `root`, and the directories between them would go unchecked.
 fn owned_below(root: &Path, file: &Path) -> bool {
-    owned_by_user(file)
+    use path_absolutize::Absolutize;
+    let (Ok(root), Ok(file)) = (root.absolutize(), file.absolutize()) else {
+        return false;
+    };
+    owned_by_user(&file)
         && file
             .ancestors()
             .skip(1)
-            .take_while(|dir| *dir != root && dir.starts_with(root))
+            .take_while(|dir| *dir != &*root && dir.starts_with(&root))
             .all(owned_by_user)
 }
 
-/// Whether `path` and, when it is a symlink, what it points at both belong to the effective user.
+/// Whether `path` and, when it is a symlink, what it points at both belong to the effective user,
+/// and no other account can write to what it points at.
+///
 /// The link is checked so a link another account planted to the user's own file does not pass,
-/// and the target so a link the user made to another account's file does not either.
+/// and the target so a link the user made to another account's file does not either. A file or
+/// directory the user owns but that another account may write is shared: that account could
+/// edit the config, or replace it through the directory, after the trust is recorded.
 #[cfg(unix)]
 fn owned_by_user(path: &Path) -> bool {
     use std::os::unix::fs::MetadataExt;
-    let uid = nix::unistd::geteuid().as_raw();
-    let owned = |meta: std::io::Result<std::fs::Metadata>| meta.is_ok_and(|m| m.uid() == uid);
-    owned(path.symlink_metadata()) && owned(path.metadata())
+    let uid = nix::unistd::geteuid();
+    let (Ok(link), Ok(target)) = (path.symlink_metadata(), path.metadata()) else {
+        return false;
+    };
+    link.uid() == uid.as_raw()
+        && target.uid() == uid.as_raw()
+        && !writable_by_others(target.mode(), target.gid(), private_group(uid))
+}
+
+/// Whether a file or directory with permission bits `mode` and group `gid` may be written by an
+/// account other than its owner. World-writable always may. Group-writable may too, unless the
+/// group is `private_gid`, the user's own private group, which holds nobody else: with that
+/// convention, a umask of `002` makes every file group-writable.
+#[cfg(unix)]
+fn writable_by_others(mode: u32, gid: u32, private_gid: Option<u32>) -> bool {
+    mode & 0o002 != 0 || (mode & 0o020 != 0 && private_gid != Some(gid))
+}
+
+/// The user's private group: their primary group when it has the user's name and no other
+/// member. `None` when there is no such group or it cannot be read, so a group-writable file
+/// keeps the prompt.
+#[cfg(unix)]
+fn private_group(uid: nix::unistd::Uid) -> Option<u32> {
+    use nix::unistd::{Group, User};
+    static PRIVATE_GROUP: std::sync::OnceLock<Option<u32>> = std::sync::OnceLock::new();
+    *PRIVATE_GROUP.get_or_init(|| {
+        let user = User::from_uid(uid).ok().flatten()?;
+        let group = Group::from_gid(user.gid).ok().flatten()?;
+        (group.name == user.name && group.mem.iter().all(|member| *member == user.name))
+            .then_some(group.gid.as_raw())
+    })
 }
 
 /// Windows has no owner check as cheap as a uid comparison, so ownership does not gate this there.
@@ -166,11 +206,19 @@ pub(super) fn trust_typed_command(path: &Path, config_root: &Path) -> eyre::Resu
         .get_or_insert_with(HashSet::new)
         .insert(config_root.to_path_buf())
     {
-        let undo = match untrust_argument(path) {
+        // `mise untrust` reads a file it is given as `mise trust` does. With only paranoid
+        // `env_files` on, a file that does not look like mise config, such as `.node-version`,
+        // is then an env file with a record of its own, so the hint names the root instead.
+        let named = if super::trust_root_for_cli(path) == config_root {
+            path
+        } else {
+            config_root
+        };
+        let undo = match untrust_argument(named) {
             Some(arg) => format!("Undo with `mise untrust {arg}`."),
             None => format!(
                 "Undo with `mise untrust` and the path {}, quoted for your shell.",
-                path.display()
+                named.display()
             ),
         };
         info!(
@@ -189,7 +237,7 @@ pub(super) fn trust_typed_command(path: &Path, config_root: &Path) -> eyre::Resu
 /// PowerShell started from bash, which cannot read bash's quoting.
 ///
 /// `mise untrust` with no argument acts on the nearest config only, and one command can trust a
-/// parent project too, so the hint names the file whose root was trusted.
+/// parent project too, so the hint names the file whose root was trusted, or that root.
 fn untrust_argument(path: &Path) -> Option<String> {
     let activated = env::var("MISE_SHELL").ok().and_then(|s| s.parse().ok());
     quote_untrust_path(path, activated, cfg!(windows))
@@ -434,6 +482,61 @@ mod tests {
             assert!(owned_by_user(&own) && owned_by_user(own.parent().unwrap()));
             assert!(!owned_below(Path::new("/"), &own));
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn ownership_checks_the_directories_below_a_relative_or_dotted_path() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let config = root.join(".config");
+        std::fs::create_dir(&config).unwrap();
+        let own = config.join("custom.toml");
+        std::fs::write(&own, "").unwrap();
+        // `.config` is shared, so a path through it must fail however it is written.
+        std::fs::set_permissions(&config, std::fs::Permissions::from_mode(0o777)).unwrap();
+        let dotted = root
+            .join("x")
+            .join("..")
+            .join(".config")
+            .join("custom.toml");
+        // Up from the working directory to `/`, then down to the file.
+        let cwd = std::env::current_dir().unwrap();
+        let relative = (1..cwd.components().count())
+            .map(|_| Path::new(".."))
+            .collect::<PathBuf>()
+            .join(own.strip_prefix("/").unwrap());
+        assert!(relative.is_relative());
+        for file in [&own, &dotted, &relative] {
+            assert!(!owned_below(&root, file), "{}", file.display());
+        }
+        std::fs::set_permissions(&config, std::fs::Permissions::from_mode(0o755)).unwrap();
+        for file in [&own, &dotted, &relative] {
+            assert!(owned_below(&root, file), "{}", file.display());
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_file_another_account_can_write_is_not_the_users() {
+        // World-writable always is shared.
+        assert!(writable_by_others(0o100666, 1000, Some(1000)));
+        assert!(writable_by_others(0o040777, 1000, None));
+        // Group-writable is shared unless the group is the user's private group.
+        assert!(writable_by_others(0o100664, 100, Some(1000)));
+        assert!(writable_by_others(0o100664, 1000, None));
+        assert!(!writable_by_others(0o100664, 1000, Some(1000)));
+        assert!(!writable_by_others(0o100644, 100, None));
+
+        let dir = tempfile::tempdir().unwrap();
+        let own = dir.path().join("mise.toml");
+        std::fs::write(&own, "").unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&own, std::fs::Permissions::from_mode(0o644)).unwrap();
+        assert!(owned_by_user(&own));
+        std::fs::set_permissions(&own, std::fs::Permissions::from_mode(0o646)).unwrap();
+        assert!(!owned_by_user(&own));
     }
 
     #[cfg(unix)]

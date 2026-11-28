@@ -219,3 +219,18 @@ assert_not_contains_text "$output" "TYPED_TRUST_ROOT"
 assert_not_contains_text "$output" "$notice"
 assert_not_contains_text "$output" "Trust them?"
 ok "[trust] an ignored monorepo root stays out when a subproject is trusted"
+forget_trust
+
+# With only paranoid `env_files` on, `mise untrust .node-version` would take the
+# file for an env file of its own, so the hint names the directory that was
+# trusted, and running it leaves the directory untrusted.
+mkdir -p nv/local/bin
+echo "path:./local" >nv/.node-version
+nv_env="MISE_PARANOID=env_files MISE_IDIOMATIC_VERSION_FILE_ENABLE_TOOLS=node"
+output="$(cd nv && on_pty "$nv_env mise env")"
+assert_contains_text "$output" "$notice"
+assert_contains_text "$output" "Undo with \`mise untrust $PWD/nv\`"
+(cd nv && env MISE_PARANOID=env_files MISE_IDIOMATIC_VERSION_FILE_ENABLE_TOOLS=node mise untrust "$PWD")
+assert_fail_contains "cd nv && $nv_env MISE_YES=0 mise env 2>&1" "not trusted"
+forget_trust
+ok "[trust] the hint for a version file names the trusted directory"
