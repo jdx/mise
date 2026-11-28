@@ -219,3 +219,20 @@ assert_not_contains "mise trust --ignore dotfiles 2>&1" "config.staging.toml"
 assert_contains "MISE_ENV=staging mise -C ~ env" "GLOBAL_STAGING=gstaged"
 assert_not_contains "mise untrust dotfiles 2>&1" "config.staging.toml"
 assert_contains "MISE_ENV=staging mise -C ~ env" "GLOBAL_STAGING=gstaged"
+
+# A checkout that is itself the global config dir still has project config of its own, such as
+# `.mise/config.toml`, which global discovery does not load: naming the checkout revokes or
+# ignores it, and leaves the global config alone.
+mkdir -p selfdot/.mise
+printf '[env]\nSELF_GLOBAL = "selfglobal"\n' >selfdot/config.toml
+printf '[env]\nSELF_PROJECT = "selfproject"\n' >selfdot/.mise/config.toml
+rm "$MISE_CONFIG_DIR"
+ln -s "$PWD/selfdot" "$MISE_CONFIG_DIR"
+mise trust selfdot/.mise/config.toml
+assert_contains "mise -C selfdot env" "SELF_PROJECT=selfproject"
+assert_contains "mise untrust selfdot 2>&1" "untrusted ~/workdir/selfdot/.mise/config.toml"
+assert_fail_contains "mise -C selfdot env 2>&1" "not trusted"
+mise trust selfdot/.mise/config.toml
+assert_contains "mise trust --ignore selfdot 2>&1" "ignored ~/workdir/selfdot/.mise/config.toml"
+assert_not_contains "mise -C selfdot env 2>&1" "SELF_PROJECT=selfproject"
+assert_contains "mise -C ~ env" "SELF_GLOBAL=selfglobal"

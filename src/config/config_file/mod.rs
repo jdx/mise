@@ -693,7 +693,7 @@ pub fn trusted_configs_of_project(project: &Path) -> Vec<PathBuf> {
             config_root::project_by_name(path) == project
                 && !(config::is_global_config(path)
                     && !config::is_project_link_to_global_config(path))
-                && !config::lives_in_global_config_dir(path)
+                && !config::is_global_config_for_any_env(path)
                 && !TrustRecord::find(path).is_env_file_approval()
         })
         .collect()
