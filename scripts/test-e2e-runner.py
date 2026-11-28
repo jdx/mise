@@ -636,6 +636,9 @@ class E2EDockerSlotTests(unittest.TestCase):
         binary.parent.mkdir()
         binary.write_bytes(ELF_HEADER)
         binary.chmod(0o755)
+        # A binary a test can opt into with MISE_TEST_PITCHFORK=bin/pitchfork. On
+        # Linux the tree is below /tmp, as a developer's own build is below /home.
+        (binary.parent / "pitchfork").write_text("a pitchfork build\n")
         fake = root / "fakebin" / "docker"
         fake.parent.mkdir()
         fake.write_text(FAKE_DOCKER if real is None else LOGGING_DOCKER)
@@ -798,16 +801,35 @@ class E2EDockerSlotTests(unittest.TestCase):
         ]
         self.assertNotEqual(mounts[0], mounts[1])
 
+    def test_external_binary_is_mounted_outside_the_directories_a_reset_empties(self):
+        result, calls = self.run_runner(
+            {"test_a": ""}, MISE_TEST_PITCHFORK="bin/pitchfork"
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        mount = next(
+            arg for arg in self.starts(calls)[0].split() if "/bin/pitchfork:" in arg
+        )
+        _, inside, mode = mount.rsplit(":", 2)
+        self.assertEqual(mode, "ro")
+        self.assertFalse(inside.startswith(("/tmp/", "/root/", "/home/", "/dev/")), mount)
+        self.assertIn(f" -e MISE_TEST_PITCHFORK={inside} ", self.exec_calls(calls)[0])
+
     def test_real_container_is_clean_for_the_next_test(self):
         real = self.real_docker()
+        # A mounted file cannot be removed, so one inside /tmp, /root or /home
+        # would fail every reset.
+        reads_binary = '[[ $(<"$MISE_TEST_PITCHFORK") == "a pitchfork build" ]] || exit 1\n'
         result, calls = self.run_runner(
             {
                 "test_1_leaves_things": LEAVE_THINGS,
-                "test_2_new_container": EXPECT_NEW_CONTAINER,
-                "test_3_leaves_things": "# e2e:non-root\ntouch /tmp/left /home/left",
+                "test_2_new_container": reads_binary + EXPECT_NEW_CONTAINER,
+                "test_3_leaves_things": "# e2e:non-root\n"
+                + reads_binary
+                + "touch /tmp/left /home/left",
                 "test_4_new_container": EXPECT_NEW_CONTAINER,
             },
             real=real,
+            MISE_TEST_PITCHFORK="bin/pitchfork",
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(len(self.starts(calls)), 1, calls)

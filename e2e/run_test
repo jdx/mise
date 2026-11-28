@@ -421,12 +421,14 @@ docker_test_args() {
     -v "$mise_bin:/usr/local/lib/mise/debug/mise:ro"
   )
   # An external binary a test opts into (a pitchfork build) lives on the host, so
-  # it has to be mounted at the same path for the variable to mean anything
-  # inside the container. Without this the test would see an unset variable and
-  # skip.
+  # it has to be mounted for the variable to mean anything inside the container.
+  # Without this the test would see an unset variable and skip. It is not
+  # mounted at its host path, which is usually below /home or /tmp: the reset
+  # between two tests empties those, and a mounted file cannot be removed.
   if [[ -n ${MISE_TEST_PITCHFORK:-} && -f $MISE_TEST_PITCHFORK ]]; then
-    DOCKER_MOUNT_ARGS+=(-v "$MISE_TEST_PITCHFORK:$MISE_TEST_PITCHFORK:ro")
-    DOCKER_ENV_ARGS+=(-e MISE_TEST_PITCHFORK="$MISE_TEST_PITCHFORK")
+    local pitchfork=/usr/local/lib/mise-pitchfork/pitchfork
+    DOCKER_MOUNT_ARGS+=(-v "$MISE_TEST_PITCHFORK:$pitchfork:ro")
+    DOCKER_ENV_ARGS+=(-e MISE_TEST_PITCHFORK="$pitchfork")
   fi
   return 0
 }
