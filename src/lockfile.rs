@@ -2285,31 +2285,15 @@ impl Lockfile {
                     .map(|specifier| (specifier.clone(), entry.options.clone()))
             })
             .collect();
-        for entry in entries {
+        for (index, entry) in entries.iter().enumerate() {
+            let others = entries
+                .iter()
+                .enumerate()
+                .filter(|(other, e)| *other != index && e.version == entry.version)
+                .map(|(_, e)| e);
+            let excludes = excluded.excluding(&key, entry, others);
             let mut entry = entry.clone();
-            let mut record = ExcludedPlatform {
-                tool: key.clone(),
-                version: entry.version.clone(),
-                backend: entry.backend.clone().unwrap_or_default(),
-                options: entry.options.clone(),
-                platform: String::new(),
-            };
-            let mut is_excluded = |platform: &String| {
-                record.platform.clone_from(platform);
-                if entry.backend.is_some() {
-                    excluded.contains(&record)
-                } else {
-                    // A legacy entry names no backend, so it is matched on the rest of the
-                    // entry: an exclusion removes only a row it matches without doubt, and a
-                    // skipped task's pin of the version with other options keeps its rows.
-                    excluded.iter().any(|e| {
-                        e.tool == record.tool
-                            && e.version == record.version
-                            && e.options == record.options
-                            && e.platform == record.platform
-                    })
-                }
-            };
+            let is_excluded = |platform: &String| excludes(platform);
             let recorded = entry.platforms.len() + entry.unsupported_platforms.len();
             let platforms = std::mem::take(&mut entry.platforms)
                 .into_iter()
@@ -5844,8 +5828,7 @@ impl UnsupportedPlatforms {
 /// A platform record of one lockfile entry that `mise lock` left out on purpose, because the
 /// `os` option of the request that entry is for excludes it. The entry is the tool's key, its
 /// version, backend and options, so a request for the same version from another backend, or
-/// with other options, is not affected. A legacy entry that records no backend is matched on
-/// the rest: the tool's key, version and options.
+/// with other options, is not affected.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ExcludedPlatform {
     pub tool: String,
@@ -5855,9 +5838,91 @@ pub struct ExcludedPlatform {
     pub platform: String,
 }
 
+/// A request `mise lock` saw: its backend and the lockfile options it has on each platform.
+type SeenRequest = (String, BTreeSet<BTreeMap<String, String>>);
+
 /// The [`ExcludedPlatform`]s of a run. Generation drops their records, so restoring what a
-/// skipped task file may still use must not bring them back.
-pub type ExcludedPlatforms = BTreeSet<ExcludedPlatform>;
+/// skipped task file may still use must not bring them back. Only a record an exclusion
+/// matches without doubt stays out: a stale row is safer than a lost pin.
+///
+/// | previous entry | matches an exclusion of the same tool, version and platform |
+/// |---|---|
+/// | names a backend | with the same backend and options |
+/// | names no backend (legacy) | with the same options |
+/// | legacy, with no options | also when the tool's version has exactly one request |
+///
+/// The last row is for entries written before options were recorded. One request is one
+/// that `mise lock` saw, and no other entry of the previous lockfile for that version stands
+/// for another one, such as a skipped task's.
+#[derive(Debug, Clone, Default)]
+pub struct ExcludedPlatforms {
+    records: BTreeSet<ExcludedPlatform>,
+    requests: BTreeMap<(String, String), BTreeSet<SeenRequest>>,
+}
+
+impl ExcludedPlatforms {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn insert(&mut self, record: ExcludedPlatform) {
+        self.records.insert(record);
+    }
+
+    /// Records that `mise lock` saw a request for `tool@version` from `backend`, with these
+    /// lockfile options across the target platforms.
+    pub fn add_request(
+        &mut self,
+        tool: &str,
+        version: &str,
+        backend: String,
+        options: BTreeSet<BTreeMap<String, String>>,
+    ) {
+        self.requests
+            .entry((tool.to_string(), version.to_string()))
+            .or_default()
+            .insert((backend, options));
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &ExcludedPlatform> {
+        self.records.iter()
+    }
+
+    /// Which platforms of `entry`, a previous entry of `tool`, are excluded. `others` are the
+    /// previous lockfile's other entries for the same version.
+    fn excluding<'a>(
+        &'a self,
+        tool: &'a str,
+        entry: &'a LockfileTool,
+        mut others: impl Iterator<Item = &'a LockfileTool>,
+    ) -> impl Fn(&str) -> bool + 'a {
+        let mut only_request = || {
+            let requests = self
+                .requests
+                .get(&(tool.to_string(), entry.version.clone()));
+            let Some(requests) = requests.filter(|requests| requests.len() == 1) else {
+                return false;
+            };
+            let (backend, options) = requests.first().unwrap();
+            others.all(|other| {
+                other.backend.as_ref() == Some(backend) && options.contains(&other.options)
+            })
+        };
+        let legacy_unrecorded =
+            entry.backend.is_none() && entry.options.is_empty() && only_request();
+        move |platform: &str| {
+            self.records.iter().any(|e| {
+                e.tool == tool
+                    && e.version == entry.version
+                    && e.platform == platform
+                    && match &entry.backend {
+                        Some(backend) => *backend == e.backend && e.options == entry.options,
+                        None => e.options == entry.options || legacy_unrecorded,
+                    }
+            })
+        }
+    }
+}
 
 pub type LockResolutionResult = (
     String,
