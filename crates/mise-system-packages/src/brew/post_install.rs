@@ -279,6 +279,7 @@ impl Context<'_> {
         let source = self.path(step, "source")?;
         let target = self.path(step, "target")?;
         let destination = copy_destination(&source, &target)?;
+        refuse_linked_parents(&destination, &prefix_roots())?;
         // Homebrew serializes `overwrite: false` only; an absent key (the DSL
         // default) allows overwriting, unlike `move`/`write` where `flag` applies.
         let protected = step.get("overwrite").and_then(Value::as_bool) == Some(false);
@@ -294,13 +295,9 @@ impl Context<'_> {
             if !flag(step, "recursive") {
                 bail!("{} is a directory", source.display());
             }
-            copy_tree(
-                &source,
-                &destination,
-                false,
-                &mut Vec::new(),
-                &super::pour::link_roots(),
-            )
+            let roots = super::pour::link_roots();
+            let destination = copy_tree_root(&destination, &roots)?;
+            copy_tree(&source, &destination, false, &mut Vec::new(), &roots)
         } else {
             fs::copy(&source, &destination)?;
             Ok(())
@@ -606,6 +603,71 @@ fn refuse_glob(step: &Value) -> Result<()> {
 /// Homebrew's copy steps place a source under an existing directory target.
 /// Resolve that path before checking `overwrite`, since it is the path Homebrew
 /// protects (rather than the directory containing it).
+/// The Homebrew prefix and its Cellar, as spelled and as resolved: the
+/// directories a step's paths start from.
+fn prefix_roots() -> Vec<PathBuf> {
+    [prefix::prefix(), prefix::cellar()]
+        .into_iter()
+        .chain(super::pour::link_roots())
+        .collect()
+}
+
+/// Refuse a `copy` whose destination lies below a symlink inside the prefix.
+/// `copy_destination` follows a target that links to a directory, so
+/// `var/redirect` linking to `/outside` would put the files in `/outside`.
+/// Only the directories between the deepest of `roots` the destination is
+/// below and the destination are checked: the prefix and the Cellar may be
+/// links (a Cellar on another disk), which `prefix::refuse_foreign_as_root`
+/// judges. A destination outside every root is left alone, and the
+/// destination itself is handled by `copy_tree_root` and `fs::copy`.
+fn refuse_linked_parents(destination: &Path, roots: &[PathBuf]) -> Result<()> {
+    let Some(parent) = destination.parent() else {
+        return Ok(());
+    };
+    let Some(root) = roots
+        .iter()
+        .filter(|root| parent.starts_with(root))
+        .max_by_key(|root| root.components().count())
+    else {
+        return Ok(());
+    };
+    let mut path = root.clone();
+    for part in parent.strip_prefix(root)?.components() {
+        path.push(part);
+        if path.is_symlink() {
+            bail!(
+                "not copying to {}: {} is a symlink, and files are not copied through one",
+                destination.display(),
+                path.display(),
+            );
+        }
+    }
+    Ok(())
+}
+
+/// Where a recursive `copy` puts its tree. `copy_tree` skips a destination
+/// that is a symlink, which suits a bottle's etc and var but would drop a
+/// recipe's step without a word, so a link is resolved here instead: one that
+/// leads below one of `roots` (the Homebrew prefix) is copied into where it
+/// leads, and any other is an error.
+fn copy_tree_root(destination: &Path, roots: &[PathBuf]) -> Result<PathBuf> {
+    if !destination.is_symlink() {
+        return Ok(destination.to_path_buf());
+    }
+    let real = destination
+        .canonicalize()
+        .wrap_err_with(|| format!("{} is a symlink mise cannot follow", destination.display()))?;
+    if !roots.iter().any(|root| real.starts_with(root)) {
+        bail!(
+            "{} is a symlink to {}, outside the Homebrew prefix, and files are not copied \
+             through it",
+            destination.display(),
+            real.display(),
+        );
+    }
+    Ok(real)
+}
+
 fn copy_destination(source: &Path, target: &Path) -> Result<PathBuf> {
     if target.is_dir() {
         let name = source
@@ -958,6 +1020,96 @@ mod tests {
             fs::read_to_string(directory_target.join("directory-source/nested/file"))?,
             "directory"
         );
+        Ok(())
+    }
+
+    /// a recursive copy onto a symlink copies into where it leads in the
+    /// prefix and fails for anywhere else; it is never skipped
+    #[cfg(unix)]
+    #[test]
+    fn recursive_copy_onto_a_symlink_follows_it_only_within_the_prefix() -> Result<()> {
+        use std::os::unix::fs::symlink;
+        let tmp = tempfile::tempdir()?;
+        let root = tmp.path().canonicalize()?;
+        let prefix = root.join("prefix");
+        let inside = prefix.join("Cellar/demo/etc/conf");
+        fs::create_dir_all(&inside)?;
+        symlink(&inside, prefix.join("conf"))?;
+        let roots = [prefix.clone()];
+        assert_eq!(copy_tree_root(&prefix.join("conf"), &roots)?, inside);
+        assert_eq!(copy_tree_root(&inside, &roots)?, inside);
+        let outside = root.join("outside");
+        fs::create_dir_all(&outside)?;
+        symlink(&outside, prefix.join("away"))?;
+        let err = copy_tree_root(&prefix.join("away"), &roots).unwrap_err();
+        assert!(
+            err.to_string().contains("outside the Homebrew prefix"),
+            "{err}"
+        );
+        symlink(root.join("missing"), prefix.join("dangling"))?;
+        assert!(copy_tree_root(&prefix.join("dangling"), &roots).is_err());
+
+        // the step itself: `<target>/conf` links out of the (default) prefix
+        let source = root.join("src/conf");
+        fs::create_dir_all(&source)?;
+        fs::write(source.join("f"), "f")?;
+        let target = root.join("target");
+        fs::create_dir_all(&target)?;
+        symlink(&outside, target.join("conf"))?;
+        let step = json!({
+            "source": {"path": source},
+            "target": {"path": target},
+            "recursive": true,
+        });
+        let err = ctx(&root).copy(&step).unwrap_err();
+        assert!(
+            err.to_string().contains("outside the Homebrew prefix"),
+            "{err}"
+        );
+        assert_eq!(fs::read_dir(&outside)?.count(), 0);
+        Ok(())
+    }
+
+    /// `var/redirect` links out of the prefix: a copy below it is refused,
+    /// while real directories and a linked Cellar are fine
+    #[cfg(unix)]
+    #[test]
+    fn copy_refuses_a_destination_below_a_link_in_the_prefix() -> Result<()> {
+        use std::os::unix::fs::symlink;
+        let tmp = tempfile::tempdir()?;
+        let root = tmp.path().canonicalize()?;
+        let prefix = root.join("prefix");
+        let outside = root.join("outside");
+        let disk = root.join("disk/cellar");
+        fs::create_dir_all(prefix.join("var/real"))?;
+        fs::create_dir_all(&outside)?;
+        fs::create_dir_all(disk.join("demo/1.0"))?;
+        symlink(&outside, prefix.join("var/redirect"))?;
+        symlink(&disk, prefix.join("Cellar"))?;
+        let roots = [prefix.clone(), prefix.join("Cellar"), disk.clone()];
+
+        for destination in [
+            prefix.join("var/redirect/assets"),
+            prefix.join("var/redirect/deeper/assets"),
+        ] {
+            let err = refuse_linked_parents(&destination, &roots).unwrap_err();
+            assert!(
+                err.to_string().contains(&format!(
+                    "{} is a symlink",
+                    prefix.join("var/redirect").display()
+                )),
+                "{err}"
+            );
+        }
+        for destination in [
+            prefix.join("var/real/assets"),
+            prefix.join("var/new/assets"),
+            prefix.join("Cellar/demo/1.0/etc"),
+            outside.join("assets"),
+        ] {
+            refuse_linked_parents(&destination, &roots)
+                .wrap_err_with(|| destination.display().to_string())?;
+        }
         Ok(())
     }
 

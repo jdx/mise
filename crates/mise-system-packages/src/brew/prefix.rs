@@ -181,11 +181,15 @@ fn sudo_invoking_uid() -> Option<u32> {
 /// a directory for a symlink between a check and a write and have root
 /// create files wherever they like. Each of those must be owned by root or
 /// by the user who ran `sudo mise`.
+///
+/// A prefix spelled with `..` is refused for every user, before anything is
+/// checked or created: see [`refuse_parent_steps`].
 pub(super) fn refuse_foreign_as_root() -> Result<()> {
+    let prefix = prefix();
+    refuse_parent_steps(&prefix)?;
     if !nix::unistd::geteuid().is_root() {
         return Ok(());
     }
-    let prefix = prefix();
     if let Some((path, uid)) =
         foreign_component(&prefix, &bootstrap_dirs(&prefix), sudo_invoking_uid())
     {
@@ -200,6 +204,25 @@ pub(super) fn refuse_foreign_as_root() -> Result<()> {
             path.display(),
             prefix.display(),
             path.display(),
+        );
+    }
+    Ok(())
+}
+
+/// Refuse a prefix with a `..` in it. Where `a/missing/../b` leads depends on
+/// what `missing` is once it is created, and the checks read it lexically up
+/// to the missing part: `mkdir -p` would make `a/missing` and then write in
+/// `a/b`, which nothing checked. (`Path::components` drops an inner `.`, and a
+/// leading one is the working directory, which is checked.)
+fn refuse_parent_steps(prefix: &Path) -> Result<()> {
+    if prefix
+        .components()
+        .any(|part| part == std::path::Component::ParentDir)
+    {
+        bail!(
+            "the Homebrew prefix {} contains `..`; set MISE_SYSTEM_BREW_PREFIX to a path \
+             without it",
+            prefix.display()
         );
     }
     Ok(())
@@ -226,14 +249,17 @@ fn foreign_component(
 /// through, so the links and directories it leads through count as much as
 /// the link itself. A path that does not exist yet is resolved as far as it
 /// exists, which a link above a prefix still to be created can lead anywhere
-/// from.
+/// from. A relative path (`MISE_SYSTEM_BREW_PREFIX=brew`) is taken from the
+/// working directory, joined but not resolved, so the working directory and
+/// the directories above it are checked too.
 fn guarded_paths(prefix: &Path, dirs: &[PathBuf]) -> Vec<PathBuf> {
     std::iter::once(prefix)
         .chain(dirs.iter().map(PathBuf::as_path))
         .flat_map(|path| {
+            let path = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
             path.ancestors()
                 .map(Path::to_path_buf)
-                .chain(resolution_paths(path))
+                .chain(resolution_paths(&path))
                 .collect::<Vec<_>>()
         })
         .collect()
@@ -516,6 +542,38 @@ mod tests {
         let paths = resolution_paths(&base.join("a/prefix"));
         assert!(paths.contains(&base.join("a")));
         assert!(paths.contains(&base.join("b")));
+    }
+
+    /// a relative prefix is written to below the working directory, so that
+    /// directory and those above it are checked
+    #[test]
+    fn root_checks_the_working_directory_of_a_relative_prefix() {
+        let cwd = std::env::current_dir().unwrap();
+        let paths = guarded_paths(Path::new("brew"), &[PathBuf::from("brew/Cellar")]);
+        for path in cwd.ancestors() {
+            assert!(paths.contains(&path.to_path_buf()), "{}", path.display());
+        }
+        assert!(paths.contains(&cwd.join("brew")));
+        assert!(paths.contains(&cwd.join("brew/Cellar")));
+        assert!(paths.iter().all(|path| path.is_absolute()), "{paths:?}");
+    }
+
+    /// `..` makes where the prefix lands depend on directories still to be
+    /// created, so it is refused up front
+    #[test]
+    fn a_prefix_with_a_parent_step_is_refused() {
+        for prefix in ["/safe/new/../foreign/prefix", "../brew", "brew/.."] {
+            let err = refuse_parent_steps(Path::new(prefix)).unwrap_err();
+            assert!(err.to_string().contains("contains `..`"), "{prefix}: {err}");
+        }
+        for prefix in [
+            "/home/linuxbrew/.linuxbrew",
+            "/opt/./homebrew",
+            "./brew",
+            "brew",
+        ] {
+            assert!(refuse_parent_steps(Path::new(prefix)).is_ok(), "{prefix}");
+        }
     }
 
     #[test]
