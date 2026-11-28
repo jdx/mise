@@ -657,12 +657,8 @@ impl Backend for AquaBackend {
             (url, url_api, v.to_string(), filename, digest)
         };
 
-        // A lockfile's URL only hints at `v` (the prefix may not be in it), so
-        // the tag is the one resolved before the URL was read.
-        let release_tag = match validated_url {
-            Some(_) => release_tag,
-            None => selected_release_tag(&pkg, &v, release_tag.as_deref()),
-        };
+        let release_tag =
+            install_release_tag(&pkg, &v, release_tag.as_deref(), validated_url.is_some());
 
         let original_linux_replacement = pkg.replacements.get("linux").cloned();
         pkg = Self::apply_selected_asset_libc_replacement(pkg, os(), &filename);
@@ -5077,6 +5073,27 @@ fn selected_release_tag(pkg: &AquaPackage, v: &str, known_tag: Option<&str>) -> 
     known_tag.filter(|tag| *tag == v).map(str::to_string)
 }
 
+/// The release tag an install's checks bind to. For a download from a lockfile URL, the tag
+/// resolved before the URL was read, as the URL only hints at `v` (the prefix may not be in it).
+/// When none was, because the URL names another release than the locked version's or no
+/// release at all, a GitHub release package's tag is `v`, the release its provenance is fetched
+/// from. Without it, provenance built from any release of the package would pass for the
+/// artifact the URL points at.
+fn install_release_tag(
+    pkg: &AquaPackage,
+    v: &str,
+    resolved_tag: Option<&str>,
+    from_lockfile_url: bool,
+) -> Option<String> {
+    if !from_lockfile_url {
+        return selected_release_tag(pkg, v, resolved_tag);
+    }
+    match resolved_tag {
+        Some(tag) => Some(tag.to_string()),
+        None => selected_release_tag(pkg, v, None),
+    }
+}
+
 /// The tag a package's SLSA provenance must have been built from, as
 /// slsa-verifier's `--source-tag` took it: the recipe's `source_tag`, or else
 /// the version's release tag, when mise knows it. A `source_tag` of `-` turns
@@ -6275,6 +6292,45 @@ slsa_provenance:
         assert_eq!(
             selected_release_tag(&http, "v1.2.3", Some("v1.2.3")).as_deref(),
             Some("v1.2.3")
+        );
+    }
+
+    #[test]
+    fn install_release_tag_binds_a_lockfile_url_to_the_requested_release() {
+        let release = pkg_from_yaml(
+            "type: github_release\nrepo_owner: owner\nrepo_name: tool\nasset: tool.tar.gz\nslsa_provenance:\n  type: github_release\n  asset: tool.intoto.jsonl\n",
+        );
+        let http = pkg_from_yaml(
+            "type: http\nrepo_owner: owner\nrepo_name: tool\nurl: https://example.com/tool-{{.SemVer}}.tar.gz\n",
+        );
+        // A locked URL whose tag names the locked version keeps that tag
+        assert_eq!(
+            install_release_tag(&release, "2.0.0", Some("v2.0.0"), true).as_deref(),
+            Some("v2.0.0")
+        );
+        // A locked URL that names another release, or none, leaves no tag resolved; the
+        // provenance must still come from the requested release, not from any release
+        assert_eq!(
+            install_release_tag(&release, "v2.0.0", None, true).as_deref(),
+            Some("v2.0.0")
+        );
+        assert_eq!(
+            slsa_source_tag(
+                &release,
+                install_release_tag(&release, "v2.0.0", None, true).as_deref()
+            ),
+            Some("v2.0.0")
+        );
+        // A package that is no GitHub release still has no tag to bind to
+        assert_eq!(install_release_tag(&http, "v2.0.0", None, true), None);
+        // Without a lockfile URL the tag is the selected release's, as before
+        assert_eq!(
+            install_release_tag(&release, "v2.0.0", None, false).as_deref(),
+            Some("v2.0.0")
+        );
+        assert_eq!(
+            install_release_tag(&http, "v2.0.0", Some("v2.0.0"), false).as_deref(),
+            Some("v2.0.0")
         );
     }
 
