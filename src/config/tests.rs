@@ -1758,6 +1758,82 @@ fn test_glob_treats_directory_as_literal() -> Result<()> {
     Ok(())
 }
 
+/// `MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES=none` turns discovery off and names no file, so an
+/// env file named `none` is not config that `mise trust` would trust the directory for.
+#[test]
+fn test_user_config_filenames_skip_the_disable_value() {
+    let vars = |set: &'static [(&'static str, &'static str)]| {
+        move |name: &str| {
+            set.iter()
+                .find(|(var, _)| *var == name)
+                .map(|(_, value)| value.to_string())
+        }
+    };
+    assert!(
+        user_config_filenames_from(vars(&[("MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES", "none")]))
+            .is_empty()
+    );
+    assert_eq!(
+        user_config_filenames_from(vars(&[
+            ("MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES", "none"),
+            ("MISE_OVERRIDE_CONFIG_FILENAMES", "project.toml:none"),
+            ("MISE_DEFAULT_CONFIG_FILENAME", ""),
+        ])),
+        ["project.toml", "none"],
+        "`none` disables only `.tool-versions` discovery, as the whole value"
+    );
+    assert_eq!(
+        user_config_filenames_from(vars(&[
+            (
+                "MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES",
+                "a.versions::b.versions"
+            ),
+            ("MISE_DEFAULT_TOOL_VERSIONS_FILENAME", "c.versions"),
+            ("MISE_DEFAULT_CONFIG_FILENAME", "d.toml"),
+        ])),
+        ["a.versions", "b.versions", "c.versions", "d.toml"]
+    );
+}
+
+/// A config file for an environment `MISE_ENV` does not select is config too: trusting its
+/// root covers it, so `mise trust mise.staging.toml` with only `env_files` on trusts the
+/// project rather than approving the file as an env file.
+#[test]
+fn test_has_own_config_filename_counts_every_environment() -> Result<()> {
+    let tmp = TempDir::new()?;
+    let dir = tmp.path().join("proj");
+    let files = [
+        "mise.staging.toml",
+        ".mise.prod.local.toml",
+        ".config/mise/config.dev.toml",
+        "mise/conf.d/web/mise.qa.toml",
+        ".mise/conf.d/base.staging.toml",
+        "mise.toml",
+        "project.toml",
+        "none",
+        ".env",
+        "env.staging.toml",
+    ];
+    for file in files {
+        let path = dir.join(file);
+        fs::create_dir_all(path.parent().unwrap())?;
+        fs::write(&path, "")?;
+    }
+    let user_names = vec!["project.toml".to_string()];
+    let is_config = |file: &str| has_own_config_filename_from(&dir.join(file), &dir, &user_names);
+    for file in &files[..7] {
+        assert!(is_config(file), "{file} is config");
+    }
+    for file in &files[7..] {
+        assert!(!is_config(file), "{file} is not config");
+    }
+    // A name the operator set counts outside the directory searched from, mise's own do not.
+    let child = |file: &str| has_own_config_filename_from(&dir.join(file), tmp.path(), &user_names);
+    assert!(child("project.toml"));
+    assert!(!child("mise.staging.toml"));
+    Ok(())
+}
+
 /// Override filenames come from a project `.miserc.toml` that loads without
 /// trust, and are looked up in every ancestor directory: they are names, not
 /// patterns.
