@@ -1,5 +1,4 @@
 backends = ["aqua:Kotlin/kotlin-lsp"]
-bins = ["kotlin-lsp"]
 description = "Official Kotlin Language Server by JetBrains"
 test = { cmd = "kotlin-lsp --version", expected = "{{version}}" }
 version_order = "semver"
