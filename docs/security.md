@@ -211,9 +211,11 @@ when all of these hold:
   directory between that directory and those files, and the target of each one
   that is a symlink. A config file another account left in a shared directory,
   such as a `.config/mise.toml` beside your own `mise.toml`, still asks. So does
-  a symlink whose target sits below a directory that neither you nor root
-  owns, or that another account can write to and that is not sticky like
-  `/tmp`: that account could replace the target after the trust is recorded. Windows does not check ownership.
+  a symlink whose target, or a link it passes through on the way, sits below a
+  directory that neither you nor root owns, or that another account can write
+  to and that is not sticky like `/tmp`: that account could replace the target
+  or repoint the link after the trust is recorded. Windows does not check
+  ownership.
 
 mise cannot tell a command you typed from one a program started on the same
 terminal, so a mise command run from a script or a Makefile target you start
