@@ -1513,14 +1513,16 @@ impl Lock {
         )
         .await?;
         // What a request's `os` option excludes was dropped on purpose, so it stays dropped.
-        let excluded = lockfile::generate::os_excluded_platforms(tools, target_platforms)?;
+        let mut excluded = lockfile::generate::os_excluded_platforms(tools, target_platforms)?;
+        let skipped = crate::config::safe_mode_skipped_task_file();
+        excluded.set_task_file_skipped(skipped);
         for short in withheld {
             lockfile.restore_missing_versions(previous, short, &excluded);
         }
         // Safe mode left out a task file, so `tools` lacks what its tasks request, and a
         // version only they pin was dropped above. Keep every locked version, as
         // `prune_stale_versions` does outside generate mode.
-        if crate::config::safe_mode_skipped_task_file() {
+        if skipped {
             for short in previous.tools().keys() {
                 lockfile.restore_missing_versions(previous, short, &excluded);
             }

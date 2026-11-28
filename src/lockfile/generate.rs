@@ -452,14 +452,6 @@ pub fn os_excluded_platforms(
     for (ba, tv) in tools {
         let backend = tv.backend()?;
         let short = crate::toolset::install_state::state_short(&ba.short).into_owned();
-        let mut request_options = BTreeSet::new();
-        for platform in platforms {
-            for platform in backend.platform_variants_for(tv, platform) {
-                request_options
-                    .insert(backend.lockfile_options(&tv.request, &PlatformTarget::new(platform))?);
-            }
-        }
-        excluded.add_request(&short, &tv.version, ba.stored_full(), request_options);
         for platform in platforms {
             if tv.request.is_os_supported_on(platform) {
                 continue;
@@ -2238,11 +2230,24 @@ mod tests {
                 .iter()
                 .all(|entry| entry.backend.is_none())
         );
-        generated.restore_missing_versions(&legacy, "fixture", &excluded);
-        let entries = generated.tools_for("fixture").unwrap();
+        let mut restored = generated.clone();
+        restored.restore_missing_versions(&legacy, "fixture", &excluded);
+        let entries = restored.tools_for("fixture").unwrap();
         assert_eq!(entries.len(), 1, "{entries:?}");
         assert_eq!(entries[0].options, other);
         assert_eq!(entries[0].platforms.len(), 2, "{entries:?}");
+
+        // While a task file is skipped, a legacy entry with no options may be a skipped
+        // task's, so the exclusion keeps out none of its rows.
+        let mut excluded = excluded;
+        excluded.set_task_file_skipped(true);
+        generated.restore_missing_versions(&legacy, "fixture", &excluded);
+        let entries = generated.tools_for("fixture").unwrap();
+        assert_eq!(entries.len(), 2, "{entries:?}");
+        assert!(
+            entries.iter().all(|entry| entry.platforms.len() == 2),
+            "{entries:?}"
+        );
     }
 
     /// A tool configured with URL credentials is selected under its

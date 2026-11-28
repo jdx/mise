@@ -6574,9 +6574,9 @@ fn the_global_lockfile_is_matched_as_written() {
     ));
 }
 
-/// Which previous entries an `os` exclusion keeps out when a skipped task file makes
-/// `mise lock` restore them. Each case excludes `macos-arm64` for the run's requests and says
-/// whether the entry under test gets that row back.
+/// Which previous entries an `os` exclusion keeps out when `mise lock` restores them, as it
+/// does for a skipped task file. Each case excludes `macos-arm64` for the run's requests and
+/// says whether the entry under test gets that row back.
 #[test]
 fn restoring_matches_an_os_exclusion_only_to_an_entry_it_names_without_doubt() {
     let opts = |pairs: &[(&str, &str)]| -> BTreeMap<String, String> {
@@ -6587,100 +6587,101 @@ fn restoring_matches_an_os_exclusion_only_to_an_entry_it_names_without_doubt() {
     };
     let none = BTreeMap::new;
     let url_x = || opts(&[("url", "https://example.invalid/x.tar.gz")]);
-    let url_y = || opts(&[("url", "https://example.invalid/y.tar.gz")]);
     let other = || opts(&[("bin", "other")]);
-    type Entry = (Option<&'static str>, BTreeMap<String, String>);
     struct Case {
         name: &'static str,
-        // the previous lockfile's entries for widget@1.0.0; the first is under test
-        previous: Vec<Entry>,
+        // the previous lockfile's entry for widget@1.0.0
+        previous: (Option<&'static str>, BTreeMap<String, String>),
         // the run's requests for widget@1.0.0, each excluding macos-arm64
         requests: Vec<(&'static str, BTreeMap<String, String>)>,
+        // whether safe mode skipped a task file, whose requests the run did not see
+        skipped: bool,
         restored: bool,
     }
     let cases = [
         Case {
             name: "the exact entry stays out",
-            previous: vec![(Some("http:widget"), none())],
+            previous: (Some("http:widget"), none()),
             requests: vec![("http:widget", none())],
+            skipped: true,
             restored: false,
         },
         Case {
             name: "an entry with other options keeps its row (4726517415)",
-            previous: vec![(Some("http:widget"), other())],
+            previous: (Some("http:widget"), other()),
             requests: vec![("http:widget", none())],
+            skipped: true,
             restored: true,
         },
         Case {
             name: "an entry from another backend keeps its row (4726517415)",
-            previous: vec![(Some("http:elsewhere"), none())],
+            previous: (Some("http:elsewhere"), none()),
             requests: vec![("http:widget", none())],
+            skipped: true,
             restored: true,
         },
         Case {
             name: "a legacy entry with the same options stays out (4726558471, 4726564982)",
-            previous: vec![(None, none())],
-            requests: vec![("http:widget", none())],
+            previous: (None, url_x()),
+            requests: vec![("http:widget", url_x())],
+            skipped: true,
             restored: false,
         },
         Case {
             name: "a legacy entry with other options keeps its row (4726581190)",
-            previous: vec![(None, other())],
+            previous: (None, other()),
+            requests: vec![("http:widget", url_x())],
+            skipped: true,
+            restored: true,
+        },
+        Case {
+            name: "a legacy entry without options keeps its row beside a request with options \
+                   (4726611377, 4726663915)",
+            previous: (None, none()),
+            requests: vec![("http:widget", url_x())],
+            skipped: true,
+            restored: true,
+        },
+        Case {
+            name: "a legacy entry without options keeps its row beside a request without them \
+                   (4726663915)",
+            previous: (None, none()),
             requests: vec![("http:widget", none())],
+            skipped: true,
             restored: true,
         },
         Case {
-            name: "a legacy entry without options, for the only request, stays out (4726611377)",
-            previous: vec![(None, none())],
-            requests: vec![("http:widget", url_x())],
+            name: "with nothing skipped, a legacy entry without options matches on its options",
+            previous: (None, none()),
+            requests: vec![("http:widget", none())],
+            skipped: false,
             restored: false,
         },
         Case {
-            name: "a legacy entry without options, for one of two requests, keeps its row",
-            previous: vec![(None, none())],
-            requests: vec![("http:widget", url_x()), ("http:widget", url_y())],
-            restored: true,
-        },
-        Case {
-            name: "a legacy entry without options beside a skipped task's entry keeps its row",
-            previous: vec![(None, none()), (Some("http:other"), none())],
+            name: "with nothing skipped, a legacy entry without options keeps a row for others",
+            previous: (None, none()),
             requests: vec![("http:widget", url_x())],
+            skipped: false,
             restored: true,
-        },
-        Case {
-            name: "a legacy entry without options beside the request's own entry stays out",
-            previous: vec![(None, none()), (Some("http:widget"), url_x())],
-            requests: vec![("http:widget", url_x())],
-            restored: false,
         },
     ];
     for case in cases {
+        let (backend, options) = &case.previous;
+        let mut entry = basic_tool("1.0.0", "unused");
+        entry.backend = backend.map(str::to_string);
+        entry.options = options.clone();
+        for platform in ["linux-x64", "macos-arm64"] {
+            entry
+                .platforms
+                .insert(platform.to_string(), PlatformInfo::default());
+        }
         let mut previous = Lockfile::default();
-        let entries = case
-            .previous
-            .iter()
-            .map(|(backend, options)| {
-                let mut entry = basic_tool("1.0.0", "unused");
-                entry.backend = backend.map(str::to_string);
-                entry.options = options.clone();
-                for platform in ["linux-x64", "macos-arm64"] {
-                    entry
-                        .platforms
-                        .insert(platform.to_string(), PlatformInfo::default());
-                }
-                entry
-            })
-            .collect::<Vec<_>>();
-        let under_test = entries[0].clone();
-        previous.tools.insert("widget".to_string(), entries);
+        previous
+            .tools
+            .insert("widget".to_string(), vec![entry.clone()]);
         let mut excluded = ExcludedPlatforms::new();
+        excluded.set_task_file_skipped(case.skipped);
         for (backend, options) in &case.requests {
-            excluded.add_request(
-                "widget",
-                "1.0.0",
-                backend.to_string(),
-                BTreeSet::from([options.clone()]),
-            );
             excluded.insert(ExcludedPlatform {
                 tool: "widget".to_string(),
                 version: "1.0.0".to_string(),
@@ -6691,13 +6692,17 @@ fn restoring_matches_an_os_exclusion_only_to_an_entry_it_names_without_doubt() {
         }
         let mut current = Lockfile::default();
         current.restore_missing_versions(&previous, "widget", &excluded);
-        let entry = current.tools["widget"]
+        let restored = current.tools["widget"]
             .iter()
-            .find(|e| e.backend == under_test.backend && e.options == under_test.options)
+            .find(|e| e.backend == entry.backend && e.options == entry.options)
             .unwrap_or_else(|| panic!("{}: entry not restored", case.name));
-        assert!(entry.platforms.contains_key("linux-x64"), "{}", case.name);
+        assert!(
+            restored.platforms.contains_key("linux-x64"),
+            "{}",
+            case.name
+        );
         assert_eq!(
-            entry.platforms.contains_key("macos-arm64"),
+            restored.platforms.contains_key("macos-arm64"),
             case.restored,
             "{}",
             case.name
