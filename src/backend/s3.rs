@@ -274,11 +274,11 @@ impl S3Backend {
             pr.set_length(content_length);
         }
 
-        // Stream the body to a temp file then rename for atomic operation. The
-        // temp file is deleted when it is dropped before the rename.
-        let tmp_path = download_temp_path(dest)?;
-        write_body(resp.body, s3_url, &tmp_path, max_bytes, pr).await?;
-        persist_download(tmp_path, dest)
+        // Stream the body to a staged file then rename for atomic operation.
+        // The staging directory is deleted when it is dropped before the rename.
+        let staged = stage_download(dest)?;
+        write_body(resp.body, s3_url, &staged.file, max_bytes, pr).await?;
+        persist_download(staged, dest)
     }
 
     /// Fetch versions from a manifest file URL
@@ -500,14 +500,25 @@ async fn create_s3_client(region: Option<&str>, endpoint: Option<&str>) -> Resul
     Ok(S3Client::from_conf(s3_config.build()))
 }
 
-/// A new, uniquely named file beside `dest` to download into, so that no name
-/// `dest` can have (one ending in `.tmp` included) makes it `dest` itself.
+/// Where an S3 object is downloaded before it is renamed to its destination:
+/// `file`, in a new directory beside the destination that is deleted, with
+/// whatever is in it, when this is dropped.
+struct StagedDownload {
+    dir: tempfile::TempDir,
+    file: PathBuf,
+}
+
+/// A new, uniquely named directory beside `dest` to download into, so that no
+/// name `dest` can have (one ending in `.tmp` included) makes it `dest` itself.
 ///
-/// The name is short and fixed rather than built from `dest`'s, which may
-/// already be close to the filesystem's limit on a name. Its first character
-/// differs from `dest`'s, so the two can never be the same name.
-fn download_temp_path(dest: &Path) -> Result<tempfile::TempPath> {
-    let dir = match dest.parent() {
+/// The directory is the private part: on unix it is created reachable by its
+/// owner only, so the partial download is private while the file in it is
+/// created like any other, with the mode `dest` has always had. The
+/// name is short and fixed rather than built from `dest`'s, which may already
+/// be close to the filesystem's limit on a name. Its first character differs
+/// from `dest`'s, so the two can never be the same name.
+fn stage_download(dest: &Path) -> Result<StagedDownload> {
+    let parent = match dest.parent() {
         Some(dir) if !dir.as_os_str().is_empty() => dir,
         _ => Path::new("."),
     };
@@ -519,37 +530,35 @@ fn download_temp_path(dest: &Path) -> Result<tempfile::TempPath> {
     } else {
         ".mise-s3-"
     };
-    // Created by std as an ordinary file: tempfile's own files are marked
-    // temporary on Windows, which the rename would carry over to `dest`.
-    Ok(tempfile::Builder::new()
-        .prefix(prefix)
-        .suffix(".tmp")
-        .make_in(dir, |path| {
-            std::fs::OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(path)
-        })?
-        .into_temp_path())
+    let mut builder = tempfile::Builder::new();
+    builder.prefix(prefix).suffix(".tmp");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        builder.permissions(std::fs::Permissions::from_mode(0o700));
+    }
+    let dir = builder.tempdir_in(parent)?;
+    let file = dir.path().join("download");
+    Ok(StagedDownload { dir, file })
 }
 
-/// Move a finished download from `tmp` to `dest`. If that fails, `tmp` is
-/// dropped, which removes the file.
+/// Move a finished download to `dest`. If that fails, `staged` is dropped,
+/// which removes it.
 ///
-/// `std::fs::rename` rather than `TempPath::persist` or `keep`: only std turns
-/// a path past `MAX_PATH` into the extended-length form Windows needs without
-/// long-path support, and tempfile's calls would fail on one only once the
+/// `std::fs::rename` rather than tempfile's `persist`: only std turns a path
+/// past `MAX_PATH` into the extended-length form Windows needs without
+/// long-path support, and tempfile's call would fail on one only once the
 /// whole object has been downloaded.
-fn persist_download(mut tmp: tempfile::TempPath, dest: &Path) -> Result<()> {
-    std::fs::rename(&tmp, dest).map_err(|err| {
+fn persist_download(staged: StagedDownload, dest: &Path) -> Result<()> {
+    std::fs::rename(&staged.file, dest).map_err(|err| {
         eyre!(
             "failed to move {} to {}: {err}",
-            file::display_path(&tmp),
+            file::display_path(&staged.file),
             file::display_path(dest)
         )
     })?;
-    // The file is `dest` now; there is nothing left at `tmp` to remove.
-    tmp.disable_cleanup(true);
+    // Only the empty directory is left, which this removes.
+    drop(staged.dir);
     Ok(())
 }
 
@@ -1287,7 +1296,7 @@ checksum = "sha256:abc123"
     }
 
     #[test]
-    fn test_download_temp_path_is_never_the_destination() {
+    fn test_stage_download_is_never_the_destination() {
         let dir = tempfile::tempdir().unwrap();
         for name in [
             "tool.tar.gz",
@@ -1297,51 +1306,73 @@ checksum = "sha256:abc123"
             ".mise-s3-x.tmp",
         ] {
             let dest = dir.path().join(name);
-            let tmp = download_temp_path(&dest).unwrap();
-            assert_ne!(&*tmp, dest.as_path());
-            assert_eq!(tmp.parent(), dest.parent());
-            assert!(tmp.exists());
-            // A download that fails drops the temp file, which removes it and
-            // leaves nothing under the destination's name.
-            let tmp_file = tmp.to_path_buf();
-            drop(tmp);
-            assert!(!tmp_file.exists());
+            let staged = stage_download(&dest).unwrap();
+            let staging_dir = staged.dir.path().to_path_buf();
+            assert_ne!(staging_dir, dest);
+            assert_eq!(staging_dir.parent(), dest.parent());
+            assert!(staging_dir.is_dir());
+            assert_eq!(staged.file.parent(), Some(staging_dir.as_path()));
+            // A download that fails drops the staging directory, which removes
+            // it with the partial file and leaves nothing under the
+            // destination's name.
+            std::fs::write(&staged.file, "partial").unwrap();
+            drop(staged);
+            assert!(!staging_dir.exists());
             assert!(!dest.exists());
         }
         let dest = dir.path().join("tool.tmp");
-        let tmp = download_temp_path(&dest).unwrap();
-        let tmp_file = tmp.to_path_buf();
-        std::fs::write(&tmp, "done").unwrap();
-        persist_download(tmp, &dest).unwrap();
+        let staged = stage_download(&dest).unwrap();
+        let staging_dir = staged.dir.path().to_path_buf();
+        std::fs::write(&staged.file, "done").unwrap();
+        persist_download(staged, &dest).unwrap();
         assert_eq!(std::fs::read_to_string(&dest).unwrap(), "done");
-        assert!(!tmp_file.exists());
+        assert!(!staging_dir.exists());
     }
 
     #[test]
-    fn test_persist_download_removes_the_temp_file_when_the_rename_fails() {
+    fn test_persist_download_removes_the_staged_file_when_the_rename_fails() {
         let dir = tempfile::tempdir().unwrap();
         // A directory with an entry in it cannot be replaced by a file.
         let dest = dir.path().join("tool.tar.gz");
         std::fs::create_dir_all(dest.join("inside")).unwrap();
-        let tmp = download_temp_path(&dest).unwrap();
-        let tmp_file = tmp.to_path_buf();
-        std::fs::write(&tmp, "done").unwrap();
-        assert!(persist_download(tmp, &dest).is_err());
-        assert!(!tmp_file.exists());
+        let staged = stage_download(&dest).unwrap();
+        let staging_dir = staged.dir.path().to_path_buf();
+        std::fs::write(&staged.file, "done").unwrap();
+        assert!(persist_download(staged, &dest).is_err());
+        assert!(!staging_dir.exists());
         assert!(dest.join("inside").is_dir());
     }
 
     #[test]
-    fn test_download_temp_path_fits_beside_a_long_name() {
-        // 255 bytes is the longest name common filesystems allow; a temp name
-        // built from it would not fit.
+    fn test_stage_download_fits_beside_a_long_name() {
+        // 255 bytes is the longest name common filesystems allow; a staging
+        // name built from it would not fit.
         let dir = tempfile::tempdir().unwrap();
         let dest = dir.path().join(format!("{}.tar.gz", "a".repeat(248)));
         assert_eq!(dest.file_name().unwrap().len(), 255);
-        let tmp = download_temp_path(&dest).unwrap();
-        assert!(tmp.file_name().unwrap().len() < 32);
-        std::fs::write(&tmp, "done").unwrap();
-        persist_download(tmp, &dest).unwrap();
+        let staged = stage_download(&dest).unwrap();
+        assert!(staged.dir.path().file_name().unwrap().len() < 32);
+        std::fs::write(&staged.file, "done").unwrap();
+        persist_download(staged, &dest).unwrap();
         assert_eq!(std::fs::read_to_string(&dest).unwrap(), "done");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_staged_download_is_private_until_it_is_in_place() {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = |path: &Path| std::fs::metadata(path).unwrap().permissions().mode() & 0o777;
+        let dir = tempfile::tempdir().unwrap();
+        let dest = dir.path().join("tool.tar.gz");
+        let staged = stage_download(&dest).unwrap();
+        // Other users cannot reach the partial download.
+        assert_eq!(mode(staged.dir.path()), 0o700);
+        // `write_body` creates the file the way it always has, so once it is
+        // in place it has the mode any new file beside it gets.
+        tokio::fs::File::create(&staged.file).await.unwrap();
+        persist_download(staged, &dest).unwrap();
+        let reference = dir.path().join("reference");
+        std::fs::write(&reference, "").unwrap();
+        assert_eq!(mode(&dest), mode(&reference));
     }
 }
