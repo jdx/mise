@@ -3179,7 +3179,7 @@ pub fn config_paths_in_dir_with_filenames(dir: &Path, filenames: &[String]) -> V
         .collect()
 }
 
-pub(crate) fn all_dirs() -> Result<Vec<PathBuf>> {
+fn all_dirs() -> Result<Vec<PathBuf>> {
     file::all_dirs(env::current_dir()?, &env::MISE_CEILING_PATHS)
 }
 
@@ -4041,47 +4041,6 @@ pub(crate) fn override_config_files() -> IndexSet<PathBuf> {
     let files: IndexSet<PathBuf> = files.into_iter().filter(|p| p.is_file()).collect();
     *o = Some(files.clone());
     files
-}
-
-/// Where `path` ranks among the global override files, lowest first, as
-/// [`override_config_files`] orders them. The file need not exist yet. `None` when it is
-/// not an override file of an active environment.
-pub(crate) fn override_config_rank(path: &Path) -> Option<usize> {
-    if !is_override_config(path) {
-        return None;
-    }
-    let name = path.file_name()?.to_str()?;
-    if name == "config.override.toml" {
-        return Some(0);
-    }
-    let environment = name
-        .strip_prefix("config.")?
-        .strip_suffix(".override.toml")?;
-    env::MISE_GLOBAL_ENV_WITH_AUTO
-        .iter()
-        .rposition(|e| e == environment)
-        .map(|i| i + 1)
-}
-
-/// Where `path` ranks among the config files discovery reads from `root`, lowest first, as
-/// [`DEFAULT_CONFIG_FILENAMES`] orders them. Files one pattern matches rank by name, a later
-/// name higher, as discovery reads them. The file need not exist yet.
-pub(crate) fn config_filename_precedence(root: &Path, path: &Path) -> Option<(usize, PathBuf)> {
-    let escaped_root = glob::Pattern::escape(&root.to_string_lossy());
-    DEFAULT_CONFIG_FILENAMES
-        .iter()
-        .enumerate()
-        .rev()
-        .find_map(|(i, candidate)| {
-            if is_glob_pattern(candidate) {
-                let pattern = Path::new(&escaped_root).join(candidate);
-                glob::Pattern::new(&pattern.to_string_lossy())
-                    .is_ok_and(|g| g.matches_path(path))
-                    .then(|| (i, path.to_path_buf()))
-            } else {
-                (root.join(candidate) == path).then(|| (i, PathBuf::new()))
-            }
-        })
 }
 
 pub(crate) fn system_config_files() -> IndexSet<PathBuf> {

@@ -179,7 +179,6 @@ pub(super) async fn local(
 
     if !runtime.is_empty() || remove.is_some() {
         trace!("saving config file {}", display_path(path));
-        config_file::ensure_saved_edit_keeps_tool_request_count(&config.config_files, &cf).await?;
         cf.save()?;
     } else {
         miseprint!("{}", cf.dump()?)?;

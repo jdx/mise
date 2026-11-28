@@ -237,9 +237,13 @@ impl ToolRequestSetBuilder {
         let mut effective = EffectiveToolRequests::default();
         let mut per_file = Vec::with_capacity(config_files.len());
         for cf in config_files.values() {
+            if effective.is_full() {
+                effective.skip(cf.get_path());
+                continue;
+            }
             let mut cf_trs = cf.to_tool_request_set()?;
-            cf_trs.sources.retain(|ba, _| !effective.is_named(ba));
-            effective.add(&mut cf_trs.tools, Vec::len)?;
+            effective.add(cf.get_path(), &mut cf_trs.tools, Vec::len);
+            cf_trs.sources.retain(|ba, _| cf_trs.tools.contains_key(ba));
             per_file.push(cf_trs);
         }
         for cf_trs in per_file.into_iter().rev() {

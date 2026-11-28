@@ -190,8 +190,12 @@ impl ToolsetBuilder {
                 ConfigScope::SystemOnly if !config::is_system_config(cf.get_path()) => continue,
                 _ => {}
             }
+            if effective.is_full() {
+                effective.skip(cf.get_path());
+                continue;
+            }
             let mut cf_ts = cf.to_toolset()?;
-            effective.add(&mut cf_ts.versions, |tvl| tvl.requests.len())?;
+            effective.add(cf.get_path(), &mut cf_ts.versions, |tvl| tvl.requests.len());
             per_file.push(cf_ts);
         }
         for cf_ts in per_file.into_iter().rev() {

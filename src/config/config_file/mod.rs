@@ -136,151 +136,60 @@ fn ensure_tool_request_count(path: &Path, count: usize) -> Result<()> {
 /// What is bounded is the requests that take effect. A config file's list for a tool replaces
 /// the lists of lower-priority files for that tool, so the files are given from the highest
 /// priority down and [`Self::add`] drops the tools a closer file already named before counting.
-/// The count only grows, a list a closer config replaces never counts, and the walk stops at the
-/// first file that goes over, before the requests of the files below it are built.
+/// Past the bound, the closer files win: the tools that would take the count over, and every
+/// file below them, are left out with a warning rather than refused. The config still loads, so
+/// `mise use` and `mise unuse` can still fix it, and the requests that are built stay bounded.
 #[derive(Debug, Default)]
 pub(crate) struct EffectiveToolRequests {
     named: HashSet<Arc<BackendArg>>,
     count: usize,
+    full: bool,
 }
 
 impl EffectiveToolRequests {
-    /// Drop from `tools` the tools a higher-priority file named, count the rest, and refuse
-    /// once the count is over [`MAX_TOOL_REQUESTS`].
+    /// Drop from `tools` the tools a higher-priority file named, and those that would take the
+    /// count over [`MAX_TOOL_REQUESTS`]; count the rest.
     pub(crate) fn add<V>(
         &mut self,
+        path: &Path,
         tools: &mut IndexMap<Arc<BackendArg>, V>,
         requests: impl Fn(&V) -> usize,
-    ) -> Result<()> {
+    ) {
         tools.retain(|ba, _| !self.named.contains(ba));
-        self.count += tools.values().map(&requests).sum::<usize>();
-        if self.count > MAX_TOOL_REQUESTS {
-            return Err(eyre!(
-                "the config files request {} tool versions, mise allows {MAX_TOOL_REQUESTS}",
-                self.count
-            ));
-        }
-        self.named.extend(tools.keys().cloned());
-        Ok(())
-    }
-
-    /// Whether a higher-priority file named `ba`.
-    pub(crate) fn is_named(&self, ba: &BackendArg) -> bool {
-        self.named.contains(ba)
-    }
-}
-
-/// [`ensure_edit_keeps_tool_request_count`] for an edit about to be saved, with what
-/// `edited` includes merged in, as reload counts it. An include that cannot load is left
-/// out: reload fails on it whatever the count. Returns `edited` with its includes merged,
-/// as a later check in the same run counts it once it is saved.
-pub async fn ensure_saved_edit_keeps_tool_request_count(
-    config_files: &IndexMap<PathBuf, Arc<dyn ConfigFile>>,
-    edited: &Arc<dyn ConfigFile>,
-) -> Result<Arc<dyn ConfigFile>> {
-    let merged = match crate::config::remote_include::apply(edited.clone()).await {
-        Ok(merged) => merged,
-        Err(err) => {
-            debug!(
-                "counting {} without its includes: {err:#}",
-                edited.get_path().display()
-            );
-            edited.clone()
-        }
-    };
-    ensure_edit_keeps_tool_request_count(config_files, &merged)?;
-    Ok(merged)
-}
-
-/// Refuse an edit to `edited` that would take what the config files request together over
-/// [`MAX_TOOL_REQUESTS`], before it is written: each file can stay under the bound on its own and
-/// still leave a toolset that no longer builds, which would also stop the next `mise use` from
-/// undoing the edit.
-///
-/// `config_files` are the loaded config files from the highest priority down. Only those that
-/// load together with `edited` are counted: for a global file, the other global files; for a
-/// file that is not loaded here, such as one `--path` names, the global files and the loaded
-/// files read from a directory that holds it, conf.d folder fragments with their project; for a
-/// new file that discovery from the current directory would read, every loaded file.
-/// `edited` takes the place of the loaded file at its path; a file not loaded yet is counted
-/// below the closer files and above those in its own directory and its parents. A file
-/// other than `edited` that cannot list its tools is left out, since the edit does not change it.
-pub fn ensure_edit_keeps_tool_request_count(
-    config_files: &IndexMap<PathBuf, Arc<dyn ConfigFile>>,
-    edited: &Arc<dyn ConfigFile>,
-) -> Result<()> {
-    let path = edited.get_path();
-    let loaded = config_files.contains_key(path);
-    let global = crate::config::is_global_config(path);
-    // The directory whose discovery reads a config file. A conf.d folder fragment is its own
-    // config root, but it is read with the project that holds it, as a conf.d file is.
-    let discovered_from = |p: &Path, cf: &dyn ConfigFile| match p.parent() {
-        Some(folder) if crate::config::is_conf_d_folder_file(p) => config_root::config_root(folder),
-        _ => cf.config_root(),
-    };
-    let root = discovered_from(path, edited.as_ref());
-    // A file not loaded yet that discovery from here would read loads with every loaded file,
-    // as one above the current directory does. Any other loads only with the files read from
-    // a directory that holds it.
-    let discovered_here =
-        !global && !loaded && crate::config::all_dirs().is_ok_and(|dirs| dirs.contains(&root));
-    let loads_with_edited = |p: &Path, cf: &Arc<dyn ConfigFile>| {
-        if crate::config::is_global_config(p) {
+        let mut ignored = 0;
+        tools.retain(|ba, v| {
+            let n = requests(v);
+            if self.full || self.count + n > MAX_TOOL_REQUESTS {
+                self.full = true;
+                ignored += n;
+                return false;
+            }
+            self.count += n;
+            self.named.insert(ba.clone());
             true
-        } else if global {
-            false
-        } else {
-            loaded || discovered_here || root.starts_with(discovered_from(p, cf.as_ref()))
+        });
+        if ignored > 0 {
+            warn_over_bound(path, &format!("{ignored} tool versions"));
         }
-    };
-    let mut files: Vec<(&Path, &Arc<dyn ConfigFile>)> = config_files
-        .iter()
-        .filter(|(p, cf)| *p == path || loads_with_edited(p, cf))
-        .map(|(p, cf)| (p.as_path(), if p == path { edited } else { cf }))
-        .collect();
-    if !loaded {
-        // Files from the highest priority down. Override files come first, later environments
-        // winning; then a closer file wins over the new one, which wins over the files above
-        // it; files in its own directory rank by their filename, as discovery reads them.
-        let at = if crate::config::is_override_config(path) {
-            let rank = crate::config::override_config_rank(path);
-            files.iter().position(|(p, _)| {
-                !crate::config::is_override_config(p)
-                    || crate::config::override_config_rank(p) < rank
-            })
-        } else {
-            let precedence = crate::config::config_filename_precedence(&root, path);
-            files.iter().position(|(p, cf)| {
-                if crate::config::is_override_config(p) {
-                    false
-                } else if crate::config::is_global_config(p) {
-                    true
-                } else {
-                    let other = discovered_from(p, cf.as_ref());
-                    if other == root {
-                        crate::config::config_filename_precedence(&root, p) < precedence
-                    } else {
-                        root.starts_with(other)
-                    }
-                }
-            })
-        }
-        .unwrap_or(files.len());
-        files.insert(at, (path, edited));
     }
-    let files = files.into_iter().map(|(_, cf)| cf);
-    let mut effective = EffectiveToolRequests::default();
-    for cf in files {
-        let mut trs = match cf.to_tool_request_set() {
-            Ok(trs) => trs,
-            Err(_) if !Arc::ptr_eq(cf, edited) => continue,
-            Err(e) => return Err(e),
-        };
-        effective
-            .add(&mut trs.tools, Vec::len)
-            .map_err(|e| eyre!("not saving {}: {e}", display_path(path)))?;
+
+    /// Whether the bound is reached, so the files below need not be built: check before
+    /// building a file's requests, and [`Self::skip`] it if so.
+    pub(crate) fn is_full(&self) -> bool {
+        self.full
     }
-    Ok(())
+
+    /// Leave out a file below the bound, with a warning.
+    pub(crate) fn skip(&self, path: &Path) {
+        warn_over_bound(path, "its tools");
+    }
+}
+
+fn warn_over_bound(path: &Path, what: &str) {
+    warn_once!(
+        "ignoring {what} in {}: the config files request more than {MAX_TOOL_REQUESTS} tool versions together",
+        display_path(path)
+    );
 }
 
 /// A templated tool entry's options as written and as the config that declares them renders
@@ -2190,217 +2099,6 @@ mod tests {
 
     use super::*;
 
-    /// A new file counts at the rank discovery gives its filename, so a loaded file that
-    /// ranks higher in the same directory, as `mise.local.toml` does over `mise.toml`, still
-    /// wins over it. The tests' config filenames rank `test.config.toml` above
-    /// `.test.mise.toml`.
-    #[test]
-    fn a_new_file_counts_below_a_higher_ranked_file_in_its_directory() {
-        let dir = tempfile::tempdir().unwrap();
-        let node = format!("\"1\",{}", "\"1\",".repeat(MAX_TOOL_REQUESTS - 2));
-        let local: Arc<dyn ConfigFile> = Arc::new(
-            MiseToml::from_str(
-                &format!("[tools]\nnode = [{node}]\npython = \"3\"\n"),
-                &dir.path().join("test.config.toml"),
-            )
-            .unwrap(),
-        );
-        let files: IndexMap<PathBuf, Arc<dyn ConfigFile>> =
-            [(local.get_path().to_path_buf(), local.clone())]
-                .into_iter()
-                .collect();
-        let new: Arc<dyn ConfigFile> = Arc::new(
-            MiseToml::from_str(
-                "[tools]\nnode = \"1\"\nruby = \"3\"\n",
-                &dir.path().join(".test.mise.toml"),
-            )
-            .unwrap(),
-        );
-        let err = ensure_edit_keeps_tool_request_count(&files, &new).unwrap_err();
-        assert!(err.to_string().contains("1001 tool versions"), "{err}");
-    }
-
-    /// Reload merges what a file includes into it, so the check before a save counts it too.
-    #[tokio::test]
-    async fn a_saved_edit_counts_what_the_file_includes() {
-        let dir = tempfile::tempdir().unwrap();
-        let node = format!("\"1\",{}", "\"1\",".repeat(MAX_TOOL_REQUESTS - 1));
-        std::fs::write(
-            dir.path().join("fragment.toml"),
-            format!("[tools]\nnode = [{node}]\n"),
-        )
-        .unwrap();
-        let path = dir.path().join(".test.mise.toml");
-        let edited: Arc<dyn ConfigFile> = Arc::new(
-            MiseToml::from_str(
-                "include = [\"./fragment.toml\"]\n[tools]\npython = \"3\"\n",
-                &path,
-            )
-            .unwrap(),
-        );
-        let files: IndexMap<PathBuf, Arc<dyn ConfigFile>> = IndexMap::new();
-        ensure_edit_keeps_tool_request_count(&files, &edited).unwrap();
-        let err = ensure_saved_edit_keeps_tool_request_count(&files, &edited)
-            .await
-            .unwrap_err();
-        assert!(err.to_string().contains("1001 tool versions"), "{err}");
-    }
-
-    /// An edit is checked against what all the config files request together, so a file that
-    /// stays under the bound on its own is still not saved when the toolset would go over it.
-    #[test]
-    fn an_edit_that_takes_the_config_files_over_the_bound_is_refused() {
-        let dir = tempfile::tempdir().unwrap();
-        let toml = |name: &str, body: &str| -> Arc<dyn ConfigFile> {
-            Arc::new(MiseToml::from_str(body, &dir.path().join(name)).unwrap())
-        };
-        let parent_body = format!("[tools]\nnode = [{}]\n", "\"1\",".repeat(MAX_TOOL_REQUESTS));
-        let parent = toml("parent.toml", &parent_body);
-        let child = toml("mise.toml", "[tools]\n");
-        let files: IndexMap<PathBuf, Arc<dyn ConfigFile>> = [&child, &parent]
-            .into_iter()
-            .map(|cf| (cf.get_path().to_path_buf(), cf.clone()))
-            .collect();
-
-        ensure_edit_keeps_tool_request_count(&files, &child).unwrap();
-        // replacing the parent's node versions keeps the toolset small
-        ensure_edit_keeps_tool_request_count(&files, &toml("mise.toml", "[tools]\nnode = \"1\"\n"))
-            .unwrap();
-        // a new tool in the loaded file, or in a file not loaded yet, goes over
-        for name in ["mise.toml", "mise.local.toml"] {
-            let edited = toml(name, "[tools]\npython = \"3\"\n");
-            let err = ensure_edit_keeps_tool_request_count(&files, &edited).unwrap_err();
-            assert!(err.to_string().contains("1001 tool versions"), "{err}");
-            assert!(err.to_string().contains("not saving"), "{err}");
-        }
-        // a file in another project, as `mise use --path` names, never loads with these
-        let other = tempfile::tempdir().unwrap();
-        let elsewhere: Arc<dyn ConfigFile> = Arc::new(
-            MiseToml::from_str("[tools]\npython = \"3\"\n", &other.path().join("mise.toml"))
-                .unwrap(),
-        );
-        ensure_edit_keeps_tool_request_count(&files, &elsewhere).unwrap();
-        // a file in a subdirectory of the loaded ones loads with them
-        std::fs::create_dir_all(dir.path().join("sub")).unwrap();
-        let below = toml("sub/mise.toml", "[tools]\npython = \"3\"\n");
-        assert!(ensure_edit_keeps_tool_request_count(&files, &below).is_err());
-        // a file above the current directory, as `mise use --path ../mise.toml` names, loads
-        // with everything found from here
-        let cwd = crate::dirs::CWD.clone().unwrap();
-        let above: Arc<dyn ConfigFile> = Arc::new(
-            MiseToml::from_str(
-                "[tools]\npython = \"3\"\n",
-                &cwd.parent().unwrap().join("mise.toml"),
-            )
-            .unwrap(),
-        );
-        assert!(ensure_edit_keeps_tool_request_count(&files, &above).is_err());
-
-        // a closer file's list replaces the new parent's, so it counts at the closer file's
-        // priority: 999 python and 1 node below, 2 node above, is 1,000 in all
-        let python = format!("\"3\",{}", "\"3\",".repeat(MAX_TOOL_REQUESTS - 2));
-        let child: Arc<dyn ConfigFile> = Arc::new(
-            MiseToml::from_str(
-                &format!("[tools]\npython = [{python}]\nnode = \"1\"\n"),
-                &cwd.join("mise.edit-count-test.toml"),
-            )
-            .unwrap(),
-        );
-        let files: IndexMap<PathBuf, Arc<dyn ConfigFile>> =
-            [(child.get_path().to_path_buf(), child.clone())]
-                .into_iter()
-                .collect();
-        let parent: Arc<dyn ConfigFile> = Arc::new(
-            MiseToml::from_str(
-                "[tools]\nnode = [\"1\", \"2\"]\n",
-                &cwd.parent().unwrap().join("mise.toml"),
-            )
-            .unwrap(),
-        );
-        ensure_edit_keeps_tool_request_count(&files, &parent).unwrap();
-    }
-
-    /// A conf.d folder fragment has its own config root but loads with the project that holds
-    /// it, so a new file in that project counts it, and a new fragment counts the project.
-    #[test]
-    fn conf_d_folder_fragments_count_with_their_project() {
-        let dir = tempfile::tempdir().unwrap();
-        let toml = |name: &str, body: &str| -> Arc<dyn ConfigFile> {
-            Arc::new(MiseToml::from_str(body, &dir.path().join(name)).unwrap())
-        };
-        let full = format!("[tools]\nnode = [{}]\n", "\"1\",".repeat(MAX_TOOL_REQUESTS));
-        let python = "[tools]\npython = \"3\"\n";
-        let loaded = |cf: &Arc<dyn ConfigFile>| -> IndexMap<PathBuf, Arc<dyn ConfigFile>> {
-            [(cf.get_path().to_path_buf(), cf.clone())]
-                .into_iter()
-                .collect()
-        };
-        for fragment in [
-            ".mise/conf.d/tools/mise.toml",
-            "mise/conf.d/tools/mise.toml",
-        ] {
-            let files = loaded(&toml(fragment, &full));
-            let err = ensure_edit_keeps_tool_request_count(&files, &toml("mise.toml", python))
-                .unwrap_err();
-            assert!(
-                err.to_string().contains("1001 tool versions"),
-                "{fragment}: {err}"
-            );
-        }
-        let files = loaded(&toml("mise.toml", &full));
-        let new_fragment = toml(".mise/conf.d/tools/mise.toml", python);
-        assert!(ensure_edit_keeps_tool_request_count(&files, &new_fragment).is_err());
-    }
-
-    /// A `.tool-versions` edit is counted as it will be saved, not as the file was read.
-    #[test]
-    fn a_tool_versions_edit_is_counted_as_it_will_be_saved() {
-        let dir = tempfile::tempdir().unwrap();
-        let parent_body = format!(
-            "[tools]\nnode = [{}]\n",
-            "\"1\",".repeat(MAX_TOOL_REQUESTS - 1)
-        );
-        let parent: Arc<dyn ConfigFile> =
-            Arc::new(MiseToml::from_str(&parent_body, &dir.path().join("parent.toml")).unwrap());
-        let path = dir.path().join(".tool-versions");
-        let read: Arc<dyn ConfigFile> =
-            Arc::new(ToolVersions::parse_str("ruby 3\n", path.clone()).unwrap());
-        let files: IndexMap<PathBuf, Arc<dyn ConfigFile>> = [&read, &parent]
-            .into_iter()
-            .map(|cf| (cf.get_path().to_path_buf(), cf.clone()))
-            .collect();
-        ensure_edit_keeps_tool_request_count(&files, &read).unwrap();
-
-        let python = BackendArg::from("python");
-        let request = |version: &str| {
-            ToolRequest::new(
-                Arc::new(python.clone()),
-                version,
-                ToolSource::ToolVersions(path.clone()),
-            )
-            .unwrap()
-        };
-        let edited: Arc<dyn ConfigFile> =
-            Arc::new(ToolVersions::parse_str("ruby 3\n", path.clone()).unwrap());
-        edited
-            .replace_versions(&python, vec![request("3")])
-            .unwrap();
-        let err = ensure_edit_keeps_tool_request_count(&files, &edited).unwrap_err();
-        assert!(err.to_string().contains("1001 tool versions"), "{err}");
-        // removing the tool again leaves the file as it was read
-        edited.remove_tool(&python).unwrap();
-        ensure_edit_keeps_tool_request_count(&files, &edited).unwrap();
-        assert!(
-            !edited
-                .to_tool_request_set()
-                .unwrap()
-                .tools
-                .contains_key(&python)
-        );
-    }
-
-    /// Files from the highest priority down; a tool's list in a closer file replaces the lists
-    /// below it, so only the lists that take effect count toward the bound.
     #[test]
     fn only_tool_requests_that_take_effect_count_toward_the_bound() {
         let files = |sizes: &[(&str, usize)]| {
@@ -2409,37 +2107,48 @@ mod tests {
                 .map(|(tool, n)| (Arc::new(BackendArg::from(*tool)), vec![(); *n]))
                 .collect::<IndexMap<_, _>>()
         };
+        let path = Path::new("mise.toml");
+        // What each file keeps, and the total.
         let total = |stack: &[&[(&str, usize)]]| {
             let mut effective = EffectiveToolRequests::default();
-            for file in stack {
-                effective.add(&mut files(file), Vec::len)?;
-            }
-            Ok::<_, eyre::Report>(effective.count)
+            let kept = stack
+                .iter()
+                .map(|file| {
+                    if effective.is_full() {
+                        return vec![];
+                    }
+                    let mut tools = files(file);
+                    effective.add(path, &mut tools, Vec::len);
+                    tools.keys().map(|ba| ba.short.clone()).collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>();
+            (kept, effective.count)
         };
 
         // a project replaces the 600 node versions two parents request
         let parents: &[&[(&str, usize)]] = &[&[("node", 1)], &[("node", 600)], &[("python", 500)]];
-        assert_eq!(total(parents).unwrap(), 501);
-        // what each file adds for tools no closer file named does count
-        let spread: &[&[(&str, usize)]] = &[&[("node", 600)], &[("node", 1), ("python", 401)]];
-        assert!(
-            total(spread)
-                .unwrap_err()
-                .to_string()
-                .contains("1001 tool versions")
-        );
+        assert_eq!(total(parents).1, 501);
         let at_limit: &[&[(&str, usize)]] = &[&[("node", 600)], &[("python", 400)]];
-        assert_eq!(total(at_limit).unwrap(), MAX_TOOL_REQUESTS);
+        assert_eq!(total(at_limit).1, MAX_TOOL_REQUESTS);
+        // past the bound the closer files win, and nothing below the bound is kept
+        let spread: &[&[(&str, usize)]] = &[
+            &[("node", 600)],
+            &[("ruby", 1), ("python", 401), ("go", 1)],
+            &[("deno", 1)],
+        ];
+        let (kept, count) = total(spread);
+        assert_eq!(count, 601);
+        assert_eq!(kept, [vec!["node"], vec!["ruby"], vec![]]);
 
         let mut effective = EffectiveToolRequests::default();
         let mut lower = files(&[("python", 3), ("node", 2)]);
-        effective.add(&mut files(&[("node", 1)]), Vec::len).unwrap();
-        effective.add(&mut lower, Vec::len).unwrap();
+        effective.add(path, &mut files(&[("node", 1)]), Vec::len);
+        effective.add(path, &mut lower, Vec::len);
         assert_eq!(
             lower.keys().map(|ba| ba.short.as_str()).collect::<Vec<_>>(),
             ["python"]
         );
-        assert!(effective.is_named(&BackendArg::from("node")));
+        assert!(effective.named.contains(&BackendArg::from("node")));
     }
 
     #[tokio::test]
