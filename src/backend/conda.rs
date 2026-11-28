@@ -33,7 +33,16 @@ use std::fmt::Debug;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{Duration, SystemTime};
 use versions::Versioning;
+
+/// The prefix of the directory each install keeps its own archives in, in the
+/// conda data dir.
+const PRIVATE_ARCHIVE_DIR_PREFIX: &str = ".install-";
+
+/// How long after its last write an install's directory is left behind, well
+/// past the time any install takes to download and extract its archives.
+const PRIVATE_ARCHIVE_DIR_MAX_AGE: Duration = Duration::from_secs(24 * 60 * 60);
 
 /// Conda package info stored in the shared conda-packages section of lockfiles
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -317,14 +326,61 @@ impl CondaBackend {
     }
 
     /// A directory for this install's own copies of its archives, which no
-    /// other install writes. It is in the conda data dir, so a copy of a cached
-    /// archive is a hard link, and it is removed when dropped.
+    /// other install writes, removed when dropped.
     fn private_archive_dir() -> Result<tempfile::TempDir> {
-        let data_dir = Self::conda_data_dir();
-        file::create_dir_all(&data_dir)?;
-        Ok(tempfile::Builder::new()
-            .prefix(".install-")
-            .tempdir_in(&data_dir)?)
+        Self::private_archive_dir_in(&Self::conda_data_dir())
+    }
+
+    /// [`Self::private_archive_dir`] in `data_dir`, so a copy of a cached
+    /// archive is a hard link. A `data_dir` this install cannot write, such as
+    /// a read-only cache, still serves its archives: they are copied to a
+    /// directory in the system temp dir instead.
+    fn private_archive_dir_in(data_dir: &Path) -> Result<tempfile::TempDir> {
+        let in_data_dir = file::create_dir_all(data_dir).and_then(|()| {
+            if let Some(before) = SystemTime::now().checked_sub(PRIVATE_ARCHIVE_DIR_MAX_AGE) {
+                Self::remove_stale_private_dirs(data_dir, before);
+            }
+            Ok(tempfile::Builder::new()
+                .prefix(PRIVATE_ARCHIVE_DIR_PREFIX)
+                .tempdir_in(data_dir)?)
+        });
+        match in_data_dir {
+            Ok(dir) => Ok(dir),
+            Err(err) => {
+                debug!(
+                    "copying conda archives to the temp dir, as {} is not writable: {err:#}",
+                    data_dir.display()
+                );
+                Ok(tempfile::Builder::new().prefix("mise-conda-").tempdir()?)
+            }
+        }
+    }
+
+    /// Remove the directories of installs last written to before `before`. An
+    /// install that was killed leaves its directory, and so does one that
+    /// failed while a download was copying an archive into it: the copy runs
+    /// on a blocking thread cancelling the install does not stop, and it
+    /// creates the directory again after the install removed it.
+    fn remove_stale_private_dirs(data_dir: &Path, before: SystemTime) {
+        let Ok(entries) = std::fs::read_dir(data_dir) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            if !entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with(PRIVATE_ARCHIVE_DIR_PREFIX)
+            {
+                continue;
+            }
+            let stale = entry
+                .metadata()
+                .and_then(|m| m.modified())
+                .is_ok_and(|modified| modified < before);
+            if stale && let Err(err) = file::remove_all(entry.path()) {
+                debug!("failed to remove {}: {err:#}", entry.path().display());
+            }
+        }
     }
 
     /// Where this install keeps its copy of the archive cached at `dest`, in
@@ -2140,6 +2196,59 @@ mod tests {
         assert_eq!(std::fs::read(&dest).unwrap(), b"other bytes");
         assert_eq!(std::fs::read(&private).unwrap(), b"archive");
         assert_eq!(sha256_of(&private), sha);
+    }
+
+    /// A conda data dir the install cannot write still serves the archives
+    /// cached in it: they are copied to a directory in the system temp dir.
+    #[test]
+    fn an_unwritable_data_dir_keeps_install_copies_in_the_temp_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let cached = dir.path().join("cache").join("pkg-1.0-0.conda");
+        std::fs::create_dir_all(cached.parent().unwrap()).unwrap();
+        std::fs::write(&cached, b"archive").unwrap();
+        let sha = sha256_of(&cached);
+        // A file where the directory should be: no directory can be made in it.
+        let unwritable = dir.path().join("conda-packages");
+        std::fs::write(&unwritable, b"").unwrap();
+
+        let private_dir = CondaBackend::private_archive_dir_in(&unwritable).unwrap();
+        assert!(!private_dir.path().starts_with(&unwritable));
+        let private = CondaBackend::private_archive_path(&cached, private_dir.path());
+        assert!(CondaBackend::take_verified_copy(
+            &cached,
+            &private,
+            Some(&sha),
+            true
+        ));
+        assert_eq!(std::fs::read(&private).unwrap(), b"archive");
+    }
+
+    /// The directory an install left behind is removed by a later install
+    /// once it is stale, and nothing else in the conda data dir is.
+    #[test]
+    fn stale_install_dirs_are_removed() {
+        use std::time::{Duration, SystemTime};
+        let dir = tempfile::tempdir().unwrap();
+        let data_dir = dir.path();
+        let left = data_dir.join(".install-left").join("7");
+        std::fs::create_dir_all(&left).unwrap();
+        std::fs::write(left.join("pkg-1.0-0.conda"), b"archive").unwrap();
+        let cached = data_dir.join("0123456789abcdef").join("pkg-1.0-0.conda");
+        std::fs::create_dir_all(cached.parent().unwrap()).unwrap();
+        std::fs::write(&cached, b"archive").unwrap();
+        let flat = data_dir.join("pkg-1.0-0.conda");
+        std::fs::write(&flat, b"archive").unwrap();
+
+        let hour = Duration::from_secs(60 * 60);
+        CondaBackend::remove_stale_private_dirs(data_dir, SystemTime::now() - hour);
+        assert!(left.exists());
+        CondaBackend::remove_stale_private_dirs(data_dir, SystemTime::now() + hour);
+        assert!(!data_dir.join(".install-left").exists());
+        assert!(cached.exists());
+        assert!(flat.exists());
+
+        let private_dir = CondaBackend::private_archive_dir_in(data_dir).unwrap();
+        assert_eq!(private_dir.path().parent(), Some(data_dir));
     }
 
     /// Same-named archives from two channels are cached apart, so one does not
