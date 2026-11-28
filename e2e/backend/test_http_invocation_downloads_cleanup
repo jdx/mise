@@ -26,7 +26,7 @@ touch "$STAGING/pdead.lock"
 echo stale >"$STAGING/pdead/.tmpinner/artifact"
 # What an older mise left: lockless folders, one old and one possibly still in use.
 mkdir -p "$STAGING/.tmpold" "$STAGING/.tmpnew"
-touch -d '2 days ago' "$STAGING/.tmpold"
+touch -t 202001010000 "$STAGING/.tmpold"
 
 cat >mise.toml <<TOML
 [tools."http:hello"]

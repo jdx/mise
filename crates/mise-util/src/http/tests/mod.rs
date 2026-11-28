@@ -151,14 +151,14 @@ fn sweep_removes_staging_of_dead_processes_and_keeps_live_ones() {
     // What an older mise left: a folder with no lock file at all.
     std::fs::create_dir_all(root.join(".tmpold/.tmpinner")).unwrap();
 
-    sweep_abandoned_scratch(root, Duration::from_secs(3600));
+    sweep_abandoned_scratch(root, &live.lock_path, Duration::from_secs(3600));
     assert!(live.dir.join("artifact").exists());
     assert!(!root.join("pdead").exists());
     assert!(!dead_lock.exists());
     // Too recent: an older mise may still be downloading into it.
     assert!(root.join(".tmpold").exists());
 
-    sweep_abandoned_scratch(root, Duration::ZERO);
+    sweep_abandoned_scratch(root, &live.lock_path, Duration::ZERO);
     assert!(!root.join(".tmpold").exists());
     assert!(live.dir.join("artifact").exists());
 

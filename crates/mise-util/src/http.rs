@@ -569,7 +569,7 @@ impl InvocationScratch {
         );
         let dir = scratch_dir_for(&lock_path);
         std::fs::create_dir(&dir)?;
-        sweep_abandoned_scratch(root, unlocked_max_age);
+        sweep_abandoned_scratch(root, &lock_path, unlocked_max_age);
         Ok(Self {
             dir,
             lock_path,
@@ -628,18 +628,22 @@ fn remove_scratch_dir(dir: &Path) {
 
 /// Deletes the staging folders of processes that ended without cleaning up: those whose
 /// lock nobody holds, and lockless ones older than `unlocked_max_age`. Only call it with
-/// [`CLAIMS_LOCK`] held, so no folder is between being named and being locked.
-fn sweep_abandoned_scratch(root: &Path, unlocked_max_age: Duration) {
+/// [`CLAIMS_LOCK`] held, so no folder is between being named and being locked. It skips
+/// `own_lock`, the caller's, without relying on the OS to refuse a second lock on it.
+fn sweep_abandoned_scratch(root: &Path, own_lock: &Path, unlocked_max_age: Duration) {
     let Ok(entries) = std::fs::read_dir(root) else {
         return;
     };
     for entry in entries.flatten() {
         let path = entry.path();
+        if path == own_lock {
+            continue;
+        }
         if path.extension().is_some_and(|ext| ext == "lock") {
             let Ok(mut lock) = fslock::LockFile::open(&path) else {
                 continue;
             };
-            // Held: the owner is alive, or this is our own folder.
+            // Held: the owner is alive.
             if !matches!(lock.try_lock(), Ok(true)) {
                 continue;
             }
