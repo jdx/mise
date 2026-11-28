@@ -218,7 +218,7 @@ async fn resolve_closure(
             .into_iter()
             .enumerate()
             .map(|(index, (key, requested))| async move {
-                let result = fetch_formula_with_fallback(&key, requested, provision_ruby).await;
+                let result = fetch_validated_formula(&key, requested, provision_ruby).await;
                 (index, key, requested, result)
             })
             .collect();
@@ -359,6 +359,16 @@ async fn resolve_closure(
     Ok(sorted)
 }
 
+async fn fetch_validated_formula(
+    key: &FormulaKey,
+    requested: bool,
+    provision_ruby: bool,
+) -> Result<(Formula, Option<String>, Option<String>)> {
+    let resolved = fetch_formula_with_fallback(key, requested, provision_ruby).await?;
+    validate_formula_identity(&resolved.0)?;
+    Ok(resolved)
+}
+
 async fn fetch_formula_with_fallback(
     key: &FormulaKey,
     requested: bool,
@@ -407,10 +417,6 @@ async fn fetch_formula_with_fallback(
         }
         Err(err) => Err(err),
     }
-    .and_then(|resolved| {
-        validate_formula_identity(&resolved.0)?;
-        Ok(resolved)
-    })
 }
 
 /// Fetched metadata names the formula's rack and keg (`Cellar/<name>/<version>`),
