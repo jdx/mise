@@ -106,8 +106,9 @@ jobs:
       # Overflow to hosted runners when the self-hosted queue is deep. GitHub has no
       # "queued jobs by label" API and listing runners needs admin rights, so walk the
       # oldest in-flight runs of the test workflow (at most 2 + MAX_RUNS requests) and
-      # measure how long the oldest job still queued for the label has waited. Any
-      # error, empty result or parse failure leaves the self-hosted decision above.
+      # measure how long the oldest job still queued for the label has waited. A
+      # failed request, an empty result or a parse failure ends the step without an
+      # override, which leaves the self-hosted decision above.
       # Only API data is used here; nothing from the checkout runs with this token.
       - name: Check Windows queue depth
         id: windows-queue
@@ -124,32 +125,49 @@ jobs:
           set +e
           set -o pipefail
           now=$(date +%s)
-          runs=$(
-            for status in in_progress queued; do
-              gh api "repos/$REPO/actions/workflows/test.yml/runs?status=$status&per_page=100" \
-                --jq '.workflow_runs[] | [.created_at, .id] | @tsv'
-            done | sort | head -n "$MAX_RUNS" | cut -f2 | grep -E '^[0-9]+$'
-          )
+          # Every failure ends here, before anything is written to GITHUB_OUTPUT.
+          keep_self_hosted() {
+            echo "$1: using the self-hosted runners"
+            exit 0
+          }
+
+          listed=""
+          for status in in_progress queued; do
+            page=$(gh api "repos/$REPO/actions/workflows/test.yml/runs?status=$status&per_page=100" \
+              --jq '.workflow_runs[] | [.created_at, .id] | @tsv') ||
+              keep_self_hosted "Could not list the $status test runs"
+            listed+="$page"$'\n'
+          done
+          runs=$(printf '%s' "$listed" | sort | head -n "$MAX_RUNS" | cut -f2 | grep -E '^[0-9]+$')
+
+          # A run created earlier can queue its Windows jobs later, so the oldest
+          # queued job is the minimum over the runs, not the first one found.
           oldest=""
           for id in $runs; do
             created=$(gh api "repos/$REPO/actions/runs/$id/jobs?per_page=100" | jq -r --arg label "$RUNNER_LABEL" \
-              '[.jobs[] | select(.status == "queued" and ((.labels // []) | index($label))) | .created_at] | min // empty')
-            if [ -n "$created" ]; then
-              oldest=$(date -d "$created" +%s)
+              '[.jobs[] | select(.status == "queued" and ((.labels // []) | index($label))) | .created_at] | min // empty') ||
+              keep_self_hosted "Could not read the jobs of run $id"
+            [ -n "$created" ] || continue
+            queued_at=$(date -d "$created" +%s) ||
+              keep_self_hosted "Could not parse the queue time of a job in run $id"
+            if [ -z "$oldest" ] || [ "$queued_at" -lt "$oldest" ]; then
+              oldest=$queued_at
+            fi
+            # Past the threshold already: an older job elsewhere would not change the decision.
+            if [ $(( (now - oldest) / 60 )) -gt "$MAX_WAIT_MINUTES" ]; then
               break
             fi
           done
 
-          if ! [[ "$oldest" =~ ^[0-9]+$ ]]; then
-            echo "No job is queued for $RUNNER_LABEL (or the query failed): using the self-hosted runners"
-            exit 0
+          if [ -z "$oldest" ]; then
+            keep_self_hosted "No job is queued for $RUNNER_LABEL"
           fi
           wait_min=$(( (now - oldest) / 60 ))
           if [ "$wait_min" -gt "$MAX_WAIT_MINUTES" ]; then
-            echo "Oldest job queued for $RUNNER_LABEL has waited ${wait_min}m (> ${MAX_WAIT_MINUTES}m): using windows-latest"
+            echo "A job queued for $RUNNER_LABEL has waited ${wait_min}m (> ${MAX_WAIT_MINUTES}m): using windows-latest"
             echo "windows-self-hosted=false" >> "$GITHUB_OUTPUT"
           else
-            echo "Oldest job queued for $RUNNER_LABEL has waited ${wait_min}m (<= ${MAX_WAIT_MINUTES}m): using the self-hosted runners"
+            echo "The oldest job queued for $RUNNER_LABEL has waited ${wait_min}m (<= ${MAX_WAIT_MINUTES}m): using the self-hosted runners"
           fi
 
   build-ubuntu:
