@@ -302,7 +302,8 @@ fn restore_option_templates(request: &mut ToolRequest, templates: &[ToolOptionTe
 /// config other than the file being written out of `templates`, but an option such a project
 /// declares can still be a template after loading: an expression that reads `version` is left
 /// unrendered until the version is known. Written into another file, a later run without safe
-/// mode would render it there.
+/// mode would render it there. In a table option such as `platforms`, only the entries that
+/// hold such a template are dropped.
 fn drop_unlent_templates(
     request: &mut ToolRequest,
     templates: &[ToolOptionTemplate],
@@ -310,9 +311,11 @@ fn drop_unlent_templates(
 ) {
     let options = request.options_mut();
     options.opts.retain(|k, v| {
-        !toml_value_has_template(v)
-            || explicit.opts.contains_key(k)
-            || templates.iter().any(|t| t.written.opts.get(k) == Some(&*v))
+        let written: Vec<_> = templates
+            .iter()
+            .filter_map(|t| t.written.opts.get(k))
+            .collect();
+        explicit.opts.contains_key(k) || keep_lent_parts(v, &written)
     });
     options.core.install_env.retain(|k, v| {
         !matches!(v, EnvValue::String(s) if contains_template_syntax(s))
@@ -321,6 +324,26 @@ fn drop_unlent_templates(
                 .iter()
                 .any(|t| t.written.install_env.get(k) == Some(&*v))
     });
+}
+
+/// Whether to keep option value `value`, after dropping from it the table entries that hold
+/// template syntax and are not written as they are in one of `written`, the same option's value
+/// in each config that lent its templates. A table none of whose entries is left is dropped.
+fn keep_lent_parts(value: &mut toml::Value, written: &[&toml::Value]) -> bool {
+    if !toml_value_has_template(value) || written.contains(&&*value) {
+        return true;
+    }
+    let toml::Value::Table(table) = value else {
+        return false;
+    };
+    table.retain(|k, entry| {
+        let written: Vec<_> = written
+            .iter()
+            .filter_map(|w| w.as_table()?.get(k))
+            .collect();
+        keep_lent_parts(entry, &written)
+    });
+    !table.is_empty()
 }
 
 const TOOL_SELECTOR_KEYS: [&str; 4] = ["version", "prefix", "ref", "path"];

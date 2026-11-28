@@ -105,6 +105,20 @@ assert_fail_contains "mise set --file .mise/config.toml HOMELINK=1 2>&1" "Write 
 assert_not_contains "cat $HOME/.config/mise/config.toml" "HOMELINK"
 cd "$back" || exit 1
 
+echo "=== nor is one that would create a global config file ==="
+mkdir -p ../to-global-dir
+cd ../to-global-dir || exit 1
+ln -s "$HOME/.config/mise" .mise
+assert_fail_contains "mise set --file .mise/config.local.toml NEWFILE=1 2>&1" "Write global config with"
+assert_fail "test -e $HOME/.config/mise/config.local.toml"
+cd "$back" || exit 1
+
+echo "=== global config reached through a linked home directory is global config ==="
+linkhome="$(dirname "$HOME")/linkhome"
+ln -s "$HOME" "$linkhome"
+assert "mise set --file $linkhome/.config/mise/config.toml VIALINK=1"
+assert_contains "cat $HOME/.config/mise/config.toml" 'VIALINK = "1"'
+
 echo "=== tasks rm removes nothing when one file links out ==="
 mkdir -p ../rm-two
 cat <<'TOML' >../outside/rm.toml

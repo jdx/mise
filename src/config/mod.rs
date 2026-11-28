@@ -3778,6 +3778,68 @@ pub(crate) fn is_project_link_to_global_config(path: &Path) -> bool {
         .is_some_and(|global| global != path && !path.canonicalize().is_ok_and(|real| real == path))
 }
 
+/// Whether writing `path` would reach global or system config through a link a project placed:
+/// a project file linked to a global config file, or a project's `.mise` or `.config` linked to
+/// the global config directory, where the file need not exist yet.
+///
+/// Global config spelled another way above its config root, such as through a linked home
+/// directory, is still global config: what the two spellings share from the config root down
+/// is the user's own layout, so no project link is involved.
+pub(crate) fn write_reaches_global_config_through_link(path: &Path) -> bool {
+    let Some(global) = global_config_spelling(path) else {
+        return false;
+    };
+    if global == path || resolve_for_write(path).is_some_and(|real| real == path) {
+        return false;
+    }
+    !is_global_config_spelled_from_above_its_root(path, &global)
+}
+
+/// Where global or system config is spelled for a file `path` resolves to: where discovery
+/// found it, or for a file that does not exist yet, the global or system config directory (or
+/// its `conf.d`) that `path`'s directory resolves to.
+fn global_config_spelling(path: &Path) -> Option<PathBuf> {
+    if let Some(global) = discovered_global_config(path) {
+        return Some(global);
+    }
+    let dir = path.parent()?.canonicalize().ok()?;
+    let name = path.file_name()?;
+    [*dirs::CONFIG, *dirs::SYSTEM_CONFIG]
+        .into_iter()
+        .flat_map(|config| [config.to_path_buf(), config.join("conf.d")])
+        .find(|candidate| candidate.canonicalize().is_ok_and(|c| c == dir))
+        .map(|candidate| candidate.join(name))
+}
+
+/// `path` with every link resolved, for a file that may not exist yet.
+fn resolve_for_write(path: &Path) -> Option<PathBuf> {
+    path.canonicalize().ok().or_else(|| {
+        let dir = path.parent()?.canonicalize().ok()?;
+        Some(dir.join(path.file_name()?))
+    })
+}
+
+/// Whether `path` and `global`, two spellings of the same file, differ only above the global
+/// config root: past their longest common tail of components, the rest of each resolves to the
+/// same directory, which holds the config root.
+fn is_global_config_spelled_from_above_its_root(path: &Path, global: &Path) -> bool {
+    let (mut path_head, mut global_head) = (path, global);
+    while path_head.file_name().is_some() && path_head.file_name() == global_head.file_name() {
+        match (path_head.parent(), global_head.parent()) {
+            (Some(p), Some(g)) => (path_head, global_head) = (p, g),
+            _ => break,
+        }
+    }
+    let (Ok(path_dir), Ok(global_dir)) = (path_head.canonicalize(), global_head.canonicalize())
+    else {
+        return false;
+    };
+    path_dir == global_dir
+        && env::MISE_GLOBAL_CONFIG_ROOT
+            .canonicalize()
+            .is_ok_and(|root| root.starts_with(&global_dir))
+}
+
 /// The path global or system config discovery found `path` at, if `path` is
 /// global config. The two differ when `path` only resolves to that file, which
 /// also holds for a symlink to it from a directory the user does not control,

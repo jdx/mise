@@ -1507,10 +1507,11 @@ pub fn symlink_check_before_write(path: &Path) -> Result<()> {
         !matches!((dir, project), (Some(dir), Some(project)) if dir.starts_with(&project))
     });
     // A directory link that stays in the project can still lead to global config, as a home
-    // directory's `.mise` linked to `.config/mise` does, so that case is never waved through.
+    // directory's `.mise` linked to `.config/mise` does, so that case is never waved through,
+    // and neither is one that would create a global config file that does not exist yet.
     let to_global = || {
         path.absolutize()
-            .is_ok_and(|abs| config::is_project_link_to_global_config(&abs))
+            .is_ok_and(|abs| config::write_reaches_global_config_through_link(&abs))
     };
     if !path.is_symlink() && !dir_leads_out && !to_global() {
         return Ok(());
