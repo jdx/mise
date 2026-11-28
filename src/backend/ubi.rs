@@ -874,6 +874,20 @@ impl TokenHosts {
                 && url.host_str() == Some("github.com"))
     }
 
+    /// Whether the API ubi uses is one that project config named in safe mode,
+    /// which gets no token; see `mise_util::untrusted_hosts`. This is the API the
+    /// builder is given, not the `api_url` as written: one on a public forge host
+    /// is replaced by that forge's default API, whatever its port.
+    fn token_denied(&self) -> bool {
+        let forge = match self.forge {
+            ForgeType::GitLab => mise_util::untrusted_hosts::Forge::GitLab,
+            ForgeType::Forgejo => mise_util::untrusted_hosts::Forge::Forgejo,
+            _ => mise_util::untrusted_hosts::Forge::GitHub,
+        };
+        url::Url::parse(&self.api_url)
+            .is_ok_and(|url| mise_util::untrusted_hosts::forge_token_denied_at(forge, &url))
+    }
+
     /// A host this install would send `token` to that may not get it.
     async fn foreign_host(
         &self,
@@ -947,19 +961,7 @@ async fn install(
     {
         builder = builder.api_base_url(api_url.strip_suffix("/").unwrap_or(api_url));
     }
-    // An `api_url` that project config named in safe mode gets no token; see
-    // `mise_util::untrusted_hosts`.
-    let untrusted_forge = match forge {
-        ForgeType::GitLab => mise_util::untrusted_hosts::Forge::GitLab,
-        ForgeType::Forgejo => mise_util::untrusted_hosts::Forge::Forgejo,
-        _ => mise_util::untrusted_hosts::Forge::GitHub,
-    };
-    let token_denied = opts
-        .api_url_override()
-        .and_then(|api_url| url::Url::parse(api_url).ok())
-        .is_some_and(|url| {
-            mise_util::untrusted_hosts::forge_token_denied_at(untrusted_forge, &url)
-        });
+    let token_denied = token_hosts.token_denied();
     // ubi sends its token with every request, the download included, and reads
     // one from the environment when it is given none.
     let env_token = forge_token_env_var(&forge);
@@ -1077,6 +1079,33 @@ mod tests {
         assert!(gitlab.allows("https://gitlab.com/o/r/-/releases/v1/downloads/tool.tar.gz"));
         assert!(!gitlab.allows("https://cdn.example/tool.tar.gz"));
         assert!(!gitlab.allows("https://github.com/o/r/releases/download/v1/tool.tar.gz"));
+    }
+
+    #[test]
+    fn test_token_denial_follows_the_api_the_builder_uses() {
+        // a project `api_url` on the public GitHub host is replaced by the
+        // default API, so naming another port there denies nothing
+        mise_util::untrusted_hosts::deny_forge_token_for_url("https://api.github.com:8443");
+        let public =
+            TokenHosts::new(ForgeType::GitHub, Some("https://api.github.com:8443")).unwrap();
+        assert!(public.public_api);
+        assert!(!public.token_denied());
+        // an override that reaches the builder is still denied
+        mise_util::untrusted_hosts::deny_forge_token_for_url(
+            "https://ghe.ubi-denied.invalid/api/v3",
+        );
+        let custom = TokenHosts::new(
+            ForgeType::GitHub,
+            Some("https://ghe.ubi-denied.invalid/api/v3/"),
+        )
+        .unwrap();
+        assert!(custom.token_denied());
+        let other = TokenHosts::new(
+            ForgeType::GitHub,
+            Some("https://ghe.ubi-allowed.invalid/api/v3"),
+        )
+        .unwrap();
+        assert!(!other.token_denied());
     }
 
     #[tokio::test]

@@ -370,6 +370,58 @@ fn test_replacement_credentials_are_found_in_every_spelling_of_the_server() {
 /// would put it in the query or path of whatever URL the key matched. Such a
 /// rule is refused for every URL; other rules still apply.
 #[test]
+fn test_a_rule_login_is_written_only_where_the_server_is() {
+    // The host also appears in the path and the query; only the server gets the login.
+    let mut rules = IndexMap::new();
+    rules.insert(
+        "github.com".to_string(),
+        "user:secret@mirror.example.com".to_string(),
+    );
+    assert_eq!(
+        rewritten(
+            &rules,
+            "https://github.com/owner/github.com/x?from=github.com"
+        ),
+        "https://user:secret@mirror.example.com/owner/github.com/x?from=github.com"
+    );
+    // A rule without a login still replaces every match, as it always has.
+    let mut plain = IndexMap::new();
+    plain.insert("github.com".to_string(), "mirror.example.com".to_string());
+    assert_eq!(
+        rewritten(&plain, "https://github.com/owner/github.com/x"),
+        "https://mirror.example.com/owner/mirror.example.com/x"
+    );
+}
+
+/// A port written out is the server its scheme's default port names; another
+/// port, or the other scheme's default, is another server, except that a
+/// switch between the two defaults is kept so that the downgrade is refused.
+#[test]
+fn test_same_server_compares_written_and_default_ports() {
+    let url = |s: &str| Url::parse(s).unwrap();
+    assert!(same_server(
+        &url("http://files.example:443/x"),
+        &url("https://files.example/x")
+    ));
+    assert!(same_server(
+        &url("https://files.example:443/x"),
+        &url("https://files.example/x")
+    ));
+    assert!(same_server(
+        &url("https://files.example/x"),
+        &url("http://files.example/x")
+    ));
+    assert!(!same_server(
+        &url("https://files.example/x"),
+        &url("https://files.example:8443/x")
+    ));
+    assert!(!same_server(
+        &url("http://files.example:8080/x"),
+        &url("https://files.example/x")
+    ));
+}
+
+#[test]
 fn test_replacements_that_name_no_server_are_refused() {
     for replacement in [
         "///user:secret@mirror.example.com/",

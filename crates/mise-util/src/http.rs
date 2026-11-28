@@ -525,6 +525,21 @@ fn invocation_download_key(
     )
 }
 
+/// The [`HTTP_CACHE`] entry for a text request. Responses can depend on the
+/// credentials (a token may select a repository), so the headers are part of it,
+/// as a digest so the values are never kept in memory as plain text. So is the
+/// tool scope, for the reason [`invocation_download_key`] gives and its reverse: a
+/// body fetched without credentials for a project tool must not be handed to the
+/// later work of a global tool, which would have sent them.
+fn text_cache_key(url: &Url, headers: &HeaderMap) -> String {
+    let scope = crate::untrusted_hosts::current_tool_scope();
+    if headers.is_empty() {
+        format!("{url}\n{scope:?}")
+    } else {
+        format!("{url}\n{scope:?}\n{}", header_digest(headers))
+    }
+}
+
 /// Own temporary shared artifacts for this command, including cancellation paths.
 pub struct InvocationDownloads;
 
@@ -1365,22 +1380,15 @@ impl Client {
             .await
     }
 
-    /// [`Self::get_text_cached`] with extra request headers. The cache is keyed by URL
-    /// alone, so every caller of one URL within a process must send the same headers.
+    /// [`Self::get_text_cached`] with extra request headers. The cache is keyed by
+    /// [`text_cache_key`]: the URL, the headers and the tool scope.
     pub async fn get_text_cached_with_headers<U: IntoUrl>(
         &self,
         url: U,
         headers: &HeaderMap,
     ) -> Result<String> {
         let url = url.into_url()?;
-        // Responses can depend on the credentials (a token may select a repository), so
-        // they are part of the key, as a digest so the values are never kept in memory
-        // as plain text.
-        let key = if headers.is_empty() {
-            url.to_string()
-        } else {
-            format!("{url}\n{}", header_digest(headers))
-        };
+        let key = text_cache_key(&url, headers);
 
         // Get or create the OnceCell for this URL
         let cell = {
@@ -3293,14 +3301,14 @@ pub fn host_auth_headers(url: &Url) -> Result<HeaderMap> {
     // files are a 404 without the token, so it is routed here too. `get_headers`
     // decides what each host actually gets.
     if crate::github::is_github_api_url(url) || crate::github::is_github_raw_content_url(url) {
-        let mut headers = crate::github::get_headers(url.as_str(), crate::github::API_URL)?;
         // A host that a project tool's URL named in safe mode; see
-        // `untrusted_hosts`. The media type headers stay, so what is public
-        // there still downloads.
+        // `untrusted_hosts`. No token is looked up for it, so one that cannot be
+        // sent cannot fail the request either. The media type headers stay, so
+        // what is public there still downloads.
         if crate::untrusted_hosts::host_auth_denied(url) {
-            headers.remove(AUTHORIZATION);
+            return Ok(crate::github::media_type_headers(url));
         }
-        return Ok(headers);
+        return crate::github::get_headers(url.as_str(), crate::github::API_URL);
     }
 
     // A generic URL does not carry the configured GitHub Enterprise, GitLab or
@@ -3502,9 +3510,12 @@ fn is_credential_header(name: &HeaderName, value: &HeaderValue) -> bool {
 /// the defaults (`https://host/` to `http://host/`) is the same server reached in
 /// the clear; credentials stay with it so that
 /// [`ensure_secure_url_replacement`] refuses the downgrade instead of sending
-/// the request without them.
+/// the request without them. A port written out is the same server as the
+/// default it names, so `http://host:443/` and `https://host/` are one too.
 pub fn same_server(original_url: &Url, url: &Url) -> bool {
-    url.host() == original_url.host() && url.port() == original_url.port()
+    url.host() == original_url.host()
+        && (url.port() == original_url.port()
+            || url.port_or_known_default() == original_url.port_or_known_default())
 }
 
 /// Drop the credential headers scoped to the original server ([`same_server`])
@@ -3544,6 +3555,12 @@ fn apply_netrc_credentials(
     // Compare host only: netrc lookup and forge-token selection are both
     // host-scoped, so a path/query-only rewrite on the same host must not
     // let netrc clobber a still-valid forge token.
+    // A login in the URL (the user's, or a replacement rule's) is the credential
+    // written for this request, and reqwest sends it as Authorization; a netrc
+    // header would replace it, which curl does not do either.
+    if !url.username().is_empty() || url.password().is_some() {
+        return final_headers;
+    }
     let host_changed = url.host() != original_url.host();
     let has_auth = final_headers.contains_key(AUTHORIZATION);
     if netrc_should_apply(host_changed, has_auth) {
@@ -3864,7 +3881,15 @@ pub fn apply_url_replacements(url: &mut Url) {
             } else {
                 // Simple string replacement
                 if url_string.contains(pattern) {
-                    let new_url_string = url_string.replace(pattern, replacement);
+                    // A rule that writes a login replaces only the first match, the one
+                    // [`credentials_in_place`] checks is the server: replacing every
+                    // match would also put the login wherever else the pattern occurs,
+                    // such as a path or query naming the same host.
+                    let new_url_string = if replacement_credentials(replacement).is_some() {
+                        url_string.replacen(pattern, replacement, 1)
+                    } else {
+                        url_string.replace(pattern, replacement)
+                    };
                     // Only proceed if the URL actually changed
                     if new_url_string != url_string
                         && let Ok(new_url) = new_url_string.parse::<Url>()

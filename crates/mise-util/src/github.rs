@@ -2439,20 +2439,27 @@ pub fn get_headers<U: IntoUrl>(url: U, api_url: &str) -> Result<HeaderMap> {
         );
     }
 
-    if is_github_api_url(&url) && url.path().contains("/releases/assets/") {
+    headers.extend(media_type_headers(&url));
+    Ok(headers)
+}
+
+/// The headers [`get_headers`] sends that carry no credential: the media type a
+/// release asset or a file's contents is asked for in.
+pub fn media_type_headers(url: &url::Url) -> HeaderMap {
+    let mut headers = HeaderMap::new();
+    if is_github_api_url(url) && url.path().contains("/releases/assets/") {
         headers.insert(
             "accept",
             HeaderValue::from_static("application/octet-stream"),
         );
-    } else if is_github_api_url(&url) && url.path().contains("/contents/") {
+    } else if is_github_api_url(url) && url.path().contains("/contents/") {
         // https://docs.github.com/en/rest/repos/contents#custom-media-types-for-repository-contents
         headers.insert(
             "accept",
             HeaderValue::from_static("application/vnd.github.raw"),
         );
     }
-
-    Ok(headers)
+    headers
 }
 
 // ── github_tokens.toml ──────────────────────────────────────────────

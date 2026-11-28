@@ -426,6 +426,25 @@ fn test_apply_netrc_overrides_existing_auth_when_url_redirected() {
     assert_eq!(auth_value(&out), vec!["Basic bmV0cmM=".to_string()]);
 }
 
+#[test]
+fn test_apply_netrc_leaves_a_url_login_alone() {
+    // A replacement rule's `user:pass@` login, which reqwest sends as
+    // Authorization, is not replaced by netrc for the mirror.
+    let original: Url = "https://public.example.com/file".parse().unwrap();
+    let redirected: Url = "https://user:pw@mirror.internal/file".parse().unwrap();
+    let out = apply_netrc_credentials(
+        HeaderMap::new(),
+        &original,
+        &redirected,
+        basic_netrc_headers(),
+    );
+    assert!(auth_value(&out).is_empty());
+    // nor is a login the user wrote into the URL itself
+    let url: Url = "https://user:pw@example.com/file".parse().unwrap();
+    let out = apply_netrc_credentials(HeaderMap::new(), &url, &url, basic_netrc_headers());
+    assert!(auth_value(&out).is_empty());
+}
+
 /// Credentials stay with the host and port they were written for. A scheme
 /// change between the default ports keeps them, so the downgrade check refuses
 /// the request rather than sending it without them.
@@ -826,10 +845,56 @@ async fn text_request_without_host_auth_sends_no_forge_token() {
         with_host_auth.contains("authorization: bearer ghp_operator"),
         "{with_host_auth}"
     );
+    // Only the forge token is checked: a developer's netrc may hold a login for
+    // the loopback host, which `without_host_auth` does not turn off.
     assert!(
-        !without_host_auth.contains("authorization:"),
+        !without_host_auth.contains("ghp_operator")
+            && !without_host_auth.contains("authorization: bearer"),
         "{without_host_auth}"
     );
+}
+
+/// On a host a project tool's URL named, no GitHub token is looked up, so a
+/// token that cannot be sent in a header does not fail the request either.
+#[test]
+fn host_auth_headers_resolve_no_token_for_a_denied_host() {
+    /// Clears the token override and the denied hosts in `Drop`.
+    struct Cleanup {
+        _lock: std::sync::MutexGuard<'static, ()>,
+    }
+    impl Drop for Cleanup {
+        fn drop(&mut self) {
+            *crate::github::test_support::TOKENS_FILE_OVERRIDE
+                .write()
+                .unwrap() = None;
+            crate::untrusted_hosts::reset();
+        }
+    }
+
+    let settings_lock = crate::testing::lock_ignoring_poison(&crate::testing::SETTINGS_LOCK);
+    let github_env_lock = crate::testing::lock_ignoring_poison(&crate::github::TEST_ENV_LOCK);
+    let mut settings = mise_settings::SettingsPartial::empty();
+    settings.github.enterprise_hosts = Some(vec!["ghe.denied.invalid".to_string()]);
+    crate::testing::reset_settings(Some(settings));
+    let _settings = SettingsGuard {
+        _lock: settings_lock,
+    };
+    let mut tokens = std::collections::HashMap::new();
+    tokens.insert("ghe.denied.invalid".to_string(), "bad\ntoken".to_string());
+    *crate::github::test_support::TOKENS_FILE_OVERRIDE
+        .write()
+        .unwrap() = Some(tokens);
+    let _cleanup = Cleanup {
+        _lock: github_env_lock,
+    };
+
+    let url = Url::parse("https://ghe.denied.invalid/api/v3/repos/o/r/releases/assets/1").unwrap();
+    // the token is resolved, and fails, while the host is not denied
+    assert!(host_auth_headers(&url).is_err());
+    crate::untrusted_hosts::deny_netrc_for_url("https://ghe.denied.invalid/tool.tar.gz");
+    let headers = host_auth_headers(&url).unwrap();
+    assert!(!headers.contains_key(AUTHORIZATION));
+    assert_eq!(headers["accept"], "application/octet-stream");
 }
 
 #[test]
