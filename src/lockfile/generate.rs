@@ -252,9 +252,16 @@ async fn resolve(
     Ok(cell
         .get_or_init(|| async {
             let backend = tv.backend().ok();
+            let tool = ba.clone();
             let mut resolution = resolve_tool_lock_info(ba, tv, platform, backend).await;
+            // The artifact is downloaded for the tool, so in its credential scope: a project
+            // tool's release can point the download at any host.
             if let Ok(info) = &mut resolution.4
-                && let Err(error) = complete_artifact_checksums(info).await
+                && let Err(error) = crate::toolset::with_safe_mode_tool_scope(
+                    &tool,
+                    complete_artifact_checksums(info),
+                )
+                .await
             {
                 resolution.4 = Err(error.to_string());
             }
@@ -583,6 +590,7 @@ pub async fn generate(
             continue;
         }
         let semaphore = semaphore.clone();
+        let tool = ba.clone();
         tasks.spawn(async move {
             let _permit = semaphore.acquire().await?;
             let mut resolution = if let Some(info) = actual {
@@ -600,9 +608,15 @@ pub async fn generate(
                 resolve(ba, tv.clone(), platform).await?
             };
             if let Ok(info) = &mut resolution.4 {
-                complete_artifact_checksums(info).await?;
+                crate::toolset::with_safe_mode_tool_scope(&tool, async {
+                    complete_artifact_checksums(info).await?;
+                    if let Some(old) = &previous_info {
+                        check_replaced_weak_pins(old, info).await?;
+                    }
+                    Ok::<_, eyre::Report>(())
+                })
+                .await?;
                 if let Some(old) = previous_info {
-                    check_replaced_weak_pins(&old, info).await?;
                     preserve_legacy_metadata(&old, info);
                 }
             }
