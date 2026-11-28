@@ -3,7 +3,7 @@ use crate::backend::asset_matcher::detect_platform_from_url;
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::get_filename_from_url;
 use crate::cli::tool_stub::ToolStubFile;
-use crate::config::config_file::trust_check;
+use crate::config::config_file::{is_path_trusted_for_content, trust_check};
 use crate::config::{Config, Settings, SettingsExt};
 use crate::file::display_path;
 use crate::file::{self, ExtractionFormat};
@@ -184,20 +184,28 @@ impl ToolStub {
         // same reason, as `task-stubs`.
         Self::validate_windows_launcher(stub_path, &stub_content)?;
 
-        // Before the stub is written, so a failed lockfile write leaves the
-        // stub unchanged.
-        if let Some(sidecar) = &sidecar {
-            ensure_unchanged(&sidecar.stub_path, &sidecar.checked_content)?;
-            sidecar.write()?;
-        }
-
-        if let Some(parent) = stub_path.parent() {
-            file::create_dir_all(parent)?;
-        }
-
-        file::write(stub_path, &stub_content)?;
-        file::make_executable(stub_path)?;
-        let launcher = Self::write_windows_launcher(stub_path, &stub_content)?;
+        let write_stub = || -> Result<Option<PathBuf>> {
+            if let Some(parent) = stub_path.parent() {
+                file::create_dir_all(parent)?;
+            }
+            file::write(stub_path, &stub_content)?;
+            file::make_executable(stub_path)?;
+            Self::write_windows_launcher(stub_path, &stub_content)
+        };
+        let launcher = match &sidecar {
+            // The lockfile is written first, so a failed lockfile write leaves the stub
+            // unchanged.
+            Some(sidecar) => with_unchanged_stub(
+                &sidecar.lockfile_path,
+                stub_path,
+                &sidecar.checked_content,
+                || {
+                    sidecar.write()?;
+                    write_stub()
+                },
+            )?,
+            None => write_stub()?,
+        };
 
         // Both lines printed here rather than where each file is written, so the launcher cannot
         // end up announced with a different verb than the stub it belongs to.
@@ -830,10 +838,22 @@ exec "$MISE_BIN" tool-stub "$0" "$@"
         for owner in lockfile::tool_stub_lockfile_owners(&config_path, monorepo_root.as_deref()) {
             trust_check(&owner)?;
         }
-        if Settings::get().paranoid.config() {
+        let paranoid = Settings::get().paranoid.config();
+        if paranoid {
             trust_check(&real_stub)?;
         }
         let content = file::read_to_string(&real_stub)?;
+        // The check above hashed the stub as it was then. The text used is this read, so that
+        // is the text whose trust counts.
+        if paranoid && !Settings::safe_mode() && !is_path_trusted_for_content(&real_stub, &content)
+        {
+            bail!(
+                "tool stub {} changed after its trust was checked; nothing was written\n\
+                hint: review the stub, then run `mise trust {}` and the command again",
+                display_path(&real_stub),
+                display_path(&real_stub)
+            );
+        }
         let mut stub = ToolStubFile::from_content(&self.output, content.clone())?;
         // A stub without `tool` or `bin` takes them from its file name. A run through the link
         // names them after the link, but the lock data is recorded for the target, which its
@@ -1026,12 +1046,31 @@ fn ensure_unchanged(path: &Path, checked: &str) -> Result<()> {
     Ok(())
 }
 
+/// Runs `write` with the lock every writer of `lockfile` takes held, once the stub at `stub`
+/// still holds `checked`.
+///
+/// The lock is taken before the check and held until `write` has rewritten the stub: another
+/// `--lock` of this project rewrites its stub under the same lock, and a stub it rewrites while
+/// this run waits has to fail the check, not be overwritten with the text read before. `write`
+/// must not take the lock itself, as a second lock of the file in this process would wait on
+/// the first.
+fn with_unchanged_stub<T>(
+    lockfile: &Path,
+    stub: &Path,
+    checked: &str,
+    write: impl FnOnce() -> Result<T>,
+) -> Result<T> {
+    let _lock = crate::lock_file::LockFile::new(lockfile)
+        .with_callback(|l| debug!("waiting for lock on {}", display_path(l)))
+        .lock()?;
+    ensure_unchanged(stub, checked)?;
+    write()
+}
+
 impl SidecarLock {
+    /// Records the lock data, called through [`with_unchanged_stub`], which holds the lock.
     fn write(&self) -> Result<()> {
         let stub = &self.stub_path;
-        let _lock = crate::lock_file::LockFile::new(&self.lockfile_path)
-            .with_callback(|l| debug!("waiting for lock on {}", display_path(l)))
-            .lock()?;
         let mut lockfile = Lockfile::read(&self.lockfile_path)?;
         let tv = &self.tv;
         let short = &tv.ba().short;
@@ -1160,7 +1199,42 @@ fn wants_windows_launcher(stub_content: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{ChecksumAlgorithm, ensure_unchanged};
+    use super::{ChecksumAlgorithm, ensure_unchanged, with_unchanged_stub};
+
+    /// A run that waits for the lockfile lock checks the stub after it has the lock, so a
+    /// stub another `--lock` rewrote while it waited is not overwritten with older text.
+    #[test]
+    fn a_stub_rewritten_while_the_lock_is_awaited_is_not_overwritten() {
+        let dir = tempfile::tempdir().unwrap();
+        let lockfile = dir.path().join("mise.lock");
+        let stub = dir.path().join("t");
+        std::fs::write(&stub, "version = \"1\"\n").unwrap();
+
+        let held = crate::lock_file::LockFile::new(&lockfile).lock().unwrap();
+        let (started, waiting) = std::sync::mpsc::channel();
+        let run = {
+            let (lockfile, stub) = (lockfile.clone(), stub.clone());
+            std::thread::spawn(move || {
+                started.send(()).unwrap();
+                with_unchanged_stub(&lockfile, &stub, "version = \"1\"\n", || {
+                    std::fs::write(&stub, "version = \"1\"\n# rewritten from the old text\n")?;
+                    Ok(())
+                })
+            })
+        };
+        waiting.recv().unwrap();
+        // Give the run time to reach the lock, where a check made before it would pass.
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        std::fs::write(&stub, "version = \"2\"\n").unwrap();
+        drop(held);
+
+        let err = run.join().unwrap().unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("changed while it was being locked")
+        );
+        assert_eq!(std::fs::read_to_string(&stub).unwrap(), "version = \"2\"\n");
+    }
 
     #[test]
     fn a_stub_edited_while_it_is_locked_is_not_rewritten() {
