@@ -66,7 +66,7 @@ pub(super) fn install_bottle_config(keg: &Path) -> Result<Vec<PathBuf>> {
     let result = match copied {
         Ok(()) => recheck_links(links, &mut created, &roots),
         Err(err) => {
-            undo_links(links);
+            undo_links(links, &mut created);
             Err(err)
         }
     }
@@ -105,7 +105,7 @@ fn copy_tree(
     // installed link is checked again once the whole tree is in place
     let mut links = Vec::new();
     if let Err(err) = copy_tree_links(src, dst, keep_existing, created, roots, &mut links) {
-        undo_links(links);
+        undo_links(links, created);
         return Err(err);
     }
     recheck_links(links, created, roots)
@@ -291,16 +291,44 @@ impl Replaced {
             );
         }
     }
+
+    /// Keep the old entry where it is, since the new link at `dest` could
+    /// not be removed (`err`), and say where that is.
+    fn keep(self, dest: &Path, err: &std::io::Error) {
+        let kept = self.dir.keep().join(dest.file_name().unwrap());
+        warn!(
+            "brew: could not remove the link at {} ({err}); what was there before is in {}",
+            dest.display(),
+            kept.display()
+        );
+    }
 }
 
-/// Remove each link in `links` and put back what it replaced, after a later
-/// step failed.
-fn undo_links(links: Vec<InstalledLink>) {
-    for installed in links {
-        if let Some(replaced) = installed.replaced
-            && fs::remove_file(&installed.dest).is_ok()
-        {
-            replaced.put_back(&installed.dest);
+/// Remove the link `installed` put at its `dest`, drop it from `created`, and
+/// put back what it replaced. If the link cannot be removed, what it replaced
+/// stays aside, never deleted, and a warning says where it is.
+fn remove_link(installed: InstalledLink, created: &mut Vec<PathBuf>) -> std::io::Result<()> {
+    if let Err(err) = fs::remove_file(&installed.dest) {
+        if let Some(replaced) = installed.replaced {
+            replaced.keep(&installed.dest, &err);
+        }
+        return Err(err);
+    }
+    created.retain(|path| *path != installed.dest);
+    if let Some(replaced) = installed.replaced {
+        replaced.put_back(&installed.dest);
+    }
+    Ok(())
+}
+
+/// Remove every link in `links`, new or replacing, and put back what each
+/// replaced, after a later step failed: none of them has passed the check
+/// that runs once the whole tree is in place.
+fn undo_links(links: Vec<InstalledLink>, created: &mut Vec<PathBuf>) {
+    for installed in links.into_iter().rev() {
+        let dest = installed.dest.clone();
+        if let Err(err) = remove_link(installed, created) {
+            warn!("brew: could not remove {}: {err}", dest.display());
         }
     }
 }
@@ -334,21 +362,12 @@ fn recheck_links(
                 installed.dest.display(),
                 installed.link.display(),
             );
-            if let Err(err) = fs::remove_file(&installed.dest) {
+            if let Err(err) = remove_link(installed, created) {
                 failed.get_or_insert(err);
-                // the link is still there, so what it replaced stays aside
-                if let Some(replaced) = installed.replaced {
-                    let _ = replaced.dir.keep();
-                }
-                continue;
-            }
-            created.retain(|path| *path != installed.dest);
-            if let Some(replaced) = installed.replaced {
-                replaced.put_back(&installed.dest);
             }
         }
         if let Some(err) = failed {
-            undo_links(stay);
+            undo_links(stay, created);
             return Err(err.into());
         }
         links = stay;
@@ -1117,6 +1136,82 @@ mod tests {
             .collect::<Result<Vec<_>>>()?;
         names.sort();
         assert_eq!(names, ["a", "b"]);
+        Ok(())
+    }
+
+    /// when the copy fails partway, every link it installed is removed, the
+    /// new ones too, since none has passed the check of the finished tree,
+    /// and what a link replaced is put back
+    #[cfg(unix)]
+    #[test]
+    fn copy_tree_removes_every_link_when_the_copy_fails() -> Result<()> {
+        use std::os::unix::fs::symlink;
+        let tmp = tempfile::tempdir()?;
+        let root = tmp.path().canonicalize()?;
+        let prefix = root.join("prefix");
+        fs::create_dir_all(prefix.join("inside"))?;
+        // `c` is a directory in the prefix, so copying the bottle's file `c`
+        // onto it fails after `a` and `b` are linked
+        fs::create_dir_all(prefix.join("etc/c"))?;
+        fs::write(prefix.join("etc/b"), "mine")?;
+        let src = root.join("src");
+        fs::create_dir_all(&src)?;
+        symlink("../inside", src.join("a"))?;
+        symlink("../inside", src.join("b"))?;
+        fs::write(src.join("c"), "bottle")?;
+        let mut created = Vec::new();
+        assert!(
+            copy_tree(
+                &src,
+                &prefix.join("etc"),
+                false,
+                &mut created,
+                std::slice::from_ref(&prefix),
+            )
+            .is_err()
+        );
+        assert!(prefix.join("etc/a").symlink_metadata().is_err());
+        assert_eq!(fs::read_to_string(prefix.join("etc/b"))?, "mine");
+        assert!(created.is_empty(), "{created:?}");
+        let mut names = fs::read_dir(prefix.join("etc"))?
+            .map(|entry| Ok(entry?.file_name()))
+            .collect::<Result<Vec<_>>>()?;
+        names.sort();
+        assert_eq!(names, ["b", "c"]);
+        Ok(())
+    }
+
+    /// a link that cannot be removed leaves what it replaced aside, where the
+    /// warning says it is, instead of deleting it
+    #[cfg(unix)]
+    #[test]
+    fn undo_links_keeps_what_a_link_replaced_when_the_link_stays() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let etc = tmp.path().canonicalize()?.join("etc");
+        fs::create_dir_all(&etc)?;
+        let dest = etc.join("a");
+        fs::write(&dest, "mine")?;
+        let replaced = Replaced::set_aside(&dest)?;
+        // no link went in at `dest`, so removing it fails
+        let installed = InstalledLink {
+            dest: dest.clone(),
+            link: PathBuf::from("../inside"),
+            replaced: Some(replaced),
+        };
+        let mut created = Vec::new();
+        undo_links(vec![installed], &mut created);
+        let aside = fs::read_dir(&etc)?
+            .map(|entry| Ok(entry?.path()))
+            .collect::<Result<Vec<_>>>()?;
+        assert_eq!(aside.len(), 1, "{aside:?}");
+        assert!(
+            aside[0]
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with(".mise-replaced-")
+        );
+        assert_eq!(fs::read_to_string(aside[0].join("a"))?, "mine");
         Ok(())
     }
 
