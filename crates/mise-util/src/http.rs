@@ -2888,7 +2888,9 @@ impl TextRequest<'_> {
     /// caller passes the credentials the request is meant to carry with
     /// [`Self::headers`]. A netrc login still follows the tool's scope, as
     /// on any other request for the tool: a trusted tool sends it, and a
-    /// project tool in safe mode does not.
+    /// project tool in safe mode does not, except to a host an operator's URL
+    /// replacement sent the request to, when project config does not name
+    /// that host (see [`crate::untrusted_hosts::netrc_denied_on_replacement_host`]).
     pub fn without_host_auth(mut self) -> Self {
         self.host_auth = false;
         self
