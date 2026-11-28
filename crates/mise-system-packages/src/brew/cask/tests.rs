@@ -7369,6 +7369,50 @@ fn cask_prune_force_removes_a_self_updated_cask() -> Result<()> {
 }
 
 #[test]
+fn cask_prune_force_preserves_pkg_casks() -> Result<()> {
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
+    let tmp = tempfile::tempdir()?;
+    let _guard = BrewPrefixGuard::set(tmp.path());
+    let state_dir = tmp.path().join("state");
+    let cask = test_cask("example", "1.0.0");
+    let version_dir = caskroom_version_dir(CaskManager::BrewCask, &cask.token, &cask.version);
+    file::create_dir_all(&version_dir)?;
+    write_receipt_with_flight_targets(
+        &version_dir,
+        &cask,
+        &CaskArtifacts {
+            pkgs: vec![PkgArtifact {
+                source: "Example.pkg".to_string(),
+                choices: Vec::new(),
+            }],
+            pkg_ids: vec!["com.example.pkg".to_string()],
+            ..Default::default()
+        },
+        &[],
+        &BTreeMap::new(),
+        &[],
+        &[],
+    )?;
+
+    for force in [false, true] {
+        let plan = cask_prune_plan_from_tokens(&BTreeSet::new(), &state_dir, force)?;
+        assert!(plan.remove.is_empty());
+        assert_eq!(plan.skipped.len(), 1);
+        let skipped = &plan.skipped[0];
+        assert_eq!(skipped.token, cask.token);
+        assert!(!skipped.forceable);
+        assert!(
+            skipped
+                .reason
+                .contains("the vendor's uninstall instructions")
+        );
+        assert_eq!(apply_cask_prune_plan_in(&plan, false, &state_dir)?, 0);
+        assert!(read_receipt(&version_dir)?.is_some());
+    }
+    Ok(())
+}
+
+#[test]
 fn cask_prune_force_keeps_a_link_that_now_points_elsewhere() -> Result<()> {
     let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
