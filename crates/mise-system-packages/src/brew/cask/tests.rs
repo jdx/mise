@@ -10624,6 +10624,105 @@ fn declared_app_cask_populates_only_the_fields_an_app_install_reads() -> Result<
     Ok(())
 }
 
+/// An app-only cask shaped like the published Homebrew metadata for Figma.
+fn app_only_cask() -> Cask {
+    let mut cask = test_cask("figma", "126.11.11");
+    cask.url = "https://desktop.figma.com/mac-arm/Figma-126.11.11.zip".to_string();
+    cask.sha256 =
+        Some("d52d56de2bf91e5e5d6feb2215c14d49a009a2cee9a3e5708e24f54f514bc2cc".to_string());
+    cask.auto_updates = true;
+    cask.raw_base = Some(HOMEBREW_CASK_RAW.to_string());
+    cask.aliases = vec!["figma-desktop".to_string()];
+    cask.conflicts_with.cask = vec!["figma@beta".to_string()];
+    cask.artifacts = vec![
+        serde_json::json!({ "uninstall": [{ "quit": "com.figma.agent" }] }),
+        serde_json::json!({ "app": ["Figma.app"], "target": "/Applications/Figma.app" }),
+        serde_json::json!({ "zap": [{ "trash": ["~/Library/Application Support/Figma"] }] }),
+    ];
+    cask
+}
+
+#[test]
+fn cask_backed_app_installs_the_casks_app_as_macos_app() -> Result<()> {
+    let cask = app_cask_from_homebrew("design", app_only_cask())?;
+
+    // Recorded under the config's name and mise's own state, never the Caskroom.
+    assert_eq!(cask.token, "design");
+    assert_eq!(cask.manager, CaskManager::MacosApp);
+    assert!(!cask.manager.uses_homebrew_caskroom());
+    assert!(cask.aliases.is_empty());
+    assert!(cask.conflicts_with.cask.is_empty());
+    assert!(cask.raw_base.is_none());
+    // The download comes from the cask, verified by its checksum.
+    assert_eq!(cask.version, "126.11.11");
+    assert_eq!(
+        cask.url,
+        "https://desktop.figma.com/mac-arm/Figma-126.11.11.zip"
+    );
+    assert_eq!(
+        cask.sha256.as_deref(),
+        Some("d52d56de2bf91e5e5d6feb2215c14d49a009a2cee9a3e5708e24f54f514bc2cc")
+    );
+    // A self-updating app is treated as brew-cask treats it.
+    assert!(cask.auto_updates);
+    // Only the app is kept, so the uninstall stanza cannot block pruning.
+    assert_eq!(cask.artifacts.len(), 1);
+    let artifacts = cask_artifacts(&cask)?;
+    assert_eq!(artifacts.apps.len(), 1);
+    assert_eq!(artifacts.apps[0].source, "Figma.app");
+    assert!(cask_prune_blocker(&cask, &artifacts).is_none());
+    Ok(())
+}
+
+#[test]
+fn cask_backed_app_refuses_casks_that_install_more_than_an_app() {
+    let mut with_binary = app_only_cask();
+    with_binary.artifacts.push(serde_json::json!({
+        "binary": ["$APPDIR/Figma.app/Contents/MacOS/figma"]
+    }));
+    let err = app_cask_from_homebrew("figma", with_binary).unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("installs binaries as well as an app"),
+        "{err}"
+    );
+    assert!(err.to_string().contains("brew-cask"), "{err}");
+
+    let mut with_hook = app_only_cask();
+    with_hook
+        .artifacts
+        .push(serde_json::json!({ "postflight": null }));
+    let err = app_cask_from_homebrew("figma", with_hook).unwrap_err();
+    assert!(err.to_string().contains("install steps"), "{err}");
+
+    let mut no_app = app_only_cask();
+    no_app.artifacts = vec![serde_json::json!({ "font": ["Example.ttf"] })];
+    let err = app_cask_from_homebrew("figma", no_app).unwrap_err();
+    assert!(err.to_string().contains("fonts"), "{err}");
+}
+
+#[test]
+fn cask_backed_app_refuses_unverifiable_or_dependent_casks() {
+    let mut no_check = app_only_cask();
+    no_check.sha256 = Some("no_check".to_string());
+    let err = app_cask_from_homebrew("figma", no_check).unwrap_err();
+    assert!(err.to_string().contains("no checksum"), "{err}");
+
+    let mut missing = app_only_cask();
+    missing.sha256 = None;
+    assert!(app_cask_from_homebrew("figma", missing).is_err());
+
+    let mut dependent = app_only_cask();
+    dependent.depends_on.cask = vec!["other".to_string()];
+    let err = app_cask_from_homebrew("figma", dependent).unwrap_err();
+    assert!(err.to_string().contains("depends on"), "{err}");
+
+    let mut traversing = app_only_cask();
+    traversing.version = "../1".to_string();
+    assert!(app_cask_from_homebrew("figma", traversing).is_err());
+    assert!(app_cask_from_homebrew("../escape", app_only_cask()).is_err());
+}
+
 #[test]
 fn declared_app_cask_rejects_a_traversing_package_name() {
     let spec = crate::options::AppSpec {
