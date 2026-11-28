@@ -1481,8 +1481,15 @@ pub fn is_trusted_in_worktrees(path: &Path) -> bool {
 ///
 /// The prefix keeps these apart from the records of single paths, whose names start with the
 /// trusted path's parent directory and file name.
+///
+/// The key joins the two paths with a NUL, which no path contains, rather than hashing them one
+/// after the other: `Path` hashes its components without marking where the path ends, so two
+/// different splits of the same components would otherwise share one record.
 fn worktrees_trust_path(repo_path: &crate::git::RepositoryPath) -> PathBuf {
-    dirs::TRUSTED_CONFIGS.join(format!("worktrees-{}", hash_to_str(repo_path)))
+    let mut key = repo_path.common_dir.as_os_str().to_owned();
+    key.push("\0");
+    key.push(repo_path.relative.as_os_str());
+    dirs::TRUSTED_CONFIGS.join(format!("worktrees-{}", hash_to_str(&key)))
 }
 
 /// generates a path like ~/.mise/trusted-configs/dir-file-3e8b8c44c3.toml
@@ -2450,5 +2457,19 @@ mod hashed_path_filename_tests {
             hashed_path_filename(&relative),
             hashed_path_filename(&absolute)
         );
+    }
+
+    #[test]
+    fn worktrees_trust_records_do_not_depend_on_where_the_paths_split() {
+        use crate::git::RepositoryPath;
+        let record = |common: &str, relative: &str| {
+            worktrees_trust_path(&RepositoryPath {
+                common_dir: PathBuf::from(common),
+                relative: PathBuf::from(relative),
+            })
+        };
+        assert_ne!(record("/a/b", "c"), record("/a", "b/c"));
+        assert_ne!(record("/a/b", ""), record("/a", "b"));
+        assert_eq!(record("/a", "b/c"), record("/a", "b/c"));
     }
 }
