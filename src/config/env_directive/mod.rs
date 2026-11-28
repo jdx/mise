@@ -120,7 +120,10 @@ impl EnvDirectiveContext<'_> {
         let rendered = self.parse_template(origin, &marked)?;
         let pattern = rendered
             .split_once(PATTERN_MARK)
-            .and_then(|(dir, pattern)| Some((dir, marks.to_glob(pattern)?)));
+            .and_then(|(dir, pattern)| {
+                let (lead, glob) = marks.split_glob(pattern)?;
+                Some((format!("{dir}{lead}"), glob))
+            });
         Ok(match pattern {
             Some((dir, pattern)) => EnvPath {
                 path: format!("{dir}{pattern}").into(),
@@ -328,11 +331,10 @@ impl SubstitutionMarks {
         out
     }
 
-    /// The glob a rendered, marked pattern stands for: written text as it is, and substituted
-    /// text escaped so it matches only itself. `None` when the markers do not pair up or a NUL
-    /// is left over.
-    fn to_glob(&self, rendered: &str) -> Option<String> {
-        let mut glob = String::with_capacity(rendered.len());
+    /// The written and substituted (`true`) stretches of a rendered, marked pattern. `None` when
+    /// the markers do not pair up or a NUL is left over.
+    fn segments<'a>(&self, rendered: &'a str) -> Option<Vec<(bool, &'a str)>> {
+        let mut segments = vec![];
         let mut rest = rendered;
         while let Some(open) = rest.find(&self.open) {
             let written = &rest[..open];
@@ -342,15 +344,62 @@ impl SubstitutionMarks {
             if written.contains(PATTERN_MARK) || data.contains(PATTERN_MARK) {
                 return None;
             }
-            glob.push_str(written);
-            glob.push_str(&escape_glob(data));
+            segments.push((false, written));
+            segments.push((true, data));
             rest = &after[close + self.close.len()..];
         }
         if rest.contains(PATTERN_MARK) {
             return None;
         }
-        glob.push_str(rest);
-        Some(glob)
+        segments.push((false, rest));
+        Some(segments)
+    }
+
+    /// The glob a rendered, marked pattern stands for: written text as it is, and substituted
+    /// text escaped so it matches only itself. `None` when the markers do not pair up or a NUL
+    /// is left over.
+    #[cfg(test)]
+    fn to_glob(&self, rendered: &str) -> Option<String> {
+        Some(glob_of(&self.segments(rendered)?))
+    }
+
+    /// [`Self::to_glob`], with the directories that substitutions name ahead of the first
+    /// wildcard the entry writes split off as a literal path. `{{ cwd ~ '/' }}.env.*` renders an
+    /// absolute directory there, which must be where the glob is taken, not a part of the glob.
+    fn split_glob(&self, rendered: &str) -> Option<(String, String)> {
+        let segments = self.segments(rendered)?;
+        let is_sep = |c: char| c == '/' || (cfg!(windows) && c == '\\');
+        // The end, in `segments`, of the last separator a substitution renders before the first
+        // written wildcard.
+        let mut split = None;
+        for (i, (data, text)) in segments.iter().enumerate() {
+            if !*data {
+                if text.contains(['*', '?', '[', '{']) {
+                    break;
+                }
+            } else if let Some(at) = text.rfind(is_sep) {
+                split = Some((i, at + 1));
+            }
+        }
+        let Some((i, at)) = split else {
+            return Some((String::new(), glob_of(&segments)));
+        };
+        // Written text ahead of the split is literal unless it holds a glob escape.
+        if !cfg!(windows)
+            && segments[..i]
+                .iter()
+                .any(|(data, t)| !data && t.contains('\\'))
+        {
+            return Some((String::new(), glob_of(&segments)));
+        }
+        let lead: String = segments[..i]
+            .iter()
+            .map(|(_, t)| *t)
+            .chain([&segments[i].1[..at]])
+            .collect();
+        let mut rest = segments[i + 1..].to_vec();
+        rest.insert(0, (true, &segments[i].1[at..]));
+        Some((lead, glob_of(&rest)))
     }
 
     /// `rendered` without the markers or a NUL.
@@ -360,6 +409,20 @@ impl SubstitutionMarks {
             .replace(&self.close, "")
             .replace(PATTERN_MARK, "")
     }
+}
+
+/// The glob [`SubstitutionMarks::segments`] stand for.
+fn glob_of(segments: &[(bool, &str)]) -> String {
+    segments
+        .iter()
+        .map(|(data, text)| {
+            if *data {
+                escape_glob(text)
+            } else {
+                text.to_string()
+            }
+        })
+        .collect()
 }
 
 /// Glob syntax that matches `text` and nothing else. Each metacharacter goes in a character
@@ -1659,6 +1722,30 @@ mod tests {
         );
         // a template that drops a substitution's closing marker leaves no pattern
         assert_eq!(marks.to_glob(&format!("{}*", marks.open)), None);
+    }
+
+    /// A directory a substitution names ahead of the first written wildcard is where the glob
+    /// is taken, even when the separator after it is rendered too, and it stays literal there.
+    #[test]
+    fn test_substituted_directories_lead_the_glob() {
+        let marks = SubstitutionMarks::new();
+        let split = |pattern: &str, value: &str| {
+            let rendered = marks.wrap_substitutions(pattern).replace("{{ x }}", value);
+            marks.split_glob(&rendered)
+        };
+        let owned = |a: &str, b: &str| Some((a.to_string(), b.to_string()));
+        assert_eq!(
+            split("{{ x }}.env.*", "/abs/d*r/"),
+            owned("/abs/d*r/", ".env.*")
+        );
+        assert_eq!(
+            split("{{ x }}.env.*", "/abs/a*"),
+            owned("/abs/", "a[*].env.*")
+        );
+        assert_eq!(split("a{{ x }}b*", "c/d"), owned("ac/", "db*"));
+        assert_eq!(split("{{ x }}*.env", "*"), owned("", "[*]*.env"));
+        // a separator after the first written wildcard belongs to the glob
+        assert_eq!(split("*/{{ x }}.env", "a/b"), owned("", "*/a/b.env"));
     }
 
     /// Marking the substitutions of a pattern leaves what the template render and the `$`
