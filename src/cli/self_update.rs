@@ -279,6 +279,8 @@ fn reexec(_args: &[String], original_cwd: Option<&std::path::Path>) -> Result<()
     use std::os::unix::process::CommandExt;
 
     let mut command = build_reexec_command(std::env::args_os().skip(1), original_cwd);
+    // `exec()` runs no destructors, so the guard in `main` would never delete them.
+    crate::http::release_invocation_downloads();
     let err = command.exec();
     warn!("mise was updated but could not re-execute the command: {err}");
     Ok(())

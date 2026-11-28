@@ -1001,6 +1001,8 @@ where
             return Err(err);
         }
     };
+    // `exec()` runs no destructors, so the guard in `main` would never delete them.
+    crate::http::release_invocation_downloads();
     if let Some(sandboxed) = sandboxed {
         // macOS: exec through sandbox-exec
         let err = exec::Command::new(&sandboxed.program)
@@ -1197,6 +1199,9 @@ where
     }
     // What came from mise's own command line is a lossy copy: the program gets the originals.
     let args = env::args_as_given(args.into_iter().map(Into::into).collect());
+
+    // The child can run for as long as it likes, and mise is only waiting for it now.
+    crate::http::release_invocation_downloads();
 
     // Windows does not support exec in the same way as Unix,
     // so we emulate it instead by not handling Ctrl-C and letting

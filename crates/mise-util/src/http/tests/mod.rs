@@ -136,6 +136,39 @@ async fn test_generation_shares_concurrent_artifact_downloads() {
 }
 
 #[test]
+fn sweep_removes_staging_of_dead_processes_and_keeps_live_ones() {
+    let root = tempfile::tempdir().unwrap();
+    let root = root.path();
+    // A live process: its lock is held, so its folder must survive.
+    let live = InvocationScratch::claim(root).unwrap();
+    std::fs::write(live.dir.join("artifact"), b"live").unwrap();
+    // A process that was killed or replaced by `exec()`: its lock file and folder
+    // remain, but nothing holds the lock.
+    let dead_lock = root.join("pdead.lock");
+    std::fs::write(&dead_lock, b"").unwrap();
+    std::fs::create_dir(root.join("pdead")).unwrap();
+    std::fs::write(root.join("pdead/artifact"), b"dead").unwrap();
+    // What an older mise left: a folder with no lock file at all.
+    std::fs::create_dir_all(root.join(".tmpold/.tmpinner")).unwrap();
+
+    sweep_abandoned_scratch(root, Duration::from_secs(3600));
+    assert!(live.dir.join("artifact").exists());
+    assert!(!root.join("pdead").exists());
+    assert!(!dead_lock.exists());
+    // Too recent: an older mise may still be downloading into it.
+    assert!(root.join(".tmpold").exists());
+
+    sweep_abandoned_scratch(root, Duration::ZERO);
+    assert!(!root.join(".tmpold").exists());
+    assert!(live.dir.join("artifact").exists());
+
+    let (dir, lock_path) = (live.dir.clone(), live.lock_path.clone());
+    live.remove();
+    assert!(!dir.exists());
+    assert!(!lock_path.exists());
+}
+
+#[test]
 fn shared_download_retention_evicts_idle_bytes_but_never_active_callers() {
     let make_entry = || {
         let directory = tempfile::tempdir().unwrap();

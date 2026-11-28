@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+
+# Downloads are staged under `invocation-downloads` while lockfiles are generated (the
+# default `lockfile_mode`). Only a destructor at the end of `main` deleted them, and a
+# shim or `mise x` ends by replacing itself with the tool through `exec()`, which runs
+# no destructors, so every lazy install leaked its whole artifact. Killed processes
+# leaked theirs too, and nothing ever cleaned the folder up.
+
+# The e2e harness defaults to merge mode, which does not stage downloads.
+export MISE_LOCKFILE_MODE=generate
+
+FIXTURES="$TMPDIR/invocation-downloads-fixtures"
+STAGING="$MISE_CACHE_DIR/invocation-downloads"
+mkdir -p "$FIXTURES/hello/bin"
+cat >"$FIXTURES/hello/bin/hello-tool" <<'TOOL'
+#!/usr/bin/env bash
+echo hello-tool-ok
+TOOL
+chmod +x "$FIXTURES/hello/bin/hello-tool"
+tar czf "$FIXTURES/hello.tar.gz" -C "$FIXTURES" hello
+start_http_server --dir "$FIXTURES"
+
+# What a killed mise left: a lock file nobody holds beside its folder.
+mkdir -p "$STAGING/pdead/.tmpinner"
+touch "$STAGING/pdead.lock"
+echo stale >"$STAGING/pdead/.tmpinner/artifact"
+# What an older mise left: lockless folders, one old and one possibly still in use.
+mkdir -p "$STAGING/.tmpold" "$STAGING/.tmpnew"
+touch -d '2 days ago' "$STAGING/.tmpold"
+
+cat >mise.toml <<TOML
+[tools."http:hello"]
+version = "1.0.0"
+url = "http://127.0.0.1:$HTTP_PORT/hello.tar.gz"
+bin_path = "hello/bin"
+lazy = true
+lazy_bins = ["hello-tool"]
+TOML
+
+# Installs the lazy tool, then execs it.
+assert "mise x -- hello-tool" "hello-tool-ok"
+assert_directory_exists "$MISE_DATA_DIR/installs/http-hello/1.0.0"
+
+assert_directory_not_exists "$STAGING/pdead"
+assert_fail "test -e '$STAGING/pdead.lock'"
+assert_directory_not_exists "$STAGING/.tmpold"
+assert_directory_exists "$STAGING/.tmpnew"
+# Nothing of this run is left behind.
+assert "find '$STAGING' -mindepth 1 -not -path '$STAGING/.tmpnew' | wc -l | tr -d ' '" "0"

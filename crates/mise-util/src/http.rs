@@ -512,7 +512,153 @@ pub struct InvocationDownloads;
 
 impl Drop for InvocationDownloads {
     fn drop(&mut self) {
-        INVOCATION_DOWNLOADS.lock().unwrap().clear();
+        release_invocation_downloads();
+    }
+}
+
+/// Deletes this process's staged downloads. Call it before replacing the process with
+/// `exec()`, which runs no destructors, so [`InvocationDownloads`] never gets to.
+pub fn release_invocation_downloads() {
+    INVOCATION_DOWNLOADS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clear();
+    let scratch = INVOCATION_SCRATCH
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .take();
+    if let Some(scratch) = scratch {
+        scratch.remove();
+    }
+}
+
+/// This process's folder under `invocation-downloads`, with the lock that marks it in use.
+///
+/// Folder `<name>` is owned by whoever holds the lock on `<name>.lock` beside it. The
+/// lock is taken before the folder exists and the OS drops it when the process ends,
+/// however it ends: by `exec()` (the file is opened close-on-exec), by a signal, or by
+/// `process::exit`. So a later mise can tell a dead process's folder from a live one
+/// and delete it, which destructors alone cannot do after a kill or an `exec()`.
+struct InvocationScratch {
+    dir: PathBuf,
+    lock_path: PathBuf,
+    lock: fslock::LockFile,
+}
+
+impl InvocationScratch {
+    fn claim(root: &Path) -> Result<Self> {
+        for _ in 0..5 {
+            let lock_path = tempfile::Builder::new()
+                .prefix("p")
+                .suffix(".lock")
+                .tempfile_in(root)?
+                .into_temp_path()
+                .keep()?;
+            let mut lock = fslock::LockFile::open(&lock_path)?;
+            // A sweeping process may have locked the new file, taking it for a dead
+            // owner's, and deleted it before we locked it: start over with a new name.
+            if !lock.try_lock()? || !lock_path.exists() {
+                continue;
+            }
+            let dir = scratch_dir_for(&lock_path);
+            std::fs::create_dir(&dir)?;
+            return Ok(Self {
+                dir,
+                lock_path,
+                lock,
+            });
+        }
+        bail!(
+            "could not claim a download staging folder in {}",
+            display_path(root)
+        )
+    }
+
+    fn remove(self) {
+        remove_scratch_dir(&self.dir);
+        // Windows cannot delete a file another handle has open, so unlock first.
+        drop(self.lock);
+        let _ = std::fs::remove_file(&self.lock_path);
+    }
+}
+
+static INVOCATION_SCRATCH: Mutex<Option<InvocationScratch>> = Mutex::new(None);
+
+/// Folders with no lock file beside them were left by mise versions that staged
+/// downloads straight under `invocation-downloads`. Such a version may still be running,
+/// so only delete them once no download could plausibly still be using them.
+const UNLOCKED_SCRATCH_MAX_AGE: Duration = Duration::from_secs(24 * 60 * 60);
+
+/// The folder this process stages its downloads in, created on first use. Creating it
+/// also deletes what dead processes left, so the sweep costs nothing for commands that
+/// download nothing.
+fn invocation_scratch() -> Result<PathBuf> {
+    let mut scratch = INVOCATION_SCRATCH.lock().unwrap();
+    if let Some(scratch) = &*scratch {
+        return Ok(scratch.dir.clone());
+    }
+    // Not TEMP: a download under a deep TEMP passes MAX_PATH on Windows,
+    // and a lockfile must not depend on where TEMP points.
+    let root = crate::dirs::CACHE.join("invocation-downloads");
+    file::create_dir_all(&root)?;
+    let claimed = InvocationScratch::claim(&root)?;
+    sweep_abandoned_scratch(&root, UNLOCKED_SCRATCH_MAX_AGE);
+    let dir = claimed.dir.clone();
+    *scratch = Some(claimed);
+    Ok(dir)
+}
+
+fn scratch_dir_for(lock_path: &Path) -> PathBuf {
+    lock_path.with_extension("")
+}
+
+fn remove_scratch_dir(dir: &Path) {
+    if let Err(err) = std::fs::remove_dir_all(dir)
+        && err.kind() != std::io::ErrorKind::NotFound
+    {
+        debug!("failed to remove {}: {err}", display_path(dir));
+    }
+}
+
+/// Deletes the staging folders of processes that ended without cleaning up: those whose
+/// lock nobody holds, and lockless ones older than `unlocked_max_age`.
+fn sweep_abandoned_scratch(root: &Path, unlocked_max_age: Duration) {
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().is_some_and(|ext| ext == "lock") {
+            let Ok(mut lock) = fslock::LockFile::open(&path) else {
+                continue;
+            };
+            // Held: the owner is alive, or this is our own folder.
+            if !matches!(lock.try_lock(), Ok(true)) {
+                continue;
+            }
+            debug!(
+                "removing abandoned download staging {}",
+                display_path(&path)
+            );
+            remove_scratch_dir(&scratch_dir_for(&path));
+            drop(lock);
+            let _ = std::fs::remove_file(&path);
+        } else if entry.file_type().is_ok_and(|t| t.is_dir()) {
+            let mut lock_name = entry.file_name();
+            lock_name.push(".lock");
+            if root.join(lock_name).exists() {
+                continue;
+            }
+            let age = entry
+                .metadata()
+                .and_then(|m| m.modified())
+                .ok()
+                .and_then(|modified| SystemTime::now().duration_since(modified).ok());
+            if age.is_some_and(|age| age >= unlocked_max_age) {
+                debug!("removing stale download staging {}", display_path(&path));
+                remove_scratch_dir(&path);
+            }
+        }
     }
 }
 
@@ -1626,11 +1772,7 @@ impl Client {
                 .clone();
             let (directory, metadata) = shared
                 .get_or_try_init(|| async {
-                    // Not TEMP: a download under a deep TEMP passes MAX_PATH on Windows,
-                    // and a lockfile must not depend on where TEMP points.
-                    let scratch = crate::dirs::CACHE.join("invocation-downloads");
-                    file::create_dir_all(&scratch)?;
-                    let directory = tempfile::tempdir_in(&scratch)?;
+                    let directory = tempfile::tempdir_in(invocation_scratch()?)?;
                     let metadata = self
                         .download_file_with_headers_timeout(
                             url.clone(),
