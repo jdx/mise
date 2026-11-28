@@ -982,9 +982,53 @@ async fn go_list(go: &OsStr, args: &[&str], env: &BTreeMap<String, String>) -> R
     if std::fs::read_to_string(&go_mod).ok().as_deref() != Some(GO_META_MOD) {
         crate::file::write_atomic(&go_mod, GO_META_MOD)?;
     }
-    let mut cmd = tokio::process::Command::new(go);
+    let program = match std::env::current_dir() {
+        Ok(cwd) => program_outside_cwd(go, env, &cwd),
+        Err(_) => go.to_os_string(),
+    };
+    let mut cmd = tokio::process::Command::new(program);
     cmd.env_clear().envs(env).current_dir(&dir);
     crate::cmd::cmd_read_async_command(cmd, &go.to_string_lossy(), args).await
+}
+
+/// `program` as a path that names the same executable once the child runs in
+/// another directory. The child looks a bare name up in `env`'s PATH after it
+/// changes directory, so a relative entry of that PATH, or a relative
+/// `program`, would be read against the new directory instead of `cwd`. A bare
+/// name found in no entry is returned as it is, for the child to report.
+fn program_outside_cwd(
+    program: &OsStr,
+    env: &BTreeMap<String, String>,
+    cwd: &std::path::Path,
+) -> std::ffi::OsString {
+    let path = std::path::Path::new(program);
+    if path.is_absolute() {
+        return program.to_os_string();
+    }
+    if path.components().count() > 1 {
+        return cwd.join(path).into_os_string();
+    }
+    let Some(search) = env
+        .iter()
+        .find(|(key, _)| key.eq_ignore_ascii_case("PATH"))
+        .map(|(_, value)| value)
+    else {
+        return program.to_os_string();
+    };
+    let names = crate::file::executable_names(&program.to_string_lossy());
+    std::env::split_paths(search)
+        // An empty or relative entry means a directory below `cwd`.
+        .map(|dir| cwd.join(dir))
+        .find_map(|dir| {
+            names
+                .iter()
+                .map(|name| dir.join(name))
+                .find(|candidate| candidate.is_file() && crate::file::is_executable(candidate))
+        })
+        .map_or_else(
+            || program.to_os_string(),
+            std::path::PathBuf::into_os_string,
+        )
 }
 
 /// Result of asking one route for a module's `@latest` version.
@@ -1382,6 +1426,51 @@ async fn fetch_proxy_version_infos(
 mod tests {
     use super::*;
     use crate::toolset::ToolVersionOptions;
+
+    #[cfg(unix)]
+    #[test]
+    fn go_list_program_is_found_before_changing_directory() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let work = tempfile::tempdir().unwrap();
+        let cwd = work.path();
+        let bin = cwd.join("sdk/go/bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        let go = bin.join("go");
+        std::fs::write(&go, "#!/bin/sh\n").unwrap();
+        std::fs::set_permissions(&go, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let env_with = |path: &str| BTreeMap::from([("PATH".to_string(), path.to_string())]);
+        let resolve = |program: &str, env: &BTreeMap<String, String>| {
+            std::path::PathBuf::from(program_outside_cwd(OsStr::new(program), env, cwd))
+        };
+
+        // A relative PATH entry is read against the directory mise runs in.
+        assert_eq!(resolve("go", &env_with("/nonexistent:sdk/go/bin")), go);
+        // So is an empty one, which POSIX reads as the current directory.
+        let here = env_with(":/nonexistent");
+        assert_eq!(resolve("sdk/go/bin/go", &here), cwd.join("sdk/go/bin/go"));
+        std::fs::copy(&go, cwd.join("go")).unwrap();
+        assert_eq!(resolve("go", &here), cwd.join("go"));
+        // A program that is a path already needs no lookup.
+        assert_eq!(
+            resolve("/usr/bin/go", &here),
+            std::path::PathBuf::from("/usr/bin/go")
+        );
+        // A file without the execute bit is not the program.
+        let plain = cwd.join("plain");
+        std::fs::create_dir_all(&plain).unwrap();
+        std::fs::write(plain.join("go"), "").unwrap();
+        assert_eq!(resolve("go", &env_with("plain:sdk/go/bin")), go);
+        // A name found nowhere is left for the child to report, as before.
+        assert_eq!(
+            resolve("go", &env_with("/nonexistent")),
+            std::path::PathBuf::from("go")
+        );
+        assert_eq!(
+            resolve("go", &BTreeMap::new()),
+            std::path::PathBuf::from("go")
+        );
+    }
 
     #[test]
     fn go_install_versions_only_retry_explicit_unprefixed_semver() {
