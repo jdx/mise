@@ -593,8 +593,9 @@ jobs:
             TITLE="$(head -1 /tmp/release-notes.txt | sed 's/^#* //' | sed "s/^$VERSION: //")"
             echo "RELEASE_TITLE=$VERSION: $TITLE" >> "$GITHUB_ENV"
             # Show on the run's summary page which commits the notes cover or
-            # leave out, and why.
-            if [[ -f /tmp/release-coverage.md ]]; then
+            # leave out, and why. An existing draft keeps its own notes (the
+            # next step only uploads assets to it), so skip the report then.
+            if [[ "$EXISTING_DRAFT" != "true" && -f /tmp/release-coverage.md ]]; then
               cat /tmp/release-coverage.md >> "$GITHUB_STEP_SUMMARY"
             fi
             # Remove the title line (and any blank line after it) from the notes body
@@ -624,6 +625,7 @@ jobs:
           EOF
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          EXISTING_DRAFT: ${{ steps.check-release.outputs.draft }}
       - name: Create Draft GitHub Release
         id: create-release
         if: startsWith(github.ref, 'refs/tags/v') && steps.check-release.outputs.exists != 'true'
