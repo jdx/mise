@@ -1533,6 +1533,29 @@ fn changes_from(
     Ok(changes)
 }
 
+/// What changed from one snapshot tree to another, as one short line, or
+/// `None` when no tracked file differs.
+pub(crate) fn describe_trees(repo: &HistoryRepo, from: &str, to: &str) -> Result<Option<String>> {
+    let mut changes = changes_from(repo, Some(from), to, None)?;
+    // a permission change lives in the manifest, which the tree diff skips
+    let before = super::manifest::Manifest::read(repo, from)?.unwrap_or_default();
+    let after = super::manifest::Manifest::read(repo, to)?.unwrap_or_default();
+    let keys: BTreeSet<&String> = before
+        .permissions
+        .keys()
+        .chain(after.permissions.keys())
+        .collect();
+    for key in keys {
+        if before.permissions.get(key) != after.permissions.get(key) {
+            let path = tree_path_to_display(key);
+            if !changes.touches(&path) {
+                changes.modified.push(path);
+            }
+        }
+    }
+    Ok((!changes.is_empty()).then(|| truncate(describe_changes(&changes))))
+}
+
 /// The computed one-line description of a checkpoint.
 pub(crate) fn describe(
     draft: &Draft,
@@ -1591,6 +1614,27 @@ pub(crate) fn describe_changes(changes: &Changes) -> String {
         text.push_str(&format!(" +{more} more"));
     }
     text
+}
+
+/// `wrote ~/.a, ~/.b +3 more`: the live paths an operation wrote, with
+/// `others` more it changed that have no path worth naming.
+pub(crate) fn describe_written(paths: &[PathBuf], others: usize) -> Option<String> {
+    let mut names: Vec<String> = paths
+        .iter()
+        .map(|path| short_path(&mise_util::file::display_path(path)))
+        .collect();
+    names.sort();
+    let more = names.len().saturating_sub(DESCRIPTION_PATHS) + others;
+    names.truncate(DESCRIPTION_PATHS);
+    let mut text = match (names.is_empty(), more) {
+        (true, 0) => return None,
+        (true, more) => return Some(format!("wrote {more} path(s)")),
+        (false, _) => format!("wrote {}", names.join(", ")),
+    };
+    if more > 0 {
+        text.push_str(&format!(" +{more} more"));
+    }
+    Some(truncate(text))
 }
 
 /// `~/.config/hypr/bindings.lua` -> `hypr/bindings.lua`; other paths as is.

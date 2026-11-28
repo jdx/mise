@@ -743,6 +743,12 @@ impl HistoryRepo {
         Ok(commit)
     }
 
+    /// The trailer that records which matcher version captured a commit,
+    /// on a line of its own after the message.
+    pub(crate) fn matcher_trailer(matcher: u32) -> String {
+        format!("\n{}{matcher}", Self::MATCHER_TRAILER)
+    }
+
     /// Create an ordinary child commit. The caller advances the branch with
     /// an expected-head check; recovery blobs never enter this tree.
     pub(crate) fn write_checkpoint_commit(
@@ -767,7 +773,7 @@ impl HistoryRepo {
         // A separate trailer preserves compatibility with older clients,
         // whose Mise-History JSON record rejects unknown fields.
         if let Some(matcher) = checkpoint.tree.coverage.matcher {
-            message.push_str(&format!("\n{}{matcher}", Self::MATCHER_TRAILER));
+            message.push_str(&Self::matcher_trailer(matcher));
         }
         let parent = self.ref_oid(Self::HISTORY_REF)?;
         self.commit_tree(&tree, parent.as_deref().into_iter().collect(), &message)
