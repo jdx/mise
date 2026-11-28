@@ -6393,6 +6393,7 @@ platforms.macos-arm64.url = 'https://example.com/{{ version }}/tool-darwin-arm64
                 let result = ChecksumFetcher::new(&assets)
                     .fetch_checksum_for("tool-linux.tar.gz", &source)
                     .await
+                    .unwrap()
                     .expect("checksum is found");
                 assert_eq!(
                     result.to_string_formatted(),
