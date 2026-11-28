@@ -1609,6 +1609,8 @@ impl Backend for UnifiedGitBackend {
                         url,
                         url_api,
                         download_headers,
+                        download_url: crate::lockfile::LoginUrl::of(&additional.url),
+                        download_url_api: crate::lockfile::LoginUrl::of(&additional.url_api),
                         provenance: additional_provenance,
                         ..Default::default()
                     });
@@ -1628,7 +1630,10 @@ impl Backend for UnifiedGitBackend {
                 let (url, url_api, checksum) =
                     lock_urls_of(&asset, |url| self.forge_headers(url, &opts.api_url())).await?;
                 Ok(PlatformInfo {
+                    // With the logins `mise lock` checks a replaced md5 or sha1
+                    // pin through, downloading the asset again.
                     download_url: crate::lockfile::LoginUrl::of(&asset.url),
+                    download_url_api: crate::lockfile::LoginUrl::of(&asset.url_api),
                     download_headers,
                     checksum_source,
                     url: Some(url),

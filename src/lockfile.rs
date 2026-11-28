@@ -543,6 +543,7 @@ impl From<&PlatformInfo> for CachedPlatform {
             // Set by a plugin that resolves a URL, never by a lockfile.
             download_headers: _,
             download_url: _,
+            download_url_api: _,
             conda_deps,
             provenance,
             provenance_verified,
@@ -601,6 +602,7 @@ impl From<CachedPlatform> for PlatformInfo {
             url_api,
             download_headers: None,
             download_url: None,
+            download_url_api: None,
             conda_deps,
             provenance: provenance.map(Into::into),
             provenance_verified,
@@ -623,6 +625,8 @@ impl From<&ArtifactInfo> for CachedArtifact {
             url,
             url_api,
             download_headers: _,
+            download_url: _,
+            download_url_api: _,
             provenance,
             provenance_verified,
         } = artifact;
@@ -656,6 +660,8 @@ impl From<CachedArtifact> for ArtifactInfo {
             url,
             url_api,
             download_headers: None,
+            download_url: None,
+            download_url_api: None,
             provenance: provenance.map(Into::into),
             provenance_verified,
         }
@@ -1433,6 +1439,12 @@ pub struct ArtifactInfo {
     /// only to download the artifact for its checksum; never written.
     #[serde(skip)]
     pub download_headers: Option<DownloadHeaders>,
+    /// `url` and `url_api` with the logins they are recorded without, as
+    /// [`PlatformInfo::download_url`] and [`PlatformInfo::download_url_api`].
+    #[serde(skip)]
+    pub download_url: Option<LoginUrl>,
+    #[serde(skip)]
+    pub download_url_api: Option<LoginUrl>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub provenance: Option<ProvenanceType>,
     /// Opaque legacy metadata, preserved only to avoid churn with older clients.
@@ -1493,6 +1505,8 @@ impl ArtifactInfo {
             url: self.url.clone(),
             url_api: self.url_api.clone().or_else(|| other.url_api.clone()),
             download_headers: None,
+            download_url: None,
+            download_url_api: None,
             provenance,
             provenance_verified,
         }
@@ -1580,6 +1594,11 @@ pub struct PlatformInfo {
     /// never written.
     #[serde(skip)]
     pub download_url: Option<LoginUrl>,
+    /// `url_api` with the login it is recorded without, as `download_url` is
+    /// for `url`: a login only the configured API URL holds. Used only to
+    /// download the artifact for its checksum; never written.
+    #[serde(skip)]
+    pub download_url_api: Option<LoginUrl>,
     /// References to conda packages in the shared conda-packages section (by basename)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub conda_deps: Option<Vec<String>>,
@@ -1649,17 +1668,20 @@ impl PlatformInfo {
     }
 
     /// Whether both describe the same persisted data. Ignores `size`, which is
-    /// read from existing lockfiles but never written, `download_headers` and
-    /// `download_url`.
+    /// read from existing lockfiles but never written, `download_headers`,
+    /// `download_url` and `download_url_api`.
     pub fn same_persisted_data(&self, other: &PlatformInfo) -> bool {
         fn persisted(info: &PlatformInfo) -> PlatformInfo {
             let mut info = info.clone();
             info.size = None;
             info.download_headers = None;
             info.download_url = None;
+            info.download_url_api = None;
             for artifact in &mut info.additional_artifacts {
                 artifact.size = None;
                 artifact.download_headers = None;
+                artifact.download_url = None;
+                artifact.download_url_api = None;
             }
             info
         }
@@ -1681,6 +1703,7 @@ impl PlatformInfo {
             url_api: None,
             download_headers: None,
             download_url: None,
+            download_url_api: None,
             provenance: None,
             provenance_verified: None,
             github_attestations: None,
@@ -1804,6 +1827,7 @@ impl PlatformInfo {
         PlatformInfo {
             download_headers: None,
             download_url: None,
+            download_url_api: None,
             install: self.install.clone().or_else(|| {
                 if self.url.is_some() {
                     None
@@ -2032,6 +2056,7 @@ impl TryFrom<toml::Value> for PlatformInfo {
                 Ok(PlatformInfo {
                     download_headers: None,
                     download_url: None,
+                    download_url_api: None,
                     install,
                     checksum,
                     checksum_source,
@@ -3108,6 +3133,7 @@ impl Lockfile {
                 PlatformInfo {
                     download_headers: None,
                     download_url: None,
+                    download_url_api: None,
                     install: platform_info.install.or_else(|| {
                         if platform_info.url.is_some() {
                             None

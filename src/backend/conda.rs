@@ -253,6 +253,27 @@ impl CondaBackend {
         dirs::DATA.join("conda-packages")
     }
 
+    /// Where the archive downloaded from `url` is cached. Channels can publish
+    /// different archives under the same file name, so each source URL has its
+    /// own directory: a concurrent install from another channel cannot replace
+    /// the file this install extracts and hashes. The login and a default port
+    /// are no part of the key, so the same package keeps one cache entry.
+    fn archive_cache_path(url: &str) -> PathBuf {
+        let source = lock_url(url);
+        let source = url::Url::parse(&source)
+            .map(|u| u.to_string())
+            .unwrap_or(source);
+        let filename = source
+            .split(['?', '#'])
+            .next()
+            .and_then(|path| path.rsplit('/').next())
+            .filter(|name| !name.is_empty())
+            .unwrap_or("package")
+            .to_string();
+        let key = hash::hash_sha256_to_str(&source);
+        Self::conda_data_dir().join(&key[..16]).join(filename)
+    }
+
     /// Get the filename portion of a package URL
     fn url_filename(url: &url::Url) -> String {
         url.path_segments()
@@ -294,9 +315,8 @@ impl CondaBackend {
         Ok(actual_hex == expected_hex)
     }
 
-    /// Whether `dest` is a cached archive that `checksum` pins. Archives are
-    /// cached by file name, which channels share, so a cached file with no
-    /// sha256 to check it by may have come from another channel.
+    /// Whether `dest` is a cached archive that `checksum` pins. A cached file
+    /// with no sha256 to check it by may be an older copy of the package.
     fn cached_archive_matches(dest: &std::path::Path, checksum: Option<&str>) -> Result<bool> {
         let pinned = checksum.is_some_and(|c| c.starts_with("sha256:"));
         Ok(pinned && dest.exists() && Self::verify_checksum(dest, checksum)?)
@@ -316,7 +336,9 @@ impl CondaBackend {
             return Ok(());
         }
 
-        file::create_dir_all(Self::conda_data_dir())?;
+        if let Some(parent) = dest.parent() {
+            file::create_dir_all(parent)?;
+        }
         let temp = Self::temp_download_path(dest);
         HTTP.download_file_pinned(url, &temp, checksum, None)
             .await?;
@@ -335,7 +357,7 @@ impl CondaBackend {
             // Another concurrent installer may have won the race and written `dest`.
             // If `dest` now holds what was just downloaded from `url`, treat this as
             // success. With no sha256 pin, that is checked against the download, since
-            // the winner may have fetched a same-named archive from another channel.
+            // the winner may have fetched a different copy from the same URL.
             // Remove the download before returning any error from the comparison,
             // so a failed install does not leave a copy of the archive behind.
             let won = Self::cached_archive_matches(dest, checksum)
@@ -358,8 +380,7 @@ impl CondaBackend {
     /// Download a single package archive to the shared conda data dir.
     async fn download_record(record: RepoDataRecord) -> Result<PathBuf> {
         let url_str = record.url.to_string();
-        let filename = Self::url_filename(&record.url);
-        let dest = Self::conda_data_dir().join(&filename);
+        let dest = Self::archive_cache_path(&url_str);
         let checksum = Self::format_sha256(&record);
 
         Self::download_to(&url_str, &dest, checksum.as_deref()).await?;
@@ -370,8 +391,7 @@ impl CondaBackend {
     async fn download_url_with_checksum(
         (url_str, checksum): (String, Option<String>),
     ) -> Result<PathBuf> {
-        let filename = url_str.rsplit('/').next().unwrap_or("package").to_string();
-        let dest = Self::conda_data_dir().join(&filename);
+        let dest = Self::archive_cache_path(&url_str);
 
         Self::download_to(&url_str, &dest, checksum.as_deref()).await?;
         Ok(dest)
@@ -2010,6 +2030,37 @@ mod tests {
         assert!(!CondaBackend::cached_archive_matches(&dest, Some("md5:abc")).unwrap());
         let other = format!("sha256:{}", "0".repeat(64));
         assert!(!CondaBackend::cached_archive_matches(&dest, Some(&other)).unwrap());
+    }
+
+    /// Same-named archives from two channels are cached apart, so one install
+    /// cannot replace the file another extracts and hashes. A login or a
+    /// default port does not change where a package is cached.
+    #[test]
+    fn archives_are_cached_per_source_url() {
+        let path = CondaBackend::archive_cache_path;
+        let main = path("https://conda.example/main/linux-64/pkg-1.0-0.conda");
+        let other = path("https://conda.example/other/linux-64/pkg-1.0-0.conda");
+        assert_ne!(main, other);
+        assert_eq!(main.file_name(), other.file_name());
+        assert_eq!(
+            main.file_name().and_then(|n| n.to_str()),
+            Some("pkg-1.0-0.conda")
+        );
+        assert!(main.starts_with(CondaBackend::conda_data_dir()));
+        assert_eq!(
+            main,
+            path("https://ci:token@conda.example/main/linux-64/pkg-1.0-0.conda")
+        );
+        assert_eq!(
+            main,
+            path("https://conda.example:443/main/linux-64/pkg-1.0-0.conda")
+        );
+        assert_eq!(
+            path("https://conda.example/main/noarch/pkg-1.0-0.tar.bz2")
+                .file_name()
+                .and_then(|n| n.to_str()),
+            Some("pkg-1.0-0.tar.bz2")
+        );
     }
 
     /// An unpinned download that loses the rename race accepts the winner's file

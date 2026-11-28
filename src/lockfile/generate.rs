@@ -1449,7 +1449,7 @@ async fn complete_artifact_checksums(info: &mut PlatformInfo) -> Result<()> {
         info.checksum = Some(
             artifact_checksum(
                 url,
-                info.url_api.as_deref(),
+                download_url_api(info),
                 info.download_headers.as_ref(),
                 expected.as_slice(),
             )
@@ -1460,10 +1460,11 @@ async fn complete_artifact_checksums(info: &mut PlatformInfo) -> Result<()> {
     for artifact in &mut info.additional_artifacts {
         if artifact.checksum.as_deref().is_none_or(is_weak_checksum) {
             let expected = artifact.checksum.as_deref().map(|c| (c, RELEASE_CHECKSUM));
+            let (url, url_api) = artifact_download_urls(artifact);
             artifact.checksum = Some(
                 artifact_checksum(
-                    &artifact.url,
-                    artifact.url_api.as_deref(),
+                    &url,
+                    url_api.as_deref(),
                     artifact.download_headers.as_ref(),
                     expected.as_slice(),
                 )
@@ -1484,15 +1485,39 @@ fn download_url(info: &PlatformInfo) -> Option<&str> {
         .or(info.url.as_deref())
 }
 
+/// The API URL the main artifact of `info` is downloaded from, as
+/// [`download_url`] is the browser URL.
+fn download_url_api(info: &PlatformInfo) -> Option<&str> {
+    info.download_url_api
+        .as_ref()
+        .map(crate::lockfile::LoginUrl::as_str)
+        .or(info.url_api.as_deref())
+}
+
+/// The URL and API URL `artifact` is downloaded from, with the logins of its
+/// configured URLs, as [`download_url`] and [`download_url_api`] give them.
+fn artifact_download_urls(artifact: &ArtifactInfo) -> (String, Option<String>) {
+    let url = artifact
+        .download_url
+        .as_ref()
+        .map_or(artifact.url.as_str(), crate::lockfile::LoginUrl::as_str);
+    let url_api = artifact
+        .download_url_api
+        .as_ref()
+        .map(crate::lockfile::LoginUrl::as_str)
+        .or(artifact.url_api.as_deref());
+    (url.to_owned(), url_api.map(str::to_owned))
+}
+
 const RELEASE_CHECKSUM: &str = "the checksum its release lists";
 const LOCKED_CHECKSUM: &str = "the checksum mise.lock pinned it by";
 
 /// A refreshed entry replaces the md5 or sha1 checksum `old` pinned an
 /// artifact by. When the artifact is still at the same URL, it is downloaded
 /// and checked against that pin as well as the new checksum, so the refresh
-/// cannot move the pin to other bytes the URL now serves. The main artifact is
-/// downloaded through the login of its configured URL, which the entry leaves
-/// out. The artifacts in `verified` were already checked against that same old
+/// cannot move the pin to other bytes the URL now serves. Each artifact is
+/// downloaded through the logins of its configured URL and API URL, which the
+/// entry leaves out. The artifacts in `verified` were already checked against that same old
 /// pin, through the login the old entry recorded, and are not downloaded again.
 async fn check_replaced_weak_pins(
     old: &PlatformInfo,
@@ -1519,7 +1544,7 @@ async fn check_replaced_weak_pins(
         expected.extend(new.checksum.as_deref().map(|c| (c, RELEASE_CHECKSUM)));
         artifact_checksum(
             url,
-            new.url_api.as_deref(),
+            download_url_api(new),
             new.download_headers.as_ref(),
             &expected,
         )
@@ -1537,9 +1562,10 @@ async fn check_replaced_weak_pins(
         };
         let mut expected = vec![(pin.as_str(), LOCKED_CHECKSUM)];
         expected.extend(artifact.checksum.as_deref().map(|c| (c, RELEASE_CHECKSUM)));
+        let (url, url_api) = artifact_download_urls(artifact);
         artifact_checksum(
-            &artifact.url,
-            artifact.url_api.as_deref(),
+            &url,
+            url_api.as_deref(),
             artifact.download_headers.as_ref(),
             &expected,
         )
@@ -3061,6 +3087,93 @@ mod tests {
         assert!(!err.contains("token"), "{err}");
         with_login.assert_async().await;
         without_login.assert_async().await;
+    }
+
+    /// A forge entry recorded with no login and an md5 pin, refreshed through
+    /// an API URL that holds the configured login: the old pin is checked
+    /// through that login, for the main artifact and an additional one, since
+    /// the recorded API URL leaves it out and a private API refuses it.
+    #[tokio::test]
+    async fn a_replaced_weak_pin_is_checked_through_the_login_of_the_configured_api_url() {
+        let mut server = mockito::Server::new_async().await;
+        let mut mocks = Vec::new();
+        for name in ["api-login-main", "api-login-extra"] {
+            // The browser URL answers with a sign-in page, so the API URL is used.
+            mocks.push(
+                server
+                    .mock("HEAD", format!("/download/{name}.tar.gz").as_str())
+                    .with_header("content-type", "text/html")
+                    .create_async()
+                    .await,
+            );
+            mocks.push(
+                server
+                    .mock("GET", format!("/api/assets/{name}").as_str())
+                    .match_header("authorization", "Basic Y2k6dG9rZW4=")
+                    .with_body("artifact")
+                    .expect_at_least(1)
+                    .create_async()
+                    .await,
+            );
+            mocks.push(
+                server
+                    .mock("GET", format!("/api/assets/{name}").as_str())
+                    .match_header("authorization", mockito::Matcher::Missing)
+                    .with_status(401)
+                    .expect(0)
+                    .create_async()
+                    .await,
+            );
+        }
+        let urls = |name: &str| {
+            (
+                format!("{}/download/{name}.tar.gz", server.url()),
+                format!("{}/api/assets/{name}", server.url()),
+            )
+        };
+        let login =
+            |url: &str| crate::lockfile::LoginUrl::of(&url.replace("http://", "http://ci:token@"));
+        let (main_url, main_api) = urls("api-login-main");
+        let (extra_url, extra_api) = urls("api-login-extra");
+        let md5 = format!("md5:{ARTIFACT_MD5}");
+        let sha256 = format!("sha256:{ARTIFACT_SHA256}");
+        let old = PlatformInfo {
+            url: Some(main_url.clone()),
+            url_api: Some(main_api.clone()),
+            checksum: Some(md5.clone()),
+            additional_artifacts: vec![crate::lockfile::ArtifactInfo {
+                url: extra_url.clone(),
+                url_api: Some(extra_api.clone()),
+                checksum: Some(md5.clone()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let refreshed = PlatformInfo {
+            checksum: Some(sha256.clone()),
+            download_url_api: login(&main_api),
+            additional_artifacts: vec![crate::lockfile::ArtifactInfo {
+                url: extra_url.clone(),
+                url_api: Some(extra_api.clone()),
+                checksum: Some(sha256.clone()),
+                download_url_api: login(&extra_api),
+                ..Default::default()
+            }],
+            ..old.clone()
+        };
+        assert!(!format!("{refreshed:?}").contains("token"), "{refreshed:?}");
+        let written = toml::to_string(&refreshed).unwrap();
+        assert!(!written.contains("token"), "{written}");
+
+        check_replaced_weak_pins(&old, &refreshed, &[])
+            .await
+            .unwrap();
+        for mock in mocks.iter().skip(1).step_by(3) {
+            mock.assert_async().await;
+        }
+        for mock in mocks.iter().skip(2).step_by(3) {
+            mock.assert_async().await;
+        }
     }
 
     /// An additional artifact sends the headers its backend resolved it with,
