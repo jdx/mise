@@ -1211,9 +1211,18 @@ pub(crate) fn lock_url(url: &str) -> String {
 
 /// Whether the lockfile URL `locked` names the artifact downloaded from `url`.
 /// A login is no part of that, on either side: `url` carries the one in the
-/// user's config, and an existing lockfile entry may carry one too.
+/// user's config, and an existing lockfile entry may carry one too. Neither is
+/// spelling: `https://host:443/a` names the same artifact as `https://host/a`,
+/// which is how a URL with a login put back on is written out.
 pub(crate) fn is_lock_url(locked: Option<&str>, url: &str) -> bool {
-    locked.is_some_and(|locked| lock_url(locked) == lock_url(url))
+    locked.is_some_and(|locked| {
+        let (locked, url) = (lock_url(locked), lock_url(url));
+        locked == url
+            || matches!(
+                (url::Url::parse(&locked), url::Url::parse(&url)),
+                (Ok(locked), Ok(url)) if locked == url
+            )
+    })
 }
 
 /// A URL from mise.lock as it is downloaded. The lockfile records it without
@@ -1230,14 +1239,17 @@ pub(crate) fn with_login_of(mut url: url::Url, base: &url::Url) -> url::Url {
 }
 
 /// [`lock_url`] for a `mise lock` entry of the artifact at `url`. With no
-/// checksum yet, and lockfile generation on, the artifact is hashed through
-/// `url` itself: the recorded URL, without its login, would only answer with
-/// an authentication error.
+/// checksum yet, or only an md5 or sha1 one, and lockfile generation on, the
+/// artifact is hashed through `url` itself, checked against the weak checksum
+/// and pinned by its sha256: the recorded URL, without its login, would only
+/// answer with an authentication error when `mise lock` hashed it.
 pub(crate) async fn resolve_lock_url(url: &str, checksum: &mut Option<String>) -> Result<String> {
     let lock_url = lock_url(url);
-    if checksum.is_none() && lock_url != url && crate::config::Settings::get().generate_lockfiles()
+    if checksum.as_deref().is_none_or(is_weak_checksum)
+        && lock_url != url
+        && crate::config::Settings::get().generate_lockfiles()
     {
-        crate::lockfile::generate::download_for_verification(url, checksum).await?;
+        crate::lockfile::generate::download_for_strong_checksum(url, checksum).await?;
     }
     Ok(lock_url)
 }

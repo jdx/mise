@@ -6073,6 +6073,7 @@ fn test_lockfile_write_refuses_credential_queries() {
         size: None,
         url: "https://dl.example.com/sig.tgz?sig=s3cret".to_string(),
         url_api: None,
+        download_headers: None,
         provenance: None,
         provenance_verified: None,
         checksum_source: None,

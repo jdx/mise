@@ -620,6 +620,7 @@ impl From<&ArtifactInfo> for CachedArtifact {
             size,
             url,
             url_api,
+            download_headers: _,
             provenance,
             provenance_verified,
         } = artifact;
@@ -652,6 +653,7 @@ impl From<CachedArtifact> for ArtifactInfo {
             size,
             url,
             url_api,
+            download_headers: None,
             provenance: provenance.map(Into::into),
             provenance_verified,
         }
@@ -1425,6 +1427,10 @@ pub struct ArtifactInfo {
     pub url: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub url_api: Option<String>,
+    /// Request headers `url` needs, as [`PlatformInfo::download_headers`]: used
+    /// only to download the artifact for its checksum; never written.
+    #[serde(skip)]
+    pub download_headers: Option<reqwest::header::HeaderMap>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub provenance: Option<ProvenanceType>,
     /// Opaque legacy metadata, preserved only to avoid churn with older clients.
@@ -1484,6 +1490,7 @@ impl ArtifactInfo {
             size: self.size.or(other.size),
             url: self.url.clone(),
             url_api: self.url_api.clone().or_else(|| other.url_api.clone()),
+            download_headers: None,
             provenance,
             provenance_verified,
         }
@@ -1605,6 +1612,7 @@ impl PlatformInfo {
             info.download_headers = None;
             for artifact in &mut info.additional_artifacts {
                 artifact.size = None;
+                artifact.download_headers = None;
             }
             info
         }

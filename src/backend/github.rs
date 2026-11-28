@@ -1591,6 +1591,11 @@ impl Backend for UnifiedGitBackend {
                         additional_provenance.as_ref(),
                     )?;
                     let checksum_source = locked_digest_source(&additional, additional_downloaded);
+                    let download_headers = if additional.url_api.is_empty() {
+                        None
+                    } else {
+                        Some(self.forge_headers(&additional.url_api, &opts.api_url())?)
+                    };
                     let (url, url_api, checksum) =
                         lock_urls_of(&additional, |url| self.forge_headers(url, &opts.api_url()))
                             .await?;
@@ -1599,6 +1604,7 @@ impl Backend for UnifiedGitBackend {
                         checksum,
                         url,
                         url_api,
+                        download_headers,
                         provenance: additional_provenance,
                         ..Default::default()
                     });
@@ -1609,12 +1615,8 @@ impl Backend for UnifiedGitBackend {
                 // token the install download sends.
                 let download_headers = if asset.url_api.is_empty() {
                     None
-                } else if self.is_gitlab() {
-                    gitlab::get_headers(&asset.url_api, &opts.api_url())?.into()
-                } else if self.is_forgejo() {
-                    forgejo::get_headers(&asset.url_api, &opts.api_url())?.into()
                 } else {
-                    github::get_headers(&asset.url_api, &opts.api_url())?.into()
+                    Some(self.forge_headers(&asset.url_api, &opts.api_url())?)
                 };
                 let checksum_source = locked_digest_source(&asset, primary_downloaded);
                 let (url, url_api, checksum) =

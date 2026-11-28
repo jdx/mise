@@ -220,15 +220,16 @@ fn query_param_name(pair: &str) -> String {
 /// `text` is read both as a value that is one URL and as free text: a
 /// parameter after raw whitespace or a quote (`https://host/my tool?token=x`)
 /// is found by the first reading only, and the URLs after the first one in an
-/// argument list by the second.
+/// argument list by the second. So is the query of a URL inside a parameter
+/// (`?next=https://host/y?token=x`), as redaction reads it.
 pub fn url_query_param_names(text: &str) -> Vec<String> {
     [&WHOLE_URL_QUERY, &URL_QUERY]
         .into_iter()
         .flat_map(|url_query| url_query.captures_iter(text))
         .flat_map(|captures| {
-            captures[2]
-                .split('&')
-                .map(query_param_name)
+            query_pairs(&captures[2])
+                .into_iter()
+                .map(|(_, name, _)| query_param_name(name))
                 .filter(|name| !name.is_empty())
                 .collect::<Vec<_>>()
         })
@@ -374,8 +375,8 @@ fn url_credential_spans(text: &str, whitespace_ends_url: bool) -> Vec<(usize, us
         let query = &query[..query
             .find(|c: char| c.is_control() && !TAB_OR_NEWLINE.contains(&c))
             .unwrap_or(query.len())];
-        for (offset, pair) in query_pairs(query) {
-            if let Some((name, value)) = pair.split_once('=')
+        for (offset, name, value) in query_pairs(query) {
+            if let Some(value) = value
                 && !matches!(value, "" | "[redacted]")
                 && is_credential_query_param(&query_param_name(name))
             {
@@ -387,27 +388,42 @@ fn url_credential_spans(text: &str, whitespace_ends_url: bool) -> Vec<(usize, us
     spans
 }
 
-/// The `name=value` pairs of `query`, each with its byte offset in it, for
-/// redaction. The query of a URL inside the query is read too: in one argument
+/// The pairs of `query` as `(offset, name, value)`, the offset being where the
+/// name starts in `query`, and the value `None` for a pair with no `=`.
+///
+/// The query of a URL inside the query is read too: in one argument
 /// (`https://a/x?ref=main https://b/y?token=t`) or a parameter
 /// (`?next=https://b/y?token=t`), the `?` after a `://` starts the pairs of
 /// that URL, which would otherwise be part of the value of `ref` or `next`.
-/// What comes before that `?` stays the value of the pair it is in.
-fn query_pairs(query: &str) -> Vec<(usize, &str)> {
+/// Each value still runs to the `&` that ends its pair, past any such `?`, so a
+/// credential that holds URL-like text (`?token=abc://x?y`) is read whole. A
+/// name ends at the first `=` before the next such `?`, which keeps the reading
+/// linear in the length of `query`.
+fn query_pairs(query: &str) -> Vec<(usize, &str, Option<&str>)> {
     let mut pairs = vec![];
     let mut pos = 0;
     for pair in query.split('&') {
-        let mut start = pos;
-        let mut rest = pair;
-        while let Some(question) = rest
-            .find("://")
-            .and_then(|scheme| rest[scheme..].find('?').map(|q| scheme + q))
-        {
-            pairs.push((start, &rest[..question]));
-            start += question + 1;
-            rest = &rest[question + 1..];
+        // Where the pair starts, then the query of each URL inside it.
+        let mut starts = vec![0];
+        let mut from = 0;
+        while let Some(question) = pair[from..].find("://").and_then(|scheme| {
+            let scheme = from + scheme;
+            pair[scheme..].find('?').map(|q| scheme + q)
+        }) {
+            starts.push(question + 1);
+            from = question + 1;
         }
-        pairs.push((start, rest));
+        for (i, &start) in starts.iter().enumerate() {
+            let end = starts.get(i + 1).map_or(pair.len(), |next| next - 1);
+            match pair[start..end].find('=') {
+                Some(eq) => pairs.push((
+                    pos + start,
+                    &pair[start..start + eq],
+                    Some(&pair[start + eq + 1..]),
+                )),
+                None => pairs.push((pos + start, &pair[start..end], None)),
+            }
+        }
         pos += pair.len() + 1;
     }
     pairs
@@ -984,6 +1000,15 @@ mod tests {
                 "https://a.example/x?next=https://b.example/y?n=https://c.example/z?token=THIRD",
                 "https://a.example/x?next=https://b.example/y?n=https://c.example/z?token=[redacted]",
             ),
+            // A credential that holds URL-like text is redacted whole.
+            (
+                "https://a.example/x?token=FIRST://x?SECOND&v=1",
+                "https://a.example/x?token=[redacted]&v=1",
+            ),
+            (
+                "https://a.example/x?next=https://b.example/y?token=SECOND://z?THIRD&v=1",
+                "https://a.example/x?next=https://b.example/y?token=[redacted]&v=1",
+            ),
         ] {
             for redacted in [
                 redact_url_credentials_in_arg(input).into_owned(),
@@ -1000,6 +1025,27 @@ mod tests {
         assert_eq!(
             redact_url_credentials("see https://a.example/x?next=https://b.example/y?token=SECOND"),
             "see https://a.example/x?next=https://b.example/y?token=[redacted]"
+        );
+        // Two URLs in one JSON argument, the second with the credential.
+        let json = r#"{"primary":"https://a.example/t?ref=main","secondary":"https://b.example/t?token=LIVE_KEY"}"#;
+        assert!(!redact_url_credentials_in_arg(json).contains("LIVE_KEY"));
+        assert_eq!(
+            redact_url_credentials(json),
+            r#"{"primary":"https://a.example/t?ref=main","secondary":"https://b.example/t?token=[redacted]"}"#
+        );
+    }
+
+    #[test]
+    fn test_url_query_param_names_reads_a_url_inside_a_parameter() {
+        let url = "https://a.example/x?next=https://b.example/y?token=SECRET&v=1";
+        assert_eq!(url_query_param_names(url), ["next", "token", "v"]);
+        let stripped = strip_credential_query_params(url);
+        assert!(!stripped.contains("SECRET"), "{stripped}");
+        assert_eq!(strip_credential_query_params(&stripped), stripped);
+        // The query of a URL in a value names its parameters too.
+        assert_eq!(
+            url_query_param_names("https://a.example/x?ref=b://c?d=1"),
+            ["ref", "d"]
         );
     }
 

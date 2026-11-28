@@ -5,7 +5,8 @@ use crate::backend::{SecurityFeature, VersionInfo};
 use crate::args::BackendArg;
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::{
-    ensure_safe_relative_bin_path, get_filename_from_url, lock_url, resolve_lock_url, with_login_of,
+    ensure_safe_relative_bin_path, get_filename_from_url, is_weak_checksum, lock_url,
+    resolve_lock_url, with_login_of,
 };
 use crate::config::{Settings, SettingsExt};
 use crate::dirs;
@@ -718,6 +719,12 @@ impl Backend for AquaBackend {
         };
         self.verify(ctx, &mut tv, &pkg, version, &filename, locked_checksum)
             .await?;
+        if validated_url.is_some() {
+            let archive = tv.download_path().join(&filename);
+            if let Some(info) = tv.lock_platforms.get_mut(&self.get_platform_key()) {
+                forget_locked_login(info, &url, &archive)?;
+            }
+        }
 
         // Advance to extraction operation if applicable
         if needs_extraction(format, &pkg.package_type()) {
@@ -4504,6 +4511,27 @@ fn cosign_opt_value<'a>(opts: &'a [String], flag: &str) -> Option<&'a str> {
 /// package's own `url` put back when that is a URL on the same server (scheme,
 /// host and port). mise.lock records it without the login ([`lock_url`]), and
 /// an `http` package from a registry that needs one is downloaded from it.
+/// The locked entry `info`, whose archive `archive` was just downloaded from
+/// `download_url` and verified, as the lockfile update writes it: without the
+/// login an older mise.lock recorded in its URLs, as a fresh install records
+/// them. When the download sent a login, from mise.lock or from the package's
+/// `url`, and `info` has no sha256, blake3 or sha512 pin, the archive is pinned
+/// by its sha256 now: `mise lock` could not fetch it through the recorded URL,
+/// which has no login.
+fn forget_locked_login(info: &mut PlatformInfo, download_url: &str, archive: &Path) -> Result<()> {
+    let has_login = |url: &str| lock_url(url) != url;
+    if has_login(download_url) && info.checksum.as_deref().is_none_or(is_weak_checksum) {
+        info.checksum = Some(format!(
+            "sha256:{}",
+            crate::hash::file_hash_sha256(archive, None)?
+        ));
+        info.checksum_source = None;
+    }
+    info.url = info.url.as_deref().map(lock_url);
+    info.url_api = info.url_api.as_deref().map(lock_url);
+    Ok(())
+}
+
 fn locked_download_url(pkg: &AquaPackage, v: &str, url: String) -> String {
     if pkg.package_type() != AquaPackageType::Http {
         return url;
@@ -5687,6 +5715,48 @@ mod lock_candidate_tests {
         ] {
             assert_eq!(locked_download_url(&pkg, "v1.0.0", url.to_string()), url);
         }
+    }
+
+    /// A locked install leaves the login an older mise.lock recorded out of the
+    /// entry, and pins an archive fetched with a login by sha256 when the entry
+    /// has no strong checksum, since `mise lock` could not fetch it again.
+    #[test]
+    fn test_locked_install_forgets_the_lockfile_login() {
+        let dir = tempfile::tempdir().unwrap();
+        let archive = dir.path().join("tool.tar.gz");
+        std::fs::write(&archive, b"artifact").unwrap();
+        let sha256 = format!(
+            "sha256:{}",
+            crate::hash::file_hash_sha256(&archive, None).unwrap()
+        );
+        let login = "https://ci:token@dl.example/v1.0.0/tool.tar.gz";
+        let plain = "https://dl.example/v1.0.0/tool.tar.gz";
+        let entry = |url: &str, checksum: Option<&str>| PlatformInfo {
+            url: Some(url.to_string()),
+            checksum: checksum.map(str::to_owned),
+            ..Default::default()
+        };
+
+        for checksum in [None, Some("md5:8e5b948a454515dbabfc7eb718daa52f")] {
+            let mut info = entry(login, checksum);
+            forget_locked_login(&mut info, login, &archive).unwrap();
+            assert_eq!(info.url.as_deref(), Some(plain));
+            assert_eq!(info.checksum.as_deref(), Some(sha256.as_str()));
+        }
+        // A strong pin stays.
+        let blake3 = format!("blake3:{}", "a".repeat(64));
+        let mut info = entry(login, Some(&blake3));
+        forget_locked_login(&mut info, login, &archive).unwrap();
+        assert_eq!(info.url.as_deref(), Some(plain));
+        assert_eq!(info.checksum.as_deref(), Some(blake3.as_str()));
+        // The login of the package's `url`, put back for the download, counts.
+        let mut info = entry(plain, None);
+        forget_locked_login(&mut info, login, &archive).unwrap();
+        assert_eq!(info.checksum.as_deref(), Some(sha256.as_str()));
+        // A download without a login changes nothing.
+        let mut info = entry(plain, None);
+        forget_locked_login(&mut info, plain, &archive).unwrap();
+        assert_eq!(info, entry(plain, None));
     }
 
     #[tokio::test]

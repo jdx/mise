@@ -1969,7 +1969,8 @@ impl Pusher {
     ///    read from its config), so `--update-index` can upgrade a
     ///    previously single-arch tag without dropping that platform. If the
     ///    wrap fails, the entry is dropped with a warning rather than
-    ///    failing the push.
+    ///    failing the push, unless the config is over the JSON value limit
+    ///    ([`ConfigOverJsonLimit`]).
     async fn existing_index_entries(&mut self, tag: &str) -> Result<Vec<Descriptor>> {
         let url = format!("{}/v2/{}/manifests/{tag}", self.base_url, self.repository);
         let accept = [
@@ -2013,6 +2014,9 @@ impl Pusher {
             .await
         {
             Ok(entry) => Ok(vec![entry]),
+            // The platform exists but is too large to read: dropping it would
+            // push an index without it, so fail before the tag changes.
+            Err(e) if e.downcast_ref::<ConfigOverJsonLimit>().is_some() => Err(e),
             Err(e) => {
                 warn!(
                     "could not preserve the existing single-platform manifest at {tag} \
@@ -2054,6 +2058,8 @@ impl Pusher {
             self.base_url, self.repository
         );
         let config_bytes = download_blob(&mut self.session, &config_url, config_size, None).await?;
+        mise_util::http::ensure_json_values_bounded(&config_bytes)
+            .map_err(|e| eyre::Report::new(ConfigOverJsonLimit(format!("{e:#}"))))?;
         let config: serde_json::Value = parse_json(&config_bytes)?;
         let platform = platform_from_config_value(&config)?;
         Ok(Descriptor {
@@ -2065,6 +2071,25 @@ impl Pusher {
         })
     }
 }
+
+/// The config of the manifest a tag points at holds more JSON values than mise
+/// reads, so its platform is unknown. Unlike other failures to wrap that
+/// manifest, this one stops `--update-index`, which would otherwise replace the
+/// tag with an index that lacks a platform it serves.
+#[derive(Debug)]
+struct ConfigOverJsonLimit(String);
+
+impl std::fmt::Display for ConfigOverJsonLimit {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "cannot read the platform of the manifest the tag points at: {}",
+            self.0
+        )
+    }
+}
+
+impl std::error::Error for ConfigOverJsonLimit {}
 
 /// State shared with an upload-body closure. It holds any deferred I/O error
 /// and, for streaming uploads, the watchdog to advance as chunks are yielded.
@@ -2916,6 +2941,61 @@ mod tests {
         assert!(format!("{err:#}").contains("401"), "{err:#}");
         assert_eq!(session.authorization, None);
         token.assert_async().await;
+    }
+
+    /// A single-platform tag whose config is too large to read is not wrapped
+    /// into an index without its platform: reading the entries fails, so
+    /// `--update-index` stops before it writes the tag. A config that is only
+    /// malformed is still dropped with a warning.
+    #[tokio::test]
+    async fn existing_platform_over_the_json_limit_fails_the_index_update() {
+        let mut server = mockito::Server::new_async().await;
+        let too_many = ",".repeat(mise_util::http::MAX_JSON_VALUES + 1);
+        let mut entries = vec![];
+        for (tag, config) in [("big", too_many.as_str()), ("bad", "not json")] {
+            let digest = sha256_digest(config.as_bytes());
+            server
+                .mock("GET", format!("/v2/tools/manifests/{tag}").as_str())
+                .with_header("content-type", MEDIA_TYPE_OCI_MANIFEST)
+                .with_body(
+                    serde_json::json!({
+                        "schemaVersion": 2, "mediaType": MEDIA_TYPE_OCI_MANIFEST,
+                        "config": {"mediaType": "application/vnd.oci.image.config.v1+json",
+                                   "digest": digest, "size": config.len()},
+                        "layers": []
+                    })
+                    .to_string(),
+                )
+                .create_async()
+                .await;
+            server
+                .mock("GET", format!("/v2/tools/blobs/{digest}").as_str())
+                .with_body(config)
+                .create_async()
+                .await;
+            let mut pusher = Pusher {
+                base_url: server.url(),
+                repository: "tools".to_string(),
+                session: AuthSession {
+                    reference: Reference::parse(&format!(
+                        "{}/tools:{tag}",
+                        server.host_with_port()
+                    ))
+                    .unwrap(),
+                    credential: None,
+                    scopes: vec!["repository:tools:pull,push".to_string()],
+                    authorization: None,
+                },
+                mount_from: None,
+            };
+            entries.push(pusher.existing_index_entries(tag).await);
+        }
+        let err = entries.remove(0).unwrap_err();
+        assert!(
+            err.downcast_ref::<ConfigOverJsonLimit>().is_some(),
+            "{err:#}"
+        );
+        assert!(entries.remove(0).unwrap().is_empty());
     }
 
     /// A token service that redirects to a signed URL and is rate limited there: the error the

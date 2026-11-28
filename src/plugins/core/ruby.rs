@@ -672,7 +672,6 @@ impl RubyPlugin {
                 if self.is_precompiled_archive_url(&url, &tv.version, &platform) =>
             {
                 debug!("using lockfile URL for ruby {}: {url}", tv.version);
-                let url = self.precompiled_download_url(url, &tv.version, &platform);
                 // An entry without a checksum is still checked against the release
                 // digest, when the release lists the same archive.
                 let checksum = if has_checksum {
@@ -723,9 +722,12 @@ impl RubyPlugin {
         };
         let tarball_path = tv.download_path().join(&filename);
 
+        // Checksums are chosen and checked against `url`, the URL mise.lock names.
+        // Only the request carries the login of `ruby.precompiled_url`.
+        let download_url = self.precompiled_download_url(url.clone(), &tv.version, &platform);
         ctx.pr.set_message(format!("download {}", filename));
         HTTP.download_file_stored(
-            &url,
+            &download_url,
             &tarball_path,
             lock_checksum(tv, &self.get_platform_key(), &url).as_deref(),
             Some(ctx.pr.as_ref()),
@@ -1219,6 +1221,55 @@ mod tests {
                 );
             },
         );
+    }
+
+    /// A locked URL spelled with the default port still names the archive the
+    /// download, with the login of `ruby.precompiled_url` put back on, fetches,
+    /// so its locked checksum still pins that download.
+    #[cfg(not(windows))]
+    #[test]
+    fn test_ruby_locked_url_with_default_port_keeps_its_checksum() {
+        use crate::backend::static_helpers::{is_lock_url, lock_checksum};
+        use crate::lockfile::PlatformInfo;
+
+        let locked = "https://mirror.example:443/3.3.0/ruby-3.3.0.x86_64_linux.tar.gz";
+        let download = with_ruby_settings(
+            |settings| {
+                settings.ruby.precompiled_url = Some(
+                    "https://user:secret@mirror.example/{version}/ruby-{version}.{platform}.tar.gz"
+                        .to_string(),
+                );
+            },
+            |plugin| {
+                assert!(plugin.is_precompiled_archive_url(locked, "3.3.0", "x86_64_linux"));
+                plugin.precompiled_download_url(locked.to_string(), "3.3.0", "x86_64_linux")
+            },
+        );
+        assert_eq!(
+            download,
+            "https://user:secret@mirror.example/3.3.0/ruby-3.3.0.x86_64_linux.tar.gz"
+        );
+        assert!(is_lock_url(Some(locked), &download));
+
+        let backend = RubyPlugin::new();
+        let mut tv = ToolVersion::new(
+            ToolRequest::new(backend.ba().clone(), "3.3.0", ToolSource::Unknown).unwrap(),
+            "3.3.0".to_string(),
+        );
+        tv.lock_platforms.insert(
+            "linux-x64".to_string(),
+            PlatformInfo {
+                url: Some(locked.to_string()),
+                checksum: Some(format!("sha256:{}", "a".repeat(64))),
+                ..Default::default()
+            },
+        );
+        assert_eq!(
+            lock_checksum(&tv, "linux-x64", locked),
+            lock_checksum(&tv, "linux-x64", &download)
+        );
+        assert!(lock_checksum(&tv, "linux-x64", locked).is_some());
+        assert!(lock_checksum(&tv, "linux-x64", "https://mirror.example:8443/x.tar.gz").is_none());
     }
 
     #[test]

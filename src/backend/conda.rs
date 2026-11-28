@@ -507,23 +507,32 @@ impl CondaBackend {
             .map(Self::record_basename)
             .collect();
 
+        // The lockfile names packages without the login of the channel.
+        let main_checksum = Self::checksum_for_lock(
+            main_record.url.as_str(),
+            Self::format_sha256(&main_record),
+            &downloaded[n_deps],
+        )?;
         let platform_info = tv
             .lock_platforms
             .entry(platform_key.to_string())
             .or_default();
-        // The lockfile names packages without the login of the channel.
         platform_info.url = Some(lock_url(main_record.url.as_str()));
-        platform_info.checksum = Self::format_sha256(&main_record);
+        platform_info.checksum = main_checksum;
         platform_info.conda_deps = Some(dep_basenames.clone());
 
         // Store dep package info in tv.conda_packages for lockfile update
-        for record in &all_records[..n_deps] {
+        for (record, archive) in all_records[..n_deps].iter().zip(&downloaded) {
             let basename = Self::record_basename(record);
             tv.conda_packages.insert(
                 (platform_key.to_string(), basename),
                 CondaPackageInfo {
                     url: lock_url(record.url.as_str()),
-                    checksum: Self::format_sha256(record),
+                    checksum: Self::checksum_for_lock(
+                        record.url.as_str(),
+                        Self::format_sha256(record),
+                        archive,
+                    )?,
                 },
             );
         }
@@ -584,6 +593,10 @@ impl CondaBackend {
             }
         }
 
+        let main_download_url = downloads
+            .last()
+            .map(|(url, _)| url.clone())
+            .unwrap_or_default();
         ctx.pr
             .set_message(format!("downloading {} packages", downloads.len()));
         let downloaded = parallel::parallel(downloads, Self::download_url_with_checksum).await?;
@@ -617,6 +630,10 @@ impl CondaBackend {
             }
         }
         if let Some(info) = tv.lock_platforms.get_mut(platform_key) {
+            if let Some(archive) = downloaded.last() {
+                info.checksum =
+                    Self::checksum_for_lock(&main_download_url, info.checksum.take(), archive)?;
+            }
             Self::forget_locked_login(info);
         }
 
@@ -628,6 +645,25 @@ impl CondaBackend {
     /// write it back. The package is the same, so its checksum stays.
     fn forget_locked_login(info: &mut PlatformInfo) {
         info.url = info.url.as_deref().map(lock_url);
+    }
+
+    /// The checksum to record for `archive`, downloaded from `url`, when the
+    /// lockfile names it without the login `url` holds. With none, `mise lock`
+    /// would hash the archive again through the recorded URL, which the channel
+    /// refuses without the login, so the downloaded archive is hashed now. A
+    /// checksum the channel or lockfile gave stays as it is.
+    fn checksum_for_lock(
+        url: &str,
+        checksum: Option<String>,
+        archive: &Path,
+    ) -> Result<Option<String>> {
+        if checksum.is_some() || lock_url(url) == url {
+            return Ok(checksum);
+        }
+        Ok(Some(format!(
+            "sha256:{}",
+            hash::file_hash_sha256(archive, None)?
+        )))
     }
 
     fn make_bins_executable(install_path: &std::path::Path) -> Result<()> {
@@ -1364,6 +1400,37 @@ mod tests {
             Some("https://conda.example/main/linux-64/tool-1.0-0.conda")
         );
         assert_eq!(info.checksum.as_deref(), Some("sha256:abcd"));
+    }
+
+    /// An archive fetched through the channel login with no checksum is hashed
+    /// before the lockfile drops the login, since `mise lock` could not fetch
+    /// it again through the recorded URL.
+    #[test]
+    fn archive_without_a_checksum_is_hashed_before_its_login_is_dropped() {
+        let dir = tempfile::tempdir().unwrap();
+        let archive = dir.path().join("tool-1.0-0.conda");
+        std::fs::write(&archive, b"archive").unwrap();
+        let sha256 = format!(
+            "sha256:{}",
+            crate::hash::file_hash_sha256(&archive, None).unwrap()
+        );
+        let login = "https://ci:token@conda.example/main/linux-64/tool-1.0-0.conda";
+        let plain = "https://conda.example/main/linux-64/tool-1.0-0.conda";
+
+        assert_eq!(
+            CondaBackend::checksum_for_lock(login, None, &archive).unwrap(),
+            Some(sha256)
+        );
+        assert_eq!(
+            CondaBackend::checksum_for_lock(login, Some("sha256:abcd".to_string()), &archive)
+                .unwrap()
+                .as_deref(),
+            Some("sha256:abcd")
+        );
+        assert_eq!(
+            CondaBackend::checksum_for_lock(plain, None, &archive).unwrap(),
+            None
+        );
     }
 
     /// The version can come from a plain tool list that loads without trust,

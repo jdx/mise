@@ -540,8 +540,15 @@ async fn upgrade_weak_pins_recorded_with_a_login(
         };
         let mut expected = vec![(pin.as_str(), LOCKED_CHECKSUM)];
         expected.extend(artifact.checksum.as_deref().map(|c| (c, RELEASE_CHECKSUM)));
-        artifact.checksum =
-            Some(artifact_checksum(&old.url, old.url_api.as_deref(), None, &expected).await?);
+        artifact.checksum = Some(
+            artifact_checksum(
+                &old.url,
+                old.url_api.as_deref(),
+                artifact.download_headers.as_ref(),
+                &expected,
+            )
+            .await?,
+        );
         artifact.checksum_source = None;
     }
     Ok(())
@@ -1405,7 +1412,7 @@ async fn complete_artifact_checksums(info: &mut PlatformInfo) -> Result<()> {
                 artifact_checksum(
                     &artifact.url,
                     artifact.url_api.as_deref(),
-                    None,
+                    artifact.download_headers.as_ref(),
                     expected.as_slice(),
                 )
                 .await?,
@@ -1454,7 +1461,13 @@ async fn check_replaced_weak_pins(old: &PlatformInfo, new: &PlatformInfo) -> Res
         };
         let mut expected = vec![(pin.as_str(), LOCKED_CHECKSUM)];
         expected.extend(artifact.checksum.as_deref().map(|c| (c, RELEASE_CHECKSUM)));
-        artifact_checksum(&artifact.url, artifact.url_api.as_deref(), None, &expected).await?;
+        artifact_checksum(
+            &artifact.url,
+            artifact.url_api.as_deref(),
+            artifact.download_headers.as_ref(),
+            &expected,
+        )
+        .await?;
     }
     Ok(())
 }
@@ -1505,6 +1518,22 @@ async fn artifact_checksum(
         "sha256:{}",
         crate::hash::file_hash_sha256(&path, None)?
     ))
+}
+
+/// [`download_for_verification`], after which an md5 or sha1 `checksum` the
+/// download matched is replaced by the download's sha256.
+pub(crate) async fn download_for_strong_checksum(
+    url: &str,
+    checksum: &mut Option<String>,
+) -> Result<()> {
+    let directory = download_for_verification(url, checksum).await?;
+    if checksum.as_deref().is_some_and(is_weak_checksum) {
+        *checksum = Some(format!(
+            "sha256:{}",
+            crate::hash::file_hash_sha256(&directory.path().join("artifact"), None)?
+        ));
+    }
+    Ok(())
 }
 
 pub(crate) async fn download_for_verification(
@@ -2671,6 +2700,91 @@ mod tests {
                 .await
                 .is_err()
         );
+    }
+
+    /// An artifact whose resolved checksum is an md5 is hashed through the URL
+    /// with the login, before the lockfile drops it: the md5 is checked and
+    /// replaced by the sha256, which `mise lock` then has no need to download.
+    #[tokio::test]
+    async fn weak_checksum_is_replaced_from_the_login_url() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/weak-checksum-login.tar.gz")
+            .match_header("authorization", "Basic Y2k6dG9rZW4=")
+            .with_body("artifact")
+            .create_async()
+            .await;
+        // A path no other test serves: the invocation download cache is keyed by
+        // URL, and mockito hands the same ports to later tests.
+        let url = format!("{}/weak-checksum-login.tar.gz", server.url())
+            .replace("http://", "http://ci:token@");
+        let mut checksum = Some(format!("md5:{ARTIFACT_MD5}"));
+        download_for_strong_checksum(&url, &mut checksum)
+            .await
+            .unwrap();
+        assert_eq!(checksum, Some(format!("sha256:{ARTIFACT_SHA256}")));
+
+        let mut checksum = Some("md5:00000000000000000000000000000000".to_string());
+        assert!(
+            download_for_strong_checksum(&url, &mut checksum)
+                .await
+                .is_err()
+        );
+        mock.assert_async().await;
+    }
+
+    /// An additional artifact sends the headers its backend resolved it with,
+    /// as the main one does, both when its md5 pin recorded with a login is
+    /// replaced and when an artifact with no checksum is hashed.
+    #[tokio::test]
+    async fn additional_artifacts_send_their_download_headers() {
+        let mut server = mockito::Server::new_async().await;
+        let upgraded = server
+            .mock("GET", "/tool.tar.gz.sig")
+            .match_header("private-token", "forge-token")
+            .with_body("artifact")
+            .create_async()
+            .await;
+        let completed = server
+            .mock("GET", "/tool.tar.gz.pem")
+            .match_header("private-token", "forge-token")
+            .with_body("artifact")
+            .create_async()
+            .await;
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert("private-token", "forge-token".parse().unwrap());
+        let sig = format!("{}/tool.tar.gz.sig", server.url());
+        let pem = format!("{}/tool.tar.gz.pem", server.url());
+        let old = PlatformInfo {
+            additional_artifacts: vec![crate::lockfile::ArtifactInfo {
+                url: sig.replace("http://", "http://ci:token@"),
+                checksum: Some(format!("md5:{ARTIFACT_MD5}")),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let artifact = |url: &str| crate::lockfile::ArtifactInfo {
+            url: url.into(),
+            download_headers: Some(headers.clone()),
+            ..Default::default()
+        };
+        let mut new = PlatformInfo {
+            additional_artifacts: vec![artifact(&sig), artifact(&pem)],
+            ..Default::default()
+        };
+        upgrade_weak_pins_recorded_with_a_login(&old, &mut new)
+            .await
+            .unwrap();
+        complete_artifact_checksums(&mut new).await.unwrap();
+        upgraded.assert_async().await;
+        completed.assert_async().await;
+        let sha256 = format!("sha256:{ARTIFACT_SHA256}");
+        for artifact in &new.additional_artifacts {
+            assert_eq!(artifact.checksum.as_deref(), Some(sha256.as_str()));
+        }
+        // The headers are never persisted.
+        let written = toml::to_string(&new).unwrap();
+        assert!(!written.contains("forge-token"), "{written}");
     }
 
     #[test]
