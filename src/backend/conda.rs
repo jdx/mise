@@ -809,14 +809,20 @@ impl CondaBackend {
         platform_info.checksum = Self::format_checksum(&main_record);
         platform_info.conda_deps = Some(dep_basenames.clone());
 
-        // Store dep package info in tv.conda_packages for lockfile update
-        for record in &all_records[..n_deps] {
+        // Store dep package info in tv.conda_packages for lockfile update. A package
+        // whose channel publishes no checksum is pinned by the sha256 of the archive
+        // just installed, so that `--locked` installs can check it.
+        for (record, archive) in all_records[..n_deps].iter().zip(&downloaded) {
             let basename = Self::record_basename(record);
+            let checksum = match Self::format_checksum(record) {
+                Some(checksum) => checksum,
+                None => format!("sha256:{}", hash::file_hash_sha256(archive, None)?),
+            };
             tv.conda_packages.insert(
                 (platform_key.to_string(), basename),
                 CondaPackageInfo {
                     url: record.url.to_string(),
-                    checksum: Self::format_checksum(record),
+                    checksum: Some(checksum),
                 },
             );
         }
@@ -1372,9 +1378,18 @@ impl CondaBackend {
 
         let raw_opts = tv.request.options();
         let opts = CondaOptions::new(&raw_opts);
-        let records = self
-            .solve_packages(vec![match_spec], platform, opts, tv.before_date)
-            .await?;
+        // As in `resolve_lock_info`, the errors leave out the fetch's and the solver's
+        // own, which can quote a channel URL with a token in it.
+        let specs = vec![match_spec];
+        let records = Self::lock_records(
+            Self::fetch_records(&specs, platform, opts),
+            specs.clone(),
+            platform,
+            &tool_name,
+            &target.to_key(),
+            tv.before_date,
+        )
+        .await?;
 
         let tool_name_norm = tool_name.to_lowercase();
         let mut result = BTreeMap::new();
@@ -1385,7 +1400,11 @@ impl CondaBackend {
             let basename = Self::record_basename(record);
             let checksum = match Self::format_checksum(record) {
                 Some(checksum) => checksum,
-                None => Self::download_checksum(record.url.as_str()).await?,
+                None => Self::download_checksum(record.url.as_str())
+                    .await
+                    .wrap_err_with(|| {
+                        format!("failed to download conda package {basename} to hash it")
+                    })?,
             };
             result.insert(
                 basename,
