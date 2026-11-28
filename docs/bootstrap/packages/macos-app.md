@@ -42,11 +42,12 @@ that one with `brew-cask` instead. Homebrew publishes only a cask's current
 version, so `version` cannot be set with `cask`, and neither can `url`,
 `sha256`, or `artifact`.
 
-Updates follow the cask, as they do for `brew-cask`: when the cask moves to a
-new version, `mise bootstrap packages apply` installs it. An app that the cask
-marks as updating itself is left alone by `apply`, and
-`mise bootstrap packages upgrade` replaces it only when the installed bundle is
-older than the cask and not running. Uninstall and zap steps in the cask are
+Updates work as they do for `brew-cask`. `mise bootstrap packages apply`
+installs the cask's current version when the app is missing, and leaves an
+installed app alone. `mise bootstrap packages upgrade` installs the cask's
+current version when it differs from the installed one; an app that the cask
+marks as updating itself is replaced only when the installed bundle is older
+than the cask and not running. Uninstall and zap steps in the cask are
 not run; see [Remove an app](#remove-an-app).
 
 ## Declare a download
