@@ -658,10 +658,13 @@ pub(super) fn write_config(path: &Path, content: &str) -> Result<bool> {
     let already_trusted = is_already_trusted(path);
     config_file::symlink_check_before_write(path)?;
     config_file::trust_check_before_write(path)?;
-    if let Some(parent) = path.parent() {
+    // The trust prompt can wait on the user while the checkout changes, so where the file leads
+    // is checked again, and the write goes to the destination that passed.
+    let destination = config_file::checked_write_destination(path)?;
+    if let Some(parent) = destination.parent() {
         file::create_dir_all(parent)?;
     }
-    file::write(path, content)?;
+    file::write(&destination, content)?;
     config_file::trust_after_write(path)?;
     Ok(!already_trusted)
 }

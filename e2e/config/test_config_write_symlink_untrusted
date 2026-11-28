@@ -22,6 +22,18 @@ assert_not_contains "cat ../outside/victim.toml" "FOO"
 assert_fail "mise tasks add hi -- echo hi"
 assert_not_contains "cat ../outside/victim.toml" "hi"
 
+echo "=== mise settings set and unset --local do not follow it either ==="
+cat <<'TOML' >../outside/settings.toml
+[settings]
+jobs = 4
+TOML
+rm mise.toml
+ln -s ../outside/settings.toml mise.toml
+assert_fail_contains "mise settings unset --local jobs 2>&1" "refusing to write"
+assert_contains "cat ../outside/settings.toml" "jobs = 4"
+assert_fail_contains "mise settings set --local jobs 2 2>&1" "refusing to write"
+assert_contains "cat ../outside/settings.toml" "jobs = 4"
+
 echo "=== a dangling link out of the project creates nothing ==="
 rm mise.toml
 ln -s ../outside/new.toml mise.toml
