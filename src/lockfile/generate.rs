@@ -452,6 +452,14 @@ pub fn os_excluded_platforms(
     for (ba, tv) in tools {
         let backend = tv.backend()?;
         let short = crate::toolset::install_state::state_short(&ba.short).into_owned();
+        let mut request_options = BTreeSet::new();
+        for platform in platforms {
+            for platform in backend.platform_variants_for(tv, platform) {
+                request_options
+                    .insert(backend.lockfile_options(&tv.request, &PlatformTarget::new(platform))?);
+            }
+        }
+        excluded.add_request(&short, &tv.version, ba.stored_full(), request_options);
         for platform in platforms {
             if tv.request.is_os_supported_on(platform) {
                 continue;
