@@ -1673,6 +1673,10 @@ impl Capture {
                     plan.saved(Instant::now());
                 }
                 if describe_command::configured().is_some() {
+                    // a folded checkpoint keeps the number of the one it
+                    // replaced, which is no longer in history to describe
+                    self.describe_next
+                        .retain(|queued| queued.id != entry.id || queued.commit == entry.commit);
                     self.describe_next.push_back((*entry).clone());
                     if self.describe_next.len() > DESCRIBE_QUEUE
                         && let Some(skipped) = self.describe_next.pop_front()

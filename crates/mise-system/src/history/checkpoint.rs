@@ -957,12 +957,19 @@ impl Store {
         let Ok(sync) = super::sync::run::lock_in(&self.state_dir) else {
             return Ok(None);
         };
-        if let Some(upstream) = repo.ref_oid(super::sync::network::UPSTREAM_REF)?
-            && repo
-                .merge_bases(&replaced.commit, &upstream)?
-                .contains(&replaced.commit)
-        {
-            return Ok(None);
+        // never one origin holds, or may hold after a push that stopped
+        // before its answer was recorded
+        for published in [
+            super::sync::network::UPSTREAM_REF,
+            super::sync::network::PUSHING_REF,
+        ] {
+            if let Some(published) = repo.ref_oid(published)?
+                && repo
+                    .merge_bases(&replaced.commit, &published)?
+                    .contains(&replaced.commit)
+            {
+                return Ok(None);
+            }
         }
         Ok(Some(Fold {
             replaced: replaced.clone(),

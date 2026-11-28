@@ -286,30 +286,31 @@ impl Schedule {
         schedule.last_change = Some(now);
     }
 
-    /// When the pending ordinary paths are due together: once the last of
-    /// them is, but no later than `BATCH_MAX` after the first one changed.
+    /// When the pending ordinary paths are due together: once every one of
+    /// them has been quiet for its settle time, but no later than
+    /// `BATCH_MAX` after the first one changed. A lone pending path keeps
+    /// its own deadline, periodic saves included, so churn is still seen.
     fn batch_due(&self) -> Option<Instant> {
-        let mut last_due: Option<Instant> = None;
+        let mut members = 0;
+        let mut last_quiet: Option<Instant> = None;
         let mut first_change: Option<Instant> = None;
         for schedule in self.paths.values() {
             if schedule.interval > self.limits.base {
                 continue;
             }
-            let Some(due) = schedule.due(&self.limits) else {
+            let Some(last) = schedule.last_change else {
                 continue;
             };
-            last_due = last_due.max(Some(due));
-            let began = schedule.pending_since.or(schedule.last_change);
-            first_change = match (first_change, began) {
-                (Some(first), Some(began)) => Some(first.min(began)),
-                (first, began) => first.or(began),
-            };
+            members += 1;
+            last_quiet = last_quiet.max(Some(last + schedule.settle(&self.limits)));
+            let began = schedule.pending_since.unwrap_or(last);
+            first_change = Some(first_change.map_or(began, |first| first.min(began)));
         }
-        let last_due = last_due?;
-        Some(match first_change {
-            Some(first) => last_due.min(first + BATCH_MAX.max(self.limits.base)),
-            None => last_due,
-        })
+        if members < 2 {
+            return None;
+        }
+        let cap = first_change? + BATCH_MAX.max(self.limits.base);
+        Some(last_quiet?.min(cap))
     }
 
     /// When `schedule`'s pending change is due, ordinary paths together.
@@ -510,6 +511,26 @@ mod tests {
         );
         assert_eq!(
             schedule.due_paths(start + secs(3)),
+            vec![PathBuf::from("a"), PathBuf::from("b")]
+        );
+    }
+
+    #[test]
+    fn a_batch_waits_for_a_member_that_keeps_changing() {
+        let start = Instant::now();
+        let mut schedule = Schedule::new(limits());
+        schedule.note("a".into(), start);
+        schedule.note("b".into(), start + secs(1));
+        schedule.note("b".into(), start + Duration::from_millis(2500));
+        // b's first change would make it periodically due at 3s, but it
+        // has not been quiet yet: the batch waits for it
+        assert!(schedule.due_paths(start + secs(3)).is_empty());
+        assert_eq!(
+            schedule.deadline(),
+            Some(start + Duration::from_millis(4500))
+        );
+        assert_eq!(
+            schedule.due_paths(start + Duration::from_millis(4500)),
             vec![PathBuf::from("a"), PathBuf::from("b")]
         );
     }
