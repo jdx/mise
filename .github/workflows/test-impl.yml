@@ -105,9 +105,10 @@ jobs:
 
       # Overflow to hosted runners when the self-hosted queue is deep. GitHub has no
       # "queued jobs by label" API and listing runners needs admin rights, so walk the
-      # oldest in-flight runs of the test workflow (at most 2 + MAX_RUNS requests) and
-      # measure how long the oldest job still queued for the label has waited. A
-      # failed request, an empty result or a parse failure ends the step without an
+      # oldest in-flight runs of the test workflow (2 + MAX_RUNS requests, plus one
+      # for every 100 runs in flight past the first 100 of a status) and measure
+      # how long the oldest job still queued for the label has waited. A failed
+      # request, an empty result or a parse failure ends the step without an
       # override, which leaves the self-hosted decision above.
       # Only API data is used here; nothing from the checkout runs with this token.
       - name: Check Windows queue depth
@@ -125,6 +126,7 @@ jobs:
           set +e
           set -o pipefail
           now=$(date +%s)
+          max_wait=$((MAX_WAIT_MINUTES * 60))
           # Every failure ends here, before anything is written to GITHUB_OUTPUT.
           keep_self_hosted() {
             echo "$1: using the self-hosted runners"
@@ -132,8 +134,10 @@ jobs:
           }
 
           listed=""
+          # The API lists the newest runs first, so the oldest are on the last
+          # page: read them all.
           for status in in_progress queued; do
-            page=$(gh api "repos/$REPO/actions/workflows/test.yml/runs?status=$status&per_page=100" \
+            page=$(gh api --paginate "repos/$REPO/actions/workflows/test.yml/runs?status=$status&per_page=100" \
               --jq '.workflow_runs[] | [.created_at, .id] | @tsv') ||
               keep_self_hosted "Could not list the $status test runs"
             listed+="$page"$'\n'
@@ -156,7 +160,7 @@ jobs:
               oldest=$queued_at
             fi
             # Past the threshold already: an older job elsewhere would not change the decision.
-            if [ $(( (now - oldest) / 60 )) -gt "$MAX_WAIT_MINUTES" ]; then
+            if [ $((now - oldest)) -gt "$max_wait" ]; then
               break
             fi
           done
@@ -164,12 +168,14 @@ jobs:
           if [ -z "$oldest" ]; then
             keep_self_hosted "No job is queued for $RUNNER_LABEL"
           fi
-          wait_min=$(( (now - oldest) / 60 ))
-          if [ "$wait_min" -gt "$MAX_WAIT_MINUTES" ]; then
-            echo "A job queued for $RUNNER_LABEL has waited ${wait_min}m (> ${MAX_WAIT_MINUTES}m): using windows-latest"
+          # Compared in seconds: whole minutes would let a job wait up to a minute longer.
+          waited=$((now - oldest))
+          shown="$((waited / 60))m$((waited % 60))s"
+          if [ "$waited" -gt "$max_wait" ]; then
+            echo "A job queued for $RUNNER_LABEL has waited $shown (> ${MAX_WAIT_MINUTES}m): using windows-latest"
             echo "windows-self-hosted=false" >> "$GITHUB_OUTPUT"
           else
-            echo "The oldest job queued for $RUNNER_LABEL has waited ${wait_min}m (<= ${MAX_WAIT_MINUTES}m): using the self-hosted runners"
+            echo "The oldest job queued for $RUNNER_LABEL has waited $shown (<= ${MAX_WAIT_MINUTES}m): using the self-hosted runners"
           fi
 
   build-ubuntu:
