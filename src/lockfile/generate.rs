@@ -729,29 +729,33 @@ pub async fn generate(
                         && tv.ba().stored_full() == entry.backend.clone().unwrap_or_default()
                 })
                 .find_map(|tv| tv.npm_provenance.clone());
-            let recorded = previous.tools_for(short).and_then(|previous_entries| {
+            let recorded = match previous.tools_for(short) {
                 // The repository is a property of the package, so a pin
                 // survives a change of install options or of version:
                 // prefer the entry with the same options, else the
                 // package's pin for this version.
-                let same_package = |previous: &&LockfileTool| {
-                    previous.version == entry.version && previous.backend == entry.backend
-                };
-                previous_entries
-                    .iter()
-                    .filter(same_package)
-                    .find(|previous| {
-                        previous.options == entry.options && previous.provenance.is_some()
-                    })
-                    .and_then(|previous| previous.provenance.clone())
-                    .or_else(|| {
-                        crate::lockfile::pinned_package_provenance(
+                Some(previous_entries) => {
+                    let same_package = |previous: &&LockfileTool| {
+                        previous.version == entry.version && previous.backend == entry.backend
+                    };
+                    match previous_entries
+                        .iter()
+                        .filter(same_package)
+                        .find(|previous| {
+                            previous.options == entry.options && previous.provenance.is_some()
+                        })
+                        .and_then(|previous| previous.provenance.clone())
+                    {
+                        Some(pin) => Some(pin),
+                        None => crate::lockfile::pinned_package_provenance(
                             previous_entries,
                             &entry.version,
                             entry.backend.as_deref(),
-                        )
-                    })
-            });
+                        )?,
+                    }
+                }
+                None => None,
+            };
             if let (Some(verified), Some(recorded)) = (&verified, &recorded)
                 && verified != recorded
             {

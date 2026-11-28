@@ -1624,7 +1624,7 @@ impl Backend for NPMBackend {
                 &crate::toolset::install_state::state_short(&tv.ba().short),
                 &tv.version,
                 &tv.ba().stored_full(),
-            );
+            )?;
         }
         // A checksum without an aube lock installs a downloaded local archive,
         // which aube builds no provenance subject for. Only the paranoid

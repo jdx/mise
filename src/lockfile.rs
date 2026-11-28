@@ -4675,7 +4675,7 @@ pub(crate) fn update_lockfiles(
                         .cloned()
                         .flatten()
                 },
-            );
+            )?;
             if is_monorepo_root_lockfile {
                 preserve_absent_tool_entries(
                     &mut merged_tools,
@@ -6001,7 +6001,7 @@ fn merge_tool_entries<F>(
     entries: Vec<LockfileTool>,
     existing_tools: Option<&Vec<LockfileTool>>,
     mut resolve: F,
-) -> MergeToolEntriesResult
+) -> Result<MergeToolEntriesResult>
 where
     F: FnMut(&str, &Platform) -> Option<BTreeMap<String, String>>,
 {
@@ -6056,7 +6056,7 @@ where
         for entry in by_key.values_mut() {
             if entry.provenance.is_none() {
                 entry.provenance =
-                    pinned_package_provenance(existing, &entry.version, entry.backend.as_deref());
+                    pinned_package_provenance(existing, &entry.version, entry.backend.as_deref())?;
             }
         }
         for existing_tool in existing {
@@ -6154,7 +6154,7 @@ where
                 .then_with(|| a.options.cmp(&b.options))
         })
         .collect();
-    (tools, consumed_keys)
+    Ok((tools, consumed_keys))
 }
 
 fn preserve_absent_tool_entries(
@@ -7649,20 +7649,27 @@ pub(crate) fn get_locked_npm_provenance(
     short: &str,
     version: &str,
     backend: &str,
-) -> Option<PackageProvenance> {
+) -> Result<Option<PackageProvenance>> {
     if !Settings::get().lockfile_enabled() {
-        return None;
+        return Ok(None);
     }
     // Only the lockfile that owns the request: a tool an override config
     // declares must not inherit a pin from the project's lockfile.
-    let lockfile = match request.lockfile_source()? {
-        ToolSource::MiseToml(path) => read_lockfile_for(config, path),
-        source if source.path().is_some() => {
-            Arc::new(read_lockfile_for_tool_source(config, source).ok()?)
+    let lockfile = match request.lockfile_source() {
+        Some(ToolSource::MiseToml(path)) => read_lockfile_for(config, path),
+        Some(source) if source.path().is_some() => {
+            match read_lockfile_for_tool_source(config, source) {
+                Ok(lockfile) => Arc::new(lockfile),
+                Err(_) => return Ok(None),
+            }
         }
-        _ => read_all_lockfiles(config),
+        Some(_) => read_all_lockfiles(config),
+        None => return Ok(None),
     };
-    pinned_package_provenance(lockfile.tools_for(short)?, version, Some(backend))
+    match lockfile.tools_for(short) {
+        Some(entries) => pinned_package_provenance(entries, version, Some(backend)),
+        None => Ok(None),
+    }
 }
 
 /// The repository `entries` pin `backend`'s package to for `version`. A
@@ -7672,25 +7679,40 @@ pub(crate) fn get_locked_npm_provenance(
 /// to, takes the repository the package's pinned entries name, so a release
 /// built anywhere else is refused and its new entry keeps the pin. When those
 /// entries name more than one repository, the package's repository is not
-/// known and a version with no entry gets no pin.
+/// known, so a version with no entry is an error rather than an unpinned
+/// install: the user has to reconcile the pins first.
 pub(crate) fn pinned_package_provenance(
     entries: &[LockfileTool],
     version: &str,
     backend: Option<&str>,
-) -> Option<PackageProvenance> {
+) -> Result<Option<PackageProvenance>> {
     let package = || {
         entries
             .iter()
             .filter(move |tool| tool.backend.as_deref() == backend)
     };
     if package().any(|tool| tool.version == version) {
-        return package()
+        return Ok(package()
             .filter(|tool| tool.version == version)
-            .find_map(|tool| tool.provenance.clone());
+            .find_map(|tool| tool.provenance.clone()));
     }
-    let mut pins = package().filter_map(|tool| tool.provenance.as_ref());
-    let pin = pins.next()?;
-    pins.all(|other| other == pin).then(|| pin.clone())
+    let pins = package()
+        .filter_map(|tool| tool.provenance.as_ref())
+        .map(|pin| pin.repository.as_str())
+        .unique()
+        .collect_vec();
+    match pins.as_slice() {
+        [] => Ok(None),
+        [repository] => Ok(Some(PackageProvenance {
+            repository: repository.to_string(),
+        })),
+        repositories => bail!(
+            "mise.lock pins {} to more than one repository ({}), so {version} has no repository to verify its provenance against; \
+             remove the lock entries whose pin is stale, then try again",
+            backend.unwrap_or("the package"),
+            repositories.join(", ")
+        ),
+    }
 }
 
 pub(crate) fn get_locked_backend_for_version(

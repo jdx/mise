@@ -2022,7 +2022,8 @@ fn merge_keeps_unsupported_platforms_until_resolved() {
         vec![entry(&["linux-x64", "macos-arm64"], &[])],
         Some(&existing),
         |_, _| None,
-    );
+    )
+    .unwrap();
     assert_eq!(tools.len(), 1);
     assert_eq!(
         tools[0].platforms.keys().collect::<Vec<_>>(),
@@ -2040,7 +2041,8 @@ fn merge_keeps_unsupported_platforms_until_resolved() {
         vec![entry(&["linux-x64"], &[])],
         Some(&existing),
         |_, platform| (platform.to_key() == "windows-x64").then(|| windows_url.clone()),
-    );
+    )
+    .unwrap();
     assert!(
         tools
             .iter()
@@ -2559,7 +2561,7 @@ fn merge_keeps_a_provenance_pin_when_install_options_change() {
     let mut fresh = basic_tool("3.1.0", "npm:@sigstore/bundle");
     fresh.options = BTreeMap::from([("allow_builds".to_string(), "x".to_string())]);
 
-    let (merged, _) = merge_tool_entries(vec![fresh], Some(&vec![existing]), |_, _| None);
+    let (merged, _) = merge_tool_entries(vec![fresh], Some(&vec![existing]), |_, _| None).unwrap();
 
     let kept = merged
         .iter()
@@ -2579,7 +2581,7 @@ fn merge_keeps_a_provenance_pin_when_the_version_changes() {
     });
     let fresh = basic_tool("3.2.0", "npm:@sigstore/bundle");
 
-    let (merged, _) = merge_tool_entries(vec![fresh], Some(&vec![existing]), |_, _| None);
+    let (merged, _) = merge_tool_entries(vec![fresh], Some(&vec![existing]), |_, _| None).unwrap();
 
     assert_eq!(merged.len(), 1);
     assert_eq!(merged[0].version, "3.2.0");
@@ -2599,7 +2601,7 @@ fn merge_leaves_a_locked_version_without_a_provenance_pin_as_it_is() {
     let existing = vec![basic_tool("0.9.0", "npm:example"), pinned.clone()];
     let fresh = vec![basic_tool("0.9.0", "npm:example"), pinned];
 
-    let (merged, _) = merge_tool_entries(fresh, Some(&existing), |_, _| None);
+    let (merged, _) = merge_tool_entries(fresh, Some(&existing), |_, _| None).unwrap();
 
     let pins = merged
         .iter()
@@ -2626,7 +2628,9 @@ fn a_provenance_pin_covers_the_unlocked_versions_of_its_package() {
         pinned("2.0.0", "npm:moved", "github.com/moved/new"),
     ];
     let pin = |version: &str, backend: &str| {
-        pinned_package_provenance(&entries, version, Some(backend)).map(|p| p.repository)
+        pinned_package_provenance(&entries, version, Some(backend))
+            .unwrap()
+            .map(|p| p.repository)
     };
 
     // A locked version has its own pin, or none.
@@ -2643,9 +2647,18 @@ fn a_provenance_pin_covers_the_unlocked_versions_of_its_package() {
     // A pin never crosses to another package.
     assert_eq!(pin("1.0.0", "npm:unpinned"), None);
     assert_eq!(pin("1.0.0", "npm:other").unwrap(), "github.com/other/other");
-    // Entries that disagree name no repository for a new version.
+    // Entries that disagree keep their own pins, but a new version is
+    // refused rather than installed unpinned.
     assert_eq!(pin("2.0.0", "npm:moved").unwrap(), "github.com/moved/new");
-    assert_eq!(pin("3.0.0", "npm:moved"), None);
+    let err = pinned_package_provenance(&entries, "3.0.0", Some("npm:moved")).unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("github.com/moved/old, github.com/moved/new"),
+        "{err}"
+    );
+    // So is an entry written for it when the lockfile is updated.
+    let fresh = vec![basic_tool("3.0.0", "npm:moved")];
+    assert!(merge_tool_entries(fresh, Some(&entries), |_, _| None).is_err());
 }
 
 #[test]
@@ -2655,7 +2668,8 @@ fn test_preserve_absent_tool_entries_for_monorepo_upsert() {
         vec![basic_tool("22.0.0", "core:node")],
         Some(&existing),
         |_, _| None,
-    );
+    )
+    .unwrap();
 
     preserve_absent_tool_entries(&mut merged, Some(&existing), &consumed);
 
@@ -2960,7 +2974,8 @@ fn test_preserve_absent_does_not_resurrect_rekeyed_empty_options_entry() {
         }],
         Some(&existing),
         |_, _| Some(options.clone()),
-    );
+    )
+    .unwrap();
 
     preserve_absent_tool_entries(&mut merged, Some(&existing), &consumed);
 
@@ -3054,7 +3069,7 @@ fn test_merge_tool_entries_rekeys_empty_options_entry_on_new_options() {
     }];
 
     let (merged, consumed) =
-        merge_tool_entries(fresh, Some(&existing), |_, _| Some(new_options.clone()));
+        merge_tool_entries(fresh, Some(&existing), |_, _| Some(new_options.clone())).unwrap();
 
     assert!(consumed.contains(&("26.0.1".to_string(), BTreeMap::new())));
     assert_eq!(
@@ -3164,7 +3179,8 @@ fn test_merge_tool_entries_preserves_disjoint_empty_options_variant() {
                 "false".to_string(),
             )]))
         }
-    });
+    })
+    .unwrap();
 
     assert!(consumed.is_empty());
     assert_eq!(
@@ -3376,7 +3392,7 @@ fn test_merge_tool_entries_does_not_copy_changed_options_data() {
     }];
 
     let (merged, consumed) =
-        merge_tool_entries(fresh, Some(&existing), |_, _| Some(new_options.clone()));
+        merge_tool_entries(fresh, Some(&existing), |_, _| Some(new_options.clone())).unwrap();
 
     assert!(consumed.is_empty());
     assert_eq!(merged.len(), 1);
@@ -3417,7 +3433,7 @@ fn test_merge_tool_entries_preserves_data_when_resolution_fails() {
         unsupported_platforms: Default::default(),
     }];
 
-    let (merged, consumed) = merge_tool_entries(fresh, Some(&existing), |_, _| None);
+    let (merged, consumed) = merge_tool_entries(fresh, Some(&existing), |_, _| None).unwrap();
 
     assert!(consumed.is_empty());
     assert_eq!(merged.len(), 2);
@@ -3454,7 +3470,7 @@ fn test_merge_tool_entries_keeps_other_platform_option_variants() {
     let mut fresh_linux = variant("shellcheck-*.tar.xz", "linux-x64", "sha256:LINUX");
     fresh_linux.platforms.clear();
 
-    let (merged, _) = merge_tool_entries(vec![fresh_linux], Some(&existing), |_, _| None);
+    let (merged, _) = merge_tool_entries(vec![fresh_linux], Some(&existing), |_, _| None).unwrap();
 
     assert_eq!(merged.len(), 2);
     assert!(merged.iter().any(|tool| {
@@ -3494,7 +3510,7 @@ fn test_merge_tool_entries_marker_keeps_other_variant_artifact() {
         .unsupported_platforms
         .insert("windows-x64".to_string());
 
-    let (merged, _) = merge_tool_entries(vec![fresh_linux], Some(&existing), |_, _| None);
+    let (merged, _) = merge_tool_entries(vec![fresh_linux], Some(&existing), |_, _| None).unwrap();
 
     assert!(merged.iter().any(|tool| {
         tool.options["asset_pattern"] == "shellcheck-*.zip"
@@ -3538,7 +3554,7 @@ fn test_merge_tool_entries_keeps_unrefreshed_platforms_of_changed_variant() {
         &[("linux-x64", "sha256:NEWLINUX")],
     )];
 
-    let (merged, _) = merge_tool_entries(fresh, Some(&existing), |_, _| None);
+    let (merged, _) = merge_tool_entries(fresh, Some(&existing), |_, _| None).unwrap();
 
     assert_eq!(merged.len(), 2);
     let old = merged
@@ -3574,7 +3590,7 @@ fn test_merge_tool_entries_retained_variants_do_not_count_as_fresh() {
     ];
     let fresh = vec![tool("c", &["linux-x64"])];
 
-    let (merged, _) = merge_tool_entries(fresh, Some(&existing), |_, _| None);
+    let (merged, _) = merge_tool_entries(fresh, Some(&existing), |_, _| None).unwrap();
 
     for pattern in ["a", "b"] {
         let kept = merged
@@ -3667,7 +3683,7 @@ fn test_merge_tool_entries_repairs_empty_non_empty_duplicate() {
     }];
 
     let (merged, consumed) =
-        merge_tool_entries(fresh, Some(&existing), |_, _| Some(unix_options.clone()));
+        merge_tool_entries(fresh, Some(&existing), |_, _| Some(unix_options.clone())).unwrap();
 
     assert!(consumed.contains(&("3.4.2".to_string(), BTreeMap::new())));
     assert_eq!(merged.len(), 1);
@@ -3703,7 +3719,7 @@ fn test_preserve_absent_keeps_other_non_empty_monorepo_variant() {
         provenance: None,
         unsupported_platforms: Default::default(),
     }];
-    let (mut merged, consumed) = merge_tool_entries(fresh, Some(&existing), |_, _| None);
+    let (mut merged, consumed) = merge_tool_entries(fresh, Some(&existing), |_, _| None).unwrap();
 
     preserve_absent_tool_entries(&mut merged, Some(&existing), &consumed);
 
