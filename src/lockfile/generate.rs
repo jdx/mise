@@ -521,7 +521,7 @@ fn headers_for_old_urls<'a>(
 /// `download_url_api` is downloaded from when the install downloads it from
 /// that URL alone, as from a forge on a custom API (see `lock_download_urls`
 /// in the github backend). It holds the login the install sends there.
-fn api_only_download_url<'a>(
+pub(crate) fn api_only_download_url<'a>(
     download_url: Option<&crate::lockfile::LoginUrl>,
     download_url_api: Option<&'a crate::lockfile::LoginUrl>,
 ) -> Option<&'a str> {
@@ -539,7 +539,7 @@ fn api_only_download_url<'a>(
 /// sends no login `old` recorded. Anything else is downloaded from the URLs
 /// `old` recorded, with their logins, and `headers` only reach the server of
 /// `new_url` and `new_api` they were resolved for.
-fn old_pin_download<'a>(
+pub(crate) fn old_pin_download<'a>(
     (old_url, old_api): (&str, Option<&str>),
     install_api: Option<&str>,
     (new_url, new_api): (Option<&str>, Option<&str>),
