@@ -4459,6 +4459,78 @@ pub(crate) async fn tool_config_locked_lockfiles(
     }
 }
 
+/// Whether a tool from `source` belongs to a project config, not a global one.
+fn is_project_source(source: &ToolSource) -> bool {
+    source
+        .path()
+        .is_some_and(|path| !crate::config::is_global_config(path))
+}
+
+/// Whether the update after an install writes `lockfile_path`, which
+/// `configs` write. When lockfiles are enabled implicitly, only files the user
+/// has already created are maintained. An explicit `lockfile = true`
+/// (`creation_enabled`) opts into creating a project lockfile too, for a
+/// project config and when a project tool goes in it
+/// (`has_tool_contribution`); global lockfiles remain explicit via the
+/// `mise lock --global` command.
+fn update_writes_lockfile(
+    lockfile_path: &Path,
+    creation_enabled: bool,
+    configs: &[PathBuf],
+    has_tool_contribution: impl FnOnce() -> bool,
+) -> bool {
+    lockfile_path.exists()
+        || (creation_enabled
+            && configs
+                .iter()
+                .any(|path| !crate::config::is_global_config(path))
+            && has_tool_contribution())
+}
+
+/// Whether installing `tv`, out of the toolset `ts`, writes or updates an
+/// entry for it in a lockfile, as [`update_lockfiles`] decides after the
+/// install: an install with `locked` writes none, and otherwise the entry goes
+/// in the lockfile of the tool's config, if that lockfile is written. A tool
+/// from the command line has no lockfile of its own; it updates the entry of a
+/// config that requests the same version of it.
+///
+/// An install that records nothing can download what the release gives as it
+/// is; one that records an entry must download it as a later locked install of
+/// the entry will.
+pub(crate) fn install_writes_lock_entry(
+    config: &Config,
+    ts: &Toolset,
+    tv: &ToolVersion,
+    locked: bool,
+) -> bool {
+    if locked || !Settings::get().lockfile_enabled() {
+        return false;
+    }
+    let configs = config_paths_by_lockfile(config);
+    let writes = |source: &ToolSource| {
+        lockfile_path_for_tool_source(config, source).is_some_and(|(path, _)| {
+            update_writes_lockfile(
+                &path,
+                config.lockfile_creation_enabled(),
+                configs.get(&path).map_or(&[], Vec::as_slice),
+                || is_project_source(source),
+            )
+        })
+    };
+    let source = tv.request.source();
+    if lockfile_path_for_tool_source(config, source).is_some() {
+        return writes(source);
+    }
+    ts.versions
+        .iter()
+        .filter(|(ba, _)| ba.short == tv.ba().short)
+        .flat_map(|(_, tvl)| &tvl.versions)
+        .any(|configured| {
+            configured.request.version() == tv.request.version()
+                && writes(configured.request.source())
+        })
+}
+
 pub(crate) fn update_lockfiles(
     config: &Config,
     ts: &Toolset,
@@ -4495,34 +4567,27 @@ pub(crate) fn update_lockfiles(
             );
             continue;
         }
-        // When lockfiles are enabled implicitly, only maintain files the user has
-        // already created. An explicit `lockfile = true` opts into project
-        // lockfile creation too; global lockfiles remain explicit via the
-        // `mise lock --global` command.
-        if !lockfile_path.exists() {
+        let has_tool_contribution = || {
             let source_maps_to_lockfile = |source: &ToolSource| {
                 lockfile_path_for_tool_source(config, source)
                     .is_some_and(|(path, _)| path == lockfile_path)
             };
             let updates_project_lockfiles = new_versions.is_empty()
-                || new_versions.iter().any(|tv| {
-                    tv.request
-                        .source()
-                        .path()
-                        .is_some_and(|path| !crate::config::is_global_config(path))
-                });
-            let has_tool_contribution = updates_project_lockfiles
+                || new_versions
+                    .iter()
+                    .any(|tv| is_project_source(tv.request.source()));
+            updates_project_lockfiles
                 && tools_by_source
                     .iter()
-                    .any(|(source, tools)| !tools.is_empty() && source_maps_to_lockfile(source));
-            let create_project_lockfile = config.lockfile_creation_enabled()
-                && configs
-                    .iter()
-                    .any(|path| !crate::config::is_global_config(path))
-                && has_tool_contribution;
-            if !create_project_lockfile {
-                continue;
-            }
+                    .any(|(source, tools)| !tools.is_empty() && source_maps_to_lockfile(source))
+        };
+        if !update_writes_lockfile(
+            &lockfile_path,
+            config.lockfile_creation_enabled(),
+            &configs,
+            has_tool_contribution,
+        ) {
+            continue;
         }
         let is_monorepo_root_lockfile = config.monorepo_lockfile_root().is_some_and(|root| {
             lockfile_path.parent() == Some(crate::config::monorepo_lockfile_dir(&root).as_path())

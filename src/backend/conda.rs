@@ -760,10 +760,8 @@ impl CondaBackend {
             }
         }
 
-        let main_download_url = downloads
-            .last()
-            .map(|(url, _)| url.clone())
-            .unwrap_or_default();
+        // The URL each archive came from, dependencies first and the main package last.
+        let download_urls = downloads.iter().map(|(url, _)| url.clone()).collect_vec();
         ctx.pr
             .set_message(format!("downloading {} packages", downloads.len()));
         let private_dir = Self::private_archive_dir()?;
@@ -793,18 +791,18 @@ impl CondaBackend {
         self.create_bin_launcher_dir(tv, &main_paths)?;
 
         // Repopulate tv.conda_packages from lockfile so downstream lockfile update preserves entries
-        for basename in &dep_basenames {
+        for ((basename, url), archive) in dep_basenames.iter().zip(&download_urls).zip(&downloaded)
+        {
             if let Some(pkg_info) = lockfile.get_conda_package(platform_key, basename) {
                 tv.conda_packages.insert(
                     (platform_key.to_string(), basename.clone()),
-                    Self::locked_dependency(pkg_info),
+                    Self::locked_dependency(pkg_info, url, archive)?,
                 );
             }
         }
         if let Some(info) = tv.lock_platforms.get_mut(platform_key) {
-            if let Some(archive) = downloaded.last() {
-                info.checksum =
-                    Self::checksum_for_lock(&main_download_url, info.checksum.take(), archive)?;
+            if let (Some(url), Some(archive)) = (download_urls.last(), downloaded.last()) {
+                info.checksum = Self::checksum_for_lock(url, info.checksum.take(), archive)?;
             }
             Self::forget_locked_login(info);
         }
@@ -821,14 +819,20 @@ impl CondaBackend {
     }
 
     /// A dependency entry from mise.lock as a locked install hands it to the
-    /// lockfile update: without the channel login an older lockfile may hold,
-    /// which the install took back from the configured channel. The writer
-    /// drops it too; this keeps it out of `tv.conda_packages` as well.
-    fn locked_dependency(pkg_info: &CondaPackageInfo) -> CondaPackageInfo {
-        CondaPackageInfo {
+    /// lockfile update, after downloading `archive` from `url`: without the
+    /// channel login an older lockfile may hold, which the install took back
+    /// from the configured channel, and with a checksum, as for the main
+    /// package ([`Self::checksum_for_lock`]). The writer drops the login too;
+    /// this keeps it out of `tv.conda_packages` as well.
+    fn locked_dependency(
+        pkg_info: &CondaPackageInfo,
+        url: &str,
+        archive: &Path,
+    ) -> Result<CondaPackageInfo> {
+        Ok(CondaPackageInfo {
             url: lock_url(&pkg_info.url),
-            checksum: pkg_info.checksum.clone(),
-        }
+            checksum: Self::checksum_for_lock(url, pkg_info.checksum.clone(), archive)?,
+        })
     }
 
     /// The checksum to record for `archive`, downloaded from `url`, when the
@@ -1591,18 +1595,43 @@ mod tests {
         assert_eq!(info.checksum.as_deref(), Some("sha256:abcd"));
     }
 
-    /// The same for a dependency entry the locked install copies from mise.lock.
+    /// The same for a dependency entry the locked install copies from
+    /// mise.lock. One an older lockfile recorded with the login and no
+    /// checksum gets the checksum of the archive downloaded through the login,
+    /// as the main package does, since `mise lock` could not fetch it again
+    /// through the recorded URL.
     #[test]
     fn locked_install_leaves_the_channel_login_out_of_the_dependencies() {
+        let dir = tempfile::tempdir().unwrap();
+        let archive = dir.path().join("libfoo-1.0-0.conda");
+        std::fs::write(&archive, b"archive").unwrap();
+        let url = "https://ci:token@conda.example/main/linux-64/libfoo-1.0-0.conda";
+        let plain = "https://conda.example/main/linux-64/libfoo-1.0-0.conda";
         let dependency = CondaPackageInfo {
-            url: "https://ci:token@conda.example/main/linux-64/libfoo-1.0-0.conda".to_string(),
+            url: url.to_string(),
             checksum: Some("sha256:abcd".to_string()),
         };
         assert_eq!(
-            CondaBackend::locked_dependency(&dependency),
+            CondaBackend::locked_dependency(&dependency, url, &archive).unwrap(),
             CondaPackageInfo {
-                url: "https://conda.example/main/linux-64/libfoo-1.0-0.conda".to_string(),
+                url: plain.to_string(),
                 checksum: Some("sha256:abcd".to_string()),
+            }
+        );
+
+        let unhashed = CondaPackageInfo {
+            checksum: None,
+            ..dependency
+        };
+        let sha256 = format!(
+            "sha256:{}",
+            crate::hash::file_hash_sha256(&archive, None).unwrap()
+        );
+        assert_eq!(
+            CondaBackend::locked_dependency(&unhashed, url, &archive).unwrap(),
+            CondaPackageInfo {
+                url: plain.to_string(),
+                checksum: Some(sha256),
             }
         );
     }

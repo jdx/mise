@@ -6332,3 +6332,50 @@ backend = "conda:jq"
             .is_some()
     );
 }
+
+/// An install writes a lock entry only where the update after it writes a
+/// lockfile: the existing `mise.lock` of the tool's config, or one that
+/// `lockfile = true` lets it create. With neither, with `locked`, or with
+/// `lockfile = false`, it records nothing, so a forge install downloads the
+/// login a release link gives as the release gives it.
+#[tokio::test]
+async fn test_install_writes_a_lock_entry_only_where_the_update_writes_a_lockfile() {
+    let _guard = crate::test::SettingsGuard::lock();
+    let lockfile = |on: Option<bool>| {
+        let mut settings = <crate::config::settings::SettingsPartial as confique::Layer>::empty();
+        settings.lockfile = on;
+        Settings::reset(Some(settings));
+    };
+    let base = Config::get().await.unwrap();
+    let tmp = tempfile::tempdir().unwrap();
+    let project = tmp.path().join("mise.toml");
+    let tools = "[tools]\n\"gitlab:o/r\" = \"1\"\n";
+    let config_with = |body: &str| {
+        let cf: Arc<dyn crate::config::config_file::ConfigFile> = Arc::new(
+            crate::config::config_file::mise_toml::MiseToml::from_str(body, &project).unwrap(),
+        );
+        base.with_config_files(ConfigMap::from_iter([(project.clone(), cf)]))
+    };
+    let tv = basic_tv_from_source(
+        "gitlab:o/r",
+        "1",
+        "1.0.0",
+        ToolSource::MiseToml(project.clone()),
+    );
+    let ts = Toolset::new(ToolSource::Argument);
+
+    lockfile(None);
+    let plain = config_with(tools);
+    assert!(!install_writes_lock_entry(&plain, &ts, &tv, false));
+
+    lockfile(Some(true));
+    let creating = config_with(&format!("[settings]\nlockfile = true\n{tools}"));
+    assert!(install_writes_lock_entry(&creating, &ts, &tv, false));
+    assert!(!install_writes_lock_entry(&creating, &ts, &tv, true));
+
+    lockfile(None);
+    fs::write(tmp.path().join("mise.lock"), "").unwrap();
+    assert!(install_writes_lock_entry(&plain, &ts, &tv, false));
+    lockfile(Some(false));
+    assert!(!install_writes_lock_entry(&plain, &ts, &tv, false));
+}
