@@ -3943,9 +3943,13 @@ pub fn path_stays_within(path: &Path, dir: &Path) -> bool {
 
 /// Returns whether `path` starts with `prefix` either lexically or after
 /// resolving symlinks and the existing path prefix. A path with a `..` behind
-/// the prefix is only compared resolved, see [`path_stays_within`].
+/// the prefix is only compared resolved, see [`path_stays_within`]. Resolving
+/// stops at the first component that does not exist and keeps the rest as
+/// written, so a `..` left there is not within `prefix` either: Windows, for
+/// one, resolves `missing\..` without looking for `missing`.
 pub fn path_starts_with_resolved(path: &Path, prefix: &Path) -> bool {
-    path_stays_within(path, prefix) || desymlink_path(path).starts_with(desymlink_path(prefix))
+    path_stays_within(path, prefix)
+        || path_stays_within(&desymlink_path(path), &desymlink_path(prefix))
 }
 
 fn resolve_path_with_existing_prefix(path: &Path) -> PathBuf {

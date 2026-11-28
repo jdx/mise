@@ -845,6 +845,12 @@ fn path_starts_with_resolved_does_not_take_a_parent_dir_behind_the_prefix_as_wri
     let returning = inside.join("../tasks/own.toml");
     assert!(!path_stays_within(&returning, &inside));
     assert!(path_starts_with_resolved(&returning, &inside));
+
+    // Resolving stops at a missing component, so a `..` behind it stays as
+    // written and is not inside either.
+    let past_missing = inside.join("missing/../../../project/theirs.toml");
+    assert!(desymlink_path(&past_missing).starts_with(&inside));
+    assert!(!path_starts_with_resolved(&past_missing, &inside));
 }
 
 /// Resolving a path also resolves its ancestors: they are the ancestors of the
