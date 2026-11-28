@@ -657,12 +657,8 @@ impl Backend for AquaBackend {
             (url, url_api, v.to_string(), filename, digest)
         };
 
-        // A lockfile's URL only hints at `v` (the prefix may not be in it), so
-        // the tag is the one resolved before the URL was read.
-        let release_tag = match validated_url {
-            Some(_) => release_tag,
-            None => selected_release_tag(&pkg, &v, release_tag.as_deref()),
-        };
+        let release_tag =
+            install_release_tag(&pkg, &v, release_tag.as_deref(), validated_url.is_some());
 
         let original_linux_replacement = pkg.replacements.get("linux").cloned();
         pkg = Self::apply_selected_asset_libc_replacement(pkg, os(), &filename);
@@ -956,7 +952,10 @@ impl Backend for AquaBackend {
                     Some(vp) => vec![vp.as_str(), v.as_str()],
                     None => vec![v.as_str()],
                 };
-                let mut result = (None, None, None);
+                let mut result = None;
+                // A release that has the asset, but under a download URL naming another file,
+                // is refused like at install, unless another tag spelling has the asset.
+                let mut refused = None;
                 for candidate in &candidates {
                     let asset_strs = pkg.asset_strs(candidate, target_os, target_arch)?;
                     match self
@@ -965,8 +964,11 @@ impl Backend for AquaBackend {
                     {
                         Ok((url, url_api, digest)) => {
                             v = candidate.to_string();
-                            result = (Some(url), url_api, digest);
+                            result = Some((Some(url), url_api, digest));
                             break;
+                        }
+                        Err(e) if e.downcast_ref::<AssetUrlNamesAnotherFile>().is_some() => {
+                            refused.get_or_insert(e);
                         }
                         Err(e) => {
                             debug!(
@@ -978,7 +980,11 @@ impl Backend for AquaBackend {
                         }
                     }
                 }
-                result
+                match (result, refused) {
+                    (Some(result), _) => result,
+                    (None, Some(e)) => return Err(e),
+                    (None, None) => (None, None, None),
+                }
             }
             AquaPackageType::GithubArchive => (
                 Some(self.github_archive_url(&pkg, &v)),
@@ -1019,6 +1025,7 @@ impl Backend for AquaBackend {
                 .is_some_and(crate::versions_host::is_mirrored_asset_api_url);
 
         // Try to get checksum from checksum file if not available from GitHub API
+        let mut checksum_file_error = None;
         let mut checksum = match checksum {
             Some(c) => Some(c),
             None => match self
@@ -1027,10 +1034,7 @@ impl Backend for AquaBackend {
             {
                 Ok(checksum) => checksum,
                 Err(e) => {
-                    warn!(
-                        "[{}] failed to get checksum from checksum file: {e}",
-                        self.ba()
-                    );
+                    checksum_file_error = Some(e);
                     None
                 }
             },
@@ -1149,6 +1153,24 @@ impl Backend for AquaBackend {
                 tv.version
             );
         }
+        if let Some(e) = checksum_file_error {
+            match checksum_file_fallback(
+                verified_at_lock_time && provenance.is_some(),
+                Settings::get().generate_lockfiles(),
+            ) {
+                ChecksumFileFallback::Refuse => bail!(
+                    "could not read the checksum file the aqua registry declares for {} on {}: {e:#}",
+                    self.ba(),
+                    target.to_key()
+                ),
+                ChecksumFileFallback::DropChecksum => checksum = None,
+                ChecksumFileFallback::KeepChecksum => {}
+            }
+            warn!(
+                "[{}] failed to get checksum from checksum file: {e:#}",
+                self.ba()
+            );
+        }
         Ok(PlatformInfo {
             checksum_source: mirror_digest.then_some(ChecksumSource::VersionsHost),
             url,
@@ -1212,12 +1234,20 @@ impl AquaBackend {
             .get(&platform_key)
             .and_then(|asset| asset.url_api.clone());
 
+        let pkg = AQUA_REGISTRY.package(&self.id).await?;
         // Skip get_version_tags() API call if the lockfile URL contains the release tag.
         // Keep the tag for selecting Aqua version overrides, which may be scoped by prefix.
-        let locked_tag = existing_platform
-            .as_deref()
-            .and_then(github_release_tag_from_url);
-        let tag_is_locked = locked_tag.is_some();
+        let raw_opts = tv.request.options();
+        let tool_libc = AquaOptions::new(&raw_opts).libc()?;
+        let locked_tag = existing_platform.as_deref().and_then(|url| {
+            locked_release_tag(
+                &pkg,
+                url,
+                &tv.version,
+                &PlatformTarget::from_current(),
+                tool_libc,
+            )
+        });
         let tag = if let Some(tag) = locked_tag {
             Some(tag)
         } else if existing_platform.is_some() {
@@ -1251,18 +1281,6 @@ impl AquaBackend {
         let mut v = tag.clone().unwrap_or_else(|| tv.version.clone());
         let mut v_prefixed =
             (tag.is_none() && !tv.version.starts_with('v')).then(|| format!("v{v}"));
-        let pkg = AQUA_REGISTRY.package(&self.id).await?;
-        // A listed tag was mapped to the version when it was listed; a locked
-        // URL's tag has to be mapped here, or it could name another release.
-        let current = PlatformTarget::from_current();
-        let tag_names_version = !tag_is_locked
-            || tag.as_deref().is_some_and(|tag| {
-                let (target_os, target_arch) = Self::to_aqua_platform(&current);
-                versioned_package_from_tag(&pkg, tag, target_os, target_arch, None)
-                    .ok()
-                    .flatten()
-                    .is_some_and(|(version, _)| version == tv.version)
-            });
         let pkg = Self::package_for_release(tv, pkg, tag.as_deref())?;
         if let Some(prefix) = &pkg.version_prefix
             && !v.starts_with(prefix)
@@ -1278,7 +1296,7 @@ impl AquaBackend {
             });
         }
         let release_tag = match tag {
-            Some(_) => tag_names_version.then(|| v.clone()),
+            Some(_) => Some(v.clone()),
             None => pkg.version_prefix.is_some().then(|| v.clone()),
         };
 
@@ -2391,7 +2409,9 @@ impl AquaBackend {
         };
         let data = file::read(check.artifact_path)?;
         let sig = file::read_to_string(&sig_path)?;
-        minisign::verify(
+        // The key signs every release, so the signature must also name this file: otherwise an
+        // older release's archive and its own signature pass as the requested version
+        minisign::verify_for_file(
             &check.config.public_key(
                 check.pkg,
                 check.version,
@@ -2400,6 +2420,7 @@ impl AquaBackend {
             )?,
             &data,
             &sig,
+            check.artifact_filename,
         )?;
         debug!("minisign verified");
         Ok(())
@@ -3069,6 +3090,7 @@ impl AquaBackend {
                 gh_release.assets.iter().map(|a| &a.name).join("\n")
             )
         })?;
+        ensure_download_url_names_asset(asset)?;
 
         Ok((
             asset.browser_download_url.to_string(),
@@ -3094,6 +3116,7 @@ impl AquaBackend {
         url.to_string()
     }
 
+    /// Names the tag in full, like the archive URL above. See [`Self::github_content_url`].
     fn github_archive_api_url(&self, pkg: &AquaPackage, v: &str) -> String {
         let mut url = Url::parse(github::API_URL).expect("GitHub API URL should be valid");
         url.path_segments_mut()
@@ -3103,11 +3126,18 @@ impl AquaBackend {
                 pkg.repo_owner.as_str(),
                 pkg.repo_name.as_str(),
                 "tarball",
+                "refs",
+                "tags",
                 v,
             ]);
         url.to_string()
     }
 
+    /// The version is looked up under `refs/tags`, like the archive URL above. In the ref
+    /// position GitHub also resolves a branch, a full ref or a commit id, including the head of
+    /// an unmerged pull request or a commit pushed to a fork. A version can come from a config
+    /// that needs no trust or from the versions host, so it may only select a tag the
+    /// repository's owners created.
     fn github_content_url(&self, pkg: &AquaPackage, v: &str) -> String {
         let mut url = Url::parse("https://raw.githubusercontent.com")
             .expect("GitHub content URL should be valid");
@@ -3115,7 +3145,12 @@ impl AquaBackend {
             let mut segments = url
                 .path_segments_mut()
                 .expect("GitHub content URL should support path segments");
-            segments.extend([pkg.repo_owner.as_str(), pkg.repo_name.as_str()]);
+            segments.extend([
+                pkg.repo_owner.as_str(),
+                pkg.repo_name.as_str(),
+                "refs",
+                "tags",
+            ]);
             segments.extend(v.split('/'));
             segments.extend(pkg.path.as_deref().unwrap().split('/'));
         }
@@ -3136,12 +3171,18 @@ impl AquaBackend {
             ]);
             segments.extend(pkg.path.as_deref().unwrap().split('/'));
         }
-        url.query_pairs_mut().append_pair("ref", v);
+        // Names the tag in full. See [`Self::github_content_url`].
+        url.query_pairs_mut()
+            .append_pair("ref", &format!("refs/tags/{v}"));
         url.to_string()
     }
 
     /// Fetch checksum from a checksum file without downloading the actual tarball.
     /// This is used for cross-platform lockfile generation.
+    ///
+    /// `Ok(None)` means the registry declares no checksum for the artifact. A declared
+    /// checksum file that cannot be found, downloaded or that has no row for the artifact
+    /// is an error, as it is for an install.
     async fn fetch_checksum_from_file(
         &self,
         pkg: &AquaPackage,
@@ -3167,16 +3208,10 @@ impl AquaBackend {
                 let asset_strs = checksum_config.asset_strs(pkg, v, target_os, target_arch)?;
                 // No filename derivation is needed here, so the transport URL is all that
                 // is needed.
-                match self
-                    .github_release_asset_urls_for_target(pkg, v, asset_strs, target)
+                self.github_release_asset_urls_for_target(pkg, v, asset_strs, target)
                     .await
-                {
-                    Ok((_, download_url)) => download_url,
-                    Err(e) => {
-                        debug!("Failed to get checksum file asset: {}", e);
-                        return Ok(None);
-                    }
-                }
+                    .wrap_err("could not find the checksum file in the release")?
+                    .1
             }
             AquaChecksumType::Http => checksum_config.url(pkg, v, target_os, target_arch)?,
         };
@@ -3185,13 +3220,11 @@ impl AquaBackend {
         // `text_with_charset` -> `encoding_rs::Encoding::decode`), so a UTF-16 checksum file is
         // handled here without help — unlike the install path above, which reads from disk. It
         // also detects an HTML body and retries over https, which reading bytes would skip.
-        let checksum_content = match HTTP.get_text(&url).await {
-            Ok(content) => content,
-            Err(e) => {
-                debug!("Failed to download checksum file {}: {}", url, e);
-                return Ok(None);
-            }
-        };
+        let checksum_content = HTTP
+            .get_text(&url)
+            .await
+            // The URL stays out: a private one can carry a token in its query.
+            .wrap_err("could not download the checksum file")?;
 
         // Parse checksum from file content
         let checksum_str =
@@ -4688,6 +4721,54 @@ fn github_release_tag_from_url(url: &str) -> Option<String> {
     urlencoding::decode(tag).ok().map(Cow::into_owned)
 }
 
+/// What a lock entry does when the checksum file the registry declares could not vouch for the
+/// artifact.
+#[derive(Debug, PartialEq, Eq)]
+enum ChecksumFileFallback {
+    /// Fail the platform.
+    Refuse,
+    /// Record the entry without a checksum, so the install reads the checksum file itself.
+    DropChecksum,
+    /// Keep the checksum of the artifact that verified provenance covers.
+    KeepChecksum,
+}
+
+/// An install refuses an artifact the declared checksum file does not vouch for, and an install
+/// that finds a checksum in the lockfile does not read the checksum file. Without the file, the
+/// only checksum a lock entry can hold is the hash of whatever the download host served, so only
+/// provenance verified at lock time may stand in for the file. Without it, `generate` mode fails
+/// the platform, and merge mode records the entry without that hash.
+fn checksum_file_fallback(provenance_verified: bool, generate: bool) -> ChecksumFileFallback {
+    match (provenance_verified, generate) {
+        (true, _) => ChecksumFileFallback::KeepChecksum,
+        (false, true) => ChecksumFileFallback::Refuse,
+        (false, false) => ChecksumFileFallback::DropChecksum,
+    }
+}
+
+/// The release tag of a locked URL, when it names the locked version. A listed tag was mapped to
+/// the version when it was listed; a locked URL's tag could name another release, whose override
+/// declares that release's checks, so the recipe is then selected from the version instead. The
+/// tag is mapped for `target` with the libc the install selects the recipe for, the target's and
+/// then the tool's `libc` option, so an override for that libc applies its `version_prefix` here
+/// too.
+fn locked_release_tag(
+    pkg: &AquaPackage,
+    url: &str,
+    version: &str,
+    target: &PlatformTarget,
+    tool_libc: Option<&str>,
+) -> Option<String> {
+    let tag = github_release_tag_from_url(url)?;
+    let (target_os, target_arch) = AquaBackend::to_aqua_platform(target);
+    let target_libc = AquaBackend::target_variant_libc(target, tool_libc);
+    versioned_package_from_tag(pkg, &tag, target_os, target_arch, target_libc.as_deref())
+        .ok()
+        .flatten()
+        .is_some_and(|(tag_version, _)| tag_version == version)
+        .then_some(tag)
+}
+
 fn starts_with_v(s: &str) -> bool {
     s.starts_with('v') || s.starts_with('V')
 }
@@ -5033,6 +5114,27 @@ fn selected_release_tag(pkg: &AquaPackage, v: &str, known_tag: Option<&str>) -> 
     known_tag.filter(|tag| *tag == v).map(str::to_string)
 }
 
+/// The release tag an install's checks bind to. For a download from a lockfile URL, the tag
+/// resolved before the URL was read, as the URL only hints at `v` (the prefix may not be in it).
+/// When none was, because the URL names another release than the locked version's or no
+/// release at all, a GitHub release package's tag is `v`, the release its provenance is fetched
+/// from. Without it, provenance built from any release of the package would pass for the
+/// artifact the URL points at.
+fn install_release_tag(
+    pkg: &AquaPackage,
+    v: &str,
+    resolved_tag: Option<&str>,
+    from_lockfile_url: bool,
+) -> Option<String> {
+    if !from_lockfile_url {
+        return selected_release_tag(pkg, v, resolved_tag);
+    }
+    match resolved_tag {
+        Some(tag) => Some(tag.to_string()),
+        None => selected_release_tag(pkg, v, None),
+    }
+}
+
 /// The tag a package's SLSA provenance must have been built from, as
 /// slsa-verifier's `--source-tag` took it: the recipe's `source_tag`, or else
 /// the version's release tag, when mise knows it. A `source_tag` of `-` turns
@@ -5124,6 +5226,27 @@ fn is_aqua_linux_libc_replacement(replacement: &str) -> bool {
         replacement,
         "unknown-linux-gnu" | "unknown-linux-musl" | "linux-gnu" | "linux-musl"
     )
+}
+
+/// A release asset matched by its name whose download URL names another file.
+#[derive(Debug, thiserror::Error)]
+#[error("release asset {name} has a download URL that names another file: {url}")]
+struct AssetUrlNamesAnotherFile {
+    name: String,
+    url: String,
+}
+
+/// The asset is matched by `name`, but the download, the line read from a verified checksum file
+/// and the lockfile entry are named after its download URL, so the two must agree.
+fn ensure_download_url_names_asset(asset: &github::GithubAsset) -> Result<()> {
+    if get_filename_from_url(&asset.browser_download_url) != asset.name {
+        return Err(AssetUrlNamesAnotherFile {
+            name: asset.name.clone(),
+            url: asset.browser_download_url.clone(),
+        }
+        .into());
+    }
+    Ok(())
 }
 
 fn select_github_release_asset<'a>(
@@ -5647,6 +5770,60 @@ mod lock_candidate_tests {
         assert_eq!(checksum, Some(format!("sha256:{DIGEST}")));
     }
 
+    /// `Ok(None)` is kept for a registry that declares no checksum. A declared checksum file
+    /// that does not answer is an error, so `mise lock` cannot take it for "no checksum".
+    #[tokio::test]
+    async fn test_fetch_checksum_from_file_fails_when_the_declared_file_is_missing() {
+        const ARTIFACT: &str = "tool-1.0.0-linux-amd64.tar.gz";
+
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/hashes.sha256")
+            .with_status(404)
+            .create_async()
+            .await;
+
+        let checksum: AquaChecksum = serde_json::from_str(&format!(
+            r#"{{"type":"http","algorithm":"sha256","url":"{}/hashes.sha256"}}"#,
+            server.url()
+        ))
+        .unwrap();
+        let backend = AquaBackend::from_arg(BackendArg::new(
+            "tool".to_string(),
+            Some("aqua:owner/repo".to_string()),
+        ));
+        let target = PlatformTarget::new(crate::platform::Platform::parse("linux-x64").unwrap());
+
+        let mut pkg = AquaPackage::default();
+        pkg.checksum = Some(checksum);
+        let err = backend
+            .fetch_checksum_from_file(&pkg, "1.0.0", "linux", "amd64", Some(ARTIFACT), &target)
+            .await
+            .unwrap_err();
+        mock.assert_async().await;
+        assert!(format!("{err:#}").contains("/hashes.sha256"), "{err:#}");
+
+        let disabled: AquaChecksum = serde_json::from_str(&format!(
+            r#"{{"type":"http","algorithm":"sha256","enabled":false,"url":"{}/hashes.sha256"}}"#,
+            server.url()
+        ))
+        .unwrap();
+        assert!(!disabled.enabled());
+        pkg.checksum = Some(disabled);
+        let none = backend
+            .fetch_checksum_from_file(&pkg, "1.0.0", "linux", "amd64", Some(ARTIFACT), &target)
+            .await
+            .unwrap();
+        assert_eq!(none, None);
+
+        pkg.checksum = None;
+        let none = backend
+            .fetch_checksum_from_file(&pkg, "1.0.0", "linux", "amd64", Some(ARTIFACT), &target)
+            .await
+            .unwrap();
+        assert_eq!(none, None);
+    }
+
     #[test]
     fn test_lock_candidates_no_tag_with_version_prefix() {
         let (v, candidates) = build_lock_candidates("1.7.1", None, Some("jq-"));
@@ -5810,10 +5987,111 @@ version_overrides:
         );
         let url = "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-macos-arm64";
         let tag = github_release_tag_from_url(url).unwrap();
-        let versioned = pkg.with_version(&[&tag], "darwin", "arm64");
+        let versioned = pkg.clone().with_version(&[&tag], "darwin", "arm64");
 
         assert_eq!(tag, "jq-1.8.1");
         assert_eq!(versioned.asset, "jq-{{.OS}}-{{.Arch}}");
+        assert_eq!(
+            locked_release_tag(&pkg, url, "1.8.1", &PlatformTarget::from_current(), None)
+                .as_deref(),
+            Some("jq-1.8.1")
+        );
+    }
+
+    #[test]
+    fn test_locked_release_tag_must_name_the_locked_version() {
+        let pkg = pkg_from_yaml(
+            r#"
+type: github_release
+repo_owner: bufbuild
+repo_name: buf
+version_constraint: "false"
+version_overrides:
+  - version_constraint: semver("<= 0.41.0")
+    asset: buf-{{.OS}}-{{.Arch}}.tar.gz
+  - version_constraint: "true"
+    asset: buf-{{.OS}}-{{.Arch}}.tar.gz
+    checksum:
+      type: github_release
+      asset: sha256.txt
+      algorithm: sha256
+"#,
+        );
+        let url = |tag: &str| {
+            format!(
+                "https://github.com/evil/payload/releases/download/{tag}/buf-Linux-x86_64.tar.gz"
+            )
+        };
+        let current = PlatformTarget::from_current();
+        assert_eq!(
+            locked_release_tag(&pkg, &url("v1.50.0"), "1.50.0", &current, None).as_deref(),
+            Some("v1.50.0")
+        );
+        for tag in ["v0", "v0.41.0", "v1.49.0"] {
+            assert_eq!(
+                locked_release_tag(&pkg, &url(tag), "1.50.0", &current, None),
+                None,
+                "{tag}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_checksum_file_fallback_keeps_only_a_verified_checksum() {
+        use ChecksumFileFallback::*;
+        for (provenance_verified, generate, expected) in [
+            (true, true, KeepChecksum),
+            (true, false, KeepChecksum),
+            (false, true, Refuse),
+            (false, false, DropChecksum),
+        ] {
+            assert_eq!(
+                checksum_file_fallback(provenance_verified, generate),
+                expected,
+                "provenance verified: {provenance_verified}, generate: {generate}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_locked_release_tag_maps_with_the_install_libc() {
+        // The musl build is released under `musl-<version>`. The tag is read with the libc the
+        // install selects the recipe for: the target's, then the tool's `libc` option.
+        let pkg = pkg_from_yaml(
+            r#"
+type: github_release
+repo_owner: acme
+repo_name: tool
+asset: tool-{{.OS}}-{{.Arch}}
+overrides:
+  - goos: linux
+    version_prefix: musl-
+    variants:
+      - key: libc
+        value: musl
+"#,
+        );
+        let target =
+            |key: &str| PlatformTarget::new(crate::platform::Platform::parse(key).unwrap());
+        let url = |tag: &str| {
+            format!("https://github.com/acme/tool/releases/download/{tag}/tool-linux-amd64")
+        };
+        for (tag, platform, tool_libc, expected) in [
+            ("musl-1.2.3", "linux-x64-musl", None, Some("musl-1.2.3")),
+            ("1.2.3", "linux-x64-musl", None, None),
+            ("1.2.3", "linux-x64-gnu", None, Some("1.2.3")),
+            ("musl-1.2.3", "linux-x64", Some("musl"), Some("musl-1.2.3")),
+            ("1.2.3", "linux-x64", Some("musl"), None),
+            ("1.2.3", "linux-x64", None, Some("1.2.3")),
+            ("1.2.3", "linux-x64-gnu", Some("musl"), Some("1.2.3")),
+        ] {
+            assert_eq!(
+                locked_release_tag(&pkg, &url(tag), "1.2.3", &target(platform), tool_libc)
+                    .as_deref(),
+                expected,
+                "{tag} on {platform} with libc option {tool_libc:?}"
+            );
+        }
     }
 
     #[test]
@@ -6075,6 +6353,45 @@ slsa_provenance:
     }
 
     #[test]
+    fn install_release_tag_binds_a_lockfile_url_to_the_requested_release() {
+        let release = pkg_from_yaml(
+            "type: github_release\nrepo_owner: owner\nrepo_name: tool\nasset: tool.tar.gz\nslsa_provenance:\n  type: github_release\n  asset: tool.intoto.jsonl\n",
+        );
+        let http = pkg_from_yaml(
+            "type: http\nrepo_owner: owner\nrepo_name: tool\nurl: https://example.com/tool-{{.SemVer}}.tar.gz\n",
+        );
+        // A locked URL whose tag names the locked version keeps that tag
+        assert_eq!(
+            install_release_tag(&release, "2.0.0", Some("v2.0.0"), true).as_deref(),
+            Some("v2.0.0")
+        );
+        // A locked URL that names another release, or none, leaves no tag resolved; the
+        // provenance must still come from the requested release, not from any release
+        assert_eq!(
+            install_release_tag(&release, "v2.0.0", None, true).as_deref(),
+            Some("v2.0.0")
+        );
+        assert_eq!(
+            slsa_source_tag(
+                &release,
+                install_release_tag(&release, "v2.0.0", None, true).as_deref()
+            ),
+            Some("v2.0.0")
+        );
+        // A package that is no GitHub release still has no tag to bind to
+        assert_eq!(install_release_tag(&http, "v2.0.0", None, true), None);
+        // Without a lockfile URL the tag is the selected release's, as before
+        assert_eq!(
+            install_release_tag(&release, "v2.0.0", None, false).as_deref(),
+            Some("v2.0.0")
+        );
+        assert_eq!(
+            install_release_tag(&http, "v2.0.0", Some("v2.0.0"), false).as_deref(),
+            Some("v2.0.0")
+        );
+    }
+
+    #[test]
     fn slsa_source_tag_follows_the_recipe() {
         let pkg = |slsa: &str| {
             pkg_from_yaml(&format!(
@@ -6269,6 +6586,36 @@ no_asset: true
             url: format!("https://api.example.com/{name}"),
             digest: None,
             updated_at: None,
+        }
+    }
+
+    #[test]
+    fn download_url_must_name_the_matched_asset() {
+        let dl = "https://github.com/acme/tool/releases/download/2.0.0";
+        let with_url = |name: &str, url: String| GithubAsset {
+            browser_download_url: url,
+            ..asset(name)
+        };
+        assert!(ensure_download_url_names_asset(&with_url("tool", format!("{dl}/tool"))).is_ok());
+        assert!(
+            ensure_download_url_names_asset(&with_url(
+                "tool-1.0.0+build.tar.gz",
+                format!("{dl}/tool-1.0.0%2Bbuild.tar.gz")
+            ))
+            .is_ok()
+        );
+        for url in [
+            format!("{dl}/tool-server"),
+            format!("{dl}/tool/"),
+            format!("{dl}/..%2Ftool-server"),
+            "https://github.com/".to_string(),
+        ] {
+            let err = ensure_download_url_names_asset(&with_url("tool", url.clone())).unwrap_err();
+            assert!(
+                err.to_string()
+                    .contains("release asset tool has a download URL that names another file"),
+                "{url}: {err}"
+            );
         }
     }
 
