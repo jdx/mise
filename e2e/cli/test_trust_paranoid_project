@@ -176,6 +176,16 @@ mise trust relinked/mise.toml
 assert_fail_contains "MISE_ENV=staging mise -C relinked env 2>&1" "not trusted"
 assert_contains "mise -C ~ env" "GLOBAL=global"
 
+# Naming the global config dir stays inside it, whichever global file is picked there: the home
+# directory's own configs keep their trust and are not ignored.
+printf '[env]\nGLOBAL_MISE = "global"\n' >"$MISE_CONFIG_DIR/mise.toml"
+assert_contains "mise -C ~ env" "HOME_VAR=home"
+assert_not_contains "mise untrust $MISE_CONFIG_DIR 2>&1" "untrusted ~/mise.toml"
+assert_contains "mise -C ~ env" "HOME_VAR=home"
+assert_fail_contains "mise trust --ignore $MISE_CONFIG_DIR 2>&1" "is global config, which cannot be ignored"
+assert_contains "mise -C ~ env" "HOME_VAR=home"
+rm "$MISE_CONFIG_DIR/mise.toml"
+
 # A dotfiles checkout that the global config dir links to holds the global config itself, not a
 # project's link to it: the checkout is not swept as a project, and it cannot be ignored.
 mkdir -p dotfiles/.config/mise
@@ -200,3 +210,12 @@ assert_contains "mise trust --ignore dotfiles 2>&1" "ignored ~/workdir/dotfiles/
 assert_not_contains "MISE_ENV=staging mise -C dotfiles env 2>&1" "=staged"
 assert_contains "MISE_ENV=staging mise -C dotfiles env" "DOTFILES=dotfiles"
 assert_contains "mise -C ~ env" "DOTFILES=dotfiles"
+
+# A global config file for an environment that is not selected is still global config, not the
+# checkout's: ignoring or untrusting the checkout leaves it alone.
+printf '[env]\nGLOBAL_STAGING = "gstaged"\n' >dotfiles/.config/mise/config.staging.toml
+assert_contains "MISE_ENV=staging mise -C ~ env" "GLOBAL_STAGING=gstaged"
+assert_not_contains "mise trust --ignore dotfiles 2>&1" "config.staging.toml"
+assert_contains "MISE_ENV=staging mise -C ~ env" "GLOBAL_STAGING=gstaged"
+assert_not_contains "mise untrust dotfiles 2>&1" "config.staging.toml"
+assert_contains "MISE_ENV=staging mise -C ~ env" "GLOBAL_STAGING=gstaged"
