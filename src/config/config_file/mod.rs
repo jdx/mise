@@ -679,12 +679,20 @@ pub fn config_project(path: &Path) -> PathBuf {
 /// whether or not they are still on disk. In paranoid mode each config is its own trust root, so
 /// these are the files the user approved there, a config that another branch brings back
 /// included. Env file approvals are not trust in a config and are left out.
+///
+/// A record belongs to the project its own path names, not the one a link now at that path
+/// leads to: a config replaced by a link to global config keeps its record in the project, so
+/// that record goes with the project's and the file asks again if it comes back. Global config
+/// itself, such as a dotfiles checkout the global config dir links to, is left out.
 pub fn trusted_configs_of_project(project: &Path) -> Vec<PathBuf> {
     let project = record_identity(project);
     trusted_paths_below(&project)
         .into_iter()
         .filter(|path| {
-            config_project(path) == project && !TrustRecord::find(path).is_env_file_approval()
+            config_root::project_by_name(path) == project
+                && !(config::is_global_config(path)
+                    && !config::is_project_link_to_global_config(path))
+                && !TrustRecord::find(path).is_env_file_approval()
         })
         .collect()
 }
