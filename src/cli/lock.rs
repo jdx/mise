@@ -1705,10 +1705,9 @@ impl Lock {
         ))
         .await?;
         if !generate || self.bump || format_changed {
-            // A package whose pins disagree got no entry for a version its entries
-            // don't cover, so that version gets no graph either. A version they
-            // already cover keeps its entry, and a new one for changed options,
-            // so its graph is still generated.
+            // A package whose pins disagree may have had a request's entry
+            // withheld, so it gets a graph only for a request whose entry (same
+            // version, backend and options) is in the lockfile.
             let aube_tools = graph_tools
                 .iter()
                 .filter(|(ba, tv)| {
@@ -1718,10 +1717,19 @@ impl Lock {
                     if !lockfile::package_pins_disagree(entries) {
                         return true;
                     }
+                    let Ok(options) = tv.backend().and_then(|backend| {
+                        backend.lockfile_options(
+                            &tv.request,
+                            &crate::backend::platform_target::PlatformTarget::from_current(),
+                        )
+                    }) else {
+                        return true;
+                    };
                     let backend_name = ba.stored_full();
                     entries.iter().any(|entry| {
                         entry.version == tv.version
                             && entry.backend.as_deref().is_none_or(|b| b == backend_name)
+                            && entry.options == options
                     })
                 })
                 .cloned()
