@@ -1092,27 +1092,21 @@ fn owns_stream(roots: &Roots, tracked: &TrackedSet, branch_path: &str) -> bool {
     }
 }
 
-/// Paths the incoming commit recorded as not captured: a directory the
+/// Streams the incoming commit recorded as not captured: a directory the
 /// saving machine skipped (a cache, a nested repository) or could not read.
-/// A commit from an older mise, or one whose record cannot be read, names
-/// none, which is how sync behaved before.
+/// They stay portable stream names, variant included, so a skip in one
+/// variant never matches a path of another and no local spelling of the
+/// home directory enters the comparison. A commit from an older mise, or
+/// one whose record cannot be read, names none, which is how sync behaved
+/// before.
 fn uncaptured_upstream(
     repo: &crate::history::shadow::HistoryRepo,
     upstream: &reconcile::Upstream,
-) -> Vec<PathBuf> {
+) -> Vec<String> {
     let Some(commit) = &upstream.commit else {
         return vec![];
     };
-    let Ok(record) = repo.read_meta(commit) else {
-        return vec![];
-    };
-    let coverage = &record.tree.coverage;
-    coverage
-        .omitted
-        .iter()
-        .chain(&coverage.incomplete)
-        .map(|omitted| mise_util::file::replace_path(&omitted.path))
-        .collect()
+    repo.uncaptured_streams(commit).unwrap_or_default()
 }
 
 /// **What the saving machine skipped is not a deletion.** Another machine
@@ -1126,7 +1120,7 @@ fn uncaptured_upstream(
 fn uncaptured_deletion(
     roots: &Roots,
     tracked: &TrackedSet,
-    uncaptured: &[PathBuf],
+    uncaptured: &[String],
     plan: &PathPlan,
 ) -> bool {
     if uncaptured.is_empty()
@@ -1136,12 +1130,29 @@ fn uncaptured_deletion(
     {
         return false;
     }
+    let under = |stream: &str| {
+        plan.branch_path == stream
+            || plan
+                .branch_path
+                .strip_prefix(stream)
+                .is_some_and(|rest| rest.starts_with('/'))
+    };
+    // only omissions of this very stream; both sides then locate through
+    // the same roots, so the owning-entry comparison sees one spelling
+    let covering: Vec<PathBuf> = uncaptured
+        .iter()
+        .filter(|stream| under(stream))
+        .filter_map(|stream| roots.locate(stream).path().map(Path::to_path_buf))
+        .collect();
+    if covering.is_empty() {
+        return false;
+    }
     let located = roots.locate(&plan.branch_path);
     let Some(path) = located.path() else {
         return false;
     };
     tracked.entry_for(path).is_some_and(|entry| {
-        crate::history::checkpoint::omission_covers(uncaptured, path, &entry.path)
+        crate::history::checkpoint::omission_covers(&covering, path, &entry.path)
     })
 }
 
@@ -1610,7 +1621,7 @@ mod nested_repository_tests {
             "track",
             policy,
         ));
-        let uncaptured = vec![home.join("project/target")];
+        let uncaptured = vec!["home/project/target".to_string()];
         let plan = |path: &str, apply: Option<Option<Object>>| PathPlan {
             branch_path: path.into(),
             apply,
@@ -1644,6 +1655,38 @@ mod nested_repository_tests {
             Some(Some(("100644".into(), "0".repeat(40)))),
         );
         assert!(!uncaptured_deletion(&roots, &tracked, &uncaptured, &write));
+        // a skip in one variant says nothing about another's stream, either
+        // way round
+        let deletion = plan("home@linux/project/target/build.o", Some(None));
+        assert!(!uncaptured_deletion(
+            &roots,
+            &tracked,
+            &uncaptured,
+            &deletion
+        ));
+        let variant_skip = vec!["home@macos/project/target".to_string()];
+        let deletion = plan("home/project/target/build.o", Some(None));
+        assert!(!uncaptured_deletion(
+            &roots,
+            &tracked,
+            &variant_skip,
+            &deletion
+        ));
+        let deletion = plan("home@macos/project/target/build.o", Some(None));
+        assert!(uncaptured_deletion(
+            &roots,
+            &tracked,
+            &variant_skip,
+            &deletion
+        ));
+        // a sibling whose name only starts the same is not under the skip
+        let deletion = plan("home/project/target2/build.o", Some(None));
+        assert!(!uncaptured_deletion(
+            &roots,
+            &tracked,
+            &uncaptured,
+            &deletion
+        ));
     }
 
     #[test]
