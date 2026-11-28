@@ -231,6 +231,15 @@ pub async fn list_remote_versions_across_ranges(
 /// later backend, and platform or settings filtering can select one too. Compare against the declared first backend
 /// rather than the filtered `RegistryTool::backends()` list, so a client-side filter
 /// promoting another backend does not make it inherit the published list.
+/// The runtime a tool's own option selects for it (`python` for pipx, `node` for npm). It is
+/// installed as that tool's private dependency instead of being taken from the active toolset.
+pub(crate) fn selected_runtime_dependency(request: &ToolRequest) -> Result<Option<ToolRequest>> {
+    if let Some(python) = pipx::selected_python_dependency(request)? {
+        return Ok(Some(python));
+    }
+    npm::selected_node_dependency(request)
+}
+
 pub(crate) fn backend_arg_is_preferred_registry_backend(ba: &BackendArg) -> bool {
     let full = ba.full_without_opts();
     REGISTRY
