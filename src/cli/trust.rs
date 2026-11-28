@@ -10,6 +10,7 @@ use crate::ui::style::display_path_escaped;
 use crate::{config, dirs, env, file};
 use eyre::{Result, bail};
 use itertools::Itertools;
+use path_absolutize::Absolutize;
 use std::sync::Arc;
 
 /// Mark a config file as trusted
@@ -241,8 +242,9 @@ fn nearest_local_config_file(filenames: &[String]) -> Option<PathBuf> {
 ///
 /// A picked file that is global config stands only for itself, since its root is the home
 /// directory and a sweep from there would reach the configs of another project. In paranoid
-/// mode a project's link to global config is the exception: the project is the directory that
-/// holds the link, as [`paranoid_project`] finds it.
+/// mode the sweep is per file, so it starts from the directory instead, as [`paranoid_project`]
+/// finds it, and leaves the global files out: a directory whose only config is global config
+/// itself still stands for that file.
 fn refused_roots(path: &Path, cfr: &Path, named_file: bool, filenames: &[String]) -> Vec<PathBuf> {
     if named_file {
         return vec![cfr.to_path_buf()];
@@ -251,7 +253,7 @@ fn refused_roots(path: &Path, cfr: &Path, named_file: bool, filenames: &[String]
         let Some(project) = paranoid_project(path) else {
             return vec![cfr.to_path_buf()];
         };
-        return std::iter::once(cfr.to_path_buf())
+        let roots: Vec<PathBuf> = std::iter::once(cfr.to_path_buf())
             .chain(config::project_config_files(&project, filenames))
             .filter(|file| {
                 file.is_file()
@@ -261,6 +263,15 @@ fn refused_roots(path: &Path, cfr: &Path, named_file: bool, filenames: &[String]
             })
             .unique()
             .collect();
+        // A directory whose only config is global config itself stands for that file, as it
+        // would named.
+        if roots.is_empty()
+            && is_global_config(path)
+            && config_file::config_root::linked_global_project(path).is_none()
+        {
+            return vec![cfr.to_path_buf()];
+        }
+        return roots;
     }
     if is_global_config(path) {
         return vec![cfr.to_path_buf()];
@@ -280,13 +291,28 @@ fn refused_roots(path: &Path, cfr: &Path, named_file: bool, filenames: &[String]
 
 /// The project whose configs a paranoid untrust or ignore of a directory, or with no path, acts
 /// on, from the file picked there. When that file is a project's link to global config, it is the
-/// project that holds the link, so the project's other configs are found whichever file was
-/// picked. `None` for global config at its own path.
+/// project that holds the link. When it is global config itself, such as the config in a dotfiles
+/// checkout that the global config dir links to, it is the directory its path names. Either way
+/// the project's other configs are found whichever file was picked, and the sweep leaves the
+/// global files out.
 fn paranoid_project(path: &Path) -> Option<PathBuf> {
     if let Some(project) = config_file::config_root::linked_global_project(path) {
         return Some(project);
     }
-    (!is_global_config(path)).then(|| config_file::config_project(path))
+    if is_global_config(path) {
+        let path = path.absolutize().ok()?;
+        return Some(config_file::config_root::project_by_name(&path));
+    }
+    Some(config_file::config_project(path))
+}
+
+/// The error for `mise trust --ignore` of global config, which trust does not apply to.
+fn global_config_ignore_refused(path: &Path) -> eyre::Report {
+    eyre::eyre!(
+        "{} is global config, which cannot be ignored with `mise trust --ignore`. \
+         Use the `ignored_config_paths` setting instead.",
+        display_path_escaped(path)
+    )
 }
 
 /// The project that `path` belongs to, then `cfr` when that is a root nested in it: the roots
@@ -508,14 +534,14 @@ impl Trust {
         let paranoid = Settings::get().paranoid.config();
         let project = paranoid.then(|| paranoid_project(&path)).flatten();
         if is_global_config(&path) && (self.named_file() || project.is_none()) {
-            bail!(
-                "{} is global config, which cannot be ignored with `mise trust --ignore`. \
-                 Use the `ignored_config_paths` setting instead.",
-                display_path_escaped(&path)
-            );
+            return Err(global_config_ignore_refused(&path));
         }
         let cfr = cli_trust_root(&path, self.named_file());
         let roots = refused_roots(&path, &cfr, self.named_file(), &self.config_filenames);
+        // A directory whose only config is global config itself stands for that file.
+        if roots.iter().any(|root| is_global_config(root)) {
+            return Err(global_config_ignore_refused(&path));
+        }
         if roots.is_empty() {
             warn!(
                 "{} has no config of its own to ignore: paranoid mode refuses a config reached \
