@@ -6696,10 +6696,18 @@ fn aube_graph_names_only_registry(lock: &AubeLock) -> bool {
                         .is_none_or(|deps| match deps.as_table() {
                             Some(deps) => deps.iter().all(|(name, dep)| {
                                 let field = |field: &str| dep.get(field).and_then(Value::as_str);
+                                // A skipped optional dependency is installed from nowhere:
+                                // aube writes the `0.0.0` placeholder for its version and
+                                // reads only the specifier back.
+                                let dep_version_ok = |version: &str| match *section {
+                                    "skippedOptionalDependencies" => {
+                                        name_ok(name) && version_ok(version)
+                                    }
+                                    _ => has_package(name, version),
+                                };
                                 only_fields(dep, &["specifier", "version"])
                                     && field("specifier").is_some_and(specifier_ok)
-                                    && field("version")
-                                        .is_some_and(|version| has_package(name, version))
+                                    && field("version").is_some_and(dep_version_ok)
                             }),
                             None => false,
                         })

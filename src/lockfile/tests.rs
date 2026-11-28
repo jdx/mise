@@ -6412,8 +6412,20 @@ fn untrusted_lockfile_keeps_a_registry_only_aube_graph() {
     );
     assert_ne!(scalar_settings, with_package(""));
     assert_ne!(list_snapshots, with_package(""));
+    // aube records an optional dependency it skipped on this platform with a
+    // placeholder version, which names no package.
+    let skipped_optional = with_package("").replace(
+        "        version: 1.0.0\n",
+        "        version: 1.0.0\n    skippedOptionalDependencies:\n      fsevents:\n        specifier: ^2.3.0\n        version: 0.0.0\n",
+    );
+    let skipped_optional_url = skipped_optional.replace("^2.3.0", "https://attacker.example/x.tgz");
+    let skipped_optional_link = skipped_optional.replace("0.0.0", "link:../x");
+    assert_ne!(skipped_optional, with_package(""));
     let plain = with_package("");
     for (graph, kept) in [
+        (skipped_optional.as_str(), true),
+        (skipped_optional_url.as_str(), false),
+        (skipped_optional_link.as_str(), false),
         (scalar_settings.as_str(), false),
         (list_snapshots.as_str(), false),
         (plain.as_str(), true),
