@@ -71,8 +71,10 @@ Describe 'dotfiles-symlink-each-links' {
         $LASTEXITCODE | Should -Be 0
         (Get-Item -LiteralPath $link -Force).LinkType | Should -Be 'SymbolicLink'
 
-        # the per-entry state files, not the per-target records under targets\
+        # the per-entry state files, not the per-target records under targets\ or the record of
+        # the directories mise made
         Get-ChildItem -LiteralPath (Join-Path $env:MISE_STATE_DIR 'dotfiles') -Filter '*.toml' -File |
+            Where-Object Name -ne 'created_dirs.toml' |
             Remove-Item -Force
         Remove-Item -LiteralPath (Join-Path $root 'source\file.txt')
 
@@ -120,7 +122,8 @@ Describe 'dotfiles-symlink-each-links' {
         $LASTEXITCODE | Should -Be 0 -Because $out
 
         # This used to write a second state file beside the first.
-        @(Get-ChildItem -LiteralPath (Join-Path $root 'state\dotfiles') -Filter '*.toml' -File).Count | Should -Be 1
+        @(Get-ChildItem -LiteralPath (Join-Path $root 'state\dotfiles') -Filter '*.toml' -File |
+            Where-Object Name -ne 'created_dirs.toml').Count | Should -Be 1
         (Get-Item -LiteralPath (Join-Path $root 'target\old.txt') -Force).LinkType | Should -Be 'SymbolicLink'
         (Get-Item -LiteralPath (Join-Path $root 'target\new.txt') -Force).LinkType | Should -Be 'SymbolicLink'
 
@@ -128,7 +131,8 @@ Describe 'dotfiles-symlink-each-links' {
         $LASTEXITCODE | Should -Be 0 -Because $out
         Test-Path -LiteralPath (Join-Path $root 'target\old.txt') | Should -BeFalse
         Test-Path -LiteralPath (Join-Path $root 'target\new.txt') | Should -BeFalse
-        @(Get-ChildItem -LiteralPath (Join-Path $root 'state\dotfiles') -Filter '*.toml' -File).Count | Should -Be 0
+        @(Get-ChildItem -LiteralPath (Join-Path $root 'state\dotfiles') -Filter '*.toml' -File |
+            Where-Object Name -ne 'created_dirs.toml').Count | Should -Be 0
     }
 
     It 'keeps one target record when a single-file target is spelled with other letter case' {
