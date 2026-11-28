@@ -5,7 +5,7 @@ use eyre::{Context, Result, bail};
 use glob::{MatchOptions, Pattern};
 use serde::Deserialize;
 
-use crate::config::config_file::diagnostic::hide_linked_source;
+use crate::config::config_file::diagnostic::hide_linked_source_below;
 
 use super::{
     ProjectId, WorkspaceDiscoveryContext, WorkspaceProject, WorkspaceProvenance, WorkspaceProvider,
@@ -84,7 +84,7 @@ impl WorkspaceProvider for UvWorkspaceProvider {
         if !context.is_file(&root_pyproject_path) {
             return Ok(Vec::new());
         }
-        let root_pyproject = read_pyproject(context, &root_pyproject_path)?;
+        let root_pyproject = read_pyproject(context, &root_pyproject_path, workspace_root)?;
         let Some(workspace) = root_pyproject.tool.uv.workspace.as_ref() else {
             return Ok(Vec::new());
         };
@@ -119,7 +119,7 @@ impl WorkspaceProvider for UvWorkspaceProvider {
             let pyproject = if project_root == canonical_root {
                 root_pyproject.clone()
             } else {
-                read_pyproject(context, &pyproject_path)?
+                read_pyproject(context, &pyproject_path, &canonical_root)?
             };
             let project = pyproject.project.as_ref().ok_or_else(|| {
                 eyre::eyre!("uv project at {} is missing [project]", relative.display())
@@ -279,7 +279,7 @@ fn member_manifests_with_context(
     if !context.is_file(&root_pyproject) {
         return Ok(Vec::new());
     }
-    let pyproject = read_pyproject(context, &root_pyproject)?;
+    let pyproject = read_pyproject(context, &root_pyproject, workspace_root)?;
     let Some(workspace) = pyproject.tool.uv.workspace.as_ref() else {
         return Ok(Vec::new());
     };
@@ -304,12 +304,18 @@ fn member_manifests_with_context(
     Ok(manifests)
 }
 
-fn read_pyproject(context: &WorkspaceDiscoveryContext, path: &Path) -> Result<PyProject> {
+/// Reads the `pyproject.toml` at `path`, found under `root`: a parse error hides the
+/// file's text when `path` or a directory between `root` and it is a link.
+fn read_pyproject(
+    context: &WorkspaceDiscoveryContext,
+    path: &Path,
+    root: &Path,
+) -> Result<PyProject> {
     let contents = context
         .read_to_string(path)
         .wrap_err_with(|| format!("failed to read uv project metadata {}", path.display()))?;
     toml::from_str(&contents)
-        .map_err(|err| hide_linked_source(err, &contents, path))
+        .map_err(|err| hide_linked_source_below(err, &contents, path, root))
         .wrap_err_with(|| format!("failed to parse uv project metadata {}", path.display()))
 }
 

@@ -5,7 +5,7 @@ use eyre::{Context, Result, bail};
 use glob::{MatchOptions, Pattern};
 use serde::Deserialize;
 
-use crate::config::config_file::diagnostic::hide_linked_source;
+use crate::config::config_file::diagnostic::hide_linked_source_below;
 
 use super::{
     ProjectId, WorkspaceDiscoveryContext, WorkspaceProject, WorkspaceProvenance, WorkspaceProvider,
@@ -81,7 +81,7 @@ impl WorkspaceProvider for CargoWorkspaceProvider {
         if !context.is_file(&root_manifest_path) {
             return Ok(Vec::new());
         }
-        let root_manifest = read_manifest(context, &root_manifest_path)?;
+        let root_manifest = read_manifest(context, &root_manifest_path, workspace_root)?;
         let Some(workspace) = root_manifest.workspace.as_ref() else {
             return Ok(Vec::new());
         };
@@ -124,7 +124,7 @@ impl WorkspaceProvider for CargoWorkspaceProvider {
             let manifest = if package_root == canonical_root {
                 root_manifest.clone()
             } else {
-                read_manifest(context, &manifest_path)?
+                read_manifest(context, &manifest_path, &canonical_root)?
             };
             let package = manifest.package.as_ref().ok_or_else(|| {
                 eyre::eyre!(
@@ -227,12 +227,18 @@ impl WorkspaceProvider for CargoWorkspaceProvider {
     }
 }
 
-fn read_manifest(context: &WorkspaceDiscoveryContext, path: &Path) -> Result<CargoManifest> {
+/// Reads the Cargo manifest at `path`, found under `root`: a parse error hides the file's
+/// text when `path` or a directory between `root` and it is a link.
+fn read_manifest(
+    context: &WorkspaceDiscoveryContext,
+    path: &Path,
+    root: &Path,
+) -> Result<CargoManifest> {
     let contents = context
         .read_to_string(path)
         .wrap_err_with(|| format!("failed to read Cargo manifest {}", path.display()))?;
     toml::from_str(&contents)
-        .map_err(|err| hide_linked_source(err, &contents, path))
+        .map_err(|err| hide_linked_source_below(err, &contents, path, root))
         .wrap_err_with(|| format!("failed to parse Cargo manifest {}", path.display()))
 }
 

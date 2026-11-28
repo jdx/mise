@@ -152,10 +152,10 @@ impl WorkspaceProvider for NodeWorkspaceProvider {
                 let manifest = if root == Path::new(".") {
                     match root_manifest.clone() {
                         Some(manifest) => manifest,
-                        None => read_package_json(context, &manifest_path)?,
+                        None => read_package_json(context, &manifest_path, workspace_root)?,
                     }
                 } else {
-                    read_package_json(context, &manifest_path)?
+                    read_package_json(context, &manifest_path, workspace_root)?
                 };
                 let name = manifest.name.clone().ok_or_else(|| {
                     eyre::eyre!(
@@ -625,7 +625,7 @@ fn read_turbo_json(
             warn!(
                 "failed to parse optional {}: {}",
                 path.display(),
-                diagnostic::hide_linked_details(error, &path)
+                diagnostic::hide_linked_details_below(error, &path, workspace_root)
             );
             Ok(None)
         }
@@ -711,7 +711,13 @@ fn workspace_definition(
     }))
 }
 
-fn read_package_json(context: &WorkspaceDiscoveryContext, path: &Path) -> Result<PackageJson> {
+/// Reads the `package.json` at `path`, found under `root`: a parse error hides the file's
+/// text when `path` or a directory between `root` and it is a link.
+fn read_package_json(
+    context: &WorkspaceDiscoveryContext,
+    path: &Path,
+    root: &Path,
+) -> Result<PackageJson> {
     let contents = context.read_to_string(path).map_err(|error| {
         eyre::eyre!(
             "failed to read Node package manifest {}: {error}",
@@ -722,7 +728,7 @@ fn read_package_json(context: &WorkspaceDiscoveryContext, path: &Path) -> Result
         eyre::eyre!(
             "failed to parse Node package manifest {}: {}",
             path.display(),
-            diagnostic::hide_linked_details(error, path)
+            diagnostic::hide_linked_details_below(error, path, root)
         )
     })
 }
@@ -1837,6 +1843,18 @@ snapshots:
         assert!(
             linked_manifest.contains("details hidden"),
             "{linked_manifest}"
+        );
+
+        // a regular file behind a directory that links out of the project is not read
+        fs::remove_dir_all(root.join("packages")).unwrap();
+        fs::create_dir_all(home.join("pkgs/app")).unwrap();
+        fs::copy(home.join("token.json"), home.join("pkgs/app/package.json")).unwrap();
+        symlink(home.join("pkgs"), root.join("packages")).unwrap();
+        let linked_dir = report(&root);
+        assert!(!linked_dir.contains("s3cr3t"), "{linked_dir}");
+        assert!(
+            linked_dir.contains("outside the workspace root"),
+            "{linked_dir}"
         );
     }
 }

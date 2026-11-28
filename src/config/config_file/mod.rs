@@ -170,6 +170,26 @@ impl EffectiveToolRequests {
     }
 }
 
+/// [`ensure_edit_keeps_tool_request_count`] for an edit about to be saved, with what
+/// `edited` includes merged in, as reload counts it. An include that cannot load is left
+/// out: reload fails on it whatever the count.
+pub async fn ensure_saved_edit_keeps_tool_request_count(
+    config_files: &IndexMap<PathBuf, Arc<dyn ConfigFile>>,
+    edited: &Arc<dyn ConfigFile>,
+) -> Result<()> {
+    let merged = match crate::config::remote_include::apply(edited.clone()).await {
+        Ok(merged) => merged,
+        Err(err) => {
+            debug!(
+                "counting {} without its includes: {err:#}",
+                edited.get_path().display()
+            );
+            edited.clone()
+        }
+    };
+    ensure_edit_keeps_tool_request_count(config_files, &merged)
+}
+
 /// Refuse an edit to `edited` that would take what the config files request together over
 /// [`MAX_TOOL_REQUESTS`], before it is written: each file can stay under the bound on its own and
 /// still leave a toolset that no longer builds, which would also stop the next `mise use` from
@@ -2195,6 +2215,32 @@ mod tests {
             .unwrap(),
         );
         let err = ensure_edit_keeps_tool_request_count(&files, &new).unwrap_err();
+        assert!(err.to_string().contains("1001 tool versions"), "{err}");
+    }
+
+    /// Reload merges what a file includes into it, so the check before a save counts it too.
+    #[tokio::test]
+    async fn a_saved_edit_counts_what_the_file_includes() {
+        let dir = tempfile::tempdir().unwrap();
+        let node = format!("\"1\",{}", "\"1\",".repeat(MAX_TOOL_REQUESTS - 1));
+        std::fs::write(
+            dir.path().join("fragment.toml"),
+            format!("[tools]\nnode = [{node}]\n"),
+        )
+        .unwrap();
+        let path = dir.path().join(".test.mise.toml");
+        let edited: Arc<dyn ConfigFile> = Arc::new(
+            MiseToml::from_str(
+                "include = [\"./fragment.toml\"]\n[tools]\npython = \"3\"\n",
+                &path,
+            )
+            .unwrap(),
+        );
+        let files: IndexMap<PathBuf, Arc<dyn ConfigFile>> = IndexMap::new();
+        ensure_edit_keeps_tool_request_count(&files, &edited).unwrap();
+        let err = ensure_saved_edit_keeps_tool_request_count(&files, &edited)
+            .await
+            .unwrap_err();
         assert!(err.to_string().contains("1001 tool versions"), "{err}");
     }
 

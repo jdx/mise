@@ -321,8 +321,15 @@ pub(crate) const LINKED_DETAILS_HIDDEN: &str =
 /// a message can quote a value (`invalid type: string "…"`), and a text with no
 /// `key: value` line is one YAML string, so [`LINKED_DETAILS_HIDDEN`] takes its
 /// place unless [`may_quote`] allows `path` to be quoted.
-pub(crate) fn hide_linked_details(error: impl fmt::Display, path: &Path) -> String {
-    if may_quote(path) {
+///
+/// `path` was found under `root`: every directory between them is checked too, see
+/// [`may_quote_below`].
+pub(crate) fn hide_linked_details_below(
+    error: impl fmt::Display,
+    path: &Path,
+    root: &Path,
+) -> String {
+    if may_quote_below(path, root) {
         error.to_string()
     } else {
         LINKED_DETAILS_HIDDEN.to_string()
