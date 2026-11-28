@@ -188,31 +188,28 @@ enum Piece {
 /// A piece spans exactly what the renderer replaces, so that markers put around it in
 /// [`SubstitutionMarks::wrap_substitutions`] never split a token:
 ///
-/// - A template tag runs to its closer, and also covers the whitespace its `-` trims: before
-///   `{{-`, `{%-` or `{#-`, and after `-}}`, `-%}` or `-#}`.
+/// - A template tag runs to its closer, past any in its string literals, and also covers the
+///   whitespace its `-` trims: before `{{-`, `{%-` or `{#-`, and after `-}}`, `-%}` or `-#}`.
 /// - The `$` syntax is read as [`shell_expand_env`] reads it: `$$` is a written `$`, `${…}` runs
-///   to the brace that closes it, nested fallbacks included, and `$NAME` to the end of the name.
+///   to the brace that closes it, nested fallbacks and template tags included, and `$NAME` to the
+///   end of the name.
 ///   A `$` before anything else is written text, and so is a `$` before a template tag, which
 ///   renders first.
 fn template_pieces(input: &str) -> Vec<(Piece, std::ops::Range<usize>)> {
     let bytes = input.as_bytes();
-    let is_tag_open = |at: usize| {
-        bytes.get(at) == Some(&b'{') && matches!(bytes.get(at + 1), Some(b'{' | b'%' | b'#'))
-    };
     let mut pieces = Vec::new();
     let mut text_start = 0;
     let mut i = 0;
     while i < bytes.len() {
         let found = match bytes[i] {
-            b'{' if is_tag_open(i) => {
-                let (piece, close) = match bytes[i + 1] {
-                    b'{' => (Piece::Substituted, "}}"),
-                    b'%' => (Piece::Tag, "%}"),
-                    _ => (Piece::Tag, "#}"),
+            b'{' if is_tag_open(bytes, i) => {
+                let piece = if bytes[i + 1] == b'{' {
+                    Piece::Substituted
+                } else {
+                    Piece::Tag
                 };
-                let mut end = input[i + 2..]
-                    .find(close)
-                    .map_or(input.len(), |end| i + 2 + end + 2);
+                let close = tag_close(bytes[i + 1]);
+                let mut end = template_tag_end(input, i);
                 let tag = &input[i..end];
                 let mut start = i;
                 if bytes.get(i + 2) == Some(&b'-') {
@@ -228,9 +225,8 @@ fn template_pieces(input: &str) -> Vec<(Piece, std::ops::Range<usize>)> {
                     i += 2;
                     continue;
                 }
-                Some(b'{') if !is_tag_open(i + 1) => {
-                    let end =
-                        read_braced_expr(input, i + 2).map_or(input.len(), |(end, _)| end + 1);
+                Some(b'{') if !is_tag_open(bytes, i + 1) => {
+                    let end = braced_expr_end(input, i + 2).map_or(input.len(), |end| end + 1);
                     Some((Piece::Substituted, i, end))
                 }
                 Some(&b) if is_var_start(b.into()) => {
@@ -260,6 +256,66 @@ fn template_pieces(input: &str) -> Vec<(Piece, std::ops::Range<usize>)> {
         pieces.push((Piece::Written, text_start..input.len()));
     }
     pieces
+}
+
+/// Whether a template tag (`{{`, `{%` or `{#`) opens at `at`.
+fn is_tag_open(bytes: &[u8], at: usize) -> bool {
+    bytes.get(at) == Some(&b'{') && matches!(bytes.get(at + 1), Some(b'{' | b'%' | b'#'))
+}
+
+/// The closer of the tag whose opener's second byte is `kind`.
+fn tag_close(kind: u8) -> &'static str {
+    match kind {
+        b'{' => "}}",
+        b'%' => "%}",
+        _ => "#}",
+    }
+}
+
+/// The end of the tag that opens at `at`, after its closer, as the template engine reads it: a
+/// closer inside a string literal does not end it. The end of `input` when it has no closer.
+fn template_tag_end(input: &str, at: usize) -> usize {
+    let close = tag_close(input.as_bytes()[at + 1]);
+    crate::tera::template_tag_end(&input[at..], close).map_or(input.len(), |end| at + end)
+}
+
+/// Where the `}` that closes a `${` whose body starts at `start` is, as [`read_braced_expr`]
+/// finds it once the template has rendered: a template tag in the body, such as the fallback in
+/// `${P:-{{ env.DEFAULT }}}`, renders first, so its braces do not close the expression.
+fn braced_expr_end(input: &str, start: usize) -> Option<usize> {
+    let bytes = input.as_bytes();
+    let mut depth = 1;
+    let mut command_depth = 0;
+    let mut i = start;
+    while i < bytes.len() {
+        if is_tag_open(bytes, i) {
+            i = template_tag_end(input, i);
+            continue;
+        }
+        let next = bytes.get(i + 1);
+        match bytes[i] {
+            b'(' if command_depth > 0 => command_depth += 1,
+            b')' if command_depth > 0 => command_depth -= 1,
+            _ if command_depth > 0 => {}
+            b'$' if next == Some(&b'{') && !is_tag_open(bytes, i + 1) => {
+                depth += 1;
+                i += 1;
+            }
+            b'$' if next == Some(&b'(') => {
+                command_depth = 1;
+                i += 1;
+            }
+            b'}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(i);
+                }
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    None
 }
 
 /// Where the path component that holds the first glob metacharacter the entry writes begins,
@@ -1674,6 +1730,8 @@ mod tests {
         );
         assert_eq!(written_pattern_start("${X:-*}/.env"), None);
         assert_eq!(written_pattern_start("{# * #}.env"), None);
+        assert_eq!(written_pattern_start("{{ '}}*' }}.env"), None);
+        assert_eq!(written_pattern_start("${X:-{{ '*' }}}.env"), None);
         // `?` alone is not a glob, as before
         assert_eq!(written_pattern_start("a?.env"), None);
         assert_eq!(written_pattern_start(".env.*"), Some(0));
@@ -1782,6 +1840,10 @@ mod tests {
                 ("{{ env.P -}} {{- env.P }}*", "devdev*"),
                 ("a {%- if true %}{{ env.P }}{% endif -%} *", "adev*"),
                 (" {#- c #}*", "*"),
+                ("${A:-{{ env.P }}}*.env", "dev*.env"),
+                ("${P:-{{ env.A | default(value='}') }}}*", "dev[}]*"),
+                ("{{ 'a}}*' }}.e*", "a[}][}][*].e*"),
+                ("{% if 'a%}*' %}{{ env.P }}{% endif %}*", "dev*"),
             ] {
                 assert_eq!(glob(pattern).as_deref(), Some(expected), "{pattern}");
             }
