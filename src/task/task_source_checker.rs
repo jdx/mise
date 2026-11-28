@@ -50,8 +50,9 @@ pub(crate) fn is_glob_pattern(path: &str) -> bool {
 const MAX_BRACE_EXPANSIONS: usize = 1024;
 
 /// Where a scan of a glob stands with respect to a `[...]` character class, read as globset
-/// reads one: a `]` just after the `[`, or after a negating `!` or `^`, is a member, and the
-/// next `]` closes the class.
+/// reads one: a `]` just after the `[`, or after a negating `!` or `^`, is a member, a POSIX
+/// class such as `[:digit:]` is one member, and the next `]` closes the class. Inside a class
+/// a `\` is a member, not an escape.
 #[derive(Clone, Copy, PartialEq)]
 enum GlobClass {
     Outside,
@@ -61,27 +62,70 @@ enum GlobClass {
     Negated,
     /// Past the first member.
     Body,
+    /// Just after the `-` of a range, whose end the next character is.
+    RangeEnd,
 }
 
 impl GlobClass {
-    /// Moves past `ch` and returns whether it is part of a class, its brackets included.
-    fn step(&mut self, ch: char) -> bool {
-        *self = match (*self, ch) {
-            (GlobClass::Outside, '[') => GlobClass::Opened,
-            (GlobClass::Outside, _) => return false,
-            (GlobClass::Opened, '!' | '^') => GlobClass::Negated,
-            (GlobClass::Body, ']') => GlobClass::Outside,
-            _ => GlobClass::Body,
+    /// Moves past `ch`, which `after` follows. `None` when `ch` is outside a class; otherwise
+    /// the number of bytes of `after` that belong to the same member, as a POSIX class's do.
+    fn step(&mut self, ch: char, after: &str) -> Option<usize> {
+        let (next, extra) = match (*self, ch) {
+            (GlobClass::Outside, '[') => (GlobClass::Opened, 0),
+            (GlobClass::Outside, _) => return None,
+            (GlobClass::Opened, '!' | '^') => (GlobClass::Negated, 0),
+            (GlobClass::Body | GlobClass::RangeEnd, ']') => (GlobClass::Outside, 0),
+            (GlobClass::Body, '-') => (GlobClass::RangeEnd, 0),
+            (GlobClass::RangeEnd, _) => (GlobClass::Body, 0),
+            (_, '[') => (GlobClass::Body, posix_class_len(after)),
+            _ => (GlobClass::Body, 0),
         };
-        true
+        *self = next;
+        Some(extra)
     }
+}
 
-    /// Moves past a character a `\` escapes, which inside a class is a member.
-    fn step_escaped(&mut self) {
-        if *self != GlobClass::Outside {
-            *self = GlobClass::Body;
-        }
+/// The length of the `:name:]` that ends a POSIX class whose `[` `after` follows, as globset
+/// reads one (up to eight lowercase letters), or 0 when `after` does not start with one.
+fn posix_class_len(after: &str) -> usize {
+    let Some(name) = after.strip_prefix(':') else {
+        return 0;
+    };
+    let letters = name.bytes().take_while(u8::is_ascii_lowercase).count();
+    if letters <= 8 && name[letters..].starts_with(":]") {
+        letters + 3
+    } else {
+        0
     }
+}
+
+/// Each character of `pattern` with its byte offset and whether it is glob syntax: outside a
+/// character class, and neither a `\` that escapes the next character nor the character it
+/// escapes. A `\` escapes only when `escapes`, as it does outside Windows.
+fn glob_syntax(pattern: &str, escapes: bool) -> Vec<(usize, char, bool)> {
+    let mut out = Vec::with_capacity(pattern.len());
+    let mut class = GlobClass::Outside;
+    let mut escaped = false;
+    let mut member_end = 0;
+    for (idx, ch) in pattern.char_indices() {
+        let next = idx + ch.len_utf8();
+        let syntax = if idx < member_end {
+            false
+        } else if escaped {
+            escaped = false;
+            false
+        } else if escapes && ch == '\\' && class == GlobClass::Outside {
+            escaped = true;
+            false
+        } else if let Some(extra) = class.step(ch, &pattern[next..]) {
+            member_end = next + extra;
+            false
+        } else {
+            true
+        };
+        out.push((idx, ch, syntax));
+    }
+    out
 }
 
 /// Expand globset-style brace alternates before passing a pattern to `glob`.
@@ -100,27 +144,16 @@ pub(crate) fn expand_glob_braces(pattern: &str) -> Result<Vec<String>> {
     }
 
     fn find_group(pattern: &str) -> Result<Option<BraceGroup>> {
-        let mut escaped = false;
-        let mut class = GlobClass::Outside;
         let mut group_start = None;
         let mut group_depth = 0;
         let mut branch_start = 0;
         let mut branches = Vec::new();
 
-        for (idx, ch) in pattern.char_indices() {
-            if escaped {
-                escaped = false;
-                class.step_escaped();
-                continue;
-            }
-            // On Windows, backslashes are path separators rather than glob
-            // escapes. Literal braces can still be expressed with a character
-            // class, e.g. `[{]` and `[}]`.
-            if ch == '\\' && !cfg!(windows) {
-                escaped = true;
-                continue;
-            }
-            if class.step(ch) {
+        // On Windows, backslashes are path separators rather than glob escapes.
+        // Literal braces can still be expressed with a character class, e.g.
+        // `[{]` and `[}]`.
+        for (idx, ch, syntax) in glob_syntax(pattern, !cfg!(windows)) {
+            if !syntax {
                 continue;
             }
             match ch {
@@ -186,27 +219,10 @@ pub(crate) fn expand_glob_braces(pattern: &str) -> Result<Vec<String>> {
                 );
             }
             let mut literal = String::with_capacity(pattern.len());
-            let mut escaped = false;
-            let mut class = GlobClass::Outside;
-            for ch in pattern.chars() {
-                if escaped {
-                    escaped = false;
-                    class.step_escaped();
-                    literal.push(ch);
-                    continue;
-                }
-                if ch == '\\' && !cfg!(windows) {
-                    escaped = true;
-                    literal.push(ch);
-                    continue;
-                }
-                if class.step(ch) {
-                    literal.push(ch);
-                    continue;
-                }
+            for (_, ch, syntax) in glob_syntax(pattern, !cfg!(windows)) {
                 match ch {
-                    '{' => literal.push_str("[{]"),
-                    '}' => literal.push_str("[}]"),
+                    '{' if syntax => literal.push_str("[{]"),
+                    '}' if syntax => literal.push_str("[}]"),
                     _ => literal.push(ch),
                 }
             }
@@ -799,12 +815,36 @@ pub(crate) fn glob_walk_in(base: &Path, pattern: &str) -> Result<GlobWalker> {
 }
 
 /// The non-empty components of a relative glob, split at `/` and, when `windows`, at `\`,
-/// where it is a separator rather than an escape.
+/// where it is a separator rather than an escape. A separator inside a character class does
+/// not split, since the matcher never lets a class match one: `dev[a/**/b]*.env` is one
+/// component.
 fn glob_components(pattern: &str, windows: bool) -> Vec<&str> {
-    pattern
-        .split(|c| c == '/' || (windows && c == '\\'))
-        .filter(|c| !c.is_empty())
-        .collect_vec()
+    let mut components = vec![];
+    let mut start = 0;
+    let mut class = GlobClass::Outside;
+    let mut escaped = false;
+    let mut member_end = 0;
+    for (idx, ch) in pattern.char_indices() {
+        let next = idx + ch.len_utf8();
+        if idx < member_end {
+            continue;
+        }
+        if class == GlobClass::Outside && (ch == '/' || (windows && ch == '\\')) {
+            // an escaped `/` still separates: the matcher reads it as one
+            escaped = false;
+            components.push(&pattern[start..idx]);
+            start = next;
+        } else if escaped {
+            escaped = false;
+        } else if !windows && ch == '\\' && class == GlobClass::Outside {
+            escaped = true;
+        } else if let Some(extra) = class.step(ch, &pattern[next..]) {
+            member_end = next + extra;
+        }
+    }
+    components.push(&pattern[start..]);
+    components.retain(|c| !c.is_empty());
+    components
 }
 
 fn build_glob_walker(
@@ -2795,12 +2835,59 @@ mod tests {
         assert_eq!(expand_glob_braces("[ab]{x,y}").unwrap(), ["[ab]x", "[ab]y"]);
     }
 
+    /// Inside a class a `\` is a member, as globset reads it, so `[\]` is a whole class.
     #[cfg(not(windows))]
     #[test]
-    fn glob_braces_escapes_inside_a_class() {
+    fn glob_braces_take_a_backslash_in_a_class_as_a_member() {
         assert_eq!(
-            expand_glob_braces(r"[\]]{x,y}").unwrap(),
-            [r"[\]]x", r"[\]]y"]
+            expand_glob_braces(r"[\]{x,y}]").unwrap(),
+            [r"[\]x]", r"[\]y]"]
+        );
+        let glob = globset::Glob::new(r"[\]x]").unwrap().compile_matcher();
+        assert!(glob.is_match(r"\x]"));
+    }
+
+    /// A POSIX class such as `[:digit:]` is one member, so its `]` does not close the class.
+    #[test]
+    fn glob_braces_stay_literal_after_a_posix_class() {
+        for pattern in [
+            "env/[[:digit:]{a,b}]*.env",
+            "env/[a[:alpha:]{a,b}]*.env",
+            "env/[![:digit:]{a,b}]*.env",
+        ] {
+            assert_eq!(expand_glob_braces(pattern).unwrap(), [pattern], "{pattern}");
+        }
+        // a `[:` that is no POSIX class, and a `[` that ends a range, are single members
+        assert_eq!(
+            expand_glob_braces("[[:Digit]{x,y}").unwrap(),
+            ["[[:Digit]x", "[[:Digit]y"]
+        );
+        assert_eq!(
+            expand_glob_braces("[*-[:digit:]{x,y}]").unwrap(),
+            ["[*-[:digit:]x]", "[*-[:digit:]y]"]
+        );
+        let glob = globset::Glob::new("[[:digit:]{a,b}]")
+            .unwrap()
+            .compile_matcher();
+        assert!(glob.is_match("{"));
+        assert!(glob.is_match("5"));
+        assert!(!glob.is_match("x"));
+    }
+
+    /// A separator inside a class does not end a component, so a `**` in it is no globstar.
+    #[test]
+    fn glob_components_keep_a_class_whole() {
+        assert_eq!(
+            glob_components("env/dev[a/**/b]*.env", false),
+            ["env", "dev[a/**/b]*.env"]
+        );
+        assert_eq!(
+            glob_components("env/[]/]/**/x", false),
+            ["env", "[]/]", "**", "x"]
+        );
+        assert_eq!(
+            glob_components("env/[[:alpha:]/]x/y", false),
+            ["env", "[[:alpha:]/]x", "y"]
         );
     }
 

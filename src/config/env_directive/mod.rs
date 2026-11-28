@@ -357,6 +357,9 @@ fn writes_a_star(input: &str, shell_expand: bool) -> bool {
 struct SubstitutionMarks {
     open: String,
     close: String,
+    /// Put between a written `*` and a `{% %}` or `{# #}` tag next to it, so that the `*`s on
+    /// either side of a tag that renders nothing stay two runs.
+    boundary: String,
     /// Whether a `$VAR` is a substitution (`env_shell_expand`).
     shell_expand: bool,
 }
@@ -367,24 +370,44 @@ impl SubstitutionMarks {
         Self {
             open: format!("{PATTERN_MARK}{nonce}<"),
             close: format!("{PATTERN_MARK}{nonce}>"),
+            boundary: format!("{PATTERN_MARK}{nonce}|"),
             shell_expand,
         }
     }
 
-    /// `pattern` with each substitution wrapped in the markers.
+    /// `pattern` with each substitution wrapped in the markers, and a boundary marker between
+    /// each tag and a written `*` next to it.
     fn wrap_substitutions(&self, pattern: &str) -> String {
+        let pieces = template_pieces(pattern, self.shell_expand);
         let mut out = String::with_capacity(pattern.len());
-        for (piece, range) in template_pieces(pattern, self.shell_expand) {
+        for (i, (piece, range)) in pieces.iter().enumerate() {
+            let text = &pattern[range.clone()];
             match piece {
                 Piece::Substituted => {
                     out.push_str(&self.open);
-                    out.push_str(&pattern[range]);
+                    out.push_str(text);
                     out.push_str(&self.close);
                 }
-                Piece::Written | Piece::Tag => out.push_str(&pattern[range]),
+                Piece::Written => out.push_str(text),
+                Piece::Tag => {
+                    if out.ends_with('*') {
+                        out.push_str(&self.boundary);
+                    }
+                    out.push_str(text);
+                    if let Some((Piece::Written, next)) = pieces.get(i + 1)
+                        && pattern[next.clone()].starts_with('*')
+                    {
+                        out.push_str(&self.boundary);
+                    }
+                }
             }
         }
         out
+    }
+
+    /// `text` without boundary markers.
+    fn without_boundaries(&self, text: &str) -> String {
+        text.replace(&self.boundary, "")
     }
 
     /// The written and substituted (`true`) stretches of a rendered, marked pattern. `None` when
@@ -397,14 +420,16 @@ impl SubstitutionMarks {
             let after = &rest[open + self.open.len()..];
             let close = after.find(&self.close)?;
             let data = &after[..close];
-            if written.contains(PATTERN_MARK) || data.contains(PATTERN_MARK) {
+            if self.without_boundaries(written).contains(PATTERN_MARK)
+                || data.contains(PATTERN_MARK)
+            {
                 return None;
             }
             segments.push((false, written));
             segments.push((true, data));
             rest = &after[close + self.close.len()..];
         }
-        if rest.contains(PATTERN_MARK) {
+        if self.without_boundaries(rest).contains(PATTERN_MARK) {
             return None;
         }
         segments.push((false, rest));
@@ -437,16 +462,22 @@ impl SubstitutionMarks {
             &['*', '?', '[', '{', '\\']
         };
         let is_sep = |c: char| c == '/' || (cfg!(windows) && c == '\\');
+        // A Windows prefix, as the `?` in `\\?\C:\`, holds no glob.
+        let prefix = match Path::new(segments[0].1).components().next() {
+            Some(std::path::Component::Prefix(prefix)) => prefix.as_os_str().len(),
+            _ => 0,
+        };
         // The segment, always a written one, and the offset in it where the glob starts: just
         // past the last written separator ahead of the first written glob character.
-        let mut start = (0, 0);
+        let mut start = (0, prefix);
         for (i, (data, text)) in segments.iter().enumerate() {
             if *data {
                 continue;
             }
-            let glob_char = text.find(glob_chars);
-            if let Some(at) = text[..glob_char.unwrap_or(text.len())].rfind(is_sep) {
-                start = (i, at + 1);
+            let skip = if i == 0 { prefix } else { 0 };
+            let glob_char = text[skip..].find(glob_chars).map(|at| skip + at);
+            if let Some(at) = text[skip..glob_char.unwrap_or(text.len())].rfind(is_sep) {
+                start = (i, skip + at + 1);
             }
             if glob_char.is_some() {
                 break;
@@ -458,7 +489,15 @@ impl SubstitutionMarks {
             .map(|(_, t)| *t)
             .chain([&segments[i].1[..at]])
             .collect();
-        if segments[i..].iter().any(|(data, _)| *data) {
+        let dir = self.without_boundaries(&dir);
+        let pattern: String = [&segments[i].1[at..]]
+            .into_iter()
+            .chain(segments[i + 1..].iter().map(|(_, t)| *t))
+            .collect();
+        // A `$VAR` that tags joined, as `${% if x %}P{% endif %}` does, is a substitution too.
+        if segments[i..].iter().any(|(data, _)| *data)
+            || (self.shell_expand && has_shell_substitution(&pattern))
+        {
             let start = if dir.is_empty() {
                 "at the start of the path".to_string()
             } else {
@@ -471,11 +510,63 @@ impl SubstitutionMarks {
                  `env.d/{{{{ env.PROFILE }}}}/*.env`, or write the glob out in full"
             );
         }
-        let pattern: String = [&segments[i].1[at..]]
-            .into_iter()
-            .chain(segments[i + 1..].iter().map(|(_, t)| *t))
-            .collect();
-        Ok(Some((dir, pattern)))
+        Ok(Some((dir, self.join_star_runs_across_tags(&pattern))))
+    }
+
+    /// `pattern` without its boundary markers, and with each run of `*`s that a tag rendering
+    /// nothing joined, as in `*{% if x %}a{% endif %}*`, made what [`join_star_runs`] makes it:
+    /// the `**`s written in it, or one `*` when there are none. So joining never forms a `**`
+    /// that descends.
+    fn join_star_runs_across_tags(&self, pattern: &str) -> String {
+        #[derive(Default)]
+        struct Run {
+            /// The `*`s of the run since the last boundary.
+            current: usize,
+            /// All the `*`s of the run.
+            stars: usize,
+            /// The `*`s of the run that are in a written `**`.
+            written: usize,
+        }
+        impl Run {
+            fn cross(&mut self) {
+                if self.current > 1 {
+                    self.written += self.current;
+                }
+                self.current = 0;
+            }
+            fn flush(&mut self, out: &mut String) {
+                self.cross();
+                let n = if self.written > 0 {
+                    self.written
+                } else {
+                    self.stars.min(1)
+                };
+                out.extend(std::iter::repeat_n('*', n));
+                *self = Self::default();
+            }
+        }
+        let mut out = String::with_capacity(pattern.len());
+        let mut run = Run::default();
+        let mut escaping = false;
+        let mut rest = pattern;
+        while let Some(c) = rest.chars().next() {
+            if let Some(after) = rest.strip_prefix(&self.boundary) {
+                run.cross();
+                rest = after;
+                continue;
+            }
+            rest = &rest[c.len_utf8()..];
+            if c == '*' && !escaping {
+                run.current += 1;
+                run.stars += 1;
+            } else {
+                run.flush(&mut out);
+                out.push(c);
+            }
+            escaping = !escaping && c == '\\' && !cfg!(windows);
+        }
+        run.flush(&mut out);
+        out
     }
 
     /// `rendered` without the markers or a NUL.
@@ -483,6 +574,7 @@ impl SubstitutionMarks {
         rendered
             .replace(&self.open, "")
             .replace(&self.close, "")
+            .replace(&self.boundary, "")
             .replace(PATTERN_MARK, "")
     }
 
@@ -493,7 +585,7 @@ impl SubstitutionMarks {
         while let Some(at) = rest.find(PATTERN_MARK) {
             out.push_str(&rest[..at]);
             let after = rest[at + 1..].trim_start_matches(|c: char| c.is_ascii_digit());
-            rest = after.strip_prefix(['<', '>']).unwrap_or(after);
+            rest = after.strip_prefix(['<', '>', '|']).unwrap_or(after);
         }
         out.push_str(rest);
         out
@@ -1677,6 +1769,26 @@ fn expand_braced_expr(
     }
 }
 
+/// Whether rendered `text` holds a `$VAR` or `${…}` that [`shell_expand_env`] expands. A `$$`
+/// is a written `$`, and so is a `${` with no closing brace.
+fn has_shell_substitution(text: &str) -> bool {
+    let mut chars = text.char_indices().peekable();
+    while let Some((idx, c)) = chars.next() {
+        if c != '$' {
+            continue;
+        }
+        match chars.peek() {
+            Some((_, '$')) => {
+                chars.next();
+            }
+            Some((_, '{')) if read_braced_expr(text, idx + 2).is_some() => return true,
+            Some(&(_, next)) if is_var_start(next) => return true,
+            _ => {}
+        }
+    }
+    false
+}
+
 fn is_var_start(ch: char) -> bool {
     ch == '_' || ch.is_ascii_alphabetic()
 }
@@ -2050,6 +2162,91 @@ mod tests {
         assert_eq!(
             SubstitutionMarks::strip_any(&marks.wrap_substitutions("a/{{ x }}/$Y*")),
             "a/{{ x }}/$Y*"
+        );
+    }
+
+    /// A tag that renders nothing between two written `*`s does not join them into a `**`.
+    #[test]
+    fn test_tags_do_not_join_stars() {
+        let mut engine = TeraEngine::V2(Box::default());
+        let mut split = |input: &str, x: bool| {
+            let mut ctx = tera::Context::new();
+            ctx.insert("x", &x);
+            split_path(&mut engine, input, &ctx, true).unwrap()
+        };
+        let owned = |a: &str, b: &str| Some((a.to_string(), b.to_string()));
+        let input = "env/*{% if x %}dev{% endif %}*/.env";
+        assert_eq!(split(input, true), owned("env/", "*dev*/.env"));
+        assert_eq!(split(input, false), owned("env/", "*/.env"));
+        assert_eq!(split("env/*{# c #}*/.env", true), owned("env/", "*/.env"));
+        assert_eq!(
+            split("env/* {%- if x %}{% endif -%} */.env", false),
+            owned("env/", "*/.env")
+        );
+        // a `**` the entry writes still descends, and so does one a tag sits next to
+        assert_eq!(split("env/**/.env", true), owned("env/", "**/.env"));
+        assert_eq!(split("env/**{# c #}/.env", true), owned("env/", "**/.env"));
+        assert_eq!(split("env/**{# c #}*/.env", true), owned("env/", "**/.env"));
+        // an escaped `*` is a name, not part of a run
+        #[cfg(unix)]
+        assert_eq!(
+            split("env/\\*{# c #}*.env", true),
+            owned("env/", "\\**.env")
+        );
+        // and no boundary marker is left in the directory or a literal path
+        assert_eq!(
+            split("{% if x %}a{% endif %}/*{# c #}.env", true),
+            owned("a/", "*.env")
+        );
+        let marks = SubstitutionMarks::new(true);
+        let wrapped = marks.wrap_substitutions("a*{# c #}");
+        assert_eq!(marks.strip(&wrapped), "a*{# c #}");
+        assert_eq!(SubstitutionMarks::strip_any(&wrapped), "a*{# c #}");
+    }
+
+    /// A `$VAR` that tags join is a substitution once rendered: in the glob it is an error, and
+    /// in the directory it expands. A `$$` stays a written `$`.
+    #[test]
+    fn test_a_variable_that_tags_join_in_the_glob_is_an_error() {
+        let mut engine = TeraEngine::V2(Box::default());
+        let ctx = glob_context();
+        let owned = |a: &str, b: &str| Some((a.to_string(), b.to_string()));
+        for input in [
+            "profiles/${% if true %}P{% endif %}.e*",
+            "profiles/${% if true %}{P}{% endif %}.e*",
+        ] {
+            let err = split_path(&mut engine, input, &ctx, true).unwrap_err();
+            assert!(
+                err.to_string().contains("part of the glob"),
+                "{input}: {err}"
+            );
+            // with shell expansion off, the `$` is a name
+            let off = split_path(&mut engine, input, &ctx, false).unwrap();
+            assert!(off.is_some_and(|(dir, _)| dir == "profiles/"), "{input}");
+        }
+        assert_eq!(
+            split_path(&mut engine, "p/$${% if true %}P{% endif %}.e*", &ctx, true).unwrap(),
+            owned("p/", "$P.e*")
+        );
+        assert_eq!(
+            split_path(&mut engine, "p/${% if true %}{P{% endif %}*", &ctx, true).unwrap(),
+            owned("p/", "${P*")
+        );
+        assert_eq!(
+            split_path(&mut engine, "${% if true %}D{% endif %}/*.env", &ctx, true).unwrap(),
+            owned("/abs/d*r/", "*.env")
+        );
+    }
+
+    /// The `?` of a Windows verbatim prefix is no wildcard.
+    #[cfg(windows)]
+    #[test]
+    fn test_a_windows_prefix_holds_no_glob() {
+        let mut engine = TeraEngine::V2(Box::default());
+        let ctx = glob_context();
+        assert_eq!(
+            split_path(&mut engine, r"\\?\C:\repo\*.env", &ctx, false).unwrap(),
+            Some((r"\\?\C:\repo\".to_string(), "*.env".to_string()))
         );
     }
 

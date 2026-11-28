@@ -67,7 +67,7 @@ done
 mkdir -p profiles
 echo "DEV_PROFILE=1" >profiles/dev.env
 # shellcheck disable=SC2016 # mise expands $PROFILE, not the shell
-for entry in 'profiles/{{ env.PROFILE }}.e*' 'profiles/$PROFILE.e*' 'profiles/${{ "PROFILE" }}.e*'; do
+for entry in 'profiles/{{ env.PROFILE }}.e*' 'profiles/$PROFILE.e*' 'profiles/${{ "PROFILE" }}.e*' 'profiles/${% if true %}PROFILE{% endif %}.e*'; do
   cat <<EOS >.mise.toml
 [env]
 _.file = '$entry'

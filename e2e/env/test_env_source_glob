@@ -26,11 +26,20 @@ echo "export SOURCE3=3" >source.d/nested/3.sh
 assert_contains "mise env -s bash" "SOURCE2=2"
 assert_not_contains "mise env -s bash" "SOURCE3=3"
 
-# a `*` that a template renders inside the pattern matches only itself
+# a template can name the directory the glob is matched in, and a `*` it renders there is
+# part of the name, not a wildcard
+cat >.mise.toml <<EOF
+[env]
+_.source = "{{ env.DIR }}/*.sh"
+EOF
+assert_contains "DIR=source.d mise env -s bash" "SOURCE1=1"
+assert_contains "DIR=source.d mise env -s bash" "SOURCE2=2"
+assert_not_contains "DIR='source.*' mise env -s bash" "SOURCE1=1"
+
+# a template inside the glob is an error
 cat >.mise.toml <<EOF
 [env]
 _.source = "source.d/{{ env.SCRIPT }}.s*"
 EOF
-assert_contains "SCRIPT=1 mise env -s bash" "SOURCE1=1"
-assert_not_contains "SCRIPT='*' mise env -s bash" "SOURCE1=1"
-assert_not_contains "SCRIPT='*' mise env -s bash" "SOURCE2=2"
+# shellcheck disable=SC2016 # the message names $VAR literally
+assert_fail "SCRIPT=1 mise env -s bash" 'a template or $VAR is part of the glob, which starts after "source.d/"'
