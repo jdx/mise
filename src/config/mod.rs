@@ -5989,7 +5989,12 @@ async fn apply_task_config_inputs(
     // a tasks-only config nobody trusted stays inert until it is run, even when a trusted
     // ancestor cascades templated entries to it. Such a task renders them without its own
     // `vars` and `env`, and an entry that needs them stays as written.
-    let trusted = task.is_trusted(config).await;
+    //
+    // The entries, `vars` and `env` all come from config, so the trust that counts is the
+    // trust of the task's definition. The script a `file` task names adds none of them, and
+    // its path, which can be a template, is not rendered here. Plain-text entries need no
+    // context, so no trust is looked up for them.
+    let trusted = task_inputs.has_templates() && task.definition_is_trusted(config);
     let tera_ctx = if !task_inputs.has_templates() {
         tera::Context::new()
     } else if trusted {

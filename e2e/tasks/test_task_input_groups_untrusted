@@ -154,3 +154,29 @@ assert_contains "mise tasks ls" "build"
 assert_contains "mise tasks ls" "script"
 mise __complete_word__ --shell fish --line 'mise run ' >/dev/null 2>&1 || true
 assert_empty "ls $ran"
+
+echo "=== in paranoid mode, a trusted config's inputs see its vars whatever script it names ==="
+# The entries, vars and env all come from the config, so its trust is enough: the
+# script a `file` task names declares none of them, and needs trust of its own only
+# to be read. Listing does not render a `file` template to find out.
+mkdir -p "$HOME/paranoid"
+cd "$HOME/paranoid" || exit 1
+cat <<EOF >mise.toml
+[vars]
+dir = "lib"
+
+[task_config.input_groups]
+src = ["{{ vars.dir }}/**"]
+
+[tasks.build]
+file = "build.sh"
+sources = ["@group:src"]
+
+[tasks.other]
+file = "{{ exec(command='touch $ran/rendered') }}build.sh"
+EOF
+echo 'echo built' >build.sh
+assert "MISE_PARANOID=1 mise trust"
+assert_contains "MISE_PARANOID=1 mise tasks info build --json" "$PWD/lib/**"
+assert_contains "MISE_PARANOID=1 mise tasks ls" "other"
+assert_empty "ls $ran"

@@ -1345,7 +1345,10 @@ impl Task {
         self.definition_is_trusted(config) && self.resolved_file_is_trusted(file)
     }
 
-    fn definition_is_trusted(&self, config: &Config) -> bool {
+    /// [`Self::is_trusted`] for the files the task is defined in only, leaving out the script
+    /// a `file` task names: what the definition alone declares, such as its `vars`, `env` and
+    /// the input groups its config cascades, needs no more.
+    pub(crate) fn definition_is_trusted(&self, config: &Config) -> bool {
         self.sources_are_trusted(config) || self.trust_typed_sources(config)
     }
 
