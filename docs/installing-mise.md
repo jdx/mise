@@ -141,6 +141,16 @@ The script installs one of these builds:
 [GitHub Releases](#github-releases) has the same builds plus `windows-x64` and
 `windows-arm64`.
 
+::: warning FreeBSD builds are best-effort
+Releases also include a `freebsd-x64` build, for FreeBSD 13 or newer, when it
+compiles. It is cross-compiled and never run by mise's tests, and a release goes out without it
+if its build fails. The install script does not select it: download it from
+[GitHub Releases](https://github.com/jdx/mise/releases) or
+[build from source with Cargo](#cargo). `mise self-update` works with it, but
+fails for a release that has no FreeBSD build. Report problems you hit with it in a
+[Discussion](https://github.com/jdx/mise/discussions).
+:::
+
 The `linux-x64`, `linux-arm64` and `linux-armv7` builds are dynamically linked
 and need glibc 2.18 or newer. The `-musl` builds are static and do not need
 glibc; use them on musl systems such as Alpine Linux and on systems with an
@@ -455,6 +465,12 @@ you can also check the signature of `SHASUMS256.txt` as shown under
 holds `mise.exe` and `mise-shim.exe`, and add it to your `Path`. Keep the two
 files together: mise copies `mise-shim.exe` to create its shims.
 
+Putting `mise.exe` on `Path` is not the last step: unlike the
+[PowerShell script](#windows-script), a manual install does not remind you to
+activate mise. Set up [PowerShell activation](/shell-setup.html#powershell), or
+put the shims directory on `Path` for cmd.exe as described in
+[Windows shells](/shell-setup.html#windows).
+
 ## Language package managers {#language-package-managers}
 
 ### Cargo {#cargo}
@@ -542,6 +558,9 @@ mkdir -p ~/.local/bin
 install -m 755 ./mise ~/.local/bin/mise
 ~/.local/bin/mise --version
 ```
+
+Then [activate mise in your shell](/shell-setup.html) so tools from your
+config are on `PATH`.
 
 ## Verify the executable {#verify-the-executable}
 

@@ -19,6 +19,9 @@ pub struct HistoryTomlConfig {
     /// email used for history commit authors and committers; {hostname} expands to this machine's hostname
     #[serde(default)]
     pub git_email: Option<String>,
+    /// name used for history commit authors and committers; {hostname} expands to this machine's hostname
+    #[serde(default)]
+    pub git_name: Option<String>,
     /// this machine's name in per-machine streams (variants = [{ machine = true }]) instead of the name generated with the history store
     #[serde(default)]
     #[schemars(regex(pattern = r"^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$"))]

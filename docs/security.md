@@ -42,6 +42,24 @@ repository's config can run code.
   run with it. It does not sandbox mise while it evaluates config, installs
   tools, or runs hooks. Run untrusted projects or tools in an isolated
   environment without access to your usual files or credentials.
+- **Resource exhaustion.** Input that mise reads before you trust it, or that
+  comes from the network, must not make mise hang, crash, or use unbounded
+  memory, disk or CPU. A report that such input does is a security bug. This
+  covers:
+  - project config, `.tool-versions` and `mise.lock` you have not
+    [trusted](#configuration-trust), and any `.miserc.toml`, which never needs
+    trust, including what [`mise activate`](/cli/activate.html) reads when you
+    `cd` into a repository you just cloned
+  - anything mise reads in [safe mode](#safe-mode)
+  - remote metadata, such as version lists, release APIs, checksum lists,
+    registry templates and OAuth responses
+  - downloaded archives, such as decompression bombs or archives with too many
+    entries, even when [download verification](#download-verification) passes
+
+  Trusted config and the tools and tasks it runs are out of scope. Trusted
+  config can already run commands as you, so a trusted config that loops or
+  allocates a lot is a bug, not a vulnerability. The same goes for a tool you
+  chose to install that is large.
 
 ## Configuration trust
 
@@ -99,9 +117,17 @@ idea:
   environments but cannot drop or reorder one that a global or system
   `miserc.toml` selects. The project's own environments come after the global
   ones and override them, so a global environment protects only settings that
-  project config cannot set, such as `paranoid`. The other keys a project file
-  can set change which project files load and how far up mise looks for them;
-  they cannot hide global or system config. Global and system `conf.d`
+  project config cannot set, such as `paranoid`. The environments a project
+  adds or turns on select only project files, never a global or system
+  `config.<env>.toml`. The other keys a project file can set change which
+  project files load and how far up mise looks for them;
+  they cannot hide global or system config. A project's `ignored_config_paths`
+  adds to the list it inherits and cannot remove an entry, so a project under
+  an ignored path stays ignored. Its environment names may use only letters,
+  digits, `_`, `-` and `.`, so they cannot carry shell or template syntax into
+  a trusted config that uses `{{ mise_env }}`. Its override filenames must be
+  file names ending in `.toml` or `tool-versions`, so they cannot make mise
+  read a file such as `~/.netrc` as config. Global and system `conf.d`
   fragments follow only the global and system `env_conf_d`. Templates in a
   project `.miserc.toml` see no environment variables and may use only `if`
   statements and a short list of functions and filters, so they cannot leak your
@@ -209,7 +235,8 @@ Two settings decide trust by location:
   `trusted_config_paths` and `mise trust`. mise reads it before it looks for
   config files, so set it in a [`.miserc.toml`](/configuration.html#miserc) or
   in `MISE_IGNORED_CONFIG_PATHS`. A project's `.miserc.toml` cannot ignore
-  global or system config.
+  global or system config, and it can add entries but cannot remove one set
+  in a global or system `miserc.toml` or in a parent directory.
 
 ```toml
 # ~/.config/mise/config.toml
@@ -239,6 +266,24 @@ that only names one of the repository's worktrees shares nothing. After moving a
 worktree by hand, run `git worktree repair`. A path in the main checkout that is
 a symlink, or sits below one, shares nothing either; trust the worktree's config
 directly instead.
+
+To trust a config in every checkout of a repository, run `mise trust --worktrees`
+in any of them. This is how worktrees of a bare repository, which have no main
+checkout, share trust. It covers the same path in the main checkout and in every
+linked worktree, including worktrees created later, and nothing else: a config at
+another path in a worktree still needs its own trust.
+
+```sh
+git -C ~/src/app.git worktree add ~/work/feature-x
+cd ~/work/feature-x
+mise trust --worktrees
+```
+
+The grant is kept in mise's trust store, keyed by the repository's git directory,
+not in the repository, so a copy of the repository does not carry it.
+`mise trust --untrust --worktrees` removes it, and `mise trust --ignore` in one
+worktree still stops the config loading there. Paranoid mode refuses
+`--worktrees`.
 
 ## Safe mode
 

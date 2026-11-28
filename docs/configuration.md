@@ -427,8 +427,9 @@ dotfiles = "~/.config/mise/conf.d/30-dotfiles.toml"
 
 New declarations from `mise use --global`,
 `mise bootstrap packages use --global`,
-`mise bootstrap packages import --global`, and `mise dotfiles add` (which
-writes global config by default) then go to those files. A target must point to
+`mise bootstrap packages import --global`, `mise dotfiles add` (which
+writes global config by default), and `mise dotfiles track` then go to those
+files. A target must point to
 a file mise loads from the global config directory: `config.toml`, `mise.toml`,
 or a `conf.d` fragment. A path such as `~/.config/mise/tools.toml` is not
 loaded, so mise rejects it.
@@ -479,7 +480,19 @@ the `.miserc.toml` file.
 
 `env` holds names, so mise ignores one that contains a path separator. It also
 ignores an override filename that is absolute or contains `..`: both only select
-files in the directories mise already searches.
+files in the directories mise already searches. An override filename from a file
+found from the current directory must also be a file name without a directory,
+ending in `.toml` for `override_config_filenames` or `tool-versions` for
+`override_tool_versions_filenames`; set any other name in
+`~/.config/mise/miserc.toml`.
+
+A `.miserc.toml` found from the current directory loads without trust, and on
+every command mise looks for the files of each selected environment and for each
+override filename in every directory it searches. mise therefore uses only the
+first 64 entries of such a file's `env` and of each of its override filename
+lists, and the `env_sets` of all such files may name 64 environments between
+them: a set that would go past that is ignored. mise warns about what it leaves
+out. The global and system files, `MISE_ENV` and `-E` are not limited.
 
 ### Where mise looks for .miserc.toml {#miserc-locations}
 
@@ -506,6 +519,26 @@ order, ahead of the project's own, so a project cannot turn off a baseline such 
 `~/.config/mise/conf.d` and `/etc/mise/conf.d` follow the global and system
 files. The `-E` flag and environment variables such as `MISE_ENV` and
 `MISE_ENV_CONF_D` override every `.miserc.toml` file.
+
+The environments a file found from the current directory adds or turns on,
+through `env`, `env_sets` or `auto_env`, select project files only. The files
+in `~/.config/mise` and `/etc/mise`, such as `config.ci.toml`, follow the
+global and system `miserc.toml` files, `-E`, `MISE_ENV` and `MISE_AUTO_ENV`:
+they need no trust and can set `yes` or `paranoid`, so a project cannot load
+or skip one.
+
+`ignored_config_paths` is the other exception. A file found from the current
+directory adds its entries to the list it inherits, from the global and system
+files and from the files in parent directories, and cannot remove one, so a
+checkout under an ignored path cannot un-ignore itself with
+`ignored_config_paths = []`. The global and system files still replace each
+other's list, and `MISE_IGNORED_CONFIG_PATHS` replaces them all.
+
+Environment names in a file found from the current directory, in `env` and in
+`env_sets`, may use only letters, digits, `_`, `-` and `.`, and start with a
+letter or digit. mise ignores any other name with a warning, since the names
+reach every config's templates as `mise_env`. Select such an environment with
+`-E`, `MISE_ENV` or `~/.config/mise/miserc.toml`.
 
 ### Personal and machine-wide choices
 

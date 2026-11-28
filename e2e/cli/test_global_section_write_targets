@@ -187,3 +187,25 @@ printf 'project dotfile\n' >"$HOME/.project-write-target"
   assert_not_contains "cat mise.toml" "project-write-target"
 )
 assert_contains "cat no-defaults/config.toml" '"~/.project-write-target"'
+
+# `mise dot track` sends new entries to the dotfiles target too.
+mkdir -p track-defaults/conf.d
+cat >track-defaults/config.toml <<EOF
+[settings.write_targets]
+dotfiles = "$PWD/track-defaults/conf.d/30-dotfiles.toml"
+EOF
+printf 'tracked\n' >"$HOME/.track-write-target"
+MISE_CONFIG_DIR="$PWD/track-defaults" MISE_HISTORY_NOTIFY=false mise dot track "$HOME/.track-write-target"
+assert_contains "cat track-defaults/conf.d/30-dotfiles.toml" '"~/.track-write-target" = { mode = "track" }'
+assert_not_contains "cat track-defaults/config.toml" 'track-write-target'
+
+# An entry that already exists stays in the file that declares it.
+printf 'tracked elsewhere\n' >"$HOME/.track-existing"
+cat >>track-defaults/config.toml <<'EOF'
+
+[dotfiles]
+"~/.track-existing" = { mode = "track" }
+EOF
+MISE_CONFIG_DIR="$PWD/track-defaults" MISE_HISTORY_NOTIFY=false mise dot track "$HOME/.track-existing"
+assert_contains "cat track-defaults/config.toml" '"~/.track-existing"'
+assert_not_contains "cat track-defaults/conf.d/30-dotfiles.toml" 'track-existing'

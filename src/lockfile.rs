@@ -850,9 +850,9 @@ fn warn_outdated_lockfile(path: &Path, remedy: &str) {
         && outdated_lockfile_version_today(
             version,
             jiff::Timestamp::now()
-                .to_zoned(jiff::tz::TimeZone::UTC)
+                .to_zoned_datetime(jiff::tz::TimeZone::UTC)
                 .date(),
-            || jiff::Zoned::now().date(),
+            || jiff::ZonedDateTime::now().date(),
         )
     {
         warn_once!(
@@ -6691,6 +6691,12 @@ pub(crate) fn read_lockfile_for_tool_source(
     warn_outdated_lockfiles(config);
     if let ToolSource::MiseToml(path) | ToolSource::MiseTomlDaemon(path) = source {
         return Ok(read_lockfile_for_config_path(config, path));
+    }
+    // A request no file owns (a CLI argument, a task tool, ...) takes its pin
+    // from the merged lockfiles, so its dependency tables must come from there
+    // too, or the pin names packages this read cannot find.
+    if source.path().is_none() {
+        return Ok(read_all_lockfiles(config).as_ref().clone());
     }
 
     let monorepo_root = config.monorepo_lockfile_root();

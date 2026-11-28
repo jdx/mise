@@ -66,3 +66,9 @@ image = "ghcr.io/cross-rs/aarch64-unknown-linux-musl:0.2.5"
 
 [target.armv7-unknown-linux-musleabi]
 image = "ghcr.io/cross-rs/armv7-unknown-linux-musleabi:0.2.5"
+
+# FreeBSD (best-effort release build). The 0.2.5 image's GCC 6.4 hits an
+# internal compiler error on zlib-ng's AVX-512 code, so use a newer image
+# (GCC 13, FreeBSD 13 sysroot) pinned by digest. Binaries need FreeBSD 13+.
+[target.x86_64-unknown-freebsd]
+image = "ghcr.io/cross-rs/x86_64-unknown-freebsd@sha256:d1ecbeb055803f5316607acce26c8af2b8609a04e38a06ba7aed84f9df80042e"

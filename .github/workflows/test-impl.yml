@@ -204,7 +204,7 @@ jobs:
       - run: |
           mbx build --all-features --ignore-rust-version
           echo "$PWD/target/debug" >> "$GITHUB_PATH"
-      - uses: ./.github/actions/mise-tools
+      - uses: $/.github/actions/mise-tools
       # The CI profile fails ordinary tests after one second and explicitly
       # budgeted full-command-graph tests after two seconds.
       - run: mise run test:unit-ci
@@ -293,7 +293,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: mise x mold@2 -- sh -c 'dirname "$(command -v mold)"' >> "$GITHUB_PATH"
-      - uses: ./.github/actions/mise-tools
+      - uses: $/.github/actions/mise-tools
       - run: mise x -- aube install
       # build-ubuntu produced this commit's binary, downloaded above.
       - run: mise run render
@@ -376,7 +376,7 @@ jobs:
           persist-credentials: false
       - name: Fetch tokens
         id: tokens
-        uses: ./.github/actions/fetch-token
+        uses: $/.github/actions/fetch-token
         with:
           api-secret: ${{ secrets.MISE_VERSIONS_API_SECRET }}
           count: "8"
@@ -456,6 +456,29 @@ jobs:
               TOKEN_A: ${{ steps.tokens.outputs.token_3 || secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
               TOKEN_B: ${{ steps.tokens.outputs.token_7 || secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
             run: *e2e-run
+
+  # FreeBSD release binaries are best-effort and nothing runs them, so this
+  # only checks that the release feature set still compiles for the target.
+  # It is not required: a red check here is a heads-up
+  # that the next release will ship without the FreeBSD archive.
+  check-freebsd:
+    # A failure here must not fail the reusable workflow that test.yml requires.
+    continue-on-error: true
+    permissions:
+      contents: read
+    runs-on: ${{ !inputs.trusted && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64;overrides.cache-tag=cache' }}
+    timeout-minutes: 60
+    needs: [classify-changes]
+    if: needs.classify-changes.outputs.full-ci == 'true'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: taiki-e/install-action@51cd0b8c0499559d9a4d75c0f5c67bec3a894ec8 # v2.75.28
+        with:
+          tool: cross
+      - run: rustup update stable --no-self-update && rustup default stable
+      - run: cross check --target x86_64-unknown-freebsd --ignore-rust-version --no-default-features --features rustls-native-roots,self_update,vfox/vendored-lua,openssl/vendored
 
   bootstrap-linux-host:
     permissions:
@@ -581,7 +604,7 @@ jobs:
           path: target/debug
       - run: ls target\debug
       - run: Add-Content $env:GITHUB_PATH "$env:GITHUB_WORKSPACE\target\debug"
-      - uses: ./.github/actions/mise-tools
+      - uses: $/.github/actions/mise-tools
       - name: e2e
         uses: jdx/workflows/retry@7e4ea6cf326e2b3bb4335f733381af531aaa699d # v1.2.1
         with:

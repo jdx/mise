@@ -601,6 +601,13 @@ async fn run_staged(
         }
     }
     argv.push(format!("MISE_TRUSTED_CONFIG_PATHS={project}"));
+    if repository.is_none() || preview_setup {
+        // The staging directory sits in the target's shared /tmp, so config
+        // search stops there: a mise.toml another user left above it is never
+        // loaded. A real repository bootstrap runs in the target's own global
+        // config directory and keeps the target's own ceiling.
+        argv.push(format!("MISE_CEILING_PATHS={staging}"));
+    }
     if let Some(mise_env) = &session.host.mise_env {
         // An explicit empty list selects no environments; the empty value masks the aliases.
         argv.push(format!("MISE_ENV={}", mise_env.join(",")));
@@ -1728,7 +1735,21 @@ impl RemoteArtifactResolver {
             return Ok(path.clone());
         }
         self.ensure_official_local(local).await?;
-        let checksum = self.manifest().await?.checksum(&asset)?.to_string();
+        let checksum = self
+            .manifest()
+            .await?
+            .checksum(&asset)
+            .wrap_err_with(|| {
+                if platform.os == "freebsd" {
+                    format!(
+                        "FreeBSD builds are best-effort and mise {} shipped without one; set mise_bin, remote_mise, or bootstrap_command",
+                        MISE_VERSION.as_str()
+                    )
+                } else {
+                    format!("no official mise release artifact named {asset}")
+                }
+            })?
+            .to_string();
         if self.directory.is_none() {
             self.directory = Some(tempfile::tempdir()?);
         }
@@ -1846,6 +1867,14 @@ fn release_asset_name(os: &str, arch: &str, libc: Option<LibcFlavor>) -> Result<
             Some(LibcFlavor::Musl) => format!("linux-{release_arch}-musl"),
             None => bail!("Linux release targets require a detected libc family"),
         },
+        // Best-effort release target: only x86_64 is built, and a release
+        // whose FreeBSD build failed has no such artifact.
+        "freebsd" if arch == "x86_64" => {
+            if libc.is_some() {
+                bail!("FreeBSD release targets cannot declare a libc family");
+            }
+            format!("freebsd-{release_arch}")
+        }
         _ => {
             bail!(
                 "mise {} has no official precompiled artifact for {os}/{arch}; set mise_bin, remote_mise, or bootstrap_command",
@@ -1862,7 +1891,7 @@ fn official_release_assets(os: &str, arch: &str) -> Result<Vec<String>> {
             .into_iter()
             .map(|libc| release_asset_name(os, arch, Some(libc)))
             .collect(),
-        "macos" => Ok(vec![release_asset_name(os, arch, None)?]),
+        "macos" | "freebsd" => Ok(vec![release_asset_name(os, arch, None)?]),
         "windows" => {
             let release_arch = match arch {
                 "x86_64" => "x64",
@@ -2277,15 +2306,59 @@ impl SshSession<'_> {
         args
     }
 
+    /// Run a remote command and return its stdout. Every caller expects a
+    /// short answer (a path, a version, a platform), so each stream is read
+    /// only up to [`Self::OUTPUT_LIMIT`]: a host that keeps writing ends the
+    /// command with an error instead of filling memory.
     async fn output_async(&self, remote_argv: &[&str]) -> Result<String> {
         let args = self.args(false, remote_argv);
         info!("$ {} {}", self.ssh.display(), shell_words::join(&args));
-        let output = tokio::process::Command::new(&self.ssh)
+        let mut child = tokio::process::Command::new(&self.ssh)
             .args(args)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
             .kill_on_drop(true)
-            .output()
-            .await?;
-        checked_output(output, &self.host.name)
+            .spawn()?;
+        let stdout = child.stdout.take().expect("piped stdout");
+        let stderr = child.stderr.take().expect("piped stderr");
+        // a stream over the limit fails its reader, which ends the join at
+        // once, even while the other stream is still open; returning drops the
+        // child, which kills it
+        let (stdout, stderr) = tokio::try_join!(
+            self.read_limited(stdout, Self::OUTPUT_LIMIT),
+            self.read_limited(stderr, Self::OUTPUT_LIMIT),
+        )?;
+        let status = child.wait().await?;
+        checked_output(
+            Output {
+                status,
+                stdout,
+                stderr,
+            },
+            &self.host.name,
+        )
+    }
+
+    const OUTPUT_LIMIT: u64 = 1024 * 1024;
+
+    /// Read `reader` to its end, failing as soon as it has given more than
+    /// `limit` bytes.
+    async fn read_limited(
+        &self,
+        reader: impl tokio::io::AsyncRead + Unpin,
+        limit: u64,
+    ) -> Result<Vec<u8>> {
+        use tokio::io::AsyncReadExt as _;
+        let mut buf = Vec::new();
+        reader.take(limit + 1).read_to_end(&mut buf).await?;
+        if buf.len() as u64 > limit {
+            bail!(
+                "remote command on '{}' wrote more than {limit} bytes of output",
+                self.host.name
+            );
+        }
+        Ok(buf)
     }
 
     async fn status_with_stdin_async(&self, remote_argv: &[&str], input: File) -> Result<()> {
@@ -2408,11 +2481,20 @@ fn validate_value(kind: &str, value: &str) -> Result<()> {
     Ok(())
 }
 
+/// The remote host prints the staging directory, and the path then goes into
+/// remote shell commands and into the socket paths of OpenSSH's `-R`, which
+/// expands `${VAR}` from mise's own environment and `%` tokens. So only the
+/// characters `mktemp` writes are accepted after the fixed prefix.
 fn validate_staging_path(path: &str) -> Result<()> {
-    if !path.starts_with("/tmp/mise-bootstrap.")
-        || path["/tmp/mise-bootstrap.".len()..].is_empty()
-        || path.chars().any(char::is_whitespace)
-    {
+    let plain = path
+        .strip_prefix("/tmp/mise-bootstrap.")
+        .is_some_and(|suffix| {
+            !suffix.is_empty()
+                && suffix
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))
+        });
+    if !plain {
         bail!("remote mktemp returned an unsafe staging path: {path:?}");
     }
     Ok(())
@@ -2527,6 +2609,51 @@ mod tests {
     fn source_host(source: &Path, excludes: &[&str]) -> Result<RemoteHost> {
         let excludes: Vec<String> = excludes.iter().map(|e| e.to_string()).collect();
         ad_hoc_host("example.test", source.to_path_buf(), &excludes)
+    }
+
+    /// A host that answers a short question with endless output must not
+    /// make mise hold all of it; a normal answer still comes through.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn remote_output_is_read_up_to_a_limit() -> Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+        let temp = tempfile::tempdir()?;
+        let host = source_host(temp.path(), &[])?;
+        let ssh = temp.path().join("ssh");
+        let session = SshSession {
+            relay: false,
+            ssh: ssh.clone(),
+            host: &host,
+            connect_timeout: 5,
+            control_path: None,
+        };
+        for (script, limit_hit) in [
+            ("head -c 3000000 /dev/zero", true),
+            ("head -c 3000000 /dev/zero >&2", true),
+            // the other stream stays open: the limit must still end it
+            ("head -c 3000000 /dev/zero\nexec sleep 60 >/dev/null", true),
+            (
+                "head -c 3000000 /dev/zero >&2\nexec sleep 60 2>/dev/null",
+                true,
+            ),
+            ("echo /home/me", false),
+        ] {
+            fs::write(&ssh, format!("#!/bin/sh\n{script}\n"))?;
+            fs::set_permissions(&ssh, fs::Permissions::from_mode(0o700))?;
+            let result = tokio::time::timeout(
+                std::time::Duration::from_secs(20),
+                session.output_async(&["true"]),
+            )
+            .await
+            .unwrap_or_else(|_| panic!("{script}: still waiting after the limit"));
+            if limit_hit {
+                let err = result.expect_err(script).to_string();
+                assert!(err.contains("more than 1048576 bytes"), "{script}: {err}");
+            } else {
+                assert_eq!(result?, "/home/me\n");
+            }
+        }
+        Ok(())
     }
 
     #[test]
@@ -2876,6 +3003,24 @@ mod tests {
         assert!(validate_staging_path("/tmp/mise-bootstrap.").is_err());
         assert!(validate_staging_path("/tmp/other").is_err());
         assert!(validate_staging_path("/tmp/mise-bootstrap.a b").is_err());
+        assert!(validate_staging_path("/tmp/mise-bootstrap.Ab-1_2.x").is_ok());
+        // ssh expands these in a forwarded socket path, the shell in commands.
+        for suffix in [
+            "${GITHUB_TOKEN}",
+            "$HOME",
+            "%d",
+            "a%%b",
+            "a:b",
+            "a\\b",
+            "[a]",
+            "a/../b",
+            "a\nb",
+            "a;b",
+            "a'b",
+        ] {
+            let path = format!("/tmp/mise-bootstrap.{suffix}");
+            assert!(validate_staging_path(&path).is_err(), "{path:?}");
+        }
     }
 
     #[test]
@@ -3128,7 +3273,12 @@ mod tests {
             format!("mise-v{version}-macos-arm64")
         );
         assert!(release_asset_name("linux", "riscv64", Some(LibcFlavor::Glibc)).is_err());
-        assert!(release_asset_name("freebsd", "x86_64", None).is_err());
+        assert_eq!(
+            release_asset_name("freebsd", "x86_64", None).unwrap(),
+            format!("mise-v{version}-freebsd-x64")
+        );
+        assert!(release_asset_name("freebsd", "aarch64", None).is_err());
+        assert!(release_asset_name("freebsd", "x86_64", Some(LibcFlavor::Glibc)).is_err());
         assert!(release_asset_name("linux", "x86_64", None).is_err());
     }
 
@@ -3173,6 +3323,14 @@ mod tests {
             }
         );
         assert!(parse_remote_platform("Linux\nx86_64\nunknown\n").is_err());
+        assert_eq!(
+            parse_remote_platform("FreeBSD\namd64\nnone\n").unwrap(),
+            RemotePlatform {
+                os: "freebsd".to_string(),
+                arch: "x86_64".to_string(),
+                libc: None,
+            }
+        );
         assert!(parse_remote_platform("Linux\nx86_64\n").is_err());
         assert!(parse_remote_platform("Darwin\narm64\nnone\nextra\n").is_err());
     }

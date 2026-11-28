@@ -35,7 +35,7 @@ use crate::{
     registry::REGISTRY,
 };
 use eyre::{Result, eyre};
-use globset::{GlobBuilder, GlobMatcher};
+use globset::{GlobBuilder, GlobSet, GlobSetBuilder};
 use idiomatic_version::IdiomaticVersionFile;
 use indexmap::{IndexMap, IndexSet};
 use std::sync::LazyLock as Lazy;
@@ -1037,6 +1037,15 @@ fn is_trusted_without_config_paths(
             add_trusted(canonicalized_path.to_path_buf());
             return true;
         }
+        // Or the same path was trusted for every checkout of the repository with
+        // `mise trust --worktrees`, which is how worktrees of a bare repository,
+        // having no main checkout, share trust.
+        if crate::git::repository_path(canonicalized_path)
+            .is_some_and(|repo_path| worktrees_trust_path(&repo_path).exists())
+        {
+            add_trusted(canonicalized_path.to_path_buf());
+            return true;
+        }
         return false;
     }
     add_trusted(canonicalized_path.to_path_buf());
@@ -1127,10 +1136,39 @@ fn path_is_under_any(path: &Path, ignored: &[PathBuf]) -> bool {
         .any(|p| canonical.starts_with(p))
 }
 
+/// The longest glob [`compile_path_glob`] accepts, in bytes: what a path can be
+/// on Linux. The regex globset generates takes memory in proportion to the
+/// pattern before the size limit of the compiled regex can reject it.
+const GLOB_MAX_LEN: usize = 4096;
+/// The most `{` it accepts. globset recurses once per nested `{…}` while it
+/// builds a glob, so a deeply nested pattern overflows the stack. Every `{` is
+/// counted rather than the nesting itself: a `}` that is escaped or inside a
+/// character class closes nothing, and a depth counter that missed one would
+/// let the nesting through.
+const GLOB_MAX_BRACES: usize = 64;
+
+/// Compiles a path glob that can come from a file read without trust: a
+/// project `.miserc.toml` sets `ignored_config_paths` and the override
+/// filenames, which become the config filename patterns.
+///
+/// `Glob::compile_matcher` panics when the regex it generates is rejected, for
+/// nesting too deep or growing too large. `GlobSetBuilder::build` returns that
+/// as an error instead.
+pub(crate) fn compile_path_glob(pattern: &str) -> Result<GlobSet> {
+    if pattern.len() > GLOB_MAX_LEN {
+        return Err(eyre!("the pattern is longer than {GLOB_MAX_LEN} bytes"));
+    }
+    if pattern.matches('{').count() > GLOB_MAX_BRACES {
+        return Err(eyre!("more than {GLOB_MAX_BRACES} `{{` in the pattern"));
+    }
+    let glob = GlobBuilder::new(pattern).literal_separator(true).build()?;
+    Ok(GlobSetBuilder::new().add(glob).build()?)
+}
+
 #[derive(Default)]
 struct IgnoredConfigPathMatcher {
     literals: Vec<PathBuf>,
-    globs: Vec<GlobMatcher>,
+    globs: Vec<GlobSet>,
 }
 
 impl IgnoredConfigPathMatcher {
@@ -1142,8 +1180,8 @@ impl IgnoredConfigPathMatcher {
                 matcher.literals.push(path.clone());
                 continue;
             }
-            match GlobBuilder::new(&pattern).literal_separator(true).build() {
-                Ok(glob) => matcher.globs.push(glob.compile_matcher()),
+            match compile_path_glob(&pattern) {
+                Ok(glob) => matcher.globs.push(glob),
                 Err(err) => {
                     warn!("invalid ignored_config_paths glob {pattern}: {err}");
                     matcher.literals.push(path.clone());
@@ -1391,6 +1429,67 @@ pub fn untrust(path: &Path) -> eyre::Result<()> {
         file::remove_file(&monorepo_path)?;
     }
     Ok(())
+}
+
+/// Trusts the trust root `path` in every checkout of its git repository: the main checkout and
+/// every linked worktree, present and future, including worktrees of a bare repository. Returns
+/// the repository's git dir, or None when `path` is not in a checkout of one.
+///
+/// The record stays in mise's own trust store, keyed by the repository's git dir and the path
+/// within a checkout, so it covers that one path in each checkout, as sharing trust with a main
+/// checkout does, and never travels with a copy of the repository.
+pub fn trust_in_worktrees(path: &Path) -> Result<Option<PathBuf>> {
+    let Some(repo_path) = crate::git::repository_path(&path.canonicalize()?) else {
+        return Ok(None);
+    };
+    rm_ignored(path.to_path_buf())?;
+    let record = worktrees_trust_path(&repo_path);
+    if !record.exists() {
+        file::create_dir_all(&*dirs::TRUSTED_CONFIGS)?;
+        // Pointing at the repository lets `mise prune --configs` remove the record with it.
+        file::make_symlink_or_file(&repo_path.common_dir, &record)?;
+    }
+    Ok(Some(repo_path.common_dir))
+}
+
+/// Removes the record [`trust_in_worktrees`] keeps for `path`. Returns whether there was one.
+pub fn untrust_in_worktrees(path: &Path) -> Result<bool> {
+    let Some(repo_path) = path
+        .canonicalize()
+        .ok()
+        .and_then(|path| crate::git::repository_path(&path))
+    else {
+        return Ok(false);
+    };
+    let record = worktrees_trust_path(&repo_path);
+    if record.exists() {
+        file::remove_file(&record)?;
+        return Ok(true);
+    }
+    Ok(false)
+}
+
+/// Whether `path` is trusted for every checkout of its repository by [`trust_in_worktrees`].
+pub fn is_trusted_in_worktrees(path: &Path) -> bool {
+    path.canonicalize()
+        .ok()
+        .and_then(|path| crate::git::repository_path(&path))
+        .is_some_and(|repo_path| worktrees_trust_path(&repo_path).exists())
+}
+
+/// generates a path like ~/.mise/trusted-configs/worktrees-3e8b8c44c3
+///
+/// The prefix keeps these apart from the records of single paths, whose names start with the
+/// trusted path's parent directory and file name.
+///
+/// The key joins the two paths with a NUL, which no path contains, rather than hashing them one
+/// after the other: `Path` hashes its components without marking where the path ends, so two
+/// different splits of the same components would otherwise share one record.
+fn worktrees_trust_path(repo_path: &crate::git::RepositoryPath) -> PathBuf {
+    let mut key = repo_path.common_dir.as_os_str().to_owned();
+    key.push("\0");
+    key.push(repo_path.relative.as_os_str());
+    dirs::TRUSTED_CONFIGS.join(format!("worktrees-{}", hash_to_str(&key)))
 }
 
 /// generates a path like ~/.mise/trusted-configs/dir-file-3e8b8c44c3.toml
@@ -1839,6 +1938,50 @@ mod ignored_config_path_tests {
 
         assert!(matcher.is_match(&root.path().join("vendor/jj/.config/mise.toml")));
         assert!(!matcher.is_match(&root.path().join("vendor/jj/.config/.mise.toml")));
+    }
+
+    #[test]
+    fn brace_glob_matches_each_alternative() {
+        let root = tempfile::tempdir().unwrap();
+        let pattern = root.path().join("{vendor,third_party}/**/mise.toml");
+        let matcher = IgnoredConfigPathMatcher::new(&[pattern]);
+
+        assert!(matcher.is_match(&root.path().join("vendor/jj/mise.toml")));
+        assert!(matcher.is_match(&root.path().join("third_party/jj/mise.toml")));
+        assert!(!matcher.is_match(&root.path().join("src/jj/mise.toml")));
+    }
+
+    /// A project `.miserc.toml` supplies these patterns without trust, so one
+    /// that globset cannot compile is kept as a literal path instead of taking
+    /// the process down.
+    #[test]
+    fn glob_that_cannot_be_compiled_is_kept_as_a_literal() {
+        let nested = |depth: usize| format!("/x/{}b{}", "{a,".repeat(depth), "}".repeat(depth));
+        for pattern in [
+            // past the regex parser's nesting limit
+            nested(125),
+            // deep enough to overflow the stack in globset's glob-to-regex pass
+            nested(100_000),
+            // 1000 levels again, each `{` followed by a `}` that closes nothing
+            format!("/x/{}b{}", r"{\}".repeat(1000), "}".repeat(1000)),
+            format!("/x/{}b{}", "{[}]".repeat(1000), "}".repeat(1000)),
+            // past the size limit of the compiled regex
+            format!("/x/{}", "?".repeat(2_000_000)),
+        ] {
+            let path = PathBuf::from(pattern);
+            let matcher = IgnoredConfigPathMatcher::new(std::slice::from_ref(&path));
+            assert!(matcher.globs.is_empty());
+            assert_eq!(matcher.literals, [path]);
+        }
+    }
+
+    #[test]
+    fn path_glob_at_the_limits_still_compiles() {
+        let nested = |depth: usize| format!("{}b{}", "{a,".repeat(depth), "}".repeat(depth));
+        assert!(compile_path_glob(&nested(GLOB_MAX_BRACES)).is_ok());
+        assert!(compile_path_glob(&nested(GLOB_MAX_BRACES + 1)).is_err());
+        assert!(compile_path_glob(&"?".repeat(GLOB_MAX_LEN)).is_ok());
+        assert!(compile_path_glob(&"?".repeat(GLOB_MAX_LEN + 1)).is_err());
     }
 
     #[test]
@@ -2314,5 +2457,19 @@ mod hashed_path_filename_tests {
             hashed_path_filename(&relative),
             hashed_path_filename(&absolute)
         );
+    }
+
+    #[test]
+    fn worktrees_trust_records_do_not_depend_on_where_the_paths_split() {
+        use crate::git::RepositoryPath;
+        let record = |common: &str, relative: &str| {
+            worktrees_trust_path(&RepositoryPath {
+                common_dir: PathBuf::from(common),
+                relative: PathBuf::from(relative),
+            })
+        };
+        assert_ne!(record("/a/b", "c"), record("/a", "b/c"));
+        assert_ne!(record("/a/b", ""), record("/a", "b"));
+        assert_eq!(record("/a", "b/c"), record("/a", "b/c"));
     }
 }
