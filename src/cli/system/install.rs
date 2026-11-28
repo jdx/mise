@@ -220,9 +220,26 @@ pub(crate) async fn apply_login_items(
             return Ok(BootstrapApplyReport::default());
         }
     }
-    login_items::apply(&targets, dry_run).await?;
-    if !dry_run {
+    let not_added = login_items::apply(&targets, dry_run).await?;
+    if dry_run {
+        return Ok(BootstrapApplyReport::default());
+    }
+    let list = targets
+        .iter()
+        .zip(list)
+        .filter(|(s, _)| !not_added.contains(&s.path))
+        .map(|(_, action)| action)
+        .collect::<Vec<_>>();
+    if !list.is_empty() {
         info!("login items: {}", list.join(", "));
+    }
+    for path in &not_added {
+        warn!(
+            "login items: macOS did not add {} to your Open at Login list. \
+             If your organization manages it, it is still a login item, but \
+             mise cannot see it and reports it as missing.",
+            path.display()
+        );
     }
     Ok(BootstrapApplyReport::default())
 }

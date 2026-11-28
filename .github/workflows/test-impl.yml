@@ -204,7 +204,7 @@ jobs:
       - run: |
           mbx build --all-features --ignore-rust-version
           echo "$PWD/target/debug" >> "$GITHUB_PATH"
-      - uses: ./.github/actions/mise-tools
+      - uses: $/.github/actions/mise-tools
       # The CI profile fails ordinary tests after one second and explicitly
       # budgeted full-command-graph tests after two seconds.
       - run: mise run test:unit-ci
@@ -293,7 +293,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: mise x mold@2 -- sh -c 'dirname "$(command -v mold)"' >> "$GITHUB_PATH"
-      - uses: ./.github/actions/mise-tools
+      - uses: $/.github/actions/mise-tools
       - run: mise x -- aube install
       # build-ubuntu produced this commit's binary, downloaded above.
       - run: mise run render
@@ -376,7 +376,7 @@ jobs:
           persist-credentials: false
       - name: Fetch tokens
         id: tokens
-        uses: ./.github/actions/fetch-token
+        uses: $/.github/actions/fetch-token
         with:
           api-secret: ${{ secrets.MISE_VERSIONS_API_SECRET }}
           count: "8"
@@ -581,7 +581,7 @@ jobs:
           path: target/debug
       - run: ls target\debug
       - run: Add-Content $env:GITHUB_PATH "$env:GITHUB_WORKSPACE\target\debug"
-      - uses: ./.github/actions/mise-tools
+      - uses: $/.github/actions/mise-tools
       - name: e2e
         uses: jdx/workflows/retry@7e4ea6cf326e2b3bb4335f733381af531aaa699d # v1.2.1
         with:

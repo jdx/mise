@@ -318,11 +318,11 @@ pub fn format_hidden_release_details(
             // release never becomes eligible — only show when it will for
             // relative ages.
             let eligible_at = age.and_then(|age| release_eligible_at(created, age));
-            let released = created.to_zoned(tz.clone()).strftime("%Y-%m-%d");
+            let released = created.to_zoned_datetime(tz.clone()).strftime("%Y-%m-%d");
             match eligible_at {
                 Some(at) => format!(
                     " (released {released}, eligible {})",
-                    at.to_zoned(tz).strftime("%Y-%m-%d %H:%M %Z")
+                    at.to_zoned_datetime(tz).strftime("%Y-%m-%d %H:%M %Z")
                 ),
                 None => format!(" (released {released})"),
             }
@@ -341,7 +341,7 @@ fn release_eligible_at(created_at: Timestamp, age: &str) -> Option<Timestamp> {
         return None;
     }
     let mut high = created_at
-        .to_zoned(jiff::tz::TimeZone::UTC)
+        .to_zoned_datetime(jiff::tz::TimeZone::UTC)
         .checked_add(span)
         .ok()
         .map(|eligible| eligible.timestamp())?;
@@ -367,7 +367,7 @@ fn release_eligible_at(created_at: Timestamp, age: &str) -> Option<Timestamp> {
 }
 
 fn release_is_eligible_at(created_at: Timestamp, now: Timestamp, age: &Span) -> bool {
-    now.to_zoned(jiff::tz::TimeZone::UTC)
+    now.to_zoned_datetime(jiff::tz::TimeZone::UTC)
         .checked_sub(age)
         .is_ok_and(|cutoff| cutoff.timestamp() > created_at)
 }
