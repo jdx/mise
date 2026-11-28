@@ -1102,10 +1102,11 @@ fn slsa_signer_hint(old: &PlatformInfo, new: &PlatformInfo, backend: &str) -> &'
 }
 
 /// Why the conda dependency rows `conda`, from resolving one tool on `platform`, cannot
-/// go into the shared `conda-packages` section: a row there that another entry of
-/// `candidate` still installs pins a different checksum. Rows are keyed by file name
-/// and channel, so the channel now serves other bytes under the same name, and
-/// replacing the row would change what that other entry installs.
+/// go into the shared `conda-packages` section: a row there, from the previous lockfile
+/// or from another tool resolved in this run, pins a different checksum. Rows are keyed
+/// by file name and channel, and a channel's file does not change, so the channel now
+/// serves other bytes under the same name. Replacing the row would change what every
+/// other tool that names it installs, whichever order the tools are written in.
 fn conda_pin_conflict(
     candidate: &Lockfile,
     platform: &str,
@@ -1118,23 +1119,17 @@ fn conda_pin_conflict(
         let (Some(old), Some(new)) = (&existing.checksum, &package.checksum) else {
             continue;
         };
-        let same_algorithm = old.split_once(':').map(|(algorithm, _)| algorithm)
-            == new.split_once(':').map(|(algorithm, _)| algorithm);
-        if old == new || !same_algorithm {
+        let algorithm = |checksum: &str| {
+            checksum
+                .split_once(':')
+                .map(|(algorithm, _)| algorithm.to_ascii_lowercase())
+        };
+        if old.eq_ignore_ascii_case(new) || algorithm(old) != algorithm(new) {
             continue;
         }
-        let used = candidate.tools.values().flatten().any(|entry| {
-            entry
-                .platforms
-                .get(platform)
-                .and_then(|info| info.conda_deps.as_ref())
-                .is_some_and(|deps| deps.iter().any(|dep| dep == key))
-        });
-        if used {
-            return Some(format!(
-                "the conda package {key} has a different checksum than mise.lock pins for another tool that uses it: {new} instead of {old}. Its channel serves other bytes under the same name"
-            ));
-        }
+        return Some(format!(
+            "the conda package {key} has a different checksum than mise.lock pins for it: {new} instead of {old}. Its channel serves other bytes under the same name; remove its row from mise.lock to accept them"
+        ));
     }
     None
 }
@@ -1613,43 +1608,26 @@ mod tests {
     }
 
     #[test]
-    fn conda_pin_conflict_refuses_a_new_checksum_for_a_row_another_tool_uses() {
+    fn conda_pin_conflict_refuses_a_new_checksum_for_a_pinned_row() {
         let platform = "linux-x64";
         let dep = "zlib-1.3.1-h_2@0123456789abcdef0123456789abcdef".to_string();
-        let row = |hex: &str| crate::backend::conda::CondaPackageInfo {
+        let row = |checksum: String| crate::backend::conda::CondaPackageInfo {
             url: "https://conda.example/forge/linux-64/zlib-1.3.1-h_2.conda".into(),
-            checksum: Some(format!("sha256:{}", hex.repeat(64))),
+            checksum: Some(checksum),
         };
+        let sha = |hex: &str| format!("sha256:{}", hex.repeat(64));
         let mut candidate = Lockfile::default();
-        candidate.set_conda_package(platform, &dep, row("a"));
-        let incoming = BTreeMap::from([(dep.clone(), row("b"))]);
-        // An unused row is replaced: nothing installs the old pin.
+        let incoming = BTreeMap::from([(dep.clone(), row(sha("b")))]);
         assert!(conda_pin_conflict(&candidate, platform, &incoming).is_none());
-        candidate.set_platform_info(
-            "other",
-            "1.0.0",
-            Some("conda:other"),
-            &BTreeMap::new(),
-            platform,
-            PlatformInfo {
-                conda_deps: Some(vec![dep.clone()]),
-                ..Default::default()
-            },
-        );
+        candidate.set_conda_package(platform, &dep, row(sha("a")));
         let error = conda_pin_conflict(&candidate, platform, &incoming).unwrap();
         assert!(error.contains(&dep), "{error}");
         assert!(!error.contains("conda.example"), "{error}");
-        // The same pin, or one in another algorithm, is no conflict.
-        let same = BTreeMap::from([(dep.clone(), row("a"))]);
-        assert!(conda_pin_conflict(&candidate, platform, &same).is_none());
-        let md5 = BTreeMap::from([(
-            dep.clone(),
-            crate::backend::conda::CondaPackageInfo {
-                checksum: Some(format!("md5:{}", "c".repeat(32))),
-                ..row("a")
-            },
-        )]);
-        assert!(conda_pin_conflict(&candidate, platform, &md5).is_none());
+        // The same pin, in either case, or one in another algorithm, is no conflict.
+        for checksum in [sha("a"), sha("A"), format!("md5:{}", "c".repeat(32))] {
+            let same = BTreeMap::from([(dep.clone(), row(checksum))]);
+            assert!(conda_pin_conflict(&candidate, platform, &same).is_none());
+        }
     }
 
     #[tokio::test]
