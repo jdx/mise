@@ -2,7 +2,10 @@
 
 use std::path::Path;
 
-use crate::backend::static_helpers::{list_available_platforms_with_key, lookup_platform_key};
+use crate::backend::static_helpers::{
+    list_available_platforms_with_key, lookup_platform_key, platform_download,
+    platform_entry_string,
+};
 use crate::config::env_directive::EnvValue;
 use crate::file;
 use crate::hash;
@@ -179,26 +182,12 @@ impl ToolStubFile {
         Ok(stub)
     }
 
-    /// The `bin` the stub names for `platform` (an `os-arch` key such as `linux-x64`) in its
-    /// `[platforms.<platform>]` table. A run on that platform uses it before the top-level `bin`.
-    pub fn platform_bin(&self, platform: &str) -> Option<&str> {
-        self.opts
-            .get("platforms")?
-            .as_table()?
-            .get(platform)?
-            .as_table()?
-            .get("bin")?
-            .as_str()
-    }
-
-    /// The `bin` the stub names for the platform a run downloads for. It is looked up under
-    /// the `os-arch` keys the download's `url` is, in the same order: the machine's platform
-    /// and its aliases (`macos-arm64`, then `darwin-arm64`, ...), so the two come from one
-    /// platform even when `MISE_OS` or `MISE_ARCH` names another.
-    pub fn bin_for_this_platform(&self) -> Option<&str> {
-        crate::backend::static_helpers::platform_aliases()
-            .into_iter()
-            .find_map(|(os, arch)| self.platform_bin(&format!("{os}-{arch}")))
+    /// The `bin` a run of the stub on this machine looks for: the one the install names the
+    /// downloaded binary after, read with it by [`platform_download`] from the platform whose
+    /// `url` is downloaded, so the two agree even when `MISE_OS` or `MISE_ARCH` names another
+    /// platform, or a platform's `bin` is a flat `platforms_<os>_<arch>_bin` key.
+    pub fn bin_for_this_platform(&self) -> Option<String> {
+        platform_download(&self.tool_options()).bin
     }
 
     /// Whether every platform the stub downloads for has its own `bin`, so a run never uses the
@@ -217,9 +206,9 @@ impl ToolStubFile {
         };
         let platforms = list_available_platforms_with_key(&opts, "url");
         !platforms.is_empty()
-            && platforms
-                .iter()
-                .all(|platform| is_os_arch_key(platform) && self.platform_bin(platform).is_some())
+            && platforms.iter().all(|platform| {
+                is_os_arch_key(platform) && platform_entry_string(&opts, platform, "bin").is_some()
+            })
     }
 
     // Create a ToolRequest directly using ToolVersionOptions
@@ -229,13 +218,8 @@ impl ToolStubFile {
         self.opts.keys().any(|key| key != "tool") || !self.install_env.is_empty()
     }
 
-    pub fn to_tool_request(&self, stub_path: &Path) -> Result<ToolRequest> {
-        use crate::args::BackendArg;
-
-        let mut backend_arg = BackendArg::from(&self.tool_name);
-        let source = ToolSource::ToolStub(stub_path.to_path_buf());
-
-        // Create ToolVersionOptions from our fields
+    /// The options the stub installs its tool with.
+    fn tool_options(&self) -> ToolVersionOptions {
         let mut opts = self.opts.clone();
         opts.shift_remove("tool"); // Remove tool field since it's handled separately
 
@@ -244,7 +228,7 @@ impl ToolStubFile {
             opts.insert("bin".to_string(), toml::Value::String(bin.clone()));
         }
 
-        let options = ToolVersionOptions {
+        ToolVersionOptions {
             core: CoreToolOptions {
                 os: self.os.clone(),
                 depends: None,
@@ -252,7 +236,15 @@ impl ToolStubFile {
                 ..Default::default()
             },
             opts: opts.into(),
-        };
+        }
+    }
+
+    pub fn to_tool_request(&self, stub_path: &Path) -> Result<ToolRequest> {
+        use crate::args::BackendArg;
+
+        let mut backend_arg = BackendArg::from(&self.tool_name);
+        let source = ToolSource::ToolStub(stub_path.to_path_buf());
+        let options = self.tool_options();
 
         // Set options on the BackendArg so they're available to the backend
         backend_arg.set_opts(Some(options.clone()));
@@ -338,17 +330,69 @@ bin = "t"
             assert!(lookup_platform_key(&opts, "url").is_some(), "{platform}");
             assert_eq!(
                 stub.bin_for_this_platform(),
-                Some(format!("{platform}-bin").as_str())
+                Some(format!("{platform}-bin"))
             );
         }
 
-        // a platform that is not this machine's is never used
+        // a platform that is not this machine's is never used: the top-level bin is, which
+        // defaults to the stub's file name
         let other = if cfg!(target_os = "linux") {
             "windows-x64"
         } else {
             "linux-x64"
         };
         let stub = stub(&format!("[platforms.{other}]\nbin = \"other\"\n"));
-        assert_eq!(stub.bin_for_this_platform(), None);
+        assert_eq!(stub.bin_for_this_platform().as_deref(), Some("stub"));
+    }
+
+    #[test]
+    fn test_bin_for_this_platform_is_the_bin_of_the_downloaded_url() {
+        let aliases = crate::backend::static_helpers::platform_aliases();
+        let [(os, arch), (later_os, later_arch), ..] = aliases.as_slice() else {
+            return; // a platform with one spelling has no later alias to confuse
+        };
+        let later = format!("{later_os}-{later_arch}");
+        let installed_and_run = |content: &str| {
+            let stub = stub(content);
+            // the install names the downloaded binary after this bin, and a run looks for it
+            let installed = platform_download(&stub.tool_options());
+            assert_eq!(installed.bin, stub.bin_for_this_platform(), "{content}");
+            (installed.url, stub.bin_for_this_platform())
+        };
+
+        // a flat key for the preferred spelling is the entry downloaded, so its bin is the one
+        // run, not the bin of a later spelling's table
+        let flat = format!(
+            "tool = \"http:t\"\n\
+            platforms_{os}_{arch}_url = \"https://example.com/flat.tar.gz\"\n\
+            platforms_{os}_{arch}_bin = \"flat-bin\"\n\
+            [platforms.{later}]\nurl = \"https://example.com/nested.tar.gz\"\nbin = \"nested-bin\"\n"
+        );
+        assert_eq!(
+            installed_and_run(&flat),
+            (
+                Some("https://example.com/flat.tar.gz".to_string()),
+                Some("flat-bin".to_string())
+            )
+        );
+
+        // a preferred spelling that sets only a bin downloads nothing, so the bin run is the
+        // one of the later spelling whose url is downloaded
+        let bin_only = format!(
+            "tool = \"http:t\"\n\
+            [platforms.{os}-{arch}]\nbin = \"unused-bin\"\n\
+            [platforms.{later}]\nurl = \"https://example.com/later.tar.gz\"\nbin = \"later-bin\"\n"
+        );
+        assert_eq!(
+            installed_and_run(&bin_only),
+            (
+                Some("https://example.com/later.tar.gz".to_string()),
+                Some("later-bin".to_string())
+            )
+        );
+
+        // and a later spelling with a url and no bin of its own takes the top-level bin
+        let no_bin = bin_only.replace("bin = \"later-bin\"\n", "");
+        assert_eq!(installed_and_run(&no_bin).1.as_deref(), Some("stub"));
     }
 }

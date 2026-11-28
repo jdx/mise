@@ -233,22 +233,15 @@ enum BinPathError {
 }
 
 fn resolve_platform_specific_bin(stub: &ToolStubFile, stub_path: &Path) -> String {
-    // The bin of the platform the tool was downloaded for: platforms.{platform}.bin
-    if let Some(bin) = stub.bin_for_this_platform() {
-        return bin.to_string();
-    }
-
-    // Fall back to global bin field
-    if let Some(bin) = &stub.bin {
-        return bin.to_string();
-    }
-
-    // Finally, fall back to stub filename (without extension)
-    stub_path
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or(&stub.tool_name)
-        .to_string()
+    // The bin the install named the binary it downloaded after: the bin of the platform whose
+    // url was downloaded, else the top-level one, else the stub's file name (without extension)
+    stub.bin_for_this_platform().unwrap_or_else(|| {
+        stub_path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or(&stub.tool_name)
+            .to_string()
+    })
 }
 
 async fn find_cached_or_resolve_bin_path(
