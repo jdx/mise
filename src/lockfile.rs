@@ -2278,10 +2278,19 @@ impl Lockfile {
             .collect();
         for entry in entries {
             let mut entry = entry.clone();
+            let was_bound = !entry.specifiers.is_empty();
             entry
                 .specifiers
                 .retain(|specifier| !rebound.contains(&(specifier.clone(), entry.options.clone())));
-            if present.contains(&(entry.version.clone(), entry.options.clone())) {
+            let is_present = present.contains(&(entry.version.clone(), entry.options.clone()));
+            // Every request this entry was bound to now resolves to another version, so no
+            // request needs it. Back with no specifiers it would read as a legacy entry, which
+            // lookups match by version prefix, so a version the run moved away from could be
+            // picked again.
+            if was_bound && entry.specifiers.is_empty() && !is_present {
+                continue;
+            }
+            if is_present {
                 let mut restored = BTreeMap::new();
                 if let Some(kept) = self.tools.get_mut(&key).and_then(|have| {
                     have.iter_mut()
@@ -2321,6 +2330,8 @@ impl Lockfile {
 
     /// Generation dropped the shared package records that the conda_deps of `platforms`, an
     /// entry's restored platforms, name along with them, so bring them back from `previous`.
+    /// Only the missing ones: a record this run wrote for the same package file was resolved
+    /// now, so it stays, and a different old one is reported rather than written over it.
     fn restore_conda_packages(
         &mut self,
         previous: &Lockfile,
@@ -2328,8 +2339,16 @@ impl Lockfile {
     ) {
         for (platform, info) in platforms {
             for dep in info.conda_deps.iter().flatten() {
-                if let Some(package) = previous.get_conda_package(platform, dep) {
-                    self.set_conda_package(platform, dep, package.clone());
+                let Some(package) = previous.get_conda_package(platform, dep) else {
+                    continue;
+                };
+                match self.get_conda_package(platform, dep) {
+                    None => self.set_conda_package(platform, dep, package.clone()),
+                    Some(fresh) if fresh == package => {}
+                    Some(fresh) => warn!(
+                        "conda package {dep} for {platform} was locked from {} now and from {} before; keeping the new record",
+                        fresh.url, package.url
+                    ),
                 }
             }
         }

@@ -6323,6 +6323,85 @@ fn restore_missing_versions_keeps_the_requests_this_run_did_not_bind() {
 }
 
 #[test]
+fn restore_missing_versions_drops_an_entry_whose_requests_all_moved() {
+    // 1.0.0 was bound to `1` alone, and this run moved `1` to 1.1.0. Back with no specifiers,
+    // 1.0.0 would read as a legacy entry, which a request is matched to by version prefix.
+    let mut old = basic_tool("1.0.0", "aqua:widget");
+    old.specifiers = BTreeSet::from(["1".to_string()]);
+    // An entry that was legacy before is still kept.
+    let legacy = basic_tool("0.9.0", "aqua:widget");
+    let mut previous = Lockfile::default();
+    previous
+        .tools
+        .insert("widget".to_string(), vec![old, legacy.clone()]);
+    let mut moved = basic_tool("1.1.0", "aqua:widget");
+    moved.specifiers = BTreeSet::from(["1".to_string()]);
+    let mut current = Lockfile::default();
+    current
+        .tools
+        .insert("widget".to_string(), vec![moved.clone()]);
+
+    current.restore_missing_versions(&previous, "widget");
+
+    let versions = current.tools["widget"]
+        .iter()
+        .map(|e| e.version.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(versions, ["1.1.0", "0.9.0"]);
+}
+
+#[test]
+fn restore_missing_versions_keeps_the_conda_records_this_run_wrote() {
+    // A skipped task's tool and a visible one share a conda package file name, which this run
+    // locked from another channel. The restored entry brings back the records that are missing,
+    // and the one this run wrote stays.
+    let platform = "linux-x64";
+    let mut previous = Lockfile::default();
+    let mut restored_tool = tool_with_conda_dep("1.0.0", "conda:old", platform, "libzlib-1.3");
+    restored_tool
+        .platforms
+        .get_mut(platform)
+        .unwrap()
+        .conda_deps
+        .as_mut()
+        .unwrap()
+        .push("ncurses-6.4".to_string());
+    previous
+        .tools
+        .insert("conda:old".to_string(), vec![restored_tool]);
+    add_test_conda_package(&mut previous, platform, "libzlib-1.3");
+    add_test_conda_package(&mut previous, platform, "ncurses-6.4");
+
+    let mut current = Lockfile::default();
+    current.tools.insert(
+        "conda:new".to_string(),
+        vec![tool_with_conda_dep(
+            "2.0.0",
+            "conda:new",
+            platform,
+            "libzlib-1.3",
+        )],
+    );
+    let fresh = CondaPackageInfo {
+        url: "https://other.example.com/libzlib-1.3.conda".to_string(),
+        checksum: Some("sha256:fresh".to_string()),
+    };
+    current.set_conda_package(platform, "libzlib-1.3", fresh.clone());
+
+    current.restore_missing_versions(&previous, "conda:old");
+
+    assert_eq!(current.tools["conda:old"].len(), 1);
+    assert_eq!(
+        current.get_conda_package(platform, "libzlib-1.3"),
+        Some(&fresh)
+    );
+    assert_eq!(
+        current.get_conda_package(platform, "ncurses-6.4"),
+        previous.get_conda_package(platform, "ncurses-6.4")
+    );
+}
+
+#[test]
 fn restore_missing_versions_keeps_the_platforms_this_run_did_not_lock() {
     // A skipped task locked 1.0.0 for two platforms. This run rebuilt the same entry for one;
     // the other's record must come back, and the one this run locked must stay as it is.
