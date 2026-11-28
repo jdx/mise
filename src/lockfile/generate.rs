@@ -730,6 +730,25 @@ impl std::fmt::Display for CondaPackageConflict {
 
 impl std::error::Error for CondaPackageConflict {}
 
+/// The checksum `lockfile` has for conda package `basename` on `platform`,
+/// carried into `package`, the package recorded again with none, when both
+/// name the same URL (without a login). Replacing the record would otherwise
+/// drop the pin a locked install checks the package against.
+fn keep_conda_pin_of_the_same_url(
+    lockfile: &Lockfile,
+    platform: &str,
+    basename: &str,
+    package: &mut crate::backend::conda::CondaPackageInfo,
+) {
+    use crate::backend::static_helpers::is_lock_url;
+    if package.checksum.is_none()
+        && let Some(existing) = lockfile.get_conda_package(platform, basename)
+        && is_lock_url(Some(&existing.url), &package.url)
+    {
+        package.checksum = existing.checksum.clone();
+    }
+}
+
 /// The conflict writing `package`, the record of conda package `basename` on
 /// `platform` that entry `tool` (short, version, options) needs, into
 /// `lockfile` would cause: the record there differs, in its URL without a
@@ -1081,6 +1100,15 @@ pub async fn generate(
             report.abandon();
             bail!("{error}");
         }
+        // The dependency packages of an entry reused as it was: it brings no
+        // records, and keeps the ones the lockfile has.
+        let kept_conda_deps = info
+            .conda_deps
+            .iter()
+            .flatten()
+            .filter(|basename| !conda.contains_key(*basename))
+            .cloned()
+            .collect_vec();
         candidate.set_platform_info(
             &short,
             &version,
@@ -1099,6 +1127,7 @@ pub async fn generate(
                 report.abandon();
                 return Err(error);
             }
+            keep_conda_pin_of_the_same_url(&candidate, &platform.to_key(), &key, &mut value);
             if let Some(conflict) = conda_package_conflict(
                 &candidate,
                 &platform.to_key(),
@@ -1110,6 +1139,23 @@ pub async fn generate(
                 return Err(conflict.into());
             }
             candidate.set_conda_package(&platform.to_key(), &key, value);
+        }
+        // A tool written earlier in this run may have replaced a record this
+        // entry keeps; checked here too, the conflict does not depend on which
+        // of the two is written first.
+        for key in kept_conda_deps {
+            if let Some(kept) = previous.get_conda_package(&platform.to_key(), &key)
+                && let Some(conflict) = conda_package_conflict(
+                    &candidate,
+                    &platform.to_key(),
+                    &key,
+                    kept,
+                    (&short, &version, &options),
+                )
+            {
+                report.abandon();
+                return Err(conflict.into());
+            }
         }
     }
     for warning in unsupported.messages() {
@@ -2232,16 +2278,20 @@ mod tests {
         )
         .await
         .unwrap_err();
-        let error = CondaPackageConflict::in_lockfile(error, Path::new("/project/mise.lock"));
+        let lockfile = Path::new("project").join("mise.lock");
+        let error = CondaPackageConflict::in_lockfile(error, &lockfile);
         let message = format!("{error:#}");
         assert!(error.is::<CondaPackageConflict>(), "{message}");
         for expected in [
-            "fixture@1.0 and other@2.0 both need conda package zlib-1.3-h0_0",
-            "bioconda/linux-64/zlib-1.3-h0_0.conda (sha256:bioconda)",
-            "conda-forge/linux-64/zlib-1.3-h0_0.conda (sha256:conda-forge)",
-            "/project/mise.lock keeps one record per package name",
+            "fixture@1.0 and other@2.0 both need conda package zlib-1.3-h0_0".to_string(),
+            "bioconda/linux-64/zlib-1.3-h0_0.conda (sha256:bioconda)".to_string(),
+            "conda-forge/linux-64/zlib-1.3-h0_0.conda (sha256:conda-forge)".to_string(),
+            format!(
+                "{} keeps one record per package name",
+                display_path(&lockfile)
+            ),
         ] {
-            assert!(message.contains(expected), "{message}");
+            assert!(message.contains(&expected), "{message}");
         }
 
         // Without `other`'s entry, nothing else names the record.
@@ -2259,6 +2309,141 @@ mod tests {
         assert_eq!(
             generated.get_conda_package(&platform.to_key(), "zlib-1.3-h0_0"),
             Some(&zlib)
+        );
+    }
+
+    /// A tool installed now that needs a conda package from another channel
+    /// than an entry reused as it was (not installed, not resolved again) is a
+    /// conflict too, whichever of the two is written first: the reused entry
+    /// still names the record it was resolved with.
+    #[tokio::test]
+    async fn conda_package_a_reused_entry_needs_is_not_replaced() {
+        use crate::backend::conda::CondaPackageInfo;
+        crate::backend::load_tools().await.unwrap();
+        let platform = Platform::current();
+        let zlib = "zlib-1.3-h0_0";
+        let mut previous = Lockfile::default();
+        previous.set_platform_info(
+            "fixture",
+            "1.0",
+            Some("http:fixture"),
+            &BTreeMap::new(),
+            &platform.to_key(),
+            PlatformInfo {
+                url: Some("https://example.invalid/never-download".into()),
+                checksum: Some("sha256:unchanged".into()),
+                provenance_verified: Some(false),
+                conda_deps: Some(vec![zlib.into()]),
+                ..Default::default()
+            },
+        );
+        previous.bind_request("fixture", "1", "1.0", &BTreeMap::new());
+        previous.set_conda_package(
+            &platform.to_key(),
+            zlib,
+            CondaPackageInfo {
+                url: "https://conda.example/conda-forge/linux-64/zlib-1.3-h0_0.conda".into(),
+                checksum: Some("sha256:conda-forge".into()),
+            },
+        );
+        let ba = BackendArg::new("installed".into(), Some("http:installed".into()));
+        let request = ToolRequest::new_with_options(
+            Arc::new(ba.clone()),
+            "2",
+            ToolVersionOptions::default(),
+            ToolSource::Argument,
+        )
+        .unwrap();
+        let mut installed = ToolVersion::new(request, "2.0".into());
+        installed.lock_platforms.insert(
+            platform.to_key(),
+            PlatformInfo {
+                url: Some("https://conda.example/linux-64/installed-2.0-h0_0.conda".into()),
+                checksum: Some("sha256:installed".into()),
+                conda_deps: Some(vec![zlib.into()]),
+                ..Default::default()
+            },
+        );
+        installed.conda_packages.insert(
+            (platform.to_key(), zlib.into()),
+            CondaPackageInfo {
+                url: "https://conda.example/bioconda/linux-64/zlib-1.3-h0_0.conda".into(),
+                checksum: Some("sha256:bioconda".into()),
+            },
+        );
+        let installed = (ba, installed);
+
+        for tools in [[installed.clone(), tool()], [tool(), installed.clone()]] {
+            let error = generate(
+                &previous,
+                &tools,
+                std::slice::from_ref(&platform),
+                false,
+                PlatformSelection::Default,
+                1,
+                std::slice::from_ref(&installed.1),
+            )
+            .await
+            .unwrap_err();
+            let message = format!("{error:#}");
+            assert!(error.is::<CondaPackageConflict>(), "{message}");
+            assert!(
+                message.contains("both need conda package zlib-1.3-h0_0"),
+                "{message}"
+            );
+            for tool in ["fixture@1.0", "installed@2.0"] {
+                assert!(message.contains(tool), "{message}");
+            }
+        }
+    }
+
+    /// A conda package recorded again at the URL the lockfile has for it, with
+    /// no checksum, keeps the checksum the lockfile has: dropping it would let
+    /// a locked install accept bytes the pin rejects.
+    #[tokio::test]
+    async fn conda_package_without_a_checksum_keeps_the_recorded_pin() {
+        use crate::backend::conda::CondaPackageInfo;
+        crate::backend::load_tools().await.unwrap();
+        let platform = Platform::current();
+        let url = "https://conda.example/linux-64/zlib-1.3-h0_0.conda";
+        let (ba, mut actual) = tool();
+        actual.lock_platforms.insert(
+            platform.to_key(),
+            PlatformInfo {
+                url: Some("https://conda.example/linux-64/fixture-1.0-h0_0.conda".into()),
+                checksum: Some("sha256:main".into()),
+                conda_deps: Some(vec!["zlib-1.3-h0_0".into()]),
+                ..Default::default()
+            },
+        );
+        actual.conda_packages.insert(
+            (platform.to_key(), "zlib-1.3-h0_0".into()),
+            CondaPackageInfo {
+                url: url.into(),
+                checksum: None,
+            },
+        );
+        let pinned = CondaPackageInfo {
+            url: url.into(),
+            checksum: Some("sha256:pinned".into()),
+        };
+        let mut previous = previous();
+        previous.set_conda_package(&platform.to_key(), "zlib-1.3-h0_0", pinned.clone());
+
+        let generated = generate(
+            &previous,
+            &[(ba, actual.clone())],
+            std::slice::from_ref(&platform),
+            false,
+            PlatformSelection::Default,
+            1,
+            &[actual],
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            generated.get_conda_package(&platform.to_key(), "zlib-1.3-h0_0"),
+            Some(&pinned)
         );
     }
 

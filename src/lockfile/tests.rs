@@ -6420,8 +6420,14 @@ async fn failed_locked_download_skips_only_that_version() {
     assert_eq!(
         unrecorded,
         HashMap::from([
-            ("repo".to_string(), BTreeSet::from(["2.0.0".to_string()])),
-            ("other".to_string(), BTreeSet::from(["3.0.0".to_string()])),
+            (
+                "repo".to_string(),
+                BTreeSet::from([unrecorded_request("2.0.0")])
+            ),
+            (
+                "other".to_string(),
+                BTreeSet::from([unrecorded_request("3.0.0")])
+            ),
         ])
     );
     assert_eq!(errors.len(), 2);
@@ -6450,7 +6456,7 @@ fn unrecorded_request_keeps_its_previous_entry() {
     preserve_unrecorded_entries(
         &mut merged,
         Some(&existing),
-        &BTreeSet::from(["2".to_string()]),
+        &BTreeSet::from([unrecorded_request("2")]),
     );
 
     assert_eq!(
@@ -6461,4 +6467,60 @@ fn unrecorded_request_keeps_its_previous_entry() {
         vec!["1.0.0", "2.1.0", "1.9.0"]
     );
     assert_eq!(merged[2].specifiers, BTreeSet::from(["2".to_string()]));
+}
+
+fn unrecorded_request(specifier: &str) -> UnrecordedRequest {
+    UnrecordedRequest {
+        specifier: specifier.to_string(),
+        options: BTreeMap::new(),
+    }
+}
+
+/// In a lockfile whose entries have no specifiers (revision 0), the request
+/// whose new version was not recorded keeps the entries a locked install of
+/// it finds: versions it prefixes (any for `latest`) with its options or
+/// none. Entries only other requests find are replaced as usual.
+#[test]
+fn unrecorded_request_keeps_its_legacy_entry() {
+    let tool = |version: &str, options: &[(&str, &str)]| {
+        let mut tool = basic_tool(version, "github:owner/repo");
+        tool.options = options
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect();
+        tool
+    };
+    let existing = vec![
+        tool("1.0.0", &[]),
+        tool("2.0.0", &[]),
+        tool("2.0.5", &[("asset", "other")]),
+        tool("20.0.0", &[]),
+    ];
+    let versions =
+        |merged: &[LockfileTool]| merged.iter().map(|tool| tool.version.clone()).collect_vec();
+
+    let mut merged = vec![tool("1.1.0", &[])];
+    preserve_unrecorded_entries(
+        &mut merged,
+        Some(&existing),
+        &BTreeSet::from([unrecorded_request("prefix:2")]),
+    );
+    assert_eq!(versions(&merged), vec!["1.1.0", "2.0.0"]);
+    assert!(merged[1].specifiers.is_empty());
+
+    let mut merged = vec![tool("1.1.0", &[])];
+    preserve_unrecorded_entries(
+        &mut merged,
+        Some(&existing),
+        &BTreeSet::from([unrecorded_request("2")]),
+    );
+    assert_eq!(versions(&merged), vec!["1.1.0", "2.0.0", "20.0.0"]);
+
+    let mut merged = Vec::new();
+    preserve_unrecorded_entries(
+        &mut merged,
+        Some(&existing),
+        &BTreeSet::from([unrecorded_request("latest")]),
+    );
+    assert_eq!(versions(&merged), vec!["1.0.0", "2.0.0", "20.0.0"]);
 }

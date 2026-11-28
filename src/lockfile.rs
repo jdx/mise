@@ -5135,15 +5135,15 @@ struct ProvenanceRegressionCheck {
 /// Make, for each version in `tool_versions_by_short`, the download a locked
 /// install of an artifact its install fetched through a login the release gave
 /// makes ([`check_locked_downloads`]). A version whose download fails is not
-/// recorded: it is taken out, with its error in `errors`, and its request
-/// (specifier) is returned under its short, for [`preserve_unrecorded_entries`]
-/// to keep the entry the lockfile has for it. Other versions of the tool are
-/// recorded as usual; a tool with none left keeps its entries as they were.
+/// recorded: it is taken out, with its error in `errors`, and its request is
+/// returned under its short, for [`preserve_unrecorded_entries`] to keep the
+/// entry the lockfile has for it. Other versions of the tool are recorded as
+/// usual; a tool with none left keeps its entries as they were.
 async fn check_installed_locked_downloads(
     tool_versions_by_short: &mut HashMap<String, Vec<ToolVersion>>,
     errors: &mut Vec<String>,
-) -> HashMap<String, BTreeSet<String>> {
-    let mut unrecorded: HashMap<String, BTreeSet<String>> = HashMap::new();
+) -> HashMap<String, BTreeSet<UnrecordedRequest>> {
+    let mut unrecorded: HashMap<String, BTreeSet<UnrecordedRequest>> = HashMap::new();
     for (short, versions) in tool_versions_by_short.iter_mut() {
         let mut recorded = Vec::with_capacity(versions.len());
         for mut tv in std::mem::take(versions) {
@@ -5157,10 +5157,18 @@ async fn check_installed_locked_downloads(
                 }
             }
             if failed {
+                // The options its entry would have been written with, which a
+                // legacy entry (no specifiers) is found by.
+                let options = lockfile_tool_from_tool_version(&tv)
+                    .map(|tool| tool.options)
+                    .unwrap_or_default();
                 unrecorded
                     .entry(short.clone())
                     .or_default()
-                    .insert(tv.request.version());
+                    .insert(UnrecordedRequest {
+                        specifier: tv.request.version(),
+                        options,
+                    });
             } else {
                 recorded.push(tv);
             }
@@ -5171,17 +5179,68 @@ async fn check_installed_locked_downloads(
     unrecorded
 }
 
-/// Keep the entries of `existing_tools` bound to `specifiers`, the requests
-/// whose new version was not recorded ([`check_installed_locked_downloads`]),
-/// which the merge dropped as superseded. A shared entry keeps only those
-/// requests; the others moved to the versions recorded now.
+/// A request whose new version was not recorded
+/// ([`check_installed_locked_downloads`]), with the lockfile options its entry
+/// would have had.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct UnrecordedRequest {
+    specifier: String,
+    options: BTreeMap<String, String>,
+}
+
+impl UnrecordedRequest {
+    /// Whether a legacy entry, one with no specifiers (every entry of a
+    /// revision-0 lockfile), is one a locked install of this request can find:
+    /// its version starts with the request's (at a separator for `prefix:`),
+    /// any for `latest`, and it has the request's options or none.
+    fn finds_legacy(&self, tool: &LockfileTool) -> bool {
+        let version_matches = match self.specifier.strip_prefix("prefix:") {
+            Some(prefix) => {
+                lockfile_version_matches(prefix, &tool.version)
+                    && lockfile_version_matches_prefix_boundary(prefix, &tool.version)
+            }
+            None => lockfile_version_matches(&self.specifier, &tool.version),
+        };
+        tool.specifiers.is_empty()
+            && version_matches
+            && (tool.options == self.options || tool.options.is_empty())
+    }
+}
+
+/// Keep the entries of `existing_tools` that `unrecorded` requests found,
+/// which the merge dropped as superseded: those bound to one of them, and,
+/// for a request no entry is bound to, the legacy entries (no specifiers) a
+/// locked install of it can find, as the lockfile had them. A shared entry
+/// keeps only the unrecorded requests; the others moved to the versions
+/// recorded now.
 fn preserve_unrecorded_entries(
     merged_tools: &mut Vec<LockfileTool>,
     existing_tools: Option<&Vec<LockfileTool>>,
-    specifiers: &BTreeSet<String>,
+    unrecorded: &BTreeSet<UnrecordedRequest>,
 ) {
-    for existing_tool in existing_tools.into_iter().flatten() {
-        if existing_tool.specifiers.is_disjoint(specifiers)
+    let existing_tools = existing_tools.map(Vec::as_slice).unwrap_or_default();
+    let specifiers: BTreeSet<&str> = unrecorded
+        .iter()
+        .map(|request| request.specifier.as_str())
+        .collect();
+    let bound = |tool: &LockfileTool| {
+        tool.specifiers
+            .iter()
+            .any(|specifier| specifiers.contains(specifier.as_str()))
+    };
+    let unbound_requests = unrecorded
+        .iter()
+        .filter(|request| {
+            !existing_tools
+                .iter()
+                .any(|tool| tool.specifiers.contains(&request.specifier))
+        })
+        .collect_vec();
+    for existing_tool in existing_tools {
+        let legacy = unbound_requests
+            .iter()
+            .any(|request| request.finds_legacy(existing_tool));
+        if !(bound(existing_tool) || legacy)
             || merged_tools.iter().any(|tool| {
                 tool.version == existing_tool.version && tool.options == existing_tool.options
             })
@@ -5190,7 +5249,7 @@ fn preserve_unrecorded_entries(
         }
         let mut tool = existing_tool.clone();
         tool.specifiers
-            .retain(|specifier| specifiers.contains(specifier));
+            .retain(|specifier| specifiers.contains(specifier.as_str()));
         merged_tools.push(tool);
     }
 }
