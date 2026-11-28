@@ -231,7 +231,10 @@ impl Backend for GoBackend {
                     // again with no limit on its size, nor to date the version
                     // from a parent module, which is another release.
                     ProxyReleaseDate::Refused(err) => return Err(err),
-                    ProxyReleaseDate::Unanswered(failure) => failure,
+                    // As in listing, which module this is falls to `go list`,
+                    // rather than to a shallower candidate's `.info`.
+                    ProxyReleaseDate::Failed(err) => Some(err),
+                    ProxyReleaseDate::NotServed => None,
                 };
                 // A private module under the default `proxy,direct` GOPROXY is
                 // not on the proxy, and reporting no date for it would hand the
@@ -1229,9 +1232,12 @@ enum ProxyReleaseDate {
     /// A candidate's `.info` answered with more than mise reads. That
     /// candidate is the module, so the date is not looked for anywhere else.
     Refused(eyre::Report),
-    /// No candidate answered; this is the first one that failed rather than
-    /// not being served, if any did.
-    Unanswered(Option<eyre::Report>),
+    /// A candidate's `.info` failed some other way (a server error, a network
+    /// error, a body that does not parse), so whether it is the module is
+    /// unknown. Listing hands the same failure to `go list`.
+    Failed(eyre::Report),
+    /// No proxy is used, or none serves any candidate.
+    NotServed,
 }
 
 /// Ask the module proxies for the release date of `version` (with its `v`)
@@ -1241,15 +1247,15 @@ enum ProxyReleaseDate {
 /// listing stops at the same one, since a module whose list has the version
 /// serves its `.info`. A shallower candidate is another module, and the same
 /// version there is another release, whose date says nothing about this one.
-/// So an answer too large to read ends the walk as a found one does.
+/// So only a path the proxy says it does not serve (404 or 410) is passed
+/// over; any other answer ends the walk.
 async fn proxy_release_date(
     proxies: &[GoProxy],
     candidates: &[String],
     version: &str,
 ) -> ProxyReleaseDate {
-    let mut failure: Option<eyre::Report> = None;
     if proxies.is_empty() {
-        return ProxyReleaseDate::Unanswered(failure);
+        return ProxyReleaseDate::NotServed;
     }
     for mod_path in candidates {
         let endpoint = format!("{}/@v/{version}.info", encode_module_path(mod_path));
@@ -1259,9 +1265,9 @@ async fn proxy_release_date(
             // module; another candidate or `go list` still might be.
             ProxyVersionInfoResult::NotFound => {}
             ProxyVersionInfoResult::Error => {
-                failure.get_or_insert_with(|| {
-                    eyre!("module proxy could not be reached for {mod_path}@{version}")
-                });
+                return ProxyReleaseDate::Failed(eyre!(
+                    "module proxy could not be reached for {mod_path}@{version}"
+                ));
             }
             ProxyVersionInfoResult::TooLarge => {
                 return ProxyReleaseDate::Refused(eyre!(
@@ -1271,7 +1277,7 @@ async fn proxy_release_date(
             }
         }
     }
-    ProxyReleaseDate::Unanswered(failure)
+    ProxyReleaseDate::NotServed
 }
 
 async fn query_proxy_list(proxies: &[GoProxy], encoded_path: &str) -> ProxyListResult {
@@ -2132,10 +2138,34 @@ mod tests {
             proxy_release_date(&proxies, &candidates, "v2.0.0").await,
             ProxyReleaseDate::Found(Some(time)) if time == "2026-05-01T00:00:00Z"
         ));
+        // A server error says nothing about whether the nested path is the
+        // module, so the parent's own v3.0.0 is not asked either; the lookup
+        // goes to `go list`, as listing's does.
+        let failing = server
+            .mock("GET", "/example.com/tool/cmd/tool/@v/v3.0.0.info")
+            .with_status(500)
+            .expect_at_least(1)
+            .create_async()
+            .await;
+        let parent_v3 = server
+            .mock("GET", "/example.com/tool/@v/v3.0.0.info")
+            .with_status(200)
+            .with_body(r#"{"Version":"v3.0.0","Time":"2020-01-01T00:00:00Z"}"#)
+            .expect(0)
+            .create_async()
+            .await;
+        match proxy_release_date(&proxies, &candidates, "v3.0.0").await {
+            ProxyReleaseDate::Failed(err) => {
+                assert!(format!("{err:#}").contains("example.com/tool/cmd/tool@v3.0.0"));
+            }
+            _ => panic!("the nested path's failure should end the proxy walk"),
+        }
         nested.assert_async().await;
         parent.assert_async().await;
         not_a_module.assert_async().await;
         root.assert_async().await;
+        failing.assert_async().await;
+        parent_v3.assert_async().await;
     }
 
     #[tokio::test]
