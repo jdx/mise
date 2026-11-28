@@ -155,3 +155,15 @@ assert_contains "MISE_SAFE=1 mise use --path other/mise.toml dummy@2.0.0 2>&1" "
 assert_not_contains "cat other/mise.toml" "version |"
 assert_not_contains "cat other/mise.toml" "example.com/linux"
 assert_contains "cat other/mise.toml" 'url = "https://example.com/mac"'
+
+# the same goes for the flat per-platform keys the http backend reads
+cat >mise.toml <<'TOML'
+[tools]
+dummy = { version = "1.0.0", platforms_linux_x64_url = "https://example.com/linux", platforms_linux_x64_checksum_url = "https://example.com/{{ version | upper }}/SHA256SUMS", platforms_macos_arm64_url = "https://example.com/mac" }
+TOML
+rm -rf other
+mkdir other
+assert_contains "MISE_SAFE=1 mise use --path other/mise.toml dummy@2.0.0 2>&1" "platforms_linux_x64_url"
+assert_not_contains "cat other/mise.toml" "version |"
+assert_not_contains "cat other/mise.toml" "example.com/linux"
+assert_contains "cat other/mise.toml" 'platforms_macos_arm64_url = "https://example.com/mac"'

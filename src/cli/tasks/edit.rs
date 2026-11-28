@@ -47,7 +47,7 @@ impl TasksEdit {
         };
         let file = &task.config_source;
         if !file.exists() {
-            super::write::script_check_before_change(file, true).await?;
+            super::write::script_check_before_write(file).await?;
             file::create_dir_all(file.parent().unwrap())?;
             file::write(file, default_task())?;
             file::make_executable(file)?;

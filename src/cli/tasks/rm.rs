@@ -76,7 +76,7 @@ impl TasksRm {
                 match definition {
                     Definition::Toml(path) => config_file::symlink_check_before_write(path)?,
                     Definition::File(path) => {
-                        write::script_check_before_change(path, false).await?
+                        write::script_check_before_remove(path).await?;
                     }
                     Definition::Other(_) => {}
                 }
@@ -98,7 +98,10 @@ impl TasksRm {
                 Definition::Toml(path) => self.remove_toml_task(task, &path)?,
                 Definition::File(path) => {
                     if !self.dry_run {
-                        file::remove_file(&path)?;
+                        // The directories may have changed while the prompt waited, so check
+                        // again and remove the script from the directory that passed.
+                        let resolved = write::script_check_before_remove(&path).await?;
+                        file::remove_file(&resolved)?;
                     }
                     Report::new(task, Action::Removed, Kind::File, &path)
                 }

@@ -1695,10 +1695,17 @@ pub fn symlink_check_before_write(path: &Path) -> Result<()> {
     ))
 }
 
-/// Refuses to change task script `script`, found in a task directory of config root `root`,
-/// through a link that leaves the root: a directory between the root and the script, or the
-/// script itself when `follow_own_link` is set. Removing a script deletes its own link, not what
-/// the link leads to, so a removal passes `false`.
+/// Refuses to write task script `script`, found in a task directory of config root `root`,
+/// through a link that leaves the root: the script itself, or a directory between the root and
+/// the script. See [`script_check_before_remove`] for the rule.
+pub fn script_check_before_write(script: &Path, root: &Path) -> Result<()> {
+    script_link_check(script, root, true).map(drop)
+}
+
+/// Refuses to remove task script `script`, found in a task directory of config root `root`,
+/// through a directory link that leaves the root. Removing a script deletes its own link, not
+/// what the link leads to, so only the directories are checked. Returns the path to remove: the
+/// script in its directory resolved, so the removal goes to the directory this check approved.
 ///
 /// The rule is [`symlink_check_before_write`]'s: a project's links come with its working tree, so
 /// a linked `mise-tasks` would let its author choose which file `mise tasks rm` deletes or
@@ -1707,21 +1714,31 @@ pub fn symlink_check_before_write(path: &Path) -> Result<()> {
 /// themselves, or for a project outside safe mode that was trusted before this command started,
 /// and never to create a file. A script outside the root, which an include named, is the
 /// config's choice and is left alone.
-pub fn script_check_before_change(script: &Path, root: &Path, follow_own_link: bool) -> Result<()> {
+pub fn script_check_before_remove(script: &Path, root: &Path) -> Result<PathBuf> {
+    script_link_check(script, root, false)
+}
+
+/// [`script_check_before_write`] when `follow_own_link` is set, else
+/// [`script_check_before_remove`]. Returns the path the change goes to.
+fn script_link_check(script: &Path, root: &Path, follow_own_link: bool) -> Result<PathBuf> {
     let script = script.absolutize()?;
     let root = root.absolutize()?;
-    let (Ok(below_root), Some(dir), Some(name)) = (
-        script.strip_prefix(&root),
-        script.parent(),
-        script.file_name(),
-    ) else {
-        return Ok(());
+    let (Some(dir), Some(name)) = (script.parent(), script.file_name()) else {
+        return Ok(script.into_owned());
+    };
+    let target = if follow_own_link {
+        file::atomic_write_target(&script)?
+    } else {
+        dir.canonicalize()?.join(name)
+    };
+    let Ok(below_root) = script.strip_prefix(&root) else {
+        return Ok(target);
     };
     if [&*dirs::CONFIG, &*dirs::SYSTEM_CONFIG]
         .into_iter()
         .any(|config_dir| config_dir.absolutize().is_ok_and(|d| script.starts_with(d)))
     {
-        return Ok(());
+        return Ok(target);
     }
     let own_link = follow_own_link && script.is_symlink();
     let dir_link = below_root
@@ -1731,19 +1748,14 @@ pub fn script_check_before_change(script: &Path, root: &Path, follow_own_link: b
         .filter(|relative| !relative.as_os_str().is_empty())
         .any(|relative| config_root::is_link(&root.join(relative)));
     if !own_link && !dir_link {
-        return Ok(());
+        return Ok(target);
     }
-    let target = if follow_own_link {
-        file::atomic_write_target(&script)?
-    } else {
-        dir.canonicalize()?.join(name)
-    };
     let (verb, through) = match (follow_own_link, own_link) {
         (false, _) => ("remove", "a linked directory"),
         (true, true) => ("write", "its symlink"),
         (true, false) => ("write", "a linked directory"),
     };
-    let refuse = |why: &str| -> Result<()> {
+    let refuse = |why: &str| -> Result<PathBuf> {
         Err(eyre!(
             "refusing to {verb} task {} through {through} to {}: {why}",
             display_path(&script),
@@ -1754,7 +1766,7 @@ pub fn script_check_before_change(script: &Path, root: &Path, follow_own_link: b
         .canonicalize()
         .is_ok_and(|root| target.starts_with(root))
     {
-        return Ok(());
+        return Ok(target);
     }
     if target.symlink_metadata().is_err() {
         return refuse(
@@ -1767,7 +1779,7 @@ pub fn script_check_before_change(script: &Path, root: &Path, follow_own_link: b
         );
     }
     if is_trusted(&root) && !trusted_by_this_command(&root) {
-        return Ok(());
+        return Ok(target);
     }
     refuse(&format!(
         "the link leaves the project, and mise follows such a link only for a project that was trusted before this command. Check where the link leads, run `mise trust` in {} and run the command again, or replace the link",

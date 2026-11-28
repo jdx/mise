@@ -337,16 +337,15 @@ fn drop_unlent_templates(
     }
     // A platform with no checksum of its own is checked against the top-level one, as the
     // http backend looks a platform's option up there when the platform does not set it. So a
-    // platform that lost its own checksum keeps its url while a top-level one is left, and one
-    // that never had a checksum loses its url with the top-level checksum.
+    // platform that lost its own checksum keeps its url while a top-level one is left.
     if !options.opts.keys().any(|k| is_checksum_option(k)) {
-        if top_checksum_dropped {
-            unverified.extend(platforms_without_checksum(&options.opts));
-        }
-        for at in unverified {
-            if remove_url_at(&mut options.opts, &at) {
-                warn_unverified_url(&tool, &format!("{}.url", at.join(".")));
-            }
+        for at in drop_unverified_platform_urls(
+            &mut options.opts,
+            &dropped,
+            unverified,
+            top_checksum_dropped,
+        ) {
+            warn_unverified_url(&tool, &at);
         }
     }
     options.core.install_env.retain(|k, v| {
@@ -395,20 +394,102 @@ fn keep_lent_parts(
     !table.is_empty()
 }
 
-/// The paths of the `platforms` (or `platform`) entries in `opts` that have a `url` and no
-/// checksum option of their own.
-fn platforms_without_checksum(opts: &indexmap::IndexMap<String, toml::Value>) -> Vec<Vec<String>> {
-    ["platforms", "platform"]
+/// The tables of per-platform options, and the prefixes of their flat spellings, that the http
+/// backend reads.
+const PLATFORM_TABLES: [&str; 2] = ["platforms", "platform"];
+
+/// Removes the per-platform urls in `opts`, once no top-level checksum is left, that safe mode
+/// leaves with no checksum, and returns where each was. A platform is written either as a table
+/// in `platforms` (or `platform`) or as flat keys such as `platforms_linux_x64_url` (see
+/// [`flat_platform_option`]); the http backend reads both. A platform keeps its url while it has
+/// a checksum of its own in either spelling. Otherwise it loses the url when it lost its own
+/// checksum (a flat key in `dropped`, or a table path in `unverified`), or when
+/// `top_checksum_dropped`, as the url would have been checked against the top-level one. The
+/// other paths in `unverified` lose their url as they are.
+fn drop_unverified_platform_urls(
+    opts: &mut IndexMap<String, toml::Value>,
+    dropped: &[String],
+    unverified: Vec<Vec<String>>,
+    top_checksum_dropped: bool,
+) -> Vec<String> {
+    let mut removed = vec![];
+    let mut lost: Vec<String> = dropped
+        .iter()
+        .filter_map(|k| flat_platform_option(k))
+        .filter(|(_, field)| *field != "url")
+        .map(|(platform, _)| platform)
+        .collect();
+    for at in unverified {
+        match at.as_slice() {
+            [table, platform] if PLATFORM_TABLES.contains(&table.as_str()) => {
+                lost.push(platform.clone());
+            }
+            _ => {
+                if remove_url_at(opts, &at) {
+                    removed.push(format!("{}.url", at.join(".")));
+                }
+            }
+        }
+    }
+    // Each platform: whether it has a url, and whether a checksum of its own.
+    let mut platforms: IndexMap<String, (bool, bool)> = IndexMap::new();
+    let tables = PLATFORM_TABLES
         .into_iter()
-        .filter_map(|key| Some((key, opts.get(key)?.as_table()?)))
-        .flat_map(|(key, platforms)| {
-            platforms.iter().filter_map(move |(platform, entry)| {
-                let entry = entry.as_table()?;
-                (entry.contains_key("url") && !entry.keys().any(|k| is_checksum_option(k)))
-                    .then(|| vec![key.to_string(), platform.clone()])
-            })
+        .filter_map(|table| opts.get(table)?.as_table());
+    for (platform, entry) in tables.flatten() {
+        let Some(entry) = entry.as_table() else {
+            continue;
+        };
+        let (url, checksum) = platforms.entry(platform.clone()).or_default();
+        *url |= entry.contains_key("url");
+        *checksum |= entry.keys().any(|k| is_checksum_option(k));
+    }
+    for (platform, field) in opts.keys().filter_map(|k| flat_platform_option(k)) {
+        let (url, checksum) = platforms.entry(platform).or_default();
+        if field == "url" {
+            *url = true;
+        } else {
+            *checksum = true;
+        }
+    }
+    let unchecked: Vec<String> = platforms
+        .into_iter()
+        .filter(|(platform, (url, checksum))| {
+            *url && !*checksum && (top_checksum_dropped || lost.contains(platform))
         })
-        .collect()
+        .map(|(platform, _)| platform)
+        .collect();
+    for platform in &unchecked {
+        for table in PLATFORM_TABLES {
+            if remove_url_at(opts, &[table.to_string(), platform.clone()]) {
+                removed.push(format!("{table}.{platform}.url"));
+            }
+        }
+    }
+    opts.retain(|k, _| {
+        let unchecked_url = flat_platform_option(k)
+            .is_some_and(|(platform, field)| field == "url" && unchecked.contains(&platform));
+        if unchecked_url {
+            removed.push(k.clone());
+        }
+        !unchecked_url
+    });
+    removed
+}
+
+/// The platform and field of flat per-platform option `key`, which the http backend reads as
+/// `platforms_<os>_<arch>_<field>` (or `platform_...`) beside the `platforms` table:
+/// `("linux-x64", "url")` for `platforms_linux_x64_url`. The platform is spelled as a key of the
+/// `platforms` table is; only the fields that decide whether a download is checked are read.
+fn flat_platform_option(key: &str) -> Option<(String, &'static str)> {
+    let rest = PLATFORM_TABLES
+        .into_iter()
+        .find_map(|table| key.strip_prefix(table)?.strip_prefix('_'))?;
+    let (platform, field) = ["checksum_url", "checksum", "url"]
+        .into_iter()
+        .find_map(|field| Some((rest.strip_suffix(field)?.strip_suffix('_')?, field)))?;
+    let (os, arch) = platform.split_once('_')?;
+    (!os.is_empty() && !arch.is_empty()).then(|| (format!("{os}-{arch}"), field))
 }
 
 /// Removes the `url` of the table at path `at` in `opts`, and each table on the way that is
@@ -3400,6 +3481,88 @@ mod schema_conformance;
 #[cfg(test)]
 #[cfg(unix)]
 mod tests {
+    #[test]
+    fn flat_platform_options_are_read_as_the_http_backend_reads_them() {
+        use super::flat_platform_option as parse;
+        let some = |p: &str, f| Some((p.to_string(), f));
+        assert_eq!(parse("platforms_linux_x64_url"), some("linux-x64", "url"));
+        assert_eq!(
+            parse("platform_linux_arm64_checksum"),
+            some("linux-arm64", "checksum")
+        );
+        assert_eq!(
+            parse("platforms_macos_x86_64_checksum_url"),
+            some("macos-x86_64", "checksum_url")
+        );
+        assert_eq!(parse("platforms_url"), None);
+        assert_eq!(parse("platforms_linux_url"), None);
+        assert_eq!(parse("platforms_linux_x64_bin"), None);
+        assert_eq!(parse("checksum_url"), None);
+    }
+
+    #[test]
+    fn a_platform_url_left_without_a_checksum_is_dropped_in_every_spelling() {
+        let opts = |toml: &str| -> indexmap::IndexMap<String, toml::Value> {
+            toml::from_str::<toml::Table>(toml)
+                .unwrap()
+                .into_iter()
+                .collect()
+        };
+        // The top-level checksum is gone: each platform with no checksum of its own loses its
+        // url, nested or flat, and one with its own checksum keeps it.
+        let mut o = opts(indoc! {r#"
+            platforms_linux_x64_url = "l"
+            platform_linux_arm64_url = "la"
+            platforms_macos_arm64_url = "m"
+            platforms_macos_arm64_checksum = "sha256:1"
+            platforms = { windows-x64 = { url = "w" }, freebsd-x64 = { url = "f", checksum = "sha256:2" } }
+        "#});
+        let removed = super::drop_unverified_platform_urls(&mut o, &[], vec![], true);
+        assert_eq!(
+            removed,
+            [
+                "platforms.windows-x64.url",
+                "platforms_linux_x64_url",
+                "platform_linux_arm64_url"
+            ]
+        );
+        assert_eq!(
+            o.keys().collect::<Vec<_>>(),
+            [
+                "platforms_macos_arm64_url",
+                "platforms_macos_arm64_checksum",
+                "platforms"
+            ]
+        );
+        assert!(o["platforms"].get("freebsd-x64").is_some());
+        assert!(o["platforms"].get("windows-x64").is_none());
+
+        // A platform that lost its own flat checksum loses its url; the others keep theirs.
+        let mut o = opts(indoc! {r#"
+            platforms_linux_x64_url = "l"
+            platforms_macos_arm64_url = "m"
+            platforms = { windows-x64 = { url = "w" } }
+        "#});
+        let dropped = ["platforms_linux_x64_checksum_url".to_string()];
+        let removed = super::drop_unverified_platform_urls(&mut o, &dropped, vec![], false);
+        assert_eq!(removed, ["platforms_linux_x64_url"]);
+        assert!(o.contains_key("platforms_macos_arm64_url"));
+        assert!(o["platforms"]["windows-x64"].get("url").is_some());
+
+        // A table that lost its checksum keeps its url while a flat checksum covers it.
+        let mut o = opts(indoc! {r#"
+            platforms_linux_x64_checksum = "sha256:3"
+            platforms = { linux-x64 = { url = "l" }, macos-arm64 = { url = "m" } }
+        "#});
+        let unverified = vec![
+            vec!["platforms".to_string(), "linux-x64".to_string()],
+            vec!["platforms".to_string(), "macos-arm64".to_string()],
+        ];
+        let removed = super::drop_unverified_platform_urls(&mut o, &[], unverified, false);
+        assert_eq!(removed, ["platforms.macos-arm64.url"]);
+        assert!(o["platforms"]["linux-x64"].get("url").is_some());
+    }
+
     #[test]
     fn history_preflight_rejects_an_unreadable_macos_settings_section() {
         let path = std::path::Path::new("/tmp/mise.toml");

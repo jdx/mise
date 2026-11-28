@@ -609,25 +609,39 @@ pub(super) async fn choose_definition(name: &str, target: &TargetArgs) -> Result
     }
 }
 
-/// Refuses to change task script `script` through a link out of its project; see
-/// [`config_file::script_check_before_change`]. The project is the deepest root, of the loaded
-/// config or the one mise runs in, that the script's path as written lies in. A removal passes
-/// `follow_own_link = false`, as it deletes the script's own link.
-pub(super) async fn script_check_before_change(script: &Path, follow_own_link: bool) -> Result<()> {
-    let config = Config::get().await?;
+/// Refuses to write task script `script` through a link out of its project; see
+/// [`config_file::script_check_before_write`].
+pub(super) async fn script_check_before_write(script: &Path) -> Result<()> {
     let script = path_absolutize::Absolutize::absolutize(script)?;
-    let root = config
+    match script_project_root(&script).await? {
+        Some(root) => config_file::script_check_before_write(&script, &root),
+        None => Ok(()),
+    }
+}
+
+/// Refuses to remove task script `script` through a directory link out of its project; see
+/// [`config_file::script_check_before_remove`]. Returns the path to remove, in the directory
+/// this check approved.
+pub(super) async fn script_check_before_remove(script: &Path) -> Result<PathBuf> {
+    let script = path_absolutize::Absolutize::absolutize(script)?;
+    match script_project_root(&script).await? {
+        Some(root) => config_file::script_check_before_remove(&script, &root),
+        None => Ok(script.into_owned()),
+    }
+}
+
+/// The project of absolute task script path `script`: the deepest root, of the loaded config
+/// or the one mise runs in, that the path as written lies in.
+async fn script_project_root(script: &Path) -> Result<Option<PathBuf>> {
+    let config = Config::get().await?;
+    Ok(config
         .config_files
         .values()
         .map(|cf| cf.config_root())
         .chain(config.project_root.clone())
         .chain(crate::dirs::CWD.clone())
         .filter(|root| script.starts_with(root))
-        .max_by_key(|root| root.components().count());
-    match root {
-        Some(root) => config_file::script_check_before_change(&script, &root, follow_own_link),
-        None => Ok(()),
-    }
+        .max_by_key(|root| root.components().count()))
 }
 
 /// Whether config file `path` loads without asking for trust already, before a write.
