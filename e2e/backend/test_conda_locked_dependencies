@@ -81,7 +81,9 @@ lockfile = true
 "conda:locked-deps-tool" = { version = "1.0.0", channel = "$CHANNEL" }
 EOF
 
-mise install
+# generate mode, where the lockfile entry comes from what the install recorded
+# (the runner defaults to merge mode)
+MISE_LOCKFILE_MODE=generate mise install
 assert "mise exec -- locked-deps-tool" "tool-ok"
 assert_contains "cat mise.lock" "locked-deps-lib-1.0.0-0@"
 assert_contains "cat mise.lock" "noarch/locked-deps-lib-1.0.0-0.tar.bz2"
