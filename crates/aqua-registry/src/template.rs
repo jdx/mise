@@ -126,7 +126,7 @@ fn lex(code: &str) -> Result<Vec<Token<'_>>> {
     while !code.is_empty() {
         // Stop as soon as the tag is too long to parse, without storing the rest of its tokens
         check_token_budget(&tokens)?;
-        if code.starts_with(" ") {
+        if code.starts_with(char::is_whitespace) {
             let end = code
                 .char_indices()
                 .find(|(_, c)| !c.is_whitespace())

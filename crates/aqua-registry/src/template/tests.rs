@@ -293,6 +293,16 @@ fn test_lex_multibyte_identifier_and_whitespace() {
         ]
     );
 
+    // a Unicode space alone separates a function from its argument too
+    assert_eq!(
+        lex("日本\u{3000}.Version").unwrap(),
+        vec![
+            Token::Func("日本"),
+            Token::Whitespace("\u{3000}"),
+            Token::Key("Version"),
+        ]
+    );
+
     let err = render("{{日 .Version}}", &hashmap(vec![("Version", "1.0.0")])).unwrap_err();
     assert_eq!(err.to_string(), "unknown function: 日");
 }

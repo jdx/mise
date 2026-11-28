@@ -3202,7 +3202,8 @@ impl AquaBackend {
         let checksum_content = HTTP
             .get_text(&url)
             .await
-            .wrap_err_with(|| format!("could not download {url}"))?;
+            // The URL stays out: a private one can carry a token in its query.
+            .wrap_err("could not download the checksum file")?;
 
         // Parse checksum from file content
         let checksum_str =
