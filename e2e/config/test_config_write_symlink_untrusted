@@ -46,6 +46,18 @@ ln -s "$MISE_STATE_DIR/trusted-configs/planted" mise.toml
 assert_fail_contains "mise set FOO=bar 2>&1" "refusing to write"
 assert_fail "test -e $MISE_STATE_DIR/trusted-configs/planted"
 
+echo "=== nor through a directory link that stays in a project holding the state directory ==="
+mkdir -p ../state-in/state/sub
+echo "[env]" >../state-in/state/sub/config.toml
+cd ../state-in || exit 1
+ln -s state/sub .mise
+# control: while the state directory is elsewhere, the link inside the project is followed
+assert "MISE_TRUSTED_CONFIG_PATHS=$PWD mise set --file .mise/config.toml CONTROL=1"
+assert_contains "cat state/sub/config.toml" 'CONTROL = "1"'
+assert_fail_contains "MISE_TRUSTED_CONFIG_PATHS=$PWD MISE_STATE_DIR=$PWD/state mise set --file .mise/config.toml FOO=bar 2>&1" "in mise's state directory"
+assert_not_contains "cat state/sub/config.toml" "FOO"
+cd ../proj || exit 1
+
 echo "=== a link inside the project is followed ==="
 rm mise.toml
 mkdir -p config
