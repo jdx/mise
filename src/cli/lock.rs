@@ -561,6 +561,17 @@ fn verify_generation_snapshots<'a>(
     Ok(())
 }
 
+/// The task files a lock run snapshots. A remote task's `file` is still its
+/// `git::` or `http(s)://` source here, since only running the task fetches
+/// it; reading that as a path fails on Windows (os error 123), and there is
+/// no local file to watch anyway.
+fn local_task_files(tasks: &BTreeMap<String, Task>) -> impl Iterator<Item = &PathBuf> {
+    tasks
+        .values()
+        .filter(|task| !crate::task::task_fetcher::TaskFetcher::is_unfetched_remote_task(task))
+        .filter_map(|task| task.file.as_ref())
+}
+
 fn read_optional_file(path: &Path) -> Result<Option<Vec<u8>>> {
     match fs::read(path) {
         Ok(content) => Ok(Some(content)),
@@ -972,7 +983,7 @@ impl Lock {
         let config_snapshots = setup
             .effective_config_files
             .keys()
-            .chain(setup.tasks.values().filter_map(|task| task.file.as_ref()))
+            .chain(local_task_files(setup.tasks))
             .map(|path| Ok((path.clone(), read_optional_file(path)?)))
             .collect::<Result<BTreeMap<_, _>>>()?;
         let scoped_config_paths = match setup.installed {
@@ -3625,6 +3636,28 @@ mod tests {
         assert!(!is_downgrade("a1b2c3d", "e4f5a6b"));
         assert!(!is_downgrade("2024.01.15", "2024.02.01"));
         assert!(!is_downgrade("nightly", "0.166.0"));
+    }
+
+    #[test]
+    fn local_task_files_skips_unfetched_remote_sources() {
+        let task = |file: &str| {
+            let mut task = Task::default();
+            task.file = Some(PathBuf::from(file));
+            task
+        };
+        let tasks = BTreeMap::from([
+            (
+                "git".to_string(),
+                task("git::https://github.com/jdx/mise.git//xtasks/a?ref=v1"),
+            ),
+            ("http".to_string(), task("https://example.com/task.sh")),
+            ("local".to_string(), task("tasks/build")),
+            ("inline".to_string(), Task::default()),
+        ]);
+        assert_eq!(
+            local_task_files(&tasks).collect::<Vec<_>>(),
+            vec![&PathBuf::from("tasks/build")]
+        );
     }
 
     #[test]
