@@ -187,3 +187,16 @@ assert_fail_contains "mise trust --ignore dotfiles 2>&1" "is global config, whic
 assert_not_contains "mise untrust dotfiles 2>&1" "No trusted config files found"
 assert_contains "mise -C ~ env" "DOTFILES=dotfiles"
 assert_contains "mise -C dotfiles env" "DOTFILES=dotfiles"
+
+# The checkout's own configs still belong to it: naming the checkout revokes or ignores them
+# whichever file is picked for it, and the global config is left alone.
+printf '[env]\nSTAGED = "staged"\n' >dotfiles/mise.staging.toml
+MISE_ENV=staging mise trust dotfiles/mise.staging.toml
+assert_contains "MISE_ENV=staging mise -C dotfiles env" "STAGED=staged"
+assert_contains "mise untrust dotfiles 2>&1" "untrusted ~/workdir/dotfiles/mise.staging.toml"
+assert_fail_contains "MISE_ENV=staging mise -C dotfiles env 2>&1" "not trusted"
+MISE_ENV=staging mise trust dotfiles/mise.staging.toml
+assert_contains "mise trust --ignore dotfiles 2>&1" "ignored ~/workdir/dotfiles/mise.staging.toml"
+assert_not_contains "MISE_ENV=staging mise -C dotfiles env 2>&1" "=staged"
+assert_contains "MISE_ENV=staging mise -C dotfiles env" "DOTFILES=dotfiles"
+assert_contains "mise -C ~ env" "DOTFILES=dotfiles"
