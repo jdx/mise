@@ -1,5 +1,6 @@
 //! Runtime dependency closure resolution, topologically sorted (deps first).
 
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 
 use eyre::{Report, bail};
@@ -34,6 +35,20 @@ impl FormulaKey {
             tap_url,
         }
     }
+
+    fn dependency(&self, name: &str) -> Self {
+        if api::split_tap_name(name).is_none() {
+            return Self::new(name.to_owned(), self.tap_name.clone(), self.tap_url.clone());
+        }
+
+        let tap_name = api::tap_name(name);
+        let tap_url = if tap_name.is_some() && tap_name == self.tap_name {
+            self.tap_url.clone()
+        } else {
+            None
+        };
+        Self::new(name.to_owned(), tap_name, tap_url)
+    }
 }
 
 fn accept_resolved_alias_failures(
@@ -55,19 +70,32 @@ fn accept_resolved_alias_failures(
 /// Every name in the closure mapped to the formula it refers to. A name
 /// claimed by several formulae resolves by canonical name, then alias, then
 /// old name, the same precedence as the alias index.
-pub(super) fn formulae_by_name(closure: &[ResolvedFormula]) -> HashMap<&str, &ResolvedFormula> {
+pub(super) fn formulae_by_name(
+    closure: &[ResolvedFormula],
+) -> HashMap<Cow<'_, str>, &ResolvedFormula> {
+    fn names<'a>(formula: &Formula, name: &'a str) -> [Cow<'a, str>; 2] {
+        let tap = formula.tap.as_deref().unwrap_or("homebrew/core");
+        [Cow::Borrowed(name), Cow::Owned(format!("{tap}/{name}"))]
+    }
+
     let mut by_name = HashMap::new();
     for rf in closure {
-        by_name.insert(rf.formula.name.as_str(), rf);
+        for name in names(&rf.formula, &rf.formula.name) {
+            by_name.insert(name, rf);
+        }
     }
     for rf in closure {
         for alias in &rf.formula.aliases {
-            by_name.entry(alias.as_str()).or_insert(rf);
+            for name in names(&rf.formula, alias) {
+                by_name.entry(name).or_insert(rf);
+            }
         }
     }
     for rf in closure {
         for oldname in &rf.formula.oldnames {
-            by_name.entry(oldname.as_str()).or_insert(rf);
+            for name in names(&rf.formula, oldname) {
+                by_name.entry(name).or_insert(rf);
+            }
         }
     }
     by_name
@@ -243,14 +271,7 @@ async fn resolve_closure_pairs(
             if !formulae.contains_key(&canonical_key) {
                 let tag = dep_tag(&formula, &host_tag);
                 for dep in install_deps(&formula, &tag) {
-                    queue.push((
-                        FormulaKey::new(
-                            dep.clone(),
-                            effective_tap_name.clone(),
-                            effective_tap_url.clone(),
-                        ),
-                        false,
-                    ));
+                    queue.push((canonical_key.dependency(dep), false));
                 }
                 raw_bases.insert(canonical_key.clone(), tap_raw_base(&canonical_key));
                 formulae.insert(canonical_key.clone(), formula);
@@ -296,7 +317,7 @@ async fn resolve_closure_pairs(
         ctx.visiting.push(key.clone());
         let tag = dep_tag(formula, ctx.host_tag);
         for dep in install_deps(formula, &tag) {
-            let dep_key = FormulaKey::new(dep.clone(), key.tap_name.clone(), key.tap_url.clone());
+            let dep_key = key.dependency(dep);
             let dep_key = ctx.canonical.get(&dep_key).cloned().unwrap_or(dep_key);
             visit(&dep_key, ctx)?;
         }
@@ -362,13 +383,16 @@ async fn fetch_formula_with_fallback(
     provision_ruby: bool,
 ) -> Result<(Formula, Option<String>, Option<String>)> {
     match fetch_formula(key, requested, provision_ruby).await {
-        Ok(formula) => {
+        Ok(mut formula) => {
             let effective_tap_name = match formula.tap.as_deref() {
                 Some("homebrew/core") => None,
                 Some(tap) => Some(tap.to_string()),
                 None => key.tap_name.clone(),
             };
             let effective_tap_url = effective_tap_name.as_ref().and(key.tap_url.clone());
+            if formula.tap.is_none() {
+                formula.tap.clone_from(&effective_tap_name);
+            }
             Ok((formula, effective_tap_name, effective_tap_url))
         }
         Err(err) if key.tap_name.is_some() && api::split_tap_name(&key.name).is_none() => {
@@ -460,10 +484,38 @@ mod tests {
     }
 
     #[test]
+    fn formula_dependencies_use_their_own_explicit_tap() {
+        let parent_url = "https://github.com/qmk/homebrew-qmk.git";
+        let parent = FormulaKey::new(
+            "qmk".into(),
+            Some("qmk/qmk".into()),
+            Some(parent_url.into()),
+        );
+
+        for (name, tap, url) in [
+            ("unqualified", Some("qmk/qmk"), Some(parent_url)),
+            ("qmk/qmk/sibling", Some("qmk/qmk"), Some(parent_url)),
+            ("osx-cross/avr/avr-gcc@8", Some("osx-cross/avr"), None),
+            (
+                "osx-cross/arm/arm-none-eabi-gcc@8",
+                Some("osx-cross/arm"),
+                None,
+            ),
+            ("homebrew/core/git", None, None),
+        ] {
+            assert_eq!(
+                parent.dependency(name),
+                FormulaKey::new(name.into(), tap.map(str::to_owned), url.map(str::to_owned))
+            );
+        }
+    }
+
+    #[test]
     fn formulae_by_name_prefers_canonical_then_alias_then_old_name() {
         let closure = [
             resolved(serde_json::json!({
                 "name": "renamed", "oldnames": ["shared", "openssl@3"],
+                "tap": "example/tap",
                 "versions": {"stable": "1"},
             })),
             resolved(serde_json::json!({
@@ -476,6 +528,9 @@ mod tests {
         assert_eq!(name_of("openssl@3"), "openssl@3");
         assert_eq!(name_of("shared"), "openssl@3");
         assert_eq!(name_of("renamed"), "renamed");
+        assert_eq!(name_of("example/tap/renamed"), "renamed");
+        assert_eq!(name_of("example/tap/shared"), "renamed");
+        assert_eq!(name_of("homebrew/core/shared"), "openssl@3");
     }
 
     #[test]
