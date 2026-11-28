@@ -469,6 +469,7 @@ pub fn parse_use_spec(spec: &str) -> eyre::Result<(String, PackageRequest)> {
 /// settings-excluded managers are hard errors.
 pub fn packages_from_requests(
     by_mgr: IndexMap<String, Vec<PackageRequest>>,
+    config: &Config,
 ) -> eyre::Result<Vec<ManagerPackages>> {
     let known = all_manager_names();
     let mut canonical: IndexMap<String, Vec<PackageRequest>> = IndexMap::new();
@@ -478,27 +479,25 @@ pub fn packages_from_requests(
             .or_default()
             .extend(requests);
     }
-    let by_mgr = canonical;
+    let brew_taps = brew_taps_from_config(config);
+    for mgr in ["brew", "brew-cask"] {
+        if let Some(requests) = canonical.get_mut(mgr) {
+            for request in requests {
+                if let Some(url) = brew_tap_name(&request.name).and_then(|tap| brew_taps.get(tap)) {
+                    request.tap_url = Some(url.clone());
+                }
+            }
+        }
+    }
     resolve_managers(
-        by_mgr,
+        canonical,
         IndexMap::new(),
+        &brew_taps,
         ResolveOpts {
             strict: true,
             applies_together: true,
         },
     )
-}
-
-pub fn attach_brew_tap_urls(config: &Config, by_mgr: &mut IndexMap<String, Vec<PackageRequest>>) {
-    let brew_taps = brew_taps_from_config(config);
-    for mgr in ["brew", "brew-cask"] {
-        if let Some(requests) = by_mgr.get_mut(mgr) {
-            for request in requests {
-                request.tap_url =
-                    brew_tap_name(&request.name).and_then(|tap| brew_taps.get(tap).cloned());
-            }
-        }
-    }
 }
 
 /// Aggregate `[bootstrap.packages]` across all loaded config files.
@@ -722,6 +721,7 @@ fn packages_from_config_files_and_tracked_config_files(
     resolve_managers(
         by_mgr,
         manager_options,
+        &tracked_brew_taps,
         ResolveOpts {
             strict: false,
             applies_together: false,
@@ -847,6 +847,7 @@ fn packages_from_config_files_collecting(
     resolve_managers(
         requests,
         options,
+        brew_taps,
         ResolveOpts {
             strict: false,
             // `filter_env == false` is the prune union across environments
@@ -2448,6 +2449,7 @@ fn packages_from_specs_with_config_files(
     resolve_managers(
         by_mgr,
         options,
+        &brew_taps,
         ResolveOpts {
             strict: true,
             applies_together: true,
@@ -2799,8 +2801,21 @@ fn canonical_manager_name(mgr: String, known: &[String]) -> String {
 fn resolve_managers(
     by_mgr: IndexMap<String, Vec<PackageRequest>>,
     mut manager_options: IndexMap<String, ManagerPackageOptions>,
+    _brew_taps: &IndexMap<String, String>,
     opts: ResolveOpts,
 ) -> eyre::Result<Vec<ManagerPackages>> {
+    #[cfg(unix)]
+    if by_mgr.contains_key("brew") && !_brew_taps.is_empty() {
+        manager_options.insert(
+            "brew".into(),
+            ManagerPackageOptions::Brew {
+                taps: _brew_taps
+                    .iter()
+                    .map(|(tap, url)| (tap.clone(), url.clone()))
+                    .collect(),
+            },
+        );
+    }
     let ResolveOpts {
         strict,
         applies_together,

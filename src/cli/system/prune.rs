@@ -159,9 +159,8 @@ impl SystemPrune {
         }
         let config = Config::get().await?;
         let packages = system::packages_from_config_and_tracked_config_files(&config).await?;
-        let mut configured = packages
-            .iter()
-            .find(|mp| mp.manager.name() == "brew")
+        let brew_packages = packages.iter().find(|mp| mp.manager.name() == "brew");
+        let mut configured = brew_packages
             .map(|mp| mp.requests.clone())
             .unwrap_or_default();
         let configured_casks = packages
@@ -170,7 +169,11 @@ impl SystemPrune {
             .map(|mp| mp.requests.as_slice())
             .unwrap_or_default();
         configured.extend(brew::cask_formula_dependencies(configured_casks).await?);
-        let plan = match brew::prune_plan(&configured).await {
+        let default_taps = system::brew_taps_from_config(&config).into_iter().collect();
+        let taps = brew_packages
+            .and_then(|mp| mp.options.brew_taps())
+            .unwrap_or(&default_taps);
+        let plan = match brew::prune_plan(&configured, taps).await {
             Ok(plan) => plan,
             Err(err) => return Err(with_declaring_config_files(&config, err).await),
         };

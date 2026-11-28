@@ -1,7 +1,7 @@
 //! Runtime dependency closure resolution, topologically sorted (deps first).
 
 use std::borrow::Cow;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use eyre::{Report, bail};
 use futures_util::stream::{self, StreamExt};
@@ -36,17 +36,19 @@ impl FormulaKey {
         }
     }
 
-    fn dependency(&self, name: &str) -> Self {
+    fn dependency(&self, name: &str, tap_urls: &BTreeMap<String, String>) -> Self {
         if api::split_tap_name(name).is_none() {
             return Self::new(name.to_owned(), self.tap_name.clone(), self.tap_url.clone());
         }
 
         let tap_name = api::tap_name(name);
-        let tap_url = if tap_name.is_some() && tap_name == self.tap_name {
-            self.tap_url.clone()
-        } else {
-            None
-        };
+        let tap_url = tap_name.as_ref().and_then(|tap| {
+            if Some(tap) == self.tap_name.as_ref() {
+                self.tap_url.clone()
+            } else {
+                tap_urls.get(tap).cloned()
+            }
+        });
         Self::new(name.to_owned(), tap_name, tap_url)
     }
 }
@@ -150,27 +152,37 @@ pub(super) fn install_deps<'a>(formula: &'a Formula, tag: &str) -> Vec<&'a Strin
 
 pub(super) async fn resolve_closure_with_taps(
     roots: &[PackageRequest],
+    configured_taps: &BTreeMap<String, String>,
     provision_ruby: bool,
 ) -> Result<Vec<ResolvedFormula>> {
+    let mut tap_urls = configured_taps.clone();
+    // Keep explicit request URLs available for callers without a tap config.
+    for req in roots {
+        if let (Some(tap), Some(url)) = (api::tap_name(&req.name), &req.tap_url) {
+            tap_urls.entry(tap).or_insert_with(|| url.clone());
+        }
+    }
     let roots = roots
         .iter()
         .map(|req| {
-            (
-                req.name.clone(),
-                api::tap_name(&req.name)
-                    .or_else(|| req.tap_url.as_deref().and_then(api::tap_name_from_url)),
-                req.tap_url.clone(),
-            )
+            let tap_name = api::tap_name(&req.name)
+                .or_else(|| req.tap_url.as_deref().and_then(api::tap_name_from_url));
+            let tap_url = req
+                .tap_url
+                .clone()
+                .or_else(|| tap_name.as_ref().and_then(|tap| tap_urls.get(tap).cloned()));
+            FormulaKey::new(req.name.clone(), tap_name, tap_url)
         })
         .collect::<Vec<_>>();
-    resolve_closure_pairs(&roots, provision_ruby).await
+    resolve_closure(&roots, &tap_urls, provision_ruby).await
 }
 
 /// Resolve the runtime closure of `roots` into install order (dependencies
 /// before dependents). Names are resolved through the API, so aliases map to
 /// their canonical formula.
-async fn resolve_closure_pairs(
-    roots: &[(String, Option<String>, Option<String>)],
+async fn resolve_closure(
+    roots: &[FormulaKey],
+    tap_urls: &BTreeMap<String, String>,
     provision_ruby: bool,
 ) -> Result<Vec<ResolvedFormula>> {
     let host_tag = tag::host_tag();
@@ -180,15 +192,7 @@ async fn resolve_closure_pairs(
     // occurrences in the dep graph don't re-fetch from the API
     let mut canonical: HashMap<FormulaKey, FormulaKey> = HashMap::new();
     let mut on_request: HashSet<FormulaKey> = HashSet::new();
-    let mut queue: Vec<(FormulaKey, bool)> = roots
-        .iter()
-        .map(|(name, tap_name, tap_url)| {
-            (
-                FormulaKey::new(name.clone(), tap_name.clone(), tap_url.clone()),
-                true,
-            )
-        })
-        .collect();
+    let mut queue: Vec<(FormulaKey, bool)> = roots.iter().cloned().map(|key| (key, true)).collect();
     while !queue.is_empty() {
         // Resolve one dependency frontier at a time. Formulae within the
         // frontier are independent, so their metadata can be fetched
@@ -271,7 +275,7 @@ async fn resolve_closure_pairs(
             if !formulae.contains_key(&canonical_key) {
                 let tag = dep_tag(&formula, &host_tag);
                 for dep in install_deps(&formula, &tag) {
-                    queue.push((canonical_key.dependency(dep), false));
+                    queue.push((canonical_key.dependency(dep, tap_urls), false));
                 }
                 raw_bases.insert(canonical_key.clone(), tap_raw_base(&canonical_key));
                 formulae.insert(canonical_key.clone(), formula);
@@ -293,6 +297,7 @@ async fn resolve_closure_pairs(
     let mut visiting: Vec<FormulaKey> = vec![];
     struct VisitContext<'a> {
         host_tag: &'a str,
+        tap_urls: &'a BTreeMap<String, String>,
         formulae: &'a HashMap<FormulaKey, Formula>,
         raw_bases: &'a HashMap<FormulaKey, Option<String>>,
         canonical: &'a HashMap<FormulaKey, FormulaKey>,
@@ -317,7 +322,7 @@ async fn resolve_closure_pairs(
         ctx.visiting.push(key.clone());
         let tag = dep_tag(formula, ctx.host_tag);
         for dep in install_deps(formula, &tag) {
-            let dep_key = key.dependency(dep);
+            let dep_key = key.dependency(dep, ctx.tap_urls);
             let dep_key = ctx.canonical.get(&dep_key).cloned().unwrap_or(dep_key);
             visit(&dep_key, ctx)?;
         }
@@ -339,6 +344,7 @@ async fn resolve_closure_pairs(
     }); // deterministic order
     let mut visit_ctx = VisitContext {
         host_tag: &host_tag,
+        tap_urls,
         formulae: &formulae,
         raw_bases: &raw_bases,
         canonical: &canonical,
@@ -353,13 +359,17 @@ async fn resolve_closure_pairs(
     Ok(sorted)
 }
 
-async fn fetch_formula(key: &FormulaKey, requested: bool, provision_ruby: bool) -> Result<Formula> {
+async fn fetch_formula_with_fallback(
+    key: &FormulaKey,
+    requested: bool,
+    provision_ruby: bool,
+) -> Result<(Formula, Option<String>, Option<String>)> {
     if !requested && key.tap_name.is_some() && api::split_tap_name(&key.name).is_none() {
         // Exact names only: a sibling formula from the same tap 404s here,
         // and resolving that through the alias index would download it for
         // nothing. Aliases are resolved by the core fallback below.
         match api::formula_exact(&key.name).await {
-            Ok(formula) => return Ok(formula),
+            Ok(formula) => return Ok((formula, None, None)),
             Err(err) => {
                 debug!(
                     "brew: {} unavailable in core metadata ({err}); trying parent tap metadata",
@@ -368,21 +378,14 @@ async fn fetch_formula(key: &FormulaKey, requested: bool, provision_ruby: bool) 
             }
         }
     }
-    api::formula_with_tap_name(
+    match api::formula_with_tap_name(
         &key.name,
         key.tap_name.as_deref(),
         key.tap_url.as_deref(),
         provision_ruby,
     )
     .await
-}
-
-async fn fetch_formula_with_fallback(
-    key: &FormulaKey,
-    requested: bool,
-    provision_ruby: bool,
-) -> Result<(Formula, Option<String>, Option<String>)> {
-    match fetch_formula(key, requested, provision_ruby).await {
+    {
         Ok(mut formula) => {
             let effective_tap_name = match formula.tap.as_deref() {
                 Some("homebrew/core") => None,
@@ -486,6 +489,8 @@ mod tests {
     #[test]
     fn formula_dependencies_use_their_own_explicit_tap() {
         let parent_url = "https://github.com/qmk/homebrew-qmk.git";
+        let avr_url = "https://github.com/example/custom-avr.git";
+        let tap_urls = BTreeMap::from([("osx-cross/avr".into(), avr_url.into())]);
         let parent = FormulaKey::new(
             "qmk".into(),
             Some("qmk/qmk".into()),
@@ -495,7 +500,11 @@ mod tests {
         for (name, tap, url) in [
             ("unqualified", Some("qmk/qmk"), Some(parent_url)),
             ("qmk/qmk/sibling", Some("qmk/qmk"), Some(parent_url)),
-            ("osx-cross/avr/avr-gcc@8", Some("osx-cross/avr"), None),
+            (
+                "osx-cross/avr/avr-gcc@8",
+                Some("osx-cross/avr"),
+                Some(avr_url),
+            ),
             (
                 "osx-cross/arm/arm-none-eabi-gcc@8",
                 Some("osx-cross/arm"),
@@ -504,7 +513,7 @@ mod tests {
             ("homebrew/core/git", None, None),
         ] {
             assert_eq!(
-                parent.dependency(name),
+                parent.dependency(name, &tap_urls),
                 FormulaKey::new(name.into(), tap.map(str::to_owned), url.map(str::to_owned))
             );
         }

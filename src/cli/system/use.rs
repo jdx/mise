@@ -113,10 +113,9 @@ impl SystemUse {
                 None => requests.push(request),
             }
         }
-        system::attach_brew_tap_urls(&config, &mut by_mgr);
         // resolve managers before touching the config file so a typo'd
         // manager doesn't get written
-        let mut mgrs = system::packages_from_requests(by_mgr)?;
+        let mut mgrs = system::packages_from_requests(by_mgr, &config)?;
         system::attach_package_sources(&config, &mut mgrs);
 
         let (existing_global_paths, has_new_global_entries) =

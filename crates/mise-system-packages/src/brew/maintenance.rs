@@ -150,8 +150,11 @@ pub fn linked_formulae(include_all: bool) -> Result<Vec<InstalledFormula>> {
     Ok(formulae.into_values().collect())
 }
 
-pub async fn prune_plan(configured: &[PackageRequest]) -> Result<PrunePlan> {
-    let keep = configured_package_closure(configured).await?;
+pub async fn prune_plan(
+    configured: &[PackageRequest],
+    tap_urls: &BTreeMap<String, String>,
+) -> Result<PrunePlan> {
+    let keep = configured_package_closure(configured, tap_urls).await?;
     prune_plan_from_linked_formulae(&keep)
 }
 
@@ -170,15 +173,20 @@ pub fn apply_prune_plan(plan: &PrunePlan, dry_run: bool) -> Result<()> {
     Ok(())
 }
 
-async fn configured_package_closure(configured: &[PackageRequest]) -> Result<HashSet<String>> {
+async fn configured_package_closure(
+    configured: &[PackageRequest],
+    tap_urls: &BTreeMap<String, String>,
+) -> Result<HashSet<String>> {
     if configured.is_empty() {
         return Ok(HashSet::new());
     }
-    Ok(resolve::resolve_closure_with_taps(configured, false)
-        .await?
-        .into_iter()
-        .map(|rf| formula_package_name(&rf.formula))
-        .collect())
+    Ok(
+        resolve::resolve_closure_with_taps(configured, tap_urls, false)
+            .await?
+            .into_iter()
+            .map(|rf| formula_package_name(&rf.formula))
+            .collect(),
+    )
 }
 
 /// The formulae a kept, installed formula still links against. An installed
