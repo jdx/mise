@@ -65,6 +65,11 @@ pub struct Draft {
     /// checkpoint holds under other recipients, including the saved
     /// versions it carries forward rather than reads live.
     pub re_encrypt: bool,
+    /// Replace the newest checkpoint instead of following it when that one
+    /// is an unpublished autosave younger than this, and this save only
+    /// changes again files it changed: a run of edits to one file becomes
+    /// one checkpoint. Set by the watcher.
+    pub fold_within: Option<std::time::Duration>,
 }
 
 impl Draft {
@@ -137,6 +142,16 @@ pub enum Outcome {
     Unchanged,
     /// No capture could be taken (no usable git); the reason.
     Unavailable(String),
+}
+
+/// The newest checkpoint an autosave replaces, and the one before it,
+/// which the replacement describes its change against.
+struct Fold {
+    replaced: IndexEntry,
+    base: (Checkpoint, String),
+    /// held until the replacement is written, so no sync publishes the
+    /// checkpoint being replaced
+    _sync: fslock::LockFile,
 }
 
 /// An open history store.
@@ -601,70 +616,103 @@ impl Store {
                 reason.unwrap_or_else(shadow::unavailable_reason),
             ));
         }
-        let mut changes = match (&self.repo, &snapshot) {
-            (Some(repo), Some(tree)) => {
-                let since = previous_tree
-                    .as_ref()
-                    .map(|(checkpoint, _)| checkpoint.uuid.clone());
-                let from = previous_tree.as_ref().map(|(_, tree)| tree.as_str());
-                let to = content_tree.as_deref().unwrap_or(tree);
-                changes_from(repo, from, to, since)?
+        // what changed since `previous`: the newest checkpoint, or the one
+        // before it when this save replaces the newest
+        let changes_since = |previous: Option<&(Checkpoint, String)>| -> Result<Changes> {
+            let previous = &previous;
+            let mut changes = match (&self.repo, &snapshot) {
+                (Some(repo), Some(tree)) => {
+                    let since = previous
+                        .as_ref()
+                        .map(|(checkpoint, _)| checkpoint.uuid.clone());
+                    let from = previous.as_ref().map(|(_, tree)| tree.as_str());
+                    let to = content_tree.as_deref().unwrap_or(tree);
+                    changes_from(repo, from, to, since)?
+                }
+                _ => Changes::default(),
+            };
+            // the same bytes under other permissions is a change the tree diff
+            // does not show: a path-scoped `latest` and `--path` must see it
+            if snapshot.is_some()
+                && let Some((previous_checkpoint, _)) = &previous
+            {
+                let previous_modes = &previous_checkpoint.tree.modes;
+                let mode_only: BTreeSet<&String> = modes
+                    .keys()
+                    .chain(previous_modes.keys())
+                    .filter(|path| modes.get(*path) != previous_modes.get(*path))
+                    .filter(|path| !changes.touches(path))
+                    .collect();
+                changes.modified.extend(mode_only.into_iter().cloned());
             }
-            _ => Changes::default(),
+            // a manual-save entry carried forward holds its saved version by
+            // definition: a difference against a protective capture of its live
+            // contents is not a change this checkpoint made, and neither is an
+            // unheld stream's
+            if !carried.is_empty() {
+                let under = |path: &str, entry: &str| {
+                    path == entry
+                        || path
+                            .strip_prefix(entry)
+                            .is_some_and(|rest| rest.starts_with('/'))
+                };
+                // an entry nested in a carried one and captured itself keeps
+                // its changes (see `carry_streams`)
+                let captured: Vec<String> = walk
+                    .entries
+                    .iter()
+                    .enumerate()
+                    .filter(|(index, _)| !carried.contains(index))
+                    .map(|(_, entry)| entry.display())
+                    .collect();
+                let carried: Vec<String> = carried
+                    .iter()
+                    .map(|index| walk.entries[*index].display())
+                    .collect();
+                let keep = |path: &String| {
+                    !carried.iter().any(|entry| under(path, entry))
+                        || captured.iter().any(|nested| {
+                            under(path, nested)
+                                && carried
+                                    .iter()
+                                    .any(|entry| under(nested, entry) && nested != entry)
+                        })
+                };
+                changes.added.retain(keep);
+                changes.modified.retain(keep);
+                changes.removed.retain(keep);
+            }
+            Ok(changes)
         };
-        // the same bytes under other permissions is a change the tree diff
-        // does not show: a path-scoped `latest` and `--path` must see it
-        if snapshot.is_some()
-            && let Some((previous_checkpoint, _)) = &previous_tree
-        {
-            let previous_modes = &previous_checkpoint.tree.modes;
-            let mode_only: BTreeSet<&String> = modes
-                .keys()
-                .chain(previous_modes.keys())
-                .filter(|path| modes.get(*path) != previous_modes.get(*path))
-                .filter(|path| !changes.touches(path))
-                .collect();
-            changes.modified.extend(mode_only.into_iter().cloned());
-        }
-        // a manual-save entry carried forward holds its saved version by
-        // definition: a difference against a protective capture of its live
-        // contents is not a change this checkpoint made, and neither is an
-        // unheld stream's
-        if !carried.is_empty() {
-            let under = |path: &str, entry: &str| {
-                path == entry
-                    || path
-                        .strip_prefix(entry)
-                        .is_some_and(|rest| rest.starts_with('/'))
-            };
-            // an entry nested in a carried one and captured itself keeps
-            // its changes (see `carry_streams`)
-            let captured: Vec<String> = walk
-                .entries
-                .iter()
-                .enumerate()
-                .filter(|(index, _)| !carried.contains(index))
-                .map(|(_, entry)| entry.display())
-                .collect();
-            let carried: Vec<String> = carried
-                .iter()
-                .map(|index| walk.entries[*index].display())
-                .collect();
-            let keep = |path: &String| {
-                !carried.iter().any(|entry| under(path, entry))
-                    || captured.iter().any(|nested| {
-                        under(path, nested)
-                            && carried
-                                .iter()
-                                .any(|entry| under(nested, entry) && nested != entry)
-                    })
-            };
-            changes.added.retain(keep);
-            changes.modified.retain(keep);
-            changes.removed.retain(keep);
-        }
+        let mut changes = changes_since(previous_tree.as_ref())?;
+        // an autosave that only changes again what the unpublished autosave
+        // before it changed replaces that one instead of following it
+        let fold = match (&self.repo, &snapshot, draft.fold_within) {
+            (Some(repo), Some(_), Some(window)) if !draft.has_metadata() && !changes.is_empty() => {
+                let shared = tracked.shared_coverage(coverage.clone(), &walk);
+                self.fold_target(repo, &index, &changes, &shared, window)?
+            }
+            _ => None,
+        };
+        let mut has_previous = previous_tree.is_some();
+        let fold = match fold {
+            Some(fold) => {
+                let folded = changes_since(Some(&fold.base))?;
+                if folded.is_empty() {
+                    // the edits undid themselves: follow the newest
+                    // checkpoint with the undo rather than replace it with
+                    // a checkpoint that changes nothing
+                    None
+                } else {
+                    changes = folded;
+                    has_previous = true;
+                    Some(fold)
+                }
+            }
+            None => None,
+        };
         let total_files: u64 = roots.iter().map(|root| root.files).sum();
-        let mut summary = describe(&draft, &changes, previous_tree.is_some(), total_files);
+        let mut summary = describe(&draft, &changes, has_previous, total_files);
         if changes.is_empty() && !re_encrypted.is_empty() && previous_tree.is_some() {
             summary = re_encrypt_report(&re_encrypted);
         }
@@ -772,13 +820,15 @@ impl Store {
                 Err(err) => debug!("history: could not compare the previous selection: {err:#}"),
             }
         }
-        let entry = self.commit_record_locked(
+        let entry = self.commit_record_folding_locked(
             checkpoint,
             index,
             reserved_id,
             &messages,
             !draft.protective && heard(&draft),
+            fold.as_ref(),
         )?;
+        drop(fold);
         if available
             && snapshot.is_some()
             && let Some(repo) = &self.repo
@@ -811,12 +861,135 @@ impl Store {
     /// Append one ordinary record while the store lock is held.
     fn commit_record_locked(
         &self,
+        checkpoint: Checkpoint,
+        index: Index,
+        reserved_id: Option<u64>,
+        messages: &[String],
+        speak: bool,
+    ) -> Result<Box<Entry>> {
+        self.commit_record_folding_locked(checkpoint, index, reserved_id, messages, speak, None)
+    }
+
+    /// The newest checkpoint, when this autosave may replace it: an autosave
+    /// with nothing but computed metadata, younger than `window`, never
+    /// published, tracking what `coverage` says, whose changed files include
+    /// every file `changes` names.
+    /// Holds the sync lock so a sync cannot publish it meanwhile.
+    fn fold_target(
+        &self,
+        repo: &HistoryRepo,
+        index: &Index,
+        changes: &Changes,
+        coverage: &store::Coverage,
+        window: std::time::Duration,
+    ) -> Result<Option<Fold>> {
+        if changes.truncated {
+            return Ok(None);
+        }
+        let Some((replaced, older)) = index.entries.split_last() else {
+            return Ok(None);
+        };
+        if replaced.trigger != Trigger::Edit
+            || repo.ref_oid(HistoryRepo::HISTORY_REF)?.as_deref() != Some(replaced.commit.as_str())
+        {
+            return Ok(None);
+        }
+        let Some(head) = store::read_meta_cache_in(&self.state_dir, &replaced.uuid)? else {
+            return Ok(None);
+        };
+        if head.description_source != DescriptionSource::Computed
+            || head.operation.is_some()
+            || !head.labels.is_empty()
+            || head.task.is_some()
+            || head.tree.snapshot.is_none()
+            || head.changes.truncated
+            // a change to what is tracked (an exclusion, say) is its own
+            // checkpoint, never folded into an edit
+            || !same_coverage(&head.tree.coverage, coverage)
+        {
+            return Ok(None);
+        }
+        let changed = |path: &String| {
+            head.changes.added.contains(path)
+                || head.changes.modified.contains(path)
+                || head.changes.removed.contains(path)
+        };
+        if !changes
+            .added
+            .iter()
+            .chain(&changes.modified)
+            .chain(&changes.removed)
+            .all(changed)
+        {
+            return Ok(None);
+        }
+        // the replacement must describe its change against what came
+        // before: a first checkpoint, or one after a merge, stays
+        let parents = repo.parents_of(&replaced.commit)?;
+        let (Some(before), [parent]) = (older.last(), parents.as_slice()) else {
+            return Ok(None);
+        };
+        if *parent != before.commit {
+            return Ok(None);
+        }
+        let Some(base) =
+            store::read_meta_cache_in(&self.state_dir, &before.uuid)?.and_then(|checkpoint| {
+                checkpoint
+                    .tree
+                    .snapshot
+                    .clone()
+                    .map(|tree| (checkpoint, tree))
+            })
+        else {
+            return Ok(None);
+        };
+        let started: i64 = repo
+            .author_date(&replaced.commit)?
+            .split_whitespace()
+            .next()
+            .and_then(|seconds| seconds.parse().ok())
+            .unwrap_or(0);
+        let age = chrono::Utc::now().timestamp().saturating_sub(started);
+        if age < 0 || age as u64 > window.as_secs() {
+            return Ok(None);
+        }
+        // a sync running now may be publishing it
+        let Ok(sync) = super::sync::run::lock_in(&self.state_dir) else {
+            return Ok(None);
+        };
+        if let Some(upstream) = repo.ref_oid(super::sync::network::UPSTREAM_REF)?
+            && repo
+                .merge_bases(&replaced.commit, &upstream)?
+                .contains(&replaced.commit)
+        {
+            return Ok(None);
+        }
+        Ok(Some(Fold {
+            replaced: replaced.clone(),
+            base,
+            _sync: sync,
+        }))
+    }
+
+    /// Append one record while the store lock is held, replacing the newest
+    /// one when `fold` says so.
+    fn commit_record_folding_locked(
+        &self,
         mut checkpoint: Checkpoint,
         mut index: Index,
         reserved_id: Option<u64>,
         messages: &[String],
         speak: bool,
+        fold: Option<&Fold>,
     ) -> Result<Box<Entry>> {
+        // the replacement keeps the number of the record it replaces
+        let reserved_id = match fold {
+            Some(fold) => {
+                index.entries.pop();
+                reserved_id.or(Some(fold.replaced.id))
+            }
+            None => reserved_id,
+        };
         let id = reserved_id.unwrap_or_else(|| {
             let id = index.next_id.max(1);
             index.next_id = id + 1;
@@ -825,9 +998,16 @@ impl Store {
         let commit = match &self.repo {
             Some(repo) => {
                 let parent = repo.ref_oid(HistoryRepo::HISTORY_REF)?;
-                let commit = repo
-                    .write_checkpoint_commit(checkpoint.tree.snapshot.as_deref(), &checkpoint)
-                    .wrap_err("writing the checkpoint")?;
+                let commit = match (fold, checkpoint.tree.snapshot.as_deref()) {
+                    (Some(fold), Some(tree)) => repo.write_folded_checkpoint_commit(
+                        tree,
+                        &checkpoint,
+                        &fold.replaced.commit,
+                    ),
+                    _ => repo
+                        .write_checkpoint_commit(checkpoint.tree.snapshot.as_deref(), &checkpoint),
+                }
+                .wrap_err("writing the checkpoint")?;
                 let advanced = repo.update_history_head(&commit, parent.as_deref());
                 // Updating the ref makes the snapshot durable. Even a later
                 // symbolic-HEAD, metadata-cache, index, or enrollment failure

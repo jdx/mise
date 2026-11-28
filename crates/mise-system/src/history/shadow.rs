@@ -773,6 +773,47 @@ impl HistoryRepo {
         self.commit_tree(&tree, parent.as_deref().into_iter().collect(), &message)
     }
 
+    /// Like [`Self::write_checkpoint_commit`], replacing the head commit
+    /// `folded` instead of following it: the new commit takes its parents
+    /// and its author date, so it still says when the change began.
+    pub(crate) fn write_folded_checkpoint_commit(
+        &self,
+        snapshot_tree: &str,
+        checkpoint: &Checkpoint,
+        folded: &str,
+    ) -> Result<String> {
+        let record = checkpoint.for_commit();
+        let mut message = format!(
+            "{}\n\n{}{}",
+            checkpoint.description,
+            Self::RECORD_TRAILER,
+            serde_json::to_string(&record)?
+        );
+        if let Some(matcher) = checkpoint.tree.coverage.matcher {
+            message.push_str(&format!("\n{}{matcher}", Self::MATCHER_TRAILER));
+        }
+        let parents = self.parents_of(folded)?;
+        let author_date = self.author_date(folded)?;
+        self.commit_tree_dated(
+            snapshot_tree,
+            parents.iter().map(String::as_str).collect(),
+            &message,
+            Some(&author_date),
+        )
+    }
+
+    /// A commit's author date in Git's raw form (`<seconds> <offset>`).
+    pub(crate) fn author_date(&self, commit: &str) -> Result<String> {
+        self.output_str(PlumbingCall::new([
+            "show",
+            "-s",
+            "--format=%ad",
+            "--date=raw",
+            commit,
+        ]))
+        .map(|date| date.trim().to_string())
+    }
+
     #[cfg(test)]
     fn advance_head(&self, commit: &str) -> Result<()> {
         // The commit's parent is the head observed when it was prepared.
@@ -1957,6 +1998,18 @@ impl HistoryRepo {
         parents: Vec<&str>,
         message: &str,
     ) -> Result<String> {
+        self.commit_tree_dated(tree, parents, message, None)
+    }
+
+    /// [`Self::commit_tree`] with an author date (Git's raw form) other than
+    /// now.
+    fn commit_tree_dated(
+        &self,
+        tree: &str,
+        parents: Vec<&str>,
+        message: &str,
+        author_date: Option<&str>,
+    ) -> Result<String> {
         let mut args = vec!["commit-tree".to_string(), tree.to_string()];
         for parent in parents {
             args.push("-p".to_string());
@@ -1969,12 +2022,14 @@ impl HistoryRepo {
             body.push('\n');
         }
         let email = super::config::git_email()?;
-        self.output_str(
-            PlumbingCall::new(args)
-                .stdin(body.as_bytes())
-                .env("GIT_AUTHOR_EMAIL", email.as_str())
-                .env("GIT_COMMITTER_EMAIL", email),
-        )
+        let mut call = PlumbingCall::new(args)
+            .stdin(body.as_bytes())
+            .env("GIT_AUTHOR_EMAIL", email.as_str())
+            .env("GIT_COMMITTER_EMAIL", email);
+        if let Some(date) = author_date {
+            call = call.env("GIT_AUTHOR_DATE", date);
+        }
+        self.output_str(call)
     }
 
     /// A commit carrying another commit's identity: its author and committer

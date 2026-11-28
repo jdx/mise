@@ -36,6 +36,11 @@ use mise_util::lock_file::LockFile;
 /// How long the debouncer coalesces raw filesystem events before they reach
 /// the scheduler, which applies the configured quiet period on top.
 const COALESCE: Duration = Duration::from_millis(500);
+/// An autosave of files the previous autosave changed, while that one is
+/// younger than this and not yet published, replaces it: a run of edits to
+/// one file is one checkpoint. Matches the default `sync_interval`, so an
+/// edit session folds until it is published.
+const FOLD_WINDOW: Duration = Duration::from_secs(5 * 60);
 const BACKOFF_MIN: Duration = Duration::from_secs(1);
 const BACKOFF_MAX: Duration = Duration::from_secs(5 * 60);
 /// What a final capture does with throttled files: everything live when
@@ -1658,6 +1663,7 @@ impl Capture {
             };
         let mut draft = Draft::new(Trigger::Edit);
         draft.held = held.to_vec();
+        draft.fold_within = Some(FOLD_WINDOW);
         let result = self.store.attempt(tracked, draft);
         drop(operation);
         match result {
