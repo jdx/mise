@@ -78,7 +78,9 @@ impl CreatedDirs {
     /// not written over.
     pub(crate) fn load() -> Self {
         let path = record_path();
-        if !path.exists() {
+        // only a record that is not there is none; one that cannot be looked at, or a dangling
+        // link, is unreadable
+        if gone(&path) {
             return Self::default();
         }
         match file::read_to_string(&path)
