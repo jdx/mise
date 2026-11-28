@@ -51,3 +51,17 @@ assert_not_contains "mise hook-env -s bash 2>&1 || true" "PROJECT_TEST=loaded"
 assert_contains "mise trust . 2>&1" "trusted ~/workdir/proj"
 assert_contains "mise trust --ignore . 2>&1" "ignored ~/workdir/proj"
 assert_not_contains "mise hook-env -s bash 2>&1 || true" "PROJECT_TEST=loaded"
+
+# `mise trust --all` trusts the project of a config it finds under a name only `.miserc.toml`
+# declares, not that file as an env file.
+mkdir -p ~/workdir/top/app
+cd ~/workdir/top || exit 1
+echo 'override_config_filenames = ["project.toml"]' >.miserc.toml
+cat <<'EOS' >app/project.toml
+[env]
+APP_TEST = "{{ exec(command='echo loaded') }}"
+EOS
+output="$(mise trust --all 2>&1)"
+assert_contains_text "$output" "trusted ~/workdir/top/app"
+assert_not_contains_text "$output" "trusted ~/workdir/top/app/project.toml"
+assert_contains "cd app && mise env" "APP_TEST=loaded"

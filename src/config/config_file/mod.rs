@@ -1225,7 +1225,7 @@ fn trusted_monorepo_ancestor(canonical: &Path) -> bool {
 
 remove_by!("2027.11.0", "legacy-trust-record-names");
 
-/// Whether `dir` has a monorepo marker beside a record under a name that mise 2026.11.13 and
+/// Whether `dir` has a monorepo marker beside a record under a name that mise 2026.11.14 and
 /// earlier used. Loading the root's config writes the marker under the current name, but settings
 /// are read before that, so the first run after an upgrade would otherwise leave out the
 /// `[settings]` of a subproject trusted through the root.
@@ -1482,8 +1482,10 @@ pub fn trust_env_file(path: &Path) -> Result<()> {
 /// `env_files` category, when the file is not named like a config.
 fn trust_as(path: &Path, kind: TrustAs) -> Result<()> {
     rm_ignored(path.to_path_buf())?;
-    let hashed_path = trust_path(path);
     let canonicalized_path = path.canonicalize()?;
+    // Written under the current name: a record under an older name does not say what it approves
+    // (see `TrustRecord::is_env_file_approval`), so it is replaced below.
+    let hashed_path = dirs::TRUSTED_CONFIGS.join(record_name(&canonicalized_path));
     // What this writes decides the next check, which the memo would answer from the old state.
     IS_TRUSTED.lock().unwrap().remove(&canonicalized_path);
     file::create_dir_all(hashed_path.parent().unwrap())?;
@@ -1517,6 +1519,22 @@ fn trust_as(path: &Path, kind: TrustAs) -> Result<()> {
     }
     if !record_points_at(&hashed_path, &canonicalized_path) {
         file::make_symlink_or_file(&canonicalized_path, &hashed_path)?;
+    }
+    remove_by!("2027.11.0", "legacy-trust-record-names");
+    for legacy in legacy_records(&dirs::TRUSTED_CONFIGS, &canonicalized_path) {
+        // The monorepo marker moves to the new record: settings are read before the root's
+        // config loads and writes it again.
+        let marker = with_appended_extension(&legacy, "monorepo");
+        if marker.exists() {
+            file::write(with_appended_extension(&hashed_path, "monorepo"), "")?;
+        }
+        for ext in ["hash", "monorepo", ENV_FILE_APPROVAL] {
+            let sidecar = with_appended_extension(&legacy, ext);
+            if sidecar.exists() {
+                file::remove_file(&sidecar)?;
+            }
+        }
+        file::remove_file(&legacy)?;
     }
     Ok(())
 }
@@ -1709,16 +1727,34 @@ pub(crate) fn set_monorepo_root_marker(path: &Path, enabled: bool) -> Result<()>
     if enabled && !monorepo_marker.exists() {
         file::create_dir_all(monorepo_marker.parent().unwrap())?;
         file::write(&monorepo_marker, "")?;
-    } else if !enabled && monorepo_marker.exists() {
-        file::remove_file(&monorepo_marker)?;
-        if let Ok(config_root) = config_root.canonicalize() {
-            IS_TRUSTED
-                .lock()
-                .unwrap()
-                .retain(|path| path == &config_root || !path.starts_with(&config_root));
-        }
+    } else if !enabled
+        && remove_monorepo_markers(&config_root, &monorepo_marker)?
+        && let Ok(config_root) = config_root.canonicalize()
+    {
+        IS_TRUSTED
+            .lock()
+            .unwrap()
+            .retain(|path| path == &config_root || !path.starts_with(&config_root));
     }
     Ok(())
+}
+
+/// Removes `marker`, the current-name monorepo marker of `config_root`, and any marker beside one
+/// of its records under an older name, which [`trusted_monorepo_ancestor`] still reads. Returns
+/// whether one was removed.
+fn remove_monorepo_markers(config_root: &Path, marker: &Path) -> Result<bool> {
+    remove_by!("2027.11.0", "legacy-trust-record-names");
+    let legacy = legacy_records(&dirs::TRUSTED_CONFIGS, &record_identity(config_root))
+        .into_iter()
+        .map(|record| with_appended_extension(&record, "monorepo"));
+    let mut removed = false;
+    for marker in std::iter::once(marker.to_path_buf()).chain(legacy) {
+        if marker.exists() {
+            file::remove_file(&marker)?;
+            removed = true;
+        }
+    }
+    Ok(removed)
 }
 
 /// The paths strictly below `dir` that have a trust record, whether or not they are still on
@@ -1759,6 +1795,7 @@ pub fn untrust(path: &Path) -> eyre::Result<()> {
 }
 
 /// The trust record for `path`, e.g. `~/.local/state/mise/trusted-configs/dir-file-<sha256>`.
+#[cfg(test)]
 fn trust_path(path: &Path) -> PathBuf {
     record_path(&dirs::TRUSTED_CONFIGS, path)
 }
@@ -1787,6 +1824,8 @@ struct RecordLookup {
     /// Whether the record stores the path it is looked up for as its target. A record name is
     /// derived from the path, so a file of that name proves nothing until its target is compared.
     owned: bool,
+    /// Whether the record has a name that mise 2026.11.14 and earlier used.
+    legacy: bool,
 }
 
 impl RecordLookup {
@@ -1798,13 +1837,19 @@ impl RecordLookup {
             return Self {
                 path: current,
                 owned,
+                legacy: false,
             };
         }
         match legacy_records(dir, identity).into_iter().next() {
-            Some(path) => Self { path, owned: true },
+            Some(path) => Self {
+                path,
+                owned: true,
+                legacy: true,
+            },
             None => Self {
                 path: current,
                 owned: false,
+                legacy: false,
             },
         }
     }
@@ -1830,8 +1875,15 @@ impl TrustRecord {
 
     /// Whether the record approves its file as an env file only. [`trust`] writes that marker
     /// only together with a hash, so a record without one is not looked at further.
+    ///
+    /// mise 2026.11.14 and earlier wrote no marker, and recorded an env file approval exactly as
+    /// it recorded paranoid trust in a config file: a record with a hash. Such a record under an
+    /// old name does not say which one the user approved, so it counts only as the narrower one,
+    /// an env file approval. A config trusted that way is asked about again once, and trusting
+    /// it moves the record to the current name.
     fn is_env_file_approval(&self) -> bool {
-        self.has_hash() && self.sidecar(ENV_FILE_APPROVAL).exists()
+        remove_by!("2027.11.0", "legacy-trust-record-names");
+        self.has_hash() && (self.legacy || self.sidecar(ENV_FILE_APPROVAL).exists())
     }
 
     /// Whether the record has a hash and `path` still has the content it approved.
@@ -1863,7 +1915,7 @@ fn records_for(dir: &Path, path: &Path) -> Vec<PathBuf> {
 
 remove_by!("2027.11.0", "legacy-trust-record-names");
 
-/// Records under the names that mise 2026.11.13 and earlier used, which hash the path with
+/// Records under the names that mise 2026.11.14 and earlier used, which hash the path with
 /// `Hash`. That hash skips separators, so different paths can share a name, and a record found
 /// under one counts only when it points at `identity`.
 fn legacy_records(dir: &Path, identity: &Path) -> Vec<PathBuf> {
@@ -2926,6 +2978,54 @@ mod hashed_path_filename_tests {
         untrust(&b).unwrap();
     }
 
+    /// mise 2026.11.14 and earlier wrote an env file approval as a record with a hash and no
+    /// marker, just as it wrote paranoid trust in a config. Such a record approves an env file,
+    /// never config, until the user trusts the path again.
+    #[test]
+    fn a_hashed_record_under_the_old_name_is_not_config_trust() {
+        use confique::Layer;
+        use mise_settings::{Paranoid, ParanoidCategory};
+        let _held = crate::test::SettingsGuard::lock();
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("mise.toml");
+        std::fs::write(&path, "[env]\nA = \"1\"\n").unwrap();
+        let identity = record_identity(&path);
+        let legacy =
+            dirs::TRUSTED_CONFIGS.join(prefixed_record_name(&identity, hash_to_str(&identity)));
+        file::create_dir_all(&*dirs::TRUSTED_CONFIGS).unwrap();
+        file::make_symlink_or_file(&identity, &legacy).unwrap();
+
+        // Without a hash the old record is trust by path, as before.
+        assert!(!is_env_file_approval(&path));
+
+        file::write(
+            with_appended_extension(&legacy, "hash"),
+            hash::file_hash_sha256(&path, None).unwrap(),
+        )
+        .unwrap();
+        assert!(is_env_file_approval(&path));
+        // Tests trust every config that has no env file approval, so this fails only on it.
+        assert!(!is_trusted(&path));
+        let mut settings = crate::config::settings::SettingsPartial::empty();
+        settings.paranoid = Some(Paranoid::only([ParanoidCategory::EnvFiles]));
+        Settings::reset(Some(settings));
+        assert!(env_file_trust_check(&path).unwrap());
+        Settings::reset(None);
+
+        // Trusting the path again replaces the old record with one under the current name.
+        trust(&path).unwrap();
+        assert!(!legacy.exists());
+        assert!(!with_appended_extension(&legacy, "hash").exists());
+        assert!(
+            dirs::TRUSTED_CONFIGS
+                .join(hashed_path_filename(&path))
+                .exists()
+        );
+        assert!(!is_env_file_approval(&path));
+        assert!(is_trusted(&path));
+        untrust(&path).unwrap();
+    }
+
     #[test]
     fn trusting_a_path_keeps_the_ignore_of_another() {
         let (_tmp, a, b) = files_that_differ_in_separators();
@@ -2978,7 +3078,7 @@ mod hashed_path_filename_tests {
         std::fs::write(sub.join("mise.toml"), "[settings]\njobs = 3\n").unwrap();
         let config = sub.join("mise.toml");
 
-        // What mise 2026.11.13 left behind: the root's record and marker under the old name,
+        // What mise 2026.11.14 left behind: the root's record and marker under the old name,
         // and nothing under the current one. Settings are read before the root's config loads
         // and rewrites the marker, so the old marker has to count on its own.
         let identity = record_identity(&mono);
@@ -2987,13 +3087,25 @@ mod hashed_path_filename_tests {
         file::create_dir_all(&*dirs::TRUSTED_CONFIGS).unwrap();
         file::make_symlink_or_file(&identity, &legacy).unwrap();
         file::write(with_appended_extension(&legacy, "monorepo"), "").unwrap();
-        let current = dirs::TRUSTED_CONFIGS.join(hashed_path_filename(&mono));
-        assert!(!with_appended_extension(&current, "monorepo").exists());
+        let current = with_appended_extension(
+            &dirs::TRUSTED_CONFIGS.join(hashed_path_filename(&mono)),
+            "monorepo",
+        );
+        assert!(!current.exists());
 
+        // Tests trust every config without a marker, so the lookup is asserted directly.
+        let canonical = config.canonicalize().unwrap();
+        assert!(trusted_monorepo_ancestor(&canonical));
         assert!(is_trusted_with(&config, false));
         assert!(is_path_trusted(&config));
 
+        // A root that stops being a monorepo loses the old-name marker too, so it no longer
+        // trusts the subprojects.
+        assert!(remove_monorepo_markers(&mono, &current).unwrap());
+        assert!(!with_appended_extension(&legacy, "monorepo").exists());
+        assert!(!trusted_monorepo_ancestor(&canonical));
+        assert!(!remove_monorepo_markers(&mono, &current).unwrap());
+
         untrust(&mono).unwrap();
-        file::remove_file(with_appended_extension(&legacy, "monorepo")).ok();
     }
 }

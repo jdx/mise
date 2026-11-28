@@ -110,9 +110,12 @@ impl Trust {
             while self.trust_next_config()? {}
             // Env files need trust whether or not their project's config was already trusted.
             let descendants = self.get_descendants();
+            // Each found config is trusted by the root the scan checked, as the ancestor pass
+            // does. Taking it as a file the user named would, with only `env_files` on, approve
+            // one whose name only a `.miserc.toml` declares as an env file and leave its project
+            // untrusted.
             for p in self.get_untrusted_descendants() {
-                self.config_file = Some(p);
-                self.trust()?;
+                Self::trust_root(&config_trust_root(&p))?;
             }
             Self::trust_env_files().await?;
             Self::trust_descendant_env_files(&descendants)?;
@@ -466,10 +469,16 @@ impl Trust {
         let Some(path) = self.get_next_untrusted() else {
             return Ok(false);
         };
-        config_file::ensure_trust_can_approve(&path)?;
-        config_file::trust(&path)?;
-        info!("trusted {}", display_path(&path.canonicalize()?));
+        Self::trust_root(&path)?;
         Ok(true)
+    }
+
+    /// Trusts the trust root `root` that a scan found untrusted, and says so.
+    fn trust_root(root: &Path) -> Result<()> {
+        config_file::ensure_trust_can_approve(root)?;
+        config_file::trust(root)?;
+        info!("trusted {}", display_path(&root.canonicalize()?));
+        Ok(())
     }
 
     /// In paranoid mode, trusts the env files and scripts the trusted configs read, which have
