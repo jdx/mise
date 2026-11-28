@@ -99,6 +99,29 @@ impl BinPathCache {
         }
     }
 
+    /// Saves `bin_path` under `cache_key`, the key of the stub at `stub_path` read as `content`,
+    /// unless that key changed while the run resolved. The resolve reads the stub's mise.lock
+    /// again, so a `mise lock` that rewrote it after the key hashed it could have picked
+    /// another pin than the key names. Returns whether it saved.
+    ///
+    /// A lockfile that changed and then changed back between the two reads is not noticed.
+    fn save_if_unchanged(
+        bin_path: &Path,
+        cache_key: &str,
+        stub_path: &Path,
+        content: &[u8],
+    ) -> Result<bool> {
+        if Self::cache_key(stub_path, content)?.as_deref() != Some(cache_key) {
+            debug!(
+                "not caching the binary of {}: its key changed",
+                stub_path.display()
+            );
+            return Ok(false);
+        }
+        Self::save(bin_path, cache_key)?;
+        Ok(true)
+    }
+
     fn save(bin_path: &Path, cache_key: &str) -> Result<()> {
         let cache_path = Self::cache_file_path(cache_key);
 
@@ -249,10 +272,10 @@ async fn find_cached_or_resolve_bin_path(
     config: &std::sync::Arc<Config>,
     stub: &ToolStubFile,
     stub_path: &Path,
-    cache_key: Option<&str>,
+    cache_key: Option<&StubCacheKey>,
 ) -> Result<Result<PathBuf, BinPathError>> {
     // Try to load from cache first
-    if let Some(bin_path) = cache_key.and_then(BinPathCache::load) {
+    if let Some(bin_path) = cache_key.and_then(|key| BinPathCache::load(&key.key)) {
         return Ok(Ok(bin_path));
     }
 
@@ -266,8 +289,9 @@ async fn find_cached_or_resolve_bin_path(
 
     if let Some(bin_path) = bin_path {
         // Cache the result
-        if let Some(cache_key) = cache_key
-            && let Err(e) = BinPathCache::save(&bin_path, cache_key)
+        if let Some(key) = cache_key
+            && let Err(e) =
+                BinPathCache::save_if_unchanged(&bin_path, &key.key, stub_path, &key.content)
         {
             // Don't fail if caching fails, just log it
             crate::warn!("Failed to cache binary path: {e}");
@@ -314,7 +338,7 @@ async fn execute_with_tool_request(
     config: &mut std::sync::Arc<Config>,
     args: Vec<String>,
     stub_path: &Path,
-    cache_key: Option<&str>,
+    cache_key: Option<&StubCacheKey>,
 ) -> Result<()> {
     // Use direct ToolRequest creation with ToolVersionOptions
     let tool_request = stub.to_tool_request(stub_path)?;
@@ -471,27 +495,46 @@ impl ToolStub {
             }
         }; // Drop the lock before await
 
-        let content = stub_content(&self.file)?;
-        let cache_key = BinPathCache::cache_key(&self.file, content.as_bytes())?;
-        let stub = ToolStubFile::from_content(&self.file, content)?;
+        let stub_path = invoked_stub_path(&self.file);
+        let content = stub_content(&stub_path)?;
+        let cache_key =
+            BinPathCache::cache_key(&stub_path, content.as_bytes())?.map(|key| StubCacheKey {
+                key,
+                content: content.clone().into_bytes(),
+            });
+        let stub = ToolStubFile::from_content(&stub_path, content)?;
 
         // Track the stub so `mise prune` knows its tool is still needed. Stubs
         // can live anywhere, so execution time is the only chance to find them.
         // absolute() rather than canonicalize() so a symlinked stub keeps its
         // invoked filename, which the tool name can be derived from.
-        track_stub_use(&self.file);
+        track_stub_use(&stub_path);
 
         let mut config = Config::get().await?;
 
-        return execute_with_tool_request(
-            &stub,
-            &mut config,
-            args,
-            &self.file,
-            cache_key.as_deref(),
-        )
-        .await;
+        return execute_with_tool_request(&stub, &mut config, args, &stub_path, cache_key.as_ref())
+            .await;
     }
+}
+
+/// A stub's cache key, with the text it was computed from: the entry is saved only when that
+/// text still gives the same key after the run resolved (see [`BinPathCache::save_if_unchanged`]).
+struct StubCacheKey {
+    key: String,
+    content: Vec<u8>,
+}
+
+/// The stub the command line names at `path`, made absolute against the directory mise started
+/// in. A shebang passes the stub as the user ran it, often `./bin/tool`, and `--cd` or `MISE_CD`
+/// moves mise to another directory before the run reads it, where that name is another stub.
+/// The fast path and the run read, key and hand off this one path.
+fn invoked_stub_path(path: &Path) -> PathBuf {
+    if path.is_absolute() {
+        return path.to_path_buf();
+    }
+    crate::env::original_cwd()
+        .map(|cwd| cwd.join(path))
+        .unwrap_or_else(|| path.to_path_buf())
 }
 
 /// Tracks `file` as a stub that ran.
@@ -533,7 +576,7 @@ pub(crate) async fn short_circuit_stub(args: &[String]) -> Result<()> {
     }
 
     // Check if the first argument looks like a tool stub file path
-    let potential_stub_path = std::path::Path::new(&args[0]);
+    let potential_stub_path = &invoked_stub_path(Path::new(&args[0]));
 
     // Only proceed if it's an existing file with a reasonable extension
     if !potential_stub_path.exists() {
@@ -572,7 +615,7 @@ pub(crate) async fn short_circuit_stub(args: &[String]) -> Result<()> {
     *READ_BY_FAST_PATH
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner()) =
-        Some((potential_stub_path.to_path_buf(), content));
+        Some((potential_stub_path.clone(), content));
     Ok(())
 }
 
@@ -708,6 +751,43 @@ mod tests {
         )
         .unwrap();
         assert_ne!(locked, key_on_disk(&stub).unwrap());
+    }
+
+    #[test]
+    fn no_entry_is_saved_when_the_lockfile_changed_during_the_run() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join(".test.mise.toml"), "[tools]\n").unwrap();
+        let stub = tmp.path().join("bin/scan");
+        write_stub(&stub, "latest");
+        let lockfile = tmp.path().join("mise.lock");
+        std::fs::write(&lockfile, "[[tools.dummy]]\nversion = \"1.0.0\"\n").unwrap();
+        let content = std::fs::read(&stub).unwrap();
+        let key = BinPathCache::cache_key(&stub, &content).unwrap().unwrap();
+        let bin = tmp.path().join("dummy");
+        // `mise lock --bump` while the run resolved: the key names the 1.0.0 pin, and the
+        // binary found may be another version's
+        std::fs::write(&lockfile, "[[tools.dummy]]\nversion = \"2.0.0\"\n").unwrap();
+        assert!(!BinPathCache::save_if_unchanged(&bin, &key, &stub, &content).unwrap());
+        assert_eq!(None, BinPathCache::load(&key));
+        // an unchanged lockfile keeps the entry
+        let key = BinPathCache::cache_key(&stub, &content).unwrap().unwrap();
+        std::fs::write(&bin, "").unwrap();
+        assert!(BinPathCache::save_if_unchanged(&bin, &key, &stub, &content).unwrap());
+        assert_eq!(Some(bin), BinPathCache::load(&key));
+        std::fs::remove_file(BinPathCache::cache_file_path(&key)).unwrap();
+    }
+
+    #[test]
+    fn a_relative_stub_is_the_one_in_the_directory_mise_started_in() {
+        let started_in = crate::env::original_cwd().unwrap();
+        assert_eq!(
+            started_in.join("bin/tool"),
+            invoked_stub_path(Path::new("bin/tool"))
+        );
+        assert_eq!(
+            PathBuf::from("/opt/bin/tool"),
+            invoked_stub_path(Path::new("/opt/bin/tool"))
+        );
     }
 
     #[cfg(unix)]
