@@ -476,7 +476,9 @@ impl BackendArg {
         //     }
         // })?;
         // Ok(backend.clone())
-        if let Some(msg) = backend::removed_backend_error(&self.short) {
+        // Before the lookup: the short-name cache would answer an alias whose name
+        // is a core, registry or installed tool with that tool's backend.
+        if let Some(msg) = self.removed_backend_error_before_lookup() {
             bail!("{msg}");
         } else if let Some(backend) = backend::get(self) {
             Ok(backend)
@@ -552,10 +554,33 @@ impl BackendArg {
     /// The error for a tool whose name or resolved identifier (through an alias)
     /// names a backend mise has removed.
     pub(crate) fn removed_backend_error(&self) -> Option<String> {
-        backend::removed_backend_error(&self.short).or_else(|| {
+        self.removed_backend_error_before_lookup().or_else(|| {
             let full = self.full();
             backend::removed_backend_error(&full).map(|msg| format!("{}: {msg}", self.short))
         })
+    }
+
+    /// [`Self::removed_backend_error`] without `full()`'s lockfile and registry
+    /// lookups: the name, an explicit backend, an env override and a config alias.
+    fn removed_backend_error_before_lookup(&self) -> Option<String> {
+        if let Some(msg) = backend::removed_backend_error(&self.short) {
+            return Some(msg);
+        }
+        let aliased = || {
+            config::is_loaded()
+                .then(|| {
+                    Config::get_()
+                        .all_aliases
+                        .get(unalias_backend(&self.short).as_ref())
+                        .and_then(|a| a.backend.clone())
+                })
+                .flatten()
+        };
+        let full = self
+            .env_backend_override()
+            .or_else(|| self.full.clone().filter(|_| self.resolution.explicit))
+            .or_else(aliased)?;
+        backend::removed_backend_error(&full).map(|msg| format!("{}: {msg}", self.short))
     }
 
     pub fn backend_type(&self) -> BackendType {

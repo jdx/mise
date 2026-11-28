@@ -23,3 +23,13 @@ legacytool = "2.0.0"
 EOF2
 assert_fail "mise install" "legacytool: ubi:cli/cli: the ubi backend was removed from mise"
 assert_contains "mise ls 2>&1" "legacytool: ubi:cli/cli: the ubi backend was removed from mise"
+
+# An alias named after a core tool must not fall back to the core tool.
+cat <<EOF2 >mise.toml
+[tool_alias]
+node = "ubi:nodejs/node"
+
+[tools]
+node = "22"
+EOF2
+assert_fail "mise install" "node: ubi:nodejs/node: the ubi backend was removed from mise"
