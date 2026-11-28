@@ -670,7 +670,8 @@ enum MirrorVerdict<T = AttestationResult<bool>> {
     /// the user has a token to read it with.
     AskGithub,
     /// mise-versions has no attestations for an artifact whose earlier set
-    /// it served was rejected ([`foreign_attestations_verdict`]). GitHub has
+    /// it served was rejected ([`foreign_attestations_verdict`],
+    /// [`kept_set_rejection`]). GitHub has
     /// to confirm that there are none; if GitHub cannot answer, the rejection
     /// stands ([`rejection_stands`]).
     ConfirmWithGithub(AttestationError),
@@ -739,6 +740,14 @@ fn unless_rejected(
         | MirrorVerdict::ConfirmWithGithub(_)
         | MirrorVerdict::RetryGithub(_) => MirrorVerdict::ConfirmWithGithub(rejection),
     }
+}
+
+/// Why a set mise-versions served earlier was rejected, from `err`, the
+/// reason it did not verify: one naming another release's tag, say. The
+/// refresh asked for then has to settle the digest ([`unless_rejected`]).
+/// "No attestations" and a failed lookup reject nothing.
+fn kept_set_rejection(err: Option<AttestationError>) -> Option<AttestationError> {
+    err.filter(|err| !matches!(err, AttestationError::NoAttestations) && !is_api_failure(err))
 }
 
 /// GitHub's `err` when it was asked to confirm that an artifact whose set
@@ -875,9 +884,12 @@ async fn verify_with_mirror(
                         ))
                     })));
                 }
-                CachedAttestationVerification::Retry(_) => debug!(
-                    "GitHub attestations kept for {full} did not verify; asking mise-versions again"
-                ),
+                CachedAttestationVerification::Retry(err) => {
+                    debug!(
+                        "GitHub attestations kept for {full} did not verify; asking mise-versions again"
+                    );
+                    rejected = kept_set_rejection(err);
+                }
             }
         }
         unreachable!("the second pass always returns")
@@ -2172,6 +2184,42 @@ mod tests {
             ),
             MirrorVerdict::Done(Err(AttestationError::Api(_)))
         ));
+    }
+
+    /// A kept set that fails to verify, such as one naming another release's
+    /// tag, is a rejection a refresh with none does not erase; "none" and a
+    /// failed lookup reject nothing.
+    #[test]
+    fn test_a_kept_set_that_failed_is_not_erased_by_an_empty_refresh() {
+        let wrong_tag = || {
+            AttestationError::Verification(
+                "the attestation was made for refs/tags/v1.0.0, expected refs/tags/v2.0.0"
+                    .to_string(),
+            )
+        };
+        let mut rejected = kept_set_rejection(Some(wrong_tag()));
+        assert!(matches!(
+            unless_rejected(
+                MirrorVerdict::Done(Err(AttestationError::NoAttestations)),
+                &mut rejected
+            ),
+            MirrorVerdict::ConfirmWithGithub(AttestationError::Verification(ref msg))
+                if msg.contains("refs/tags/v1.0.0")
+        ));
+        let mut rejected = kept_set_rejection(Some(AttestationError::WorkflowMismatch(
+            "release.yml".to_string(),
+        )));
+        assert!(matches!(
+            unless_rejected(
+                MirrorVerdict::RetryGithub(eyre::eyre!("503")),
+                &mut rejected
+            ),
+            MirrorVerdict::ConfirmWithGithub(AttestationError::WorkflowMismatch(_))
+        ));
+
+        assert!(kept_set_rejection(None).is_none());
+        assert!(kept_set_rejection(Some(AttestationError::NoAttestations)).is_none());
+        assert!(kept_set_rejection(Some(AttestationError::Api("502".to_string()))).is_none());
     }
 
     #[test]
