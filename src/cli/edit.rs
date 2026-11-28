@@ -79,10 +79,14 @@ impl VersionProvider for MiseVersionProvider {
 /// on a resolved version nor the one `mise use --pin` makes before it writes. The text comes
 /// from a version list or release API, not from the user: a template in it would render, and
 /// could run commands with exec(), every time the saved config loads, and control characters
-/// would reach the terminal the choices are drawn on. Without a version the editor asks for
-/// one in its text field.
+/// would reach the terminal the choices are drawn on. Nor is a selector that needs trust, such
+/// as `path:`, offered: the editor may save into global config, which is trusted, and the
+/// version was not the user's choice. Without a version the editor asks for one in its text
+/// field.
 fn offerable_version(version: String) -> Option<String> {
-    if crate::tera::contains_template_syntax(&version) {
+    if crate::tera::contains_template_syntax(&version)
+        || config_file::version_requires_trust(&version)
+    {
         return None;
     }
     validate_installable_version(&version).ok()?;
@@ -601,6 +605,10 @@ mod tests {
             "1.2.3 ; id",
             "../1.2.3",
             "",
+            // a selector that takes effect only in a trusted config
+            "path:bin",
+            "ref-main",
+            "rev:1a2b3c",
         ] {
             assert_eq!(offerable_version(v.to_string()), None, "{v:?}");
         }

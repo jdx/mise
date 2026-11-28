@@ -260,6 +260,14 @@ assert_contains "MISE_SAFE=1 mise tasks ls" "fout"
 assert_fail_contains "MISE_SAFE=1 MISE_YES=1 mise tasks rm fout 2>&1" "through a linked directory"
 assert "test -e ../outside/folder/tasks/fout"
 
+echo "=== nor is .config/mise linked out of the project, though its mise.toml makes it a root ==="
+mkdir -p ../task-dot-config/.config ../outside/dot-config/tasks
+echo "[tools]" >../outside/dot-config/mise.toml
+cd ../task-dot-config || exit 1
+ln -s ../../outside/dot-config .config/mise
+assert_fail_contains "MISE_SAFE=1 mise tasks add --file new -- echo new 2>&1" "through a linked directory"
+assert_fail "test -e ../outside/dot-config/tasks/new"
+
 echo "=== nor a task directory linked into a state directory inside the project ==="
 mkdir -p ../task-state/state/scripts
 cd ../task-state || exit 1
