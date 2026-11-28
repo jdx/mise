@@ -120,11 +120,37 @@ pub(crate) async fn github_tuf_trusted_root() -> Result<TrustedRoot> {
 /// GitHub trusted roots once per `verify_*` invocation. Each is loaded lazily:
 /// GitHub bundles use the embedded root first and only fetch GitHub's TUF root
 /// after an embedded-root verification failure.
+///
+/// A TUF root that could not be loaded is cached too. Callers ask for a root
+/// once per bundle or provenance line, and whoever serves those picks how many
+/// there are, so a failed refresh must not be repeated for each of them.
 #[derive(Default)]
 pub(crate) struct TrustRoots {
-    sigstore: Option<TrustedRoot>,
+    sigstore: Option<TufRoot>,
     pub(crate) github_embedded: Option<TrustedRoot>,
-    pub(crate) github_tuf: Option<TrustedRoot>,
+    pub(crate) github_tuf: Option<TufRoot>,
+}
+
+/// The outcome of loading a TUF trust root: the root, or the message of the
+/// [`AttestationError::TrustRoot`] it failed with.
+type TufRoot = std::result::Result<TrustedRoot, String>;
+
+/// The root in `slot`, which `load` fills on the first call only, whether it
+/// succeeds or fails.
+pub(crate) async fn load_once(
+    slot: &mut Option<TufRoot>,
+    load: impl Future<Output = Result<TrustedRoot>>,
+) -> Result<&TrustedRoot> {
+    if slot.is_none() {
+        *slot = Some(load.await.map_err(|e| match e {
+            AttestationError::TrustRoot(message) => message,
+            e => e.to_string(),
+        }));
+    }
+    slot.as_ref()
+        .unwrap()
+        .as_ref()
+        .map_err(|message| AttestationError::TrustRoot(message.clone()))
 }
 
 impl TrustRoots {
@@ -133,16 +159,13 @@ impl TrustRoots {
     #[cfg(test)]
     pub(crate) fn with_sigstore_root(root: TrustedRoot) -> Self {
         Self {
-            sigstore: Some(root),
+            sigstore: Some(Ok(root)),
             ..Default::default()
         }
     }
 
     pub(crate) async fn sigstore_root(&mut self) -> Result<&TrustedRoot> {
-        if self.sigstore.is_none() {
-            self.sigstore = Some(production_trusted_root().await?);
-        }
-        Ok(self.sigstore.as_ref().unwrap())
+        load_once(&mut self.sigstore, production_trusted_root()).await
     }
 
     pub(crate) fn github_embedded_root(&mut self) -> Result<&TrustedRoot> {
@@ -153,10 +176,7 @@ impl TrustRoots {
     }
 
     pub(crate) async fn github_tuf_root(&mut self) -> Result<&TrustedRoot> {
-        if self.github_tuf.is_none() {
-            self.github_tuf = Some(github_tuf_trusted_root().await?);
-        }
-        Ok(self.github_tuf.as_ref().unwrap())
+        load_once(&mut self.github_tuf, github_tuf_trusted_root()).await
     }
 }
 
