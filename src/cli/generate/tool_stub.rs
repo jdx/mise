@@ -823,9 +823,9 @@ exec "$MISE_BIN" tool-stub "$0" "$@"
         // A stub sets tool options, which a config file may only do once it is trusted.
         // Running a stub stands in for that, but locking one does not run it, so the rules
         // for the stubs `mise lock` reads apply: the config whose lockfile is written is
-        // trusted before the stub is read (for a shared monorepo lockfile, the root config
-        // that owns it too), in paranoid mode the stub is too, and safe mode applies no
-        // stub's options.
+        // trusted before the stub is read, with every other config that writes that lockfile
+        // (such as a shared monorepo root's), in paranoid mode the stub is too, and safe mode
+        // applies no stub's options.
         for owner in lockfile::tool_stub_lockfile_owners(&config_path, monorepo_root.as_deref()) {
             trust_check(&owner)?;
         }

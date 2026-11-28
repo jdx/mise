@@ -3748,28 +3748,32 @@ pub fn tool_stub_config(stub: &Path) -> Option<(PathBuf, Option<PathBuf>)> {
 }
 
 /// The configs that must be trusted before a stub's lock data is written to the lockfile of
-/// `config_path` (from [`tool_stub_config`]): that config and, when it shares its monorepo
-/// root's lockfile, the root's base configs, which own that lockfile. A root config that
+/// `config_path` (from [`tool_stub_config`]): every base config that writes that lockfile.
+/// Those are `config_path`, the other base configs of its project (a `mise.toml` beside a
+/// `.mise.toml`), and when it shares its monorepo root's lockfile, the root's base configs.
+/// That holds for a stub at the root too, whose own config is one of them. A config that
 /// discovery ignores (see [`crate::config::config_path_is_ignored`]) is not one of them: it
 /// never loads, and the monorepo root is found without it.
 pub fn tool_stub_lockfile_owners(config_path: &Path, monorepo_root: Option<&Path>) -> Vec<PathBuf> {
     let mut owners = vec![config_path.to_path_buf()];
-    let (own_lockfile, _) = lockfile_path_for_config(config_path, None);
     let (lockfile, _) = lockfile_path_for_config(config_path, monorepo_root);
-    if let Some(root) = monorepo_root
-        && lockfile != own_lockfile
-    {
-        owners.extend(
-            crate::config::config_paths_in_dir(root)
-                .into_iter()
-                .filter(|path| {
-                    path.extension().is_some_and(|ext| ext == "toml")
-                        && !is_local_config(path)
-                        && extract_env_from_config_path(path).is_none()
-                        && !crate::config::is_global_config(path)
-                        && !crate::config::config_path_is_ignored(path, false)
-                }),
-        );
+    let project = crate::config::config_file::config_root::spelled_project(config_path);
+    let mut dirs = vec![project.as_path()];
+    dirs.extend(monorepo_root.filter(|root| *root != project));
+    for dir in dirs {
+        for path in crate::config::config_paths_in_dir(dir) {
+            if !owners.contains(&path)
+                && path.extension().is_some_and(|ext| ext == "toml")
+                && !is_local_config(&path)
+                && extract_env_from_config_path(&path).is_none()
+                && !crate::config::is_global_config(&path)
+                && !crate::config::is_system_config(&path)
+                && !crate::config::config_path_is_ignored(&path, false)
+                && lockfile_path_for_config(&path, monorepo_root).0 == lockfile
+            {
+                owners.push(path);
+            }
+        }
     }
     owners
 }
