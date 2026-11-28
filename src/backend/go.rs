@@ -1076,12 +1076,32 @@ fn program_outside_cwd(
                 .map(|name| dir.join(name))
                 // Spawnable rather than executable: on Windows a `go.ps1` may
                 // come first, and `Command::new` cannot start it.
-                .find(|candidate| candidate.is_file() && crate::file::is_spawnable(candidate))
+                .find(|candidate| {
+                    candidate.is_file()
+                        && crate::file::is_spawnable(candidate)
+                        && may_execute(candidate)
+                })
         })
         .map_or_else(
             || program.to_os_string(),
             std::path::PathBuf::into_os_string,
         )
+}
+
+/// Whether the OS lets this process execute `path`, as execvp asks before it
+/// goes on to the next PATH entry: an execute bit for someone else, or a file
+/// on a `noexec` mount, is not enough. `access` checks the real ids, which are
+/// mise's effective ones too, since mise is not installed setuid.
+#[cfg(unix)]
+fn may_execute(path: &std::path::Path) -> bool {
+    nix::unistd::access(path, nix::unistd::AccessFlags::X_OK).is_ok()
+}
+
+/// Windows has no execute permission to check beyond the extension, which
+/// `is_spawnable` has checked.
+#[cfg(not(unix))]
+fn may_execute(_path: &std::path::Path) -> bool {
+    true
 }
 
 /// Result of asking one route for a module's `@latest` version.
@@ -1579,6 +1599,18 @@ mod tests {
         let (program, search) = spawn_outside_cwd(OsStr::new("go"), &env, &cwd);
         assert_eq!(std::path::PathBuf::from(program), bin.join("go"));
         assert_eq!(search, None);
+        // Like the OS, the lookup goes past a `go` this user may not execute,
+        // here one with only someone else's execute bits, which root ignores.
+        if !nix::unistd::geteuid().is_root() {
+            let denied = cwd.join("denied");
+            std::fs::create_dir_all(&denied).unwrap();
+            std::fs::write(denied.join("go"), "#!/bin/sh\n").unwrap();
+            std::fs::set_permissions(denied.join("go"), std::fs::Permissions::from_mode(0o011))
+                .unwrap();
+            let env = BTreeMap::from([("PATH".to_string(), "denied:sdk/go/bin".to_string())]);
+            let (program, _) = spawn_outside_cwd(OsStr::new("go"), &env, &cwd);
+            assert_eq!(std::path::PathBuf::from(program), bin.join("go"));
+        }
         // Found nowhere, it is left for the child to report, as before.
         let env = BTreeMap::from([("PATH".to_string(), "sdk/none".to_string())]);
         assert_eq!(spawn_outside_cwd(OsStr::new("go"), &env, &cwd).0, "go");
