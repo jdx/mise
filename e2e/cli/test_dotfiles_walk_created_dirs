@@ -124,3 +124,12 @@ assert_succeed "mise dot unapply ~/t --yes"
 assert_fail "test -L $HOME/t/new/sub/file"
 assert_succeed "test -d $HOME/t/new/sub"
 assert "cat $MISE_STATE_DIR/dotfiles/created_dirs.toml" "not toml ["
+
+# a target that is a link to a directory is followed, not replaced, so the
+# user's directories it shows are not recorded as mise's
+rm -rf "$HOME/t" "$HOME/elsewhere" "$MISE_STATE_DIR/dotfiles/created_dirs.toml"
+mkdir -p "$HOME/elsewhere/new/sub"
+ln -s "$HOME/elsewhere" "$HOME/t"
+assert_succeed "mise dot apply --yes --force"
+assert "readlink $HOME/t/new/sub/file" "$DOTS/pkg/new/sub/file"
+assert_not_contains "cat $MISE_STATE_DIR/dotfiles/created_dirs.toml" "$HOME/t/new"

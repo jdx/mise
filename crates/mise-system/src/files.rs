@@ -5995,35 +5995,40 @@ fn execute_layer(
             let mut created = missing_ancestors(&req.target);
             let walks = shares_target(req);
             // what a forced apply replaces with a directory, which is then mise's too
-            let mut replaced = vec![];
+            // (counted once the apply has run, as it may follow a link rather than replace it)
+            let mut replaceable = vec![];
             if walks {
                 if std::fs::symlink_metadata(&req.target).is_err() {
                     created.push(req.target.clone());
                 }
                 if opts.force && blocks_dir(&req.target) {
-                    replaced.push(req.target.clone());
+                    replaceable.push((req.target.clone(), vec![req.target.clone()]));
                 }
                 // and the directories the walk creates beneath it
                 for (_, target) in walk_source_files(req).unwrap_or_default() {
                     created.extend(missing_ancestors(&target));
                     if opts.force {
-                        replaced.extend(replaced_ancestors(&req.target, &target));
+                        replaceable.extend(replaceable_ancestors(&req.target, &target));
                     }
                 }
             }
-            if let Err(err) = apply_one(req, rendered.as_deref(), written) {
-                settle_failed_apply(req, &created, &stale, pending);
-                if walks {
-                    crate::created_dirs::record(
-                        &req.target,
-                        &[created, unfolded, replaced].concat(),
-                    );
+            let applied = match apply_one(req, rendered.as_deref(), written) {
+                Ok(()) => Ok(pending),
+                Err(err) => {
+                    settle_failed_apply(req, &created, &stale, pending);
+                    Err(err)
                 }
-                return Err(err);
-            }
+            };
             if walks {
-                crate::created_dirs::record(&req.target, &[created, unfolded, replaced].concat());
+                let replaced = replaceable
+                    .into_iter()
+                    .filter(|(blocker, _)| !blocks_dir(blocker) && blocker.is_dir())
+                    .flat_map(|(_, dirs)| dirs);
+                let mut made = [created.as_slice(), unfolded.as_slice()].concat();
+                made.extend(replaced);
+                crate::created_dirs::record(&req.target, &made);
             }
+            let pending = applied?;
             // a target that appeared since planning is left alone and not
             // written, so it is not this group's to prune
             if req.create_if_missing && written[start..].contains(&req.target) {
@@ -7688,21 +7693,25 @@ fn track_walking_targets<'a>(config: &Config, requests: impl IntoIterator<Item =
     }
 }
 
-/// Ancestors of `path` at or beneath `root` that exist as something other than a real directory,
-/// such as a file or a link, which a forced apply replaces with a directory. Each directory beneath the outermost of them is made new too, wherever the old link showed one.
-fn replaced_ancestors(root: &Path, path: &Path) -> Vec<PathBuf> {
+/// The ancestors of `path` beneath `root` that exist as something other than a real directory,
+/// such as a file or a link, which a forced apply may replace with a directory. Each comes with the
+/// directories that would then be new: itself, and every one between it and `path`, wherever the
+/// old link showed one. `root` is not among them, as a link there is followed.
+fn replaceable_ancestors(root: &Path, path: &Path) -> Vec<(PathBuf, Vec<PathBuf>)> {
     let ancestors = path
         .ancestors()
         .skip(1)
-        .take_while(|dir| dir.starts_with(root))
+        .take_while(|dir| *dir != root && dir.starts_with(root))
         .collect::<Vec<_>>();
-    match ancestors.iter().rposition(|dir| blocks_dir(dir)) {
-        Some(outermost) => ancestors[..=outermost]
-            .iter()
-            .map(|dir| dir.to_path_buf())
-            .collect(),
-        None => vec![],
-    }
+    ancestors
+        .iter()
+        .enumerate()
+        .filter(|(_, dir)| blocks_dir(dir))
+        .map(|(at, dir)| {
+            let beneath = ancestors[..=at].iter().map(|d| d.to_path_buf()).collect();
+            (dir.to_path_buf(), beneath)
+        })
+        .collect()
 }
 
 /// Whether `path` is there as something other than a real directory: a file or a link.
