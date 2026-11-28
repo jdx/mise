@@ -806,15 +806,83 @@ pub(crate) fn template_string_strict(template: &str, version: Option<&str>) -> R
 /// render then substitutes the placeholders and turns the text that the config-load render
 /// escaped back into the data it was, which a plain replace would leave escaped. A `{` just
 /// before a placeholder is escaped, so that it cannot join the new `{{` into `{{{`.
+///
+/// Only the text between template tags is rewritten. A `{name}` inside a tag, such as in the
+/// string argument of `{{ os(macos="t-{version}") }}`, or in a `{% raw %}` block is text that
+/// Tera outputs as it is, and a `{{ name }}` put there would come out as those characters.
 pub(crate) fn legacy_placeholders_as_tera(template: &str, names: &[&str]) -> String {
-    let mut out = template.to_string();
-    for name in names {
-        let legacy = format!("{{{name}}}");
-        if !out.contains(&legacy) || template.contains(&format!("{{{legacy}}}")) {
+    let legacy: Vec<(&str, String)> = names
+        .iter()
+        .map(|name| (*name, format!("{{{name}}}")))
+        .filter(|(_, legacy)| {
+            template.contains(legacy.as_str()) && !template.contains(&format!("{{{legacy}}}"))
+        })
+        .collect();
+    if legacy.is_empty() {
+        return template.to_string();
+    }
+    let mut out = String::with_capacity(template.len());
+    let mut rest = template;
+    let mut in_raw = false;
+    while let Some(at) = legacy_tag_open(rest, &legacy) {
+        let (text, tag) = rest.split_at(at);
+        if in_raw {
+            out.push_str(text);
+        } else {
+            out.push_str(&rewrite_legacy_placeholders(text, &legacy));
+        }
+        let close = match tag.as_bytes()[1] {
+            b'{' => "}}",
+            b'%' => "%}",
+            _ => "#}",
+        };
+        let Some(end) = crate::tera::template_tag_end(tag, close) else {
+            // an unclosed tag runs to the end, as Tera reads it
+            out.push_str(tag);
+            return out;
+        };
+        if close == "%}" {
+            let word =
+                tag[2..end - close.len()].trim_matches(|c: char| c == '-' || c.is_whitespace());
+            if word == "raw" {
+                in_raw = true;
+            } else if word == "endraw" {
+                in_raw = false;
+            }
+        }
+        out.push_str(&tag[..end]);
+        rest = &tag[end..];
+    }
+    if in_raw {
+        out.push_str(rest);
+    } else {
+        out.push_str(&rewrite_legacy_placeholders(rest, &legacy));
+    }
+    out
+}
+
+/// Where the first template tag (`{{`, `{%` or `{#`) of `text` opens. A `{` just before a
+/// legacy placeholder is not one: `{{version}` is a `{` and a placeholder, not a tag.
+fn legacy_tag_open(text: &str, legacy: &[(&str, String)]) -> Option<usize> {
+    let bytes = text.as_bytes();
+    (0..bytes.len().saturating_sub(1)).find(|&i| {
+        bytes[i] == b'{'
+            && matches!(bytes[i + 1], b'{' | b'%' | b'#')
+            && !legacy
+                .iter()
+                .any(|(_, placeholder)| text[i + 1..].starts_with(placeholder.as_str()))
+    })
+}
+
+/// Rewrite each placeholder in `text`, which holds no template tag, as a Tera expression.
+fn rewrite_legacy_placeholders(text: &str, legacy: &[(&str, String)]) -> String {
+    let mut out = text.to_string();
+    for (name, placeholder) in legacy {
+        if !out.contains(placeholder.as_str()) {
             continue;
         }
         let mut next = String::with_capacity(out.len());
-        let mut pieces = out.split(legacy.as_str()).peekable();
+        let mut pieces = out.split(placeholder.as_str()).peekable();
         while let Some(piece) = pieces.next() {
             next.push_str(piece);
             if pieces.peek().is_some() {
@@ -2267,6 +2335,43 @@ mod tests {
         assert_eq!(render("x{{version}}"), "x1.0.0");
         assert_eq!(render("t-{version}.tgz"), "t-1.0.0.tgz");
         assert_eq!(render("{{ nope( }}-{version}"), "{{ nope( }}-1.0.0");
+    }
+
+    /// Only the text between tags gets the legacy placeholders rewritten: a `{version}` in a
+    /// tag's string argument, a comment or a raw block is text Tera outputs as it is.
+    #[test]
+    fn test_legacy_placeholders_in_tags_are_left_alone() {
+        let names = ["version"];
+        assert_eq!(
+            legacy_placeholders_as_tera(
+                r#"https://e.com/{version}/{{ os(macos="t-{version}") }}"#,
+                &names
+            ),
+            r#"https://e.com/{{ version }}/{{ os(macos="t-{version}") }}"#
+        );
+        assert_eq!(
+            legacy_placeholders_as_tera(
+                "{% if true %}{version}{% endif %}{# {version} #}{% raw %}{version}{% endraw %}{version}",
+                &names
+            ),
+            "{% if true %}{{ version }}{% endif %}{# {version} #}{% raw %}{version}{% endraw %}{{ version }}"
+        );
+        // a closer inside the string does not end the tag
+        assert_eq!(
+            legacy_placeholders_as_tera(r#"{{ "}}{version}" }}-{version}"#, &names),
+            r#"{{ "}}{version}" }}-{{ version }}"#
+        );
+        // a `{` before a placeholder is text, not a tag
+        assert_eq!(
+            legacy_placeholders_as_tera("a{{version}/{% if true %}b{% endif %}", &names),
+            r#"a{{ "{" }}{{ version }}/{% if true %}b{% endif %}"#
+        );
+        let render =
+            |template: &str| render_template(template, "1.0.0", crate::tera::get_tera(None));
+        assert_eq!(
+            render(r#"https://e.com/{version}/{{ "t-{version}" }}"#),
+            "https://e.com/1.0.0/t-{version}"
+        );
     }
 
     #[test]
