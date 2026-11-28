@@ -982,51 +982,72 @@ async fn go_list(go: &OsStr, args: &[&str], env: &BTreeMap<String, String>) -> R
     if std::fs::read_to_string(&go_mod).ok().as_deref() != Some(GO_META_MOD) {
         crate::file::write_atomic(&go_mod, GO_META_MOD)?;
     }
-    let (program, env) = match std::env::current_dir() {
-        Ok(cwd) => (
-            program_outside_cwd(go, env, &cwd),
-            env_outside_cwd(env, &cwd),
-        ),
-        Err(_) => (go.to_os_string(), env.clone()),
+    let mut cmd = match std::env::current_dir() {
+        Ok(cwd) => {
+            let (program, search) = spawn_outside_cwd(go, env, &cwd);
+            let mut cmd = tokio::process::Command::new(program);
+            cmd.env_clear().envs(env);
+            if let Some(search) = search {
+                cmd.env("PATH", search);
+            }
+            cmd
+        }
+        Err(_) => {
+            let mut cmd = tokio::process::Command::new(go);
+            cmd.env_clear().envs(env);
+            cmd
+        }
     };
-    let mut cmd = tokio::process::Command::new(program);
-    cmd.env_clear().envs(&env).current_dir(&dir);
+    cmd.current_dir(&dir);
     crate::cmd::cmd_read_async_command(cmd, &go.to_string_lossy(), args).await
 }
 
-/// `env` with each entry of its PATH made absolute against `cwd` on unix. The
-/// child searches that PATH for a bare name after it changes directory, so a
-/// relative or empty entry would otherwise be read against the new directory
-/// instead of `cwd`. A PATH that cannot hold the joined entries (a `cwd` with
-/// the separator in it, or one that is not UTF-8) is left as it is.
-fn env_outside_cwd(
+/// The program to spawn, and the PATH to give it in place of `env`'s, so that
+/// a child run in another directory starts the executable `program` names in
+/// `cwd`. The child searches its PATH for a bare name after it changes
+/// directory, so a relative or empty entry would otherwise be read against
+/// the new directory instead of `cwd`.
+///
+/// On unix each entry is made absolute against `cwd` and a bare name is left
+/// for the OS to find there, which goes on past an entry it cannot execute (a
+/// file on a `noexec` mount, say) as it always has. Where that PATH cannot be
+/// written (a `cwd` with the separator in it) and on Windows, the name is
+/// looked up here instead.
+fn spawn_outside_cwd(
+    program: &OsStr,
     env: &BTreeMap<String, String>,
     cwd: &std::path::Path,
-) -> BTreeMap<String, String> {
-    let mut env = env.clone();
-    if cfg!(unix)
-        && let Some(search) = env.get_mut("PATH")
-        && let Some(absolute) =
-            std::env::join_paths(std::env::split_paths(search).map(|dir| cwd.join(dir)))
-                .ok()
-                .and_then(|joined| joined.into_string().ok())
-    {
-        *search = absolute;
-    }
-    env
+) -> (std::ffi::OsString, Option<std::ffi::OsString>) {
+    let search = if cfg!(unix) {
+        absolute_search_path(env, cwd)
+    } else {
+        None
+    };
+    let program = program_outside_cwd(program, env, cwd, search.is_some());
+    (program, search)
+}
+
+/// `env`'s PATH with each entry joined to `cwd`, or `None` without a PATH or
+/// when the joined entries cannot form one.
+fn absolute_search_path(
+    env: &BTreeMap<String, String>,
+    cwd: &std::path::Path,
+) -> Option<std::ffi::OsString> {
+    let search = env.get("PATH")?;
+    std::env::join_paths(std::env::split_paths(search).map(|dir| cwd.join(dir))).ok()
 }
 
 /// `program` as a path that names the same executable once the child runs in
 /// another directory: a relative `program` would be read against the new
-/// directory instead of `cwd`. On unix a bare name is returned as it is, for
-/// the OS to find in the PATH `env_outside_cwd` makes absolute. On Windows,
-/// where mise resolves it, it is looked up in `env`'s PATH read against
-/// `cwd`; a bare name found in no entry is returned as it is, for the child
-/// to report.
+/// directory instead of `cwd`. A bare name is returned as it is when
+/// `os_searches` says the child gets a PATH that is already absolute;
+/// otherwise it is looked up in `env`'s PATH read against `cwd`, and a bare
+/// name found in no entry is returned as it is, for the child to report.
 fn program_outside_cwd(
     program: &OsStr,
     env: &BTreeMap<String, String>,
     cwd: &std::path::Path,
+    os_searches: bool,
 ) -> std::ffi::OsString {
     let path = std::path::Path::new(program);
     if path.is_absolute() {
@@ -1035,10 +1056,7 @@ fn program_outside_cwd(
     if path.components().count() > 1 {
         return cwd.join(path).into_os_string();
     }
-    if cfg!(unix) {
-        // Left to the OS, which searches the PATH `env_outside_cwd` made
-        // absolute, and goes on past an entry it cannot execute (a file on a
-        // `noexec` mount, say) as it always has.
+    if os_searches {
         return program.to_os_string();
     }
     let Some(search) = env
@@ -1471,15 +1489,14 @@ mod tests {
         let cwd = work.path();
         let env_with = |path: &str| BTreeMap::from([("PATH".to_string(), path.to_string())]);
         let resolve = |program: &str| {
-            std::path::PathBuf::from(program_outside_cwd(
-                OsStr::new(program),
-                &env_with("sdk/go/bin"),
-                cwd,
-            ))
+            let (program, search) =
+                spawn_outside_cwd(OsStr::new(program), &env_with("sdk/go/bin"), cwd);
+            assert!(search.is_some());
+            std::path::PathBuf::from(program)
         };
         let search = |path: &str| {
-            let env = env_outside_cwd(&env_with(path), cwd);
-            std::env::split_paths(&env["PATH"]).collect::<Vec<_>>()
+            let search = absolute_search_path(&env_with(path), cwd).unwrap();
+            std::env::split_paths(&search).collect::<Vec<_>>()
         };
 
         // A bare name is left for the OS to look up, a relative path is read
@@ -1501,7 +1518,7 @@ mod tests {
                 cwd.to_path_buf(),
             ]
         );
-        assert!(!env_outside_cwd(&BTreeMap::new(), cwd).contains_key("PATH"));
+        assert_eq!(absolute_search_path(&BTreeMap::new(), cwd), None);
 
         // Spawned from another directory, the child finds the `go` under the
         // relative entry, and goes past an earlier one it may not execute,
@@ -1522,14 +1539,49 @@ mod tests {
             "denied:sdk/go/bin"
         };
         let elsewhere = tempfile::tempdir().unwrap();
-        let output =
-            std::process::Command::new(program_outside_cwd(OsStr::new("go"), &env_with(path), cwd))
-                .env_clear()
-                .envs(env_outside_cwd(&env_with(path), cwd))
-                .current_dir(elsewhere.path())
-                .output()
-                .unwrap();
+        let (program, search) = spawn_outside_cwd(OsStr::new("go"), &env_with(path), cwd);
+        let output = std::process::Command::new(program)
+            .env_clear()
+            .env("PATH", search.unwrap())
+            .current_dir(elsewhere.path())
+            .output()
+            .unwrap();
         assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "755");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn go_list_program_is_found_here_when_path_cannot_be_made_absolute() {
+        use std::os::unix::ffi::OsStrExt;
+        use std::os::unix::fs::PermissionsExt;
+
+        let env = BTreeMap::from([("PATH".to_string(), "/nonexistent:sdk/go/bin".to_string())]);
+        // A directory that is not UTF-8 still makes a PATH, passed on as is.
+        let bytes = std::path::Path::new(OsStr::from_bytes(b"/work/\xff"));
+        let (program, search) = spawn_outside_cwd(OsStr::new("go"), &env, bytes);
+        assert_eq!(program, "go");
+        assert_eq!(
+            std::env::split_paths(&search.unwrap()).collect::<Vec<_>>(),
+            [
+                std::path::PathBuf::from("/nonexistent"),
+                bytes.join("sdk/go/bin"),
+            ]
+        );
+
+        // One with the separator in it cannot, so `go` is found in it here
+        // and spawned by its absolute path, with the PATH left alone.
+        let work = tempfile::tempdir().unwrap();
+        let cwd = work.path().join("a:b");
+        let bin = cwd.join("sdk/go/bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        std::fs::write(bin.join("go"), "#!/bin/sh\n").unwrap();
+        std::fs::set_permissions(bin.join("go"), std::fs::Permissions::from_mode(0o755)).unwrap();
+        let (program, search) = spawn_outside_cwd(OsStr::new("go"), &env, &cwd);
+        assert_eq!(std::path::PathBuf::from(program), bin.join("go"));
+        assert_eq!(search, None);
+        // Found nowhere, it is left for the child to report, as before.
+        let env = BTreeMap::from([("PATH".to_string(), "sdk/none".to_string())]);
+        assert_eq!(spawn_outside_cwd(OsStr::new("go"), &env, &cwd).0, "go");
     }
 
     #[cfg(windows)]
@@ -1543,7 +1595,7 @@ mod tests {
         }
         let env = BTreeMap::from([("Path".to_string(), "scripts;sdk".to_string())]);
         assert_eq!(
-            std::path::PathBuf::from(program_outside_cwd(OsStr::new("go"), &env, cwd)),
+            std::path::PathBuf::from(spawn_outside_cwd(OsStr::new("go"), &env, cwd).0),
             cwd.join("sdk").join("go.exe")
         );
     }
