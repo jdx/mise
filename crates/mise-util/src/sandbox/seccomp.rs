@@ -231,10 +231,13 @@ mod tests {
         }
     }
 
-    fn socket_errno(number: i64, family: libc::c_int, ty: libc::c_int) -> i32 {
-        errno_of(unsafe {
-            libc::syscall(number as libc::c_long, family, ty | libc::SOCK_CLOEXEC, 0)
-        })
+    fn socket_errno(
+        number: i64,
+        family: libc::c_int,
+        ty: libc::c_int,
+        protocol: libc::c_int,
+    ) -> i32 {
+        errno_of(unsafe { libc::syscall(number as libc::c_long, family, ty, protocol) })
     }
 
     /// `--deny-net` leaves only host-local sockets: refusing AF_INET and
@@ -250,21 +253,82 @@ mod tests {
             let socket = syscall_number(libc::SYS_socket);
             for family in [libc::AF_INET, libc::AF_INET6, libc::AF_VSOCK, AF_SMC] {
                 assert_eq!(
-                    socket_errno(socket, family, libc::SOCK_STREAM),
+                    socket_errno(socket, family, libc::SOCK_STREAM | libc::SOCK_CLOEXEC, 0),
                     libc::EPERM,
                     "family {family}"
                 );
             }
-            assert_eq!(socket_errno(socket, libc::AF_UNIX, libc::SOCK_STREAM), 0);
-            assert_eq!(socket_errno(socket, libc::AF_NETLINK, libc::SOCK_RAW), 0);
+            assert_eq!(
+                socket_errno(
+                    socket,
+                    libc::AF_UNIX,
+                    libc::SOCK_STREAM | libc::SOCK_CLOEXEC,
+                    0
+                ),
+                0
+            );
+            assert_eq!(
+                socket_errno(
+                    socket,
+                    libc::AF_NETLINK,
+                    libc::SOCK_RAW | libc::SOCK_CLOEXEC,
+                    0
+                ),
+                0
+            );
             #[cfg(target_arch = "x86_64")]
             assert_eq!(
-                socket_errno(socket | X32_SYSCALL_BIT, libc::AF_INET, libc::SOCK_STREAM),
+                socket_errno(
+                    socket | X32_SYSCALL_BIT,
+                    libc::AF_INET,
+                    libc::SOCK_STREAM | libc::SOCK_CLOEXEC,
+                    0
+                ),
                 libc::EPERM
             );
             let mut params = [0u8; 120]; // struct io_uring_params
             let ret = unsafe { libc::syscall(libc::SYS_io_uring_setup, 1, params.as_mut_ptr()) };
             assert_eq!(errno_of(ret), libc::EPERM);
+        })
+        .join()
+        .unwrap();
+    }
+
+    #[test]
+    fn test_tcp_only_socket_filter() {
+        let socket = syscall_number(libc::SYS_socket);
+        // Some kernels disable IPv6. The allowed IPv6 calls should still
+        // reach the kernel and return its normal result after filtering.
+        let ipv6_errno = socket_errno(socket, libc::AF_INET6, libc::SOCK_STREAM, 0);
+        std::thread::spawn(move || {
+            apply_seccomp_filter(NetworkPolicy::TcpOnly, false).unwrap();
+            for (family, expected) in [(libc::AF_INET, 0), (libc::AF_INET6, ipv6_errno)] {
+                for flags in [
+                    0,
+                    libc::SOCK_CLOEXEC,
+                    libc::SOCK_NONBLOCK,
+                    libc::SOCK_CLOEXEC | libc::SOCK_NONBLOCK,
+                ] {
+                    for protocol in [0, libc::IPPROTO_TCP] {
+                        assert_eq!(
+                            socket_errno(socket, family, libc::SOCK_STREAM | flags, protocol),
+                            expected,
+                            "family {family}, stream flags {flags:#x}, protocol {protocol}"
+                        );
+                    }
+                }
+                for (ty, protocol) in [
+                    (libc::SOCK_DGRAM, libc::IPPROTO_UDP),
+                    (libc::SOCK_RAW, libc::IPPROTO_TCP),
+                    (libc::SOCK_STREAM, libc::IPPROTO_UDP),
+                ] {
+                    assert_eq!(
+                        socket_errno(socket, family, ty, protocol),
+                        libc::EPERM,
+                        "family {family}, socket type {ty}, protocol {protocol}"
+                    );
+                }
+            }
         })
         .join()
         .unwrap();
