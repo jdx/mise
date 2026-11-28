@@ -123,23 +123,6 @@ pub(crate) async fn fetch_checksum_from_file(checksum_url: &str, algo: &str) -> 
     fetch_checksum_from_file_with_headers(checksum_url, algo, &HeaderMap::new()).await
 }
 
-/// The checksum a publisher lists for `filename` in the SHASUMS-style file at `shasums_url`,
-/// for an install that has no checksum pinned. See [`fetch_published_checksum`].
-pub(crate) async fn fetch_published_checksum_from_shasums(
-    shasums_url: &str,
-    filename: &str,
-) -> Result<Option<String>> {
-    let algo = crate::backend::asset_matcher::detect_checksum_algorithm(&get_filename_from_url(
-        shasums_url,
-    ));
-    fetch_published_checksum(shasums_url, |content| {
-        hash::parse_shasums(content)
-            .get(filename)
-            .map(|h| format!("{algo}:{h}"))
-    })
-    .await
-}
-
 /// The checksum a publisher lists in the individual checksum file at `checksum_url`, for an
 /// install that has no checksum pinned. See [`fetch_published_checksum`].
 pub(crate) async fn fetch_published_checksum_from_file(
@@ -180,7 +163,7 @@ async fn fetch_published_checksum(
 }
 
 /// Whether `e` is an HTTP 404 response, by its status rather than its message.
-fn is_not_found(e: &eyre::Report) -> bool {
+pub(crate) fn is_not_found(e: &eyre::Report) -> bool {
     e.chain().any(|cause| {
         cause
             .downcast_ref::<reqwest::Error>()

@@ -1901,8 +1901,13 @@ impl AquaBackend {
                     .as_ref()
                     .filter(|attestations| attestations.enabled != Some(false))
                 {
-                    self.run_github_attestation_check(&artifact_path, pkg, attestations)
-                        .await?
+                    self.run_github_attestation_check(
+                        &artifact_path,
+                        pkg,
+                        attestations,
+                        release_tag,
+                    )
+                    .await?
                 } else {
                     let (checksum_config, attestations) =
                         Self::checksum_github_attestations_config(pkg).wrap_err(
@@ -1912,7 +1917,12 @@ impl AquaBackend {
                         .download_checksum_file(checksum_config, pkg, v, tmp_dir.path(), None)
                         .await?;
                     let status = self
-                        .run_github_attestation_check(&checksum_path, pkg, attestations)
+                        .run_github_attestation_check(
+                            &checksum_path,
+                            pkg,
+                            attestations,
+                            release_tag,
+                        )
                         .await?;
                     if status == GithubAttestationStatus::Verified {
                         self.verify_checksum_file_matches_expected(
@@ -2038,12 +2048,17 @@ impl AquaBackend {
     // --- Shared verification helpers used by both lock-time and install-time ---
 
     /// Run GitHub artifact attestation verification against an already-downloaded artifact.
+    /// An attestation made for a tag other than `release_tag`, when mise knows it, does not
+    /// count: every release of the repository is attested, older ones included.
     async fn run_github_attestation_check(
         &self,
         artifact_path: &Path,
         pkg: &AquaPackage,
         attestations: &AquaGithubArtifactAttestations,
+        release_tag: Option<&str>,
     ) -> Result<GithubAttestationStatus> {
+        let release_tag = release_tag.map(str::to_string);
+        let tags = release_tag.as_slice();
         // The aqua registry stores signer_workflow as a regex pattern (e.g. `\.github/workflows/release\.yaml`).
         // sigstore-verification's verify_attestations() uses plain str::contains(), not regex, so we must
         // unescape regex metacharacter escapes (e.g. `\.` → `.`) before passing the value through.
@@ -2056,13 +2071,16 @@ impl AquaBackend {
         let mut verified_repo = repo.clone();
 
         let mut result = crate::github::sigstore::verify_attestation_with_predicate_type(
-            artifact_path,
-            &pkg.repo_owner,
-            &pkg.repo_name,
-            signer_workflow.as_deref(),
-            predicate_type,
-            None,
-            true,
+            crate::github::sigstore::PredicateAttestationRequest {
+                artifact_path,
+                owner: &pkg.repo_owner,
+                repo: &pkg.repo_name,
+                tags,
+                expected_workflow: signer_workflow.as_deref(),
+                predicate_type,
+                api_url: None,
+                use_versions_host: true,
+            },
         )
         .await;
 
@@ -2084,13 +2102,16 @@ impl AquaBackend {
             );
             verified_repo.clone_from(&canonical_repo);
             result = crate::github::sigstore::verify_attestation_with_predicate_type(
-                artifact_path,
-                canonical_owner,
-                canonical_name,
-                canonical_workflow.as_deref(),
-                predicate_type,
-                None,
-                true,
+                crate::github::sigstore::PredicateAttestationRequest {
+                    artifact_path,
+                    owner: canonical_owner,
+                    repo: canonical_name,
+                    tags,
+                    expected_workflow: canonical_workflow.as_deref(),
+                    predicate_type,
+                    api_url: None,
+                    use_versions_host: true,
+                },
             )
             .await;
         }
@@ -3408,7 +3429,7 @@ impl AquaBackend {
 
         if !skip_attestations
             && let Some(status) = self
-                .verify_github_artifact_attestations(ctx, tv, pkg, v, filename)
+                .verify_github_artifact_attestations(ctx, tv, pkg, v, release_tag, filename)
                 .await?
         {
             match status {
@@ -3532,7 +3553,7 @@ impl AquaBackend {
                     .is_some_and(|p| p.is_github_attestations())
             {
                 match self
-                    .run_github_attestation_check(&checksum_path, pkg, attestations)
+                    .run_github_attestation_check(&checksum_path, pkg, attestations, release_tag)
                     .await?
                 {
                     GithubAttestationStatus::Verified => {
@@ -3745,6 +3766,7 @@ impl AquaBackend {
         tv: &ToolVersion,
         pkg: &AquaPackage,
         _v: &str,
+        release_tag: Option<&str>,
         filename: &str,
     ) -> Result<Option<GithubAttestationStatus>> {
         // Check if attestations are enabled via global and aqua-specific settings
@@ -3764,7 +3786,7 @@ impl AquaBackend {
                 .set_message("verify GitHub artifact attestations".to_string());
             let artifact_path = tv.download_path().join(filename);
             match self
-                .run_github_attestation_check(&artifact_path, pkg, github_attestations)
+                .run_github_attestation_check(&artifact_path, pkg, github_attestations, release_tag)
                 .await?
             {
                 GithubAttestationStatus::Verified => {}

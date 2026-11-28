@@ -1905,6 +1905,7 @@ impl UnifiedGitBackend {
                     &artifact_path,
                     owner,
                     repo_name,
+                    &self.attestation_tags(tv, opts, &api_url, asset, target),
                     None,
                     Some(&api_url),
                     true,
@@ -3145,6 +3146,47 @@ impl UnifiedGitBackend {
         None
     }
 
+    /// The tags a GitHub attestation of `tv`'s `asset` may name: the ways to
+    /// spell `tv`'s version as a tag, and the tag of the release the asset
+    /// came from (the one in its URL, when that is all there is) if it spells
+    /// that version too. As for [`Self::slsa_source_tag`], a tag only the API
+    /// or a lockfile vouches for does not count: one that names another
+    /// version would let that version's attestation pass. The tag in the
+    /// `url` option for `target`, rendered for `tv`, counts as written: the
+    /// user says there where the version is. Only the option's own URL gives
+    /// that tag; a locked URL or another asset's URL is held to the version
+    /// check. Empty, which skips the check, for `latest`.
+    fn attestation_tags(
+        &self,
+        tv: &ToolVersion,
+        opts: &GitBackendOptions<'_>,
+        api_url: &str,
+        asset: &ReleaseAsset,
+        target: &PlatformTarget,
+    ) -> Vec<String> {
+        if tv.version == "latest" {
+            return vec![];
+        }
+        let repo = self.repo();
+        let web_url = self.web_url_base(api_url, &repo);
+        let mut tags = tag_candidates(&tv.version, opts.version_prefix(), Some(&repo));
+        let found = asset
+            .release_tag
+            .clone()
+            .or_else(|| crate::backend::release_tag_from_download_url(&asset.url, &web_url))
+            .filter(|tag| self.strip_version_prefix(tag, opts) == tv.version);
+        let configured = opts.direct_url_for_target(target).and_then(|url| {
+            let url = template_string_for_target(&url, tv, target);
+            crate::backend::release_tag_from_download_url(&url, &web_url)
+        });
+        for tag in found.into_iter().chain(configured) {
+            if !tags.contains(&tag) {
+                tags.push(tag);
+            }
+        }
+        tags
+    }
+
     fn strip_version_prefix(&self, tag_name: &str, opts: &GitBackendOptions<'_>) -> String {
         // If a custom version_prefix is configured, strip it first
         if let Some(prefix) = opts.version_prefix()
@@ -3407,8 +3449,10 @@ impl UnifiedGitBackend {
             && opts.github_attestations()
             && attestations_supported(&api_url)
         {
+            let tags =
+                self.attestation_tags(tv, &opts, &api_url, asset, &PlatformTarget::from_current());
             match self
-                .try_verify_github_attestations(ctx, tv, file_path, &api_url)
+                .try_verify_github_attestations(ctx, tv, file_path, &api_url, &tags)
                 .await
             {
                 Ok(true) => {
@@ -3517,6 +3561,7 @@ impl UnifiedGitBackend {
         tv: &ToolVersion,
         file_path: &std::path::Path,
         api_url: &str,
+        tags: &[String],
     ) -> std::result::Result<bool, VerificationStatus> {
         ctx.pr
             .set_message("verify GitHub artifact attestations".to_string());
@@ -3535,6 +3580,7 @@ impl UnifiedGitBackend {
             file_path,
             owner,
             repo_name,
+            tags,
             None, // We don't know the expected workflow
             Some(api_url),
             true,
@@ -5694,6 +5740,64 @@ platforms.macos-arm64.url = 'https://example.com/{{ version }}/tool-darwin-arm64
             backend.slsa_source_tag(&tv, &opts, &release("v0.9.0")),
             None
         );
+    }
+
+    #[test]
+    fn test_attestation_tags_must_name_the_version() {
+        let backend = create_test_backend();
+        let tv = |version: &str| {
+            let backend_arg = Arc::new(BackendArg::new(
+                "github:test/repo".to_string(),
+                Some("github:test/repo".to_string()),
+            ));
+            let source = crate::toolset::ToolSource::Unknown;
+            let request = ToolRequest::new(backend_arg, version, source).unwrap();
+            ToolVersion::new(request, version.to_string())
+        };
+        let asset = |tag: &str| ReleaseAsset {
+            name: "tool-linux.tar.gz".to_string(),
+            url: format!("https://github.com/test/repo/releases/download/{tag}/tool-linux.tar.gz"),
+            url_api: String::new(),
+            digest: None,
+            release_tag: None,
+        };
+        let target = PlatformTarget::new(crate::platform::Platform::parse("linux-x64").unwrap());
+        let tags = |options: &[(&str, &str)], version: &str, tag: &str| {
+            let mut opts = ToolVersionOptions::default();
+            for (key, value) in options {
+                opts.opts
+                    .insert(key.to_string(), toml::Value::String(value.to_string()));
+            }
+            let opts = backend.options(&opts);
+            let api_url = opts.api_url();
+            backend.attestation_tags(&tv(version), &opts, &api_url, &asset(tag), &target)
+        };
+        let spellings = ["v1.0.0", "1.0.0", "repo@1.0.0", "test/repo@1.0.0"];
+
+        assert_eq!(tags(&[], "1.0.0", "v1.0.0"), spellings);
+        // A URL that names another version adds no tag for 1.0.0: accepting
+        // it would let 0.9.0's attestation pass.
+        assert_eq!(tags(&[], "1.0.0", "v0.9.0"), spellings);
+        assert_eq!(tags(&[], "1.0.0", "build-42"), spellings);
+        // A tag that spells the version another way is added.
+        let prefixed = tags(&[("version_prefix", "release-")], "1.0.0", "v1.0.0");
+        assert_eq!(prefixed.last().unwrap(), "v1.0.0");
+        // So is the tag in a URL that the tool's options wrote for the platform.
+        let url = asset("build-42").url;
+        let with_url = tags(&[("platform_linux_x64_url", &url)], "1.0.0", "build-42");
+        assert_eq!(with_url.last().unwrap(), "build-42");
+        // That option vouches for its own URL only: an asset URL from a
+        // lockfile or a release listing that names another tag adds nothing.
+        let elsewhere = tags(&[("platform_linux_x64_url", &url)], "1.0.0", "v0.9.0");
+        assert!(!elsewhere.contains(&"v0.9.0".to_string()), "{elsewhere:?}");
+        assert_eq!(elsewhere.last().unwrap(), "build-42");
+        // The option's tag is read after rendering it for the version.
+        let templated =
+            "https://github.com/test/repo/releases/download/nightly-{{ version }}/tool.tar.gz";
+        let rendered = tags(&[("platform_linux_x64_url", templated)], "1.0.0", "v0.9.0");
+        assert_eq!(rendered.last().unwrap(), "nightly-1.0.0");
+        // Nothing spells `latest`.
+        assert!(tags(&[], "latest", "v1.0.0").is_empty());
     }
 
     #[test]

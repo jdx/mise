@@ -989,6 +989,9 @@ where
         ));
     }
     env::remove_var(env::MISE_SHIM_PATH_ENV);
+    // `exec()` runs no destructors, so the guard in `main` would never delete them. Before
+    // the sandbox, which can take away mise's own write access to the cache.
+    crate::http::release_invocation_downloads();
     // Apply sandbox (Landlock/seccomp on Linux, sandbox-exec on macOS)
     let args_str: Vec<String> = args
         .iter()
@@ -1197,6 +1200,9 @@ where
     }
     // What came from mise's own command line is a lossy copy: the program gets the originals.
     let args = env::args_as_given(args.into_iter().map(Into::into).collect());
+
+    // The child can run for as long as it likes, and mise is only waiting for it now.
+    crate::http::release_invocation_downloads();
 
     // Windows does not support exec in the same way as Unix,
     // so we emulate it instead by not handling Ctrl-C and letting
