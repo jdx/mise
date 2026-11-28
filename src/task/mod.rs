@@ -892,33 +892,63 @@ pub(crate) fn header_has_decoded_template(body: &str) -> bool {
         .any(|value| toml_value_has_template(&value))
 }
 
+/// The script a file task names, read once for its usage spec, so that the text whose trust is
+/// checked is the text that is parsed.
+pub(crate) struct TaskScript {
+    path: PathBuf,
+    text: std::io::Result<String>,
+}
+
+impl TaskScript {
+    /// `path` comes from config that may not be trusted yet, so it is read like a config
+    /// file: only a regular file, and only up to the size limit.
+    fn read(path: PathBuf) -> Self {
+        let text = crate::file::read_config_to_string(&path)
+            .map_err(|err| std::io::Error::other(format!("{err:#}")));
+        Self { path, text }
+    }
+}
+
 #[cfg(test)]
 fn parse_task_script_usage(file: &Path) -> usage::Result<usage::Spec> {
     parse_task_script_usage_with_env(file, None, "", true)
 }
 
-/// `preamble` is the task's `usage` field, which a file task only has from a template it
-/// extends: it comes first, ahead of the script's own `#USAGE` lines. `trusted` is whether
-/// the spec may name files to read (see [`refuse_usage_file_reads`]).
+#[cfg(test)]
 fn parse_task_script_usage_with_env(
     file: &Path,
     env: Option<&EnvMap>,
     preamble: &str,
     trusted: bool,
 ) -> usage::Result<usage::Spec> {
-    // `file` comes from config that may not be trusted yet, so it is read like
-    // a config file: only a regular file, and only up to the size limit.
-    let script = crate::file::read_config_to_string(file)
-        .map_err(|err| std::io::Error::other(format!("{err:#}")))?;
+    let script = TaskScript::read(file.to_path_buf());
+    parse_task_script_text_usage(&script, env, preamble, trusted)
+}
+
+/// `preamble` is the task's `usage` field, which a file task only has from a template it
+/// extends: it comes first, ahead of the script's own `#USAGE` lines. `trusted` is whether
+/// the spec may name files to read (see [`refuse_usage_file_reads`]).
+fn parse_task_script_text_usage(
+    script: &TaskScript,
+    env: Option<&EnvMap>,
+    preamble: &str,
+    trusted: bool,
+) -> usage::Result<usage::Spec> {
+    let file = script.path.as_path();
+    let text = match &script.text {
+        Ok(text) => text,
+        Err(err) => return Err(std::io::Error::new(err.kind(), err.to_string()).into()),
+    };
     // Same reason as the `#MISE` header scan: `#USAGE` on line 1 is invisible behind a mark.
-    let mut raw = extract_usage_from_comments(crate::file::strip_utf8_bom(&script));
+    let mut raw = extract_usage_from_comments(crate::file::strip_utf8_bom(text));
     if !preamble.trim().is_empty() {
         raw = format!("{}\n{raw}", preamble.trim_end());
     }
-    // Here usage-lib reads the script again and finds its `#USAGE` lines by its own rules,
-    // so there is no text to check first: an untrusted task keeps the empty spec found above.
+    // Then the script's `#USAGE` lines are looked for by usage-lib's rules, which are not
+    // mise's, so there is no text to check first: an untrusted task keeps the empty spec
+    // found above.
     if raw.trim().is_empty() && trusted {
-        return usage::Spec::parse_script(file);
+        return parse_usage_lib_script(file, text);
     }
     let raw = hoist_root_usage_mounts(&raw).unwrap_or(raw);
     if !trusted {
@@ -1008,12 +1038,13 @@ pub(crate) fn parse_task_usage_field(
 /// A script that cannot be read still warns and yields an empty spec: that is not a spec
 /// problem, and `mise tasks validate` reports a missing task file on its own.
 fn parse_task_script_usage_checked(
-    file: &Path,
+    script: &TaskScript,
     env: Option<&EnvMap>,
     preamble: &str,
     trusted: bool,
 ) -> Result<usage::Spec> {
-    match parse_task_script_usage_with_env(file, env, preamble, trusted) {
+    let file = script.path.as_path();
+    match parse_task_script_text_usage(script, env, preamble, trusted) {
         Ok(spec) => Ok(spec),
         // Reading the script is the first thing this does, and a script that was discovered
         // and has since been deleted or made unreadable fails there. Calling that an invalid
@@ -1038,12 +1069,12 @@ fn parse_task_script_usage_checked(
 /// A file task's spec failing must not take the whole task load down, the same way one
 /// unrecognised `#MISE` key does not: every task in the project is parsed in one loop.
 fn parse_task_script_usage_or_warn(
-    file: &Path,
+    script: &TaskScript,
     env: Option<&EnvMap>,
     preamble: &str,
     trusted: bool,
 ) -> usage::Spec {
-    parse_task_script_usage_checked(file, env, preamble, trusted).unwrap_or_else(|err| {
+    parse_task_script_usage_checked(script, env, preamble, trusted).unwrap_or_else(|err| {
         warn!("{err}");
         usage::Spec::default()
     })
@@ -1071,6 +1102,36 @@ fn parse_task_usage_raw(
     }
     if let Some(mount_cmd) = spec.cmd.subcommands.shift_remove("__mise_task_root_mounts") {
         spec.cmd.mounts.extend(mount_cmd.mounts);
+    }
+    Ok(spec)
+}
+
+/// What `usage::Spec::parse_script` makes of `text` read from `file`, without reading the file
+/// again: the copy of the script that was checked is the one parsed.
+///
+/// usage-lib does not export the rules it finds `#USAGE` lines by, so they are copied here, and
+/// a test compares the two.
+fn parse_usage_lib_script(file: &Path, text: &str) -> usage::Result<usage::Spec> {
+    let usage_regex = regex!(r"^(?:#|//|::)(?:USAGE| ?\[USAGE\])(.*)$");
+    let blank_comment_regex = regex!(r"^(?:#|//|::)\s*$");
+    let mut usage = vec![];
+    for line in text.lines() {
+        if let Some(captures) = usage_regex.captures(line) {
+            usage.push(captures.get(1).map_or("", |m| m.as_str()).trim());
+        } else if !usage.is_empty() && !blank_comment_regex.is_match(line) {
+            break;
+        }
+    }
+    let mut spec = usage::Spec::parse_str_with_path(&usage.join("\n"), file)?;
+    if spec.bin.is_empty() {
+        spec.bin = file
+            .file_name()
+            .and_then(|n| n.to_str())
+            .ok_or_else(|| usage::error::UsageErr::InvalidPath(file.display().to_string()))?
+            .to_string();
+    }
+    if spec.name.is_empty() {
+        spec.name.clone_from(&spec.bin);
     }
     Ok(spec)
 }
@@ -1338,13 +1399,6 @@ impl Task {
         self.definition_is_trusted(config) && self.file_is_trusted(config).await
     }
 
-    /// [`Self::is_trusted`] for reading `file`, the script [`Self::file_path`] resolved for
-    /// that read. A `file` template can render another path each time, so the path that is
-    /// read is the path that is checked.
-    pub(crate) fn is_trusted_to_read(&self, config: &Config, file: &Path) -> bool {
-        self.definition_is_trusted(config) && self.resolved_file_is_trusted(file)
-    }
-
     /// [`Self::is_trusted`] for the files the task is defined in only, leaving out the script
     /// a `file` task names: what the definition alone declares, such as its `vars`, `env` and
     /// the input groups its config cascades, needs no more.
@@ -1422,10 +1476,30 @@ impl Task {
     }
 
     fn resolved_file_is_trusted(&self, file: &Path) -> bool {
+        self.resolved_script_is_trusted(file, None)
+    }
+
+    /// [`Self::resolved_file_is_trusted`], judged for `text` when the script was read: the
+    /// script's own trust is bound to its content, and the text that is parsed is the text
+    /// that has to be trusted, not the file as it is when read again.
+    fn resolved_script_is_trusted(&self, file: &Path, text: Option<&str>) -> bool {
+        use config::config_file::{is_path_trusted, is_path_trusted_for_content};
         !self.file_needs_own_trust()
             || config::is_global_config(file)
             || config::is_global_task_include_path(file)
-            || config::config_file::is_path_trusted(file)
+            || match text {
+                Some(text) => is_path_trusted_for_content(file, text),
+                None => is_path_trusted(file),
+            }
+    }
+
+    /// [`Self::is_trusted`] for parsing `script`, the script [`Self::file_path`] resolved and
+    /// read for that parse. A `file` template can render another path each time, and the file
+    /// can change between two reads, so the path that is read and the text read from it are
+    /// what is checked.
+    pub(crate) fn is_trusted_to_read_script(&self, config: &Config, script: &TaskScript) -> bool {
+        self.definition_is_trusted(config)
+            && self.resolved_script_is_trusted(&script.path, script.text.as_deref().ok())
     }
 
     pub fn tool_args(&self) -> Result<Vec<ToolArg>> {
@@ -2224,27 +2298,27 @@ impl Task {
         env: &EnvMap,
         extra_vars: Option<IndexMap<String, String>>,
     ) -> Result<(usage::Spec, Vec<String>)> {
-        let file = self.file_path(config).await?;
+        let file = self.file_path(config).await?.map(TaskScript::read);
         self.parse_usage_spec_with_file(config, cwd, env, extra_vars, file)
             .await
     }
 
     /// [`Self::parse_usage_spec_with_vars`] with `file`, the script [`Self::file_path`]
-    /// resolved, for a caller that checked that path before the read.
+    /// resolved and already read, for a caller that checked that text before the parse.
     async fn parse_usage_spec_with_file(
         &self,
         config: &Arc<Config>,
         cwd: Option<PathBuf>,
         env: &EnvMap,
         extra_vars: Option<IndexMap<String, String>>,
-        file: Option<PathBuf>,
+        file: Option<TaskScript>,
     ) -> Result<(usage::Spec, Vec<String>)> {
         let mut env = env.clone();
         if !self.raw_args {
             clear_usage_env(&mut env);
         }
         let (mut spec, scripts) = if let Some(file) = file {
-            let include_env = self.usage_include_env(config, &file);
+            let include_env = self.usage_include_env(config, &file.path);
             let inherited = TaskScriptParser::new(match cwd.clone() {
                 Some(cwd) => Some(cwd),
                 None => self.dir(config).await?,
@@ -2327,7 +2401,7 @@ impl Task {
     async fn parse_usage_spec_for_display_from(
         &self,
         config: &Arc<Config>,
-        file: Option<PathBuf>,
+        file: Option<TaskScript>,
     ) -> Result<usage::Spec> {
         Ok(self
             .parse_usage_spec_for_display_with_file(config, false, file)
@@ -2371,7 +2445,7 @@ impl Task {
         config: &Arc<Config>,
         strict: bool,
     ) -> Result<(usage::Spec, Option<bool>)> {
-        let file = self.file_path(config).await?;
+        let file = self.file_path(config).await?.map(TaskScript::read);
         self.parse_usage_spec_for_display_with_file(config, strict, file)
             .await
     }
@@ -2380,20 +2454,20 @@ impl Task {
         &self,
         config: &Arc<Config>,
         strict: bool,
-        file: Option<PathBuf>,
+        file: Option<TaskScript>,
     ) -> Result<(usage::Spec, Option<bool>)> {
         // The directory only feeds script parsing here. A broken `dir` template is reported
         // by `mise tasks validate` and when the task runs, so it does not fail the spec.
         let dir = self.dir(config).await.unwrap_or(None);
         let mut file_trusted = None;
         let mut spec = if let Some(file) = file {
-            let env = self.usage_include_env(config, &file);
+            let env = self.usage_include_env(config, &file.path);
             let inherited = TaskScriptParser::new(dir.clone())
                 .render_inherited_usage(config, self, false, None)
                 .await?;
             // Listing, completing and validating a task are not consent to read the files
-            // its spec names.
-            let trusted = self.is_trusted_to_read(config, &file);
+            // its spec names. The text checked is the text parsed.
+            let trusted = self.is_trusted_to_read_script(config, &file);
             file_trusted = Some(trusted);
             if strict {
                 parse_task_script_usage_checked(&file, Some(&env), &inherited, trusted)?
@@ -2434,7 +2508,8 @@ impl Task {
                 .render_inherited_usage(config, self, true, None)
                 .await?;
             // preflight is part of the run
-            parse_task_script_usage_or_warn(&file, Some(&env), &inherited, true)
+            let script = TaskScript::read(file);
+            parse_task_script_usage_or_warn(&script, Some(&env), &inherited, true)
         } else {
             let scripts_only = self.run_script_strings();
             TaskScriptParser::new(self.config_root.clone())
@@ -4592,9 +4667,10 @@ pub(crate) async fn parse_usage_values_for_inspection(
     config: &Arc<Config>,
     task: &Task,
 ) -> Result<IndexMap<String, tera::Value>> {
-    let file = task.file_path(config).await?;
+    // Read once: the text whose trust is checked is the text either parse below reads.
+    let file = task.file_path(config).await?.map(TaskScript::read);
     let trusted = match &file {
-        Some(file) => task.is_trusted_to_read(config, file),
+        Some(file) => task.is_trusted_to_read_script(config, file),
         None => task.is_trusted(config).await,
     };
     if trusted {
@@ -5586,6 +5662,27 @@ exec shapeme "$@"
         let spec = super::parse_task_script_usage_with_env(&task, None, "", false).unwrap();
         assert_eq!(spec.bin, "build");
         assert!(spec.cmd.flags.is_empty());
+    }
+
+    #[test]
+    fn test_usage_lib_script_rules_are_usage_libs() {
+        let dir = tempfile::tempdir().unwrap();
+        let script = dir.path().join("build");
+        for text in [
+            "#!/usr/bin/env bash\n#MISE\ntrue\n#USAGE flag \"--late\"\n",
+            "#!/usr/bin/env bash\n#USAGE flag \"--a\"\n#\n#USAGE flag \"--b\"\necho\n#USAGE flag \"--c\"\n",
+            "#!/usr/bin/env node\n//USAGE arg \"<x>\"\n// [USAGE] flag \"--y\"\n",
+            ":: [USAGE] bin \"other\"\n::USAGE name \"n\"\n",
+            "#USAGE\n#USAGE flag \"--empty-first\"\n",
+            "#!/bin/sh\necho no usage here\n",
+            "",
+        ] {
+            std::fs::write(&script, text).unwrap();
+            let theirs = usage::Spec::parse_script(&script).unwrap();
+            let ours = super::parse_usage_lib_script(&script, text).unwrap();
+            assert_eq!(ours.to_string(), theirs.to_string(), "{text:?}");
+            assert_eq!((ours.bin, ours.name), (theirs.bin, theirs.name), "{text:?}");
+        }
     }
 
     #[tokio::test]
