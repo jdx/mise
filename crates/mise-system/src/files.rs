@@ -7688,6 +7688,9 @@ fn track_walking_targets<'a>(config: &Config, requests: impl IntoIterator<Item =
             }));
         }
     }
+    // deepest first: a target nested in one that starts being tracked here still has what it
+    // deployed seeded; only a target tracked before this apply makes that unnecessary
+    deployed.sort_by_key(|(target, _)| std::cmp::Reverse(target.components().count()));
     for (target, paths) in deployed {
         crate::created_dirs::track(&target, paths);
     }
