@@ -98,3 +98,22 @@ ln -s "$base/shared-dir/mise" "$base/dir-project/.config/mise"
 cd "$base/dir-project" || exit 1
 MISE_TRUSTED_CONFIG_PATHS="$base/dir-project" MISE_YES=1 mise tasks rm a b
 assert "grep '^\[tasks' $base/shared-dir/mise/config.toml" "$kept"
+
+echo "=== a task directory that links out of the project needs trusted_config_paths ==="
+# Paranoid mode trusts each config file by its content, not the directory, and does not load a
+# task reached through a link inside the project, so `mise trust` cannot approve the link and
+# the refusal says what does.
+mkdir -p "$base/tasks-out" "$base/task-project"
+printf '#!/usr/bin/env bash\necho out\n' >"$base/tasks-out/out"
+chmod +x "$base/tasks-out/out"
+cd "$base/task-project" || exit 1
+echo "[tools]" >mise.toml
+ln -s "$base/tasks-out" mise-tasks
+mise trust mise.toml
+assert_fail_contains "mise tasks add --file --force out -- echo replaced 2>&1" "trusted_config_paths"
+assert_not_contains "cat $base/tasks-out/out" "replaced"
+export MISE_TRUSTED_CONFIG_PATHS="$base/task-project"
+assert "mise tasks add --file --force out -- echo replaced"
+assert_contains "cat $base/tasks-out/out" "replaced"
+assert "MISE_YES=1 mise tasks rm out"
+assert_fail "test -e $base/tasks-out/out"

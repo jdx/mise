@@ -225,6 +225,14 @@ assert_contains "mise edit --dry-run --tool-versions .tool-versions 2>&1" 'tiny 
 assert_fail "test -e ../outside/preview.toml"
 assert_fail_contains "mise edit --tool-versions .tool-versions 2>&1" "refusing to write"
 assert_fail "test -e ../outside/preview.toml"
+# mise use previews the change to the link too, and only the write refuses it. Without --path it
+# would pick .tool-versions, since the dangling link does not exist yet.
+assert_contains "mise use --dry-run --path mise.toml tiny@1.0.0 2>&1" "would update"
+# --dry-run-code exits 1 to say there is a change
+assert_fail_contains "mise use --dry-run-code --path mise.toml tiny@1.0.0 2>&1" "would update"
+assert_fail "test -e ../outside/preview.toml"
+assert_fail_contains "mise use --path mise.toml tiny@1.0.0 2>&1" "refusing to write"
+assert_fail "test -e ../outside/preview.toml"
 
 echo "=== a bare file name's link inside the project is followed ==="
 mkdir -p ../bare/config
@@ -298,3 +306,28 @@ ln -s ../outside/tasks mise-tasks
 assert "mise trust"
 assert "MISE_YES=1 mise tasks rm out"
 assert_fail "test -e ../outside/tasks/out"
+
+echo "=== a linked .mise is checked for a file mise does not look for there ==="
+mkdir -p ../dot-mise ../outside/dot-mise
+echo "[env]" >../outside/dot-mise/mise.local.toml
+cd ../dot-mise || exit 1
+echo "[tools]" >mise.toml
+ln -s ../outside/dot-mise .mise
+assert_fail_contains "MISE_SAFE=1 mise set --file .mise/mise.local.toml FOO=bar 2>&1" "refusing to write"
+assert_not_contains "cat ../outside/dot-mise/mise.local.toml" "FOO"
+
+echo "=== a path that goes up out of a link with .. is refused ==="
+# The system opens linked/../mise.toml beside where the link leads, not in the project, so the
+# file mise edit would read is not the one its write would replace.
+mkdir -p ../dotdot ../outside/deep/dir
+echo "[env]" >../outside/deep/mise.toml
+cd ../dotdot || exit 1
+echo "[env]" >mise.toml
+ln -s ../outside/deep/dir linked
+assert_fail_contains "mise edit --force linked/../mise.toml 2>&1" "goes up from"
+assert "cat mise.toml" "[env]"
+assert "cat ../outside/deep/mise.toml" "[env]"
+# a .. out of a regular directory names the file it appears to
+mkdir sub
+assert "mise edit --force sub/../mise.toml"
+assert_contains "cat mise.toml" "mise config files are hierarchical"
