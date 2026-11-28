@@ -3536,6 +3536,7 @@ mod hashed_path_filename_tests {
 
     /// A task script is written where the check followed its links to, so a link that changes
     /// after the check cannot send the write elsewhere.
+    #[cfg(unix)]
     #[test]
     fn a_task_script_write_goes_to_the_destination_the_check_approved() {
         let tmp = tempfile::tempdir().unwrap();
@@ -3549,6 +3550,7 @@ mod hashed_path_filename_tests {
 
     /// `.config/mise` holding a `mise.toml` is a config root of its own, but a link at it is the
     /// project's, so it does not take the root, and a task written there, out of the project.
+    #[cfg(unix)]
     #[test]
     fn a_task_root_that_is_itself_a_link_out_of_the_project_is_not_followed() {
         let tmp = tempfile::tempdir().unwrap();
