@@ -66,7 +66,10 @@ env = ["development"]
 ```
 
 Use `.miserc.local.toml` (not committed) for a personal choice, and
-`~/.config/mise/miserc.local.toml` for one machine. See
+`~/.config/mise/miserc.local.toml` for one machine. An environment a project
+`.miserc.toml` selects loads the project's files, not
+`~/.config/mise/config.<env>.toml`; select it with `-E`, `MISE_ENV` or
+`~/.config/mise/miserc.toml` to load that one too. See
 [`.miserc.toml`](/configuration.html#miserc) for every location and how the
 files combine.
 

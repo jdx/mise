@@ -209,6 +209,25 @@ assert_contains "cat $ssh_log" "root@ad-hoc.test"
 assert_contains "cat $ssh_log" "bootstrap --dry-run --yes"
 assert_fail "test -d $remote_stage"
 
+# Config search on the target stops at the staging directory: a mise.toml
+# another user left above the project is never loaded, even when --yes would
+# answer its trust prompt. The real threat sits in the target's shared /tmp,
+# which a test cannot plant in, and a staging path must sit directly in /tmp,
+# so plant it in the staging directory itself: the ceiling is excluded from
+# the search, so this config is unreachable only if the search stops there.
+planted_stage="$remote_stage-planted"
+planted_marker="$PWD/planted-config-ran"
+trap 'rm -rf "$planted_stage"' EXIT
+mkdir -p "$planted_stage"
+cat >"$planted_stage/mise.toml" <<EOF
+[env]
+PLANTED = "{{ exec(command='touch $planted_marker; echo planted') }}"
+EOF
+: >"$ssh_log"
+assert_succeed "REMOTE_STAGE=$planted_stage mise bootstrap remote layered --dry-run --yes"
+assert_contains "cat $ssh_log" "MISE_CEILING_PATHS=$planted_stage"
+assert_fail "test -e $planted_marker"
+
 # A home directory is not a project: refuse it unless --yes says otherwise.
 : >"$ssh_log"
 home_out=$(mise bootstrap remote --host root@ad-hoc.test --source "$HOME" --remote-mise "$HOME/.local/bin/mise" --dry-run 2>&1 || true)

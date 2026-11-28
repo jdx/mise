@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+
+# A project .miserc.toml is read without trust. A glob in it that globset
+# cannot compile, here 125 nested alternations, is skipped instead of
+# crashing every mise command in the project.
+nested=""
+closing=""
+for _ in $(seq 125); do
+  nested="$nested{a,"
+  closing="$closing}"
+done
+pattern="${nested}b${closing}"
+
+cat >mise.toml <<EOF
+[tools]
+dummy = "1"
+EOF
+mkdir -p mise-tasks
+echo 'run = "echo hi"' >mise-tasks/build.toml
+
+echo "ignored_config_paths = [\"/x/$pattern\"]" >.miserc.toml
+assert_succeed "MISE_SAFE=1 mise ls"
+assert_succeed "mise hook-env -s bash"
+
+# The override filenames become the patterns mise matches config files with.
+echo "override_config_filenames = [\"mise.toml\", \"$pattern.toml\"]" >.miserc.toml
+assert_succeed "MISE_SAFE=1 mise ls"
+assert_succeed "MISE_SAFE=1 mise tasks ls"
