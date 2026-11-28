@@ -3910,6 +3910,15 @@ https://mise.jdx.dev/sandboxing.html#access-to-particular-hosts
 """#
         arg <HOST>
     }
+    flag --allow-connect-port help="Allow outbound TCP connections to PORT on any IP address (Linux 6.7 or later)" var=#true {
+        long_help #"""
+Allow outbound TCP connections to PORT on any IP address (Linux 6.7 or later)
+
+Blocks TCP connections to other ports and creation of other IP sockets.
+Repeat to allow multiple ports. Conflicts with --deny-net and --deny-all.
+"""#
+        arg <PORT>
+    }
     flag --allow-read help="Allow reads from PATH (implies --deny-read for everything else)" var=#true {
         arg <PATH>
     }

@@ -745,6 +745,7 @@ impl TaskExecutor {
                 .chain(self.sandbox.allow_net.iter())
                 .cloned()
                 .collect(),
+            allow_connect_port: vec![],
             allow_unix: task
                 .allow_unix
                 .iter()
