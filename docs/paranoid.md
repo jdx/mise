@@ -88,7 +88,8 @@ in these ways:
 - `mise run`, `mise install`, `mise exec`, `mise watch` and the `mise daemons`
   start, restart and register commands do not trust the config they load.
 - CI does not make config trusted, and `--yes`, `MISE_YES=1` and `CI` do not
-  answer the trust prompt. In a terminal, mise still asks.
+  answer the trust prompt. In a terminal, mise still asks: a command you type
+  there does not [trust the project for you](/security.html#typed-in-a-terminal).
 - Trust is not shared between git worktrees.
 - Trusting a monorepo root trusts only that file. Trust each subproject's config
   separately.

@@ -73,9 +73,11 @@ line. Read the file, then trust it:
 mise trust ~/src/app/mise.toml
 ```
 
-mise asks before it fails when it can. This error appears where it cannot ask,
-such as in a script, an editor extension, or a command without a terminal, and
-after you answer No. Once you answer No, or run `mise trust --ignore`, later
+A command you type in a terminal trusts the project for you, as described in
+[Typed in a terminal](/security.html#typed-in-a-terminal). Where that does not
+apply, mise asks before it fails when it can. This error appears where it cannot
+ask, such as in a script, an editor extension, or a command without a terminal,
+and after you answer No. Once you answer No, or run `mise trust --ignore`, later
 commands skip that config without an error until you run `mise trust` on it.
 
 When `mise run` finds no tasks because a config in the current directory is

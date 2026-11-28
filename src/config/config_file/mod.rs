@@ -49,7 +49,10 @@ pub mod idiomatic_version;
 pub(crate) mod min_version;
 pub mod mise_toml;
 pub(crate) mod tool_versions;
+mod typed_consent;
 mod unknown_key;
+
+pub use typed_consent::{CommandOrigin, set_command_origin};
 
 #[derive(Debug, PartialEq)]
 pub(crate) enum ConfigFileType {
@@ -802,6 +805,25 @@ fn trust_and_reload_settings(config_root: &Path) -> eyre::Result<()> {
     Ok(())
 }
 
+/// [`trust_and_reload_settings`] that takes the record back when the reload fails on the
+/// project's own `[settings]`. Every later command would fail on that setting at startup,
+/// `mise untrust` too, so a record left behind could not be removed with mise.
+fn trust_and_reload_settings_or_roll_back(config_root: &Path) -> eyre::Result<()> {
+    let was_trusted = is_trusted(config_root);
+    trust(config_root)?;
+    if !was_trusted
+        && settings::is_loaded()
+        && let Err(err) = Settings::reload()
+    {
+        untrust(config_root)?;
+        if let Ok(canonical) = config_root.canonicalize() {
+            IS_TRUSTED.lock().unwrap().remove(&canonical);
+        }
+        return Err(err);
+    }
+    Ok(())
+}
+
 /// Checks whether a config may load, prompting for trust when appropriate.
 /// Automatic yes decisions cannot grant trust in paranoid mode.
 pub fn trust_check(path: &Path) -> eyre::Result<()> {
@@ -846,7 +868,13 @@ pub fn trust_check(path: &Path) -> eyre::Result<()> {
     if *REQUIRE_EXPLICIT_TRUST {
         Err(UntrustedConfig(path.into()))?
     }
-    if cmd != "hook-env" && !strict && !is_ignored(&config_root) && !is_ignored(path) {
+    // The prompt hook neither asks nor trusts. The parsed command catches `mise -q hook-env`;
+    // argv[1] covers config loaded before the command line is parsed.
+    let prompt_hook = cmd == "hook-env" || typed_consent::is_prompt_hook();
+    if !prompt_hook && !strict && !is_ignored(&config_root) && !is_ignored(path) {
+        if typed_consent::trust_typed_command(path, &config_root)? {
+            return Ok(());
+        }
         let ans = if settings::is_loaded()
             && Settings::try_get().is_ok_and(|settings| settings.yes && !settings.paranoid.config())
         {

@@ -12,7 +12,10 @@ description: "Mark a config file as trusted"
 Mark a config file as trusted
 
 Trust lets mise load the parts of a config file that can run code or change
-your environment. Without it, mise prompts, skips the file, or fails with an
+your environment. A mise command you type in a terminal, with stdin, stdout
+and stderr all on it, trusts the project's config for you and says so, unless
+paranoid mode's `config` category is on or the config belongs to another
+account. Otherwise mise prompts, skips the file, or fails with an
 untrusted-config error when it cannot prompt.
 
 A file with no template syntax that contains only `min_version`, `[tools]`
