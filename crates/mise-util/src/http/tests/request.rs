@@ -452,6 +452,44 @@ fn log_url_hides_query_values() {
     );
 }
 
+#[test]
+fn log_url_hides_path_token() {
+    let url =
+        Url::parse("https://conda.example.com/t/s3cret-tok/acme/linux-64/zlib-1.conda").unwrap();
+    assert_eq!(
+        log_url(&url),
+        "https://conda.example.com/t/[redacted]/acme/linux-64/zlib-1.conda"
+    );
+    let url = Url::parse("https://conda.example.com/acme/t").unwrap();
+    assert_eq!(log_url(&url), "https://conda.example.com/acme/t");
+}
+
+/// A conda channel can take its token in the path, as `/t/<token>/`, and a download
+/// error for one names its URL.
+#[tokio::test]
+async fn download_error_hides_url_path_token() {
+    let mut server = mockito::Server::new_async().await;
+    let _missing = server
+        .mock("GET", "/t/s3cret-tok/acme/noarch/zlib-1.conda")
+        .with_status(404)
+        .create_async()
+        .await;
+    let client = Client::new(Duration::from_secs(3), ClientKind::Http).unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let err = client
+        .download_file_pinned(
+            format!("{}/t/s3cret-tok/acme/noarch/zlib-1.conda", server.url()),
+            &dir.path().join("zlib-1.conda"),
+            None,
+            None,
+        )
+        .await
+        .unwrap_err();
+    let message = format!("{err:#} {err:?}");
+    assert!(message.contains("404"), "{message}");
+    assert!(!message.contains("s3cret-tok"), "{message}");
+}
+
 /// A status error names the URL it was for. The query there can hold a
 /// token, and the error reaches warnings, progress lines and the final report.
 #[tokio::test]

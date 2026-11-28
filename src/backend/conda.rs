@@ -50,6 +50,15 @@ pub struct CondaPackageInfo {
     pub checksum: Option<String>,
 }
 
+/// A downloaded package archive and the checksum it was verified against, or, for a
+/// package its channel publishes none for, the sha256 of this copy. An archive with no
+/// published checksum lives in a directory of its own, removed when this is dropped.
+struct DownloadedArchive {
+    path: PathBuf,
+    checksum: Option<String>,
+    _private_dir: Option<tempfile::TempDir>,
+}
+
 #[derive(Debug)]
 pub(crate) struct CondaBackend {
     ba: Arc<BackendArg>,
@@ -473,10 +482,11 @@ impl CondaBackend {
             let _ = file::remove_all(&temp);
             verified?;
             let display_checksum = checksum.unwrap_or("unknown");
+            // The file name, not the URL: a channel can carry its token in the path.
+            let path = url.split(['?', '#']).next().unwrap_or(url);
+            let filename = path.rsplit('/').next().unwrap_or(path);
             return Err(eyre::eyre!(
-                "checksum mismatch for {}: expected {}",
-                url,
-                display_checksum,
+                "checksum mismatch for {filename}: expected {display_checksum}"
             ));
         }
 
@@ -499,26 +509,51 @@ impl CondaBackend {
         Ok(())
     }
 
-    /// Download a single package archive to the shared conda data dir.
-    async fn download_record(record: RepoDataRecord) -> Result<PathBuf> {
-        let url_str = record.url.to_string();
-        let filename = Self::url_filename(&record.url);
-        let dest = Self::archive_dir(&url_str).join(&filename);
+    /// Download a single package archive, verified against the checksum its channel
+    /// publishes.
+    async fn download_record(record: RepoDataRecord) -> Result<DownloadedArchive> {
         let checksum = Self::format_checksum(&record);
-
-        Self::download_to(&url_str, &dest, checksum.as_deref()).await?;
-        Ok(dest)
+        Self::download_archive((record.url.to_string(), checksum)).await
     }
 
     /// Download a package by URL with optional checksum (for locked installs).
     async fn download_url_with_checksum(
         (url_str, checksum): (String, Option<String>),
-    ) -> Result<PathBuf> {
-        let filename = url_str.rsplit('/').next().unwrap_or("package").to_string();
-        let dest = Self::archive_dir(&url_str).join(&filename);
+    ) -> Result<DownloadedArchive> {
+        Self::download_archive((url_str, checksum)).await
+    }
 
-        Self::download_to(&url_str, &dest, checksum.as_deref()).await?;
-        Ok(dest)
+    /// Download the archive at `url`. One with a checksum goes to the shared archive
+    /// store, where every copy is verified before it is renamed into place. One without
+    /// goes to a directory of its own and is pinned by the sha256 of that copy, which is
+    /// also the copy that is installed: the store copy could be replaced between hashing
+    /// it and extracting it, by a concurrent install that has nothing to verify it with.
+    async fn download_archive(
+        (url_str, checksum): (String, Option<String>),
+    ) -> Result<DownloadedArchive> {
+        let filename = url_str.rsplit('/').next().unwrap_or("package").to_string();
+        let store = Self::archive_dir(&url_str);
+        if checksum.is_some() {
+            let path = store.join(&filename);
+            Self::download_to(&url_str, &path, checksum.as_deref()).await?;
+            return Ok(DownloadedArchive {
+                path,
+                checksum,
+                _private_dir: None,
+            });
+        }
+        file::create_dir_all(&store)?;
+        let dir = tempfile::Builder::new()
+            .prefix(".unverified.")
+            .tempdir_in(&store)?;
+        let path = dir.path().join(&filename);
+        Self::download_to(&url_str, &path, None).await?;
+        let checksum = format!("sha256:{}", hash::file_hash_sha256(&path, None)?);
+        Ok(DownloadedArchive {
+            path,
+            checksum: Some(checksum),
+            _private_dir: Some(dir),
+        })
     }
 
     /// Extract a downloaded conda package archive into dest using rattler.
@@ -785,7 +820,7 @@ impl CondaBackend {
             let is_main = name == tool_name_norm;
             ctx.pr.set_message(format!("installing {name}"));
             let paths =
-                Self::install_package(archive, &prefix, &driver, python_info.clone()).await?;
+                Self::install_package(&archive.path, &prefix, &driver, python_info.clone()).await?;
             if is_main {
                 main_paths = paths;
             }
@@ -814,15 +849,11 @@ impl CondaBackend {
         // just installed, so that `--locked` installs can check it.
         for (record, archive) in all_records[..n_deps].iter().zip(&downloaded) {
             let basename = Self::record_basename(record);
-            let checksum = match Self::format_checksum(record) {
-                Some(checksum) => checksum,
-                None => format!("sha256:{}", hash::file_hash_sha256(archive, None)?),
-            };
             tv.conda_packages.insert(
                 (platform_key.to_string(), basename),
                 CondaPackageInfo {
                     url: record.url.to_string(),
-                    checksum: Some(checksum),
+                    checksum: archive.checksum.clone(),
                 },
             );
         }
@@ -944,11 +975,15 @@ impl CondaBackend {
 
         let mut main_paths = Vec::new();
         for archive in &downloaded {
-            let filename = archive.file_name().and_then(|n| n.to_str()).unwrap_or("?");
+            let filename = archive
+                .path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("?");
             ctx.pr.set_message(format!("installing {filename}"));
             // main package is always last, so main_paths ends up with its entries
             main_paths =
-                Self::install_package(archive, &prefix, &driver, python_info.clone()).await?;
+                Self::install_package(&archive.path, &prefix, &driver, python_info.clone()).await?;
         }
 
         Self::make_bins_executable(&install_path)?;
@@ -2506,6 +2541,35 @@ mod tests {
         let platform = rattler_conda_types::Subdir::Linux64;
         let info = CondaBackend::python_info_from_basenames(&[key], platform).unwrap();
         assert_eq!(info.short_version, (3, 12));
+    }
+
+    #[tokio::test]
+    async fn an_archive_without_a_checksum_is_installed_from_its_own_copy() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/conda-forge/noarch/zstd-1.5.6-h_0.conda")
+            .with_body("package")
+            .create_async()
+            .await;
+        let url = format!("{}/conda-forge/noarch/zstd-1.5.6-h_0.conda", server.url());
+        let archive = CondaBackend::download_archive((url.clone(), None))
+            .await
+            .unwrap();
+        mock.assert_async().await;
+        assert_eq!(
+            archive.checksum,
+            Some(format!(
+                "sha256:{}",
+                crate::hash::hash_sha256_to_str("package")
+            ))
+        );
+        let store_copy = CondaBackend::archive_dir(&url).join("zstd-1.5.6-h_0.conda");
+        assert_ne!(archive.path, store_copy);
+        assert!(!store_copy.exists());
+        assert_eq!(std::fs::read(&archive.path).unwrap(), b"package");
+        let dir = archive.path.parent().unwrap().to_path_buf();
+        drop(archive);
+        assert!(!dir.exists());
     }
 
     /// A package whose channel publishes no checksum is pinned by the sha256 of a fresh

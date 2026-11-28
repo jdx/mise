@@ -718,6 +718,10 @@ pub async fn generate(
                 carry_forge_ids(old, &mut info);
             }
         }
+        if let Some(error) = conda_pin_conflict(&candidate, &platform.to_key(), &conda) {
+            report.abandon();
+            bail!("{error} ({short}@{version} on {})", platform.to_key());
+        }
         if let Some(error) = check_single_tool_provenance(
             previous.tools_for(&short).map(Vec::as_slice),
             &short,
@@ -1095,6 +1099,44 @@ fn slsa_signer_hint(old: &PlatformInfo, new: &PlatformInfo, backend: &str) -> &'
     } else {
         ""
     }
+}
+
+/// Why the conda dependency rows `conda`, from resolving one tool on `platform`, cannot
+/// go into the shared `conda-packages` section: a row there that another entry of
+/// `candidate` still installs pins a different checksum. Rows are keyed by file name
+/// and channel, so the channel now serves other bytes under the same name, and
+/// replacing the row would change what that other entry installs.
+fn conda_pin_conflict(
+    candidate: &Lockfile,
+    platform: &str,
+    conda: &BTreeMap<String, crate::backend::conda::CondaPackageInfo>,
+) -> Option<String> {
+    for (key, package) in conda {
+        let Some(existing) = candidate.get_conda_package(platform, key) else {
+            continue;
+        };
+        let (Some(old), Some(new)) = (&existing.checksum, &package.checksum) else {
+            continue;
+        };
+        let same_algorithm = old.split_once(':').map(|(algorithm, _)| algorithm)
+            == new.split_once(':').map(|(algorithm, _)| algorithm);
+        if old == new || !same_algorithm {
+            continue;
+        }
+        let used = candidate.tools.values().flatten().any(|entry| {
+            entry
+                .platforms
+                .get(platform)
+                .and_then(|info| info.conda_deps.as_ref())
+                .is_some_and(|deps| deps.iter().any(|dep| dep == key))
+        });
+        if used {
+            return Some(format!(
+                "the conda package {key} has a different checksum than mise.lock pins for another tool that uses it: {new} instead of {old}. Its channel serves other bytes under the same name"
+            ));
+        }
+    }
+    None
 }
 
 fn ensure_no_downgrade(old: &PlatformInfo, new: &PlatformInfo, backend: &str) -> Result<()> {
@@ -1568,6 +1610,46 @@ mod tests {
         let recorded = generated.get_conda_package(&key, &dep).unwrap();
         assert_eq!(recorded.url, row.url);
         assert_eq!(recorded.checksum, row.checksum);
+    }
+
+    #[test]
+    fn conda_pin_conflict_refuses_a_new_checksum_for_a_row_another_tool_uses() {
+        let platform = "linux-x64";
+        let dep = "zlib-1.3.1-h_2@0123456789abcdef0123456789abcdef".to_string();
+        let row = |hex: &str| crate::backend::conda::CondaPackageInfo {
+            url: "https://conda.example/forge/linux-64/zlib-1.3.1-h_2.conda".into(),
+            checksum: Some(format!("sha256:{}", hex.repeat(64))),
+        };
+        let mut candidate = Lockfile::default();
+        candidate.set_conda_package(platform, &dep, row("a"));
+        let incoming = BTreeMap::from([(dep.clone(), row("b"))]);
+        // An unused row is replaced: nothing installs the old pin.
+        assert!(conda_pin_conflict(&candidate, platform, &incoming).is_none());
+        candidate.set_platform_info(
+            "other",
+            "1.0.0",
+            Some("conda:other"),
+            &BTreeMap::new(),
+            platform,
+            PlatformInfo {
+                conda_deps: Some(vec![dep.clone()]),
+                ..Default::default()
+            },
+        );
+        let error = conda_pin_conflict(&candidate, platform, &incoming).unwrap();
+        assert!(error.contains(&dep), "{error}");
+        assert!(!error.contains("conda.example"), "{error}");
+        // The same pin, or one in another algorithm, is no conflict.
+        let same = BTreeMap::from([(dep.clone(), row("a"))]);
+        assert!(conda_pin_conflict(&candidate, platform, &same).is_none());
+        let md5 = BTreeMap::from([(
+            dep.clone(),
+            crate::backend::conda::CondaPackageInfo {
+                checksum: Some(format!("md5:{}", "c".repeat(32))),
+                ..row("a")
+            },
+        )]);
+        assert!(conda_pin_conflict(&candidate, platform, &md5).is_none());
     }
 
     #[tokio::test]
