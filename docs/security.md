@@ -117,9 +117,17 @@ idea:
   environments but cannot drop or reorder one that a global or system
   `miserc.toml` selects. The project's own environments come after the global
   ones and override them, so a global environment protects only settings that
-  project config cannot set, such as `paranoid`. The other keys a project file
-  can set change which project files load and how far up mise looks for them;
-  they cannot hide global or system config. Global and system `conf.d`
+  project config cannot set, such as `paranoid`. The environments a project
+  adds or turns on select only project files, never a global or system
+  `config.<env>.toml`. The other keys a project file can set change which
+  project files load and how far up mise looks for them;
+  they cannot hide global or system config. A project's `ignored_config_paths`
+  adds to the list it inherits and cannot remove an entry, so a project under
+  an ignored path stays ignored. Its environment names may use only letters,
+  digits, `_`, `-` and `.`, so they cannot carry shell or template syntax into
+  a trusted config that uses `{{ mise_env }}`. Its override filenames must be
+  file names ending in `.toml` or `tool-versions`, so they cannot make mise
+  read a file such as `~/.netrc` as config. Global and system `conf.d`
   fragments follow only the global and system `env_conf_d`. Templates in a
   project `.miserc.toml` see no environment variables and may use only `if`
   statements and a short list of functions and filters, so they cannot leak your
@@ -227,7 +235,8 @@ Two settings decide trust by location:
   `trusted_config_paths` and `mise trust`. mise reads it before it looks for
   config files, so set it in a [`.miserc.toml`](/configuration.html#miserc) or
   in `MISE_IGNORED_CONFIG_PATHS`. A project's `.miserc.toml` cannot ignore
-  global or system config.
+  global or system config, and it can add entries but cannot remove one set
+  in a global or system `miserc.toml` or in a parent directory.
 
 ```toml
 # ~/.config/mise/config.toml

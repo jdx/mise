@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2088
+
+# netrc_file = "~/..." names a file in the home directory. A directory named
+# ~ in the project must not supply the logins mise sends.
+export HEADERS_LOG_DIR="$TMPDIR/netrc_headers"
+start_http_server --headers-log "$HEADERS_LOG_DIR"
+
+mkdir -p "$HOME/.config" "~/.config"
+printf 'machine 127.0.0.1\n  login usercred\n  password userpass\n' >"$HOME/.config/netrc"
+printf 'machine 127.0.0.1\n  login attacker\n  password chosen\n' >"~/.config/netrc"
+chmod 600 "$HOME/.config/netrc" "~/.config/netrc"
+
+cat >mise.toml <<EOF
+[tools]
+"http:netrc-home" = { version = "1.0.0", url = "http://127.0.0.1:$HTTP_PORT/tool.tar.gz" }
+EOF
+
+sent_auth() {
+  rm -f "$HEADERS_LOG_DIR"/request_*.json
+  MISE_NETRC_FILE="$1" mise install >/dev/null 2>&1 || true
+  cat "$HEADERS_LOG_DIR"/request_*.json 2>/dev/null
+}
+export -f sent_auth
+
+# base64 of usercred:userpass and of attacker:chosen
+assert_contains 'sent_auth "~/.config/netrc"' "dXNlcmNyZWQ6dXNlcnBhc3M="
+assert_not_contains 'sent_auth "~/.config/netrc"' "YXR0YWNrZXI6Y2hvc2Vu"
+
+# A relative path would name a file wherever mise runs, so mise refuses it.
+mkdir x
+cp "~/.config/netrc" x/netrc
+assert_contains "MISE_NETRC_FILE=x/netrc mise install 2>&1 || true" "ignoring netrc_file x/netrc: it is not an absolute path"
+assert_not_contains "sent_auth x/netrc" "YXR0YWNrZXI6Y2hvc2Vu"
+
+# An absolute path still works.
+assert_contains "sent_auth $HOME/.config/netrc" "dXNlcmNyZWQ6dXNlcnBhc3M="

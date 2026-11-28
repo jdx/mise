@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+
+# The environments a project .miserc.toml selects never load files of the
+# global config directory. A mise command started by mise (mise x, a task)
+# must see them the same way, not as environments the user selected.
+export MISE_TRUSTED_CONFIG_PATHS=""
+unset MISE_YES MISE_ENV MISE_AUTO_ENV
+printf '[settings]\nyes = true\n' >"$MISE_CONFIG_DIR/config.ci.toml"
+
+mkdir project
+cd project || exit 1
+echo 'env = ["ci"]' >.miserc.toml
+assert "mise settings get yes" "false"
+assert "mise x -- mise settings get yes" "false"
+
+cat >mise.toml <<'TOML'
+[tasks.nested]
+run = "mise settings get yes"
+
+[tasks.selects]
+run = "MISE_ENV=ci,other mise settings get yes"
+
+[tasks.lists]
+run = "printenv MISE_ENV"
+
+[tasks.elsewhere]
+run = "cd ../other && mise env && mise settings get yes"
+TOML
+assert "MISE_TRUSTED_CONFIG_PATHS=$PWD mise run -q nested" "false"
+# The command still sees the active environments, and a MISE_ENV it sets to
+# another list is a selection of its own.
+assert "MISE_TRUSTED_CONFIG_PATHS=$PWD mise run -q lists" "ci"
+assert "MISE_TRUSTED_CONFIG_PATHS=$PWD mise run -q selects" "true"
+
+# In another directory the command still uses the environments it was given for
+# the files there, and the global files still follow the user's selection.
+mkdir ../other
+printf '[env]\nFROM_CI = "1"\n' >../other/mise.ci.toml
+# A set there named like an environment it was given does not expand again.
+printf 'env_sets.ci = ["elsewhere"]\n' >../other/.miserc.toml
+other="$(cd ../other && pwd)"
+assert_contains "MISE_TRUSTED_CONFIG_PATHS=$PWD:$other mise run -q elsewhere" "FROM_CI=1"
+assert_contains "MISE_TRUSTED_CONFIG_PATHS=$PWD:$other mise run -q elsewhere" "false"
+
+# A set the project defines expands to project environments, even for a name
+# the user selected.
+printf 'env_sets.dev = ["ci", "dev"]\n' >.miserc.toml
+assert "MISE_ENV=dev mise settings get yes" "false"
+assert "MISE_ENV=dev mise x -- mise settings get yes" "false"
+assert "mise -E dev x -- mise settings get yes" "false"
+
+# What the user selects still reaches the command mise starts.
+assert "mise -E ci x -- mise settings get yes" "true"
+assert "MISE_TRUSTED_CONFIG_PATHS=$PWD mise -E ci run -q nested" "true"
+
+# A name the user selects that a project set expands to nothing selects no
+# project environments, and the command still loads that name's global files.
+printf '[settings]\nyes = true\n' >"$MISE_CONFIG_DIR/config.none.toml"
+printf 'env = ["ci"]\nenv_sets.none = []\n' >.miserc.toml
+printf '[env]\nFROM_CI = "1"\n' >mise.ci.toml
+assert "mise -E none settings get yes" "true"
+assert "mise -E none x -- mise settings get yes" "true"
+assert_not_contains "MISE_TRUSTED_CONFIG_PATHS=$PWD mise -E none env" "FROM_CI"
+assert_not_contains "MISE_TRUSTED_CONFIG_PATHS=$PWD mise -E none x -- mise env" "FROM_CI"

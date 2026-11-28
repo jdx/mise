@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+
+# A project .miserc.toml loads without trust, so the environments it adds or
+# drops must not decide which files of the global config directory load: those
+# need no trust and can set global-only settings such as `yes`, which answers
+# the trust prompt, or `paranoid`.
+export MISE_TRUSTED_CONFIG_PATHS=""
+unset MISE_YES MISE_ENV MISE_AUTO_ENV
+profile() {
+  mkdir -p "$(dirname "$MISE_CONFIG_DIR/$1")"
+  printf '[settings]\n%s\n[env]\nFROM_GLOBAL_PROFILE = "1"\n' "${2:-yes = true}" >"$MISE_CONFIG_DIR/$1"
+}
+profile config.ci.toml
+
+mkdir project
+cat >project/mise.toml <<'TOML'
+[env]
+FROM_PROJECT = "{{ exec(command='echo rendered') }}"
+TOML
+cd project || exit 1
+assert "mise settings get yes" "false"
+
+# Adding one. The working directory is below the home directory here, so the
+# walk up from it reaches the global config directory too.
+for file in .miserc.toml .miserc.local.toml .config/miserc.toml ../.miserc.toml; do
+  mkdir -p .config
+  echo 'env = ["ci"]' >"$file"
+  assert "mise settings get yes" "false"
+  assert_fail "mise ls" "not trusted"
+  assert_not_contains "mise hook-env -s bash" "FROM_GLOBAL_PROFILE"
+  rm "$file"
+done
+printf 'env = ["dev"]\n[env_sets]\ndev = ["ci"]\n' >.miserc.toml
+assert "mise settings get yes" "false"
+for file in config.ci.local.toml config.ci.override.toml; do
+  profile "$file"
+  echo 'env = ["ci"]' >.miserc.toml
+  assert "mise settings get yes" "false"
+  rm "$MISE_CONFIG_DIR/$file"
+done
+profile config.unix.toml
+echo 'auto_env = true' >.miserc.toml
+assert "mise settings get yes" "false"
+assert "MISE_AUTO_ENV=1 mise settings get yes" "true"
+rm "$MISE_CONFIG_DIR/config.unix.toml" .miserc.toml
+
+# The project's own environment files still load, once trusted.
+echo 'env = ["ci"]' >.miserc.toml
+echo 'env.FROM_PROJECT_CI = "1"' >mise.ci.toml
+assert_contains "MISE_TRUSTED_CONFIG_PATHS=$PWD mise env" "FROM_PROJECT_CI=1"
+assert_not_contains "MISE_TRUSTED_CONFIG_PATHS=$PWD mise env" "FROM_GLOBAL_PROFILE"
+rm mise.ci.toml
+
+# The user still chooses for themselves, and a project cannot undo it.
+assert "mise -E ci settings get yes" "true"
+assert "MISE_ENV=ci mise settings get yes" "true"
+echo 'env = ["ci"]' >"$MISE_CONFIG_DIR/miserc.toml"
+echo 'env = ["development"]' >.miserc.toml
+assert "mise settings get yes" "true"
+rm "$MISE_CONFIG_DIR/miserc.toml" "$MISE_CONFIG_DIR/config.ci.toml" .miserc.toml
+
+# Dropping one. A baseline the user selects stays in force even when
+# config.toml, which the walk also finds, says otherwise.
+echo '[settings]
+paranoid = false' >"$MISE_CONFIG_DIR/config.toml"
+profile config.floor.toml "paranoid = true"
+assert "MISE_ENV=floor mise settings get paranoid" "true"
+printf '[env_sets]\nfloor = []\n' >.miserc.toml
+assert "MISE_ENV=floor mise settings get paranoid" "true"
+assert "mise -E floor settings get paranoid" "true"
+printf '[env_sets]\nfloor = ["development", "floor"]\n' >.miserc.toml
+assert "MISE_ENV=floor mise settings get paranoid" "true"
+rm "$MISE_CONFIG_DIR/config.floor.toml"
+profile config.unix.toml "paranoid = true"
+echo 'auto_env = true' >"$MISE_CONFIG_DIR/miserc.toml"
+assert "mise settings get paranoid" "true"
+echo 'auto_env = false' >.miserc.toml
+assert "mise settings get paranoid" "true"
