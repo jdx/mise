@@ -189,6 +189,16 @@ class GitDownloadStrategy < VCSDownloadStrategy; end
 # is recorded.
 def download_strategy_name(using) = using.is_a?(Class) ? using.name : nil
 
+# Git URL forms recognized by Homebrew's DownloadStrategyDetector.
+GIT_SOURCE_URL = %r{
+  \A(?:
+    https?://.+\.git\z |
+    https?://(?:git\.sr\.ht|tangled\.sh)/[^/]+/[^/]+\z |
+    git:// |
+    ssh://git
+  )
+}x
+
 # What a formula's `bottle do ... end` block declares: where the bottles are
 # hosted, the rebuild number, and one checksum per platform tag. Anything else
 # in the block (`cellar` aside) carries no metadata mise needs.
@@ -260,7 +270,7 @@ class Formula
       return if value.nil?
 
       @source_url = value
-      if using == :git || using == GitDownloadStrategy
+      if using == :git || using == GitDownloadStrategy || (using.nil? && GIT_SOURCE_URL.match?(value.to_s))
         @source_using = ":git"
         @source_tag = tag
       else
