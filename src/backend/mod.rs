@@ -754,6 +754,42 @@ pub fn list() -> BackendList {
         .unwrap_or_default()
 }
 
+/// Installed tools that [`list`] leaves out because `enable_tools` or `disable_tools` excludes
+/// them. Those settings narrow what one mise process uses, often only through an environment
+/// variable, while the shims directory serves every process; reshim lists these tools so a
+/// filtered command does not delete their shims. Tools of a disabled backend type stay out.
+pub(crate) fn list_installed_excluded_by_tool_filters() -> BackendList {
+    let settings = Settings::get();
+    let enable_tools = settings.enable_tools();
+    let disable_tools = settings.disable_tools();
+    if enable_tools.is_none() && disable_tools.is_empty() {
+        return vec![];
+    }
+    install_state::list_tools()
+        .values()
+        .filter_map(|ist| {
+            if ist.full.is_some() {
+                return arg_to_backend(ist.clone().into());
+            }
+            // Without manifest metadata an install is listed only through the seed of
+            // `build_tools`: a core tool, or a registry tool with idiomatic files.
+            CORE_PLUGINS.get(&ist.short).cloned().or_else(|| {
+                REGISTRY
+                    .get(ist.short.as_str())
+                    .filter(|rt| !rt.idiomatic_files.is_empty() && rt.is_supported_os())
+                    .and_then(|rt| arg_to_backend(rt.short.into()))
+            })
+        })
+        .filter(|backend| {
+            !tool_enabled(
+                enable_tools.as_ref(),
+                &disable_tools,
+                &backend.id().to_string(),
+            ) && !is_disabled_backend_type(&backend.get_type())
+        })
+        .collect()
+}
+
 /// Backends that can contribute version aliases.
 ///
 /// Only core tools and asdf/vfox plugins override `get_aliases`; every other
@@ -3831,6 +3867,15 @@ pub trait Backend: Debug + Send + Sync {
         Ok((self._list_remote_versions(config).await?, false))
     }
 
+    /// Whether a list `_list_remote_versions` returns in this process may come
+    /// from local metadata of unknown age rather than from the source. Such a
+    /// list is used, but not saved to the remote-version cache: the cache file
+    /// would be dated now and keep the old answer fresh for
+    /// `fetch_remote_versions_cache`.
+    fn remote_versions_may_be_stale(&self) -> bool {
+        false
+    }
+
     async fn remote_version_cache_context(&self, _config: &Arc<Config>) -> Result<Option<String>> {
         Ok(None)
     }
@@ -4083,7 +4128,10 @@ pub trait Backend: Debug + Send + Sync {
         }
 
         let degraded = std::sync::atomic::AtomicBool::new(false);
+        let fetched = std::sync::atomic::AtomicBool::new(false);
+        let may_be_stale = self.remote_versions_may_be_stale();
         let fetch = || async {
+            fetched.store(true, std::sync::atomic::Ordering::Relaxed);
             trace!("Listing remote versions for {}", ba.to_string());
             // Try versions host first (now returns VersionInfo with timestamps)
             if let Some(tool) = &versions_host_tool {
@@ -4163,9 +4211,22 @@ pub trait Backend: Debug + Send + Sync {
                 &mut remote_versions,
                 [listing_opts, selection_opts],
             );
-            remote_versions.get_or_try_init_async(fetch).await?.clone()
+            if may_be_stale {
+                // A list already in memory or a fresh cache file is used; one
+                // built now from metadata of unknown age is not kept.
+                remote_versions
+                    .get_or_try_init_async_if(fetch, |_| {
+                        !fetched.load(std::sync::atomic::Ordering::Relaxed)
+                    })
+                    .await?
+            } else {
+                remote_versions.get_or_try_init_async(fetch).await?.clone()
+            }
         };
-        if versions.is_empty() || degraded.load(std::sync::atomic::Ordering::Relaxed) {
+        if versions.is_empty()
+            || degraded.load(std::sync::atomic::Ordering::Relaxed)
+            || (refresh && may_be_stale && fetched.load(std::sync::atomic::Ordering::Relaxed))
+        {
             remote_versions.clear()?;
         }
         Ok(filter_cached_prereleases(versions, want_prereleases))
