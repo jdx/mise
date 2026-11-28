@@ -57,16 +57,18 @@ docker_slot_keeper_command() {
   printf '%s\n' 'exec -a mise-e2e-keeper sleep infinity'
 }
 
-# Kills every process in the container but the reaper, the keeper and its own
-# shell. Processes are stopped before they are killed so that they cannot fork
-# in between; a new one that slips through is caught by the next round.
+# Kills every process in the container but the reaper, the keeper, its own
+# shell and the processes whose ids are its arguments. Processes are stopped
+# before they are killed so that they cannot fork in between; a new one that
+# slips through is caught by the next round.
 DOCKER_SLOT_KILL_SCRIPT=$(
   cat <<'SCRIPT'
+spared=" $* "
 for _ in 1 2 3 4 5; do
   pids=()
   for dir in /proc/[0-9]*; do
     pid=${dir#/proc/}
-    [[ $pid == 1 || $pid == $$ ]] && continue
+    [[ $pid == 1 || $pid == $$ || $spared == *" $pid "* ]] && continue
     arg0=
     IFS= read -r -d '' arg0 <"$dir/cmdline" 2>/dev/null || true
     [[ $arg0 == mise-e2e-keeper ]] && continue

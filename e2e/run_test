@@ -470,12 +470,21 @@ docker_test_can_share_container() {
 # Runs the test in a container of its own that is removed afterwards.
 run_in_docker_container() {
   local image="$1" mise_bin="$2"
-  local host_tmp host_root host_home
-  docker_make_host_dirs
-
+  local host_tmp host_root host_home own_dir=
   local docker_args=(
     docker run --rm
   )
+  # Killing the `docker run` client does not stop the container. In a run that
+  # reuses containers, this one carries the run's label and its directories are
+  # below the run's own, so that run_all_tests removes both when it is
+  # interrupted, as it does for the containers of its slots.
+  if [[ -n ${MISE_E2E_DOCKER_RUN_ID:-} && -n ${MISE_E2E_DOCKER_SLOT_ROOT:-} ]]; then
+    own_dir="$(mktemp -d "$MISE_E2E_DOCKER_SLOT_ROOT/own.XXXXXX")"
+    docker_make_host_dirs "$own_dir"
+    docker_args+=(--label mise-e2e=1 --label "mise-e2e-run=$MISE_E2E_DOCKER_RUN_ID")
+  else
+    docker_make_host_dirs
+  fi
   # PostgreSQL refuses to initialize or run as root.
   if grep -q '^# e2e:non-root' "$TEST_SCRIPT"; then
     docker_args+=(--user nobody)
@@ -498,7 +507,7 @@ run_in_docker_container() {
 
   local rc=0
   "${docker_args[@]}" "$image" bash /mise-src/e2e/run_test "$TEST" || rc=$?
-  rm -rf "$host_tmp" "$host_root" "$host_home" 2>/dev/null || true
+  rm -rf "$host_tmp" "$host_root" "$host_home" ${own_dir:+"$own_dir"} 2>/dev/null || true
   return "$rc"
 }
 
@@ -551,7 +560,8 @@ run_in_slot_container() {
     exec_args+=(--user nobody)
   fi
   local rc=0
-  "${exec_args[@]}" "${DOCKER_ENV_ARGS[@]}" "$container" bash /mise-src/e2e/run_test "$TEST" || rc=$?
+  "${exec_args[@]}" "${DOCKER_ENV_ARGS[@]}" -e MISE_E2E_SHARED_CONTAINER=1 \
+    "$container" bash /mise-src/e2e/run_test "$TEST" || rc=$?
   if [[ $rc != 0 ]]; then
     docker_slot_discard "$container" "$slot_dir"
   elif ! docker_slot_reset "$container" "$slot_dir"; then
@@ -581,6 +591,18 @@ run_in_docker() {
 if [[ ${MISE_E2E_DOCKER:-0} == 1 ]]; then
   as_group "E2E $TEST" run_in_docker
 elif [[ ${MISE_E2E_INSIDE_DOCKER:-0} == 1 ]]; then
+  # In a container the next test uses too, what the test left running is killed
+  # before this script ends. `docker exec` returns when nothing holds the
+  # output of what it ran, or two seconds after that has ended, so a process
+  # that kept the test's output open would cost every such test two seconds;
+  # the reset kills them all anyway. The check for /.dockerenv, which Docker
+  # puts in every container, is there because on a host this would kill every
+  # process the user has.
+  stop_leftover_processes() {
+    [[ ${MISE_E2E_SHARED_CONTAINER:-0} == 1 && -e /.dockerenv ]] || return 0
+    bash -c "$DOCKER_SLOT_KILL_SCRIPT" kill $$ >/dev/null 2>&1 || true
+  }
+  trap stop_leftover_processes EXIT
   # /tmp, /home and /root are host directories that the host user created (see
   # run_in_docker), so in the container they belong to that uid. As root, mise
   # refuses a Homebrew prefix below a directory another user owns, which is
@@ -601,7 +623,7 @@ elif [[ ${MISE_E2E_INSIDE_DOCKER:-0} == 1 ]]; then
         chown "${mount_owners[$i]}" "${mount_dirs[$i]}" 2>/dev/null || true
       done
     }
-    trap restore_mount_owners EXIT
+    trap 'stop_leftover_processes; restore_mount_owners' EXIT
     if ! chown 0:0 "${mount_dirs[@]}" 2>/dev/null; then
       echo "note: cannot give ${mount_dirs[*]} to root; running with their owners as they are" >&2
     fi

@@ -483,16 +483,26 @@ FAKE_DOCKER = r"""#!/usr/bin/env bash
 # and answers the few calls the e2e scripts make. A `docker run` or `docker exec`
 # of a test fails when the test's name contains "fail", and the reset of a
 # container exits with $DOCKER_RESET_STATUS. `docker ps` lists the containers
-# named in the file $DOCKER_LIVE.
+# named in the file $DOCKER_LIVE. A `docker run` of a test whose name contains
+# "hang" is a container that runs until `docker rm` removes it.
 line=""
 for arg in "$@"; do line+="${arg%%$'\n'*} "; done
 echo "$line" >>"$DOCKER_LOG"
 last="${!#}"
 case "$1" in
   ps) [[ -f $DOCKER_LIVE ]] && cat "$DOCKER_LIVE" ;;
+  rm)
+    for arg in "$@"; do
+      [[ $arg != own-* ]] || kill "${arg#own-}" 2>/dev/null || true
+    done
+    ;;
   run)
     if [[ " $* " == *" -d "* ]]; then
       echo "id-$(grep -c '^run -d ' "$DOCKER_LOG")"
+    elif [[ $last == *hang* ]]; then
+      echo "own-$$" >>"$DOCKER_LIVE"
+      touch "$COUNTS/ready"
+      exec sleep 600
     else
       [[ $last != *fail* ]]
     fi
@@ -511,12 +521,27 @@ esac
 exit 0
 """
 
-# Logs each call as the fake does, then runs the real docker.
+# Logs each call as the fake does, then runs the real docker. After the
+# `docker exec` of a test it logs a "still-running" line for each process the
+# test left that is alive.
 LOGGING_DOCKER = r"""#!/usr/bin/env bash
 line=""
 for arg in "$@"; do line+="${arg%%$'\n'*} "; done
 echo "$line" >>"$DOCKER_LOG"
-exec "$REAL_DOCKER" "$@"
+status=0
+"$REAL_DOCKER" "$@" || status=$?
+if [[ $1 == exec && " $* " == *" /mise-src/e2e/run_test "* ]]; then
+  for arg in "$@"; do
+    [[ $arg == mise-e2e-* ]] || continue
+    "$REAL_DOCKER" exec "$arg" bash -c '
+      for cmdline in /proc/[0-9]*/cmdline; do
+        arg0=
+        IFS= read -r -d "" arg0 <"$cmdline" 2>/dev/null || true
+        [[ $arg0 != e2e-left ]] || echo "still-running $arg0 after $1"
+      done' probe "${!#}" >>"$DOCKER_LOG" 2>/dev/null
+  done
+fi
+exit "$status"
 """
 
 # The header of a Linux executable, which is as far as the runner's check that
@@ -533,6 +558,8 @@ touch /tmp/left/dir/file /tmp/.left /root/left/dir/file /home/left/dir/file /dev
 chmod 700 /tmp
 chown nobody /home
 setsid bash -c 'trap "" TERM; exec -a e2e-left sleep 300' >/dev/null 2>&1 &
+# This one keeps the output of the test open.
+bash -c 'exec -a e2e-left sleep 300' &
 """
 
 # Fails if the container is not as a new one is.
@@ -825,7 +852,8 @@ class E2EDockerSlotTests(unittest.TestCase):
                 "test_2_new_container": reads_binary + EXPECT_NEW_CONTAINER,
                 "test_3_leaves_things": "# e2e:non-root\n"
                 + reads_binary
-                + "touch /tmp/left /home/left",
+                + "touch /tmp/left /home/left\n"
+                + "bash -c 'exec -a e2e-left sleep 300' &",
                 "test_4_new_container": EXPECT_NEW_CONTAINER,
             },
             real=real,
@@ -834,6 +862,9 @@ class E2EDockerSlotTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(len(self.starts(calls)), 1, calls)
         self.assertEqual(len(self.exec_calls(calls)), 4, calls)
+        # What a test left running is dead when its `docker exec` returns. One
+        # that holds the test's output would keep the exec waiting otherwise.
+        self.assertEqual([c for c in calls if c.startswith("still-running ")], [])
         self.assertEqual(self.leftover, [])
 
     def test_real_dead_container_leaves_nothing_to_the_next_one(self):
@@ -914,6 +945,39 @@ exec sleep 600
                 self.assertEqual(list((root / "hosttmp").iterdir()), [])
                 self.assertFalse(Path((root / "slot-root").read_text().strip()).exists())
 
+    def test_interrupted_run_removes_a_container_of_its_own(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            env = self.setup_tree(root, {"test_hang": "# e2e:writable-rootfs"})
+            env["E2E_JOBS"] = "1"
+            process = subprocess.Popen(
+                ["bash", str(root / "e2e" / "run_all_tests"), "test_hang"],
+                cwd=root,
+                env=env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            ready = root / "counts" / "ready"
+            deadline = time.monotonic() + 30
+            while not ready.exists() and time.monotonic() < deadline:
+                time.sleep(0.05)
+            process.send_signal(signal.SIGINT)
+            process.communicate(timeout=30)
+            calls = (root / "docker.log").read_text().splitlines()
+            live = (root / "live").read_text().split()
+            # The fake container is a process: do not leave it if this fails.
+            for name in live:
+                try:
+                    os.kill(int(name.removeprefix("own-")), signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+            self.assertEqual(process.returncode, 130)
+            own = next(c for c in calls if c.startswith("run --rm "))
+            self.assertIn("--label mise-e2e-run=", own)
+            self.assertEqual([c.strip() for c in calls if c.startswith("rm -f ")], [f"rm -f {live[0]}"])
+            self.assertEqual(list((root / "hosttmp").iterdir()), [])
+
     def test_marked_tests_keep_a_container_of_their_own(self):
         result, calls = self.run_runner(
             {"test_apt": "# e2e:writable-rootfs", "test_plain": ""}
@@ -923,6 +987,12 @@ exec sleep 600
         self.assertEqual(len(own), 1, calls)
         self.assertNotIn("--read-only", own[0])
         self.assertTrue(own[0].endswith("run_test test_apt "), own)
+        # An interrupted run finds it by the label, and its directories are
+        # below the run's own.
+        self.assertIn("--label mise-e2e-run=", own[0])
+        mount = next(arg for arg in own[0].split() if arg.endswith(":/tmp"))
+        self.assertIn("/mise-e2e-slots.", mount)
+        self.assertEqual(self.leftover, [])
         # The other test ran in a slot container.
         self.assertEqual(len(self.starts(calls)), 1, calls)
         plain = next(c for c in calls if c.endswith("run_test test_plain "))
@@ -943,7 +1013,10 @@ exec sleep 600
             {"test_a": "", "test_b": ""}, MISE_E2E_DOCKER_REUSE="0"
         )
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(len([c for c in calls if c.startswith("run --rm ")]), 2, calls)
+        own = [c for c in calls if c.startswith("run --rm ")]
+        self.assertEqual(len(own), 2, calls)
+        # No run to remove them for: they are as they were before reuse.
+        self.assertEqual([c for c in own if "--label" in c or "mise-e2e-slots." in c], [])
         self.assertEqual(self.starts(calls), [])
         self.assertEqual([c for c in calls if c.startswith("exec ")], [])
 
