@@ -2318,6 +2318,20 @@ impl Task {
             .0)
     }
 
+    /// [`Self::parse_usage_spec_for_display`] read from `file`, the script
+    /// [`Self::file_path`] already resolved, so a caller that trust-checked that path parses
+    /// the same script rather than whatever the `file` template yields the second time.
+    async fn parse_usage_spec_for_display_from(
+        &self,
+        config: &Arc<Config>,
+        file: Option<PathBuf>,
+    ) -> Result<usage::Spec> {
+        Ok(self
+            .parse_usage_spec_for_display_with_file(config, false, file)
+            .await?
+            .0)
+    }
+
     /// [`Self::parse_usage_spec_for_display`], and whether the task is trusted to run the
     /// commands its spec names (`complete run=`, `mount`), decided for the script the spec was
     /// read from.
@@ -2354,11 +2368,22 @@ impl Task {
         config: &Arc<Config>,
         strict: bool,
     ) -> Result<(usage::Spec, Option<bool>)> {
+        let file = self.file_path(config).await?;
+        self.parse_usage_spec_for_display_with_file(config, strict, file)
+            .await
+    }
+
+    async fn parse_usage_spec_for_display_with_file(
+        &self,
+        config: &Arc<Config>,
+        strict: bool,
+        file: Option<PathBuf>,
+    ) -> Result<(usage::Spec, Option<bool>)> {
         // The directory only feeds script parsing here. A broken `dir` template is reported
         // by `mise tasks validate` and when the task runs, so it does not fail the spec.
         let dir = self.dir(config).await.unwrap_or(None);
         let mut file_trusted = None;
-        let mut spec = if let Some(file) = self.file_path(config).await? {
+        let mut spec = if let Some(file) = file {
             let env = self.usage_include_env(config, &file);
             let inherited = TaskScriptParser::new(dir.clone())
                 .render_inherited_usage(config, self, false, None)
@@ -4558,7 +4583,8 @@ pub(crate) async fn parse_usage_values_from_bypassed_task(
 /// Like [`parse_usage_values_from_task`] for a command that builds the dependency graph to
 /// look at it, such as `mise tasks deps`. That is not the run that consents to reading the
 /// files an untrusted task's spec names (see [`refuse_usage_file_reads`]), so such a task's
-/// values come from the spec the listing commands parse.
+/// values come from the spec the listing commands parse, read from the script just checked,
+/// and without the commands that parsing it would run (see [`remove_spec_commands`]).
 pub(crate) async fn parse_usage_values_for_inspection(
     config: &Arc<Config>,
     task: &Task,
@@ -4576,7 +4602,8 @@ pub(crate) async fn parse_usage_values_for_inspection(
             .await?;
         return Ok(usage_values_from_spec(task, &spec));
     }
-    let spec = task.parse_usage_spec_for_display(config).await?;
+    let mut spec = task.parse_usage_spec_for_display_from(config, file).await?;
+    remove_spec_commands(&mut spec.cmd);
     Ok(usage_values_from_spec(task, &spec))
 }
 
@@ -4599,6 +4626,43 @@ async fn parse_usage_values(
         Err(err) => return Err(err),
     };
     Ok(usage_values_from_spec(task, &spec))
+}
+
+/// Strip from `cmd` everything completing or parsing one of its words would execute: `mount`,
+/// `complete run=`, `complete delegate=` and `choices run=`, through every subcommand and
+/// clause. A task that loaded without trust is inert until `mise run`, and pressing Tab or
+/// looking at the task graph is not that. Names, help, flags and declared choices stay, so the
+/// task still completes.
+///
+/// `choices env=` goes with them. It runs nothing, but it offers the words of a variable of the
+/// user's environment as candidates, and an untrusted config does not get to read the
+/// environment.
+pub fn remove_spec_commands(cmd: &mut usage::SpecCommand) {
+    let executes = |c: &usage::SpecComplete| c.run.is_some() || c.delegate.is_some();
+    cmd.mounts.clear();
+    cmd.complete.retain(|_, complete| !executes(complete));
+    let clause = cmd.clause.as_mut().map(|c| (&mut c.args, &mut c.flags));
+    for (args, flags) in std::iter::once((&mut cmd.args, &mut cmd.flags)).chain(clause) {
+        let flag_args = flags.iter_mut().filter_map(|flag| flag.arg.as_mut());
+        for arg in args.iter_mut().chain(flag_args) {
+            arg.complete.take_if(|complete| executes(complete));
+            if let Some(choices) = &mut arg.choices
+                && (choices.run.is_some() || choices.env().is_some())
+            {
+                choices.run = None;
+                choices.set_env(None);
+                // Without them the declared values are no longer the whole set, and usage
+                // rejects a `choices` that declares nothing at all.
+                choices.strict = false;
+                if choices.choices.is_empty() && choices.details.is_empty() {
+                    arg.choices = None;
+                }
+            }
+        }
+    }
+    for subcommand in cmd.subcommands.values_mut() {
+        remove_spec_commands(subcommand);
+    }
 }
 
 fn usage_values_from_spec(task: &Task, spec: &usage::Spec) -> IndexMap<String, tera::Value> {

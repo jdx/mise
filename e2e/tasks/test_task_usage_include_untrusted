@@ -98,3 +98,52 @@ assert_not_contains "MISE_SAFE=1 mise tasks info schema --json 2>&1" "hunter2"
 safe="$(MISE_SAFE=1 mise tasks --usage 2>&1)"
 assert_contains_text "$safe" "safe mode reads no file"
 assert_not_contains_text "$safe" "mise trust"
+
+# Looking at the graph is not the run either. A dependency that passes an
+# untrusted task arguments makes the graph parse them against its spec when the
+# task refers to its usage values, and the usage parser runs the commands a spec
+# names while it parses, and offers the words of the variable `choices env=`
+# names (here in a debug message, as the choices "deploy" is not one of).
+cat <<'EOF' >>"$MISE_CONFIG_DIR/config.toml"
+[task_templates.usage-src]
+sources = ["{{usage.target}}"]
+EOF
+mkdir -p commands/mise-tasks
+cat <<EOF >commands/mise.toml
+[tasks.parent]
+run = "true"
+depends = [
+  { task = "choices", args = ["deploy"] },
+  { task = "mounted", args = ["deploy"] },
+  { task = "env-choices", args = ["deploy"] },
+]
+EOF
+cat <<EOF >commands/mise-tasks/choices
+#!/usr/bin/env bash
+#MISE extends="usage-src"
+#USAGE arg "<target>" { choices run="touch $PWD/commands/ran-choices"; }
+EOF
+cat <<EOF >commands/mise-tasks/mounted
+#!/usr/bin/env bash
+#MISE extends="usage-src"
+#USAGE mount run="touch $PWD/commands/ran-mount"
+#USAGE arg "[target]"
+EOF
+cat <<EOF >commands/mise-tasks/env-choices
+#!/usr/bin/env bash
+#MISE extends="usage-src"
+#USAGE arg "<target>" { choices env="E2E_TARGETS"; }
+EOF
+chmod +x commands/mise-tasks/*
+export E2E_TARGETS="hunter3 staging"
+assert_not_contains "MISE_DEBUG=1 mise -C commands tasks deps parent 2>&1" "hunter3"
+assert_fail "test -e commands/ran-choices"
+assert_fail "test -e commands/ran-mount"
+assert_not_contains "MISE_DEBUG=1 mise -C commands tasks validate 2>&1 || true" "hunter3"
+assert_fail "test -e commands/ran-choices"
+assert_fail "test -e commands/ran-mount"
+# once trusted, the graph parses the spec the run would
+mise trust commands/mise.toml
+assert_contains "MISE_DEBUG=1 mise -C commands tasks deps parent 2>&1" "hunter3"
+assert_succeed "test -e commands/ran-choices"
+assert_succeed "test -e commands/ran-mount"

@@ -4,9 +4,9 @@ use crate::config::{self, Config};
 use crate::dirs;
 use crate::file;
 use crate::file::display_rel_path;
-use crate::task::Task;
 use crate::task::task_fetcher::TaskFetcher;
 use crate::task::task_list::find_non_executable_task_files;
+use crate::task::{Task, remove_spec_commands};
 use crate::ui::table::MiseTable;
 use comfy_table::{Attribute, Cell, Row};
 use eyre::{Result, bail};
@@ -530,42 +530,6 @@ impl TasksLs {
         }
         row.push(Cell::new(&task.description).add_attribute(Attribute::Dim));
         row.into()
-    }
-}
-
-/// Strip from `cmd` everything completing one of its words would execute: `mount`,
-/// `complete run=`, `complete delegate=` and `choices run=`, through every subcommand and
-/// clause. A task that loaded without trust is inert until `mise run`, and pressing Tab is not
-/// that. Names, help, flags and declared choices stay, so the task still completes.
-///
-/// `choices env=` goes with them. It runs nothing, but it offers the words of a variable of the
-/// user's environment as candidates, and an untrusted config does not get to read the
-/// environment.
-fn remove_spec_commands(cmd: &mut usage::SpecCommand) {
-    let executes = |c: &usage::SpecComplete| c.run.is_some() || c.delegate.is_some();
-    cmd.mounts.clear();
-    cmd.complete.retain(|_, complete| !executes(complete));
-    let clause = cmd.clause.as_mut().map(|c| (&mut c.args, &mut c.flags));
-    for (args, flags) in std::iter::once((&mut cmd.args, &mut cmd.flags)).chain(clause) {
-        let flag_args = flags.iter_mut().filter_map(|flag| flag.arg.as_mut());
-        for arg in args.iter_mut().chain(flag_args) {
-            arg.complete.take_if(|complete| executes(complete));
-            if let Some(choices) = &mut arg.choices
-                && (choices.run.is_some() || choices.env().is_some())
-            {
-                choices.run = None;
-                choices.set_env(None);
-                // Without them the declared values are no longer the whole set, and usage
-                // rejects a `choices` that declares nothing at all.
-                choices.strict = false;
-                if choices.choices.is_empty() && choices.details.is_empty() {
-                    arg.choices = None;
-                }
-            }
-        }
-    }
-    for subcommand in cmd.subcommands.values_mut() {
-        remove_spec_commands(subcommand);
     }
 }
 
