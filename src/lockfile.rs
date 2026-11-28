@@ -2299,11 +2299,13 @@ impl Lockfile {
                 if entry.backend.is_some() {
                     excluded.contains(&record)
                 } else {
-                    // A legacy entry names no backend, so nothing tells which request it is
-                    // for: it is matched by tool and version, as before entries were told apart.
+                    // A legacy entry names no backend, so it is matched on the rest of the
+                    // entry: an exclusion removes only a row it matches without doubt, and a
+                    // skipped task's pin of the version with other options keeps its rows.
                     excluded.iter().any(|e| {
                         e.tool == record.tool
                             && e.version == record.version
+                            && e.options == record.options
                             && e.platform == record.platform
                     })
                 }
@@ -5842,8 +5844,8 @@ impl UnsupportedPlatforms {
 /// A platform record of one lockfile entry that `mise lock` left out on purpose, because the
 /// `os` option of the request that entry is for excludes it. The entry is the tool's key, its
 /// version, backend and options, so a request for the same version from another backend, or
-/// with other options, is not affected. A legacy entry that records no backend is matched by
-/// the tool's key and version alone.
+/// with other options, is not affected. A legacy entry that records no backend is matched on
+/// the rest: the tool's key, version and options.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ExcludedPlatform {
     pub tool: String,
