@@ -3782,17 +3782,49 @@ pub(crate) fn is_project_link_to_global_config(path: &Path) -> bool {
 /// a project file linked to a global config file, or a project's `.mise` or `.config` linked to
 /// the global config directory, where the file need not exist yet.
 ///
-/// Global config spelled another way above its config root, such as through a linked home
-/// directory, is still global config: what the two spellings share from the config root down
-/// is the user's own layout, so no project link is involved.
+/// What decides is where each link on the way to the file is placed, not where it leads: two
+/// spellings of global config resolve to the same file whoever placed the link between them.
+/// A link that global config's own spelling also passes through is the user's layout (a
+/// linked `~/.config`). Any other link is the user's own only when it sits above the directory
+/// the path spells as its project, in a directory that holds the global config directory: a
+/// linked `/home`, or a link to the home directory placed beside it. A link at or below that
+/// project directory, or one placed in a directory that does not hold global config, such as
+/// a checkout's `home` linked to the home directory, is a project's link to global config.
 pub(crate) fn write_reaches_global_config_through_link(path: &Path) -> bool {
     let Some(global) = global_config_spelling(path) else {
         return false;
     };
-    if global == path || resolve_for_write(path).is_some_and(|real| real == path) {
+    let Some(target_dir) = resolve_for_write(path).and_then(|real| {
+        if real == path {
+            return None;
+        }
+        real.parent().map(Path::to_path_buf)
+    }) else {
+        return false;
+    };
+    if global == path {
         return false;
     }
-    !is_global_config_spelled_from_above_its_root(path, &global)
+    let users_links = link_placements(&global)
+        .map(|(_, placement)| placement)
+        .collect::<Vec<_>>();
+    let project = config_file::config_root::spelled_project(path);
+    link_placements(path).any(|(spelled, placement)| {
+        let in_project = spelled.starts_with(&project) && spelled != project;
+        !users_links.contains(&placement) && (in_project || !target_dir.starts_with(&placement.0))
+    })
+}
+
+/// The symlinks `path` passes through on the way to its file, the file itself included: each as
+/// spelled in `path`, with where it is placed, the directory that holds it (resolved) and its
+/// name there.
+fn link_placements(
+    path: &Path,
+) -> impl Iterator<Item = (&Path, (PathBuf, std::ffi::OsString))> + '_ {
+    path.ancestors().filter(|p| p.is_symlink()).filter_map(|p| {
+        let dir = p.parent()?.canonicalize().ok()?;
+        Some((p, (dir, p.file_name()?.to_os_string())))
+    })
 }
 
 /// Where global or system config is spelled for a file `path` resolves to: where discovery
@@ -3817,27 +3849,6 @@ fn resolve_for_write(path: &Path) -> Option<PathBuf> {
         let dir = path.parent()?.canonicalize().ok()?;
         Some(dir.join(path.file_name()?))
     })
-}
-
-/// Whether `path` and `global`, two spellings of the same file, differ only above the global
-/// config root: past their longest common tail of components, the rest of each resolves to the
-/// same directory, which holds the config root.
-fn is_global_config_spelled_from_above_its_root(path: &Path, global: &Path) -> bool {
-    let (mut path_head, mut global_head) = (path, global);
-    while path_head.file_name().is_some() && path_head.file_name() == global_head.file_name() {
-        match (path_head.parent(), global_head.parent()) {
-            (Some(p), Some(g)) => (path_head, global_head) = (p, g),
-            _ => break,
-        }
-    }
-    let (Ok(path_dir), Ok(global_dir)) = (path_head.canonicalize(), global_head.canonicalize())
-    else {
-        return false;
-    };
-    path_dir == global_dir
-        && env::MISE_GLOBAL_CONFIG_ROOT
-            .canonicalize()
-            .is_ok_and(|root| root.starts_with(&global_dir))
 }
 
 /// The path global or system config discovery found `path` at, if `path` is

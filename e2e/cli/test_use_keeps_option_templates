@@ -114,3 +114,18 @@ assert "MISE_SAFE=1 mise use --path other/mise.toml dummy@2.0.0"
 assert_not_contains "cat other/mise.toml" "version |"
 assert_not_contains "cat other/mise.toml" "linux-x64"
 assert_contains "cat other/mise.toml" 'url = "https://example.com/plain"'
+
+# a checksum left out would leave its url to download unchecked, so the url
+# goes too, unless another checksum is pinned beside it
+cat >mise.toml <<'TOML'
+[tools]
+dummy = { version = "1.0.0", url = "https://example.com/top", checksum_url = "https://example.com/{{ version | upper }}.sha256", platforms = { linux-x64 = { url = "https://example.com/linux", checksum_url = "https://example.com/{{ version | upper }}/SHA256SUMS" }, macos-arm64 = { url = "https://example.com/mac", checksum = "sha256:0000000000000000000000000000000000000000000000000000000000000000", checksum_url = "https://example.com/{{ version | upper }}/SHA256SUMS" } } }
+TOML
+rm -rf other
+mkdir other
+assert_contains "MISE_SAFE=1 mise use --path other/mise.toml dummy@2.0.0 2>&1" "without it the download would not be checked"
+assert_not_contains "cat other/mise.toml" "version |"
+assert_not_contains "cat other/mise.toml" "example.com/top"
+assert_not_contains "cat other/mise.toml" "example.com/linux"
+assert_contains "cat other/mise.toml" 'url = "https://example.com/mac"'
+assert_contains "cat other/mise.toml" 'checksum = "sha256:0000'
