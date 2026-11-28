@@ -240,9 +240,29 @@ impl ToolVersion {
         request: ToolRequest,
         opts: &ResolveOptions,
     ) -> Result<Self> {
+        Self::resolve_guarded(config, request, opts, false).await
+    }
+
+    /// [`Self::resolve`] for `mise lock --check`, which reads the lock entry
+    /// and installs nothing: a tool URL that safe mode does not fetch
+    /// resolves to its entry, offline, whether or not it is installed.
+    pub async fn resolve_for_lock_check(
+        config: &Arc<Config>,
+        request: ToolRequest,
+        opts: &ResolveOptions,
+    ) -> Result<Self> {
+        Self::resolve_guarded(config, request, opts, true).await
+    }
+
+    async fn resolve_guarded(
+        config: &Arc<Config>,
+        request: ToolRequest,
+        opts: &ResolveOptions,
+        lock_entry_suffices: bool,
+    ) -> Result<Self> {
         // A tool URL that safe mode does not fetch can still be used as
         // installed: resolve it without remote lookups, and refuse it unless
-        // that finds a version on disk.
+        // that finds a version on disk, or, for a lock check, the lock entry.
         if let Err(refused) = request.ensure_safe_url_tool_key() {
             if Self::sub_base_is_alias_for_latest(config, &request).await {
                 // An offline resolve still asks the host for `latest` here.
@@ -253,6 +273,7 @@ impl ToolVersion {
                 ..opts.clone()
             };
             return match Self::resolve_fetchable(config, request, &offline).await {
+                Ok(tv) if lock_entry_suffices && tv.resolved_from_lockfile() => Ok(tv),
                 Ok(tv)
                     if tv
                         .backend()
@@ -470,7 +491,12 @@ impl ToolVersion {
         request: &ToolRequest,
         target: &PlatformTarget,
     ) -> Result<Option<Self>> {
-        request.ensure_safe_url_tool_key()?;
+        // Offline, as `mise lock --check` runs, this reads only the lockfile
+        // and fetches nothing, so a tool URL safe mode does not fetch can
+        // still be looked up.
+        if !Settings::get().offline() {
+            request.ensure_safe_url_tool_key()?;
+        }
         let version = request.version();
         let (query, boundary, alias_resolved) = match request {
             ToolRequest::Prefix { prefix, .. } => (prefix.clone(), true, false),

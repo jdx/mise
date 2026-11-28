@@ -56,6 +56,17 @@ cat <<EOF >mise.toml
 EOF
 assert_fail "MISE_SAFE=1 mise install" "$refused"
 
+# `mise lock --check` reads only the lock entry and fetches nothing, so it
+# checks a tool URL safe mode does not fetch, installed or not.
+cat <<EOF >mise.lock
+[[tools."npm:https://pkg.example.invalid/tool.tgz"]]
+version = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+backend = "npm:https://pkg.example.invalid/tool.tgz"
+EOF
+assert_contains "MISE_SAFE=1 mise lock --check --platform linux-x64" "is up to date"
+assert_fail "MISE_SAFE=1 mise install" "$refused"
+rm mise.lock
+
 # A tool that only a task declares is a project tool too.
 cat <<EOF >mise.toml
 [tasks.build]

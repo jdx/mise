@@ -417,7 +417,9 @@ impl Lock {
         let named = self.platform_selection(&Settings::get())?.named();
         for request in requests {
             let resolved = match request.resolve_options(&locked) {
-                Ok(opts) => ToolVersion::resolve(config, request.clone(), &opts).await,
+                Ok(opts) => {
+                    ToolVersion::resolve_for_lock_check(config, request.clone(), &opts).await
+                }
                 Err(err) => Err(err),
             };
             let host = match resolved {
