@@ -1,6 +1,8 @@
 //! Runtime dependency closure resolution, topologically sorted (deps first).
 
-use std::collections::{HashMap, HashSet};
+use std::borrow::Cow;
+use std::collections::hash_map::Entry;
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use eyre::{Report, bail};
 use futures_util::stream::{self, StreamExt};
@@ -15,6 +17,7 @@ use mise_settings::Settings;
 pub(super) struct ResolvedFormula {
     pub formula: Formula,
     pub tap_raw_base: Option<String>,
+    pub tap_inferred: bool,
     /// directly requested in config (vs pulled in as a dependency)
     pub on_request: bool,
 }
@@ -33,6 +36,22 @@ impl FormulaKey {
             tap_name,
             tap_url,
         }
+    }
+
+    fn dependency(&self, name: &str, tap_urls: &BTreeMap<String, String>) -> Self {
+        if api::split_tap_name(name).is_none() {
+            return Self::new(name.to_owned(), self.tap_name.clone(), self.tap_url.clone());
+        }
+
+        let tap_name = api::tap_name(name);
+        let tap_url = tap_name.as_ref().and_then(|tap| {
+            if Some(tap) == self.tap_name.as_ref() {
+                self.tap_url.clone()
+            } else {
+                tap_urls.get(tap).cloned()
+            }
+        });
+        Self::new(name.to_owned(), tap_name, tap_url)
     }
 }
 
@@ -55,19 +74,32 @@ fn accept_resolved_alias_failures(
 /// Every name in the closure mapped to the formula it refers to. A name
 /// claimed by several formulae resolves by canonical name, then alias, then
 /// old name, the same precedence as the alias index.
-pub(super) fn formulae_by_name(closure: &[ResolvedFormula]) -> HashMap<&str, &ResolvedFormula> {
+pub(super) fn formulae_by_name(
+    closure: &[ResolvedFormula],
+) -> HashMap<Cow<'_, str>, &ResolvedFormula> {
+    fn names<'a>(formula: &Formula, name: &'a str) -> [Cow<'a, str>; 2] {
+        let tap = formula.tap.as_deref().unwrap_or("homebrew/core");
+        [Cow::Borrowed(name), Cow::Owned(format!("{tap}/{name}"))]
+    }
+
     let mut by_name = HashMap::new();
     for rf in closure {
-        by_name.insert(rf.formula.name.as_str(), rf);
+        for name in names(&rf.formula, &rf.formula.name) {
+            by_name.insert(name, rf);
+        }
     }
     for rf in closure {
         for alias in &rf.formula.aliases {
-            by_name.entry(alias.as_str()).or_insert(rf);
+            for name in names(&rf.formula, alias) {
+                by_name.entry(name).or_insert(rf);
+            }
         }
     }
     for rf in closure {
         for oldname in &rf.formula.oldnames {
-            by_name.entry(oldname.as_str()).or_insert(rf);
+            for name in names(&rf.formula, oldname) {
+                by_name.entry(name).or_insert(rf);
+            }
         }
     }
     by_name
@@ -122,45 +154,46 @@ pub(super) fn install_deps<'a>(formula: &'a Formula, tag: &str) -> Vec<&'a Strin
 
 pub(super) async fn resolve_closure_with_taps(
     roots: &[PackageRequest],
+    configured_taps: &BTreeMap<String, String>,
     provision_ruby: bool,
 ) -> Result<Vec<ResolvedFormula>> {
+    let mut tap_urls = configured_taps.clone();
+    // Keep explicit request URLs available for callers without a tap config.
+    for req in roots {
+        if let (Some(tap), Some(url)) = (api::tap_name(&req.name), &req.tap_url) {
+            tap_urls.entry(tap).or_insert_with(|| url.clone());
+        }
+    }
     let roots = roots
         .iter()
         .map(|req| {
-            (
-                req.name.clone(),
-                api::tap_name(&req.name)
-                    .or_else(|| req.tap_url.as_deref().and_then(api::tap_name_from_url)),
-                req.tap_url.clone(),
-            )
+            let tap_name = api::tap_name(&req.name)
+                .or_else(|| req.tap_url.as_deref().and_then(api::tap_name_from_url));
+            let tap_url = req
+                .tap_url
+                .clone()
+                .or_else(|| tap_name.as_ref().and_then(|tap| tap_urls.get(tap).cloned()));
+            FormulaKey::new(req.name.clone(), tap_name, tap_url)
         })
         .collect::<Vec<_>>();
-    resolve_closure_pairs(&roots, provision_ruby).await
+    resolve_closure(&roots, &tap_urls, provision_ruby).await
 }
 
 /// Resolve the runtime closure of `roots` into install order (dependencies
 /// before dependents). Names are resolved through the API, so aliases map to
 /// their canonical formula.
-async fn resolve_closure_pairs(
-    roots: &[(String, Option<String>, Option<String>)],
+async fn resolve_closure(
+    roots: &[FormulaKey],
+    tap_urls: &BTreeMap<String, String>,
     provision_ruby: bool,
 ) -> Result<Vec<ResolvedFormula>> {
     let host_tag = tag::host_tag();
-    let mut formulae: HashMap<FormulaKey, Formula> = HashMap::new();
-    let mut raw_bases: HashMap<FormulaKey, Option<String>> = HashMap::new();
+    let mut formulae: HashMap<FormulaKey, ResolvedFormula> = HashMap::new();
     // alias (or canonical name) -> canonical name, so repeated alias
     // occurrences in the dep graph don't re-fetch from the API
     let mut canonical: HashMap<FormulaKey, FormulaKey> = HashMap::new();
     let mut on_request: HashSet<FormulaKey> = HashSet::new();
-    let mut queue: Vec<(FormulaKey, bool)> = roots
-        .iter()
-        .map(|(name, tap_name, tap_url)| {
-            (
-                FormulaKey::new(name.clone(), tap_name.clone(), tap_url.clone()),
-                true,
-            )
-        })
-        .collect();
+    let mut queue: Vec<(FormulaKey, bool)> = roots.iter().cloned().map(|key| (key, true)).collect();
     while !queue.is_empty() {
         // Resolve one dependency frontier at a time. Formulae within the
         // frontier are independent, so their metadata can be fetched
@@ -186,7 +219,7 @@ async fn resolve_closure_pairs(
             .into_iter()
             .enumerate()
             .map(|(index, (key, requested))| async move {
-                let result = fetch_formula_with_fallback(&key, requested, provision_ruby).await;
+                let result = fetch_validated_formula(&key, requested, provision_ruby).await;
                 (index, key, requested, result)
             })
             .collect();
@@ -200,7 +233,7 @@ async fn resolve_closure_pairs(
 
         let mut failed = vec![];
         for (_, key, requested, result) in fetched {
-            let (formula, effective_tap_name, effective_tap_url) = match result {
+            let (mut formula, effective_tap_name, effective_tap_url) = match result {
                 Ok(resolved) => resolved,
                 Err(err) => {
                     failed.push((key, requested, err));
@@ -240,20 +273,21 @@ async fn resolve_closure_pairs(
                     ))
                     .or_insert_with(|| canonical_key.clone());
             }
-            if !formulae.contains_key(&canonical_key) {
+            if let Entry::Vacant(entry) = formulae.entry(canonical_key.clone()) {
+                let tap_inferred = formula.tap.is_none() && effective_tap_name.is_some();
+                if tap_inferred {
+                    formula.tap.clone_from(&effective_tap_name);
+                }
                 let tag = dep_tag(&formula, &host_tag);
                 for dep in install_deps(&formula, &tag) {
-                    queue.push((
-                        FormulaKey::new(
-                            dep.clone(),
-                            effective_tap_name.clone(),
-                            effective_tap_url.clone(),
-                        ),
-                        false,
-                    ));
+                    queue.push((canonical_key.dependency(dep, tap_urls), false));
                 }
-                raw_bases.insert(canonical_key.clone(), tap_raw_base(&canonical_key));
-                formulae.insert(canonical_key.clone(), formula);
+                entry.insert(ResolvedFormula {
+                    formula,
+                    tap_raw_base: tap_raw_base(&canonical_key),
+                    tap_inferred,
+                    on_request: false,
+                });
             }
             if requested {
                 on_request.insert(canonical_key);
@@ -272,8 +306,8 @@ async fn resolve_closure_pairs(
     let mut visiting: Vec<FormulaKey> = vec![];
     struct VisitContext<'a> {
         host_tag: &'a str,
-        formulae: &'a HashMap<FormulaKey, Formula>,
-        raw_bases: &'a HashMap<FormulaKey, Option<String>>,
+        tap_urls: &'a BTreeMap<String, String>,
+        formulae: &'a HashMap<FormulaKey, ResolvedFormula>,
         canonical: &'a HashMap<FormulaKey, FormulaKey>,
         done: &'a mut HashSet<FormulaKey>,
         visiting: &'a mut Vec<FormulaKey>,
@@ -290,22 +324,21 @@ async fn resolve_closure_pairs(
             debug!("dependency cycle involving {}, breaking", key.name);
             return Ok(());
         }
-        let Some(formula) = ctx.formulae.get(key) else {
+        let Some(resolved) = ctx.formulae.get(key) else {
             bail!("unresolved dependency: {}", key.name);
         };
         ctx.visiting.push(key.clone());
-        let tag = dep_tag(formula, ctx.host_tag);
-        for dep in install_deps(formula, &tag) {
-            let dep_key = FormulaKey::new(dep.clone(), key.tap_name.clone(), key.tap_url.clone());
+        let tag = dep_tag(&resolved.formula, ctx.host_tag);
+        for dep in install_deps(&resolved.formula, &tag) {
+            let dep_key = key.dependency(dep, ctx.tap_urls);
             let dep_key = ctx.canonical.get(&dep_key).cloned().unwrap_or(dep_key);
             visit(&dep_key, ctx)?;
         }
         ctx.visiting.pop();
         ctx.done.insert(key.clone());
         ctx.sorted.push(ResolvedFormula {
-            formula: ctx.formulae[key].clone(),
-            tap_raw_base: ctx.raw_bases.get(key).cloned().flatten(),
             on_request: ctx.on_request.contains(key),
+            ..resolved.clone()
         });
         Ok(())
     }
@@ -318,8 +351,8 @@ async fn resolve_closure_pairs(
     }); // deterministic order
     let mut visit_ctx = VisitContext {
         host_tag: &host_tag,
+        tap_urls,
         formulae: &formulae,
-        raw_bases: &raw_bases,
         canonical: &canonical,
         done: &mut done,
         visiting: &mut visiting,
@@ -332,13 +365,27 @@ async fn resolve_closure_pairs(
     Ok(sorted)
 }
 
-async fn fetch_formula(key: &FormulaKey, requested: bool, provision_ruby: bool) -> Result<Formula> {
+async fn fetch_validated_formula(
+    key: &FormulaKey,
+    requested: bool,
+    provision_ruby: bool,
+) -> Result<(Formula, Option<String>, Option<String>)> {
+    let resolved = fetch_formula_with_fallback(key, requested, provision_ruby).await?;
+    validate_formula_identity(&resolved.0)?;
+    Ok(resolved)
+}
+
+async fn fetch_formula_with_fallback(
+    key: &FormulaKey,
+    requested: bool,
+    provision_ruby: bool,
+) -> Result<(Formula, Option<String>, Option<String>)> {
     if !requested && key.tap_name.is_some() && api::split_tap_name(&key.name).is_none() {
         // Exact names only: a sibling formula from the same tap 404s here,
         // and resolving that through the alias index would download it for
         // nothing. Aliases are resolved by the core fallback below.
         match api::formula_exact(&key.name).await {
-            Ok(formula) => return Ok(formula),
+            Ok(formula) => return Ok((formula, None, None)),
             Err(err) => {
                 debug!(
                     "brew: {} unavailable in core metadata ({err}); trying parent tap metadata",
@@ -347,21 +394,14 @@ async fn fetch_formula(key: &FormulaKey, requested: bool, provision_ruby: bool) 
             }
         }
     }
-    api::formula_with_tap_name(
+    match api::formula_with_tap_name(
         &key.name,
         key.tap_name.as_deref(),
         key.tap_url.as_deref(),
         provision_ruby,
     )
     .await
-}
-
-async fn fetch_formula_with_fallback(
-    key: &FormulaKey,
-    requested: bool,
-    provision_ruby: bool,
-) -> Result<(Formula, Option<String>, Option<String>)> {
-    match fetch_formula(key, requested, provision_ruby).await {
+    {
         Ok(formula) => {
             let effective_tap_name = match formula.tap.as_deref() {
                 Some("homebrew/core") => None,
@@ -380,10 +420,6 @@ async fn fetch_formula_with_fallback(
         }
         Err(err) => Err(err),
     }
-    .and_then(|resolved| {
-        validate_formula_identity(&resolved.0)?;
-        Ok(resolved)
-    })
 }
 
 /// Fetched metadata names the formula's rack and keg (`Cellar/<name>/<version>`),
@@ -422,6 +458,7 @@ mod tests {
         ResolvedFormula {
             formula: serde_json::from_value(json).unwrap(),
             tap_raw_base: None,
+            tap_inferred: false,
             on_request: false,
         }
     }
@@ -460,10 +497,44 @@ mod tests {
     }
 
     #[test]
+    fn formula_dependencies_use_their_own_explicit_tap() {
+        let parent_url = "https://github.com/qmk/homebrew-qmk.git";
+        let avr_url = "https://github.com/example/custom-avr.git";
+        let tap_urls = BTreeMap::from([("osx-cross/avr".into(), avr_url.into())]);
+        let parent = FormulaKey::new(
+            "qmk".into(),
+            Some("qmk/qmk".into()),
+            Some(parent_url.into()),
+        );
+
+        for (name, tap, url) in [
+            ("unqualified", Some("qmk/qmk"), Some(parent_url)),
+            ("qmk/qmk/sibling", Some("qmk/qmk"), Some(parent_url)),
+            (
+                "osx-cross/avr/avr-gcc@8",
+                Some("osx-cross/avr"),
+                Some(avr_url),
+            ),
+            (
+                "osx-cross/arm/arm-none-eabi-gcc@8",
+                Some("osx-cross/arm"),
+                None,
+            ),
+            ("homebrew/core/git", None, None),
+        ] {
+            assert_eq!(
+                parent.dependency(name, &tap_urls),
+                FormulaKey::new(name.into(), tap.map(str::to_owned), url.map(str::to_owned))
+            );
+        }
+    }
+
+    #[test]
     fn formulae_by_name_prefers_canonical_then_alias_then_old_name() {
         let closure = [
             resolved(serde_json::json!({
                 "name": "renamed", "oldnames": ["shared", "openssl@3"],
+                "tap": "example/tap",
                 "versions": {"stable": "1"},
             })),
             resolved(serde_json::json!({
@@ -476,6 +547,9 @@ mod tests {
         assert_eq!(name_of("openssl@3"), "openssl@3");
         assert_eq!(name_of("shared"), "openssl@3");
         assert_eq!(name_of("renamed"), "renamed");
+        assert_eq!(name_of("example/tap/renamed"), "renamed");
+        assert_eq!(name_of("example/tap/shared"), "renamed");
+        assert_eq!(name_of("homebrew/core/shared"), "openssl@3");
     }
 
     #[test]

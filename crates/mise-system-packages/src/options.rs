@@ -20,6 +20,8 @@ pub enum ManagerPackageOptions {
         repos: Vec<super::dnf_repos::DnfRepo>,
     },
     #[cfg(unix)]
+    Brew { taps: BTreeMap<String, String> },
+    #[cfg(unix)]
     BrewCask {
         adopt: BTreeSet<String>,
         appdirs: BTreeMap<String, PathBuf>,
@@ -47,7 +49,15 @@ impl ManagerPackageOptions {
     pub fn brew_cask_adopt(&self, name: &str) -> bool {
         match self {
             Self::BrewCask { adopt, .. } | Self::MacosApp { adopt, .. } => adopt.contains(name),
-            Self::None | Self::Apt { .. } | Self::Dnf { .. } | Self::Snap { .. } => false,
+            _ => false,
+        }
+    }
+
+    #[cfg(unix)]
+    pub fn brew_taps(&self) -> Option<&BTreeMap<String, String>> {
+        match self {
+            Self::Brew { taps } => Some(taps),
+            _ => None,
         }
     }
 
