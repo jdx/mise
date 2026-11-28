@@ -511,31 +511,30 @@ impl Backend for JavaPlugin {
     }
 
     /// Versions converted from `.sdkmanrc` that name a build by something other than its
-    /// catalog version. See [`sdkman_catalog_match`].
-    async fn resolve_exact_version(
+    /// catalog version. See [`sdkman_catalog_match`]. They are matched in the catalog of the
+    /// request's `release_type`, and the release-age cutoff then applies as for any request.
+    async fn versions_named_by(
         &self,
         _config: &Arc<Config>,
-        version: &str,
-    ) -> eyre::Result<Option<String>> {
-        let Some(query) = SdkmanQuery::parse(version) else {
+        query: &str,
+        selection_opts: &ToolVersionOptions,
+    ) -> eyre::Result<Option<HashSet<String>>> {
+        let Some(query) = SdkmanQuery::parse(query) else {
             return Ok(None);
         };
-        let metadata = self.fetch_java_metadata("ga").await?;
+        let release_type = JavaOptions::new(selection_opts).release_type().to_string();
+        let metadata = self.fetch_java_metadata(&release_type).await?;
         let platform = current_java_platform();
         let matches = sdkman_catalog_match(metadata, &query, &platform);
-        // The catalog listing's order, which picks the same build `ls-remote` lists last.
-        let listed = self
-            .list_remote_versions_for_options(&ToolVersionOptions::default())
-            .await?;
-        match listed.into_iter().rfind(|v| matches.contains(&v.version)) {
-            Some(v) => Ok(Some(v.version)),
-            None => Err(eyre::eyre!(
+        if matches.is_empty() {
+            return Err(eyre::eyre!(
                 "no {} build of Java {} found for {}",
                 query.prefix,
                 query.version,
                 platform.to_key()
-            )),
+            ));
         }
+        Ok(Some(matches.into_iter().collect()))
     }
 
     fn list_installed_versions_matching(&self, query: &str) -> Vec<String> {
