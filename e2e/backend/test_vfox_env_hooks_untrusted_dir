@@ -1,0 +1,228 @@
+#!/usr/bin/env bash
+
+# The pipenv and poetry plugins look for a project in the current directory
+# and put its virtualenv on PATH, running pipenv or poetry through a shell to
+# find it. In a directory the user has not trusted, their environment hooks
+# get no PWD and their commands start in the home directory.
+
+export MISE_TRUSTED_CONFIG_PATHS=""
+export MISE_YES=0
+unset CI GITHUB_ACTIONS GITHUB_ACTION 2>/dev/null || true
+
+# Stand-ins for an installed pipenv and poetry, which answer with the
+# project's own .venv the way the real ones do.
+PIPENV="$MISE_DATA_DIR/installs/pipenv/2024.4.1/wrapper_bin/pipenv"
+POETRY="$MISE_DATA_DIR/installs/poetry/1.8.0/bin/poetry"
+mkdir -p "$(dirname "$PIPENV")" "$(dirname "$POETRY")"
+cat >"$PIPENV" <<'SH'
+#!/bin/sh
+[ "$1" = "--venv" ] && echo "$(dirname "$PIPENV_PIPFILE")/.venv"
+SH
+cat >"$POETRY" <<'SH'
+#!/bin/sh
+[ "$*" = "env info --path" ] && echo "$PWD/.venv"
+SH
+# poetry's hook runs "mise which python3", and a mise started from a hook
+# runs the same hook again; answer that call here so it cannot recurse
+PYTHON="$MISE_DATA_DIR/installs/python/3.12.0/bin/python3"
+mkdir -p "$(dirname "$PYTHON")" "$HOME/stub-bin"
+printf '#!/bin/sh\n' >"$PYTHON"
+cat >"$HOME/stub-bin/mise" <<SH
+#!/bin/sh
+[ "\$*" = "which python3" ] && echo "$PYTHON" && exit 0
+exec "$(command -v mise)" "\$@"
+SH
+chmod +x "$PIPENV" "$POETRY" "$PYTHON" "$HOME/stub-bin/mise"
+export PATH="$HOME/stub-bin:$PATH"
+
+# what an injected command would create, wherever it ran
+pwned_files="find '$HOME/..' -name 'pwned-*'"
+
+make_repo() { # $1 = directory, $2 = the file that makes it a project
+  mkdir -p "$1/.venv/bin"
+  touch "$1/.venv/bin/python" "$1/$2"
+}
+
+# pipenv: the repository pins a plain version, which loads without trust
+make_repo pipenv-repo Pipfile
+echo "pipenv 2024.4.1" >pipenv-repo/.tool-versions
+assert_contains "cd pipenv-repo && mise env" "/pipenv/2024.4.1/wrapper_bin"
+assert_not_contains "cd pipenv-repo && mise env" "/pipenv-repo/.venv"
+assert_not_contains "cd pipenv-repo && mise hook-env -s bash" "/pipenv-repo/.venv"
+assert_not_contains "cd pipenv-repo && MISE_SAFE=1 mise env" "/pipenv-repo/.venv"
+
+# a directory name the hook puts in a shell command runs nothing
+# shellcheck disable=SC2016
+evil_dir='pipenv-$(touch pwned-pipenv)'
+make_repo "$evil_dir" Pipfile
+echo "pipenv 2024.4.1" >"$evil_dir/.tool-versions"
+assert_not_contains "cd '$evil_dir' && mise env" "/.venv"
+assert_empty "$pwned_files"
+
+# poetry: the user's own config names the project in the current directory
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[tools]
+poetry ={ version = "1.8.0", pyproject = "pyproject.toml" }
+TOML
+make_repo poetry-repo pyproject.toml
+assert_contains "cd poetry-repo && mise env" "POETRY_HOME="
+assert_not_contains "cd poetry-repo && mise env" "/poetry-repo/.venv"
+assert_not_contains "MISE_PROJECT_ROOT=$PWD/poetry-repo mise env" "/poetry-repo/.venv"
+
+# a trusted project vouches for the directories below its root, but not for a
+# repository cloned somewhere inside it
+mkdir -p project/.git
+printf '[env]\nFOO = "bar"\n[tools]\npipenv = "2024.4.1"\n' >project/mise.toml
+make_repo project/sub Pipfile
+make_repo project/sub/clone Pipfile
+mkdir project/sub/clone/.git
+make_repo project/sub/clone/inner Pipfile
+make_repo project/sub/worktree Pipfile
+echo "gitdir: $PWD/elsewhere" >project/sub/worktree/.git
+mise trust project/mise.toml
+assert_contains "cd project/sub && mise env" "FOO=bar"
+assert_contains "cd project/sub && mise env" "VIRTUAL_ENV=$PWD/project/sub/.venv"
+assert_contains "cd project/sub && mise hook-env -s bash" "/project/sub/.venv/bin"
+assert_not_contains "cd project/sub && MISE_SAFE=1 mise env" "/project/sub/.venv"
+assert_contains "cd project/sub/clone && mise env" "/pipenv/2024.4.1/wrapper_bin"
+assert_not_contains "cd project/sub/clone && mise env" "/clone/.venv"
+assert_not_contains "cd project/sub/clone/inner && mise env" "/inner/.venv"
+assert_not_contains "cd project/sub/worktree && mise env" "/worktree/.venv"
+# nor for a directory below its root that the user ignored, or anything in it
+make_repo project/ignored Pipfile
+make_repo project/ignored/deep Pipfile
+assert_contains "cd project/ignored/deep && mise env" "VIRTUAL_ENV=$PWD/project/ignored/deep/.venv"
+mise trust --ignore project/ignored
+assert_not_contains "cd project/ignored && mise env" "/project/ignored/.venv"
+assert_not_contains "cd project/ignored/deep && mise env" "/deep/.venv"
+# only the virtualenv is withheld; pipenv itself is still on PATH
+assert_contains "cd project/ignored && mise env" "$(dirname "$PIPENV")"
+assert_contains "cd project/ignored/deep && mise env" "$(dirname "$PIPENV")"
+assert_contains "cd project/sub && mise env" "VIRTUAL_ENV=$PWD/project/sub/.venv"
+# the env cache does not keep a virtualenv on PATH once its directory is ignored
+make_repo project/cached Pipfile
+cached_exec="cd project/cached && MISE_ENV_CACHE=1 __MISE_ENV_CACHE_KEY=dGVzdGtleXRlc3RrZXl0ZXN0a2V5dGVzdGtleXRlc3Q= mise exec -- printenv PATH"
+assert_contains "$cached_exec" "/project/cached/.venv/bin"
+mise trust --ignore project/cached
+assert_not_contains "$cached_exec" "/project/cached/.venv/bin"
+# a trusted_config_paths entry for the config overrides a `mise trust --ignore`
+# of its root, for the root and the directories below it alike
+mkdir -p settings-trusted/.git
+printf '[env]\nFOO = "bar"\n[tools]\npipenv = "2024.4.1"\n' >settings-trusted/mise.toml
+make_repo settings-trusted Pipfile
+make_repo settings-trusted/sub Pipfile
+mise trust --ignore settings-trusted
+assert_not_contains "cd settings-trusted/sub && mise env" "/settings-trusted/sub/.venv"
+assert_contains "cd settings-trusted && MISE_TRUSTED_CONFIG_PATHS=$PWD/settings-trusted/mise.toml mise env" "VIRTUAL_ENV=$PWD/settings-trusted/.venv"
+assert_contains "cd settings-trusted/sub && MISE_TRUSTED_CONFIG_PATHS=$PWD/settings-trusted/mise.toml mise env" "VIRTUAL_ENV=$PWD/settings-trusted/sub/.venv"
+# an ignored_config_paths pattern that names a symlink keeps the project it
+# leads to ignored, though the symlink's target matches no pattern
+make_repo project/real-poetry pyproject.toml
+ln -s real-poetry project/poetry-link
+linked="MISE_PROJECT_ROOT=$PWD/project/poetry-link"
+assert_contains "cd project/sub && $linked mise env" "/poetry-link/.venv"
+assert_not_contains "cd project/sub && MISE_IGNORED_CONFIG_PATHS='$PWD/project/poetry-lin?' $linked mise env" "/poetry-link/.venv"
+# and so does everything reached through that symlink
+make_repo project/real-poetry/deep pyproject.toml
+linked_deep="MISE_PROJECT_ROOT=$PWD/project/poetry-link/deep"
+assert_contains "cd project/sub && $linked_deep mise env" "/poetry-link/deep/.venv"
+assert_not_contains "cd project/sub && MISE_IGNORED_CONFIG_PATHS='$PWD/project/poetry-lin?' $linked_deep mise env" "/poetry-link/deep/.venv"
+
+# once trusted, the virtualenv is activated as before, except in safe mode
+mise trust pipenv-repo
+mise trust poetry-repo
+assert_contains "cd pipenv-repo && mise env" "VIRTUAL_ENV=$PWD/pipenv-repo/.venv"
+assert_contains "cd pipenv-repo && mise env" "/pipenv-repo/.venv/bin"
+assert_contains "cd poetry-repo && mise env" "VIRTUAL_ENV=$PWD/poetry-repo/.venv"
+assert_contains "MISE_PROJECT_ROOT=$PWD/poetry-repo mise env" "/poetry-repo/.venv/bin"
+assert_not_contains "cd pipenv-repo && MISE_SAFE=1 mise env" "/pipenv-repo/.venv"
+# the project is the directory mise runs in, which --cd moves and PWD does not
+mkdir -p other
+mise trust other
+assert_not_contains "cd pipenv-repo && mise --cd ../other env" "/pipenv-repo/.venv"
+# MISE_PROJECT_ROOT can name a project other than the current directory
+rooted_exec="cd other && MISE_PROJECT_ROOT=$PWD/poetry-repo MISE_ENV_CACHE=1 __MISE_ENV_CACHE_KEY=dGVzdGtleXRlc3RrZXl0ZXN0a2V5dGVzdGtleXRlc3Q= mise exec -- printenv PATH"
+assert_contains "$rooted_exec" "/poetry-repo/.venv/bin"
+# pointing it at another trusted project, with nothing else changed, gives
+# that project's virtualenv rather than the cached one
+make_repo poetry-repo2 pyproject.toml
+mise trust poetry-repo2
+rooted_exec2="cd other && MISE_PROJECT_ROOT=$PWD/poetry-repo2 MISE_ENV_CACHE=1 __MISE_ENV_CACHE_KEY=dGVzdGtleXRlc3RrZXl0ZXN0a2V5dGVzdGtleXRlc3Q= mise exec -- printenv PATH"
+assert_contains "$rooted_exec2" "/poetry-repo2/.venv/bin"
+assert_not_contains "$rooted_exec2" "/poetry-repo/.venv/bin"
+
+# and no longer once the trust is withdrawn
+mise trust --untrust pipenv-repo
+mise trust --untrust poetry-repo
+assert_not_contains "cd pipenv-repo && mise env" "/pipenv-repo/.venv"
+assert_not_contains "cd poetry-repo && mise env" "/poetry-repo/.venv"
+# including from the env cache, where only that project's trust changed
+assert_not_contains "$rooted_exec" "/poetry-repo/.venv/bin"
+
+# safe mode passes no options from an untrusted mise.toml to the hook
+rm "$MISE_CONFIG_DIR/config.toml"
+mkdir -p safe-repo "safe-repo/';touch pwned-poetry;'"
+touch "safe-repo/';touch pwned-poetry;'/pyproject.toml"
+cat >safe-repo/mise.toml <<'TOML'
+[tools]
+poetry = { version = "1.8.0", pyproject = "./';touch pwned-poetry;'/pyproject.toml" }
+TOML
+assert_contains "cd safe-repo && MISE_SAFE=1 mise env" "POETRY_HOME="
+assert_empty "$pwned_files"
+# nor through a tool named on the command line, which picks up the options
+# that mise.toml gives the same tool
+assert_contains "cd safe-repo && MISE_SAFE=1 mise x poetry@1.8.0 -- env" "POETRY_HOME="
+assert_empty "$pwned_files"
+
+# a root that config [env] sets, handed by the hook to a command rather than
+# read with os.getenv, is withheld once untrusted, though a result for it is
+# cached
+ROOT_PLUGIN="$PWD/vfox-hook-root"
+mkdir -p "$ROOT_PLUGIN/hooks"
+cat >"$ROOT_PLUGIN/metadata.lua" <<'LUA'
+PLUGIN = {}
+PLUGIN.name = "hook-root"
+PLUGIN.version = "0.1.0"
+PLUGIN.homepage = "https://example.com/hook-root"
+PLUGIN.license = "MIT"
+PLUGIN.description = "env hook that passes MISE_PROJECT_ROOT to a command"
+LUA
+cat >"$ROOT_PLUGIN/hooks/available.lua" <<'LUA'
+function PLUGIN:Available(ctx)
+	return { { version = "1.0.0" } }
+end
+LUA
+cat >"$ROOT_PLUGIN/hooks/pre_install.lua" <<'LUA'
+function PLUGIN:PreInstall(ctx)
+	return { version = ctx.version }
+end
+LUA
+cat >"$ROOT_PLUGIN/hooks/env_keys.lua" <<'LUA'
+function PLUGIN:EnvKeys(ctx)
+	local cmd = require("cmd")
+	local root = cmd.exec("printf '%s' \"$MISE_PROJECT_ROOT\"")
+	return { { key = "HOOK_ROOT", value = "root:" .. root } }
+end
+LUA
+git -C "$ROOT_PLUGIN" init -q
+git -C "$ROOT_PLUGIN" add .
+git -C "$ROOT_PLUGIN" -c user.name="mise" -c user.email="mise@example.com" commit -qm "initial plugin"
+mkdir -p env-root env-root-target
+cat >env-root/mise.toml <<EOF
+[tools]
+"vfox:file://$ROOT_PLUGIN" = "1.0.0"
+
+[env]
+MISE_PROJECT_ROOT = "$PWD/env-root-target"
+EOF
+mise trust env-root/mise.toml
+mise trust env-root-target
+(cd env-root && mise install --yes)
+assert "cd env-root && mise exec -- printenv HOOK_ROOT" "root:$PWD/env-root-target"
+# and from the env cache, which serves the hook's output on a hit
+env_root_cache="MISE_ENV_CACHE=1 __MISE_ENV_CACHE_KEY=dGVzdGtleXRlc3RrZXl0ZXN0a2V5dGVzdGtleXRlc3Q="
+assert "cd env-root && $env_root_cache mise exec -- printenv HOOK_ROOT" "root:$PWD/env-root-target"
+assert_contains "cd env-root && MISE_TRACE=1 $env_root_cache mise exec -- true 2>&1" "env_cache: using cached environment"
+mise trust --untrust env-root-target
+assert "cd env-root && mise exec -- printenv HOOK_ROOT" "root:"
+assert "cd env-root && $env_root_cache mise exec -- printenv HOOK_ROOT" "root:"
