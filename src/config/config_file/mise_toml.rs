@@ -1777,7 +1777,36 @@ static RAW_BLOCK: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|
     regex::Regex::new(r"(?s)\{%(-?)\s*raw\s*(-?)%\}(.*?)\{%(-?)\s*endraw\s*(-?)%\}").unwrap()
 });
 
-const VERSION_SHIELD: &str = "__mise_deferred_version_expression_";
+/// Template code taken out of a tool option for the backend's render, and the marker its
+/// placeholders carry. The marker holds a random number drawn for each option, so text an env
+/// var or a command puts into the config-load render cannot forge a placeholder and be put back
+/// as code.
+#[derive(Debug, Default)]
+pub(crate) struct Deferred {
+    mark: String,
+    exprs: Vec<String>,
+}
+
+impl Deferred {
+    /// Keep `expr` for the backend's render and return the placeholder that stands for it.
+    fn defer(&mut self, expr: String) -> String {
+        if self.mark.is_empty() {
+            self.mark = format!(
+                "__mise_deferred_version_expression_{}_",
+                ::rand::random::<u64>()
+            );
+        }
+        self.exprs.push(expr);
+        format!("{}{}__", self.mark, self.exprs.len() - 1)
+    }
+
+    fn restore(&self, mut rendered: String) -> String {
+        for (i, expr) in self.exprs.iter().enumerate() {
+            rendered = rendered.replace(&format!("{}{i}__", self.mark), expr);
+        }
+        rendered
+    }
+}
 
 /// Render a tool option that a backend renders again once the version and platform are known.
 /// `shielded` is the option with the code deferred to the backend swapped for markers (from
@@ -1786,26 +1815,78 @@ const VERSION_SHIELD: &str = "__mise_deferred_version_expression_";
 /// in the backend's render only the deferred code and the spans marked with
 /// [`crate::tera::mark_deferred`] are template code.
 pub(crate) fn render_option_for_backend(
-    (shielded, deferred): (String, Vec<String>),
+    (shielded, deferred): (String, Deferred),
     render: impl FnOnce(&str) -> eyre::Result<String>,
 ) -> eyre::Result<String> {
     let rendered = crate::tera::escape_rendered_data(&render(&shielded)?);
-    Ok(restore_version_expressions(rendered, &deferred))
+    Ok(deferred.restore(rendered))
+}
+
+/// The `{% raw %}` blocks of `input` that are template syntax, not text inside a string literal
+/// of a `{{ }}` or `{% %}` tag or inside a comment: each block's start and its regex captures.
+fn raw_blocks(input: &str) -> Vec<(usize, regex::Captures<'_>)> {
+    let mut blocks = vec![];
+    let mut at = 0;
+    while let Some(offset) = input[at..].find('{') {
+        let start = at + offset;
+        let rest = &input[start..];
+        let close = if rest.starts_with("{%") {
+            if let Some(caps) = RAW_BLOCK.captures(rest)
+                && caps.get(0).is_some_and(|m| m.start() == 0)
+            {
+                at = start + caps[0].len();
+                blocks.push((start, caps));
+                continue;
+            }
+            "%}"
+        } else if rest.starts_with("{{") {
+            "}}"
+        } else if rest.starts_with("{#") {
+            "#}"
+        } else {
+            at = start + 1;
+            continue;
+        };
+        match tag_end(rest, close) {
+            Some(end) => at = start + end,
+            // Tera rejects a tag with no closer; nothing after it is a block.
+            None => break,
+        }
+    }
+    blocks
+}
+
+/// The end of the tag `tag` opens, after its `close`, skipping string literals in it.
+fn tag_end(tag: &str, close: &str) -> Option<usize> {
+    let mut i = 2;
+    let bytes = tag.as_bytes();
+    while i < bytes.len() {
+        if close != "#}" && matches!(bytes[i], b'"' | b'\'' | b'`') {
+            let quote = bytes[i];
+            i += 1 + bytes[i + 1..].iter().position(|&b| b == quote)?;
+        } else if bytes[i..].starts_with(close.as_bytes()) {
+            return Some(i + close.len());
+        }
+        i += 1;
+    }
+    None
 }
 
 /// The body of a `{% raw %}` block is written to be rendered by the backend, so it is swapped
 /// for a marker and put back as template code after the config-load render. The block's `-`
 /// markers trim whitespace as they do when the block is rendered: the inner ones trim the body
 /// here, and the outer ones stay on the tags left around the marker, so the render trims the
-/// text next to the block.
-pub(crate) fn shield_raw_blocks(input: &str) -> (String, Vec<String>) {
-    let mut deferred = vec![];
+/// text next to the block. Raw tags inside a string literal or a comment are text, not a block.
+pub(crate) fn shield_raw_blocks(input: &str) -> (String, Deferred) {
+    let mut deferred = Deferred::default();
     // Most option values hold no block, and the first use of the regex
     // compiles it, which costs more than everything else a command does here.
     if !input.contains("{%") {
         return (input.to_string(), deferred);
     }
-    let shielded = RAW_BLOCK.replace_all(input, |caps: &regex::Captures| {
+    let mut shielded = String::with_capacity(input.len());
+    let mut copied = 0;
+    for (start, caps) in raw_blocks(input) {
         let mut body = &caps[3];
         if !caps[2].is_empty() {
             body = body.trim_start();
@@ -1813,15 +1894,16 @@ pub(crate) fn shield_raw_blocks(input: &str) -> (String, Vec<String>) {
         if !caps[4].is_empty() {
             body = body.trim_end();
         }
-        deferred.push(body.to_string());
-        format!(
-            "{{%{} raw %}}{VERSION_SHIELD}{}__{{% endraw {}%}}",
-            &caps[1],
-            deferred.len() - 1,
-            &caps[5]
-        )
-    });
-    (shielded.into_owned(), deferred)
+        let marker = deferred.defer(body.to_string());
+        shielded.push_str(&input[copied..start]);
+        shielded.push_str(&format!(
+            "{{%{} raw %}}{marker}{{% endraw {}%}}",
+            &caps[1], &caps[5]
+        ));
+        copied = start + caps[0].len();
+    }
+    shielded.push_str(&input[copied..]);
+    (shielded, deferred)
 }
 
 /// `version` is not known at config load, so a bare `{{ version }}` renders to itself through a
@@ -1829,7 +1911,7 @@ pub(crate) fn shield_raw_blocks(input: &str) -> (String, Vec<String>) {
 /// that placeholder text, so every other `{{ }}` expression that reads `version` is swapped for
 /// a marker here and put back verbatim afterwards, to be rendered once the version is known.
 /// Raw blocks are deferred as [`shield_raw_blocks`] does.
-fn shield_version_expressions(input: &str) -> (String, Vec<String>) {
+fn shield_version_expressions(input: &str) -> (String, Deferred) {
     let (input, mut deferred) = shield_raw_blocks(input);
     if !input.contains("{{") {
         return (input, deferred);
@@ -1844,17 +1926,9 @@ fn shield_version_expressions(input: &str) -> (String, Vec<String>) {
         if inner == "version" || !VERSION_WORD.is_match(&code) {
             return expr.to_string();
         }
-        deferred.push(expr.to_string());
-        format!("{VERSION_SHIELD}{}__", deferred.len() - 1)
+        deferred.defer(expr.to_string())
     });
     (shielded.into_owned(), deferred)
-}
-
-fn restore_version_expressions(mut rendered: String, deferred: &[String]) -> String {
-    for (i, expr) in deferred.iter().enumerate() {
-        rendered = rendered.replace(&format!("{VERSION_SHIELD}{i}__"), expr);
-    }
-    rendered
 }
 
 /// Whether anything that selects or configures a tool is a template: its version,
@@ -4388,10 +4462,9 @@ mod tests {
     #[test]
     fn test_shield_leaves_text_without_an_expression_alone() {
         for input in ["", "1.2.3", "version", "{ version | upper }", "}}version{"] {
-            assert_eq!(
-                shield_version_expressions(input),
-                (input.to_string(), vec![])
-            );
+            let (out, deferred) = shield_version_expressions(input);
+            assert_eq!(out, input);
+            assert!(deferred.exprs.is_empty(), "{input}");
         }
     }
 
@@ -4425,11 +4498,46 @@ mod tests {
     fn test_shield_ignores_quoted_version() {
         let (out, deferred) =
             shield_version_expressions("{{ vars['version'] }}/{{ version | upper }}");
-        assert_eq!(deferred, vec!["{{ version | upper }}"]);
+        assert_eq!(deferred.exprs, vec!["{{ version | upper }}"]);
         assert!(out.starts_with("{{ vars['version'] }}/"));
 
         let (_, deferred) = shield_version_expressions("{{ (`'` ~ version ~ `'`) | upper }}");
-        assert_eq!(deferred.len(), 1);
+        assert_eq!(deferred.exprs.len(), 1);
+    }
+
+    /// Text that the config-load render substitutes stays data even when it spells a
+    /// placeholder of the shape that stands for deferred code.
+    #[test]
+    fn test_substituted_text_cannot_forge_a_deferred_placeholder() {
+        let input = "{{ env.X }}/{{ version | upper }}";
+        let rendered = render_option_for_backend(shield_version_expressions(input), |s| {
+            Ok(s.replace("{{ env.X }}", "__mise_deferred_version_expression_0__"))
+        })
+        .unwrap();
+        assert_eq!(
+            rendered,
+            "__mise_deferred_version_expression_0__/{{ version | upper }}"
+        );
+    }
+
+    /// A raw tag inside a string literal or a comment is text, so it is not deferred to the
+    /// backend's render, while a real block still is.
+    #[test]
+    fn test_raw_tags_in_strings_and_comments_are_not_blocks() {
+        for input in [
+            r#"{{ "{% raw %}{{ version }}{% endraw %}" }}"#,
+            "{{ '{% raw %}x{% endraw %}' ~ \"}}\" }}",
+            "{% set a = `{% raw %}x{% endraw %}` %}{{ a }}",
+            "{# {% raw %}{{ version }}{% endraw %} #}",
+        ] {
+            let (out, deferred) = shield_raw_blocks(input);
+            assert_eq!(out, input);
+            assert!(deferred.exprs.is_empty(), "{input}");
+        }
+        let input = r#"{{ "}}" }}{% raw %}{{ version }}{% endraw %}"#;
+        let (out, deferred) = shield_raw_blocks(input);
+        assert_eq!(deferred.exprs, vec!["{{ version }}"]);
+        assert!(out.starts_with(r#"{{ "}}" }}{% raw %}"#), "{out}");
     }
 
     #[tokio::test]
