@@ -4,6 +4,7 @@ mise_util::run_before_main!(init);
 
 fn init() {
     let home = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test");
+    let home = mise_util::testing::slot_home(&home);
     std::fs::create_dir_all(&home).unwrap();
     mise_util::env::set_var("HOME", &home);
     mise_util::testing::enable(home);

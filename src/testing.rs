@@ -2,7 +2,8 @@
 //! (`src/test.rs`) and the `mise` binary's (`src/main.rs`). Each calls [`init`]
 //! from its own constructor, since `cfg(test)` does not reach across crates.
 
-use std::path::PathBuf;
+use std::collections::BTreeSet;
+use std::path::{Path, PathBuf};
 
 use indoc::indoc;
 
@@ -11,16 +12,67 @@ use crate::{env, file};
 /// Set once the harness has written the fixture tree; see [`init`].
 const FIXTURES_READY_ENV: &str = "__MISE_TEST_FIXTURES_READY";
 
-/// Point mise at the `test/` fixture tree and write its config files.
+/// The parts of `test/` that tests read through the home directory.
+const FIXTURE_PATHS: &[&str] = &[
+    "fixtures",
+    "plugins",
+    "data/plugins",
+    "config/settings.toml",
+];
+
+/// The home directory of this test process: `test/home/<slot>`, which starts
+/// as a copy of the fixtures checked in under `test/`, so tests never write
+/// into the checked-in ones, and tests that nextest runs at the same time do
+/// not share a tree. See [`mise_util::testing::slot_home`].
+fn home_dir() -> PathBuf {
+    // Not under `target/`: that can be a symlink, and tests compare paths
+    // under the home directory with ones the OS has resolved.
+    let homes = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("test")
+        .join("home");
+    mise_util::testing::slot_home(&homes)
+}
+
+/// Make `to` match `from`: copy the files whose content differs, and remove
+/// what an earlier test left there that `from` does not have.
+fn sync_fixtures(from: &Path, to: &Path) -> eyre::Result<()> {
+    if from.is_dir() {
+        std::fs::create_dir_all(to)?;
+        let mut wanted = BTreeSet::new();
+        for entry in std::fs::read_dir(from)? {
+            let name = entry?.file_name();
+            sync_fixtures(&from.join(&name), &to.join(&name))?;
+            wanted.insert(name);
+        }
+        for entry in std::fs::read_dir(to)? {
+            let entry = entry?;
+            if !wanted.contains(&entry.file_name()) {
+                file::remove_all(entry.path())?;
+            }
+        }
+        return Ok(());
+    }
+    let wanted = std::fs::read(from)?;
+    if std::fs::read(to).is_ok_and(|current| current == wanted) {
+        return Ok(());
+    }
+    // copy() rather than write(): the plugin scripts must stay executable.
+    std::fs::copy(from, to)?;
+    Ok(())
+}
+
+/// Point mise at this process's copy of the `test/` fixture tree and write its
+/// config files.
 pub fn init() {
     // Invocations that only list tests (`--list`, which nextest runs twice per
-    // binary, concurrently) must not reset the shared fixture tree: one
-    // process's remove_all() unlinks the directory another just chdir'd into,
-    // and that process then aborts on its next current_dir() call.
+    // binary, concurrently) must not reset a fixture tree: one process's
+    // remove_all() unlinks the directory another just chdir'd into, and that
+    // process then aborts on its next current_dir() call.
     if std::env::args_os().any(|a| a == "--list") {
         return;
     }
-    mise_util::testing::enable(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test"));
+    let home = home_dir();
+    mise_util::testing::enable(home.clone());
     crate::register_util_hooks();
     // Tests must start from the environment nextest gives their process, not
     // from an activation diff inherited from the process that launched it.
@@ -32,15 +84,12 @@ pub fn init() {
     }
     console::set_colors_enabled(false);
     console::set_colors_enabled_stderr(false);
-    env::set_var(
-        "HOME",
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test"),
-    );
+    env::set_var("HOME", &home);
     // The embedded aube writes its adaptive concurrency state under
     // `$XDG_CACHE_HOME`, else `~/Library/Caches` on macOS, which would leave
-    // an untracked file in the fixture tree. Pin it to the Linux default,
-    // which `test/.gitignore` already covers, and away from the developer's
-    // own cache when their shell sets XDG_CACHE_HOME.
+    // file outside the home directory. Pin it to the Linux default, inside
+    // the home directory and away from the developer's own cache when their
+    // shell sets XDG_CACHE_HOME.
     env::set_var("XDG_CACHE_HOME", env::HOME.join(".cache"));
     env::remove_var("MISE_TRUSTED_CONFIG_PATHS");
     env::remove_var("MISE_DISABLE_TOOLS");
@@ -73,6 +122,12 @@ pub fn init() {
     // also keeps the cwd it inherited, which is the one the parent chose.
     if env::var_os(FIXTURES_READY_ENV).is_some() {
         return;
+    }
+    let fixtures = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test");
+    for path in FIXTURE_PATHS {
+        let to = home.join(path);
+        file::create_dir_all(to.parent().unwrap()).unwrap();
+        sync_fixtures(&fixtures.join(path), &to).unwrap();
     }
     file::remove_all(&*env::HOME.join("cwd")).unwrap();
     file::create_dir_all(&*env::HOME.join("cwd").join(".mise").join("tasks")).unwrap();
