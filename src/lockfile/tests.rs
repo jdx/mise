@@ -6323,6 +6323,46 @@ fn restore_missing_versions_keeps_the_requests_this_run_did_not_bind() {
 }
 
 #[test]
+fn restore_missing_versions_keeps_the_platforms_this_run_did_not_lock() {
+    // A skipped task locked 1.0.0 for two platforms. This run rebuilt the same entry for one;
+    // the other's record must come back, and the one this run locked must stay as it is.
+    let platform = |checksum: &str| PlatformInfo {
+        checksum: Some(checksum.to_string()),
+        ..Default::default()
+    };
+    let mut previous_entry = basic_tool("1.0.0", "aqua:widget");
+    previous_entry.platforms = BTreeMap::from([
+        ("linux-x64".to_string(), platform("sha256:old-linux")),
+        ("macos-arm64".to_string(), platform("sha256:macos")),
+        ("windows-x64".to_string(), platform("sha256:windows")),
+    ]);
+    let mut previous = Lockfile::default();
+    previous
+        .tools
+        .insert("widget".to_string(), vec![previous_entry]);
+
+    let mut rebuilt = basic_tool("1.0.0", "aqua:widget");
+    rebuilt.platforms = BTreeMap::from([("linux-x64".to_string(), platform("sha256:new-linux"))]);
+    rebuilt.unsupported_platforms = BTreeSet::from(["windows-x64".to_string()]);
+    let mut current = Lockfile::default();
+    current.tools.insert("widget".to_string(), vec![rebuilt]);
+    current.restore_missing_versions(&previous, "widget");
+
+    let entries = &current.tools["widget"];
+    assert_eq!(entries.len(), 1, "{entries:?}");
+    let platforms = &entries[0].platforms;
+    assert_eq!(
+        platforms["linux-x64"].checksum.as_deref(),
+        Some("sha256:new-linux")
+    );
+    assert_eq!(
+        platforms["macos-arm64"].checksum.as_deref(),
+        Some("sha256:macos")
+    );
+    assert!(!platforms.contains_key("windows-x64"), "{platforms:?}");
+}
+
+#[test]
 fn restore_missing_versions_brings_back_conda_package_records() {
     let path = std::env::temp_dir().join("test_restore_conda_records.lock");
     std::fs::write(

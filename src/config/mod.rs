@@ -2991,8 +2991,16 @@ pub(crate) fn glob(dir: &Path, pattern: &str) -> Result<Vec<PathBuf>> {
 /// escaped ones included, ends the literal part, so this never skips a pattern
 /// that could match.
 fn glob_parent_exists(dir: &Path, pattern: &str) -> bool {
+    let literal = glob_literal_parent(pattern);
+    literal.as_os_str().is_empty() || dir.join(literal).is_dir()
+}
+
+/// The directory `pattern` spells out before its first wildcard, empty when the
+/// first component already has one. A component with any glob metacharacter,
+/// escaped ones included, ends it, so every match of `pattern` is below it.
+fn glob_literal_parent(pattern: &str) -> PathBuf {
     let components = Path::new(pattern).components().collect_vec();
-    let literal = components
+    components
         .iter()
         .take(components.len().saturating_sub(1))
         .take_while(|c| {
@@ -3000,8 +3008,7 @@ fn glob_parent_exists(dir: &Path, pattern: &str) -> bool {
                 .to_string_lossy()
                 .contains(['*', '?', '[', ']'])
         })
-        .collect::<PathBuf>();
-    literal.as_os_str().is_empty() || dir.join(literal).is_dir()
+        .collect::<PathBuf>()
 }
 
 fn config_glob(dir: &Path, pattern: &str) -> Vec<PathBuf> {
@@ -7997,6 +8004,31 @@ pub fn is_glob_pattern(pattern: &str) -> bool {
         || pattern.contains('}')
 }
 
+/// Expand a task include like `expand_task_include`, but when safe mode bounds it, skip a glob
+/// whose fixed folder already resolves outside the project before walking that folder: a large
+/// folder outside would otherwise be scanned only for every match to be dropped. Callers still
+/// check each match, since a link below a folder inside the project can lead outside.
+fn expand_bounded_task_include(
+    dir: &Path,
+    pattern: &str,
+    bounds: Option<&[PathBuf]>,
+) -> Vec<PathBuf> {
+    if bounds.is_some() {
+        let replaced = file::replace_path(pattern);
+        let replaced = replaced.to_string_lossy();
+        if is_glob_pattern(&replaced) {
+            let literal = glob_literal_parent(&replaced);
+            if !literal.as_os_str().is_empty() {
+                let parent = dir.join(literal);
+                if parent.is_dir() && skip_task_file_outside(&parent, bounds) {
+                    return vec![];
+                }
+            }
+        }
+    }
+    expand_task_include(dir, pattern)
+}
+
 /// Expand a task include pattern (which may be a glob) to a list of paths
 fn expand_task_include(dir: &Path, pattern: &str) -> Vec<PathBuf> {
     let pattern = file::replace_path(pattern);
@@ -8116,11 +8148,8 @@ fn skip_task_file_outside(path: &Path, bounds: Option<&[PathBuf]>) -> bool {
     let Some(bounds) = bounds else {
         return false;
     };
-    // The global task directory holds global tasks even when no global config
-    // file exists to include it.
-    if is_global_task_include_path(path) {
-        return false;
-    }
+    // The global task directory is not exempt by how `path` is spelled: the global loader reads
+    // it with no bounds, and a project include naming a link in it is a project include.
     let resolved = file::desymlink_path(path);
     if bounds.iter().any(|bound| resolved.starts_with(bound)) {
         return false;
@@ -8240,7 +8269,7 @@ fn task_includes_and_bounds_for_dir(
                 note_remote_include_skipped(&p, bounds.as_deref());
                 return vec![];
             }
-            expand_task_include(&resolve_dir, &p)
+            expand_bounded_task_include(&resolve_dir, &p, bounds.as_deref())
         })
         .filter(|p| {
             !is_task_path_excluded(p, &excludes) && !skip_task_file_outside(p, bounds.as_deref())
@@ -8297,7 +8326,7 @@ pub(crate) fn task_creation_dir_for_dir(dir: &Path, config_files: &ConfigMap) ->
     if let Some(path) = includes
         .iter()
         .filter(|include| !is_remote_task_include(include))
-        .flat_map(|include| expand_task_include(&resolve_dir, include))
+        .flat_map(|include| expand_bounded_task_include(&resolve_dir, include, bounds.as_deref()))
         .filter(|path| !skip_task_file_outside(path, bounds.as_deref()))
         .find(|path| path.is_dir())
     {
@@ -8769,6 +8798,9 @@ async fn load_task_sources_from_configs(
             cascaded_task_config
         };
     let global_at_root = configs.iter().any(|cf| is_global_config(cf.get_path()));
+    // Only the global loader passes default includes: they are global config's defaults, also
+    // when no global config file exists and so none is at this root.
+    let global_defaults = default_includes.is_some();
     // a config can only vouch for task include files when it was actually
     // trusted — safe configs load without trust and cannot vouch for anything
     let require_task_include_trust = !configs.iter().any(|cf| is_path_trusted(cf.get_path()));
@@ -8802,7 +8834,7 @@ async fn load_task_sources_from_configs(
                 default_includes.unwrap_or_else(default_task_includes),
                 dir.to_path_buf(),
                 configs.len(),
-                global_at_root,
+                global_at_root || global_defaults,
             )
         });
     // Paranoid mode binds a project config's trust to its own content, which
@@ -8929,7 +8961,7 @@ async fn load_task_sources_from_configs(
         {
             vec![resolve_oci_url_to_path(include).await?]
         } else {
-            expand_task_include(&resolve_dir, include)
+            expand_bounded_task_include(&resolve_dir, include, local_bounds.as_deref())
                 .into_iter()
                 .map(TaskFileArtifact::persistent)
                 .collect()
@@ -9789,7 +9821,7 @@ fn included_task_definitions(
                     }
                     !remote
                 })
-                .flat_map(|p| expand_task_include(&root, p))
+                .flat_map(|p| expand_bounded_task_include(&root, p, bounds.as_deref()))
                 // An excluded include is dropped, and safe mode did not skip it.
                 .filter(|p| {
                     !is_task_path_excluded(p, &own_excludes)

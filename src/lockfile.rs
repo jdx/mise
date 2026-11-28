@@ -2282,24 +2282,45 @@ impl Lockfile {
                 .specifiers
                 .retain(|specifier| !rebound.contains(&(specifier.clone(), entry.options.clone())));
             if present.contains(&(entry.version.clone(), entry.options.clone())) {
+                let mut restored = BTreeMap::new();
                 if let Some(kept) = self.tools.get_mut(&key).and_then(|have| {
                     have.iter_mut()
                         .find(|kept| kept.version == entry.version && kept.options == entry.options)
                 }) {
                     kept.specifiers.extend(entry.specifiers);
-                }
-                continue;
-            }
-            // Generation dropped the shared package records this entry's
-            // conda_deps name along with it, so bring them back too.
-            for (platform, info) in &entry.platforms {
-                for dep in info.conda_deps.iter().flatten() {
-                    if let Some(package) = previous.get_conda_package(platform, dep) {
-                        self.set_conda_package(platform, dep, package.clone());
+                    // This run may have locked the entry for fewer platforms than the requests
+                    // it did not see use. The platforms it no longer records come back, and
+                    // the ones it locked, or found unsupported, stay as it left them.
+                    for (platform, info) in entry.platforms {
+                        if !kept.platforms.contains_key(&platform)
+                            && !kept.unsupported_platforms.contains(&platform)
+                        {
+                            kept.platforms.insert(platform.clone(), info.clone());
+                            restored.insert(platform, info);
+                        }
                     }
                 }
+                self.restore_conda_packages(previous, &restored);
+                continue;
             }
+            self.restore_conda_packages(previous, &entry.platforms);
             self.tools.entry(key.clone()).or_default().push(entry);
+        }
+    }
+
+    /// Generation dropped the shared package records that the conda_deps of `platforms`, an
+    /// entry's restored platforms, name along with them, so bring them back from `previous`.
+    fn restore_conda_packages(
+        &mut self,
+        previous: &Lockfile,
+        platforms: &BTreeMap<String, PlatformInfo>,
+    ) {
+        for (platform, info) in platforms {
+            for dep in info.conda_deps.iter().flatten() {
+                if let Some(package) = previous.get_conda_package(platform, dep) {
+                    self.set_conda_package(platform, dep, package.clone());
+                }
+            }
         }
     }
 
