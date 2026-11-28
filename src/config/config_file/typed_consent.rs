@@ -127,11 +127,20 @@ fn root_owned_by_user(path: &Path, config_root: &Path) -> bool {
 /// Both paths are made absolute and their `..` resolved the way [`super::config_root`] does for
 /// `root`: a relative `file`, such as the one `mise set --file .config/custom.toml` names, would
 /// otherwise never start with `root`, and the directories between them would go unchecked.
+///
+/// The system resolves a `..` after a symlink from the link's target, not from the directory
+/// that holds the link, so `link/../mise.toml` can open another file than the `mise.toml` its
+/// lexical form names. A path whose two forms lead to different files keeps the prompt.
 fn owned_below(root: &Path, file: &Path) -> bool {
     use path_absolutize::Absolutize;
-    let (Ok(root), Ok(file)) = (root.absolutize(), file.absolutize()) else {
+    let (Ok(lexical_root), Ok(lexical_file)) = (root.absolutize(), file.absolutize()) else {
         return false;
     };
+    let same_file = |raw: &Path, lexical: &Path| matches!((raw.canonicalize(), lexical.canonicalize()), (Ok(a), Ok(b)) if a == b);
+    if !same_file(root, &lexical_root) || !same_file(file, &lexical_file) {
+        return false;
+    }
+    let (root, file) = (lexical_root, lexical_file);
     owned_by_user(&file)
         && file
             .ancestors()
@@ -494,6 +503,8 @@ mod tests {
         std::fs::create_dir(&config).unwrap();
         let own = config.join("custom.toml");
         std::fs::write(&own, "").unwrap();
+        // The system resolves `x/..` only when `x` exists.
+        std::fs::create_dir(root.join("x")).unwrap();
         // `.config` is shared, so a path through it must fail however it is written.
         std::fs::set_permissions(&config, std::fs::Permissions::from_mode(0o777)).unwrap();
         let dotted = root
@@ -515,6 +526,30 @@ mod tests {
         for file in [&own, &dotted, &relative] {
             assert!(owned_below(&root, file), "{}", file.display());
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn ownership_checks_the_file_a_dotdot_after_a_symlink_opens() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        std::fs::create_dir_all(root.join("elsewhere").join("sub")).unwrap();
+        std::fs::write(root.join("mise.toml"), "").unwrap();
+        std::fs::write(root.join("elsewhere").join("mise.toml"), "").unwrap();
+        std::os::unix::fs::symlink(root.join("elsewhere").join("sub"), root.join("link")).unwrap();
+        // Read lexically this is `root/mise.toml`; the system opens `elsewhere/mise.toml`.
+        let through_link = root.join("link").join("..").join("mise.toml");
+        assert_eq!(
+            std::fs::canonicalize(&through_link).unwrap(),
+            root.join("elsewhere").join("mise.toml")
+        );
+        assert!(owned_below(&root, &root.join("mise.toml")));
+        assert!(!owned_below(&root, &through_link));
+        // A root written through the link is refused the same way.
+        assert!(!owned_below(
+            &root.join("link").join(".."),
+            &root.join("mise.toml")
+        ));
     }
 
     #[cfg(unix)]
