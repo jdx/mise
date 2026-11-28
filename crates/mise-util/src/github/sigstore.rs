@@ -3110,7 +3110,8 @@ mod tests {
             panic!("finding attestations settled the probe");
         };
 
-        // GitHub confirming that there are none settles it for probes
+        // GitHub confirming that there are none settles it for probes, and
+        // for the verification under the policy that rejected the set
         assert!(
             !github_probe_verdict(
                 Ok(false),
@@ -3126,6 +3127,19 @@ mod tests {
         assert!(matches!(
             detect_with_mirror(owner, repo, &digest, None).await,
             MirrorVerdict::Done(Ok(false))
+        ));
+        assert!(matches!(
+            verify_with_mirror(
+                Path::new("unread"),
+                owner,
+                repo,
+                &tags,
+                Some("release.yml"),
+                None,
+                &digest,
+            )
+            .await,
+            MirrorVerdict::Done(Err(AttestationError::NoAttestations))
         ));
     }
 
