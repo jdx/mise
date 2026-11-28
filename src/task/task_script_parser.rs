@@ -1326,7 +1326,16 @@ pub(super) fn resolve_env(shell: &[String]) -> Option<Vec<String>> {
     Some(shell)
 }
 
-fn is_env(program: &str) -> bool {
+/// Whether no shell mise knows quotes `value`, so that a shell mise cannot name reads it as it
+/// is: the rule [`ArgQuoting::Unknown`] holds the template functions to.
+pub(super) fn no_shell_quotes(value: &str) -> bool {
+    ArgQuoting::Unknown.reads_alike(
+        ArgQuoting::Unknown,
+        &usage::parse::ParseValue::String(value.to_string()),
+    )
+}
+
+pub(super) fn is_env(program: &str) -> bool {
     Path::new(program)
         .file_name()
         .is_some_and(|name| name == "env" || name == "env.exe")
@@ -1709,8 +1718,10 @@ mod tests {
             ("-S-i bash", true, true),
             ("-SFOO=1 bash", true, true),
             ("-- FOO=1 bash", true, true),
-            // A shell reads the quotes, but in a shebang `env -S` does.
-            ("-S 'FOO=1 bash'", false, true),
+            // In a shebang `env -S` reads the quotes, which mise refuses. In a shell, mise's
+            // splitter reads them: on Windows it groups only double quotes and keeps single ones.
+            ("-S 'FOO=1 bash'", false, !cfg!(windows)),
+            ("-S \"FOO=1 bash\"", false, true),
             ("-Sbash", true, true),
             ("-i -- bash", true, true),
             ("-u X -C /tmp FOO=1 bash", true, true),
