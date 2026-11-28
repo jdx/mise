@@ -1584,25 +1584,21 @@ impl std::fmt::Debug for LoginUrl {
     }
 }
 
-/// The download a locked install makes of an artifact whose install sent a
-/// login the release gave ([`PlatformInfo::locked_download`]): `url`, with
-/// only the logins of the `api_url` and `url` options, sent with `headers`
-/// (the forge token). Its `Debug` output leaves the login and headers out.
-#[derive(Clone, PartialEq, Eq)]
+/// What a locked install downloads for an artifact whose install sent a login
+/// the release gave ([`PlatformInfo::locked_download`]): the release asset's
+/// `url` and `url_api` with only the logins of the `api_url` and `url`
+/// options, and the `forge` and `api_url` that select the token sent with
+/// them. Nothing is requested until the lockfile update writes the entry
+/// ([`crate::backend::github::locked_download_request`]).
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LockedDownload {
     /// The release asset's name, for the error.
     pub(crate) name: String,
     pub(crate) url: LoginUrl,
-    pub(crate) headers: reqwest::header::HeaderMap,
-}
-
-impl std::fmt::Debug for LockedDownload {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("LockedDownload")
-            .field("name", &self.name)
-            .field("url", &self.url)
-            .finish_non_exhaustive()
-    }
+    /// Empty when the asset has no API URL.
+    pub(crate) url_api: LoginUrl,
+    pub(crate) api_url: LoginUrl,
+    pub(crate) forge: crate::backend::backend_type::BackendType,
 }
 
 /// Before the entry `info` of `short@version` is written: make the download a
@@ -1636,9 +1632,6 @@ pub(crate) async fn check_locked_downloads(
         locked_download_checksum(&download, checksum, checksum_source)
             .await
             .wrap_err_with(|| {
-                crate::backend::github::lost_login_error(&download.name, download.url.as_str())
-            })
-            .wrap_err_with(|| {
                 format!("{short}@{version} is installed, but mise.lock was not updated for it")
             })?;
     }
@@ -1652,15 +1645,24 @@ async fn locked_download_checksum(
     checksum: &mut Option<String>,
     checksum_source: &mut Option<ChecksumSource>,
 ) -> Result<()> {
+    // Before the request: finding a forge token can refresh it over the
+    // network.
     eyre::ensure!(!Settings::get().offline(), "offline mode is enabled");
+    let (url, headers) = crate::backend::github::locked_download_request(download).await?;
     let dir = tempfile::tempdir()?;
     let path = dir.path().join("artifact");
-    crate::http::HTTP
-        .download_file_with_headers(download.url.as_str(), &path, &download.headers, None)
-        .await?;
-    if let Some((algorithm, hash)) = checksum.as_deref().and_then(|c| c.split_once(':')) {
-        crate::hash::ensure_checksum(&path, hash, None, algorithm)?;
-    }
+    let fetched = async {
+        crate::http::HTTP
+            .download_file_with_headers(&url, &path, &headers, None)
+            .await?;
+        if let Some((algorithm, hash)) = checksum.as_deref().and_then(|c| c.split_once(':')) {
+            crate::hash::ensure_checksum(&path, hash, None, algorithm)?;
+        }
+        eyre::Ok(())
+    };
+    fetched
+        .await
+        .wrap_err_with(|| crate::backend::github::lost_login_error(&download.name, &url))?;
     if checksum
         .as_deref()
         .is_none_or(crate::backend::static_helpers::is_weak_checksum)
@@ -4745,25 +4747,8 @@ pub(crate) async fn update_lockfiles(
             }
         }
 
-        // An artifact the install downloaded through a login the release gave
-        // is recorded only once a locked install's download of it succeeds.
-        // A tool that fails it keeps its entry as it was.
-        let mut unrecorded = Vec::new();
-        for (short, versions) in &mut tool_versions_by_short {
-            for tv in versions.iter_mut() {
-                let (ba, version) = (tv.ba().clone(), tv.version.clone());
-                for info in tv.lock_platforms.values_mut() {
-                    let check = check_locked_downloads(short, &version, info);
-                    if let Err(err) = crate::toolset::with_safe_mode_tool_scope(&ba, check).await {
-                        login_errors.push(format!("{err:#}"));
-                        unrecorded.push(short.clone());
-                    }
-                }
-            }
-        }
-        for short in &unrecorded {
-            tool_versions_by_short.remove(short);
-        }
+        let unrecorded =
+            check_installed_locked_downloads(&mut tool_versions_by_short, &mut login_errors).await;
 
         // Tool stubs are not in the toolset but lock into this file too.
         let stub_requests = existing_lockfile
@@ -4917,6 +4902,13 @@ pub(crate) async fn update_lockfiles(
             // gone before auto-lock runs, letting a genuine regression slip through. The
             // stale baseline self-heals on the next update once the new version is locked.
             reinsert_deferred_baselines(&mut merged_tools, &deferred_baselines, &short);
+            if let Some(specifiers) = unrecorded.get(&short) {
+                preserve_unrecorded_entries(
+                    &mut merged_tools,
+                    existing_lockfile.tools_for(&short),
+                    specifiers,
+                );
+            }
             existing_lockfile.tools.insert(
                 crate::toolset::install_state::state_short(&short).into_owned(),
                 merged_tools,
@@ -5138,6 +5130,69 @@ struct ProvenanceRegressionCheck {
     /// downloads and verifies the artifact — compare against it, since the merge
     /// otherwise drops superseded versions before auto-lock runs.
     deferred_baselines: HashMap<String, Vec<LockfileTool>>,
+}
+
+/// Make, for each version in `tool_versions_by_short`, the download a locked
+/// install of an artifact its install fetched through a login the release gave
+/// makes ([`check_locked_downloads`]). A version whose download fails is not
+/// recorded: it is taken out, with its error in `errors`, and its request
+/// (specifier) is returned under its short, for [`preserve_unrecorded_entries`]
+/// to keep the entry the lockfile has for it. Other versions of the tool are
+/// recorded as usual; a tool with none left keeps its entries as they were.
+async fn check_installed_locked_downloads(
+    tool_versions_by_short: &mut HashMap<String, Vec<ToolVersion>>,
+    errors: &mut Vec<String>,
+) -> HashMap<String, BTreeSet<String>> {
+    let mut unrecorded: HashMap<String, BTreeSet<String>> = HashMap::new();
+    for (short, versions) in tool_versions_by_short.iter_mut() {
+        let mut recorded = Vec::with_capacity(versions.len());
+        for mut tv in std::mem::take(versions) {
+            let (ba, version) = (tv.ba().clone(), tv.version.clone());
+            let mut failed = false;
+            for info in tv.lock_platforms.values_mut() {
+                let check = check_locked_downloads(short, &version, info);
+                if let Err(err) = crate::toolset::with_safe_mode_tool_scope(&ba, check).await {
+                    errors.push(format!("{err:#}"));
+                    failed = true;
+                }
+            }
+            if failed {
+                unrecorded
+                    .entry(short.clone())
+                    .or_default()
+                    .insert(tv.request.version());
+            } else {
+                recorded.push(tv);
+            }
+        }
+        *versions = recorded;
+    }
+    tool_versions_by_short.retain(|_, versions| !versions.is_empty());
+    unrecorded
+}
+
+/// Keep the entries of `existing_tools` bound to `specifiers`, the requests
+/// whose new version was not recorded ([`check_installed_locked_downloads`]),
+/// which the merge dropped as superseded. A shared entry keeps only those
+/// requests; the others moved to the versions recorded now.
+fn preserve_unrecorded_entries(
+    merged_tools: &mut Vec<LockfileTool>,
+    existing_tools: Option<&Vec<LockfileTool>>,
+    specifiers: &BTreeSet<String>,
+) {
+    for existing_tool in existing_tools.into_iter().flatten() {
+        if existing_tool.specifiers.is_disjoint(specifiers)
+            || merged_tools.iter().any(|tool| {
+                tool.version == existing_tool.version && tool.options == existing_tool.options
+            })
+        {
+            continue;
+        }
+        let mut tool = existing_tool.clone();
+        tool.specifiers
+            .retain(|specifier| specifiers.contains(specifier));
+        merged_tools.push(tool);
+    }
 }
 
 fn reinsert_deferred_baselines(

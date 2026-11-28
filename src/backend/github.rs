@@ -745,31 +745,64 @@ pub(crate) fn lost_login_error(name: &str, download_url: &str) -> String {
     )
 }
 
-/// The download a locked install makes of `asset`, when a URL of `asset`
-/// holds a login nothing in the configuration puts back, such as a GitLab
-/// release link's: the request [`asset_download`] builds for the asset a
-/// locked install of the entry downloads ([`locked_asset_of`]). The install
-/// downloads the release's URL as it is and marks its entry with this
-/// ([`crate::lockfile::PlatformInfo::locked_download`]). The entry is recorded
-/// without the login, so the lockfile update makes this download before it
-/// writes the entry, and leaves the entry out when a locked install could not
-/// fetch it ([`crate::lockfile::check_locked_downloads`]).
-async fn locked_download_of(
+/// What a locked install downloads for `asset`, when a URL of `asset` holds a
+/// login nothing in the configuration puts back, such as a GitLab release
+/// link's: the asset a locked install of the entry downloads
+/// ([`locked_asset_of`]), from the `forge` whose token `api_url` selects. The
+/// install downloads the release's URL as it is and marks its entry with this
+/// ([`crate::lockfile::PlatformInfo::locked_download`]). Nothing is requested
+/// here: the entry is recorded without the login, so the lockfile update, when
+/// it writes the entry, makes the download ([`locked_download_request`]) and
+/// leaves the entry out when a locked install could not fetch it
+/// ([`crate::lockfile::check_locked_downloads`]).
+fn locked_download_of(
     asset: &ReleaseAsset,
     logins: &ConfiguredLogins,
     primary: bool,
-    headers_for: impl Fn(&str) -> Result<reqwest::header::HeaderMap>,
-) -> Result<Option<crate::lockfile::LockedDownload>> {
+    forge: &BackendType,
+    api_url: &str,
+) -> Option<crate::lockfile::LockedDownload> {
     let locked = locked_asset_of(asset, logins, primary);
-    if !loses_login(asset, &locked) {
-        return Ok(None);
-    }
-    let (url, headers) = asset_download(&locked, headers_for).await?;
-    Ok(Some(crate::lockfile::LockedDownload {
+    loses_login(asset, &locked).then(|| crate::lockfile::LockedDownload {
         name: asset.name.clone(),
-        url: crate::lockfile::LoginUrl::new(&url),
-        headers,
-    }))
+        url: crate::lockfile::LoginUrl::new(&locked.url),
+        url_api: crate::lockfile::LoginUrl::new(&locked.url_api),
+        api_url: crate::lockfile::LoginUrl::new(api_url),
+        forge: forge.clone(),
+    })
+}
+
+/// The request a locked install sends for `download`, as [`asset_download`]
+/// builds it: the URL it picks, which can mean asking the public forge which
+/// URL serves the asset, and the forge token for that URL.
+pub(crate) async fn locked_download_request(
+    download: &crate::lockfile::LockedDownload,
+) -> Result<(String, reqwest::header::HeaderMap)> {
+    let asset = ReleaseAsset {
+        name: download.name.clone(),
+        url: download.url.as_str().to_string(),
+        url_api: download.url_api.as_str().to_string(),
+        digest: None,
+        release_tag: None,
+    };
+    asset_download(&asset, |url| {
+        forge_headers(&download.forge, url, download.api_url.as_str())
+    })
+    .await
+}
+
+/// The headers a download from `url` sends to `forge`: the forge token
+/// configured for the server of `api_url`, when `url` is on it.
+fn forge_headers(
+    forge: &BackendType,
+    url: &str,
+    api_url: &str,
+) -> Result<reqwest::header::HeaderMap> {
+    match forge {
+        BackendType::Gitlab => gitlab::get_headers(url, api_url),
+        BackendType::Forgejo => forgejo::get_headers(url, api_url),
+        _ => github::get_headers(url, api_url),
+    }
 }
 
 /// Whether `a` and `b` name the same URL, login included, however each is
@@ -1884,13 +1917,7 @@ impl UnifiedGitBackend {
     /// The headers a download from `url` sends: the forge token configured for
     /// the server of `api_url`, when `url` is on it.
     fn forge_headers(&self, url: &str, api_url: &str) -> Result<reqwest::header::HeaderMap> {
-        if self.is_gitlab() {
-            gitlab::get_headers(url, api_url)
-        } else if self.is_forgejo() {
-            forgejo::get_headers(url, api_url)
-        } else {
-            github::get_headers(url, api_url)
-        }
+        forge_headers(&self.ba.backend_type(), url, api_url)
     }
 
     /// Where `mise lock` downloads `locked`, the asset a locked install
@@ -2588,10 +2615,13 @@ impl UnifiedGitBackend {
         // configuration puts back marks the entry with the download a locked
         // install makes, for the lockfile update to check.
         let logins = ConfiguredLogins::new(opts, tv, &PlatformTarget::from_current());
-        let locked_download = locked_download_of(asset, &logins, true, |url| {
-            self.forge_headers(url, &opts.api_url())
-        })
-        .await?;
+        let locked_download = locked_download_of(
+            asset,
+            &logins,
+            true,
+            &self.ba.backend_type(),
+            &opts.api_url(),
+        );
         if let Some(info) = tv.lock_platforms.get_mut(&platform_key) {
             forget_locked_login(info, &url, &file_path)?;
             info.locked_download = locked_download;
@@ -2712,10 +2742,13 @@ impl UnifiedGitBackend {
             &file_path,
         )?;
         let logins = ConfiguredLogins::new(opts, tv, &PlatformTarget::from_current());
-        artifact_info.locked_download = locked_download_of(asset, &logins, false, |url| {
-            self.forge_headers(url, &opts.api_url())
-        })
-        .await?;
+        artifact_info.locked_download = locked_download_of(
+            asset,
+            &logins,
+            false,
+            &self.ba.backend_type(),
+            &opts.api_url(),
+        );
         let expected_provenance =
             expected_install_provenance(artifact_info.provenance.clone(), required);
         if has_lockfile_integrity && !Settings::get().force_provenance_verify() {
@@ -4814,12 +4847,12 @@ mod tests {
 
     /// An install downloads a release asset as the release gives it, login
     /// included. When a URL holds a login nothing in the configuration puts
-    /// back (a GitLab release link's), its entry is marked with the download a
-    /// locked install of it makes: without that login, with the forge
-    /// headers. A login `api_url` gives back, or an asset with none, leaves no
-    /// mark.
-    #[tokio::test]
-    async fn test_install_marks_a_release_login_asset_with_the_locked_download() {
+    /// back (a GitLab release link's), its entry is marked with what a locked
+    /// install of it downloads: the URLs without that login, and the forge
+    /// and `api_url` whose token goes with them. A login `api_url` gives back,
+    /// or an asset with none, leaves no mark.
+    #[test]
+    fn test_install_marks_a_release_login_asset_with_the_locked_download() {
         let link = ReleaseAsset {
             name: "t.tar.gz".to_string(),
             url: "https://gitlab.example/o/r/-/releases/v1/downloads/t.tar.gz".to_string(),
@@ -4827,20 +4860,16 @@ mod tests {
             digest: Some("sha256:aaaa".to_string()),
             release_tag: Some("v1".to_string()),
         };
-        let token = |_: &str| {
-            let mut headers = reqwest::header::HeaderMap::new();
-            headers.insert("private-token", "t0ken".parse().unwrap());
-            Ok(headers)
-        };
+        let api_url = "https://gitlab.example/api/v4";
         let none = ConfiguredLogins::default();
         for primary in [true, false] {
-            let download = locked_download_of(&link, &none, primary, token)
-                .await
-                .unwrap()
+            let download = locked_download_of(&link, &none, primary, &BackendType::Gitlab, api_url)
                 .expect("marked with the locked download");
             assert_eq!(download.name, link.name);
-            assert_eq!(download.url.as_str(), "https://files.example/t.tar.gz");
-            assert_eq!(download.headers["private-token"], "t0ken");
+            assert_eq!(download.url.as_str(), link.url);
+            assert_eq!(download.url_api.as_str(), "https://files.example/t.tar.gz");
+            assert_eq!(download.api_url.as_str(), api_url);
+            assert_eq!(download.forge, BackendType::Gitlab);
         }
 
         let api = ConfiguredLogins {
@@ -4848,15 +4877,63 @@ mod tests {
             api: Some(url::Url::parse("https://link:secret@files.example/api/v4").unwrap()),
         };
         for primary in [true, false] {
-            let download = locked_download_of(&link, &api, primary, token).await;
-            assert!(download.unwrap().is_none());
+            assert!(
+                locked_download_of(&link, &api, primary, &BackendType::Gitlab, api_url).is_none()
+            );
         }
         let plain = ReleaseAsset {
             url_api: "https://files.example/t.tar.gz".to_string(),
             ..link.clone()
         };
-        let download = locked_download_of(&plain, &none, true, token).await;
-        assert!(download.unwrap().is_none());
+        assert!(locked_download_of(&plain, &none, true, &BackendType::Gitlab, api_url).is_none());
+    }
+
+    /// Marking an install's entry sends no request, so an install whose entry
+    /// no lockfile records (`lockfile = false`, or no `mise.lock` to update)
+    /// downloads only what it installs. The lockfile update sends the locked
+    /// install's request when it writes the entry, and pins what it served.
+    #[tokio::test]
+    async fn test_release_login_asset_is_requested_only_when_its_entry_is_written() {
+        let mut server = mockito::Server::new_async().await;
+        let path = unique_mock_path("t.tar.gz");
+        let locked = server
+            .mock("GET", path.as_str())
+            .match_header("authorization", mockito::Matcher::Missing)
+            .with_body("artifact")
+            .expect(1)
+            .create_async()
+            .await;
+        let plain = format!("{}{path}", server.url());
+        let asset = ReleaseAsset {
+            name: "t.tar.gz".to_string(),
+            url: plain.replacen("http://", "http://ci:t0ken@", 1),
+            url_api: String::new(),
+            digest: None,
+            release_tag: None,
+        };
+        let mut info = PlatformInfo {
+            url: Some(plain.clone()),
+            locked_download: locked_download_of(
+                &asset,
+                &ConfiguredLogins::default(),
+                true,
+                &BackendType::Github,
+                "https://api.github.com",
+            ),
+            ..Default::default()
+        };
+        assert!(info.locked_download.is_some());
+        assert!(!locked.matched_async().await, "marking sent a request");
+
+        crate::lockfile::check_locked_downloads("t", "1.0", &mut info)
+            .await
+            .unwrap();
+        locked.assert_async().await;
+        assert!(info.locked_download.is_none());
+        assert_eq!(
+            info.checksum.as_deref(),
+            Some("sha256:c7c5c1d70c5dec4416ab6158afd0b223ef40c29b1dc1f97ed9428b94d4cadb1c")
+        );
     }
 
     /// A mock path no other test or earlier run requests, ending in `file`.

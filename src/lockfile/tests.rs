@@ -6333,3 +6333,132 @@ backend = "conda:jq"
             .is_some()
     );
 }
+
+/// A tool version marked by an install that downloaded its artifact from
+/// `url` through a login the release gave.
+fn tv_with_locked_download(backend: &str, version: &str, url: &str) -> ToolVersion {
+    let mut tv = basic_tv(backend, version);
+    tv.lock_platforms.insert(
+        Platform::current().to_key(),
+        PlatformInfo {
+            url: Some(url.to_string()),
+            locked_download: Some(LockedDownload {
+                name: "t.tar.gz".to_string(),
+                url: LoginUrl::new(url),
+                url_api: LoginUrl::new(""),
+                api_url: LoginUrl::new("https://api.github.com"),
+                forge: crate::backend::backend_type::BackendType::Github,
+            }),
+            ..Default::default()
+        },
+    );
+    tv
+}
+
+/// After an install in merge mode, a version a locked install could not
+/// fetch is not recorded and its error is kept, while a sibling version of
+/// the same tool that passed is recorded. A tool with no version left keeps
+/// its entries as they were.
+#[tokio::test]
+async fn failed_locked_download_skips_only_that_version() {
+    static NEXT: AtomicUsize = AtomicUsize::new(0);
+    let prefix = format!(
+        "/locked-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    );
+    let mut server = mockito::Server::new_async().await;
+    let served = server
+        .mock("GET", format!("{prefix}/served.tar.gz").as_str())
+        .with_body("artifact")
+        .expect(1)
+        .create_async()
+        .await;
+    let refused = server
+        .mock("GET", mockito::Matcher::Regex(format!("^{prefix}/refused")))
+        .with_status(401)
+        .expect(2)
+        .create_async()
+        .await;
+    let url = |file: &str| format!("{}{prefix}/{file}", server.url());
+    let mut tools = HashMap::from([
+        (
+            "repo".to_string(),
+            vec![
+                tv_with_locked_download("github:owner/repo", "1.0.0", &url("served.tar.gz")),
+                tv_with_locked_download("github:owner/repo", "2.0.0", &url("refused.tar.gz")),
+            ],
+        ),
+        (
+            "other".to_string(),
+            vec![tv_with_locked_download(
+                "github:owner/other",
+                "3.0.0",
+                &url("refused-other.tar.gz"),
+            )],
+        ),
+    ]);
+    let mut errors = Vec::new();
+
+    let unrecorded = check_installed_locked_downloads(&mut tools, &mut errors).await;
+
+    served.assert_async().await;
+    refused.assert_async().await;
+    assert_eq!(
+        tools["repo"]
+            .iter()
+            .map(|tv| tv.version.as_str())
+            .collect_vec(),
+        vec!["1.0.0"]
+    );
+    assert!(
+        tools["repo"][0].lock_platforms[&Platform::current().to_key()]
+            .checksum
+            .is_some()
+    );
+    assert!(!tools.contains_key("other"));
+    assert_eq!(
+        unrecorded,
+        HashMap::from([
+            ("repo".to_string(), BTreeSet::from(["2.0.0".to_string()])),
+            ("other".to_string(), BTreeSet::from(["3.0.0".to_string()])),
+        ])
+    );
+    assert_eq!(errors.len(), 2);
+    assert!(
+        errors
+            .iter()
+            .any(|error| error
+                .contains("repo@2.0.0 is installed, but mise.lock was not updated for it")),
+        "{errors:?}"
+    );
+}
+
+/// The entry a request had before its new version was left unrecorded stays
+/// in the lockfile, bound to that request only; entries of the requests
+/// recorded now are replaced as usual.
+#[test]
+fn unrecorded_request_keeps_its_previous_entry() {
+    let tool = |version: &str, specifiers: &[&str]| {
+        let mut tool = basic_tool(version, "github:owner/repo");
+        tool.specifiers = specifiers.iter().map(|s| s.to_string()).collect();
+        tool
+    };
+    let existing = vec![tool("0.9.0", &["1"]), tool("1.9.0", &["2", "latest"])];
+    let mut merged = vec![tool("1.0.0", &["1"]), tool("2.1.0", &["latest"])];
+
+    preserve_unrecorded_entries(
+        &mut merged,
+        Some(&existing),
+        &BTreeSet::from(["2".to_string()]),
+    );
+
+    assert_eq!(
+        merged
+            .iter()
+            .map(|tool| tool.version.as_str())
+            .collect_vec(),
+        vec!["1.0.0", "2.1.0", "1.9.0"]
+    );
+    assert_eq!(merged[2].specifiers, BTreeSet::from(["2".to_string()]));
+}

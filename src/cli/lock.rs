@@ -1435,7 +1435,10 @@ impl Lock {
                 &lockfile,
                 &withheld,
             )
-            .await?;
+            .await
+            .map_err(|error| {
+                lockfile::generate::CondaPackageConflict::in_lockfile(error, lockfile_path)
+            })?;
         outcome.resolution_errors.extend(resolution_errors);
         let stale_versions = self.stale_versions_if_pruned(&lockfile, &resolvable);
         outcome
@@ -1621,7 +1624,10 @@ impl Lock {
                 &previous,
                 &withheld,
             )
-            .await?;
+            .await
+            .map_err(|error| {
+                lockfile::generate::CondaPackageConflict::in_lockfile(error, lockfile_path)
+            })?;
         let resolution_succeeded = resolution_errors.is_empty();
         outcome.resolution_errors.extend(resolution_errors);
 

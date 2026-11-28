@@ -209,7 +209,8 @@ pub(crate) async fn prepare_install(config: &Arc<Config>, tv: &ToolVersion) -> R
                 &[],
             ),
         )
-        .await?;
+        .await
+        .map_err(|error| CondaPackageConflict::in_lockfile(error, &path))?;
     // With no foreign target (for example `lockfile_platforms` limited to the
     // host) the candidate has no entry for the tool, so there is no graph to
     // attach to.
@@ -666,6 +667,120 @@ async fn keep_conda_pin_recorded_with_a_login(
     Ok(())
 }
 
+/// Two lockfile entries name the same conda package (one record per platform
+/// and package name, shared by every entry) and need it from different URLs or
+/// with different checksums. Writing either record would point the other entry
+/// at a package it was not resolved with, so the lockfile is not written.
+#[derive(Debug)]
+pub struct CondaPackageConflict {
+    platform: String,
+    basename: String,
+    /// The entry being written, as `short@version`, and the record it needs.
+    tool: String,
+    package: crate::backend::conda::CondaPackageInfo,
+    /// The entry the lockfile already holds the record for.
+    other: String,
+    other_package: crate::backend::conda::CondaPackageInfo,
+    /// The lockfile, once the caller names it ([`CondaPackageConflict::in_lockfile`]).
+    lockfile: Option<PathBuf>,
+}
+
+impl CondaPackageConflict {
+    /// `error` with the lockfile it was not written to named, when it is a
+    /// conflict; any other error as it is.
+    pub fn in_lockfile(error: eyre::Report, lockfile: &Path) -> eyre::Report {
+        match error.downcast::<Self>() {
+            Ok(mut conflict) => {
+                conflict.lockfile = Some(lockfile.to_path_buf());
+                conflict.into()
+            }
+            Err(error) => error,
+        }
+    }
+}
+
+impl std::fmt::Display for CondaPackageConflict {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use crate::backend::static_helpers::lock_url;
+        let describe = |package: &crate::backend::conda::CondaPackageInfo| match &package.checksum {
+            Some(checksum) => format!("{} ({checksum})", lock_url(&package.url)),
+            None => lock_url(&package.url),
+        };
+        let lockfile = self
+            .lockfile
+            .as_deref()
+            .map_or_else(|| "mise.lock".to_string(), display_path);
+        write!(
+            f,
+            "{} and {} both need conda package {} on {}, from different sources: \
+             {} needs {}, {} needs {}. {lockfile} keeps one record per package \
+             name on a platform, so it was not updated; lock the tools in \
+             separate lockfiles or resolve them from the same channel",
+            self.tool,
+            self.other,
+            self.basename,
+            self.platform,
+            self.tool,
+            describe(&self.package),
+            self.other,
+            describe(&self.other_package),
+        )
+    }
+}
+
+impl std::error::Error for CondaPackageConflict {}
+
+/// The conflict writing `package`, the record of conda package `basename` on
+/// `platform` that entry `tool` (short, version, options) needs, into
+/// `lockfile` would cause: the record there differs, in its URL without a
+/// login or in a checksum of the same algorithm, and another entry still
+/// names it. A record no other entry names is replaced.
+fn conda_package_conflict(
+    lockfile: &Lockfile,
+    platform: &str,
+    basename: &str,
+    package: &crate::backend::conda::CondaPackageInfo,
+    tool: (&str, &str, &BTreeMap<String, String>),
+) -> Option<CondaPackageConflict> {
+    use crate::backend::static_helpers::is_lock_url;
+    let existing = lockfile.get_conda_package(platform, basename)?;
+    let checksums_differ = match (&existing.checksum, &package.checksum) {
+        (Some(existing), Some(new)) => match (existing.split_once(':'), new.split_once(':')) {
+            (Some((a, existing)), Some((b, new))) => a == b && existing != new,
+            _ => existing != new,
+        },
+        _ => false,
+    };
+    if is_lock_url(Some(&existing.url), &package.url) && !checksums_differ {
+        return None;
+    }
+    let (short, version, options) = tool;
+    let other = lockfile.tools.iter().find_map(|(other_short, entries)| {
+        entries
+            .iter()
+            .filter(|entry| {
+                !(other_short == short && entry.version == version && entry.options == *options)
+            })
+            .find(|entry| {
+                entry
+                    .platforms
+                    .get(platform)
+                    .and_then(|info| info.conda_deps.as_ref())
+                    .is_some_and(|deps| deps.iter().any(|dep| dep == basename))
+            })
+            .map(|entry| format!("{other_short}@{}", entry.version))
+    })?;
+    Some(CondaPackageConflict {
+        platform: platform.to_string(),
+        basename: basename.to_string(),
+        tool: format!("{short}@{version}"),
+        package: package.clone(),
+        other,
+        other_package: existing.clone(),
+        lockfile: None,
+    })
+}
+
 /// How the target platforms were chosen. Platforms the user named are replaced
 /// individually and warn when a tool has no build for one of them.
 pub enum PlatformSelection {
@@ -983,6 +1098,16 @@ pub async fn generate(
             {
                 report.abandon();
                 return Err(error);
+            }
+            if let Some(conflict) = conda_package_conflict(
+                &candidate,
+                &platform.to_key(),
+                &key,
+                &value,
+                (&short, &version, &options),
+            ) {
+                report.abandon();
+                return Err(conflict.into());
             }
             candidate.set_conda_package(&platform.to_key(), &key, value);
         }
@@ -1892,8 +2017,6 @@ mod tests {
         crate::backend::load_tools().await.unwrap();
         let (ba, mut actual) = tool();
         let platform = Platform::current();
-        let mut headers = reqwest::header::HeaderMap::new();
-        headers.insert("private-token", "t0ken".parse().unwrap());
         let url = format!("{}/{file}", server.url());
         actual.lock_platforms.insert(
             platform.to_key(),
@@ -1903,7 +2026,9 @@ mod tests {
                 locked_download: Some(crate::lockfile::LockedDownload {
                     name: file.into(),
                     url: crate::lockfile::LoginUrl::new(&url),
-                    headers,
+                    url_api: crate::lockfile::LoginUrl::new(""),
+                    api_url: crate::lockfile::LoginUrl::new("https://api.github.com"),
+                    forge: crate::backend::backend_type::BackendType::Github,
                 }),
                 ..Default::default()
             },
@@ -1922,8 +2047,8 @@ mod tests {
     }
 
     /// An installed artifact downloaded through a login the release gave is
-    /// written once a locked install's download of it, with only the forge
-    /// token, serves the bytes the install pinned. A missing pin becomes the
+    /// written once a locked install's download of it, without that login,
+    /// serves the bytes the install pinned. A missing pin becomes the
     /// sha256 of what that download served.
     #[tokio::test]
     async fn installed_release_login_artifact_is_written_once_a_locked_install_can_fetch_it() {
@@ -1932,7 +2057,6 @@ mod tests {
         for file in ["pinned.tar.gz", "unpinned.tar.gz"] {
             let mock = server
                 .mock("GET", format!("/{file}").as_str())
-                .match_header("private-token", "t0ken")
                 .with_body("artifact")
                 .create_async()
                 .await;
@@ -2045,6 +2169,96 @@ mod tests {
             generated
                 .get_conda_package("other-platform", "zlib-1.3-h0_0")
                 .is_none()
+        );
+    }
+
+    /// An install that needs a conda package another entry already names, from
+    /// another channel, fails the update and names both tools, rather than
+    /// pointing the other entry at a package it was not resolved with. With no
+    /// other entry naming it, the record is replaced.
+    #[tokio::test]
+    async fn conda_package_another_entry_needs_from_elsewhere_is_not_overwritten() {
+        use crate::backend::conda::CondaPackageInfo;
+        crate::backend::load_tools().await.unwrap();
+        let platform = Platform::current();
+        let (ba, mut actual) = tool();
+        actual.lock_platforms.insert(
+            platform.to_key(),
+            PlatformInfo {
+                url: Some("https://conda.example/linux-64/fixture-1.0-h0_0.conda".into()),
+                checksum: Some("sha256:main".into()),
+                conda_deps: Some(vec!["zlib-1.3-h0_0".into()]),
+                ..Default::default()
+            },
+        );
+        let zlib = CondaPackageInfo {
+            url: "https://conda.example/bioconda/linux-64/zlib-1.3-h0_0.conda".into(),
+            checksum: Some("sha256:bioconda".into()),
+        };
+        actual
+            .conda_packages
+            .insert((platform.to_key(), "zlib-1.3-h0_0".into()), zlib.clone());
+        let mut previous = previous();
+        previous.set_platform_info(
+            "other",
+            "2.0",
+            Some("conda:other"),
+            &BTreeMap::new(),
+            &platform.to_key(),
+            PlatformInfo {
+                url: Some("https://conda.example/linux-64/other-2.0-h0_0.conda".into()),
+                checksum: Some("sha256:other".into()),
+                conda_deps: Some(vec!["zlib-1.3-h0_0".into()]),
+                ..Default::default()
+            },
+        );
+        previous.set_conda_package(
+            &platform.to_key(),
+            "zlib-1.3-h0_0",
+            CondaPackageInfo {
+                url: "https://conda.example/conda-forge/linux-64/zlib-1.3-h0_0.conda".into(),
+                checksum: Some("sha256:conda-forge".into()),
+            },
+        );
+
+        let error = generate(
+            &previous,
+            &[(ba.clone(), actual.clone())],
+            std::slice::from_ref(&platform),
+            true,
+            PlatformSelection::Default,
+            1,
+            std::slice::from_ref(&actual),
+        )
+        .await
+        .unwrap_err();
+        let error = CondaPackageConflict::in_lockfile(error, Path::new("/project/mise.lock"));
+        let message = format!("{error:#}");
+        assert!(error.is::<CondaPackageConflict>(), "{message}");
+        for expected in [
+            "fixture@1.0 and other@2.0 both need conda package zlib-1.3-h0_0",
+            "bioconda/linux-64/zlib-1.3-h0_0.conda (sha256:bioconda)",
+            "conda-forge/linux-64/zlib-1.3-h0_0.conda (sha256:conda-forge)",
+            "/project/mise.lock keeps one record per package name",
+        ] {
+            assert!(message.contains(expected), "{message}");
+        }
+
+        // Without `other`'s entry, nothing else names the record.
+        let generated = generate(
+            &previous,
+            &[(ba, actual.clone())],
+            std::slice::from_ref(&platform),
+            false,
+            PlatformSelection::Default,
+            1,
+            &[actual],
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            generated.get_conda_package(&platform.to_key(), "zlib-1.3-h0_0"),
+            Some(&zlib)
         );
     }
 
