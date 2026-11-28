@@ -650,12 +650,25 @@ mod tests {
             note(gone:write(string.rep("x", 1048576)))
             note(gone:close())
             // a short write waits in the handle's buffer, so it is the flush that
-            // finds the child gone; the marker file says it has closed its stdin
+            // finds the child gone; the marker file says it has closed its stdin,
+            // and the status file holds the exit status of a child that could not
+            // write the marker
             local closed = $out .. ".closed"
-            local short = io.popen("exec 0<&-; : > '" .. closed .. "'", "w")
+            local status = closed .. ".status"
+            local short = io.popen(
+                "exec 0<&-; true > '" .. closed .. "' || echo $? > '" .. status .. "'",
+                "w"
+            )
+            local deadline = os.time() + 10
             repeat
                 local marker = io.open(closed)
                 if marker then marker:close() end
+                if not marker and os.time() > deadline then
+                    local failed = io.open(status)
+                    local code = failed and failed:read("*l") or "unknown"
+                    if failed then failed:close() end
+                    error("the child did not write " .. closed .. " in 10s; exit status: " .. code)
+                end
             until marker
             note(short:write("x"))
             note(short:flush())
