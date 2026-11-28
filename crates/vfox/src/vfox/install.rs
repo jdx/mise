@@ -221,7 +221,7 @@ impl Vfox {
                     None => {
                         let mut request = client.get(request_url.clone());
                         if let Some(resolver) = &self.http_headers_resolver {
-                            request = request.headers(resolver(&request_url));
+                            request = request.headers(resolver(&request_url, url));
                         }
                         request.send().await?
                     }
@@ -252,7 +252,7 @@ impl Vfox {
             let mut headers = self
                 .http_headers_resolver
                 .as_ref()
-                .map(|resolver| resolver(&current))
+                .map(|resolver| resolver(&current, trusted))
                 .unwrap_or_default();
             if current.origin() == trusted.origin() {
                 headers.extend(plugin_headers.clone());

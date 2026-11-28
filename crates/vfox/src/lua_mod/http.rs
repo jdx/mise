@@ -222,16 +222,23 @@ fn add_default_headers_for_request(
         add_default_headers(lua, original_url, headers)
     };
 
-    add_resolved_headers(lua, request_url, headers)
+    add_resolved_headers(lua, request_url, original_url, headers)
 }
 
-fn add_resolved_headers(lua: &Lua, url: &str, mut headers: HeaderMap) -> HeaderMap {
+/// Adds the headers the resolver gives for a request to `url`, which the plugin named as
+/// `original_url`, unless the request already sets them.
+fn add_resolved_headers(
+    lua: &Lua,
+    url: &str,
+    original_url: &str,
+    mut headers: HeaderMap,
+) -> HeaderMap {
     let Ok(resolver) =
         lua.named_registry_value::<mlua::Function>(crate::http::HTTP_HEADERS_RESOLVER_REGISTRY_KEY)
     else {
         return headers;
     };
-    let Ok(table) = resolver.call::<Table>(url) else {
+    let Ok(table) = resolver.call::<Table>((url, original_url)) else {
         return headers;
     };
     let Ok(resolved) = into_headers(&table) else {

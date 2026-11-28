@@ -37,7 +37,7 @@ async fn test_url_rewriter_applies_to_all_lua_http_methods() {
     lua.set_named_registry_value(crate::http::URL_REWRITER_REGISTRY_KEY, rewriter)
         .unwrap();
     let headers_resolver = lua
-        .create_function(|lua, _: String| {
+        .create_function(|lua, _: (String, String)| {
             lua.create_table_from([("Authorization", "Basic bWlycm9yOnNlY3JldA==")])
         })
         .unwrap();

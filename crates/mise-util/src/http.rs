@@ -3868,6 +3868,22 @@ pub fn replacement_netrc_headers(url: &Url) -> HeaderMap {
     netrc_credential_headers(url)
 }
 
+/// [`netrc_headers`] for a request to `request` that a client made for
+/// `named`, a URL the URL replacements may have moved before the request was
+/// sent. When an operator's replacement sends `named` to another host, that
+/// mirror keeps its login in safe mode, as on the default download path, and
+/// so do the redirects it sends to its own origin (which reqwest would follow
+/// with the login); every other host gets [`netrc_headers`].
+pub fn rewritten_request_netrc_headers(request: &Url, named: &Url) -> HeaderMap {
+    let mut mirror = named.clone();
+    apply_url_replacements(&mut mirror);
+    if mirror.host() != named.host() && request.origin() == mirror.origin() {
+        replacement_netrc_headers(request)
+    } else {
+        netrc_headers(request)
+    }
+}
+
 fn netrc_credential_headers(url: &Url) -> HeaderMap {
     let mut headers = HeaderMap::new();
     if let Some(host) = url.host_str()

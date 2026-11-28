@@ -203,18 +203,21 @@ impl Plugin {
     /// Register the default HTTP headers resolver used by artifact downloads
     /// and the Lua HTTP module.
     pub(crate) fn set_http_headers_resolver(&self, resolver: HttpHeadersResolver) -> Result<()> {
-        let func = self.lua.create_function(move |lua, value: String| {
-            let table = lua.create_table()?;
-            let Ok(url) = Url::parse(&value) else {
-                return Ok(table);
-            };
-            for (name, value) in resolver(&url).iter() {
-                if let Ok(value) = value.to_str() {
-                    table.set(name.as_str(), value)?;
+        let func = self
+            .lua
+            .create_function(move |lua, (value, named): (String, String)| {
+                let table = lua.create_table()?;
+                let Ok(url) = Url::parse(&value) else {
+                    return Ok(table);
+                };
+                let named = Url::parse(&named).unwrap_or_else(|_| url.clone());
+                for (name, value) in resolver(&url, &named).iter() {
+                    if let Ok(value) = value.to_str() {
+                        table.set(name.as_str(), value)?;
+                    }
                 }
-            }
-            Ok(table)
-        })?;
+                Ok(table)
+            })?;
         self.lua
             .set_named_registry_value(crate::http::HTTP_HEADERS_RESOLVER_REGISTRY_KEY, func)?;
         Ok(())

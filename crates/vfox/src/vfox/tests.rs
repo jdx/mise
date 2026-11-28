@@ -225,8 +225,9 @@ async fn test_download_resolves_headers_after_url_rewrite() {
         let mirror_url = mirror_url.clone();
         move |url| *url = mirror_url.clone()
     });
-    vfox.set_http_headers_resolver(move |url| {
+    vfox.set_http_headers_resolver(move |url, named| {
         assert_eq!(url, &mirror_url);
+        assert_eq!(named.as_str(), "https://upstream.invalid/tool.tar.gz");
         let mut headers = HeaderMap::new();
         headers.insert(
             AUTHORIZATION,
@@ -595,7 +596,7 @@ async fn test_download_plugin_authorization_replaces_resolver_authorization() {
     std::fs::create_dir_all(&plugin_dir).unwrap();
     let plugin = Plugin::from_dir(&plugin_dir).unwrap();
     let mut vfox = Vfox::test();
-    vfox.set_http_headers_resolver(|_| {
+    vfox.set_http_headers_resolver(|_, _| {
         let mut headers = HeaderMap::new();
         headers.insert(
             AUTHORIZATION,

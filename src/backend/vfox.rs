@@ -1363,20 +1363,9 @@ pub(crate) async fn download_with_plugin_headers(
     let url = Url::parse(url)?;
     let mut vfox = vfox::Vfox::new();
     vfox.set_url_rewriter(crate::http::apply_url_replacements);
-    // vfox asks for the netrc login of the rewritten URL alone. When an
-    // operator's URL replacement sends the request to another host, that
-    // mirror keeps its login in safe mode, as on the default download path,
-    // and so do the redirects it sends to its own origin (which reqwest would
-    // follow with the login); the other hosts it redirects to do not.
-    let mut mirror = url.clone();
-    crate::http::apply_url_replacements(&mut mirror);
-    let mirror = (mirror.host() != url.host()).then_some(mirror);
-    vfox.set_http_headers_resolver(move |request: &Url| match &mirror {
-        Some(mirror) if request.origin() == mirror.origin() => {
-            crate::http::replacement_netrc_headers(request)
-        }
-        _ => crate::http::netrc_headers(request),
-    });
+    // A mirror an operator's URL replacement chose keeps its netrc login in
+    // safe mode, as on the default download path and in the plugin's client.
+    vfox.set_http_headers_resolver(crate::http::rewritten_request_netrc_headers);
     // The vfox client bounds connecting and each read by `http_timeout`; bound
     // the whole download by `http_download_timeout`, as the default download
     // path does.
