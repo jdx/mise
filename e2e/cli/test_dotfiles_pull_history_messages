@@ -59,3 +59,31 @@ assert_succeed "b dot pull --yes"
 assert "cat $second/.one" "v3"
 assert "subjects --first-parent $start..HEAD" "apply: wrote ~/.one
 merge origin dotfiles: edited ~/.one"
+
+# both machines made the same edit: the merge writes nothing, and the pull
+# leaves no empty apply commit after it
+echo v4 >~/.one
+assert_succeed "mise dot save ~/.one"
+assert_succeed "mise dot sync"
+echo v4 >"$second/.one"
+assert_succeed "b dot save $second/.one"
+start=$(git --git-dir="$repo" rev-parse HEAD)
+assert_succeed "b dot sync"
+assert_succeed "b dot pull --yes"
+assert "subjects --first-parent $start..HEAD" "merge origin dotfiles"
+# captured with one matcher on both sides, so the merge records it: an apply
+# that writes nothing after it compares equal and is skipped
+assert_contains "git --git-dir=$repo log -1 --format=%B HEAD" "Mise-History-Matcher: "
+
+# a permission change alone is named in the merge
+assert_succeed "mise dot sync"
+assert_succeed "mise dot pull --yes"
+chmod 600 ~/.one
+assert_succeed "mise dot save ~/.one"
+assert_succeed "mise dot sync"
+echo v3 >"$second/.two"
+assert_succeed "b dot save $second/.two"
+start=$(git --git-dir="$repo" rev-parse HEAD)
+assert_succeed "b dot sync"
+assert_succeed "b dot pull --yes"
+assert_contains "subjects --first-parent $start..HEAD" "merge origin dotfiles: edited ~/.one"

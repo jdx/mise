@@ -1536,7 +1536,23 @@ fn changes_from(
 /// What changed from one snapshot tree to another, as one short line, or
 /// `None` when no tracked file differs.
 pub(crate) fn describe_trees(repo: &HistoryRepo, from: &str, to: &str) -> Result<Option<String>> {
-    let changes = changes_from(repo, Some(from), to, None)?;
+    let mut changes = changes_from(repo, Some(from), to, None)?;
+    // a permission change lives in the manifest, which the tree diff skips
+    let before = super::manifest::Manifest::read(repo, from)?.unwrap_or_default();
+    let after = super::manifest::Manifest::read(repo, to)?.unwrap_or_default();
+    let keys: BTreeSet<&String> = before
+        .permissions
+        .keys()
+        .chain(after.permissions.keys())
+        .collect();
+    for key in keys {
+        if before.permissions.get(key) != after.permissions.get(key) {
+            let path = tree_path_to_display(key);
+            if !changes.touches(&path) {
+                changes.modified.push(path);
+            }
+        }
+    }
     Ok((!changes.is_empty()).then(|| truncate(describe_changes(&changes))))
 }
 

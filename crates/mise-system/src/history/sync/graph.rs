@@ -81,10 +81,19 @@ impl Heads {
                         &repo.output_tree_of(local)?,
                         tree,
                     )?;
-                    let message = match incoming {
+                    let mut message = match incoming {
                         Some(incoming) => format!("merge origin dotfiles: {incoming}"),
                         None => "merge origin dotfiles".to_string(),
                     };
+                    // both sides captured with one matcher: the merge was
+                    // too, so a pull that then writes nothing can reuse it
+                    let matcher = repo.read_meta(local)?.tree.coverage.matcher;
+                    if let Some(matcher) = matcher
+                        && repo.read_meta(remote)?.tree.coverage.matcher == Some(matcher)
+                    {
+                        message.push('\n');
+                        message.push_str(&HistoryRepo::matcher_trailer(matcher));
+                    }
                     repo.commit_tree(tree, vec![local, remote], &message)?
                 }
             }
