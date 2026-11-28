@@ -1613,18 +1613,18 @@ pub fn trust_check_before_write(path: &Path) -> Result<()> {
 /// state directory, and a link out of the root whose target does not exist are never followed,
 /// so a write never creates a file outside the project.
 pub fn symlink_check_before_write(path: &Path) -> Result<()> {
+    // The directory is resolved from the absolute path: a bare file name such as `mise.toml`
+    // has an empty parent, which does not resolve.
+    let abs = path.absolutize()?;
+    let dir = abs.parent().and_then(|dir| dir.canonicalize().ok());
     let dir_leads_out = config_root::linked_project(path).is_some_and(|project| {
-        let dir = path.parent().and_then(|dir| dir.canonicalize().ok());
         let project = project.canonicalize().ok();
-        !matches!((dir, project), (Some(dir), Some(project)) if dir.starts_with(&project))
+        !matches!((&dir, project), (Some(dir), Some(project)) if dir.starts_with(&project))
     });
     // A directory link that stays in the project can still lead to global config, as a home
     // directory's `.mise` linked to `.config/mise` does, so that case is never waved through,
     // and neither is one that would create a global config file that does not exist yet.
-    let to_global = || {
-        path.absolutize()
-            .is_ok_and(|abs| config::write_reaches_global_config_through_link(&abs))
-    };
+    let to_global = || config::write_reaches_global_config_through_link(&abs);
     if !path.is_symlink() && !dir_leads_out && !to_global() {
         return Ok(());
     }
@@ -1661,10 +1661,7 @@ pub fn symlink_check_before_write(path: &Path) -> Result<()> {
     let root = config_root::config_root(path).canonicalize().ok();
     let in_root = !dir_leads_out
         && (root.is_some_and(|root| target.starts_with(root))
-            || path
-                .parent()
-                .and_then(|dir| dir.canonicalize().ok())
-                .is_some_and(|dir| target.starts_with(dir)));
+            || dir.is_some_and(|dir| target.starts_with(dir)));
     if in_root {
         return Ok(());
     }
@@ -1691,6 +1688,86 @@ pub fn symlink_check_before_write(path: &Path) -> Result<()> {
         display_path(path),
         display_path(&target),
         display_path(&project)
+    ))
+}
+
+/// Refuses to change task script `script`, found in a task directory of config root `root`,
+/// through a link that leaves the root: a directory between the root and the script, or the
+/// script itself when `follow_own_link` is set. Removing a script deletes its own link, not what
+/// the link leads to, so a removal passes `false`.
+///
+/// The rule is [`symlink_check_before_write`]'s: a project's links come with its working tree, so
+/// a linked `mise-tasks` would let its author choose which file `mise tasks rm` deletes or
+/// `mise tasks add --file` writes. A link that stays in the root is followed. One that leaves it
+/// is followed only for global or system config's own tasks, which the user links into place
+/// themselves, or for a project outside safe mode that was trusted before this command started,
+/// and never to create a file. A script outside the root, which an include named, is the
+/// config's choice and is left alone.
+pub fn script_check_before_change(script: &Path, root: &Path, follow_own_link: bool) -> Result<()> {
+    let script = script.absolutize()?;
+    let root = root.absolutize()?;
+    let (Ok(below_root), Some(dir), Some(name)) = (
+        script.strip_prefix(&root),
+        script.parent(),
+        script.file_name(),
+    ) else {
+        return Ok(());
+    };
+    if [&*dirs::CONFIG, &*dirs::SYSTEM_CONFIG]
+        .into_iter()
+        .any(|config_dir| config_dir.absolutize().is_ok_and(|d| script.starts_with(d)))
+    {
+        return Ok(());
+    }
+    let own_link = follow_own_link && script.is_symlink();
+    let dir_link = below_root
+        .parent()
+        .into_iter()
+        .flat_map(Path::ancestors)
+        .filter(|relative| !relative.as_os_str().is_empty())
+        .any(|relative| config_root::is_link(&root.join(relative)));
+    if !own_link && !dir_link {
+        return Ok(());
+    }
+    let target = if follow_own_link {
+        file::atomic_write_target(&script)?
+    } else {
+        dir.canonicalize()?.join(name)
+    };
+    let (verb, through) = match (follow_own_link, own_link) {
+        (false, _) => ("remove", "a linked directory"),
+        (true, true) => ("write", "its symlink"),
+        (true, false) => ("write", "a linked directory"),
+    };
+    let refuse = |why: &str| -> Result<()> {
+        Err(eyre!(
+            "refusing to {verb} task {} through {through} to {}: {why}",
+            display_path(&script),
+            display_path(&target)
+        ))
+    };
+    if root
+        .canonicalize()
+        .is_ok_and(|root| target.starts_with(root))
+    {
+        return Ok(());
+    }
+    if target.symlink_metadata().is_err() {
+        return refuse(
+            "the link leaves the project and its target does not exist. Replace the link with a regular directory",
+        );
+    }
+    if Settings::safe_mode() {
+        return refuse(
+            "a link out of the project is only followed for global config, or for a trusted project outside safe mode",
+        );
+    }
+    if is_trusted(&root) && !trusted_by_this_command(&root) {
+        return Ok(());
+    }
+    refuse(&format!(
+        "the link leaves the project, and mise follows such a link only for a project that was trusted before this command. Check where the link leads, run `mise trust` in {} and run the command again, or replace the link",
+        display_path(&root)
     ))
 }
 

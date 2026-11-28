@@ -609,6 +609,27 @@ pub(super) async fn choose_definition(name: &str, target: &TargetArgs) -> Result
     }
 }
 
+/// Refuses to change task script `script` through a link out of its project; see
+/// [`config_file::script_check_before_change`]. The project is the deepest root, of the loaded
+/// config or the one mise runs in, that the script's path as written lies in. A removal passes
+/// `follow_own_link = false`, as it deletes the script's own link.
+pub(super) async fn script_check_before_change(script: &Path, follow_own_link: bool) -> Result<()> {
+    let config = Config::get().await?;
+    let script = path_absolutize::Absolutize::absolutize(script)?;
+    let root = config
+        .config_files
+        .values()
+        .map(|cf| cf.config_root())
+        .chain(config.project_root.clone())
+        .chain(crate::dirs::CWD.clone())
+        .filter(|root| script.starts_with(root))
+        .max_by_key(|root| root.components().count());
+    match root {
+        Some(root) => config_file::script_check_before_change(&script, &root, follow_own_link),
+        None => Ok(()),
+    }
+}
+
 /// Whether config file `path` loads without asking for trust already, before a write.
 fn is_already_trusted(path: &Path) -> bool {
     Settings::safe_mode()

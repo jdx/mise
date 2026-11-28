@@ -68,11 +68,17 @@ impl TasksRm {
             }
             definitions.push((task.as_str(), definition));
         }
-        // Every config file must be writable before any task is removed from one.
+        // Every config file must be writable, and every script removable, before any task is
+        // removed. A script's own link is removed rather than followed, so only the
+        // directories that lead to it are checked.
         if !self.dry_run {
             for (_, definition) in &definitions {
-                if let Definition::Toml(path) = definition {
-                    config_file::symlink_check_before_write(path)?;
+                match definition {
+                    Definition::Toml(path) => config_file::symlink_check_before_write(path)?,
+                    Definition::File(path) => {
+                        write::script_check_before_change(path, false).await?
+                    }
+                    Definition::Other(_) => {}
                 }
             }
         }

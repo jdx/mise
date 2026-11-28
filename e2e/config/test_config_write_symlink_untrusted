@@ -185,3 +185,41 @@ assert_contains "mise edit --dry-run --tool-versions .tool-versions 2>&1" 'tiny 
 assert_fail "test -e ../outside/preview.toml"
 assert_fail_contains "mise edit --tool-versions .tool-versions 2>&1" "refusing to write"
 assert_fail "test -e ../outside/preview.toml"
+
+echo "=== a bare file name's link inside the project is followed ==="
+mkdir -p ../bare/config
+cd ../bare || exit 1
+echo "[tools]" >config/real.toml
+ln -s config/real.toml mise.toml
+assert "mise edit --force"
+assert "test -L mise.toml"
+assert_contains "cat config/real.toml" "mise config files are hierarchical"
+
+echo "=== a task directory linked out of the project is not changed ==="
+mkdir -p ../task-link ../outside/tasks
+printf '#!/usr/bin/env bash\necho out\n' >../outside/tasks/out
+chmod +x ../outside/tasks/out
+cd ../task-link || exit 1
+echo "[tools]" >mise.toml
+ln -s ../outside/tasks mise-tasks
+assert_fail_contains "MISE_YES=1 mise tasks rm out 2>&1" "through a linked directory"
+assert "test -e ../outside/tasks/out"
+assert_fail_contains "mise tasks add --file new -- echo new 2>&1" "through a linked directory"
+assert_fail "test -e ../outside/tasks/new"
+
+echo "=== a task script's own link out is removed, not followed ==="
+rm mise-tasks
+mkdir mise-tasks
+ln -s ../../outside/tasks/out mise-tasks/out
+assert_fail_contains "mise tasks add --file --force out -- echo replaced 2>&1" "through its symlink"
+assert_not_contains "cat ../outside/tasks/out" "replaced"
+assert "MISE_YES=1 mise tasks rm out"
+assert_fail "test -L mise-tasks/out"
+assert "test -e ../outside/tasks/out"
+
+echo "=== a trusted project's task directory may link out ==="
+rm -r mise-tasks
+ln -s ../outside/tasks mise-tasks
+assert "mise trust"
+assert "MISE_YES=1 mise tasks rm out"
+assert_fail "test -e ../outside/tasks/out"

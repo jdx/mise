@@ -328,15 +328,21 @@ fn drop_unlent_templates(
         }
         keep
     });
+    let top_checksum_dropped = drops_unverified_url(&dropped, options.opts.keys());
     if !explicit.opts.contains_key("url")
-        && drops_unverified_url(&dropped, options.opts.keys())
+        && top_checksum_dropped
         && options.opts.shift_remove("url").is_some()
     {
         warn_unverified_url(&tool, "url");
     }
     // A platform with no checksum of its own is checked against the top-level one, as the
-    // http backend looks a platform's option up there when the platform does not set it.
+    // http backend looks a platform's option up there when the platform does not set it. So a
+    // platform that lost its own checksum keeps its url while a top-level one is left, and one
+    // that never had a checksum loses its url with the top-level checksum.
     if !options.opts.keys().any(|k| is_checksum_option(k)) {
+        if top_checksum_dropped {
+            unverified.extend(platforms_without_checksum(&options.opts));
+        }
         for at in unverified {
             if remove_url_at(&mut options.opts, &at) {
                 warn_unverified_url(&tool, &format!("{}.url", at.join(".")));
@@ -387,6 +393,22 @@ fn keep_lent_parts(
         unverified.push(at.to_vec());
     }
     !table.is_empty()
+}
+
+/// The paths of the `platforms` (or `platform`) entries in `opts` that have a `url` and no
+/// checksum option of their own.
+fn platforms_without_checksum(opts: &indexmap::IndexMap<String, toml::Value>) -> Vec<Vec<String>> {
+    ["platforms", "platform"]
+        .into_iter()
+        .filter_map(|key| Some((key, opts.get(key)?.as_table()?)))
+        .flat_map(|(key, platforms)| {
+            platforms.iter().filter_map(move |(platform, entry)| {
+                let entry = entry.as_table()?;
+                (entry.contains_key("url") && !entry.keys().any(|k| is_checksum_option(k)))
+                    .then(|| vec![key.to_string(), platform.clone()])
+            })
+        })
+        .collect()
 }
 
 /// Removes the `url` of the table at path `at` in `opts`, and each table on the way that is
