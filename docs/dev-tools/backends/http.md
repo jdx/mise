@@ -98,7 +98,9 @@ downloading it, then verifies, extracts and links it the same way. Add a
 ```
 
 `mise.lock` records the URL as written, so a lockfile that names a local path
-works only on machines that have the file at that path.
+works only on machines that have the file at that path. Only the `http:` backend
+reads `file://` URLs, and [safe mode](/security.html#safe-mode) reads them only
+for tools that global or system config requests.
 
 ## Per-platform downloads {#platform-specific-urls}
 

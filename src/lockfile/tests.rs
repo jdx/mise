@@ -1360,6 +1360,56 @@ fn package_provenance_rejects_unknown_keys() {
 }
 
 #[test]
+fn aube_installs_the_graph_mise_checked_not_the_sidecar_text() {
+    // To mise's YAML 1.2 parser U+0085, U+2028 and U+2029 are ordinary
+    // characters, so the last line is one comment. aube's YAML 1.1 parser
+    // ends the comment there and reads a second document after it.
+    let yaml = r#"lockfileVersion: '9.0'
+importers:
+  .:
+    dependencies:
+      cli:
+        specifier: 1.0.0
+        version: 1.0.0
+packages:
+  cli@1.0.0:
+    resolution: {integrity: sha512-root}
+    deprecated: "one\Ntwo\Lthree\Pfour\rfive"
+    "a\Nkey": true
+# end of graph
+---
+importers:
+  .:
+    dependencies:
+      cli:
+        specifier: 1.0.0
+        version: link:/payload
+"#;
+    assert!(AubeLock::from_yaml(yaml).is_err());
+    let (visible, hidden) = yaml.split_once("# end of graph").unwrap();
+    for separator in ["\u{85}", "\u{2028}", "\u{2029}"] {
+        let yaml = format!("{visible}# end of graph{}", hidden.replace('\n', separator));
+        let graph = AubeLock::from_yaml(&yaml).unwrap();
+        // The sidecar and its digest keep the text as it was read.
+        assert_eq!(graph.to_yaml().unwrap(), yaml);
+
+        let installed = graph.to_install_yaml().unwrap();
+        assert!(!installed.contains("link:"), "{installed}");
+        // Strings keep the characters aube reads as line breaks, escaped.
+        assert!(
+            !installed.contains(['\u{85}', '\u{2028}', '\u{2029}', '\r']),
+            "{installed}"
+        );
+        assert!(
+            installed.contains(r#""one\Ntwo\Lthree\Pfour\rfive""#),
+            "{installed}"
+        );
+        assert!(installed.contains(r#""a\Nkey""#), "{installed}");
+        assert_eq!(AubeLock::from_yaml(&installed).unwrap(), graph);
+    }
+}
+
+#[test]
 fn aube_graph_round_trips_through_mise_lock() {
     let yaml = r#"lockfileVersion: '9.0'
 settings:
@@ -1972,7 +2022,8 @@ fn merge_keeps_unsupported_platforms_until_resolved() {
         vec![entry(&["linux-x64", "macos-arm64"], &[])],
         Some(&existing),
         |_, _| None,
-    );
+    )
+    .unwrap();
     assert_eq!(tools.len(), 1);
     assert_eq!(
         tools[0].platforms.keys().collect::<Vec<_>>(),
@@ -1990,7 +2041,8 @@ fn merge_keeps_unsupported_platforms_until_resolved() {
         vec![entry(&["linux-x64"], &[])],
         Some(&existing),
         |_, platform| (platform.to_key() == "windows-x64").then(|| windows_url.clone()),
-    );
+    )
+    .unwrap();
     assert!(
         tools
             .iter()
@@ -2509,7 +2561,7 @@ fn merge_keeps_a_provenance_pin_when_install_options_change() {
     let mut fresh = basic_tool("3.1.0", "npm:@sigstore/bundle");
     fresh.options = BTreeMap::from([("allow_builds".to_string(), "x".to_string())]);
 
-    let (merged, _) = merge_tool_entries(vec![fresh], Some(&vec![existing]), |_, _| None);
+    let (merged, _) = merge_tool_entries(vec![fresh], Some(&vec![existing]), |_, _| None).unwrap();
 
     let kept = merged
         .iter()
@@ -2522,13 +2574,158 @@ fn merge_keeps_a_provenance_pin_when_install_options_change() {
 }
 
 #[test]
+fn merge_keeps_a_provenance_pin_when_the_version_changes() {
+    let mut existing = basic_tool("3.1.0", "npm:@sigstore/bundle");
+    existing.provenance = Some(PackageProvenance {
+        repository: "github.com/sigstore/sigstore-js".to_string(),
+    });
+    let fresh = basic_tool("3.2.0", "npm:@sigstore/bundle");
+
+    let (merged, _) = merge_tool_entries(vec![fresh], Some(&vec![existing]), |_, _| None).unwrap();
+
+    assert_eq!(merged.len(), 1);
+    assert_eq!(merged[0].version, "3.2.0");
+    assert_eq!(
+        merged[0].provenance.as_ref().map(|p| p.repository.as_str()),
+        Some("github.com/sigstore/sigstore-js")
+    );
+}
+
+#[test]
+fn package_pins_disagree_only_across_repositories_of_one_backend() {
+    let pinned = |version: &str, backend: &str, repository: &str| {
+        let mut tool = basic_tool(version, backend);
+        tool.provenance = Some(PackageProvenance {
+            repository: repository.to_string(),
+        });
+        tool
+    };
+    let agree = vec![
+        pinned("1.0.0", "npm:x", "github.com/a/x"),
+        pinned("2.0.0", "npm:x", "github.com/a/x"),
+        basic_tool("0.9.0", "npm:x"),
+        pinned("1.0.0", "npm:@other/x", "github.com/b/x"),
+    ];
+    assert!(!package_pins_disagree(&agree));
+    let mut disagree = agree;
+    disagree.push(pinned("3.0.0", "npm:x", "github.com/evil/x"));
+    assert!(package_pins_disagree(&disagree));
+}
+
+/// `mise lock` in merge mode writes a bumped version with `set_platform_info`, then
+/// prunes the old one, so the new entry has to carry the package's pin itself.
+#[test]
+fn set_platform_info_gives_a_new_version_the_package_pin() {
+    let mut existing = basic_tool("3.1.0", "npm:@sigstore/bundle");
+    existing.provenance = Some(PackageProvenance {
+        repository: "github.com/sigstore/sigstore-js".to_string(),
+    });
+    let mut lockfile = Lockfile::default();
+    lockfile
+        .tools
+        .insert("npm:@sigstore/bundle".to_string(), vec![existing]);
+    lockfile.set_platform_info(
+        "npm:@sigstore/bundle",
+        "3.2.0",
+        Some("npm:@sigstore/bundle"),
+        &BTreeMap::new(),
+        "linux-x64",
+        PlatformInfo::default(),
+    );
+    lockfile.retain_tool_versions(
+        "npm:@sigstore/bundle",
+        &BTreeSet::from(["3.2.0".to_string()]),
+    );
+    let entries = lockfile.tools_for("npm:@sigstore/bundle").unwrap();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(
+        entries[0]
+            .provenance
+            .as_ref()
+            .map(|p| p.repository.as_str()),
+        Some("github.com/sigstore/sigstore-js")
+    );
+}
+
+#[test]
+fn merge_leaves_a_locked_version_without_a_provenance_pin_as_it_is() {
+    // 0.9.0 predates the package's provenance and is locked beside 1.0.0.
+    let mut pinned = basic_tool("1.0.0", "npm:example");
+    pinned.provenance = Some(PackageProvenance {
+        repository: "github.com/example/tool".to_string(),
+    });
+    let existing = vec![basic_tool("0.9.0", "npm:example"), pinned.clone()];
+    let fresh = vec![basic_tool("0.9.0", "npm:example"), pinned];
+
+    let (merged, _) = merge_tool_entries(fresh, Some(&existing), |_, _| None).unwrap();
+
+    let pins = merged
+        .iter()
+        .map(|tool| (tool.version.as_str(), tool.provenance.is_some()))
+        .collect_vec();
+    assert_eq!(pins, [("0.9.0", false), ("1.0.0", true)]);
+}
+
+#[test]
+fn a_provenance_pin_covers_the_unlocked_versions_of_its_package() {
+    let pinned = |version: &str, backend: &str, repository: &str| {
+        let mut tool = basic_tool(version, backend);
+        tool.provenance = Some(PackageProvenance {
+            repository: repository.to_string(),
+        });
+        tool
+    };
+    let entries = vec![
+        basic_tool("0.9.0", "npm:example"),
+        pinned("1.0.0", "npm:example", "github.com/example/one"),
+        pinned("1.1.0", "npm:example", "github.com/example/one"),
+        pinned("3.0.0", "npm:other", "github.com/other/other"),
+        pinned("1.0.0", "npm:moved", "github.com/moved/old"),
+        pinned("2.0.0", "npm:moved", "github.com/moved/new"),
+    ];
+    let pin = |version: &str, backend: &str| {
+        pinned_package_provenance(&entries, version, Some(backend))
+            .unwrap()
+            .map(|p| p.repository)
+    };
+
+    // A locked version has its own pin, or none.
+    assert_eq!(
+        pin("1.1.0", "npm:example").unwrap(),
+        "github.com/example/one"
+    );
+    assert_eq!(pin("0.9.0", "npm:example"), None);
+    // A version with no entry takes the package's pin.
+    assert_eq!(
+        pin("2.0.0", "npm:example").unwrap(),
+        "github.com/example/one"
+    );
+    // A pin never crosses to another package.
+    assert_eq!(pin("1.0.0", "npm:unpinned"), None);
+    assert_eq!(pin("1.0.0", "npm:other").unwrap(), "github.com/other/other");
+    // Entries that disagree keep their own pins, but a new version is
+    // refused rather than installed unpinned.
+    assert_eq!(pin("2.0.0", "npm:moved").unwrap(), "github.com/moved/new");
+    let err = pinned_package_provenance(&entries, "3.0.0", Some("npm:moved")).unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("github.com/moved/old, github.com/moved/new"),
+        "{err}"
+    );
+    // So is an entry written for it when the lockfile is updated.
+    let fresh = vec![basic_tool("3.0.0", "npm:moved")];
+    assert!(merge_tool_entries(fresh, Some(&entries), |_, _| None).is_err());
+}
+
+#[test]
 fn test_preserve_absent_tool_entries_for_monorepo_upsert() {
     let existing = vec![basic_tool("20.0.0", "core:node")];
     let (mut merged, consumed) = merge_tool_entries(
         vec![basic_tool("22.0.0", "core:node")],
         Some(&existing),
         |_, _| None,
-    );
+    )
+    .unwrap();
 
     preserve_absent_tool_entries(&mut merged, Some(&existing), &consumed);
 
@@ -2833,7 +3030,8 @@ fn test_preserve_absent_does_not_resurrect_rekeyed_empty_options_entry() {
         }],
         Some(&existing),
         |_, _| Some(options.clone()),
-    );
+    )
+    .unwrap();
 
     preserve_absent_tool_entries(&mut merged, Some(&existing), &consumed);
 
@@ -2927,7 +3125,7 @@ fn test_merge_tool_entries_rekeys_empty_options_entry_on_new_options() {
     }];
 
     let (merged, consumed) =
-        merge_tool_entries(fresh, Some(&existing), |_, _| Some(new_options.clone()));
+        merge_tool_entries(fresh, Some(&existing), |_, _| Some(new_options.clone())).unwrap();
 
     assert!(consumed.contains(&("26.0.1".to_string(), BTreeMap::new())));
     assert_eq!(
@@ -3037,7 +3235,8 @@ fn test_merge_tool_entries_preserves_disjoint_empty_options_variant() {
                 "false".to_string(),
             )]))
         }
-    });
+    })
+    .unwrap();
 
     assert!(consumed.is_empty());
     assert_eq!(
@@ -3249,7 +3448,7 @@ fn test_merge_tool_entries_does_not_copy_changed_options_data() {
     }];
 
     let (merged, consumed) =
-        merge_tool_entries(fresh, Some(&existing), |_, _| Some(new_options.clone()));
+        merge_tool_entries(fresh, Some(&existing), |_, _| Some(new_options.clone())).unwrap();
 
     assert!(consumed.is_empty());
     assert_eq!(merged.len(), 1);
@@ -3290,7 +3489,7 @@ fn test_merge_tool_entries_preserves_data_when_resolution_fails() {
         unsupported_platforms: Default::default(),
     }];
 
-    let (merged, consumed) = merge_tool_entries(fresh, Some(&existing), |_, _| None);
+    let (merged, consumed) = merge_tool_entries(fresh, Some(&existing), |_, _| None).unwrap();
 
     assert!(consumed.is_empty());
     assert_eq!(merged.len(), 2);
@@ -3327,7 +3526,7 @@ fn test_merge_tool_entries_keeps_other_platform_option_variants() {
     let mut fresh_linux = variant("shellcheck-*.tar.xz", "linux-x64", "sha256:LINUX");
     fresh_linux.platforms.clear();
 
-    let (merged, _) = merge_tool_entries(vec![fresh_linux], Some(&existing), |_, _| None);
+    let (merged, _) = merge_tool_entries(vec![fresh_linux], Some(&existing), |_, _| None).unwrap();
 
     assert_eq!(merged.len(), 2);
     assert!(merged.iter().any(|tool| {
@@ -3367,7 +3566,7 @@ fn test_merge_tool_entries_marker_keeps_other_variant_artifact() {
         .unsupported_platforms
         .insert("windows-x64".to_string());
 
-    let (merged, _) = merge_tool_entries(vec![fresh_linux], Some(&existing), |_, _| None);
+    let (merged, _) = merge_tool_entries(vec![fresh_linux], Some(&existing), |_, _| None).unwrap();
 
     assert!(merged.iter().any(|tool| {
         tool.options["asset_pattern"] == "shellcheck-*.zip"
@@ -3411,7 +3610,7 @@ fn test_merge_tool_entries_keeps_unrefreshed_platforms_of_changed_variant() {
         &[("linux-x64", "sha256:NEWLINUX")],
     )];
 
-    let (merged, _) = merge_tool_entries(fresh, Some(&existing), |_, _| None);
+    let (merged, _) = merge_tool_entries(fresh, Some(&existing), |_, _| None).unwrap();
 
     assert_eq!(merged.len(), 2);
     let old = merged
@@ -3447,7 +3646,7 @@ fn test_merge_tool_entries_retained_variants_do_not_count_as_fresh() {
     ];
     let fresh = vec![tool("c", &["linux-x64"])];
 
-    let (merged, _) = merge_tool_entries(fresh, Some(&existing), |_, _| None);
+    let (merged, _) = merge_tool_entries(fresh, Some(&existing), |_, _| None).unwrap();
 
     for pattern in ["a", "b"] {
         let kept = merged
@@ -3540,7 +3739,7 @@ fn test_merge_tool_entries_repairs_empty_non_empty_duplicate() {
     }];
 
     let (merged, consumed) =
-        merge_tool_entries(fresh, Some(&existing), |_, _| Some(unix_options.clone()));
+        merge_tool_entries(fresh, Some(&existing), |_, _| Some(unix_options.clone())).unwrap();
 
     assert!(consumed.contains(&("3.4.2".to_string(), BTreeMap::new())));
     assert_eq!(merged.len(), 1);
@@ -3576,7 +3775,7 @@ fn test_preserve_absent_keeps_other_non_empty_monorepo_variant() {
         provenance: None,
         unsupported_platforms: Default::default(),
     }];
-    let (mut merged, consumed) = merge_tool_entries(fresh, Some(&existing), |_, _| None);
+    let (mut merged, consumed) = merge_tool_entries(fresh, Some(&existing), |_, _| None).unwrap();
 
     preserve_absent_tool_entries(&mut merged, Some(&existing), &consumed);
 
@@ -6222,7 +6421,120 @@ fn untrusted_lockfile_keeps_a_registry_only_aube_graph() {
     let peer_link = "lockfileVersion: '9.0'\nimporters:\n  .:\n    dependencies:\n      cli:\n        specifier: 1.0.0\n        version: 1.0.0\n    peerDependencies:\n      evil: ../evil\npackages:\n  cli@1.0.0:\n    resolution: {integrity: sha512-abc}\n";
     let no_version = "lockfileVersion: '9.0'\nimporters:\n  .:\n    dependencies:\n      cli:\n        specifier: 1.0.0\npackages:\n  cli@1.0.0:\n    resolution: {integrity: sha512-abc}\n";
     let unlisted = "lockfileVersion: '9.0'\nimporters:\n  .:\n    dependencies:\n      cli:\n        specifier: 1.0.0\n        version: 1.0.0\npackages:\n  other@1.0.0:\n    resolution: {integrity: sha512-abc}\n";
+    // `fields` go on the `cli` package entry.
+    let with_package = |fields: &str| {
+        format!(
+            "lockfileVersion: '9.0'\nsettings:\n  autoInstallPeers: true\nimporters:\n  .:\n    dependencies:\n      cli:\n        specifier: ^1.0.0\n        version: 1.0.0\npackages:\n  cli@1.0.0:\n    resolution: {{integrity: sha512-abc}}\n{fields}  string_decoder@1.0.0:\n    resolution: {{integrity: sha512-def}}\n  '@scope/x@1.0.0':\n    resolution: {{integrity: sha512-ghi}}\nsnapshots:\n  cli@1.0.0:\n    dependencies:\n      string_decoder: 1.0.0\n  string_decoder@1.0.0: {{}}\n  '@scope/x@1.0.0': {{}}\n"
+        )
+    };
+    let metadata = with_package(
+        "    engines: {node: '>=18'}\n    cpu: [x64, arm64]\n    os: [linux]\n    deprecated: use something else\n    hasBin: true\n    peerDependencies:\n      '@scope/x': ^1\n    peerDependenciesMeta:\n      '@scope/x': {optional: true}\n    bundledDependencies: [string_decoder, '@scope/x']\n",
+    );
+    let peer_range = |range: &str| {
+        with_package(&format!(
+            "    peerDependencies:\n      '@scope/x': '{range}'\n"
+        ))
+    };
+    let (peer_or, peer_npm_alias, peer_link_range, peer_tarball) = (
+        peer_range("^18 || >=19.0.0-rc.1"),
+        peer_range("npm:evil@1"),
+        peer_range("link:../x"),
+        peer_range("https://attacker.example/x.tgz"),
+    );
+    let bundled_true = with_package("    bundledDependencies: true\n");
+    let bundled_absolute = with_package("    bundledDependencies: [/proc/self/cwd/tools]\n");
+    let bundled_parent = with_package("    bundledDependencies: ['..']\n");
+    let bundled_scoped_parent = with_package("    bundledDependencies: ['@scope/..']\n");
+    let unknown_package_field = with_package("    version: link:/payload\n");
+    let unknown_settings = with_package("").replace(
+        "  autoInstallPeers: true\n",
+        "  autoInstallPeers: true\n  injectWorkspacePackages: true\n",
+    );
+    let unknown_snapshot_field = with_package("").replace(
+        "  string_decoder@1.0.0: {}\n",
+        "  string_decoder@1.0.0:\n    resolution: {tarball: 'http://attacker.example/x.tgz'}\n",
+    );
+    let snapshot_bundled_path = with_package("").replace(
+        "  string_decoder@1.0.0: {}\n",
+        "  string_decoder@1.0.0:\n    bundledDependencies: [../../bin]\n",
+    );
+    let unknown_dep_field = with_package("").replace(
+        "        version: 1.0.0\n",
+        "        version: 1.0.0\n        path: ../cli\n",
+    );
+    // The other sections and fields aube writes for a registry graph.
+    let snapshot_metadata = with_package("")
+        .replace(
+            "  autoInstallPeers: true\n",
+            "  autoInstallPeers: true\n  excludeLinksFromLockfile: false\n  lockfileIncludeTarballUrl: false\n",
+        )
+        .replace(
+            "snapshots:\n  cli@1.0.0:\n    dependencies:\n      string_decoder: 1.0.0\n",
+            "time:\n  cli@1.0.0: '2024-01-01T00:00:00.000Z'\nsnapshots:\n  cli@1.0.0:\n    dependencies:\n      string_decoder: 1.0.0\n    optionalDependencies:\n      '@scope/x': 1.0.0\n    transitivePeerDependencies: ['@scope/x']\n",
+        )
+        .replace(
+            "  string_decoder@1.0.0: {}\n",
+            "  string_decoder@1.0.0:\n    optional: true\n",
+        );
+    for added in [
+        "excludeLinksFromLockfile",
+        "lockfileIncludeTarballUrl",
+        "time:",
+        "optionalDependencies",
+        "transitivePeerDependencies",
+        "optional: true",
+    ] {
+        assert!(snapshot_metadata.contains(added), "{added}");
+    }
+    // A section aube writes as a table is never another type.
+    let scalar_settings =
+        with_package("").replace("settings:\n  autoInstallPeers: true\n", "settings: true\n");
+    let list_snapshots = with_package("").replace(
+        "snapshots:\n  cli@1.0.0:\n    dependencies:\n      string_decoder: 1.0.0\n  string_decoder@1.0.0: {}\n  '@scope/x@1.0.0': {}\n",
+        "snapshots: [cli@1.0.0]\n",
+    );
+    assert_ne!(scalar_settings, with_package(""));
+    assert_ne!(list_snapshots, with_package(""));
+    // aube records an optional dependency it skipped on this platform with a
+    // placeholder version, which names no package.
+    let skipped_optional = with_package("").replace(
+        "        version: 1.0.0\n",
+        "        version: 1.0.0\n    skippedOptionalDependencies:\n      fsevents:\n        specifier: ^2.3.0\n        version: 0.0.0\n",
+    );
+    let skipped_optional_url = skipped_optional.replace("^2.3.0", "https://attacker.example/x.tgz");
+    let skipped_optional_link = skipped_optional.replace("0.0.0", "link:../x");
+    assert_ne!(skipped_optional, with_package(""));
+    // An importer other than the install prefix is a workspace directory.
+    let parent_importer = with_package("").replace("importers:\n  .:\n", "importers:\n  ..:\n");
+    let extra_importer =
+        with_package("").replace("importers:\n  .:\n", "importers:\n  ../outside: {}\n  .:\n");
+    assert_ne!(parent_importer, with_package(""));
+    assert_ne!(extra_importer, with_package(""));
+    let plain = with_package("");
     for (graph, kept) in [
+        (parent_importer.as_str(), false),
+        (extra_importer.as_str(), false),
+        (skipped_optional.as_str(), true),
+        (skipped_optional_url.as_str(), false),
+        (skipped_optional_link.as_str(), false),
+        (scalar_settings.as_str(), false),
+        (list_snapshots.as_str(), false),
+        (plain.as_str(), true),
+        (metadata.as_str(), true),
+        (peer_or.as_str(), true),
+        (peer_npm_alias.as_str(), false),
+        (peer_link_range.as_str(), false),
+        (peer_tarball.as_str(), false),
+        (snapshot_metadata.as_str(), true),
+        (bundled_true.as_str(), true),
+        (bundled_absolute.as_str(), false),
+        (bundled_parent.as_str(), false),
+        (bundled_scoped_parent.as_str(), false),
+        (unknown_package_field.as_str(), false),
+        (unknown_settings.as_str(), false),
+        (unknown_snapshot_field.as_str(), false),
+        (snapshot_bundled_path.as_str(), false),
+        (unknown_dep_field.as_str(), false),
         (shorthand, false),
         (string_dep, false),
         (peer_link, false),
@@ -6284,5 +6596,84 @@ backend = "conda:jq"
         current
             .get_conda_package("macos-arm64", "ncurses-6.4-h7ea286d_0")
             .is_some()
+    );
+}
+
+#[test]
+fn a_new_version_is_not_written_when_the_package_pins_disagree() {
+    let pinned = |version: &str, repository: &str| {
+        let mut tool = basic_tool(version, "npm:moved");
+        tool.provenance = Some(PackageProvenance {
+            repository: repository.to_string(),
+        });
+        tool
+    };
+    let mut lockfile = Lockfile::default();
+    lockfile.tools.insert(
+        "npm:moved".to_string(),
+        vec![
+            pinned("1.0.0", "github.com/moved/old"),
+            pinned("2.0.0", "github.com/moved/new"),
+        ],
+    );
+    lockfile.set_platform_info(
+        "npm:moved",
+        "3.0.0",
+        Some("npm:moved"),
+        &BTreeMap::new(),
+        "linux-x64",
+        PlatformInfo::default(),
+    );
+    lockfile.set_unsupported_platform(
+        "npm:moved",
+        "3.0.0",
+        Some("npm:moved"),
+        &BTreeMap::new(),
+        "macos-arm64",
+    );
+    let versions = lockfile
+        .tools_for("npm:moved")
+        .unwrap()
+        .iter()
+        .map(|tool| tool.version.as_str())
+        .collect_vec();
+    assert_eq!(versions, ["1.0.0", "2.0.0"]);
+    // The version stays refused rather than locked unpinned.
+    assert!(
+        pinned_package_provenance(
+            lockfile.tools_for("npm:moved").unwrap(),
+            "3.0.0",
+            Some("npm:moved")
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn an_unsupported_platform_entry_takes_the_package_pin() {
+    let mut existing = basic_tool("3.1.0", "npm:@sigstore/bundle");
+    existing.provenance = Some(PackageProvenance {
+        repository: "github.com/sigstore/sigstore-js".to_string(),
+    });
+    let mut lockfile = Lockfile::default();
+    lockfile
+        .tools
+        .insert("npm:@sigstore/bundle".to_string(), vec![existing]);
+    lockfile.set_unsupported_platform(
+        "npm:@sigstore/bundle",
+        "3.2.0",
+        Some("npm:@sigstore/bundle"),
+        &BTreeMap::new(),
+        "linux-x64",
+    );
+    let entry = lockfile
+        .tools_for("npm:@sigstore/bundle")
+        .unwrap()
+        .iter()
+        .find(|tool| tool.version == "3.2.0")
+        .unwrap();
+    assert_eq!(
+        entry.provenance.as_ref().map(|p| p.repository.as_str()),
+        Some("github.com/sigstore/sigstore-js")
     );
 }

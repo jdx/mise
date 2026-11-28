@@ -81,6 +81,11 @@ impl Latest {
             .as_deref()
             .and_then(|prefix| tool.ba.with_registry_version(prefix));
         let ba = ba.as_ref().unwrap_or(&tool.ba);
+        // `--installed` reads what is on disk, except that a `sub-N:` base is
+        // resolved against the remote versions.
+        if !installed || matches!(tool.tvr, Some(ToolRequest::Sub { .. })) {
+            crate::backend::url_logins::ensure_safe_url_tool_key(ba)?;
+        }
         let mut backend = ba.backend()?;
         let mpr = MultiProgressReport::get();
         if let Some(plugin) = backend.plugin() {

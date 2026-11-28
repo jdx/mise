@@ -240,6 +240,114 @@ impl ToolVersion {
         request: ToolRequest,
         opts: &ResolveOptions,
     ) -> Result<Self> {
+        Self::resolve_guarded(config, request, opts, false).await
+    }
+
+    /// [`Self::resolve`] for `mise lock --check`, which reads the lock entry
+    /// and installs nothing: a tool URL that safe mode does not fetch
+    /// resolves to its entry, offline, whether or not it is installed.
+    pub async fn resolve_for_lock_check(
+        config: &Arc<Config>,
+        request: ToolRequest,
+        opts: &ResolveOptions,
+    ) -> Result<Self> {
+        Self::resolve_guarded(config, request, opts, true).await
+    }
+
+    async fn resolve_guarded(
+        config: &Arc<Config>,
+        request: ToolRequest,
+        opts: &ResolveOptions,
+        lock_entry_suffices: bool,
+    ) -> Result<Self> {
+        // A tool URL that safe mode does not fetch can still be used as
+        // installed: resolve it without remote lookups, and refuse it unless
+        // that finds a version on disk, or, for a lock check, the lock entry.
+        if let Err(refused) = request.ensure_safe_url_tool_key() {
+            // An offline resolve still asks the host for `latest` here, unless
+            // it finds the lock entry before it gets that far.
+            if Self::sub_base_is_alias_for_latest(config, &request).await
+                && !(lock_entry_suffices
+                    && Self::resolves_from_lockfile_first(config, &request, opts).await)
+            {
+                return Err(refused);
+            }
+            let offline = ResolveOptions {
+                offline: true,
+                ..opts.clone()
+            };
+            return match Self::resolve_fetchable(config, request, &offline).await {
+                Ok(tv) if lock_entry_suffices && tv.resolved_from_lockfile() => Ok(tv),
+                Ok(tv)
+                    if tv
+                        .backend()
+                        .is_ok_and(|backend| backend.is_version_installed(config, &tv, true)) =>
+                {
+                    Ok(tv)
+                }
+                _ => Err(refused),
+            };
+        }
+        Self::resolve_fetchable(config, request, opts).await
+    }
+
+    /// Whether `request` is a `sub-N:` request, or an alias for one, whose base
+    /// is an alias for `latest`. [`Self::resolve_sub`] resolves that base
+    /// against the remote versions even offline, as `mise prune` relies on.
+    async fn sub_base_is_alias_for_latest(config: &Arc<Config>, request: &ToolRequest) -> bool {
+        let Ok(backend) = request.backend() else {
+            return false;
+        };
+        let base = match request {
+            ToolRequest::Sub { orig_version, .. } => orig_version.clone(),
+            ToolRequest::Version { version, .. } => {
+                let aliased = config.resolve_alias(&backend, version).await;
+                match aliased.as_deref().ok().and_then(|v| v.split_once(':')) {
+                    Some((part, base)) if part.starts_with("sub-") => base.to_string(),
+                    _ => return false,
+                }
+            }
+            _ => return false,
+        };
+        base != "latest"
+            && config
+                .resolve_alias(&backend, &base)
+                .await
+                .is_ok_and(|v| v == "latest")
+    }
+
+    /// Whether [`Self::resolve_`] takes `request`'s version from its lock
+    /// entry before any lookup of versions.
+    async fn resolves_from_lockfile_first(
+        config: &Arc<Config>,
+        request: &ToolRequest,
+        opts: &ResolveOptions,
+    ) -> bool {
+        opts.use_locked_version
+            && !has_linked_version(request.ba(), &Self::linked_query(config, request).await)
+            && request
+                .lockfile_resolve(config)
+                .is_ok_and(|entry| entry.is_some())
+    }
+
+    /// What `request` asks for with its aliases expanded (`lts` -> `24`):
+    /// a link is chosen by what the request means.
+    async fn linked_query(config: &Arc<Config>, request: &ToolRequest) -> String {
+        match request.backend() {
+            Ok(backend) => config
+                .resolve_alias(&backend, &request.version())
+                .await
+                .unwrap_or_else(|_| request.version()),
+            Err(_) => request.version(),
+        }
+    }
+
+    /// [`Self::resolve`] for a request whose tool key safe mode lets mise fetch.
+    async fn resolve_fetchable(
+        config: &Arc<Config>,
+        request: ToolRequest,
+        opts: &ResolveOptions,
+    ) -> Result<Self> {
         let install_env = request.options().core.install_env;
         let ba = request.ba().clone();
         // Boxed here, so that the scopes below are handed a pointer and not a
@@ -275,14 +383,7 @@ impl ToolVersion {
         opts.apply_before_date_for_tool(request.ba(), minimum_release_age.as_deref())?;
 
         trace!("resolving {} {}", &request, opts);
-        // A link is chosen by what the request means, so expand aliases (`lts` -> `24`) first.
-        let linked_query = match request.backend() {
-            Ok(backend) => config
-                .resolve_alias(&backend, &request.version())
-                .await
-                .unwrap_or_else(|_| request.version()),
-            Err(_) => request.version(),
-        };
+        let linked_query = Self::linked_query(config, &request).await;
         if opts.use_locked_version
             && !has_linked_version(request.ba(), &linked_query)
             && let Some(lt) = request.lockfile_resolve(config)?
@@ -413,6 +514,12 @@ impl ToolVersion {
         request: &ToolRequest,
         target: &PlatformTarget,
     ) -> Result<Option<Self>> {
+        // Offline, as `mise lock --check` runs, this reads only the lockfile
+        // and fetches nothing, so a tool URL safe mode does not fetch can
+        // still be looked up.
+        if !Settings::get().offline() {
+            request.ensure_safe_url_tool_key()?;
+        }
         let version = request.version();
         let (query, boundary, alias_resolved) = match request {
             ToolRequest::Prefix { prefix, .. } => (prefix.clone(), true, false),
@@ -435,9 +542,15 @@ impl ToolVersion {
 
     fn from_lockfile(mut request: ToolRequest, lt: LockfileTool) -> Self {
         if let Some(backend_full) = &lt.backend {
+            // A lock names a URL backend without its credentials. When it is
+            // the request's own backend, the request's spelling, credentials
+            // included, is what an install uses.
             let backend = Arc::new(BackendArg::new(
                 request.ba().short.clone(),
-                Some(backend_full.clone()),
+                Some(install_state::with_request_credentials(
+                    &request.ba().full(),
+                    backend_full.clone(),
+                )),
             ));
             // The registry's options are for the backend it chose; the lock's
             // backend would read them as its own settings and record them.
@@ -2268,6 +2381,43 @@ mod tests {
                 .opts
                 .contains_key("workflow")
         );
+    }
+
+    #[test]
+    fn from_lockfile_keeps_the_credentials_of_the_request() {
+        let restore = |backend: &str| {
+            let request = ToolRequest::new(
+                Arc::new(BackendArg::new(
+                    "cargo:https://ci:token@git.example.test/o/r".to_string(),
+                    None,
+                )),
+                "1.0.0",
+                ToolSource::Argument,
+            )
+            .unwrap();
+            let lt = LockfileTool {
+                version: "1.0.0".to_string(),
+                backend: Some(backend.to_string()),
+                specifiers: Default::default(),
+                options: Default::default(),
+                platforms: Default::default(),
+                aube: None,
+                uv: None,
+                provenance: None,
+                unsupported_platforms: Default::default(),
+            };
+            ToolVersion::from_lockfile(request, lt)
+        };
+        // The lock names the request's backend without the credentials.
+        let tv = restore("cargo:https://git.example.test/o/r");
+        assert_eq!(
+            tv.ba().full(),
+            "cargo:https://ci:token@git.example.test/o/r"
+        );
+        assert_eq!(tv.ba().stored_full(), "cargo:https://git.example.test/o/r");
+        // Another backend gets none of them.
+        let tv = restore("cargo:https://git.example.test/other/r");
+        assert_eq!(tv.ba().full(), "cargo:https://git.example.test/other/r");
     }
 
     #[test]

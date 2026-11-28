@@ -48,6 +48,7 @@ impl VersionProvider for MiseVersionProvider {
     async fn latest_version(&self, tool: &str) -> Option<String> {
         // Create BackendArg from tool name
         let ba = Arc::new(BackendArg::from(tool));
+        crate::backend::url_logins::ensure_safe_url_tool_key(&ba).ok()?;
 
         // Get the backend
         let backend = ba.backend().ok()?;

@@ -543,6 +543,21 @@ impl ToolRequest {
             }
     }
 
+    /// Whether global or system config makes this request, for a tool that no project
+    /// config declares or aliases, so that its options are the operator's own.
+    ///
+    /// Safe mode asks this where it must not act on anything else. A request with no
+    /// config file behind it does not pass: a task's tools arrive as
+    /// [`ToolSource::Argument`], as a CLI argument does, and
+    /// [`crate::config::is_safe_mode_project_tool`] does not know them.
+    pub(crate) fn is_global_config_tool(&self) -> bool {
+        let Some(path) = self.source().path() else {
+            return false;
+        };
+        crate::config::is_global_config(path)
+            && !crate::config::is_safe_mode_project_tool(self.ba())
+    }
+
     /// In safe mode, records the hosts this request's options name; see
     /// [`record_safe_mode_credential_hosts`].
     pub(crate) fn record_safe_mode_credential_hosts(&self) {
@@ -554,6 +569,24 @@ impl ToolRequest {
         };
         let project = !crate::config::is_global_config(path);
         record_safe_mode_credential_hosts(&self.options().opts, project);
+        // A tool key can be the URL itself (an `npm:` tarball, a `pipx:` git source).
+        if project
+            && let Some(url) = crate::backend::url_logins::tool_key_login_url(&self.ba().full())
+        {
+            mise_util::untrusted_hosts::deny_netrc_for_url(&url);
+        }
+    }
+
+    /// In safe mode, rejects a tool key that is a URL fetching which sends the user's
+    /// netrc or git credential-helper logins to a host the key chooses (see
+    /// [`crate::backend::url_logins::tool_key_login_url`]), unless global or system config
+    /// makes the request for a tool that no project config declares. git takes those logins
+    /// from the user's own setup, so mise cannot withhold them as it does for its HTTP client.
+    pub fn ensure_safe_url_tool_key(&self) -> Result<()> {
+        if !Settings::safe_mode() || self.is_global_config_tool() {
+            return Ok(());
+        }
+        crate::backend::url_logins::ensure_safe_url_tool_key(self.ba())
     }
 
     /// Rejects install options that can execute configuration-provided code in safe mode.
@@ -561,6 +594,7 @@ impl ToolRequest {
         if !Settings::safe_mode() {
             return Ok(());
         }
+        self.ensure_safe_url_tool_key()?;
         let options = self.options();
         if options.postinstall().is_some() {
             Settings::ensure_not_safe(&format!(
@@ -1255,6 +1289,19 @@ mod tests {
     use pretty_assertions::assert_str_eq;
     use std::sync::Arc;
     use test_log::test;
+
+    #[test]
+    fn only_a_global_config_request_is_a_global_config_tool() {
+        let ba = Arc::new(BackendArg::from("http:tool"));
+        let global = ToolSource::MiseToml(crate::config::global_config_path());
+        let project = ToolSource::MiseToml("/project/mise.toml".into());
+        // A task's tools have this source too.
+        let argument = ToolSource::Argument;
+        for (source, expected) in [(global, true), (project, false), (argument, false)] {
+            let request = ToolRequest::new(ba.clone(), "1.0.0", source).unwrap();
+            assert_eq!(request.is_global_config_tool(), expected, "{request}");
+        }
+    }
 
     #[test]
     fn netrc_scope_reads_platform_url_options() {

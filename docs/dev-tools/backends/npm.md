@@ -58,11 +58,17 @@ mise use 'npm:git+https://github.com/owner/repo'
 mise use 'npm:github:owner/repo@v1.2.0'
 ```
 
+For a private repository, keep the credentials in git's credential helper
+rather than in the URL. mise records the tool, and its dependency graph beside
+`mise.lock`, without URL credentials, but the `package.json` and
+`aube-lock.yaml` in the install directory keep the URL they were installed
+from, credentials included.
+
 ### Install from a tarball URL
 
 An `https://` tarball URL is also a source, such as a preview build from
 [pkg.pr.new](https://pkg.pr.new). A tarball has no version list, so `latest` is
-what the URL serves now: mise uses a prefix of the tarball's SHA-256 as the
+what the URL serves now: mise uses the tarball's whole SHA-256 as the
 version. `mise outdated` and `mise up` fetch the URL again and compare the
 digest for equality, so they update when it differs from the installed one.
 
@@ -74,10 +80,16 @@ allow_exotic_deps = ["@scope/pkg-linux-x64"]
 
 The whole URL is the tool name, including any `@` in its path, so
 `mise use 'npm:https://…/pkg@343'` does not read `343` as a version. Installing
-downloads the tarball once, compares its digest prefix with the version (it
+downloads the tarball once, compares its digest with the version (it
 fails if they differ, until `mise up`), and installs that file, so a push between
 the check and the install cannot change what is installed. The package keeps
 the name in its own `package.json`.
+
+A tarball URL in a project's config, other than one on github.com, gitlab.com
+or bitbucket.org, needs [trust](/security.html#what-needs-trust): mise sends
+your `~/.netrc` login for the URL's host when it downloads the tarball. So does
+a Git URL over `http(s)` on another host, which git fetches with your
+credential helper and `~/.netrc` logins.
 
 `http://` URLs and the `checksum` option are not supported. `mise.lock` records
 the version but no dependency graph for a tarball URL, because aube would

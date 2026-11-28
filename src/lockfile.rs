@@ -931,10 +931,23 @@ impl AubeLock {
         })
     }
 
+    /// The sidecar text as it was read, which its digest in `mise.lock`
+    /// covers. Never hand this to aube: see [`Self::to_install_yaml`].
     pub(crate) fn to_yaml(&self) -> Result<String> {
         if !self.graph_text.is_empty() {
             return Ok(self.graph_text.clone());
         }
+        self.to_install_yaml()
+    }
+
+    /// The graph for aube to install: `graph` serialized again, never
+    /// `graph_text`. Every check on a graph reads `graph`, mise's own parse
+    /// of the text, while aube parses YAML by other rules (U+0085, U+2028 and
+    /// U+2029 end a line, and so a comment, in its YAML 1.1 parser; its fast
+    /// path splits lines on `\n` alone), so the original text can be a
+    /// different graph to aube. The serializer escapes those characters in
+    /// strings, so aube reads back the graph that was checked.
+    pub(crate) fn to_install_yaml(&self) -> Result<String> {
         let value = toml_to_yaml(toml::Value::Table(self.graph.clone()));
         Ok(yaml::to_string(&value)?)
     }
@@ -3137,6 +3150,14 @@ impl Lockfile {
             if !platform_info.is_empty() {
                 platforms.insert(platform_key.to_string(), platform_info);
             }
+            // The package's repository pin follows it into an entry for a version or
+            // options not locked before, as `merge_tool_entries` does, so pruning the
+            // old entries does not drop it. When the package's entries pin it to more
+            // than one repository, no entry is written: an unpinned one would let the
+            // version install unverified.
+            let Some(provenance) = new_entry_provenance(tools, version, backend) else {
+                return;
+            };
             tools.push(LockfileTool {
                 version: version.to_string(),
                 backend: backend.map(|s| s.to_string()),
@@ -3145,7 +3166,7 @@ impl Lockfile {
                 platforms,
                 aube: None,
                 uv: None,
-                provenance: None,
+                provenance,
                 unsupported_platforms: BTreeSet::new(),
             });
         }
@@ -3183,6 +3204,10 @@ impl Lockfile {
                 tool.unsupported_platforms.insert(platform_key.to_string());
             }
         } else {
+            // A new entry takes the package's pin, as in `set_platform_info`.
+            let Some(provenance) = new_entry_provenance(tools, version, backend) else {
+                return;
+            };
             tools.push(LockfileTool {
                 version: version.to_string(),
                 backend: backend.map(|s| s.to_string()),
@@ -3191,7 +3216,7 @@ impl Lockfile {
                 platforms: BTreeMap::new(),
                 aube: None,
                 uv: None,
-                provenance: None,
+                provenance,
                 unsupported_platforms: BTreeSet::from([platform_key.to_string()]),
             });
         }
@@ -4653,7 +4678,7 @@ pub(crate) fn update_lockfiles(
             } else {
                 build_rekey_decisions(versions, existing_lockfile.tools_for(&short))
             };
-            let (mut merged_tools, consumed_keys) = merge_tool_entries(
+            let merged = merge_tool_entries(
                 entries,
                 existing_lockfile.tools_for(&short),
                 |version, platform| {
@@ -4663,6 +4688,20 @@ pub(crate) fn update_lockfiles(
                         .flatten()
                 },
             );
+            let (mut merged_tools, consumed_keys) = match merged {
+                Ok(merged) => merged,
+                Err(err) => {
+                    // Pins that disagree leave a version with no entry no
+                    // repository to verify against. Installing that version
+                    // is refused, so keep the package's entries as they are
+                    // rather than fail the update for every other tool.
+                    warn!(
+                        "not updating {short} in {}: {err:#}",
+                        display_path(&lockfile_path)
+                    );
+                    continue;
+                }
+            };
             if is_monorepo_root_lockfile {
                 preserve_absent_tool_entries(
                     &mut merged_tools,
@@ -5988,7 +6027,7 @@ fn merge_tool_entries<F>(
     entries: Vec<LockfileTool>,
     existing_tools: Option<&Vec<LockfileTool>>,
     mut resolve: F,
-) -> MergeToolEntriesResult
+) -> Result<MergeToolEntriesResult>
 where
     F: FnMut(&str, &Platform) -> Option<BTreeMap<String, String>>,
 {
@@ -6037,20 +6076,16 @@ where
 
     // Merge with existing tools to preserve platform info
     if let Some(existing) = existing_tools {
-        for existing_tool in existing {
-            // The repository an npm package was built from does not depend on
-            // its install options, so a pin follows the same release into an
-            // entry written for changed options.
-            if let Some(provenance) = &existing_tool.provenance {
-                for ((version, _), entry) in by_key.iter_mut() {
-                    if *version == existing_tool.version
-                        && entry.backend == existing_tool.backend
-                        && entry.provenance.is_none()
-                    {
-                        entry.provenance = Some(provenance.clone());
-                    }
-                }
+        // The repository an npm package was built from does not depend on its
+        // install options or its version, so a pin follows the package into an
+        // entry written for changed options or for a release not locked before.
+        for entry in by_key.values_mut() {
+            if entry.provenance.is_none() {
+                entry.provenance =
+                    pinned_package_provenance(existing, &entry.version, entry.backend.as_deref())?;
             }
+        }
+        for existing_tool in existing {
             let key = (existing_tool.version.clone(), existing_tool.options.clone());
             if let Some(entry) = by_key.get_mut(&key) {
                 entry.specifiers.extend(existing_tool.specifiers.clone());
@@ -6145,7 +6180,7 @@ where
                 .then_with(|| a.options.cmp(&b.options))
         })
         .collect();
-    (tools, consumed_keys)
+    Ok((tools, consumed_keys))
 }
 
 fn preserve_absent_tool_entries(
@@ -6481,16 +6516,29 @@ impl Lockfile {
 
 /// Whether an aube dependency graph resolves every package from the registry
 /// by integrity hash alone. It is an allowlist of the exact shapes a registry
-/// graph has, so a source mise cannot name (a URL, git or `owner/repo`
-/// shorthand, a path or tarball file, `link:`, `file:`, `portal:`, an `npm:`
-/// alias) never matches:
+/// graph has: every section, entry field and value must be one listed here,
+/// so a source mise cannot name (a URL, git or `owner/repo` shorthand, a path
+/// or tarball file, `link:`, `file:`, `portal:`, an `npm:` alias) never
+/// matches, and neither does a field this check does not know, whatever aube
+/// does with it:
 ///
-/// - only the sections a registry graph needs are present;
+/// - only the sections a registry graph needs are present, each of the type
+///   aube writes (`settings`, `importers`, `packages`, `snapshots` and `time`
+///   are tables), and `settings` holds only aube's boolean settings;
+/// - the only importer is the install prefix itself, `.`: aube installs
+///   another importer key as a workspace directory relative to it;
 /// - every package key is `name@version` and its resolution is one non-empty
-///   `integrity`, with no `aliasOf`;
+///   `integrity`;
+/// - an importer, package or snapshot entry carries only the fields aube
+///   writes for a registry package (not `aliasOf` or `version`, which belong
+///   to aliases and URL sources), each of the type aube writes;
 /// - every importer and snapshot dependency names a package with that
-///   integrity entry, by a plain name and version.
+///   integrity entry, by a plain name and version;
+/// - every `bundledDependencies` entry is a plain package name: aube links the
+///   commands of `node_modules/<entry>` below the package, so a path there
+///   would reach outside what the registry served.
 fn aube_graph_names_only_registry(lock: &AubeLock) -> bool {
+    use toml::Value;
     const SECTIONS: [&str; 6] = [
         "lockfileVersion",
         "settings",
@@ -6499,14 +6547,49 @@ fn aube_graph_names_only_registry(lock: &AubeLock) -> bool {
         "snapshots",
         "time",
     ];
+    const SETTINGS: [&str; 3] = [
+        "autoInstallPeers",
+        "excludeLinksFromLockfile",
+        "lockfileIncludeTarballUrl",
+    ];
     const DEPENDENCIES: [&str; 4] = [
         "dependencies",
         "devDependencies",
         "optionalDependencies",
         "peerDependencies",
     ];
+    const IMPORTER: [&str; 5] = [
+        "dependencies",
+        "devDependencies",
+        "optionalDependencies",
+        "peerDependencies",
+        "skippedOptionalDependencies",
+    ];
+    const PACKAGE: [&str; 10] = [
+        "resolution",
+        "engines",
+        "cpu",
+        "os",
+        "libc",
+        "deprecated",
+        "hasBin",
+        "peerDependencies",
+        "peerDependenciesMeta",
+        "bundledDependencies",
+    ];
+    const SNAPSHOT: [&str; 7] = [
+        "dependencies",
+        "devDependencies",
+        "optionalDependencies",
+        "peerDependencies",
+        "transitivePeerDependencies",
+        "optional",
+        "bundledDependencies",
+    ];
+    // npm names never start with `.` or `_`, and `.` or `..` would be a path.
     let part_ok = |s: &str| {
         !s.is_empty()
+            && !s.starts_with(['.', '_'])
             && s.chars()
                 .all(|c| c.is_ascii_alphanumeric() || "._~-".contains(c))
     };
@@ -6538,8 +6621,38 @@ fn aube_graph_names_only_registry(lock: &AubeLock) -> bool {
         (name_ok(name) && version_ok(version))
             .then(|| format!("{name}@{}", version.split('(').next().unwrap_or(version)))
     };
+    let only_fields = |entry: &Value, fields: &[&str]| {
+        entry
+            .as_table()
+            .is_some_and(|entry| entry.keys().all(|key| fields.contains(&key.as_str())))
+    };
+    let is_name = |value: &Value| value.as_str().is_some_and(name_ok);
+    let names = |value: &Value| {
+        value
+            .as_array()
+            .is_some_and(|names| names.iter().all(is_name))
+    };
+    // aube reads `os`, `cpu` and `libc` as one string or a list of them.
+    let strings = |value: &Value| match value {
+        Value::String(_) => true,
+        Value::Array(values) => values.iter().all(Value::is_str),
+        _ => false,
+    };
+    let string_values = |value: &Value| {
+        value
+            .as_table()
+            .is_some_and(|table| table.values().all(Value::is_str))
+    };
+    let optional =
+        |entry: &Value, field: &str, ok: &dyn Fn(&Value) -> bool| entry.get(field).is_none_or(ok);
+    // `true` bundles the snapshot's dependencies, which are checked as names.
+    let bundled_ok = |entry: &Value| {
+        optional(entry, "bundledDependencies", &|bundled| {
+            bundled.is_bool() || names(bundled)
+        })
+    };
     let graph = &lock.graph;
-    let table = |name: &str| graph.get(name).and_then(toml::Value::as_table);
+    let table = |name: &str| graph.get(name).and_then(Value::as_table);
     let (Some(importers), Some(packages)) = (table("importers"), table("packages")) else {
         return false;
     };
@@ -6552,51 +6665,109 @@ fn aube_graph_names_only_registry(lock: &AubeLock) -> bool {
         let peers = &key[release.len()..];
         version_ok(&format!("{version}{peers}")).then(|| (name.to_string(), version.to_string()))
     };
+    let package_ok = |package: &Value| {
+        only_fields(package, &PACKAGE)
+            && package
+                .get("resolution")
+                .and_then(Value::as_table)
+                .is_some_and(|resolution| {
+                    resolution.len() == 1
+                        && resolution
+                            .get("integrity")
+                            .and_then(Value::as_str)
+                            .is_some_and(|integrity| !integrity.is_empty())
+                })
+            && optional(package, "engines", &string_values)
+            && ["cpu", "os", "libc"]
+                .iter()
+                .all(|field| optional(package, field, &strings))
+            && optional(package, "deprecated", &Value::is_str)
+            && optional(package, "hasBin", &Value::is_bool)
+            // A peer range is a range, as an importer's specifier is: a `link:`,
+            // `npm:` alias or tarball there would not resolve from the registry.
+            && optional(package, "peerDependencies", &|peers| {
+                peers.as_table().is_some_and(|t| {
+                    t.iter()
+                        .all(|(k, v)| name_ok(k) && v.as_str().is_some_and(specifier_ok))
+                })
+            })
+            && optional(package, "peerDependenciesMeta", &|meta| {
+                meta.as_table().is_some_and(|meta| {
+                    meta.iter().all(|(name, meta)| {
+                        name_ok(name)
+                            && only_fields(meta, &["optional"])
+                            && optional(meta, "optional", &Value::is_bool)
+                    })
+                })
+            })
+            && bundled_ok(package)
+    };
     graph.keys().all(|key| SECTIONS.contains(&key.as_str()))
-        && packages.iter().all(|(key, package)| {
-            split_key(key).is_some_and(|(name, version)| has_package(&name, &version))
-                && package.get("aliasOf").is_none()
-                && package
-                    .get("resolution")
-                    .and_then(toml::Value::as_table)
-                    .is_some_and(|resolution| {
-                        resolution.len() == 1
-                            && resolution
-                                .get("integrity")
-                                .and_then(toml::Value::as_str)
-                                .is_some_and(|integrity| !integrity.is_empty())
-                    })
-        })
-        && importers.values().all(|importer| {
-            DEPENDENCIES.iter().all(|section| {
-                importer
-                    .get(section)
-                    .is_none_or(|deps| match deps.as_table() {
-                        Some(deps) => deps.iter().all(|(name, dep)| {
-                            let field = |field: &str| dep.get(field).and_then(toml::Value::as_str);
-                            field("specifier").is_some_and(specifier_ok)
-                                && field("version")
-                                    .is_some_and(|version| has_package(name, version))
-                        }),
-                        None => false,
-                    })
+        && graph
+            .get("lockfileVersion")
+            .is_none_or(|version| version.is_str() || version.is_integer() || version.is_float())
+        && graph.get("settings").is_none_or(|settings| {
+            settings.as_table().is_some_and(|settings| {
+                settings
+                    .iter()
+                    .all(|(key, value)| SETTINGS.contains(&key.as_str()) && value.is_bool())
             })
         })
-        && table("snapshots").is_none_or(|snapshots| {
-            snapshots.iter().all(|(key, snapshot)| {
-                split_key(key).is_some_and(|(name, version)| has_package(&name, &version))
-                    && DEPENDENCIES.iter().all(|section| {
-                        snapshot
-                            .get(section)
-                            .is_none_or(|deps| match deps.as_table() {
-                                Some(deps) => deps.iter().all(|(name, version)| {
-                                    version
-                                        .as_str()
-                                        .is_some_and(|version| has_package(name, version))
-                                }),
-                                None => false,
-                            })
-                    })
+        && graph.get("time").is_none_or(string_values)
+        && packages.iter().all(|(key, package)| {
+            split_key(key).is_some_and(|(name, version)| has_package(&name, &version))
+                && package_ok(package)
+        })
+        // A tool installs into one prefix, the `.` importer. aube reads any
+        // other importer key as a workspace directory relative to that
+        // prefix, such as `..`.
+        && importers.iter().all(|(key, importer)| {
+            key == "."
+                && only_fields(importer, &IMPORTER)
+                && IMPORTER.iter().all(|section| {
+                    importer
+                        .get(section)
+                        .is_none_or(|deps| match deps.as_table() {
+                            Some(deps) => deps.iter().all(|(name, dep)| {
+                                let field = |field: &str| dep.get(field).and_then(Value::as_str);
+                                // A skipped optional dependency is installed from nowhere:
+                                // aube writes the `0.0.0` placeholder for its version and
+                                // reads only the specifier back.
+                                let dep_version_ok = |version: &str| match *section {
+                                    "skippedOptionalDependencies" => {
+                                        name_ok(name) && version_ok(version)
+                                    }
+                                    _ => has_package(name, version),
+                                };
+                                only_fields(dep, &["specifier", "version"])
+                                    && field("specifier").is_some_and(specifier_ok)
+                                    && field("version").is_some_and(dep_version_ok)
+                            }),
+                            None => false,
+                        })
+                })
+        })
+        && graph.get("snapshots").is_none_or(|snapshots| {
+            snapshots.as_table().is_some_and(|snapshots| {
+                snapshots.iter().all(|(key, snapshot)| {
+                    split_key(key).is_some_and(|(name, version)| has_package(&name, &version))
+                        && only_fields(snapshot, &SNAPSHOT)
+                        && optional(snapshot, "optional", &Value::is_bool)
+                        && optional(snapshot, "transitivePeerDependencies", &names)
+                        && bundled_ok(snapshot)
+                        && DEPENDENCIES.iter().all(|section| {
+                            snapshot
+                                .get(section)
+                                .is_none_or(|deps| match deps.as_table() {
+                                    Some(deps) => deps.iter().all(|(name, version)| {
+                                        version
+                                            .as_str()
+                                            .is_some_and(|version| has_package(name, version))
+                                    }),
+                                    None => false,
+                                })
+                        })
+                })
             })
         })
 }
@@ -7211,7 +7382,9 @@ pub(crate) fn credential_query_param(text: &str) -> Option<String> {
         .find(|name| mise_util::redactions::is_credential_query_param(name))
 }
 
-fn strip_lock_option_credentials(value: &str) -> String {
+/// One option value without credentials, as `mise.lock` records it. Install
+/// manifests and install identities record options through this too.
+pub(crate) fn strip_lock_option_credentials(value: &str) -> String {
     let value = mise_util::redactions::strip_url_credentials_in_value(value);
     // An npm credential setting is masked as the installer reads it: split into
     // shell words the way `npm_args` is, so a value made of quoted and unquoted
@@ -7507,33 +7680,111 @@ pub(crate) fn ensure_locked_url_matches_version(
 /// The backend `short`'s lock entries record for `version`; see
 /// [`locked_backend`].
 /// The repository `mise.lock` pins the package to, whatever install options
-/// the entry was written with: the repository belongs to the package, so
-/// changing an option must not drop the pin before the install is verified.
+/// the entry was written with, and whatever version when `version` has no
+/// entry yet: the repository belongs to the package, so changing an option or
+/// upgrading must not drop the pin before the install is verified.
 pub(crate) fn get_locked_npm_provenance(
     config: &Config,
     request: &ToolRequest,
     short: &str,
     version: &str,
     backend: &str,
-) -> Option<PackageProvenance> {
+) -> Result<Option<PackageProvenance>> {
     if !Settings::get().lockfile_enabled() {
-        return None;
+        return Ok(None);
     }
     // Only the lockfile that owns the request: a tool an override config
     // declares must not inherit a pin from the project's lockfile.
-    let lockfile = match request.lockfile_source()? {
-        ToolSource::MiseToml(path) => read_lockfile_for(config, path),
-        source if source.path().is_some() => {
-            Arc::new(read_lockfile_for_tool_source(config, source).ok()?)
+    let lockfile = match request.lockfile_source() {
+        Some(ToolSource::MiseToml(path)) => read_lockfile_for(config, path),
+        Some(source) if source.path().is_some() => {
+            match read_lockfile_for_tool_source(config, source) {
+                Ok(lockfile) => Arc::new(lockfile),
+                Err(_) => return Ok(None),
+            }
         }
-        _ => read_all_lockfiles(config),
+        Some(_) => read_all_lockfiles(config),
+        None => return Ok(None),
     };
-    lockfile
-        .tools_for(short)
-        .into_iter()
-        .flatten()
-        .filter(|tool| tool.version == version && tool.backend.as_deref() == Some(backend))
-        .find_map(|tool| tool.provenance.clone())
+    match lockfile.tools_for(short) {
+        Some(entries) => pinned_package_provenance(entries, version, Some(backend)),
+        None => Ok(None),
+    }
+}
+
+/// The repository `entries` pin `backend`'s package to for `version`. A
+/// version with an entry keeps its own pin, or its lack of one, so a release
+/// from before the package published provenance can stay locked beside a
+/// pinned one. A version with no entry yet, such as the one an upgrade moves
+/// to, takes the repository the package's pinned entries name, so a release
+/// built anywhere else is refused and its new entry keeps the pin. When those
+/// entries name more than one repository, the package's repository is not
+/// known, so a version with no entry is an error rather than an unpinned
+/// install: the user has to reconcile the pins first.
+pub(crate) fn pinned_package_provenance(
+    entries: &[LockfileTool],
+    version: &str,
+    backend: Option<&str>,
+) -> Result<Option<PackageProvenance>> {
+    let package = || {
+        entries
+            .iter()
+            .filter(move |tool| tool.backend.as_deref() == backend)
+    };
+    if package().any(|tool| tool.version == version) {
+        return Ok(package()
+            .filter(|tool| tool.version == version)
+            .find_map(|tool| tool.provenance.clone()));
+    }
+    let pins = package()
+        .filter_map(|tool| tool.provenance.as_ref())
+        .map(|pin| pin.repository.as_str())
+        .unique()
+        .collect_vec();
+    match pins.as_slice() {
+        [] => Ok(None),
+        [repository] => Ok(Some(PackageProvenance {
+            repository: repository.to_string(),
+        })),
+        repositories => bail!(
+            "mise.lock pins {} to more than one repository ({}), so {version} has no repository to verify its provenance against; \
+             remove the lock entries whose pin is stale, then try again",
+            backend.unwrap_or("the package"),
+            repositories.join(", ")
+        ),
+    }
+}
+
+/// The pin for a new entry of `version`, or `None` when the package's entries
+/// disagree, so the caller writes no entry. The conflict is warned about once.
+fn new_entry_provenance(
+    entries: &[LockfileTool],
+    version: &str,
+    backend: Option<&str>,
+) -> Option<Option<PackageProvenance>> {
+    match pinned_package_provenance(entries, version, backend) {
+        Ok(pin) => Some(pin),
+        Err(err) => {
+            warn_once!("{err:#}");
+            None
+        }
+    }
+}
+
+/// Whether `entries` pin one backend's package to more than one repository, which
+/// leaves a version they do not cover no repository to verify against.
+pub fn package_pins_disagree(entries: &[LockfileTool]) -> bool {
+    entries
+        .iter()
+        .filter_map(|tool| {
+            Some((
+                tool.backend.as_deref(),
+                &tool.provenance.as_ref()?.repository,
+            ))
+        })
+        .into_group_map()
+        .values()
+        .any(|repositories| repositories.iter().unique().count() > 1)
 }
 
 pub(crate) fn get_locked_backend_for_version(

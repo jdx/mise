@@ -1705,9 +1705,38 @@ impl Lock {
         ))
         .await?;
         if !generate || self.bump || format_changed {
+            // A package whose pins disagree may have had a request's entry
+            // withheld, so it gets a graph only for a request whose entry (same
+            // version, backend and options) is in the lockfile.
+            let aube_tools = graph_tools
+                .iter()
+                .filter(|(ba, tv)| {
+                    let Some(entries) = lockfile.tools_for(&ba.short) else {
+                        return true;
+                    };
+                    if !lockfile::package_pins_disagree(entries) {
+                        return true;
+                    }
+                    let Ok(options) = tv.backend().and_then(|backend| {
+                        backend.lockfile_options(
+                            &tv.request,
+                            &crate::backend::platform_target::PlatformTarget::from_current(),
+                        )
+                    }) else {
+                        return true;
+                    };
+                    let backend_name = ba.stored_full();
+                    entries.iter().any(|entry| {
+                        entry.version == tv.version
+                            && entry.backend.as_deref().is_none_or(|b| b == backend_name)
+                            && entry.options == options
+                    })
+                })
+                .cloned()
+                .collect::<Vec<_>>();
             Box::pin(lockfile::generate::populate_aube_locks(
                 &mut lockfile,
-                &graph_tools,
+                &aube_tools,
                 None,
                 self.bump,
             ))
@@ -2330,7 +2359,22 @@ impl Lock {
     /// can compare against the old version entries before they are removed.
     fn prune_stale_versions(&self, lockfile: &mut Lockfile, tools: &[LockTool]) -> Result<()> {
         let current_versions = self.current_tool_versions(tools);
+        // Entries that pin a package to more than one repository are what refuses
+        // an install of a version they do not cover, so no cleanup below drops
+        // them until the user reconciles them.
+        let disagreeing = lockfile
+            .tools()
+            .iter()
+            .filter(|(_, entries)| lockfile::package_pins_disagree(entries))
+            .map(|(short, _)| short.clone())
+            .collect::<BTreeSet<_>>();
         for (short, versions) in &current_versions {
+            if disagreeing.contains(short) {
+                warn!(
+                    "keeping the old {short} entries in mise.lock: they pin it to more than one repository"
+                );
+                continue;
+            }
             lockfile.retain_tool_versions(short, versions);
         }
         if self.is_unfiltered_lock_run() {
@@ -2348,11 +2392,12 @@ impl Lock {
                 })
                 .collect::<Vec<_>>();
             lockfile.retain_unsuperseded_unbound_entries(|short, entry| {
-                resolved.iter().any(|(name, backend, version)| {
-                    name == short
-                        && version == &entry.version
-                        && entry.backend.as_deref().is_some_and(|b| b == backend)
-                })
+                !disagreeing.contains(short)
+                    && resolved.iter().any(|(name, backend, version)| {
+                        name == short
+                            && version == &entry.version
+                            && entry.backend.as_deref().is_some_and(|b| b == backend)
+                    })
             });
         }
         if self.is_unfiltered_lock_run()
@@ -2377,6 +2422,9 @@ impl Lock {
                 })
                 .collect::<Result<Vec<_>>>()?;
             lockfile.retain_graph_entries(|short, entry| {
+                if disagreeing.contains(short) {
+                    return true;
+                }
                 let mut matching = variants
                     .iter()
                     .filter(|(name, backend, version, _)| {
@@ -3459,6 +3507,11 @@ impl Lock {
                 // the trust they need on a `[tools]` entry of the config the
                 // task is locked for.
                 if tool.ba.explicit_opts().is_some_and(|opts| !opts.is_empty()) {
+                    trust_check(&config_path)?;
+                }
+                // So does a tool key that is a URL off a public forge, which
+                // gets the user's logins for its host when it is fetched.
+                if crate::backend::url_logins::tool_key_login_url(&tool.ba.full()).is_some() {
                     trust_check(&config_path)?;
                 }
                 let request = ToolRequest::new_with_options(

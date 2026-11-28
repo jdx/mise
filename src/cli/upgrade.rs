@@ -1925,6 +1925,7 @@ impl Upgrade {
     ) -> Result<Option<String>> {
         let backend = tv.backend()?;
         if self.bump_applies(tv) || (opts.inactive && tv.request.source() == &ToolSource::Unknown) {
+            tv.request.ensure_safe_url_tool_key()?;
             let (prefix, prefix_version) = split_version_prefix(&tv.request.version());
             backend
                 .latest_version(
@@ -1944,6 +1945,7 @@ impl Upgrade {
         tv: &ToolVersion,
         opts: &ResolveOptions,
     ) -> Result<Option<String>> {
+        tv.request.ensure_safe_url_tool_key()?;
         let backend = tv.backend()?;
         let query = if self.bump_applies(tv)
             || (opts.inactive && tv.request.source() == &ToolSource::Unknown)

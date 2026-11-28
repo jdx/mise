@@ -197,6 +197,10 @@ impl LsRemote {
         let mut versions = vec![];
         let mut hidden_versions = 0;
         for b in backend::list() {
+            if let Err(err) = crate::backend::url_logins::ensure_safe_url_tool_key(b.ba()) {
+                debug!("skipping {}: {err}", b.id());
+                continue;
+            }
             let tool = b.id().to_string();
             let before_date =
                 resolve_before_date_for_backend(config, b.as_ref(), before_date).await?;
@@ -234,6 +238,7 @@ impl LsRemote {
                     .as_deref()
                     .and_then(|prefix| tool_arg.ba.with_registry_version(prefix));
                 let ba = ba.as_ref().unwrap_or(&tool_arg.ba);
+                crate::backend::url_logins::ensure_safe_url_tool_key(ba)?;
                 let mut backend = ba.backend()?;
                 backend::ensure_backend_enabled(&backend.get_type())?;
                 let mpr = MultiProgressReport::get();

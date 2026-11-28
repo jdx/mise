@@ -43,3 +43,22 @@ assert "mise install -C proj2 multi@3.1.0"
 assert "mise ls -C proj2"
 cd other || exit 1
 assert_not_contains "mise prune --dry-run 2>&1" "multi@3.1.0"
+
+# a sub-N: request whose base is an alias for latest keeps the version it
+# resolves to, also without the runtime link that names the request
+cd .. || exit 1
+mkdir -p proj3
+cat >proj3/mise.toml <<'TOML'
+[tool_alias.dummy.versions]
+newest = "latest"
+
+[tools]
+dummy = "sub-1:newest"
+TOML
+assert "mise trust proj3/mise.toml"
+assert "mise install -C proj3"
+assert "mise install dummy@1.0.0"
+rm "$MISE_DATA_DIR/installs/dummy/sub-1-newest"
+cd proj3 || exit 1
+assert_not_contains "mise prune --dry-run 2>&1" "dummy@1.1.0"
+assert_contains "mise prune --dry-run 2>&1" "dummy@1.0.0"

@@ -27,10 +27,10 @@ use base64::{Engine, prelude::BASE64_STANDARD};
 use bytesize::ByteSize;
 use jiff::Timestamp;
 use serde_json::Value;
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
-use std::sync::{LazyLock, Mutex, OnceLock};
+use std::sync::{LazyLock, Mutex};
 use std::{fmt::Debug, sync::Arc};
 use tokio::sync::Mutex as TokioMutex;
 
@@ -83,6 +83,65 @@ fn git_requirement(name: &str, version: &str) -> String {
         let base = name.split('#').next().unwrap_or(name).trim_end_matches('/');
         format!("{base}#{version}")
     }
+}
+
+/// A git source's URL as an install uses it and as a lockfile stores it, when
+/// the two differ: the stored one has no userinfo (`user:token@`). Both are
+/// spelled the way aube writes the URL into a dependency graph, without `git+`
+/// and `#ref`. A credential in the query string stays: the lockfile refuses to
+/// record such a graph.
+fn git_url_with_and_without_credentials(name: &str) -> Option<(String, String)> {
+    let url = git_source_url(name)?;
+    let stored = mise_util::redactions::strip_url_credentials_in_arg(url);
+    (stored != url).then(|| (url.to_string(), stored.into_owned()))
+}
+
+/// A git source's URL as the request spells it, the way aube writes it into a
+/// dependency graph: without `git+` and `#ref`.
+fn git_source_url(name: &str) -> Option<&str> {
+    if !is_git_spec(name) {
+        return None;
+    }
+    let url = name.split('#').next().unwrap_or(name).trim_end_matches('/');
+    Some(url.strip_prefix("git+").unwrap_or(url))
+}
+
+/// A dependency graph with every key and string passed through `f`.
+fn aube_graph_map(graph: &toml::Table, f: &dyn Fn(&str) -> String) -> toml::Table {
+    fn map(value: &toml::Value, f: &dyn Fn(&str) -> String) -> toml::Value {
+        match value {
+            toml::Value::String(s) => toml::Value::String(f(s)),
+            toml::Value::Array(values) => {
+                toml::Value::Array(values.iter().map(|v| map(v, f)).collect())
+            }
+            toml::Value::Table(table) => toml::Value::Table(aube_graph_map(table, f)),
+            other => other.clone(),
+        }
+    }
+    graph
+        .iter()
+        .map(|(key, value)| (f(key), map(value, f)))
+        .collect()
+}
+
+/// Whether a key or a string of a dependency graph names the git source at
+/// `url` itself, the way aube writes one: alone (`repo:`), after `git+`
+/// (`specifier:`) or after `<package>@` (the key of a package), and with at
+/// most a `#commit` or a longer path behind it. Anywhere else the URL is only
+/// text in another value, such as the query of another host's URL.
+fn names_git_source(value: &str, url: &str) -> bool {
+    let Some((before, after)) = value.split_once(url) else {
+        return false;
+    };
+    let is_package_key = before.strip_suffix('@').is_some_and(|package| {
+        !package.starts_with('/')
+            && package
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || "@/._~-".contains(c))
+    });
+    (before.is_empty() || before == "git+" || is_package_key)
+        && (after.is_empty() || after.starts_with(['#', '/']))
+        && !after.contains(url)
 }
 
 /// Whether a git source follows its remote's default branch, as opposed to one
@@ -163,6 +222,7 @@ fn git_ls_remote_args(remote: &str) -> Vec<&str> {
 
 /// Resolve a git remote's default-branch HEAD to a concrete commit.
 async fn git_head(remote: &str) -> eyre::Result<String> {
+    super::url_logins::ensure_safe_mode_git_remote(remote)?;
     let display_remote = display_git_remote(remote);
     timeout::run_with_timeout_async(
         async || {
@@ -235,6 +295,18 @@ pub(crate) fn is_tarball_spec(name: &str) -> bool {
     name.starts_with("https://") || name.starts_with("http://")
 }
 
+/// The URL fetched for a tool name that is a tarball or a git source: the
+/// tarball itself, or the remote git queries, without its `#ref`.
+pub(super) fn fetched_url(name: &str) -> Option<String> {
+    if is_tarball_spec(name) {
+        Some(name.to_string())
+    } else if is_git_spec(name) {
+        Some(git_remote(name))
+    } else {
+        None
+    }
+}
+
 /// Whether a source has no version list and `latest` follows whatever it
 /// serves now: a git source without a pinned `#ref`, or a tarball URL.
 fn tracks_source_head(name: &str) -> bool {
@@ -282,9 +354,17 @@ fn validate_tarball_spec(name: &str) -> Result<()> {
     Ok(())
 }
 
-/// Download a tarball source to `dest` and return its version: a prefix of the
-/// SHA-256 of what the URL serves now. The URL is mutable (`…@343` follows the
-/// newest push), so the content is its only stable identity.
+/// The version of a downloaded tarball source: the whole SHA-256 of its bytes.
+/// The version is the only thing `mise.lock` holds for a tarball, so it is a
+/// full digest; a prefix would let whoever makes the tarball craft a second
+/// one with the same version.
+fn tarball_version(archive: &Path) -> eyre::Result<String> {
+    crate::hash::file_hash_sha256(archive, None)
+}
+
+/// Download a tarball source to `dest` and return its version, the SHA-256 of
+/// what the URL serves now. The URL is mutable (`…@343` follows the newest
+/// push), so the content is its only stable identity.
 async fn fetch_tarball(url: &str, dest: &Path) -> eyre::Result<String> {
     validate_tarball_spec(url)?;
     let display = redact_credentials(url);
@@ -301,8 +381,7 @@ async fn fetch_tarball(url: &str, dest: &Path) -> eyre::Result<String> {
                 redact_credentials(&format!("{err:#}"))
             )
         })?;
-    let digest = crate::hash::file_hash_sha256(dest, None)?;
-    Ok(digest[..16].to_string())
+    tarball_version(dest)
 }
 
 /// The version of a tarball source as it is served now. One run asks several
@@ -521,11 +600,14 @@ fn bound_node_matches(install_path: &Path, selected: Option<&str>) -> bool {
     }
 }
 
+/// One registry's `latest` version for a package.
+type LatestVersionCache = Arc<TokioMutex<CacheManager<Option<String>>>>;
+
 #[derive(Debug)]
 pub(crate) struct NPMBackend {
     ba: Arc<BackendArg>,
     // use a mutex to prevent deadlocks that occurs due to reentrant cache access
-    latest_version_cache: OnceLock<TokioMutex<CacheManager<Option<String>>>>,
+    latest_version_caches: Mutex<HashMap<Option<String>, LatestVersionCache>>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1513,7 +1595,10 @@ impl Backend for NPMBackend {
             self.ensure_npm_for_version_check(config).await;
         }
 
-        let cache = self.latest_version_cache().lock().await;
+        // The registry that answers decides `latest`, as it decides the list.
+        let context = self.remote_version_cache_context(config).await?;
+        let cache = self.latest_version_cache(context.as_deref());
+        let cache = cache.lock().await;
         let this = self;
         // Like the version list, a dist-tag read from a cached packument of
         // unknown age is used but not saved (see `remote_versions_may_be_stale`).
@@ -1591,6 +1676,13 @@ impl Backend for NPMBackend {
         // A tarball URL has no dependency graph (see `resolve_aube_lock`); its
         // version, the digest, is all the lockfile holds.
         let graph_wanted = !is_tarball_spec(&self.tool_name());
+        if let Some(lock) = &tv.aube_lock
+            && lock
+                .load()
+                .is_ok_and(|lock| !self.installs_stored_aube_lock(lock, ctx.locked))
+        {
+            tv.aube_lock = None;
+        }
         if package_manager == NpmPackageManager::Aube
             && graph_wanted
             && tv.aube_lock.is_none()
@@ -1657,9 +1749,10 @@ impl Backend for NPMBackend {
         let request_options = tv.request.options();
         let options = NpmOptions::new(&request_options);
         // Lock lookup needs matching install options, but the repository a
-        // package was built from does not depend on them: load the pin by
-        // package and version, so an option change cannot swap the repository
-        // before the install is verified.
+        // package was built from does not depend on them, nor on the version:
+        // load the pin by package, of this version or, when it is not locked
+        // yet, of the package, so an option change or an upgrade cannot swap
+        // the repository before the install is verified.
         //
         // The pin is loaded even with verification off, so the lock entry
         // written for the new options keeps it for when it is turned back on.
@@ -1670,7 +1763,7 @@ impl Backend for NPMBackend {
                 &crate::toolset::install_state::state_short(&tv.ba().short),
                 &tv.version,
                 &tv.ba().stored_full(),
-            );
+            )?;
         }
         // A checksum without an aube lock installs a downloaded local archive,
         // which aube builds no provenance subject for. Only the paranoid
@@ -2229,9 +2322,81 @@ impl NPMBackend {
         }
     }
 
+    /// `text` of a dependency graph as a lockfile stores it: without the
+    /// credentials of the git source's URL. The graph is committed beside
+    /// `mise.lock`, whose `backend` names the source without them too.
+    fn aube_lock_stored_form(&self, text: &str) -> String {
+        match git_url_with_and_without_credentials(&self.tool_name()) {
+            Some((url, stored)) => text.replace(&url, &stored),
+            None => text.to_string(),
+        }
+    }
+
+    /// Whether a dependency graph names the git source with credentials in its
+    /// URL, as userinfo or in a query parameter whose name says it carries one:
+    /// any credentials, not only the ones the request has now, so a graph
+    /// stored before a token was rotated, or before the user moved it to a
+    /// credential helper, counts too. A query credential is not stripped from
+    /// the stored form, so a graph that holds one is refused.
+    pub(crate) fn aube_lock_holds_credentials(&self, lock: &crate::lockfile::AubeLock) -> bool {
+        use mise_util::redactions::{
+            strip_credential_query_params, strip_url_credentials, strip_url_credentials_in_arg,
+        };
+        let name = self.tool_name();
+        let Some(url) = git_source_url(&name) else {
+            return false;
+        };
+        let stored = strip_url_credentials_in_arg(url);
+        let source = strip_credential_query_params(&stored);
+        let holds = |text: &str| {
+            let stripped = strip_url_credentials(text);
+            let stripped = strip_credential_query_params(&stripped);
+            stripped != text && stripped.contains(source.as_ref())
+        };
+        let found = std::cell::Cell::new(false);
+        aube_graph_map(&lock.graph, &|value| {
+            if holds(value) {
+                found.set(true);
+            }
+            value.to_string()
+        });
+        found.get() || lock.project.as_deref().is_some_and(holds)
+    }
+
+    /// Whether an install can use a stored dependency graph as it is. One that
+    /// holds the credentials of its git source's URL is resolved again, which
+    /// stores it without them, unless the install is `--locked` and so must
+    /// install what the lockfile names.
+    fn installs_stored_aube_lock(&self, lock: &crate::lockfile::AubeLock, locked: bool) -> bool {
+        locked || !self.aube_lock_holds_credentials(lock)
+    }
+
+    /// The dependency graph as an install needs it: with the credentials of
+    /// the git source's URL, which the request supplies and the stored graph
+    /// leaves out. A graph read from a lockfile can be anyone's writing, so
+    /// they only go into the values that name the source itself, and aube gets
+    /// the graph as mise parsed it rather than the text it was read from.
+    fn aube_lock_install_yaml(&self, lock: &crate::lockfile::AubeLock) -> Result<String> {
+        let Some((url, stored)) = git_url_with_and_without_credentials(&self.tool_name()) else {
+            return lock.to_install_yaml();
+        };
+        let graph = aube_graph_map(&lock.graph, &|value| {
+            if names_git_source(value, &stored) {
+                value.replacen(&stored, &url, 1)
+            } else {
+                value.to_string()
+            }
+        });
+        crate::lockfile::AubeLock {
+            graph,
+            ..Default::default()
+        }
+        .to_install_yaml()
+    }
+
     pub(crate) fn from_arg(ba: BackendArg) -> Self {
         Self {
-            latest_version_cache: OnceLock::new(),
+            latest_version_caches: Mutex::new(HashMap::new()),
             ba: Arc::new(ba),
         }
     }
@@ -2241,15 +2406,28 @@ impl NPMBackend {
     /// share, so the package is in the key too. Built on first use: `full()`
     /// reads aliases and the lockfile, which are only known once config loads,
     /// as for the version-list cache.
-    fn latest_version_cache(&self) -> &TokioMutex<CacheManager<Option<String>>> {
-        self.latest_version_cache.get_or_init(|| {
-            TokioMutex::new(
-                CacheManagerBuilder::new(self.ba.cache_path().join("latest_version.msgpack.z"))
-                    .with_cache_key(self.ba.full())
-                    .with_fresh_duration(Settings::get().fetch_remote_versions_cache())
-                    .build(),
-            )
-        })
+    ///
+    /// `context` is `remote_version_cache_context`: a registry other than
+    /// npmjs.org has its own `latest`, so it gets its own entry, as its
+    /// version list does. The file is new (`_v2`), so a lookup on npmjs.org
+    /// cannot read the entry an older mise shared with every registry.
+    fn latest_version_cache(&self, context: Option<&str>) -> LatestVersionCache {
+        self.latest_version_caches
+            .lock()
+            .unwrap()
+            .entry(context.map(str::to_string))
+            .or_insert_with(|| {
+                let mut cm = CacheManagerBuilder::new(
+                    self.ba.cache_path().join("latest_version_v2.msgpack.z"),
+                )
+                .with_cache_key(self.ba.full())
+                .with_fresh_duration(Settings::get().fetch_remote_versions_cache());
+                if let Some(context) = context {
+                    cm = cm.with_cache_key(context.to_string());
+                }
+                TokioMutex::new(cm.build()).into()
+            })
+            .clone()
     }
 
     /// Legacy `npm view` version listing, kept behind `npm.shell_out` for
@@ -2752,11 +2930,15 @@ impl NPMBackend {
             // and aube names it after its own package.json.
             self.write_aube_empty_dependencies(&install_path)?;
         } else {
-            self.write_aube_root_dependency(&install_path, tv)?;
+            self.write_aube_root_dependency(&install_path, &self.package_requirement(tv)?)?;
         }
 
         if let Some(lock) = &tv.aube_lock {
-            crate::file::write(install_path.join("aube-lock.yaml"), lock.load()?.to_yaml()?)?;
+            // aube installs the graph that was checked, not the sidecar text.
+            crate::file::write(
+                install_path.join("aube-lock.yaml"),
+                self.aube_lock_install_yaml(lock.load()?)?,
+            )?;
             let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
             let mut install_options = aube::embed::InstallOptions::new(&install_path);
             install_options.frozen_mode = aube::embed::FrozenMode::Frozen;
@@ -3106,12 +3288,11 @@ impl NPMBackend {
         Ok(())
     }
 
-    fn write_aube_root_dependency(&self, install_path: &Path, tv: &ToolVersion) -> Result<()> {
+    fn write_aube_root_dependency(&self, install_path: &Path, requirement: &str) -> Result<()> {
         let path = install_path.join("package.json");
         let mut manifest: serde_json::Value =
             serde_json::from_str(&crate::file::read_to_string(&path)?)?;
-        manifest["dependencies"] =
-            serde_json::json!({ self.package_key(): self.package_requirement(tv)? });
+        manifest["dependencies"] = serde_json::json!({ self.package_key(): requirement });
         crate::file::write(
             path,
             format!("{}\n", serde_json::to_string_pretty(&manifest)?),
@@ -3148,7 +3329,12 @@ impl NPMBackend {
             || is_tarball_spec(&self.tool_name())
             || versions::SemVer::new(&tv.version).is_none()
             || resolved.is_some_and(|v| v.split('(').next() == Some(tv.version.as_str()));
-        if requirement != Some(self.package_requirement(tv)?.as_str()) || !resolves_locked_version {
+        // The graph names a git source without its credentials; one written
+        // with them still names the same source, so both sides are compared
+        // as stored.
+        let expected = self.aube_lock_stored_form(&self.package_requirement(tv)?);
+        let requirement = requirement.map(|r| self.aube_lock_stored_form(r));
+        if requirement.as_deref() != Some(expected.as_str()) || !resolves_locked_version {
             eyre::bail!(
                 "npm:{} dependency graph does not match root version {}; run `mise lock`",
                 self.display_tool_name(),
@@ -3172,13 +3358,18 @@ impl NPMBackend {
                 self.display_tool_name()
             );
         }
+        // Resolving fetches the source, so it is refused in safe mode for a
+        // URL that would get the user's logins, even for a version that is
+        // installed already.
+        tv.request.ensure_safe_url_tool_key()?;
         crate::backend::aube_host::init();
         let temp = tempfile::tempdir()?;
         let request_options = tv.request.options();
         let options = NpmOptions::new(&request_options);
         let allow_builds = options.allow_builds()?;
         self.write_aube_embed_project(temp.path(), tv.before_date, &options, &allow_builds, false)?;
-        self.write_aube_root_dependency(temp.path(), tv)?;
+        let requirement = self.package_requirement(tv)?;
+        self.write_aube_root_dependency(temp.path(), &requirement)?;
         let mut install_options = aube::embed::InstallOptions::new(temp.path());
         install_options.lockfile_only = true;
         install_options.ignore_scripts = true;
@@ -3190,11 +3381,25 @@ impl NPMBackend {
         aube::embed::install_with_overrides(install_options, Self::aube_embed_install_overrides())
             .await
             .map_err(|error| self.format_aube_install_error(error))?;
+        // aube resolved the git source by the URL of the request, and wrote it
+        // into the graph and left it in the project. Both are committed beside
+        // the lockfile, so they are kept without the URL's credentials; an
+        // install puts them back (`aube_lock_install_yaml`).
         let contents = crate::file::read_to_string(temp.path().join("aube-lock.yaml"))?;
+        let contents = self.aube_lock_stored_form(&contents);
+        self.write_aube_root_dependency(temp.path(), &self.aube_lock_stored_form(&requirement))?;
         let mut graph = crate::lockfile::AubeLock::from_yaml(&contents)?;
         graph.project = Some(crate::file::read_to_string(
             temp.path().join("package.json"),
         )?);
+        if self.aube_lock_holds_credentials(&graph) {
+            // The YAML spells the URL in a way the text above did not match.
+            eyre::bail!(
+                "npm:{} dependency graph cannot be stored without the credentials of its URL; \
+                 pass them to git another way, such as a credential helper",
+                self.display_tool_name()
+            );
+        }
         Ok(graph.into())
     }
 
@@ -4413,6 +4618,149 @@ mod tests {
     }
 
     #[test]
+    fn git_source_graph_is_stored_without_credentials() {
+        let backend = create_npm_git_backend("git+https://ci:glpat-token@git.example.test/o/r.git");
+        let request = ToolRequest::new(backend.ba().clone(), "v1", ToolSource::Argument).unwrap();
+        let tv = ToolVersion::new(request, "v1".to_string());
+        let url = "https://ci:glpat-token@git.example.test/o/r.git";
+        assert_eq!(
+            backend.package_requirement(&tv).unwrap(),
+            format!("git+{url}#v1")
+        );
+        // The graph as aube writes it for the request's URL.
+        let written = format!(
+            r#"importers:
+  .:
+    dependencies:
+      r:
+        specifier: git+{url}#v1
+        version: {url}#deadbeef
+packages:
+  '@o/r@{url}#deadbeef':
+    resolution: {{commit: deadbeef, repo: {url}, type: git}}
+"#
+        );
+        let written_lock = crate::lockfile::AubeLock::from_yaml(&written).unwrap();
+        assert!(backend.aube_lock_holds_credentials(&written_lock));
+
+        let stored = backend.aube_lock_stored_form(&written);
+        assert!(
+            !stored.contains("glpat-token"),
+            "graph holds the token: {stored}"
+        );
+        assert!(stored.contains("specifier: git+https://git.example.test/o/r.git#v1\n"));
+        assert!(stored.contains("repo: https://git.example.test/o/r.git, type: git"));
+        let stored_lock = crate::lockfile::AubeLock::from_yaml(&stored).unwrap();
+        assert!(!backend.aube_lock_holds_credentials(&stored_lock));
+
+        // A graph stored with credentials is resolved again, whatever the
+        // request's credentials are now, unless the install is `--locked`.
+        for request in [
+            "git+https://ci:glpat-token@git.example.test/o/r.git",
+            "git+https://ci:rotated-token@git.example.test/o/r.git",
+            "git+https://git.example.test/o/r.git",
+        ] {
+            let backend = create_npm_git_backend(request);
+            assert!(
+                backend.aube_lock_holds_credentials(&written_lock),
+                "{request}"
+            );
+            assert!(
+                !backend.installs_stored_aube_lock(&written_lock, false),
+                "{request}"
+            );
+            assert!(
+                backend.installs_stored_aube_lock(&written_lock, true),
+                "{request}"
+            );
+            assert!(
+                !backend.aube_lock_holds_credentials(&stored_lock),
+                "{request}"
+            );
+            assert!(
+                backend.installs_stored_aube_lock(&stored_lock, false),
+                "{request}"
+            );
+        }
+        // Another source's credentials are not this graph's to judge.
+        let other = create_npm_git_backend("git+https://git.example.test/o/other.git");
+        assert!(!other.aube_lock_holds_credentials(&written_lock));
+
+        // Either one matches the request, and is installed with the credentials.
+        for lock in [&stored_lock, &written_lock] {
+            backend.validate_aube_lock(&tv, lock).unwrap();
+            let installed = backend.aube_lock_install_yaml(lock).unwrap();
+            assert_eq!(
+                crate::lockfile::AubeLock::from_yaml(&installed).unwrap(),
+                written_lock
+            );
+        }
+
+        // A credential in the query string is for the lockfile to refuse: it
+        // stays in the stored form, and a graph that holds it counts as holding
+        // credentials.
+        let backend = create_npm_git_backend(GIT_SOURCE_WITH_CREDENTIALS);
+        assert_eq!(
+            backend.aube_lock_stored_form(GIT_SOURCE_WITH_CREDENTIALS),
+            "git+https://git.example.test/org/repo.git?access_token=query-token#main"
+        );
+        let query_url = "https://git.example.test/org/repo.git?access_token=query-token";
+        let query_lock = crate::lockfile::AubeLock::from_yaml(&format!(
+            r#"importers:
+  .:
+    dependencies:
+      repo:
+        specifier: git+{query_url}#main
+        version: {query_url}#deadbeef
+"#
+        ))
+        .unwrap();
+        assert!(backend.aube_lock_holds_credentials(&query_lock));
+        assert!(!backend.installs_stored_aube_lock(&query_lock, false));
+    }
+
+    #[test]
+    fn git_source_credentials_only_go_where_the_graph_names_the_source() {
+        let backend = create_npm_git_backend("git+https://ci:glpat-token@git.example.test/o/r.git");
+        let stored = "https://git.example.test/o/r.git";
+        for value in [
+            stored.to_string(),
+            format!("{stored}#deadbeef"),
+            format!("git+{stored}#v1"),
+            format!("r@{stored}#deadbeef"),
+            format!("@o/r@{stored}#deadbeef(peer@1.0.0)"),
+        ] {
+            assert!(names_git_source(&value, stored), "{value}");
+        }
+        // A lockfile is not always the user's own writing. In these the
+        // credentials would go to another host, or into a URL that host is sent.
+        let foreign = [
+            format!("https://evil.example.test/?next={stored}"),
+            format!("https://evil.example.test/x@{stored}#deadbeef"),
+            format!("//evil.example.test/x@{stored}"),
+            format!("{stored}.evil.example.test/r.git"),
+            format!("{stored}#deadbeef(x@https://evil.example.test/?next={stored})"),
+        ];
+        for value in &foreign {
+            assert!(!names_git_source(value, stored), "{value}");
+        }
+        let lock = crate::lockfile::AubeLock::from_yaml(&format!(
+            r#"packages:
+  r@{stored}#deadbeef:
+    resolution: {{commit: deadbeef, repo: {stored}, type: git}}
+  other@1.0.0:
+    resolution: {{tarball: '{}'}}
+"#,
+            foreign[0]
+        ))
+        .unwrap();
+        let installed = backend.aube_lock_install_yaml(&lock).unwrap();
+        assert!(installed.contains("https://ci:glpat-token@git.example.test/o/r.git"));
+        assert!(installed.contains(&foreign[0]), "{installed}");
+        assert_eq!(installed.matches("glpat-token").count(), 2, "{installed}");
+    }
+
+    #[test]
     fn git_source_diagnostics_redact_credentials_without_changing_requirements() {
         let error = git_package_install_spec(GIT_SOURCE_WITH_CREDENTIALS, "v1", true)
             .unwrap_err()
@@ -4533,6 +4881,17 @@ mod tests {
         let names = NPMBackend::tarball_package_names(aube.path());
         assert_eq!(names, vec!["@acme/hooky".to_string()]);
         assert!(NPMBackend::installed_package_lifecycle_scripts(aube.path(), &names[0]).is_none());
+    }
+
+    #[test]
+    fn tarball_version_is_the_whole_digest() {
+        use sha2::{Digest, Sha256};
+
+        let tmp = tempfile::tempdir().unwrap();
+        let archive = tmp.path().join("package.tgz");
+        std::fs::write(&archive, b"tarball bytes").unwrap();
+        let digest = hex::encode(Sha256::digest(b"tarball bytes"));
+        assert_eq!(tarball_version(&archive).unwrap(), digest);
     }
 
     #[tokio::test]
@@ -4754,12 +5113,44 @@ packages:
         assert_eq!(scoped.ba.cache_path(), unscoped.ba.cache_path());
 
         let latest = Some("1.0.0".to_string());
-        let unscoped_cache = unscoped.latest_version_cache().lock().await;
+        let unscoped_cache = unscoped.latest_version_cache(None);
+        let unscoped_cache = unscoped_cache.lock().await;
         unscoped_cache.write(&latest).unwrap();
         assert_eq!(unscoped_cache.get_cached().unwrap(), latest);
 
-        let scoped_cache = scoped.latest_version_cache().lock().await;
+        let scoped_cache = scoped.latest_version_cache(None);
+        let scoped_cache = scoped_cache.lock().await;
         assert!(scoped_cache.get_cached().is_err());
+    }
+
+    #[tokio::test]
+    async fn latest_version_cache_is_not_shared_between_registries() {
+        let _config = crate::config::Config::get().await.unwrap();
+        let backend = NPMBackend::from_arg("npm:acme-latest-cache-registry".into());
+        let contexts = [None, Some("https://npm.example/")];
+        for context in contexts
+            .into_iter()
+            .chain([Some("https://npm.other.example/")])
+        {
+            backend
+                .latest_version_cache(context)
+                .lock()
+                .await
+                .clear()
+                .unwrap();
+        }
+
+        // What one registry calls `latest` says nothing about another's.
+        let latest = Some("1.0.0".to_string());
+        let other = backend.latest_version_cache(Some("https://npm.other.example/"));
+        let other = other.lock().await;
+        other.write(&latest).unwrap();
+        assert_eq!(other.get_cached().unwrap(), latest);
+
+        for context in contexts {
+            let cache = backend.latest_version_cache(context);
+            assert!(cache.lock().await.get_cached().is_err());
+        }
     }
 
     #[tokio::test]

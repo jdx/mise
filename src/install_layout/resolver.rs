@@ -216,14 +216,16 @@ pub(crate) fn canonical_backend(full: &str) -> String {
 /// is used.
 pub(crate) fn identity_of(tv: &ToolVersion) -> Option<InstallIdentity> {
     let backend = tv.backend().ok()?;
-    // Credentials in an option (a registry URL, a signed download URL) must not
-    // reach the catalog or a receipt, which are plain files: URL userinfo is
-    // dropped, and a query string, which can carry a token but can also choose
-    // what is downloaded, takes part in the identity only as a digest.
+    // Credentials in an option (a registry URL, a signed download URL, an npm
+    // `_authToken` in `npm_args`) must not reach the catalog or a receipt,
+    // which are plain files: URL userinfo is dropped, an npm credential
+    // setting is masked as a lockfile masks it, and a query string, which can
+    // carry a token but can also choose what is downloaded, takes part in the
+    // identity only as a digest.
     let mut options: BTreeMap<String, String> = backend
         .install_identity_options(tv)
         .into_iter()
-        .map(|(key, value)| (key, redact_credentials(&value)))
+        .map(|(key, value)| (key, identity_option_value(&value)))
         .collect();
     let core = tv.request.options();
     if !core.install_env.is_empty() {
@@ -259,6 +261,13 @@ pub(crate) fn identity_of(tv: &ToolVersion) -> Option<InstallIdentity> {
         options,
         inputs,
     })
+}
+
+/// An option value as an identity records it: [`redact_credentials`], after
+/// the value of an npm credential setting (`--//host/:_authToken=`, `--_auth=`,
+/// `--_password=`), which is not part of a URL, is masked.
+fn identity_option_value(value: &str) -> String {
+    redact_credentials(&crate::lockfile::strip_lock_option_credentials(value))
 }
 
 /// `value` with the parts of URLs in it that can carry credentials kept out of
@@ -2289,6 +2298,26 @@ mod tests {
             redact_credentials("--index-url https://u:p@h.example/x --other https://h2/y"),
             "--index-url https://h.example/x --other https://h2/y"
         );
+        // An npm credential setting is not part of a URL; an option value has
+        // it masked, and is otherwise recorded as before.
+        let npm_args = identity_option_value(
+            "--//npm.example.com/:_authToken=tok --registry=https://u:p@npm.example.com/",
+        );
+        assert_eq!(
+            shell_words::split(&npm_args).unwrap(),
+            [
+                "--//npm.example.com/:_authToken=[redacted]",
+                "--registry=https://npm.example.com/",
+            ]
+        );
+        for value in [
+            "--index-url https://u:p@h.example/x --other https://h2/y",
+            "git+ssh://git@github.com:org/repo.git",
+            "https://tok@host.example/a?b=c@d",
+            "plain value",
+        ] {
+            assert_eq!(identity_option_value(value), redact_credentials(value));
+        }
     }
 
     /// An installation in the real installs root of the test environment with a

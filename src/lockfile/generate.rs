@@ -232,13 +232,16 @@ fn resolution_key(ba: &crate::args::BackendArg, tv: &ToolVersion, platform: &Pla
     options.core.install_env.sort_keys();
     let mut install_env = tv.install_env();
     install_env.sort_keys();
+    // Safe mode treats a global config's local artifact differently from a
+    // project's, so the two never share a cached result.
     format!(
-        "{}\n{}\n{:?}\n{:?}\n{}",
+        "{}\n{}\n{:?}\n{:?}\n{}\n{}",
         ba.full(),
         tv.version,
         options,
         install_env,
-        platform.to_key()
+        platform.to_key(),
+        tv.request.is_global_config_tool(),
     )
 }
 
@@ -252,6 +255,7 @@ async fn resolve(
     Ok(cell
         .get_or_init(|| async {
             let backend = tv.backend().ok();
+            let tr = tv.request.clone();
             let tool = ba.clone();
             let mut resolution = resolve_tool_lock_info(ba, tv, platform, backend).await;
             // Fetched in the tool's safe mode scope, as its install fetches them: a
@@ -259,7 +263,7 @@ async fn resolve(
             if let Ok(info) = &mut resolution.4
                 && let Err(error) = crate::toolset::with_safe_mode_tool_scope(
                     &tool,
-                    complete_artifact_checksums(info),
+                    complete_artifact_checksums(&tr, info),
                 )
                 .await
             {
@@ -612,9 +616,9 @@ pub async fn generate(
                 // mode scope, as its install does: a project tool's release
                 // chooses those hosts, and no netrc login goes to them.
                 let checksums = async {
-                    complete_artifact_checksums(info).await?;
+                    complete_artifact_checksums(&tv.request, info).await?;
                     if let Some(old) = &previous_info {
-                        check_replaced_weak_pins(old, info).await?;
+                        check_replaced_weak_pins(&tv.request, old, info).await?;
                     }
                     eyre::Ok(())
                 };
@@ -732,8 +736,10 @@ pub async fn generate(
         }
     }
     // A pin is the repository the install verified, or else the one already
-    // recorded for this version. An install that showed another repository
-    // than the recorded one must not replace the pin.
+    // recorded for this version or, when it was not locked before, for the
+    // package. An install that showed another repository than the recorded
+    // one must not replace the pin.
+    let mut unpinnable = vec![];
     for (short, entries) in &mut candidate.tools {
         for entry in entries.iter_mut() {
             let verified = installed
@@ -744,29 +750,43 @@ pub async fn generate(
                         && tv.ba().stored_full() == entry.backend.clone().unwrap_or_default()
                 })
                 .find_map(|tv| tv.npm_provenance.clone());
-            let recorded = previous
-                .tools_for(short)
-                .and_then(|previous_entries| {
-                    // The repository is a property of the package, so a pin
-                    // survives a change of install options: prefer the entry
-                    // with the same options, else any of the same version.
+            let recorded = match previous.tools_for(short) {
+                // The repository is a property of the package, so a pin
+                // survives a change of install options or of version:
+                // prefer the entry with the same options, else the
+                // package's pin for this version.
+                Some(previous_entries) => {
                     let same_package = |previous: &&LockfileTool| {
                         previous.version == entry.version && previous.backend == entry.backend
                     };
-                    previous_entries
+                    match previous_entries
                         .iter()
                         .filter(same_package)
                         .find(|previous| {
                             previous.options == entry.options && previous.provenance.is_some()
                         })
-                        .or_else(|| {
-                            previous_entries
-                                .iter()
-                                .filter(same_package)
-                                .find(|previous| previous.provenance.is_some())
-                        })
-                })
-                .and_then(|previous| previous.provenance.clone());
+                        .and_then(|previous| previous.provenance.clone())
+                    {
+                        Some(pin) => Some(pin),
+                        None => match crate::lockfile::pinned_package_provenance(
+                            previous_entries,
+                            &entry.version,
+                            entry.backend.as_deref(),
+                        ) {
+                            Ok(pin) => pin,
+                            // Pins that disagree leave this version no repository to verify
+                            // against. Installing it is refused, so keep the package's
+                            // entries as they are and lock the other tools.
+                            Err(err) => {
+                                warn!("not updating {short} in mise.lock: {err:#}");
+                                unpinnable.push(short.clone());
+                                break;
+                            }
+                        },
+                    }
+                }
+                None => None,
+            };
             if let (Some(verified), Some(recorded)) = (&verified, &recorded)
                 && verified != recorded
             {
@@ -778,6 +798,18 @@ pub async fn generate(
                 );
             }
             entry.provenance = verified.or(recorded);
+        }
+    }
+    for short in &unpinnable {
+        match previous.tools_for(short) {
+            Some(previous_entries) => {
+                candidate
+                    .tools
+                    .insert(short.clone(), previous_entries.clone());
+            }
+            None => {
+                candidate.tools.remove(short);
+            }
         }
     }
     for (short, entries) in &mut candidate.tools {
@@ -802,6 +834,14 @@ pub async fn generate(
     } else {
         tools.to_vec()
     };
+    // A package whose pins disagree keeps its previous entries, graphs included.
+    let aube_tools = aube_tools
+        .into_iter()
+        .filter(|(_, tv)| {
+            let short = crate::toolset::install_state::state_short(&tv.ba().short);
+            !unpinnable.iter().any(|skipped| *skipped == short)
+        })
+        .collect_vec();
     Box::pin(populate_aube_locks(
         &mut candidate,
         &aube_tools,
@@ -879,7 +919,11 @@ pub async fn populate_aube_locks(
             } else {
                 old.refresh().ok()
             };
-            if let Some(candidate) = candidate {
+            // A graph stored with the credentials of its git source's URL is
+            // resolved again, which stores it without them.
+            if let Some(candidate) = candidate
+                && !npm.aube_lock_holds_credentials(candidate.load()?)
+            {
                 npm.validate_aube_lock(tv, candidate.load()?)?;
                 lockfile.set_aube_lock(
                     &ba.short,
@@ -1226,13 +1270,17 @@ impl Drop for ProgressGuard<'_> {
 /// publisher chose and could make a second file match, is downloaded, checked
 /// against it, and pinned by its sha256 instead. A checksum taken from the
 /// download is confirmed, so it loses any [`ChecksumSource`](crate::lockfile::ChecksumSource) mark.
-async fn complete_artifact_checksums(info: &mut PlatformInfo) -> Result<()> {
+async fn complete_artifact_checksums(
+    tr: &crate::toolset::ToolRequest,
+    info: &mut PlatformInfo,
+) -> Result<()> {
     if info.checksum.as_deref().is_none_or(is_weak_checksum)
         && let Some(url) = &info.url
     {
         let expected = info.checksum.as_deref().map(|c| (c, RELEASE_CHECKSUM));
         info.checksum = Some(
             artifact_checksum(
+                tr,
                 url,
                 info.url_api.as_deref(),
                 info.download_headers.as_ref(),
@@ -1247,6 +1295,7 @@ async fn complete_artifact_checksums(info: &mut PlatformInfo) -> Result<()> {
             let expected = artifact.checksum.as_deref().map(|c| (c, RELEASE_CHECKSUM));
             artifact.checksum = Some(
                 artifact_checksum(
+                    tr,
                     &artifact.url,
                     artifact.url_api.as_deref(),
                     None,
@@ -1267,7 +1316,11 @@ const LOCKED_CHECKSUM: &str = "the checksum mise.lock pinned it by";
 /// artifact by. When the artifact is still at the same URL, it is downloaded
 /// and checked against that pin as well as the new checksum, so the refresh
 /// cannot move the pin to other bytes the URL now serves.
-async fn check_replaced_weak_pins(old: &PlatformInfo, new: &PlatformInfo) -> Result<()> {
+async fn check_replaced_weak_pins(
+    tr: &crate::toolset::ToolRequest,
+    old: &PlatformInfo,
+    new: &PlatformInfo,
+) -> Result<()> {
     let replaced = |old: &Option<String>, new: &Option<String>| {
         old.as_deref()
             .filter(|old| is_weak_checksum(old) && Some(*old) != new.as_deref())
@@ -1280,6 +1333,7 @@ async fn check_replaced_weak_pins(old: &PlatformInfo, new: &PlatformInfo) -> Res
         let mut expected = vec![(pin.as_str(), LOCKED_CHECKSUM)];
         expected.extend(new.checksum.as_deref().map(|c| (c, RELEASE_CHECKSUM)));
         artifact_checksum(
+            tr,
             url,
             new.url_api.as_deref(),
             new.download_headers.as_ref(),
@@ -1298,7 +1352,14 @@ async fn check_replaced_weak_pins(old: &PlatformInfo, new: &PlatformInfo) -> Res
         };
         let mut expected = vec![(pin.as_str(), LOCKED_CHECKSUM)];
         expected.extend(artifact.checksum.as_deref().map(|c| (c, RELEASE_CHECKSUM)));
-        artifact_checksum(&artifact.url, artifact.url_api.as_deref(), None, &expected).await?;
+        artifact_checksum(
+            tr,
+            &artifact.url,
+            artifact.url_api.as_deref(),
+            None,
+            &expected,
+        )
+        .await?;
     }
     Ok(())
 }
@@ -1306,6 +1367,7 @@ async fn check_replaced_weak_pins(old: &PlatformInfo, new: &PlatformInfo) -> Res
 /// The sha256 of the artifact at `url`, after checking it against each
 /// `expected` checksum (`algorithm:hash`, and what it is for the error).
 async fn artifact_checksum(
+    tr: &crate::toolset::ToolRequest,
     url: &str,
     api_url: Option<&str>,
     headers: Option<&reqwest::header::HeaderMap>,
@@ -1321,7 +1383,7 @@ async fn artifact_checksum(
         Ok(())
     };
     // A `file://` artifact is hashed in place, as the http backend installs it.
-    if let Some(local) = crate::backend::http::local_artifact_path(url)? {
+    if let Some(local) = crate::backend::http::local_artifact_path(tr, url)? {
         check(&local)?;
         return Ok(format!(
             "sha256:{}",
@@ -1352,12 +1414,13 @@ async fn artifact_checksum(
 }
 
 pub(crate) async fn download_for_verification(
+    tr: &crate::toolset::ToolRequest,
     url: &str,
     checksum: &mut Option<String>,
 ) -> Result<tempfile::TempDir> {
     let directory = tempfile::tempdir()?;
     let path = directory.path().join("artifact");
-    match crate::backend::http::local_artifact_path(url)? {
+    match crate::backend::http::local_artifact_path(tr, url)? {
         Some(local) => crate::file::copy(&local, &path)?,
         None => crate::http::HTTP.download_file(url, &path, None).await?,
     }
@@ -1770,6 +1833,7 @@ mod tests {
 
     #[tokio::test]
     async fn md5_checksum_is_checked_and_replaced_by_sha256() {
+        let (_, tv) = tool();
         let tmp = tempfile::tempdir().unwrap();
         let artifact = tmp.path().join("probe");
         std::fs::write(&artifact, b"artifact").unwrap();
@@ -1793,7 +1857,9 @@ mod tests {
         info.checksum_source = Some(crate::lockfile::ChecksumSource::VersionsHost);
         info.additional_artifacts[0].checksum_source =
             Some(crate::lockfile::ChecksumSource::VersionsHost);
-        complete_artifact_checksums(&mut info).await.unwrap();
+        complete_artifact_checksums(&tv.request, &mut info)
+            .await
+            .unwrap();
         assert_eq!(info.checksum.as_deref(), Some(sha256.as_str()));
         assert_eq!(
             info.additional_artifacts[0].checksum.as_deref(),
@@ -1806,7 +1872,9 @@ mod tests {
 
         // The md5 the release lists still has to match.
         let mut info = with_checksum("md5:00000000000000000000000000000000");
-        let err = complete_artifact_checksums(&mut info).await.unwrap_err();
+        let err = complete_artifact_checksums(&tv.request, &mut info)
+            .await
+            .unwrap_err();
         assert!(
             format!("{err:#}").contains("does not match the checksum its release lists"),
             "{err:#}"
@@ -1818,12 +1886,15 @@ mod tests {
             crate::hash::file_hash_blake3(&artifact, None).unwrap()
         );
         let mut info = with_checksum(&blake3);
-        complete_artifact_checksums(&mut info).await.unwrap();
+        complete_artifact_checksums(&tv.request, &mut info)
+            .await
+            .unwrap();
         assert_eq!(info.checksum.as_deref(), Some(blake3.as_str()));
     }
 
     #[tokio::test]
     async fn refresh_checks_the_artifact_against_the_weak_pin_it_replaces() {
+        let (_, tv) = tool();
         let tmp = tempfile::tempdir().unwrap();
         let artifact = tmp.path().join("probe");
         std::fs::write(&artifact, b"artifact").unwrap();
@@ -1846,12 +1917,14 @@ mod tests {
 
         // The bytes the URL serves are the ones mise.lock pinned.
         let old = entry(&url, "md5:8e5b948a454515dbabfc7eb718daa52f");
-        check_replaced_weak_pins(&old, &refreshed).await.unwrap();
+        check_replaced_weak_pins(&tv.request, &old, &refreshed)
+            .await
+            .unwrap();
 
         // Other bytes at the same URL stop the refresh, for the primary
         // artifact and for an additional one.
         let other = "md5:00000000000000000000000000000000";
-        let err = check_replaced_weak_pins(&entry(&url, other), &refreshed)
+        let err = check_replaced_weak_pins(&tv.request, &entry(&url, other), &refreshed)
             .await
             .unwrap_err();
         assert!(
@@ -1860,15 +1933,19 @@ mod tests {
         );
         let mut old = entry(&url, &sha256);
         old.additional_artifacts[0].checksum = Some(other.into());
-        assert!(check_replaced_weak_pins(&old, &refreshed).await.is_err());
+        assert!(
+            check_replaced_weak_pins(&tv.request, &old, &refreshed)
+                .await
+                .is_err()
+        );
 
         // A pin for another URL, or a strong one, says nothing about these bytes.
         let elsewhere = entry("file:///nonexistent/other", other);
-        check_replaced_weak_pins(&elsewhere, &refreshed)
+        check_replaced_weak_pins(&tv.request, &elsewhere, &refreshed)
             .await
             .unwrap();
         let blake3 = format!("blake3:{}", "0".repeat(64));
-        check_replaced_weak_pins(&entry(&url, &blake3), &refreshed)
+        check_replaced_weak_pins(&tv.request, &entry(&url, &blake3), &refreshed)
             .await
             .unwrap();
     }
@@ -2494,7 +2571,10 @@ mod tests {
             url: Some(url.clone()),
             ..Default::default()
         };
-        complete_artifact_checksums(&mut info).await.unwrap();
+        let (_, tv) = tool();
+        complete_artifact_checksums(&tv.request, &mut info)
+            .await
+            .unwrap();
         let expected = format!(
             "sha256:{}",
             crate::hash::file_hash_sha256(&artifact, None).unwrap()
@@ -2504,10 +2584,41 @@ mod tests {
         assert_eq!(info.url.as_deref(), Some(url.as_str()));
 
         let mut checksum = None;
-        download_for_verification(&url, &mut checksum)
+        download_for_verification(&tv.request, &url, &mut checksum)
             .await
             .unwrap();
         assert_eq!(checksum.as_deref(), Some(expected.as_str()));
+    }
+
+    #[tokio::test]
+    async fn artifact_checksum_reads_no_local_file_for_other_backends() {
+        // Only the http backend installs a `file://` artifact. The URL of a
+        // forge tool can be a release API's answer and goes to the HTTP client.
+        let tmp = tempfile::tempdir().unwrap();
+        let artifact = tmp.path().join("probe");
+        std::fs::write(&artifact, b"artifact").unwrap();
+        let url = url::Url::from_file_path(&artifact).unwrap().to_string();
+        for forge in ["github:o/r", "gitlab:o/r", "forgejo:o/r"] {
+            let tr = ToolRequest::new(Arc::new(forge.into()), "1", ToolSource::Argument).unwrap();
+            let mut info = PlatformInfo {
+                url: Some(url.clone()),
+                additional_artifacts: vec![ArtifactInfo {
+                    url: url.clone(),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            };
+            assert!(complete_artifact_checksums(&tr, &mut info).await.is_err());
+            assert_eq!(info.checksum, None, "{forge}");
+
+            let mut checksum = None;
+            assert!(
+                download_for_verification(&tr, &url, &mut checksum)
+                    .await
+                    .is_err()
+            );
+            assert_eq!(checksum, None, "{forge}");
+        }
     }
 
     #[tokio::test]
@@ -2526,7 +2637,10 @@ mod tests {
             download_headers: Some(headers),
             ..Default::default()
         };
-        complete_artifact_checksums(&mut info).await.unwrap();
+        let (_, tv) = tool();
+        complete_artifact_checksums(&tv.request, &mut info)
+            .await
+            .unwrap();
         mock.assert_async().await;
         let checksum = info.checksum.clone().unwrap();
         assert!(checksum.starts_with("sha256:"));
@@ -2553,9 +2667,16 @@ mod tests {
         headers.insert("authorization", "Bearer secret".parse().unwrap());
         let browser_url = format!("{}/browser", server.url());
         let api_url = format!("{}/api/asset", server.url());
-        let checksum = artifact_checksum(&browser_url, Some(&api_url), Some(&headers), &[])
-            .await
-            .unwrap();
+        let (_, tv) = tool();
+        let checksum = artifact_checksum(
+            &tv.request,
+            &browser_url,
+            Some(&api_url),
+            Some(&headers),
+            &[],
+        )
+        .await
+        .unwrap();
         head.assert_async().await;
         browser.assert_async().await;
         assert!(checksum.starts_with("sha256:"));
@@ -2579,9 +2700,16 @@ mod tests {
         headers.insert("authorization", "Bearer secret".parse().unwrap());
         let browser_url = format!("{}/browser", server.url());
         let api_url = format!("{}/api/asset", server.url());
-        let checksum = artifact_checksum(&browser_url, Some(&api_url), Some(&headers), &[])
-            .await
-            .unwrap();
+        let (_, tv) = tool();
+        let checksum = artifact_checksum(
+            &tv.request,
+            &browser_url,
+            Some(&api_url),
+            Some(&headers),
+            &[],
+        )
+        .await
+        .unwrap();
         head.assert_async().await;
         api.assert_async().await;
         assert!(checksum.starts_with("sha256:"));

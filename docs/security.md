@@ -77,7 +77,10 @@ A `mise.toml` loads without trust when it has no template syntax
 - `[tools]` entries whose values are version strings or arrays of version
   strings, with no options in the tool name (`"tool[opt=value]"`), no `spm:`
   name that is the URL of a host other than github.com or gitlab.com, which
-  mise would send your forge token to, and no
+  mise would send your forge token to, no `npm:` tarball URL, `npm:` Git URL or
+  `pypi:` Git URL that is fetched over `http(s)` from a host other than
+  github.com, gitlab.com or bitbucket.org, which mise or git would send your
+  `~/.netrc` and Git credential-helper logins to, and no
   [`path:`](/dev-tools/versions.html) version, which puts a directory on `PATH`
   without an install, and no `ref:` or `rev:` version, which can name any
   commit the forge serves, such as a pull request from a fork (`tag:` and
@@ -91,8 +94,8 @@ commands or other settings before you trust it. Other files follow the same
 idea:
 
 - `.tool-versions` needs trust only when it contains template syntax, inline
-  tool options such as `node[postinstall=...] 24`, or a `path:`, `ref:` or
-  `rev:` version.
+  tool options such as `node[postinstall=...] 24`, one of the tool names above
+  that needs trust, or a `path:`, `ref:` or `rev:` version.
 - Idiomatic version files such as `.nvmrc` need trust only when they contain a
   `path:`, `ref:` or `rev:` version.
 - A project's [`mise.lock`](/dev-tools/mise-lock.html) is read with its config.
@@ -326,6 +329,16 @@ These fail with `<operation> is disabled in safe mode (MISE_SAFE=1)`:
   versions.
 - Requests to S3, which are signed with your AWS credentials, so tools from the
   `s3:` backend cannot list or install versions.
+- Reading the local file that the `file://` `url` of an `http:` tool names, so
+  such a tool cannot be installed or locked, unless global or system config
+  requests the tool and no project config declares it. The checksum that
+  `mise lock` records would otherwise tell what a file outside the project
+  holds.
+- Fetching a tool whose name is an `npm:` tarball URL, or an `npm:` or `pypi:`
+  Git URL over `http(s)`, on a host other than github.com, gitlab.com or
+  bitbucket.org, unless global or system config requests the tool and no
+  project config declares it. mise or Git would send your `~/.netrc` and Git
+  credential-helper logins for that host.
 - Installing plugins. vfox plugins that are already installed or built in still
   run, because the operator chose them.
 - mise secrets: `[secrets]` sources, `mise secrets ls`, tasks that list

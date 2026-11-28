@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+
+# A `file://` tool url names a file on the machine that runs mise, and `mise
+# lock` records its sha256. Safe mode loads that url from config nobody
+# reviewed, so it reads the file only for a tool that global config requests,
+# as it refuses the `hash_file` filter, and it refuses before telling whether
+# the file exists.
+
+# Nothing here needs the network. Generate mode is what fills in a checksum
+# that config does not declare.
+export MISE_OFFLINE=1 MISE_LOCKFILE_MODE=generate
+
+mkdir -p outside project
+echo "PIN=123456" >outside/deploy.env
+SECRET="$PWD/outside/deploy.env"
+SHA256=$(sha256sum "$SECRET" | cut -d' ' -f1)
+refused="reading a local file:// artifact for a tool that global config does not request is disabled in safe mode (MISE_SAFE=1)"
+
+cd project || exit 1
+for file in "$SECRET" "$PWD/missing"; do
+  cat <<EOF >mise.toml
+[tools."http:safe-local"]
+version = "1.0.0"
+url = "file://$file"
+EOF
+  rm -f mise.lock
+  assert_fail "MISE_SAFE=1 mise lock --platform linux-x64" "$refused"
+  assert_fail "MISE_SAFE=1 mise install" "$refused"
+  assert_not_contains "cat mise.lock 2>/dev/null || true" "sha256:"
+done
+
+# A tool that only a task declares is a project tool too.
+cat <<EOF >mise.toml
+[tasks.build]
+run = "true"
+tools = { "http:safe-local" = { version = "1.0.0", url = "file://$SECRET" } }
+EOF
+rm -f mise.lock
+assert_fail "MISE_SAFE=1 mise lock --platform linux-x64" "$refused"
+assert_fail "MISE_SAFE=1 mise install --include-task-tools" "$refused"
+assert_not_contains "cat mise.lock 2>/dev/null || true" "sha256:"
+
+# Global config is the operator's, so a local file it names still installs,
+# unless the project declares the tool too: its entry is the one that counts.
+cat <<EOF >"$MISE_CONFIG_DIR/config.toml"
+[tools."http:safe-local"]
+version = "1.0.0"
+url = "file://$SECRET"
+EOF
+cat <<EOF >mise.toml
+[tools."http:safe-local"]
+version = "1.0.0"
+url = "file://$SECRET"
+EOF
+assert_fail "MISE_SAFE=1 mise install" "$refused"
+rm -f mise.toml mise.lock
+assert_succeed "MISE_SAFE=1 mise install"
+assert_succeed "test -d '$MISE_DATA_DIR/installs/http-safe-local/1.0.0'"
+rm "$MISE_CONFIG_DIR/config.toml"
+
+# Only the http backend installs a local file. On any other backend the url
+# goes to the HTTP client, with or without safe mode, so a `file://` url that
+# a release API answers with is never read either.
+cat <<EOF >mise.toml
+[tools."github:safe/local"]
+version = "1.0.0"
+platforms.linux-x64.url = "file://$SECRET"
+EOF
+for safe in 0 1; do
+  rm -f mise.lock
+  assert_fail "MISE_SAFE=$safe mise lock --platform linux-x64"
+  assert_not_contains "cat mise.lock 2>/dev/null || true" "$SHA256"
+done

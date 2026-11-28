@@ -42,7 +42,9 @@ fn is_flat_platform_opt(key: &str, name: &str) -> bool {
 
 /// An option value as it may be stored in a file: the credentials of every URL
 /// in it are removed at any depth (`platforms.<platform>` tables hold the same
-/// options one level down), and [`CREDENTIAL_OPT_KEYS`] are dropped.
+/// options one level down), the value of an npm credential setting
+/// (`npm_args = "--//host/:_authToken=..."`) is masked the way a lockfile masks
+/// it, and [`CREDENTIAL_OPT_KEYS`] are dropped.
 ///
 /// Options are rendered before they are stored, so a token templated in from
 /// the environment is in the value by then. A consumer that needs the
@@ -50,7 +52,7 @@ fn is_flat_platform_opt(key: &str, name: &str) -> bool {
 pub(crate) fn strip_option_credentials(value: &toml::Value) -> toml::Value {
     match value {
         toml::Value::String(raw) => {
-            let raw = mise_util::redactions::strip_url_credentials_in_value(raw);
+            let raw = crate::lockfile::strip_lock_option_credentials(raw);
             toml::Value::String(
                 mise_util::redactions::strip_credential_query_params(&raw).into_owned(),
             )

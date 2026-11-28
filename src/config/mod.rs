@@ -4725,6 +4725,23 @@ mod safe_mode_project_tools_tests {
             "http:project-only-tool"
         )));
     }
+
+    #[test]
+    fn a_global_request_for_a_project_tool_is_not_a_global_config_tool() {
+        record_safe_mode_project_tools(BTreeSet::from(
+            ["http:project-and-global-tool".to_string()],
+        ));
+        let request = |tool: &str| {
+            crate::toolset::ToolRequest::new(
+                Arc::new(BackendArg::from(tool)),
+                "1.0.0",
+                ToolSource::MiseToml(global_config_path()),
+            )
+            .unwrap()
+        };
+        assert!(!request("http:project-and-global-tool").is_global_config_tool());
+        assert!(request("http:global-only-tool").is_global_config_tool());
+    }
 }
 
 /// The tools that project config declares or aliases, recorded in safe mode by
