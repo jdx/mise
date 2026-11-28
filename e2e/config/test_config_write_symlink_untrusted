@@ -89,6 +89,14 @@ cd ../clone || exit 1
 ln -s ../outside/clone.toml mise.toml
 assert_fail_contains "MISE_YES=1 mise use --rm tiny 2>&1" "trusted before this command"
 assert_contains "cat ../outside/clone.toml" 'tiny = "1"'
+echo "=== and mise use refuses it before installing anything ==="
+# A fresh clone: the run above recorded the trust that yes granted.
+mkdir -p ../clone-use
+cd ../clone-use || exit 1
+ln -s ../outside/clone.toml mise.toml
+assert_fail_contains "MISE_YES=1 mise use dummy@1.0.0 2>&1" "trusted before this command"
+assert_fail "test -e $MISE_DATA_DIR/installs/dummy/1.0.0"
+assert_not_contains "cat ../outside/clone.toml" "dummy"
 cd ../proj || exit 1
 
 echo "=== a linked directory out of the project is not followed ==="

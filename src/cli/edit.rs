@@ -47,10 +47,12 @@ fn edited_file_is_trusted(path: &Path) -> bool {
     config_file::is_path_trusted(path) || is_global_config_by_location(path)
 }
 
-/// Whether `path` is global config by where it is, whether or not it exists yet, rather than a
-/// project file that leads there through a link.
+/// Whether `path` is global config by where it is and the name discovery loads it by, whether
+/// or not it exists yet, rather than a project file that leads there through a link. Another
+/// file in the global config directory is not: mise never loads it, so nothing vouches for the
+/// hosts its tool keys name.
 fn is_global_config_by_location(path: &Path) -> bool {
-    crate::config::is_global_config_write(path)
+    crate::config::is_global_config_by_name(path)
         && !crate::config::write_reaches_global_config_through_link(path)
 }
 
@@ -587,12 +589,62 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn a_global_config_file_that_does_not_exist_yet_is_trusted_for_version_lookups() {
+        // The fixture replaces the global config directory with one file through
+        // `MISE_GLOBAL_CONFIG_FILE`, so the directory's own rules are checked in a child test
+        // process that starts without it.
+        let child_env = mise::testing::DEFAULT_GLOBAL_CONFIG_ENV;
+        if std::env::var_os(child_env).is_none() {
+            // Here the file the variable names is the global config, and no other file next to it.
+            let global = crate::env::MISE_GLOBAL_CONFIG_FILE.clone().unwrap();
+            assert!(is_global_config_by_location(&global));
+            assert!(!is_global_config_by_location(
+                &global.with_file_name("mise.toml")
+            ));
+            let status = std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "cli::edit::tests::a_global_config_file_that_does_not_exist_yet_is_trusted_for_version_lookups",
+                ])
+                .env(child_env, "1")
+                .stdout(std::process::Stdio::null())
+                .status()
+                .unwrap();
+            assert!(status.success(), "child test failed");
+            return;
+        }
+
         // Unit tests trust every path with a trust root, so `is_path_trusted` cannot show the
         // gap here: what is checked is the part that needs no trust record.
-        let global = crate::dirs::CONFIG.join("edit-trust-test-config.toml");
+        let global = crate::dirs::CONFIG.join("config.edit-trust-test.toml");
         assert!(!global.exists());
         assert!(is_global_config_by_location(&global));
         assert!(edited_file_is_trusted(&global));
+        // The names discovery loads global config by, for any environment.
+        for name in [
+            "config.toml",
+            "mise.edit-trust-test.local.toml",
+            "conf.d/edit-trust-test.toml",
+            "conf.d/edit-trust-test/mise.toml",
+        ] {
+            assert!(
+                is_global_config_by_location(&crate::dirs::CONFIG.join(name)),
+                "{name}"
+            );
+        }
+        // A file there that discovery never loads is not global config, nor is a file below a
+        // folder fragment's folder.
+        for name in [
+            "edit-trust-test-config.toml",
+            "settings.toml",
+            "conf.d/edit-trust-test/other.toml",
+            "conf.d/edit-trust-test/sub/mise.toml",
+            ".mise/config.toml",
+        ] {
+            assert!(
+                !is_global_config_by_location(&crate::dirs::CONFIG.join(name)),
+                "{name}"
+            );
+        }
 
         // A project file that only links to it is not global config by location.
         let tmp = tempfile::tempdir().unwrap();

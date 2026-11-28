@@ -3895,6 +3895,20 @@ pub fn is_global_config_write(path: &Path) -> bool {
         || global_folder_fragment(path).is_some()
 }
 
+/// Whether global or system config discovery loads `path`, or will once it exists, for some
+/// environment: a discovered global file, the file `MISE_GLOBAL_CONFIG_FILE` names, an override
+/// file, a file [`is_global_config_for_any_env`] recognizes by its name (`config.toml`,
+/// `mise.prod.local.toml`, any `conf.d/*.toml`, ...), or a folder fragment, also in a folder
+/// linked into `conf.d`. Unlike [`is_global_config_write`], which goes by directory so that a
+/// write there never records trust for the home directory, a file in the global config
+/// directory that discovery would never load is not global config.
+pub fn is_global_config_by_name(path: &Path) -> bool {
+    is_global_config(path)
+        || env::MISE_GLOBAL_CONFIG_FILE.as_deref() == Some(path)
+        || is_global_config_for_any_env(path)
+        || global_folder_fragment(path).is_some()
+}
+
 /// The global and system config directories that discovery reads, as
 /// [`is_global_config_for_any_env`] has them: one that `MISE_GLOBAL_CONFIG_FILE` or
 /// `MISE_SYSTEM_CONFIG_FILE` replaces is left out.
