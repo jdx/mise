@@ -987,6 +987,10 @@ pub(crate) fn install_artifact(
     layout: ArchiveLayout,
     pr: Option<&dyn SingleReport>,
 ) -> eyre::Result<()> {
+    // `bin_path` is rendered, so it reads the escaped options; every other
+    // option here names a file or a count and reads the plain text.
+    let template_opts = opts;
+    let opts = &opts.literal();
     let install_path = tv.install_path();
     let mut strip_components = lookup_platform_key(opts, "strip_components")
         .or_else(|| opts.get_string("strip_components"))
@@ -1001,7 +1005,7 @@ pub(crate) fn install_artifact(
     if let Some(name) = lookup_with_fallback(opts, "rename_exe") {
         ensure_plain_bin_name("rename_exe", &name)?;
     }
-    let bin_path = lookup_with_fallback(opts, "bin_path")
+    let bin_path = lookup_with_fallback(template_opts, "bin_path")
         .map(|template| render_bin_path(&template, tv))
         .transpose()?;
 
@@ -1246,7 +1250,7 @@ pub(crate) fn pinned_checksum(
     platform_key: &str,
     opts: &crate::toolset::ToolVersionOptions,
 ) -> Option<String> {
-    lookup_with_fallback(opts, "checksum").or_else(|| {
+    lookup_with_fallback(&opts.literal(), "checksum").or_else(|| {
         tv.lock_platforms
             .get(platform_key)
             .and_then(|platform| platform.pin_checksum().cloned())
@@ -1259,6 +1263,7 @@ pub(crate) fn verify_artifact(
     opts: &crate::toolset::ToolVersionOptions,
     pr: Option<&dyn SingleReport>,
 ) -> Result<()> {
+    let opts = &opts.literal();
     // Check platform-specific checksum first, then fall back to generic
     let checksum = lookup_with_fallback(opts, "checksum");
 

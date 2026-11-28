@@ -127,7 +127,7 @@ fn parse_template(config: &Config, tv: &ToolVersion, tmpl: &str) -> eyre::Result
         "project_root",
         &config.project_root.as_ref().map(|p| p.to_string_lossy()),
     );
-    ctx.insert("opts", &tv.request.options().opts_as_strings());
+    ctx.insert("opts", &tv.request.options().literal().opts_as_strings());
     let mut tera = get_tera(
         config
             .project_root

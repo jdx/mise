@@ -86,7 +86,7 @@ print(json.dumps(sorted(names)))
 impl PIPXBackend {
     pub(crate) fn uv_lock_allowed(&self, tv: &ToolVersion) -> bool {
         Settings::get().pypi.uvx != Some(false)
-            && !PipxOptions::new(&tv.request.options()).uvx_disabled()
+            && !PipxOptions::new(&tv.request.options().literal()).uvx_disabled()
             && matches!(
                 self.tool_name().parse::<PipxRequest>(),
                 Ok(PipxRequest::Pypi(_))
@@ -170,7 +170,7 @@ impl PIPXBackend {
     }
 
     pub(crate) fn uv_lock_options_supported(&self, tv: &ToolVersion) -> bool {
-        let raw = tv.request.options();
+        let raw = tv.request.options().literal();
         let opts = PipxOptions::new(&raw);
         [opts.uvx_args(), opts.pipx_args()]
             .into_iter()
@@ -199,7 +199,7 @@ impl PIPXBackend {
     pub(crate) fn uv_graph_required(&self, config: &Config, tv: &ToolVersion) -> Result<bool> {
         // Index sources reach uv only through the graph's project file, so a tool
         // that sets them has no version-only install.
-        if PipxOptions::new(&tv.request.options()).has_index_options() {
+        if PipxOptions::new(&tv.request.options().literal()).has_index_options() {
             return Ok(true);
         }
         let revision = self.uv_lockfile_version(config, tv)?;
@@ -285,7 +285,7 @@ impl PIPXBackend {
         // provenance file is the only safe way to recover that identity before
         // installation. In particular, do not let a later default-Python
         // upgrade silently rebind a selected tool.
-        if PipxOptions::new(&tv.request.options())
+        if PipxOptions::new(&tv.request.options().literal())
             .selected_python()
             .ok()
             .flatten()
@@ -381,7 +381,7 @@ impl PIPXBackend {
         ctx: &InstallContext,
         tv: &mut ToolVersion,
     ) -> Result<()> {
-        let raw = tv.request.options();
+        let raw = tv.request.options().literal();
         let selected = PipxOptions::new(&raw).selected_python()?;
         let (python, identity) = if selected.is_some() {
             let dependencies = ctx.dependency_context(&tv.request).await?;
@@ -425,7 +425,7 @@ impl PIPXBackend {
         let PipxRequest::Pypi(package) = self.tool_name().parse()? else {
             bail!("uv graph locking requires a PyPI package");
         };
-        let raw = tv.request.options();
+        let raw = tv.request.options().literal();
         let opts = PipxOptions::new(&raw);
         Ok(format!(
             "{package}{}=={}",
@@ -435,7 +435,7 @@ impl PIPXBackend {
     }
 
     fn lock_requirements(&self, tv: &ToolVersion) -> Result<Vec<String>> {
-        let raw = tv.request.options();
+        let raw = tv.request.options().literal();
         let opts = PipxOptions::new(&raw);
         let mut requirements = vec![self.lock_requirement(tv)?];
         requirements.extend(opts.with()?);
@@ -482,7 +482,7 @@ impl PIPXBackend {
             .env_remove("UV_WORKING_DIR")
             .env_remove("UV_PROJECT_ENVIRONMENT")
             .env_remove("VIRTUAL_ENV");
-        let raw = tv.request.options();
+        let raw = tv.request.options().literal();
         let default_index = uv_index_url(&global_registry_url())?;
         cmd = if PipxOptions::new(&raw).registry_index_priority()? && index != default_index {
             // The registry is searched first and the global index (PyPI unless
@@ -560,7 +560,7 @@ impl PIPXBackend {
         };
         // A pinned prerelease is a valid selection whatever `prerelease` says, so
         // list with prereleases included to find it.
-        let mut opts = tv.request.options();
+        let mut opts = tv.request.options().literal();
         opts.opts
             .insert("prerelease".into(), toml::Value::String("true".into()));
         let versions = match self
@@ -633,7 +633,9 @@ impl PIPXBackend {
             Some((python, _)) if !python.as_os_str().is_empty() => Some(python.clone()),
             _ => None,
         };
-        if let Some(selector) = PipxOptions::new(&tv.request.options()).selected_python()? {
+        if let Some(selector) =
+            PipxOptions::new(&tv.request.options().literal()).selected_python()?
+        {
             let bound = match bound {
                 Some(path) => Some(path),
                 None => self.installed_selected_python(config, tv).await,
@@ -690,12 +692,12 @@ impl PIPXBackend {
         let uv = self.lock_uv_program(config).await?;
         let registry = self.get_registry_url(config).await?;
         let requirements = self.lock_requirements(tv)?;
-        let sources = PipxOptions::new(&tv.request.options()).sources()?;
+        let sources = PipxOptions::new(&tv.request.options().literal()).sources()?;
         // A tool pinned to its own index is looked up there: its name must never
         // reach the registry, which may not host it at all.
         let root_registry = match sources.get(&super::normalize_package_name(&self.tool_name())) {
             Some((_, index)) => {
-                let tool_options = tv.request.options();
+                let tool_options = tv.request.options().literal();
                 let url = PipxOptions::new(&tool_options)
                     .indexes()?
                     .iter()
@@ -729,13 +731,16 @@ impl PIPXBackend {
             }
         };
         let mut constraints = vec![">=3.8".to_string()];
-        if let Some(selector) = PipxOptions::new(&tv.request.options()).selected_python()? {
+        if let Some(selector) =
+            PipxOptions::new(&tv.request.options().literal()).selected_python()?
+        {
             constraints.push(selector.requires_python());
         }
         constraints.extend(python_constraint(&root));
         // In `priority` mode a pinned injection the registry does not host comes from
         // the global index, so its release is looked up there too.
-        let fallback = (PipxOptions::new(&tv.request.options()).registry_index_priority()?
+        let fallback = (PipxOptions::new(&tv.request.options().literal())
+            .registry_index_priority()?
             && uv_index_url(&registry)? != uv_index_url(&global_registry_url())?)
         .then(global_registry_url);
         // Everything in `with` and `expose` shares the sidecar's interpreter, so a
@@ -784,7 +789,7 @@ impl PIPXBackend {
             }
             .into(),
         );
-        if let Some(tool) = PipxOptions::new(&tv.request.options()).uv_project_tool()? {
+        if let Some(tool) = PipxOptions::new(&tv.request.options().literal()).uv_project_tool()? {
             project.insert("tool".into(), tool.into());
         }
         let temp = tempfile::tempdir()?;
@@ -802,7 +807,7 @@ impl PIPXBackend {
             .args(Self::uv_exclude_newer_args(tv.before_date))
             .args(self.uv_exempt_undated_release(config, tv).await);
         cmd = lock_python.apply(cmd);
-        let raw = tv.request.options();
+        let raw = tv.request.options().literal();
         if let Some(uv_config) = PipxOptions::new(&raw).uv_config_file()? {
             // Not named uv.toml: uv must read it only because it is passed here.
             let path = temp.path().join("mise-uv-config.toml");
@@ -868,7 +873,7 @@ impl PIPXBackend {
             || project.get("name").and_then(toml::Value::as_str) != Some(PROJECT_NAME)
             || project.get("requires-python") != lock.graph.get("requires-python")
             || lock.project.get("tool")
-                != PipxOptions::new(&tv.request.options())
+                != PipxOptions::new(&tv.request.options().literal())
                     .uv_project_tool()?
                     .map(toml::Value::Table)
                     .as_ref()
@@ -905,7 +910,7 @@ impl PIPXBackend {
                     .and_then(|m| m.get("requires-dist"))
                     .and_then(toml::Value::as_array)
                     .ok_or_else(|| eyre!("missing uv root requirements"))?;
-                let raw = tv.request.options();
+                let raw = tv.request.options().literal();
                 let extras = PipxOptions::new(&raw)
                     .extras()
                     .unwrap_or_default()
@@ -1070,7 +1075,7 @@ impl PIPXBackend {
             .ok_or_else(|| eyre!("missing locked Python root requirement"))?;
         let root = PipxOptions::requirement_package_name(root_requirement)
             .ok_or_else(|| eyre!("invalid locked Python root requirement"))?;
-        let raw = tv.request.options();
+        let raw = tv.request.options().literal();
         let mut packages = vec![root.to_string()];
         packages.extend(PipxOptions::new(&raw).exposed_package_names()?);
         Ok(packages)

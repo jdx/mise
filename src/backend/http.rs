@@ -156,15 +156,21 @@ pub(crate) struct HttpBackend {
     ba: Arc<BackendArg>,
 }
 
-#[derive(Debug, Clone, Copy)]
+/// The http options. `url`, `checksum_url`, `bin_path` and `headers` are rendered again here, so
+/// they are read as stored, with what config load substituted escaped. Every other option is
+/// used as written, as a file name, a checksum or a version-listing setting, so it is read from
+/// [`ToolVersionOptions::literal`].
+#[derive(Debug, Clone)]
 struct HttpOptions<'a> {
     values: BackendOptions<'a>,
+    literal: ToolVersionOptions,
 }
 
 impl<'a> HttpOptions<'a> {
     fn new(raw: &'a ToolVersionOptions) -> Self {
         Self {
             values: BackendOptions::new(raw),
+            literal: raw.literal(),
         }
     }
 
@@ -172,28 +178,37 @@ impl<'a> HttpOptions<'a> {
         self.values.raw()
     }
 
+    fn plain(&self) -> BackendOptions<'_> {
+        BackendOptions::new(&self.literal)
+    }
+
     fn url(&self) -> Option<String> {
         self.values.platform_string("url")
     }
 
     fn checksum(&self) -> Option<String> {
-        self.values.platform_string("checksum")
+        self.plain().platform_string("checksum")
     }
 
     fn format(&self) -> Option<String> {
-        self.values.platform_string("format")
+        self.plain().platform_string("format")
     }
 
     fn strip_components(&self) -> Option<String> {
-        self.values.platform_string("strip_components")
+        self.plain().platform_string("strip_components")
     }
 
     fn bin(&self) -> Option<String> {
-        self.values.platform_string("bin")
+        self.plain().platform_string("bin")
     }
 
     fn rename_exe(&self) -> Option<String> {
-        self.values.platform_string("rename_exe")
+        self.plain().platform_string("rename_exe")
+    }
+
+    /// `rename_exe` as written, in its string or table form.
+    fn rename_exe_value(&self) -> Option<&toml::Value> {
+        lookup_value_with_fallback(&self.literal, "rename_exe")
     }
 
     fn bin_path(&self) -> Option<String> {
@@ -215,8 +230,8 @@ impl<'a> HttpOptions<'a> {
             let bins: Vec<String> = bins.into_iter().filter(|s| !s.is_empty()).collect();
             (!bins.is_empty()).then_some(bins)
         };
-        parse(self.values.platform_value_without_base("filter_bins"))
-            .or_else(|| parse(self.values.raw().opts.get("filter_bins")))
+        parse(self.plain().platform_value_without_base("filter_bins"))
+            .or_else(|| parse(self.literal.opts.get("filter_bins")))
     }
 
     fn shared_extraction(&self) -> bool {
@@ -224,11 +239,11 @@ impl<'a> HttpOptions<'a> {
     }
 
     fn windows_script_interpreter(&self) -> Option<String> {
-        self.values.platform_string("windows_script_interpreter")
+        self.plain().platform_string("windows_script_interpreter")
     }
 
-    fn checksum_expr(&self) -> Option<&'a str> {
-        self.values.str("checksum_expr")
+    fn checksum_expr(&self) -> Option<&str> {
+        self.literal.get("checksum_expr")
     }
 
     // Target-aware accessors for cross-platform `mise lock`. These resolve
@@ -238,7 +253,7 @@ impl<'a> HttpOptions<'a> {
     }
 
     fn checksum_for_target(&self, target: &PlatformTarget) -> Option<String> {
-        self.values.platform_string_for_target("checksum", target)
+        self.plain().platform_string_for_target("checksum", target)
     }
 
     fn checksum_url_for_target(&self, target: &PlatformTarget) -> Option<String> {
@@ -247,16 +262,17 @@ impl<'a> HttpOptions<'a> {
     }
 
     fn format_for_target(&self, target: &PlatformTarget) -> Option<String> {
-        self.values.platform_string_for_target("format", target)
+        self.plain().platform_string_for_target("format", target)
     }
 
     fn strip_components_for_target(&self, target: &PlatformTarget) -> Option<String> {
-        self.values
+        self.plain()
             .platform_string_for_target("strip_components", target)
     }
 
     fn rename_exe_for_target(&self, target: &PlatformTarget) -> Option<String> {
-        self.values.platform_string_for_target("rename_exe", target)
+        self.plain()
+            .platform_string_for_target("rename_exe", target)
     }
 
     /// Request headers from the `headers` table, with each value rendered as a template
@@ -265,7 +281,7 @@ impl<'a> HttpOptions<'a> {
     fn headers(&self, version: Option<&str>) -> Result<HeaderMap> {
         header_map(
             lookup_value_with_fallback(self.raw(), "headers"),
-            lookup_value_with_fallback(self.raw(), "headers_forward"),
+            lookup_value_with_fallback(&self.literal, "headers_forward"),
             version,
         )
     }
@@ -278,38 +294,38 @@ impl<'a> HttpOptions<'a> {
     ) -> Result<HeaderMap> {
         header_map(
             self.values.platform_value_for_target("headers", target),
-            self.values
+            self.plain()
                 .platform_value_for_target("headers_forward", target),
             version,
         )
     }
 
-    fn version_list_url(&self) -> Option<&'a str> {
-        self.values.str("version_list_url")
+    fn version_list_url(&self) -> Option<&str> {
+        self.literal.get("version_list_url")
     }
 
-    fn version_regex(&self) -> Option<&'a str> {
-        self.values.str("version_regex")
+    fn version_regex(&self) -> Option<&str> {
+        self.literal.get("version_regex")
     }
 
-    fn version_json_path(&self) -> Option<&'a str> {
-        self.values.str("version_json_path")
+    fn version_json_path(&self) -> Option<&str> {
+        self.literal.get("version_json_path")
     }
 
-    fn version_expr(&self) -> Option<&'a str> {
-        self.values.str("version_expr")
+    fn version_expr(&self) -> Option<&str> {
+        self.literal.get("version_expr")
     }
 
-    fn version_date_expr(&self) -> Option<&'a str> {
-        self.values.str("version_date_expr")
+    fn version_date_expr(&self) -> Option<&str> {
+        self.literal.get("version_date_expr")
     }
 
-    fn version_date_url(&self) -> Option<&'a str> {
-        self.values.str("version_date_url")
+    fn version_date_url(&self) -> Option<&str> {
+        self.literal.get("version_date_url")
     }
 
-    fn version_date_next_expr(&self) -> Option<&'a str> {
-        self.values.str("version_date_next_expr")
+    fn version_date_next_expr(&self) -> Option<&str> {
+        self.literal.get("version_date_next_expr")
     }
 
     fn url_platforms(&self) -> Vec<String> {
@@ -582,7 +598,7 @@ impl HttpBackend {
         // keeps a readable name when it is path-safe and hashes anything else (the
         // table form, or a scalar with path separators / Windows-invalid characters)
         // so nothing unsafe reaches the cache directory name.
-        if let Some(rename) = lookup_value_with_fallback(opts.raw(), "rename_exe") {
+        if let Some(rename) = opts.rename_exe_value() {
             parts.push(format!("rename_{}", rename_cache_token(rename)));
             // When rename_exe is used, bin_path affects where the rename happens,
             // so different bin_path values result in different cached content.
@@ -931,7 +947,7 @@ impl HttpBackend {
         file::ensure_symlinks_stay_within(dest)?;
 
         // Handle rename_exe option for archives
-        if let Some(rename_value) = lookup_value_with_fallback(opts.raw(), "rename_exe") {
+        if let Some(rename_value) = opts.rename_exe_value() {
             // When bin_path is not explicitly set, auto-detect bin/ subdirectory to match
             // the same logic used by discover_bin_paths() for PATH construction
             let search_dir = if let Some(bin_path_template) = opts.bin_path() {
@@ -2377,6 +2393,35 @@ mod tests {
         assert_eq!(
             backend.missing_url_error(&none).to_string(),
             "Http backend requires 'url' option"
+        );
+    }
+
+    #[test]
+    fn options_used_as_written_read_the_substituted_text() {
+        // config load stored `tool{` and `a{{b`, which templates substituted, escaped
+        let escaped = |text: &str| crate::tera::escape_template_syntax(text);
+        let raw: ToolVersionOptions = toml::from_str(&format!(
+            "url = 'https://example.com/{dir}/tool'\nrename_exe = '{name}'\nbin = '{name}'\n\
+             version_list_url = 'https://example.com/{dir}/versions'",
+            dir = escaped("a{{b"),
+            name = escaped("tool{"),
+        ))
+        .unwrap();
+        let opts = HttpOptions::new(&raw);
+        assert_eq!(opts.rename_exe().as_deref(), Some("tool{"));
+        assert_eq!(
+            opts.rename_exe_value(),
+            Some(&toml::Value::String("tool{".to_string()))
+        );
+        assert_eq!(opts.bin().as_deref(), Some("tool{"));
+        assert_eq!(
+            opts.version_list_url(),
+            Some("https://example.com/a{{b/versions")
+        );
+        // the URL is rendered for each version, so it keeps the escaped text
+        assert_eq!(
+            opts.url().as_deref(),
+            Some(r#"https://example.com/a{{ "{{" }}b/tool"#)
         );
     }
 

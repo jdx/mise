@@ -269,7 +269,8 @@ impl TaskToolValueExt for TaskToolValue {
                         // does for `[tools]`: nothing renders it again to undo an escape. That
                         // holds for a flat `install_env.FOO` key too.
                         let for_backend = key != "install_env" && !key.starts_with("install_env.");
-                        render_value(value, tera, context, for_backend)?;
+                        render_value(value, tera, context, for_backend)
+                            .wrap_err_with(|| format!("in tool option {key}"))?;
                     }
                 }
             }

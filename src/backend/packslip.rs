@@ -2342,7 +2342,7 @@ impl PackslipBackend {
         vfox_plugin: bool,
     ) -> Result<(ToolVersion, PendingPin)> {
         let project = self.project()?;
-        let raw_opts = tv.request.options();
+        let raw_opts = tv.request.options().literal();
         let opts = PackslipOptions::new(&raw_opts);
         let pin = pin(&project, &opts)?;
         let require_log = !opts.allow_unlogged();
@@ -2612,7 +2612,7 @@ impl PackslipBackend {
 
         // Unpack as the manifest describes the file, not as its name suggests.
         ctx.pr.next_operation();
-        let mut install_opts = tv.request.options();
+        let mut install_opts = tv.request.options().literal();
         if let Some(format) = &artifact.format {
             install_opts
                 .insert_option("format".into(), toml::Value::String(format.clone()))
@@ -2722,7 +2722,10 @@ impl Backend for PackslipBackend {
     }
 
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
-        let opts = config.get_tool_opts_with_overrides(&self.ba).await?;
+        let opts = config
+            .get_tool_opts_with_overrides(&self.ba)
+            .await?
+            .literal();
         self.policy_versions(&opts, false).await
     }
 
@@ -2918,7 +2921,7 @@ impl Backend for PackslipBackend {
         let artifact = selected_artifact(
             &statement,
             &install_path,
-            PackslipOptions::new(&tv.request.options())
+            PackslipOptions::new(&tv.request.options().literal())
                 .variant()
                 .as_deref(),
         );
@@ -2940,7 +2943,7 @@ impl Backend for PackslipBackend {
         let artifact = selected_artifact(
             &statement,
             &install_path,
-            PackslipOptions::new(&tv.request.options())
+            PackslipOptions::new(&tv.request.options().literal())
                 .variant()
                 .as_deref(),
         );
@@ -2974,7 +2977,7 @@ impl Backend for PackslipBackend {
         let artifact = selected_artifact(
             &statement,
             &install_path,
-            PackslipOptions::new(&tv.request.options())
+            PackslipOptions::new(&tv.request.options().literal())
                 .variant()
                 .as_deref(),
         );
@@ -3000,7 +3003,7 @@ impl Backend for PackslipBackend {
         target: &PlatformTarget,
     ) -> Result<PlatformInfo> {
         let project = self.project()?;
-        let raw_opts = tv.request.options();
+        let raw_opts = tv.request.options().literal();
         let opts = PackslipOptions::new(&raw_opts);
         let pin = pin(&project, &opts)?;
         let stamps = crate::packslip_stamps::fetch(&project, &raw_opts).await?;
@@ -3082,7 +3085,7 @@ impl Backend for PackslipBackend {
         request: &ToolRequest,
         _target: &PlatformTarget,
     ) -> Result<BTreeMap<String, String>> {
-        let raw_opts = request.options();
+        let raw_opts = request.options().literal();
         let opts = PackslipOptions::new(&raw_opts);
         let mut options = BTreeMap::new();
         if let Some(variant) = opts.variant() {

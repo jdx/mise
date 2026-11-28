@@ -607,7 +607,7 @@ pub(crate) fn is_source(matcher: &SourceMatcher, path: &Path) -> bool {
 /// itself decides whether a `**` forms its own path component. `\` is a
 /// separator on Windows, so `src\**` carries the same defect there, while on
 /// unix that string is an escape and `glob` rejects it outright.
-fn expand_trailing_globstar(pattern: &str) -> String {
+pub(crate) fn expand_trailing_globstar(pattern: &str) -> String {
     let trailing_globstar = pattern == "**"
         || pattern.strip_suffix("**").is_some_and(|head| {
             head.chars()

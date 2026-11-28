@@ -571,8 +571,10 @@ mod tests {
 
     #[tokio::test]
     async fn resolved_age_key_file_is_not_rendered_as_a_template() {
+        // Panics rather than failing the render: the age key lookup falls back to other keys
+        // when a template fails, so an error here could go unnoticed.
         fn not_a_template(s: String) -> Result<String> {
-            bail!("age key file was rendered as a template: {s}")
+            panic!("age key file was rendered as a template: {s}")
         }
 
         let _settings = crate::test::SettingsGuard::lock();
@@ -580,9 +582,11 @@ mod tests {
         // Restores the variables even when an assertion fails. Declared after the settings
         // guard, so it drops first and the settings reset reads them restored.
         let mut environment = crate::test::EnvVarGuard::new();
+        // The key must come from the key file, not from a key the process happens to have.
         for var in [
             "MISE_SOPS_AGE_KEY",
             "MISE_SOPS_AGE_KEY_FILE",
+            "SOPS_AGE_KEY",
             "SOPS_AGE_KEY_FILE",
             "MISE_SOPS_ROPS",
         ] {

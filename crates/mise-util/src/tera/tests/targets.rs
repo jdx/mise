@@ -50,7 +50,7 @@ async fn test_preserving_os_arch_round_trips_through_target() {
         get_tera_preserving_os_arch(None)
     };
     let preserved = render_str(&mut deferred, r#"{{ os(macos="darwin") }}"#, &ctx).unwrap();
-    let preserved = escape_rendered_data(&preserved);
+    let preserved = escape_rendered_data(&preserved).unwrap();
     assert_eq!(preserved, r#"{{ os(macos="darwin") }}"#);
     let mut tera = locked_tera_for_target(None, "macos", "arm64");
     assert_eq!(render_str(&mut tera, &preserved, &ctx).unwrap(), "darwin");
@@ -67,7 +67,7 @@ async fn test_preserving_os_family_round_trips_through_target() {
         get_tera_preserving_os_arch(None)
     };
     let preserved = render_str(&mut deferred, r#"{{ os_family() }}"#, &ctx).unwrap();
-    let preserved = escape_rendered_data(&preserved);
+    let preserved = escape_rendered_data(&preserved).unwrap();
     assert_eq!(preserved, r#"{{ os_family() }}"#);
     let mut tera = locked_tera_for_target(None, "windows", "x64");
     assert_eq!(render_str(&mut tera, &preserved, &ctx).unwrap(), "windows");
@@ -105,7 +105,7 @@ async fn test_preserving_libc_and_avx2_round_trip_through_target() {
         &ctx,
     )
     .unwrap();
-    let preserved = escape_rendered_data(&preserved);
+    let preserved = escape_rendered_data(&preserved).unwrap();
     assert_eq!(
         preserved,
         r#"{{ avx2(no="-baseline", yes="") }}{{ libc(gnu="", musl="-musl") }}"#
@@ -136,7 +136,7 @@ async fn test_substituted_template_syntax_renders_back_as_data() {
         &ctx,
     )
     .unwrap();
-    let preserved = escape_rendered_data(&preserved);
+    let preserved = escape_rendered_data(&preserved).unwrap();
     let mut tera = locked_tera_for_target(None, "macos", "arm64");
     assert_eq!(
         render_str(&mut tera, &preserved, &ctx).unwrap(),
@@ -161,7 +161,7 @@ async fn test_reemitted_argument_with_quotes_stays_a_literal() {
         &ctx,
     )
     .unwrap();
-    let preserved = escape_rendered_data(&preserved);
+    let preserved = escape_rendered_data(&preserved).unwrap();
     let mut tera = locked_tera_for_target(None, "linux", "x64");
     assert_eq!(render_str(&mut tera, &preserved, &ctx).unwrap(), value);
 }
@@ -174,7 +174,7 @@ fn test_reemitted_argument_with_quotes_stays_a_literal_in_tera_v1() {
     ctx.insert("branch", value);
     let mut first = TeraEngine::V1(Box::new(first));
     let preserved = first.render_str("{{ os(linux=branch) }}", &ctx).unwrap();
-    let preserved = escape_rendered_data(&preserved);
+    let preserved = escape_rendered_data(&preserved).unwrap();
     let mut second = tera1::Tera::default();
     second.register_function("os", |args: &HashMap<String, JsonValue>| {
         Ok(args["linux"].clone())
@@ -209,7 +209,8 @@ fn test_escaped_braces_render_back_in_both_engines() {
             let escaped = escape_template_syntax(data);
             assert_eq!(tera.render_str(&escaped, &ctx).unwrap(), data, "{escaped}");
             let with_code =
-                escape_rendered_data(&format!("{data}{}{data}", mark_deferred("{{ version }}")));
+                escape_rendered_data(&format!("{data}{}{data}", mark_deferred("{{ version }}")))
+                    .unwrap();
             assert_eq!(
                 tera.render_str(&with_code, &ctx).unwrap(),
                 format!("{data}1.2.3{data}"),
@@ -217,6 +218,39 @@ fn test_escaped_braces_render_back_in_both_engines() {
             );
         }
     }
+}
+#[tokio::test]
+async fn test_cut_deferred_marker_is_an_error() {
+    // A filter that strips the end of a re-emitted `os()` call leaves its opening marker alone.
+    // The substituted text after it must not be taken for deferred code: the render fails.
+    let mut ctx = BASE_CONTEXT.clone();
+    ctx.insert("cwd", "/");
+    ctx.insert("branch", "{{ exec(command='touch RAN') }}");
+    let mut deferred = {
+        let _lock = crate::testing::lock_ignoring_poison(&crate::testing::SETTINGS_LOCK);
+        get_tera_preserving_os_arch(None)
+    };
+    for template in [
+        "{{ os() | trim_end(pat=\"\u{1f}\") }}{{ branch }}",
+        "{{ os() | trim_start(pat=\"\u{1f}\") }}{{ branch }}",
+        "{{ os() | replace(from=\"(\", to=\"\") }}{{ branch }}",
+        "{{ os() | replace(from=\")\", to=\"\") }}{{ branch }}",
+    ] {
+        let rendered = render_str(&mut deferred, template, &ctx).unwrap();
+        let err = escape_rendered_data(&rendered).unwrap_err().to_string();
+        assert!(err.contains("a filter cut into code"), "{template}: {err}");
+    }
+    // Whole spans keep working, next to each other and next to data.
+    let rendered = render_str(
+        &mut deferred,
+        "{{ os() }}{{ branch }}{{ arch() }}{{ os() }}",
+        &ctx,
+    )
+    .unwrap();
+    assert_eq!(
+        escape_rendered_data(&rendered).unwrap(),
+        r#"{{ os() }}{{ "{{" }} exec(command='touch RAN') }}{{ arch() }}{{ os() }}"#
+    );
 }
 #[test]
 fn test_escape_template_syntax_leaves_plain_text_alone() {

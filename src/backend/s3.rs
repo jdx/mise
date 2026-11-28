@@ -100,16 +100,25 @@ pub(crate) struct S3Backend {
     client: OnceCell<S3Client>,
 }
 
-#[derive(Debug, Clone, Copy)]
+/// The options of an S3 tool. `url` and `bin_path` are rendered for each version, so they are
+/// read as stored, with what config load substituted escaped. Every other option is used as
+/// written, so it is read from [`ToolVersionOptions::literal`].
+#[derive(Debug, Clone)]
 struct S3Options<'a> {
     values: BackendOptions<'a>,
+    literal: ToolVersionOptions,
 }
 
 impl<'a> S3Options<'a> {
     fn new(raw: &'a ToolVersionOptions) -> Self {
         Self {
             values: BackendOptions::new(raw),
+            literal: raw.literal(),
         }
+    }
+
+    fn plain(&self) -> BackendOptions<'_> {
+        BackendOptions::new(&self.literal)
     }
 
     fn raw(&self) -> &'a ToolVersionOptions {
@@ -121,7 +130,7 @@ impl<'a> S3Options<'a> {
     }
 
     fn checksum(&self) -> Option<String> {
-        self.values.platform_string("checksum")
+        self.plain().platform_string("checksum")
     }
 
     // Target-aware accessors for cross-platform `mise lock`. These resolve
@@ -131,7 +140,7 @@ impl<'a> S3Options<'a> {
     }
 
     fn checksum_for_target(&self, target: &PlatformTarget) -> Option<String> {
-        self.values.platform_string_for_target("checksum", target)
+        self.plain().platform_string_for_target("checksum", target)
     }
 
     fn bin_path(&self) -> Option<String> {
@@ -139,31 +148,31 @@ impl<'a> S3Options<'a> {
     }
 
     fn region(&self) -> Option<String> {
-        self.values.platform_string("region")
+        self.plain().platform_string("region")
     }
 
     fn endpoint(&self) -> Option<String> {
-        self.values.platform_string("endpoint")
+        self.plain().platform_string("endpoint")
     }
 
     fn version_list_url(&self) -> Option<String> {
-        self.values.platform_string("version_list_url")
+        self.plain().platform_string("version_list_url")
     }
 
     fn version_prefix(&self) -> Option<String> {
-        self.values.platform_string("version_prefix")
+        self.plain().platform_string("version_prefix")
     }
 
     fn version_regex(&self) -> Option<String> {
-        self.values.platform_string("version_regex")
+        self.plain().platform_string("version_regex")
     }
 
     fn version_json_path(&self) -> Option<String> {
-        self.values.platform_string("version_json_path")
+        self.plain().platform_string("version_json_path")
     }
 
     fn version_expr(&self) -> Option<String> {
-        self.values.platform_string("version_expr")
+        self.plain().platform_string("version_expr")
     }
 
     fn url_platforms(&self) -> Vec<String> {

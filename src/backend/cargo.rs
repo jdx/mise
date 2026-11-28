@@ -247,7 +247,7 @@ impl Backend for CargoBackend {
 
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
         let tv = self.install_crate(ctx, tv).await?;
-        let request_options = tv.request.options();
+        let request_options = tv.request.options().literal();
         let opts = CargoOptions::new(&request_options);
         if let Some(rename_exe) = opts.rename_exe() {
             let tool_name = opts.bin().unwrap_or_else(|| self.tool_name());
@@ -261,7 +261,7 @@ impl Backend for CargoBackend {
         request: &ToolRequest,
         target: &PlatformTarget,
     ) -> Result<BTreeMap<String, String>> {
-        let opts = request.options();
+        let opts = request.options().literal();
         Ok(CargoOptions::new(&opts).lockfile_options(target))
     }
 
@@ -315,7 +315,7 @@ impl CargoBackend {
         let install_arg = format!("{}@{}", self.tool_name(), tv.version);
 
         let cargo_install_required_options =
-            Self::cargo_install_required_options(&tv.request.options());
+            Self::cargo_install_required_options(&tv.request.options().literal());
         if self.git_url().is_none() && cargo_install_required_options.is_empty() {
             match self.binstall_status(&config, Some(&ctx.ts)).await {
                 BinstallStatus::Enabled(cargo_binstall) => {
@@ -432,7 +432,7 @@ impl CargoBackend {
     }
 
     fn requested_install_state(&self, tv: &ToolVersion) -> CargoInstallState {
-        CargoOptions::new(&tv.request.options()).install_state()
+        CargoOptions::new(&tv.request.options().literal()).install_state()
     }
 
     fn install_state_matches(&self, tv: &ToolVersion) -> bool {
@@ -475,7 +475,7 @@ impl CargoBackend {
         tv: &'a ToolVersion,
         mut cmd: CmdLineRunner<'a>,
     ) -> Result<()> {
-        let request_options = tv.request.options();
+        let request_options = tv.request.options().literal();
         let opts = CargoOptions::new(&request_options);
         if let Some(bin) = opts.bin() {
             cmd = cmd.arg(format!("--bin={bin}"));

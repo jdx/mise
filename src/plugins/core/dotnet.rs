@@ -68,7 +68,7 @@ impl DotnetPlugin {
     }
 
     async fn test_dotnet(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<()> {
-        let raw_opts = tv.request.options();
+        let raw_opts = tv.request.options().literal();
         let opts = DotnetOptions::new(&raw_opts);
         if opts.runtime().is_some() {
             // Skip SDK check for runtime-only installs; no SDK is expected.
@@ -126,7 +126,7 @@ impl Backend for DotnetPlugin {
         request: &ToolRequest,
         _target: &PlatformTarget,
     ) -> Result<BTreeMap<String, String>> {
-        let raw_opts = request.options();
+        let raw_opts = request.options().literal();
         Ok(DotnetOptions::new(&raw_opts).lockfile_options())
     }
 
@@ -217,7 +217,7 @@ impl Backend for DotnetPlugin {
         file::create_dir_all(&install_dir)?;
 
         // Read and validate runtime options
-        let raw_opts = tv.request.options();
+        let raw_opts = tv.request.options().literal();
         let opts = DotnetOptions::new(&raw_opts);
         let runtime = opts.runtime().map(str::to_string);
         if let Some(ref rt) = runtime
@@ -269,7 +269,7 @@ impl Backend for DotnetPlugin {
         if Self::is_isolated() {
             // Isolated: mise handles removal of install_path by default
         } else {
-            let raw_opts = tv.request.options();
+            let raw_opts = tv.request.options().literal();
             let opts = DotnetOptions::new(&raw_opts);
             if opts.runtime().is_some() {
                 // Runtime: remove the shared runtime directory for this version

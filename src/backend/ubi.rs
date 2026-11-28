@@ -197,7 +197,10 @@ impl Backend for UbiBackend {
                 ..Default::default()
             }])
         } else {
-            let raw_opts = config.get_tool_opts_with_overrides(&self.ba).await?;
+            let raw_opts = config
+                .get_tool_opts_with_overrides(&self.ba)
+                .await?
+                .literal();
             let opts = UbiOptions::new(&raw_opts);
             let forge = opts.provider()?;
             let api_url = opts.api_url(&forge)?;
@@ -351,7 +354,7 @@ impl Backend for UbiBackend {
             .and_then(|p| p.url.clone());
 
         let v = tv.version.to_string();
-        let raw_opts = tv.request.options();
+        let raw_opts = tv.request.options().literal();
         let opts = UbiOptions::new(&raw_opts);
         let bin_path = opts.bin_path().unwrap_or_else(|| "bin".to_string());
         ensure_safe_relative_bin_dir("bin_path", &bin_path)?;
@@ -453,7 +456,7 @@ impl Backend for UbiBackend {
         _config: &Arc<Config>,
         tv: &ToolVersion,
     ) -> eyre::Result<Vec<std::path::PathBuf>> {
-        let raw_opts = tv.request.options();
+        let raw_opts = tv.request.options().literal();
         let opts = UbiOptions::new(&raw_opts);
         if let Some(bin_path) = opts.bin_path() {
             // bin_path should always point to a directory containing binaries
@@ -485,7 +488,7 @@ impl Backend for UbiBackend {
         request: &ToolRequest,
         _target: &PlatformTarget,
     ) -> Result<BTreeMap<String, String>> {
-        let raw_opts = request.options();
+        let raw_opts = request.options().literal();
         Ok(UbiOptions::new(&raw_opts).lockfile_options())
     }
 }
@@ -508,7 +511,7 @@ impl UbiBackend {
     /// For ubi backend, generate a more specific platform key that includes tool-specific options
     fn checksum_platform_key(&self, tv: &ToolVersion, name: &str) -> String {
         let mut platform_key = self.get_platform_key();
-        let raw_opts = tv.request.options();
+        let raw_opts = tv.request.options().literal();
         let opts = UbiOptions::new(&raw_opts);
 
         if let Some(exe) = opts.exe() {

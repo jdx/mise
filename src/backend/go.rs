@@ -288,7 +288,7 @@ impl Backend for GoBackend {
 
         let install_version = tv.version.clone();
 
-        let raw_opts = tv.request.options();
+        let raw_opts = tv.request.options().literal();
         let opts = GoOptions::new(&raw_opts);
 
         // The program does not change if an explicitly requested version needs a retry.
@@ -391,7 +391,7 @@ impl Backend for GoBackend {
         request: &ToolRequest,
         _target: &PlatformTarget,
     ) -> Result<BTreeMap<String, String>> {
-        let raw_opts = request.options();
+        let raw_opts = request.options().literal();
         Ok(GoOptions::new(&raw_opts).lockfile_options())
     }
 }

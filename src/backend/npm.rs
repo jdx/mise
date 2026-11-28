@@ -1140,7 +1140,7 @@ impl Backend for NPMBackend {
         request: &ToolRequest,
         _target: &PlatformTarget,
     ) -> Result<BTreeMap<String, String>> {
-        let opts = request.options();
+        let opts = request.options().literal();
         Ok(NpmOptions::new(&opts).lockfile_options())
     }
 
@@ -1515,7 +1515,7 @@ impl Backend for NPMBackend {
             .await;
         self.check_install_deps(&ctx.config, package_manager, Some(&ctx.ts))
             .await;
-        let request_options = tv.request.options();
+        let request_options = tv.request.options().literal();
         let options = NpmOptions::new(&request_options);
         // Lock lookup needs matching install options, but the repository a
         // package was built from does not depend on them: load the pin by
@@ -2946,7 +2946,7 @@ impl NPMBackend {
         }
         crate::backend::aube_host::init();
         let temp = tempfile::tempdir()?;
-        let request_options = tv.request.options();
+        let request_options = tv.request.options().literal();
         let options = NpmOptions::new(&request_options);
         let allow_builds = options.allow_builds()?;
         self.write_aube_embed_project(temp.path(), tv.before_date, &options, &allow_builds, false)?;

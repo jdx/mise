@@ -140,16 +140,23 @@ impl EnvDirectiveContext<'_> {
     }
 }
 
-/// Whether [`EnvResults::parse_template`] can rewrite `input`: it holds a template or a `$VAR`.
-/// A `$` that starts no variable, as in `cost$.env` or `$$`, is written text.
+/// Whether [`EnvResults::parse_template`] can rewrite `input`: it holds a template, or a `$VAR`
+/// while `env_shell_expand` is on. A `$` that starts no variable, as in `cost$.env` or `$$`, is
+/// written text, and so is every `$` while `env_shell_expand` is off.
 ///
 /// The path such a `_.file` or `_.source` entry names is not fixed by the config that declares
 /// it. `{{cwd}}/.env` and `$PWD/.env` name a different file in every directory.
 fn is_templated(input: &str) -> bool {
+    is_templated_with(input, Settings::get().env_shell_expand)
+}
+
+/// [`is_templated`], with `env_shell_expand` passed in.
+fn is_templated_with(input: &str, shell_expand: bool) -> bool {
     contains_template_syntax(input)
-        || template_pieces(input)
-            .iter()
-            .any(|(piece, _)| *piece != Piece::Written)
+        || shell_expand
+            && template_pieces(input)
+                .iter()
+                .any(|(piece, _)| *piece != Piece::Written)
 }
 
 /// Starts each marker [`SubstitutionMarks`] puts around a substitution. No path holds a NUL.
@@ -464,8 +471,9 @@ impl SubstitutionMarks {
 
 /// The glob [`SubstitutionMarks::segments`] stand for.
 ///
-/// A substitution that renders nothing between two written `*`s leaves one `*`: the entry
-/// writes no `**` there, so the walk must not descend, as `env/*${SUFFIX:-}*/.env` would.
+/// A substitution that renders nothing between two written runs of `*`s leaves one `*`: the
+/// entry writes no `**` component there, so the walk must not descend, as
+/// `env/*${SUFFIX:-}*/.env` or `env/**${SUFFIX:-}*/.env` would.
 ///
 /// The escapes of [`escape_glob`] are classes, which do not nest, so text substituted inside a
 /// `[...]` the entry writes goes in as it is, and an error is returned when it holds a character
@@ -512,9 +520,12 @@ fn glob_of(segments: &[(bool, &str)]) -> eyre::Result<String> {
         }
         let mut text = *text;
         if after_data && text.starts_with('*') && ends_with_wildcard_star(&glob) {
-            // the whole run: `*` and an empty substitution before a written `**`
-            // must not leave a `**` either
+            // the whole run, on both sides: `**`, an empty substitution and `*` must not
+            // leave a `**` either
             text = text.trim_start_matches('*');
+            while ends_with_wildcard_star(&glob[..glob.len() - 1]) {
+                glob.pop();
+            }
         }
         glob.push_str(text);
         for c in text.chars() {
@@ -581,9 +592,16 @@ fn escape_glob(text: &str) -> String {
 /// directory and only `**` descends, so `.env.*` does not reach into a repository cloned below
 /// the config. `dir` is taken as it is named. The alternatives of a `{a,b}` group are matched
 /// together, so their files are in name order too, not in the order the group lists them.
+///
+/// Only a `**` the pattern writes descends. Expanding a group can put a `*` next to another, as
+/// `*{*,dev}` does, and each run of `*`s it forms is one `*`.
 fn glob_files_in(dir: &Path, pattern: &str) -> Vec<PathBuf> {
-    let alternatives = crate::task::task_source_checker::expand_enumeration_patterns(pattern)
-        .unwrap_or_else(|_| vec![pattern.to_string()]);
+    use crate::task::task_source_checker::{expand_glob_braces, expand_trailing_globstar};
+    let shielded = mark_written_star_runs(pattern);
+    let alternatives = expand_glob_braces(&shielded)
+        .unwrap_or_else(|_| vec![shielded.clone()])
+        .into_iter()
+        .map(|alternative| expand_trailing_globstar(&join_star_runs(&alternative)));
     let mut files = Vec::new();
     for alternative in alternatives {
         let Ok(walker) = crate::task::task_source_checker::glob_walk_in(dir, &alternative) else {
@@ -599,6 +617,67 @@ fn glob_files_in(dir: &Path, pattern: &str) -> Vec<PathBuf> {
     files.sort();
     files.dedup();
     files
+}
+
+/// Calls `each` with every character of a glob and whether it is an unescaped `*` wildcard. A
+/// `\` escapes the next character outside Windows.
+fn scan_stars(glob: &str, mut each: impl FnMut(char, bool)) {
+    let mut escaping = false;
+    for c in glob.chars() {
+        each(c, c == '*' && !escaping);
+        escaping = !escaping && c == '\\' && !cfg!(windows);
+    }
+}
+
+/// `pattern` with each `*` of a run of two or more written `*`s replaced by [`PATTERN_MARK`],
+/// which no glob [`SubstitutionMarks::split_glob`] returns holds, so that [`join_star_runs`]
+/// can tell them from the runs brace expansion forms.
+fn mark_written_star_runs(pattern: &str) -> String {
+    let mut out = String::with_capacity(pattern.len());
+    let mut run = 0;
+    let flush = |out: &mut String, run: &mut usize| {
+        let star = if *run > 1 { PATTERN_MARK } else { '*' };
+        out.extend(std::iter::repeat_n(star, *run));
+        *run = 0;
+    };
+    scan_stars(pattern, |c, star| {
+        if star {
+            run += 1;
+        } else {
+            flush(&mut out, &mut run);
+            out.push(c);
+        }
+    });
+    flush(&mut out, &mut run);
+    out
+}
+
+/// A brace-expanded alternative of a [`mark_written_star_runs`] pattern, with each run of `*`s
+/// that holds no written `**` made one `*`, and each that does made the run the pattern wrote.
+fn join_star_runs(alternative: &str) -> String {
+    let mut out = String::with_capacity(alternative.len());
+    let (mut stars, mut written) = (0, 0);
+    let flush = |out: &mut String, stars: &mut usize, written: &mut usize| {
+        let n = if *written > 0 {
+            *written
+        } else {
+            (*stars).min(1)
+        };
+        out.extend(std::iter::repeat_n('*', n));
+        (*stars, *written) = (0, 0);
+    };
+    scan_stars(alternative, |c, star| {
+        if c == PATTERN_MARK {
+            written += 1;
+        } else if star {
+            stars += 1;
+        } else {
+            flush(&mut out, &mut stars, &mut written);
+            out.push(c);
+        }
+    });
+    flush(&mut out, &mut stars, &mut written);
+    out
 }
 
 #[derive(Debug, Clone, Default)]
@@ -1758,6 +1837,30 @@ mod tests {
             glob("**/.env.example"),
             files(&["cloned/.env.example", "cloned/docs/.env.example"])
         );
+        // a `*` a group puts next to another does not make a `**`: only one the pattern
+        // writes descends, inside a group too
+        for pattern in [
+            "*{*,x}/.env.example",
+            "{*,x}*/.env.example",
+            "*{,*}/.env.example",
+        ] {
+            assert_eq!(glob(pattern), files(&["cloned/.env.example"]), "{pattern}");
+        }
+        for pattern in [
+            "{**,x}/.env.example",
+            "**{*,x}/.env.example",
+            "{x,cloned/**}",
+        ] {
+            assert_eq!(
+                glob(pattern),
+                files(&["cloned/.env.example", "cloned/docs/.env.example"]),
+                "{pattern}"
+            );
+        }
+        // a `*` escaped next to a written one is a character of a name, and the `*` stays one
+        if cfg!(unix) {
+            assert_eq!(glob("\\**/.env.example"), files(&[]));
+        }
         // a leading `#` or `!` is part of a name, not gitignore syntax
         assert_eq!(glob("#dev*.env"), files(&["#dev-local.env"]));
         assert_eq!(glob("!x*"), files(&["!x.env"]));
@@ -1776,7 +1879,15 @@ mod tests {
             "$PWD/.env",
             "${PWD}/env.sh",
         ] {
-            assert!(is_templated(input), "{input}");
+            assert!(is_templated_with(input, true), "{input}");
+        }
+        // with `env_shell_expand` off mise reads a `$` as written text, so the path is fixed
+        for input in ["$PWD/.env", "${PWD}/env.sh", "/opt/$HOME/.env"] {
+            assert!(!is_templated_with(input, false), "{input}");
+        }
+        // but a template still renders
+        for input in ["{{cwd}}/.env", "{% if true %}$PWD{% endif %}/.env"] {
+            assert!(is_templated_with(input, false), "{input}");
         }
         for input in [
             ".env",
@@ -1786,7 +1897,7 @@ mod tests {
             "/opt/mise/cost$.env",
             "/opt/mise/a$$b.env",
         ] {
-            assert!(!is_templated(input), "{input}");
+            assert!(!is_templated_with(input, true), "{input}");
         }
     }
 
@@ -1870,6 +1981,9 @@ mod tests {
                 "*/.env",
             ),
             ("*{{ x }}**/.env", &x(""), "*/.env"),
+            ("**{{ x }}*/.env", &x(""), "*/.env"),
+            ("**{{ x }}**/.env", &x(""), "*/.env"),
+            ("a**{{ x }}*b/.env", &x(""), "a*b/.env"),
             ("**{{ x }}/.env", &x(""), "**/.env"),
             ("*{{ x }}*/.env", &x("a"), "*a*/.env"),
         ] {

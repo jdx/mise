@@ -450,6 +450,7 @@ impl Backend for VfoxBackend {
                     let opts = config
                         .get_tool_opts_with_overrides(&this.ba)
                         .await?
+                        .literal()
                         .into_backend_options()
                         .into_map();
                     let listing = vfox
@@ -869,6 +870,7 @@ impl VfoxBackend {
                         let opts = config
                             .get_tool_opts_with_overrides(&self.ba)
                             .await?
+                            .literal()
                             .into_backend_options()
                             .into_map();
                         let listing = vfox
@@ -936,7 +938,8 @@ impl VfoxBackend {
             .await
             .unwrap_or_default();
         options.apply_overrides(&tv.request.options());
-        options
+        // A plugin gets the options as plain text: nothing renders them again.
+        options.literal()
     }
 
     pub(crate) fn from_arg(ba: BackendArg, backend_plugin_name: Option<String>) -> Self {

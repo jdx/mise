@@ -1604,7 +1604,8 @@ impl MiseToml {
                 // taken before `ba` is consumed below
                 let short = ba.short.clone();
                 let tvr = if let Some(mut options) = tool.options.clone() {
-                    self.render_tool_options(&context, ba, &mut options)?;
+                    self.render_tool_options(&context, ba, &mut options)
+                        .wrap_err_with(|| format!("in the options of tool {short}"))?;
                     let mut ba = ba.clone();
                     // The registry entry this version is routed to supplies the defaults:
                     // a backend can carry other options for another version range, and a
@@ -1742,7 +1743,8 @@ impl MiseToml {
                     } else {
                         self.parse_template_with_context(context, shielded)
                     }
-                })?;
+                })
+                .wrap_err_with(|| format!("in tool option {}", key.unwrap_or("value")))?;
             }
             toml::Value::Array(values) => {
                 for value in values {
@@ -1863,17 +1865,53 @@ impl Deferred {
 /// in the backend's render only the deferred code and the spans marked with
 /// [`crate::tera::mark_deferred`] are template code.
 pub(crate) fn render_option_for_backend(
-    (shielded, deferred): (String, Deferred),
+    shield: eyre::Result<(String, Deferred)>,
     render: impl FnOnce(&str) -> eyre::Result<String>,
 ) -> eyre::Result<String> {
-    let rendered = crate::tera::escape_rendered_data(&render(&shielded)?);
+    let (shielded, deferred) = shield?;
+    let rendered = crate::tera::escape_rendered_data(&render(&shielded)?)?;
     Ok(deferred.restore(rendered))
 }
 
-/// The `{% raw %}` blocks of `input` that are template syntax, not text inside a string literal
-/// of a `{{ }}` or `{% %}` tag or inside a comment: each block's start and its regex captures.
-fn raw_blocks(input: &str) -> Vec<(usize, regex::Captures<'_>)> {
-    let mut blocks = vec![];
+/// What [`scan_template`] finds in an option.
+#[derive(Default)]
+struct TemplateScan<'a> {
+    /// The `{% raw %}` blocks: each block's start and its regex captures.
+    blocks: Vec<(usize, regex::Captures<'a>)>,
+    /// The bodies of the `{% filter %}`, `{% macro %}` and block `{% set %}` sections. The
+    /// template changes or moves what such a body renders to before it reaches the option, so
+    /// code taken out of one for the backend's render could not be put back where it belongs.
+    sections: Vec<std::ops::Range<usize>>,
+}
+
+impl TemplateScan<'_> {
+    fn in_section(&self, at: usize) -> bool {
+        self.sections.iter().any(|section| section.contains(&at))
+    }
+}
+
+/// Whether a `{% %}` tag opens a section whose body the template renders somewhere other than
+/// in place (`Some(true)`), closes one (`Some(false)`), or neither.
+fn section_tag(tag: &str) -> Option<bool> {
+    let inner = tag
+        .trim_start_matches("{%")
+        .trim_end_matches("%}")
+        .trim_matches(|c: char| c == '-' || c.is_whitespace());
+    let (name, rest) = inner.split_once(char::is_whitespace).unwrap_or((inner, ""));
+    match name {
+        "filter" | "macro" => Some(true),
+        // `{% set x = .. %}` is a statement; `{% set x %}..{% endset %}` captures a body
+        "set" | "set_global" => (!rest.contains('=')).then_some(true),
+        "endfilter" | "endmacro" | "endset" => Some(false),
+        _ => None,
+    }
+}
+
+/// The `{% raw %}` blocks and sections of `input` that are template syntax, not text inside a
+/// string literal of a `{{ }}` or `{% %}` tag or inside a comment.
+fn scan_template(input: &str) -> TemplateScan<'_> {
+    let mut scan = TemplateScan::default();
+    let mut open_sections = vec![];
     let mut at = 0;
     while let Some(offset) = input[at..].find('{') {
         let start = at + offset;
@@ -1881,7 +1919,7 @@ fn raw_blocks(input: &str) -> Vec<(usize, regex::Captures<'_>)> {
         let close = if rest.starts_with("{%") {
             if let Some(caps) = RAW_BLOCK.captures(rest) {
                 at = start + caps[0].len();
-                blocks.push((start, caps));
+                scan.blocks.push((start, caps));
                 continue;
             }
             if RAW_OPEN.is_match(rest) {
@@ -1898,12 +1936,37 @@ fn raw_blocks(input: &str) -> Vec<(usize, regex::Captures<'_>)> {
             continue;
         };
         match crate::tera::template_tag_end(rest, close) {
-            Some(end) => at = start + end,
+            Some(end) => {
+                if close == "%}" {
+                    match section_tag(&rest[..end]) {
+                        Some(true) => open_sections.push(start + end),
+                        Some(false) => {
+                            if let Some(body) = open_sections.pop() {
+                                scan.sections.push(body..start);
+                            }
+                        }
+                        None => {}
+                    }
+                }
+                at = start + end;
+            }
             // Tera rejects a tag with no closer; nothing after it is a block.
             None => break,
         }
     }
-    blocks
+    // Tera rejects a section left open; until then it runs to the end.
+    scan.sections
+        .extend(open_sections.into_iter().map(|body| body..input.len()));
+    scan
+}
+
+/// The error for code to keep for the backend's render that sits in a section (see
+/// [`TemplateScan::sections`]).
+fn deferred_code_in_section(code: &str) -> eyre::Report {
+    eyre!(
+        "`{code}` is inside a `{{% filter %}}`, `{{% macro %}}` or `{{% set %}}` section, \
+         which would change it before the backend renders it; move it out of the section"
+    )
 }
 
 /// The body of a `{% raw %}` block is written to be rendered by the backend, so it is swapped
@@ -1911,22 +1974,34 @@ fn raw_blocks(input: &str) -> Vec<(usize, regex::Captures<'_>)> {
 /// markers trim whitespace as they do when the block is rendered: the inner ones trim the body
 /// here, and the outer ones stay on the tags left around the marker, so the render trims the
 /// text next to the block. Raw tags inside a string literal or a comment are text, not a block.
-pub(crate) fn shield_raw_blocks(input: &str) -> (String, Deferred) {
+///
+/// A block in a `{% filter %}`, `{% macro %}` or block `{% set %}` section renders here as
+/// the text it holds, so the section acts on it, when that text has no template syntax; one
+/// that holds code for the backend is an error, since the section would act on the marker.
+pub(crate) fn shield_raw_blocks(input: &str) -> eyre::Result<(String, Deferred)> {
     let mut deferred = Deferred::default();
     // Most option values hold no block, and the first use of the regex
     // compiles it, which costs more than everything else a command does here.
     if !input.contains("{%") {
-        return (input.to_string(), deferred);
+        return Ok((input.to_string(), deferred));
     }
+    let scan = scan_template(input);
     let mut shielded = String::with_capacity(input.len());
     let mut copied = 0;
-    for (start, caps) in raw_blocks(input) {
+    for (start, caps) in &scan.blocks {
+        let start = *start;
         let mut body = &caps[3];
         if !caps[2].is_empty() {
             body = body.trim_start();
         }
         if !caps[4].is_empty() {
             body = body.trim_end();
+        }
+        if scan.in_section(start) {
+            if contains_template_syntax(body) {
+                return Err(deferred_code_in_section(&caps[0]));
+            }
+            continue;
         }
         let marker = deferred.defer(body.to_string());
         shielded.push_str(&input[copied..start]);
@@ -1937,32 +2012,43 @@ pub(crate) fn shield_raw_blocks(input: &str) -> (String, Deferred) {
         copied = start + caps[0].len();
     }
     shielded.push_str(&input[copied..]);
-    (shielded, deferred)
+    Ok((shielded, deferred))
 }
 
 /// `version` is not known at config load, so a bare `{{ version }}` renders to itself through a
 /// placeholder. A filter or function on it (`{{ version | replace(..) }}`) would instead act on
 /// that placeholder text, so every other `{{ }}` expression that reads `version` is swapped for
 /// a marker here and put back verbatim afterwards, to be rendered once the version is known.
-/// Raw blocks are deferred as [`shield_raw_blocks`] does.
-fn shield_version_expressions(input: &str) -> (String, Deferred) {
-    let (input, mut deferred) = shield_raw_blocks(input);
+/// Raw blocks are deferred as [`shield_raw_blocks`] does, and an expression to defer that sits in
+/// a section is an error for the same reason.
+fn shield_version_expressions(input: &str) -> eyre::Result<(String, Deferred)> {
+    let (input, mut deferred) = shield_raw_blocks(input)?;
     if !input.contains("{{") {
-        return (input, deferred);
+        return Ok((input, deferred));
     }
-    let shielded = VERSION_EXPRESSION.replace_all(&input, |caps: &regex::Captures| {
-        let expr = &caps[0];
+    let scan = scan_template(&input);
+    let mut shielded = String::with_capacity(input.len());
+    let mut copied = 0;
+    for caps in VERSION_EXPRESSION.captures_iter(&input) {
+        let whole = caps.get(0).unwrap();
+        let expr = whole.as_str();
         let inner = expr
             .trim_start_matches("{{")
             .trim_end_matches("}}")
             .trim_matches(['-', ' ']);
         let code = QUOTED_LITERAL.replace_all(inner, "");
         if inner == "version" || !VERSION_WORD.is_match(&code) {
-            return expr.to_string();
+            continue;
         }
-        deferred.defer(expr.to_string())
-    });
-    (shielded.into_owned(), deferred)
+        if scan.in_section(whole.start()) {
+            return Err(deferred_code_in_section(expr));
+        }
+        shielded.push_str(&input[copied..whole.start()]);
+        shielded.push_str(&deferred.defer(expr.to_string()));
+        copied = whole.end();
+    }
+    shielded.push_str(&input[copied..]);
+    Ok((shielded, deferred))
 }
 
 /// Whether anything that selects or configures a tool is a template: its version,
@@ -4496,7 +4582,7 @@ mod tests {
     #[test]
     fn test_shield_leaves_text_without_an_expression_alone() {
         for input in ["", "1.2.3", "version", "{ version | upper }", "}}version{"] {
-            let (out, deferred) = shield_version_expressions(input);
+            let (out, deferred) = shield_version_expressions(input).unwrap();
             assert_eq!(out, input);
             assert!(deferred.exprs.is_empty(), "{input}");
         }
@@ -4531,11 +4617,12 @@ mod tests {
     #[test]
     fn test_shield_ignores_quoted_version() {
         let (out, deferred) =
-            shield_version_expressions("{{ vars['version'] }}/{{ version | upper }}");
+            shield_version_expressions("{{ vars['version'] }}/{{ version | upper }}").unwrap();
         assert_eq!(deferred.exprs, vec!["{{ version | upper }}"]);
         assert!(out.starts_with("{{ vars['version'] }}/"));
 
-        let (_, deferred) = shield_version_expressions("{{ (`'` ~ version ~ `'`) | upper }}");
+        let (_, deferred) =
+            shield_version_expressions("{{ (`'` ~ version ~ `'`) | upper }}").unwrap();
         assert_eq!(deferred.exprs.len(), 1);
     }
 
@@ -4564,17 +4651,17 @@ mod tests {
             "{% set a = `{% raw %}x{% endraw %}` %}{{ a }}",
             "{# {% raw %}{{ version }}{% endraw %} #}",
         ] {
-            let (out, deferred) = shield_raw_blocks(input);
+            let (out, deferred) = shield_raw_blocks(input).unwrap();
             assert_eq!(out, input);
             assert!(deferred.exprs.is_empty(), "{input}");
         }
         let input = r#"{{ "}}" }}{% raw %}{{ version }}{% endraw %}"#;
-        let (out, deferred) = shield_raw_blocks(input);
+        let (out, deferred) = shield_raw_blocks(input).unwrap();
         assert_eq!(deferred.exprs, vec!["{{ version }}"]);
         assert!(out.starts_with(r#"{{ "}}" }}{% raw %}"#), "{out}");
         // Tera 2 reads `\"` as a quote inside the string, which still closes after it
         let input = r#"{{ "\"" }}{% raw %}{{ version }}{% endraw %}"#;
-        let (_, deferred) = shield_raw_blocks(input);
+        let (_, deferred) = shield_raw_blocks(input).unwrap();
         assert_eq!(deferred.exprs, vec!["{{ version }}"]);
     }
 
@@ -4587,7 +4674,7 @@ mod tests {
         ctx.insert("x", "a{");
         let mut backend_ctx = tera::Context::new();
         backend_ctx.insert("version", "1.2.3");
-        type Shield = fn(&str) -> (String, Deferred);
+        type Shield = fn(&str) -> eyre::Result<(String, Deferred)>;
         for (input, shield, expected) in [
             (
                 "{{ x }}{{ version | replace(from='.', to='_') }}",
@@ -4623,10 +4710,10 @@ mod tests {
     fn test_raw_blocks_after_many_tags() {
         let tags = "{% if true %}x{% endif %}".repeat(2000);
         let input = format!("{tags}{{% raw %}}{{{{ version }}}}{{% endraw %}}");
-        let (_, deferred) = shield_raw_blocks(&input);
+        let (_, deferred) = shield_raw_blocks(&input).unwrap();
         assert_eq!(deferred.exprs, vec!["{{ version }}"]);
         let input = format!("{}{tags}", "{% raw %}".repeat(2000));
-        let (out, deferred) = shield_raw_blocks(&input);
+        let (out, deferred) = shield_raw_blocks(&input).unwrap();
         assert!(deferred.exprs.is_empty());
         assert_eq!(out, input);
     }
@@ -4647,6 +4734,56 @@ mod tests {
             .map(|i| format!("{i}:{{{{ version }}}};"))
             .collect();
         assert_eq!(option, expected);
+    }
+
+    /// A section that acts on its body acts on a raw block in it that holds only text. A raw
+    /// block or a version expression in one that holds code for the backend is an error, since
+    /// the section would act on the marker that stands for that code and not on the code.
+    #[test]
+    fn test_raw_blocks_and_version_expressions_in_sections() {
+        use crate::tera::{TeraEngine, render_str};
+        let ctx = tera::Context::new();
+        for (input, expected) in [
+            (
+                "{% filter lower %}{% raw %}RELEASE{% endraw %}{% endfilter %}",
+                "release",
+            ),
+            (
+                "{% filter upper %}a{% raw %}b{% endraw %}{% endfilter %}/{% raw %}{{ version }}{% endraw %}",
+                "AB/{{ version }}",
+            ),
+        ] {
+            for mut tera in [
+                TeraEngine::V1(Box::default()),
+                TeraEngine::V2(Box::default()),
+            ] {
+                let option = render_option_for_backend(shield_version_expressions(input), |s| {
+                    Ok(render_str(&mut tera, s, &ctx)?)
+                })
+                .unwrap();
+                assert_eq!(option, expected, "{input}");
+            }
+        }
+        for input in [
+            "{% filter upper %}{% raw %}rel{{ version }}{% endraw %}{% endfilter %}",
+            "{% filter lower %}x{% filter upper %}{% endfilter %}{% raw %}{{ version }}{% endraw %}{% endfilter %}",
+            "{% set body %}{% raw %}{{ version }}{% endraw %}{% endset %}{{ body | upper }}",
+            "{% macro m() %}{% raw %}{{ version }}{% endraw %}{% endmacro %}",
+            "{% filter upper %}{{ version | replace(from='.', to='_') }}{% endfilter %}",
+            "{% filter upper %}{% raw %}{{ version }}{% endraw %}",
+        ] {
+            let err = shield_version_expressions(input).unwrap_err().to_string();
+            assert!(err.contains("is inside a `{% filter %}`"), "{input}: {err}");
+        }
+        // a `set` statement is no section, and neither is a filter in a string or a comment
+        for input in [
+            "{% set x = 1 %}{% raw %}{{ version }}{% endraw %}",
+            "{{ '{% filter upper %}' }}{% raw %}{{ version }}{% endraw %}",
+            "{# {% filter upper %} #}{% raw %}{{ version }}{% endraw %}",
+        ] {
+            let (_, deferred) = shield_version_expressions(input).unwrap();
+            assert_eq!(deferred.exprs, vec!["{{ version }}"], "{input}");
+        }
     }
 
     /// A raw block whose body ends in `{` cannot join substituted text after it into code: the

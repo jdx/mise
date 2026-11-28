@@ -129,3 +129,19 @@ EOF
   assert_succeed "ODD_DIR='odd{{dir' mise uninstall http:legacy@1.0.0"
 done
 rm mise.toml
+
+# an option mise uses as written, like the file name `rename_exe` gives the
+# binary, gets the text the template substituted, not the escape that keeps it
+# from being rendered again
+printf '#!/bin/sh\necho renamed-tool\n' >stable/renamed-1.0.0
+for name in 'odd{{name' 'odd{'; do
+  cat <<EOF >mise.toml
+[tools]
+"http:renamed" = { version = "1.0.0", url = "file://$PWD/stable/renamed-{{version}}", rename_exe = "{{env.ODD_NAME}}" }
+EOF
+  assert_succeed "ODD_NAME='$name' mise install http:renamed@1.0.0"
+  install_dir="$(ODD_NAME="$name" mise where http:renamed@1.0.0)"
+  assert "ls '$install_dir'" "$name"
+  assert_succeed "ODD_NAME='$name' mise uninstall http:renamed@1.0.0"
+done
+rm mise.toml

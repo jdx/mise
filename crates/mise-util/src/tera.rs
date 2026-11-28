@@ -58,37 +58,50 @@ pub fn contains_template_syntax(input: &str) -> bool {
 /// Delimits template code that a first render emits on purpose for a later render (a
 /// re-emitted `os()` call, the `{{ version }}` placeholder). It holds a per-process random
 /// number, so a value substituted by the first render cannot produce it, and only digits
-/// between control characters, so no filter in the first render changes it.
-static DEFERRED_MARK: Lazy<String> =
-    Lazy::new(|| format!("\u{1f}{}\u{1f}", rand::rng().random::<u64>()));
+/// between control characters, so no filter in the first render changes it by accident. A span
+/// opens with this stem and `(`, and closes with it and `)`, so a filter that cuts off one end of
+/// a span leaves a marker with no partner, which [`escape_rendered_data`] refuses, instead of
+/// shifting which parts of the output count as code.
+static DEFERRED_STEM: Lazy<String> = Lazy::new(|| format!("\u{1f}{}", rand::rng().random::<u64>()));
+const DEFERRED_OPEN: &str = "(\u{1f}";
+const DEFERRED_CLOSE: &str = ")\u{1f}";
 
 /// Wrap template code a first render emits for a later render, so that
 /// [`escape_rendered_data`] keeps it live.
 pub fn mark_deferred(code: &str) -> String {
-    let mark = &*DEFERRED_MARK;
-    format!("{mark}{code}{mark}")
+    let stem = &*DEFERRED_STEM;
+    format!("{stem}{DEFERRED_OPEN}{code}{stem}{DEFERRED_CLOSE}")
 }
 
 /// Make the output of a first render safe to render again: the spans marked with
 /// [`mark_deferred`] stay template code, and everything else, which is data the first render
 /// produced (an environment variable, a directory name, a command's output), renders back to
 /// itself instead of being evaluated as template code.
-pub fn escape_rendered_data(rendered: &str) -> String {
-    let mark = &*DEFERRED_MARK;
-    if !rendered.contains(mark.as_str()) {
-        return escape_template_syntax(rendered);
+///
+/// Fails when a marker has no partner, as when a filter in the first render cut off one end of
+/// a span: the output can then no longer be split into code and data.
+pub fn escape_rendered_data(rendered: &str) -> eyre::Result<String> {
+    let stem = DEFERRED_STEM.as_str();
+    let unmatched = || {
+        eyre::eyre!(
+            "a filter cut into code that mise keeps for the backend's render, such as `os()` or `version`, so that code can no longer be told apart from substituted text"
+        )
+    };
+    let mut out = String::with_capacity(rendered.len());
+    let mut rest = rendered;
+    while let Some(start) = rest.find(stem) {
+        out.push_str(&escape_template_syntax(&rest[..start]));
+        let code = rest[start + stem.len()..]
+            .strip_prefix(DEFERRED_OPEN)
+            .ok_or_else(unmatched)?;
+        let end = code.find(stem).ok_or_else(unmatched)?;
+        rest = code[end + stem.len()..]
+            .strip_prefix(DEFERRED_CLOSE)
+            .ok_or_else(unmatched)?;
+        out.push_str(&code[..end]);
     }
-    rendered
-        .split(mark.as_str())
-        .enumerate()
-        .map(|(i, part)| {
-            if i % 2 == 1 {
-                part.to_string()
-            } else {
-                escape_template_syntax(part)
-            }
-        })
-        .collect()
+    out.push_str(&escape_template_syntax(rest));
+    Ok(out)
 }
 
 /// Rewrite every `{{`, `{%` and `{#` in `data` as an expression that renders to it, so that a
@@ -105,6 +118,18 @@ pub fn escape_template_syntax(data: &str) -> String {
             format!("{{{{ \"{}\" }}}}", &caps[0])
         })
         .into_owned()
+}
+
+/// Undo [`escape_template_syntax`]: turn each `{{ "{{" }}`, `{{ "{%" }}`, `{{ "{#" }}` and
+/// `{{ "{" }}` back into the text it renders to, and leave the rest alone. This is what a render
+/// of an escaped value outputs for those expressions, for a consumer that reads the value as
+/// plain text and never renders it.
+pub fn unescape_template_syntax(text: &str) -> std::borrow::Cow<'_, str> {
+    static ESCAPED: Lazy<Regex> = Lazy::new(|| Regex::new(r#"\{\{ "(\{[{%#]?)" \}\}"#).unwrap());
+    if !text.contains("{{ \"{") {
+        return text.into();
+    }
+    ESCAPED.replace_all(text, "$1")
 }
 
 /// The end of the template tag that `tag` opens (`{{`, `{%` or `{#`), just after its `close`

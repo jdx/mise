@@ -500,7 +500,10 @@ impl Backend for AquaBackend {
         &self,
         config: &Arc<Config>,
     ) -> Result<Option<VersionInfo>> {
-        let opts = config.get_tool_opts_with_overrides(&self.ba).await?;
+        let opts = config
+            .get_tool_opts_with_overrides(&self.ba)
+            .await?
+            .literal();
         if self.include_prereleases(&opts) {
             return Ok(None);
         }
@@ -731,7 +734,7 @@ impl Backend for AquaBackend {
     ) -> Result<Vec<PathBuf>> {
         let runtime_path = tv.runtime_path();
         let mise_bins_dir = tv.install_path().join(MISE_BINS_DIR);
-        let request_options = tv.request.options();
+        let request_options = tv.request.options().literal();
         let opts = AquaOptions::new(&request_options);
         if opts.symlink_bins() || mise_bins_dir.is_dir() {
             return Ok(vec![runtime_path.join(MISE_BINS_DIR)]);
@@ -816,7 +819,7 @@ impl Backend for AquaBackend {
         request: &ToolRequest,
         _target: &PlatformTarget,
     ) -> Result<BTreeMap<String, String>> {
-        let request_options = request.options();
+        let request_options = request.options().literal();
         AquaOptions::new(&request_options).lockfile_options()
     }
 
@@ -830,7 +833,7 @@ impl Backend for AquaBackend {
     /// another signer requirement asked for, so they are part of the identity.
     /// `symlink_bins` changes the install directory.
     fn install_identity_options(&self, tv: &ToolVersion) -> BTreeMap<String, String> {
-        let request_options = tv.request.options();
+        let request_options = tv.request.options().literal();
         let options = AquaOptions::new(&request_options);
         let mut result = options.lockfile_options().unwrap_or_default();
         for key in super::static_helpers::LISTING_ONLY_OPT_KEYS {
@@ -897,7 +900,7 @@ impl Backend for AquaBackend {
         let pkg = AQUA_REGISTRY.package(&self.id).await?;
         let mut v = tag.clone().unwrap_or_else(|| tv.version.clone());
         let mut v_prefixed = (tag_is_none && !tv.version.starts_with('v')).then(|| format!("v{v}"));
-        let raw_opts = tv.request.options();
+        let raw_opts = tv.request.options().literal();
         let opts = AquaOptions::new(&raw_opts);
         let target_libc = Self::target_variant_libc(target, self.tool_libc);
         let pkg = lock_package_for_version(
@@ -1311,7 +1314,7 @@ impl AquaBackend {
         pkg: AquaPackage,
         versions: &[&str],
     ) -> Result<AquaPackage> {
-        let raw_opts = tv.request.options();
+        let raw_opts = tv.request.options().literal();
         let opts = AquaOptions::new(&raw_opts);
         Self::package_for_target(&PlatformTarget::from_current(), pkg, versions, &opts)
     }
@@ -1410,7 +1413,7 @@ impl AquaBackend {
     /// does. Install and lock run on that copy so every asset they look up, including
     /// checksum, signature and provenance files, agrees on one libc.
     fn with_tool_libc(&self, tv: &ToolVersion) -> Result<Option<Self>> {
-        let raw_opts = tv.request.options();
+        let raw_opts = tv.request.options().literal();
         let tool_libc = AquaOptions::new(&raw_opts).libc()?;
         if tool_libc == self.tool_libc {
             return Ok(None);
@@ -2772,7 +2775,7 @@ impl AquaBackend {
         if listed != version {
             return None;
         }
-        let raw_opts = tv.request.options();
+        let raw_opts = tv.request.options().literal();
         let opts = AquaOptions::new(&raw_opts);
         self.confirm_listed_tag(pkg, &tag, target, &opts)
             .await
@@ -3977,7 +3980,7 @@ impl AquaBackend {
             Self::ensure_binaries_run_on_android(&srcs)?;
         }
 
-        let raw_opts = tv.request.options();
+        let raw_opts = tv.request.options().literal();
         let opts = AquaOptions::new(&raw_opts);
         if opts.symlink_bins() || selected_libc_sibling {
             self.create_symlink_bin_dir(tv, &srcs)?;

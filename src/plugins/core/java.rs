@@ -352,7 +352,7 @@ impl JavaPlugin {
     }
 
     fn tv_release_type(&self, tv: &ToolVersion) -> String {
-        let raw_opts = tv.request.options();
+        let raw_opts = tv.request.options().literal();
         JavaOptions::new(&raw_opts).release_type().to_string()
     }
 
@@ -485,7 +485,10 @@ impl Backend for JavaPlugin {
     }
 
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
-        let raw_opts = config.get_tool_opts_with_overrides(&self.ba).await?;
+        let raw_opts = config
+            .get_tool_opts_with_overrides(&self.ba)
+            .await?
+            .literal();
         self.list_remote_versions_for_options(&raw_opts).await
     }
 
@@ -529,7 +532,7 @@ impl Backend for JavaPlugin {
         request: &ToolRequest,
         _target: &PlatformTarget,
     ) -> Result<BTreeMap<String, String>> {
-        let raw_opts = request.options();
+        let raw_opts = request.options().literal();
         Ok(JavaOptions::new(&raw_opts)
             .lockfile_options(&request.version(), &Settings::get().java.shorthand_vendor))
     }

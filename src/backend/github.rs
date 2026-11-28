@@ -21,6 +21,7 @@ use crate::{backend::Backend, forgejo, github, gitlab};
 use async_trait::async_trait;
 use eyre::Result;
 use regex::Regex;
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::path::Path;
@@ -141,11 +142,18 @@ impl<'a> GitBackendOptions<'a> {
         self.values.raw()
     }
 
-    fn api_url(&self) -> String {
+    /// An option mise uses as written and never renders, with the escapes config load put in
+    /// substituted text undone (see [`ToolVersionOptions::literal`]).
+    fn plain_str(&self, key: &str) -> Option<Cow<'a, str>> {
         self.values
-            .str("api_url")
-            .unwrap_or(self.default_api_url)
-            .to_string()
+            .str(key)
+            .map(crate::tera::unescape_template_syntax)
+    }
+
+    fn api_url(&self) -> String {
+        self.plain_str("api_url")
+            .map(Cow::into_owned)
+            .unwrap_or_else(|| self.default_api_url.to_string())
     }
 
     fn github_attestations(&self) -> bool {
@@ -177,18 +185,17 @@ impl<'a> GitBackendOptions<'a> {
         ))
     }
 
-    fn version_prefix(&self) -> Option<&'a str> {
-        self.values.str("version_prefix")
+    fn version_prefix(&self) -> Option<Cow<'a, str>> {
+        self.plain_str("version_prefix")
     }
 
     /// The release tags this tool lists. An invalid `version_regex` is an
     /// error rather than a filter that lists nothing.
     fn tag_filter(&self) -> Result<TagFilter<'a>> {
         let regex = self
-            .values
-            .str("version_regex")
+            .plain_str("version_regex")
             .map(|pattern| {
-                Regex::new(pattern)
+                Regex::new(&pattern)
                     .map_err(|e| eyre::eyre!("invalid version_regex {pattern:?}: {e}"))
             })
             .transpose()?;
@@ -307,8 +314,14 @@ impl<'a> GitBackendOptions<'a> {
     }
 
     fn filter_bins(&self) -> Option<Vec<String>> {
-        self.parse_filter_bins(self.values.platform_value_without_base("filter_bins"))
-            .or_else(|| self.parse_filter_bins(self.values.raw().opts.get("filter_bins")))
+        let bins = self
+            .parse_filter_bins(self.values.platform_value_without_base("filter_bins"))
+            .or_else(|| self.parse_filter_bins(self.values.raw().opts.get("filter_bins")))?;
+        Some(
+            bins.iter()
+                .map(|bin| crate::tera::unescape_template_syntax(bin).into_owned())
+                .collect(),
+        )
     }
 
     fn parse_filter_bins(&self, value: Option<&toml::Value>) -> Option<Vec<String>> {
@@ -330,14 +343,14 @@ impl<'a> GitBackendOptions<'a> {
 
     /// Substring an asset name must contain to remain a candidate, applied as a
     /// pre-filter before platform autodetection (ported from the ubi backend).
-    fn matching(&self) -> Option<&'a str> {
-        self.values.str("matching")
+    fn matching(&self) -> Option<Cow<'a, str>> {
+        self.plain_str("matching")
     }
 
     /// Regex an asset name must match to remain a candidate, applied as a
     /// pre-filter before platform autodetection (ported from the ubi backend).
-    fn matching_regex(&self) -> Option<&'a str> {
-        self.values.str("matching_regex")
+    fn matching_regex(&self) -> Option<Cow<'a, str>> {
+        self.plain_str("matching_regex")
     }
 
     /// `matching`/`matching_regex` for *provenance* selection, suppressed when
@@ -357,7 +370,7 @@ impl<'a> GitBackendOptions<'a> {
         &self,
         target: &PlatformTarget,
         explicit_pattern: bool,
-    ) -> (Option<&'a str>, Option<&'a str>) {
+    ) -> (Option<Cow<'a, str>>, Option<Cow<'a, str>>) {
         if explicit_pattern || self.asset_pattern_for_target(target).is_some() {
             (None, None)
         } else {
@@ -401,8 +414,8 @@ impl<'a> GitBackendOptions<'a> {
         if let Some(value) = self.version_prefix() {
             result.insert("version_prefix".to_string(), value.to_string());
         }
-        if let Some(value) = self.values.str("version_regex") {
-            result.insert("version_regex".to_string(), value.to_string());
+        if let Some(value) = self.plain_str("version_regex") {
+            result.insert("version_regex".to_string(), value.into_owned());
         }
         if let Some(value) = self.asset_pattern_for_target(target) {
             result.insert("asset_pattern".to_string(), value);
@@ -739,13 +752,13 @@ fn direct_url_cache_context(effective: bool, registry_default: bool) -> Option<S
 /// The regex only filters. A listed tag still becomes a version by the usual
 /// prefix stripping, so the install path finds the tag again the same way.
 struct TagFilter<'a> {
-    prefix: Option<&'a str>,
+    prefix: Option<Cow<'a, str>>,
     regex: Option<Regex>,
 }
 
 impl TagFilter<'_> {
     fn lists(&self, tag: &str) -> bool {
-        self.prefix.is_none_or(|p| tag.starts_with(p)) && self.allows(tag)
+        self.prefix.as_deref().is_none_or(|p| tag.starts_with(p)) && self.allows(tag)
     }
 
     /// Whether a tag may be installed from. Installing still tries the tag
@@ -1179,7 +1192,7 @@ impl Backend for UnifiedGitBackend {
 
         match try_allowed_release_tags(
             version,
-            version_prefix,
+            version_prefix.as_deref(),
             Some(&repo),
             Some(&api_url),
             listed_tag.as_deref(),
@@ -1237,7 +1250,7 @@ impl Backend for UnifiedGitBackend {
             .asset_pattern_for_target(&PlatformTarget::from_current())
             .is_none()
         {
-            asset_matcher::validate_matching_regex(opts.matching_regex())?;
+            asset_matcher::validate_matching_regex(opts.matching_regex().as_deref())?;
         }
         // A locked URL below skips asset selection, where an invalid `libc` would fail.
         opts.libc()?;
@@ -1388,7 +1401,7 @@ impl Backend for UnifiedGitBackend {
         // same `asset_pattern` precedence as everywhere else, so an ignored regex is
         // never validated.
         if opts.asset_pattern_for_target(target).is_none() {
-            asset_matcher::validate_matching_regex(opts.matching_regex())?;
+            asset_matcher::validate_matching_regex(opts.matching_regex().as_deref())?;
         }
 
         // Resolve asset for the target platform
@@ -1688,7 +1701,7 @@ impl UnifiedGitBackend {
         let tags = opts.tag_filter()?;
         let mut first_release = None;
         let mut not_found = None;
-        for candidate in tag_candidates(version, opts.version_prefix(), Some(repo))
+        for candidate in tag_candidates(version, opts.version_prefix().as_deref(), Some(repo))
             .into_iter()
             .filter(|candidate| tags.allows(candidate))
         {
@@ -2563,7 +2576,7 @@ impl UnifiedGitBackend {
         let resolved = if self.is_gitlab() {
             try_allowed_release_tags(
                 version,
-                version_prefix,
+                version_prefix.as_deref(),
                 None,
                 None,
                 None,
@@ -2587,7 +2600,7 @@ impl UnifiedGitBackend {
         } else if self.is_forgejo() {
             try_allowed_release_tags(
                 version,
-                version_prefix,
+                version_prefix.as_deref(),
                 None,
                 None,
                 None,
@@ -2614,7 +2627,7 @@ impl UnifiedGitBackend {
             let api_url = opts.api_url();
             try_allowed_release_tags(
                 version,
-                version_prefix,
+                version_prefix.as_deref(),
                 Some(repo),
                 Some(&api_url),
                 listed_tag.as_deref(),
@@ -3118,9 +3131,13 @@ impl UnifiedGitBackend {
     ) -> Option<&'r str> {
         let tag = release.tag_name.as_str();
         if self.strip_version_prefix(tag, opts) == tv.version
-            || tag_candidates(&tv.version, opts.version_prefix(), Some(&self.repo()))
-                .iter()
-                .any(|candidate| candidate == tag)
+            || tag_candidates(
+                &tv.version,
+                opts.version_prefix().as_deref(),
+                Some(&self.repo()),
+            )
+            .iter()
+            .any(|candidate| candidate == tag)
         {
             return Some(tag);
         }
@@ -3131,7 +3148,7 @@ impl UnifiedGitBackend {
     fn strip_version_prefix(&self, tag_name: &str, opts: &GitBackendOptions<'_>) -> String {
         // If a custom version_prefix is configured, strip it first
         if let Some(prefix) = opts.version_prefix()
-            && let Some(stripped) = tag_name.strip_prefix(prefix)
+            && let Some(stripped) = tag_name.strip_prefix(&*prefix)
         {
             return stripped.to_string();
         }
@@ -3550,7 +3567,7 @@ impl UnifiedGitBackend {
         additional_overlay: bool,
         signer: crate::github::sigstore::SlsaSignerIdentity<'_>,
     ) -> Result<bool> {
-        let raw_opts = tv.request.options();
+        let raw_opts = tv.request.options().literal();
         let format = if !additional_overlay
             && let Some(format_opt) = lookup_with_fallback(&raw_opts, "format")
         {
@@ -6084,7 +6101,7 @@ platforms.macos-arm64.url = 'https://example.com/{{ version }}/tool-darwin-arm64
             backend
                 .options(&opts)
                 .matching_for_provenance(&macos, false),
-            (Some("oxlint"), Some("^oxlint-"))
+            (Some("oxlint".into()), Some("^oxlint-".into()))
         );
     }
 
@@ -6127,12 +6144,12 @@ platforms.macos-arm64.url = 'https://example.com/{{ version }}/tool-darwin-arm64
 
             // Accessors the three resolve_*_asset_url_for_target functions read.
             assert_eq!(
-                resolved.matching(),
+                resolved.matching().as_deref(),
                 Some("oxlint"),
                 "matching() must be readable for {backend_type:?}"
             );
             assert_eq!(
-                resolved.matching_regex(),
+                resolved.matching_regex().as_deref(),
                 Some("^oxlint-"),
                 "matching_regex() must be readable for {backend_type:?}"
             );

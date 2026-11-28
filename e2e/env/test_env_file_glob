@@ -90,3 +90,22 @@ EOS
 assert_contains "CHARS=b mise env -s bash" "CLASS_B=1"
 assert_not_contains "CHARS=b mise env -s bash" "CLASS_DASH"
 assert_fail "CHARS=- mise env -s bash" "inside a \`[...]\` class renders '-'"
+
+# an empty substitution does not join `*`s into a `**`, written ones or one a group supplies:
+# only a `**` the entry writes as a component descends
+mkdir -p stars/a/b
+echo "STARS_ONE=1" >stars/a/.env
+echo "STARS_DEEP=1" >stars/a/b/.env
+for entry in 'stars/**{{ env.SUFFIX }}*/.env' 'stars/*{{ env.SUFFIX }}{*,dev}/.env'; do
+  cat <<EOS >.mise.toml
+[env]
+_.file = '$entry'
+EOS
+  assert_contains "SUFFIX= mise env -s bash" "STARS_ONE=1"
+  assert_not_contains "SUFFIX= mise env -s bash" "STARS_DEEP"
+done
+cat <<'EOS' >.mise.toml
+[env]
+_.file = "stars/{**,dev}/.env"
+EOS
+assert_contains "mise env -s bash" "STARS_DEEP=1"
