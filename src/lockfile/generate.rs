@@ -517,42 +517,49 @@ fn headers_for_old_urls<'a>(
         .flatten()
 }
 
-/// Whether an artifact whose entry names `download_url` and
-/// `download_url_api` is downloaded from its API URL alone, as a forge on a
-/// custom API installs it (see `lock_download_urls` in the github backend).
-fn downloads_from_api_alone(
+/// The API URL an artifact whose entry names `download_url` and
+/// `download_url_api` is downloaded from when the install downloads it from
+/// that URL alone, as from a forge on a custom API (see `lock_download_urls`
+/// in the github backend). It holds the login the install sends there.
+fn api_only_download_url<'a>(
     download_url: Option<&crate::lockfile::LoginUrl>,
-    download_url_api: Option<&crate::lockfile::LoginUrl>,
-) -> bool {
-    download_url.is_some() && download_url == download_url_api
+    download_url_api: Option<&'a crate::lockfile::LoginUrl>,
+) -> Option<&'a str> {
+    download_url_api
+        .filter(|api| download_url == Some(*api))
+        .map(crate::lockfile::LoginUrl::as_str)
 }
 
-/// The URL and API URL an artifact recorded at `old_url` and `old_api` is
-/// downloaded from to check its old pin. With `api_only`, the install
-/// downloads it from the API URL alone, and so does the check: the browser URL
-/// could serve other bytes than the attachment the new checksum hashes. A
-/// login only `old_url` holds goes with it to `old_api` on the same server,
-/// and to no other.
-fn old_download_urls(
-    old_url: &str,
-    old_api: Option<&str>,
-    api_only: bool,
-) -> (String, Option<String>) {
-    let Some(api) = old_api.filter(|_| api_only) else {
-        return (old_url.to_owned(), old_api.map(str::to_owned));
-    };
-    let api = match (url::Url::parse(api), url::Url::parse(old_url)) {
-        (Ok(api), Ok(base)) => crate::backend::static_helpers::with_login_of(api, &base).into(),
-        _ => api.to_owned(),
-    };
-    (api.clone(), Some(api))
+/// Where [`upgrade_weak_pins_recorded_with_a_login`] downloads an artifact
+/// recorded at `old_url` and `old_api` to check its old pin: the URL, the API
+/// URL and the headers to send. An artifact the install downloads from the
+/// API URL `install_api` alone is checked there, with the login that URL
+/// holds and the `headers` the install sends: the browser URL could serve
+/// other bytes than the attachment the new checksum hashes, and the install
+/// sends no login `old` recorded. Anything else is downloaded from the URLs
+/// `old` recorded, with their logins, and `headers` only reach the server of
+/// `new_url` and `new_api` they were resolved for.
+fn old_pin_download<'a>(
+    (old_url, old_api): (&str, Option<&str>),
+    install_api: Option<&str>,
+    (new_url, new_api): (Option<&str>, Option<&str>),
+    headers: Option<&'a DownloadHeaders>,
+) -> (String, Option<String>, Option<&'a DownloadHeaders>) {
+    if let Some(api) = install_api {
+        return (api.to_owned(), Some(api.to_owned()), headers);
+    }
+    (
+        old_url.to_owned(),
+        old_api.map(str::to_owned),
+        headers_for_old_urls(old_url, old_api, new_url, new_api, headers),
+    )
 }
 
 /// The md5 or sha1 pins of `old`, an entry whose URLs held a login, replaced in
 /// `new` by the sha256 of each artifact both name. The artifact is downloaded
-/// from `old`'s URLs, with the login, as [`old_download_urls`] picks them from
-/// the URLs the install downloads `new` from, and checked against the old pin and the
-/// checksum just resolved. [`complete_artifact_checksums`] would download it
+/// from `old`'s URLs, with the login, or from the API URL alone the install
+/// downloads it from, as [`old_pin_download`] picks, and checked against the
+/// old pin and the checksum just resolved. [`complete_artifact_checksums`] would download it
 /// from `new`'s URL, which leaves the login out, and a server that needs the
 /// login would refuse it.
 ///
@@ -573,26 +580,13 @@ async fn upgrade_weak_pins_recorded_with_a_login(
     {
         let mut expected = vec![(pin.as_str(), LOCKED_CHECKSUM)];
         expected.extend(new.checksum.as_deref().map(|c| (c, RELEASE_CHECKSUM)));
-        let (url, url_api) = old_download_urls(
-            old_url,
-            old.url_api.as_deref(),
-            downloads_from_api_alone(new.download_url.as_ref(), new.download_url_api.as_ref()),
+        let (url, url_api, headers) = old_pin_download(
+            (old_url, old.url_api.as_deref()),
+            api_only_download_url(new.download_url.as_ref(), new.download_url_api.as_ref()),
+            (new.url.as_deref(), new.url_api.as_deref()),
+            new.download_headers.as_ref(),
         );
-        new.checksum = Some(
-            artifact_checksum(
-                &url,
-                url_api.as_deref(),
-                headers_for_old_urls(
-                    old_url,
-                    old.url_api.as_deref(),
-                    new.url.as_deref(),
-                    new.url_api.as_deref(),
-                    new.download_headers.as_ref(),
-                ),
-                &expected,
-            )
-            .await?,
-        );
+        new.checksum = Some(artifact_checksum(&url, url_api.as_deref(), headers, &expected).await?);
         new.checksum_source = None;
         verified.push(CheckedPin {
             artifact: None,
@@ -610,29 +604,17 @@ async fn upgrade_weak_pins_recorded_with_a_login(
         };
         let mut expected = vec![(pin.as_str(), LOCKED_CHECKSUM)];
         expected.extend(artifact.checksum.as_deref().map(|c| (c, RELEASE_CHECKSUM)));
-        let (url, url_api) = old_download_urls(
-            &old.url,
-            old.url_api.as_deref(),
-            downloads_from_api_alone(
+        let (url, url_api, headers) = old_pin_download(
+            (&old.url, old.url_api.as_deref()),
+            api_only_download_url(
                 artifact.download_url.as_ref(),
                 artifact.download_url_api.as_ref(),
             ),
+            (Some(&artifact.url), artifact.url_api.as_deref()),
+            artifact.download_headers.as_ref(),
         );
-        artifact.checksum = Some(
-            artifact_checksum(
-                &url,
-                url_api.as_deref(),
-                headers_for_old_urls(
-                    &old.url,
-                    old.url_api.as_deref(),
-                    Some(&artifact.url),
-                    artifact.url_api.as_deref(),
-                    artifact.download_headers.as_ref(),
-                ),
-                &expected,
-            )
-            .await?,
-        );
+        artifact.checksum =
+            Some(artifact_checksum(&url, url_api.as_deref(), headers, &expected).await?);
         artifact.checksum_source = None;
         verified.push(CheckedPin {
             artifact: Some(index),
@@ -3310,16 +3292,15 @@ mod tests {
 
     /// An old entry of a forge on a custom API, recorded with a login, has its
     /// md5 pins checked against the API attachment the install downloads, not
-    /// the browser URL. A login only the browser URL held goes to the API URL
-    /// on the same server.
+    /// the browser URL, with the login and headers the install sends there.
+    /// The logins the old entry recorded are not sent.
     #[tokio::test]
     async fn a_weak_pin_recorded_with_a_login_on_a_custom_api_is_checked_against_the_api() {
         let mut server = mockito::Server::new_async().await;
-        let mut browser = Vec::new();
-        let mut api = Vec::new();
+        let mut mocks = Vec::new();
         for name in ["login-main", "login-extra"] {
             let path = format!("/download/{name}.tar.gz");
-            browser.push(
+            mocks.push(
                 server
                     .mock("HEAD", path.as_str())
                     .with_header("content-type", "application/octet-stream")
@@ -3327,7 +3308,7 @@ mod tests {
                     .create_async()
                     .await,
             );
-            browser.push(
+            mocks.push(
                 server
                     .mock("GET", path.as_str())
                     .with_body("other bytes")
@@ -3335,35 +3316,59 @@ mod tests {
                     .create_async()
                     .await,
             );
-            api.push(
-                server
-                    .mock("GET", format!("/api/v1/assets/{name}").as_str())
-                    .match_header("authorization", "Basic Y2k6dG9rZW4=")
-                    .with_body("artifact")
-                    .expect(1)
-                    .create_async()
-                    .await,
-            );
         }
+        // "ci:old", the login the old entry recorded.
+        mocks.push(
+            server
+                .mock("GET", mockito::Matcher::Regex("^/api/v1/assets/".into()))
+                .match_header("authorization", "Basic Y2k6b2xk")
+                .with_status(401)
+                .expect(0)
+                .create_async()
+                .await,
+        );
+        // The main artifact's API URL holds the configured login, "ci:token".
+        mocks.push(
+            server
+                .mock("GET", "/api/v1/assets/login-main")
+                .match_header("authorization", "Basic Y2k6dG9rZW4=")
+                .with_body("artifact")
+                .expect(1)
+                .create_async()
+                .await,
+        );
+        // The extra one is downloaded with the configured token header.
+        mocks.push(
+            server
+                .mock("GET", "/api/v1/assets/login-extra")
+                .match_header("authorization", "token secret")
+                .with_body("artifact")
+                .expect(1)
+                .create_async()
+                .await,
+        );
         let urls = |name: &str| {
             (
                 format!("{}/download/{name}.tar.gz", server.url()),
                 format!("{}/api/v1/assets/{name}", server.url()),
             )
         };
-        let with_login = |url: &str| url.replace("http://", "http://ci:token@");
+        let old_login = |url: &str| url.replace("http://", "http://ci:old@");
         let install_url = |url: &str| Some(crate::lockfile::LoginUrl::new(url));
         let (main_url, main_api) = urls("login-main");
         let (extra_url, extra_api) = urls("login-extra");
+        let main_install = main_api.replace("http://", "http://ci:token@");
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert("authorization", "token secret".parse().unwrap());
         let md5 = format!("md5:{ARTIFACT_MD5}");
-        // The main artifact's login is in its API URL, the extra one's in its
-        // browser URL.
+        // The main artifact's old login is in its API URL, the extra one's in
+        // its browser URL.
         let old = PlatformInfo {
             url: Some(main_url.clone()),
-            url_api: Some(with_login(&main_api)),
+            url_api: Some(old_login(&main_api)),
             checksum: Some(md5.clone()),
             additional_artifacts: vec![crate::lockfile::ArtifactInfo {
-                url: with_login(&extra_url),
+                url: old_login(&extra_url),
                 url_api: Some(extra_api.clone()),
                 checksum: Some(md5.clone()),
                 ..Default::default()
@@ -3373,13 +3378,14 @@ mod tests {
         let mut new = PlatformInfo {
             url: Some(main_url),
             url_api: Some(main_api.clone()),
-            download_url: install_url(&main_api),
-            download_url_api: install_url(&main_api),
+            download_url: install_url(&main_install),
+            download_url_api: install_url(&main_install),
             additional_artifacts: vec![crate::lockfile::ArtifactInfo {
                 url: extra_url,
                 url_api: Some(extra_api.clone()),
                 download_url: install_url(&extra_api),
                 download_url_api: install_url(&extra_api),
+                download_headers: Some(DownloadHeaders::Client(headers)),
                 ..Default::default()
             }],
             ..Default::default()
@@ -3395,33 +3401,54 @@ mod tests {
             new.additional_artifacts[0].checksum.as_deref(),
             Some(sha256.as_str())
         );
-        for mock in browser.iter().chain(&api) {
+        for mock in &mocks {
             mock.assert_async().await;
         }
     }
 
-    /// A login goes from the browser URL to the API URL only when the
-    /// install downloads from the API alone, and only on the same server.
+    /// An artifact the install downloads from its API URL alone is checked
+    /// there, with the install's headers. Anything else is checked at the URLs
+    /// the old entry recorded, and the headers reach only the server they were
+    /// resolved for.
     #[test]
-    fn old_download_urls_keep_a_login_on_its_server() {
-        let url = "https://ci:token@forge.example/owner/repo/releases/download/v1/tool.tar.gz";
-        let api = "https://forge.example/api/v1/repos/owner/repo/releases/assets/1";
-        let elsewhere = "https://api.forge.example/repos/owner/repo/releases/assets/1";
-        let api_with_login =
-            "https://ci:token@forge.example/api/v1/repos/owner/repo/releases/assets/1";
+    fn old_pins_are_checked_where_the_install_downloads() {
+        let install =
+            crate::lockfile::LoginUrl::new("https://ci:token@forge.example/api/v1/assets/1");
+        let browser = crate::lockfile::LoginUrl::new("https://forge.example/download/tool.tar.gz");
         assert_eq!(
-            old_download_urls(url, Some(api), true),
-            (api_with_login.to_owned(), Some(api_with_login.to_owned()))
+            api_only_download_url(Some(&install), Some(&install)),
+            Some(install.as_str())
         );
+        assert_eq!(api_only_download_url(Some(&browser), Some(&install)), None);
+        assert_eq!(api_only_download_url(None, Some(&install)), None);
+
+        let headers = Some(DownloadHeaders::Client(reqwest::header::HeaderMap::new()));
+        let old_url = "https://ci:old@forge.example/download/tool.tar.gz";
+        let old_api = Some("https://forge.example/api/v1/assets/1");
+        let api = install.as_str();
         assert_eq!(
-            old_download_urls(url, Some(elsewhere), true),
-            (elsewhere.to_owned(), Some(elsewhere.to_owned()))
+            old_pin_download(
+                (old_url, old_api),
+                Some(api),
+                (None, None),
+                headers.as_ref()
+            ),
+            (api.to_owned(), Some(api.to_owned()), headers.as_ref())
         );
+        let same_server = (Some(browser.as_str()), old_api);
         assert_eq!(
-            old_download_urls(url, Some(api), false),
-            (url.to_owned(), Some(api.to_owned()))
+            old_pin_download((old_url, old_api), None, same_server, headers.as_ref()),
+            (
+                old_url.to_owned(),
+                old_api.map(str::to_owned),
+                headers.as_ref()
+            )
         );
-        assert_eq!(old_download_urls(url, None, true), (url.to_owned(), None));
+        let moved = (None, Some("https://api.forge.example/assets/1"));
+        assert_eq!(
+            old_pin_download((old_url, old_api), None, moved, headers.as_ref()),
+            (old_url.to_owned(), old_api.map(str::to_owned), None)
+        );
     }
 
     /// An additional artifact sends the headers its backend resolved it with,
