@@ -2881,7 +2881,9 @@ pub(crate) fn glob_in_dir(dir: &Path, pattern: &str) -> Result<Vec<PathBuf>> {
             _ => return crate_glob(),
         };
         let component = component.as_ref();
-        if component.contains("**") {
+        // `glob::glob` also matches `.` and `..` for a component that starts with a dot,
+        // which a directory listing never returns.
+        if component.contains("**") || component.starts_with('.') {
             return crate_glob();
         }
         if component.contains(['*', '?', '[']) {
@@ -2894,7 +2896,8 @@ pub(crate) fn glob_in_dir(dir: &Path, pattern: &str) -> Result<Vec<PathBuf>> {
                 let mut names = entries
                     .flatten()
                     .map(|entry| entry.file_name())
-                    .filter(|name| matcher.matches(&name.to_string_lossy()))
+                    // as `glob::glob` does, skip a name that is not valid UTF-8
+                    .filter(|name| name.to_str().is_some_and(|name| matcher.matches(name)))
                     .collect_vec();
                 names.sort();
                 next.extend(names.into_iter().map(|name| base.join(name)));
@@ -4035,6 +4038,39 @@ pub(crate) fn override_config_files() -> IndexSet<PathBuf> {
     let files: IndexSet<PathBuf> = files.into_iter().filter(|p| p.is_file()).collect();
     *o = Some(files.clone());
     files
+}
+
+/// Where `path` ranks among the global override files, lowest first, as
+/// [`override_config_files`] orders them. The file need not exist yet. `None` when it is
+/// not an override file of an active environment.
+pub(crate) fn override_config_rank(path: &Path) -> Option<usize> {
+    if !is_override_config(path) {
+        return None;
+    }
+    let name = path.file_name()?.to_str()?;
+    if name == "config.override.toml" {
+        return Some(0);
+    }
+    let environment = name
+        .strip_prefix("config.")?
+        .strip_suffix(".override.toml")?;
+    env::MISE_GLOBAL_ENV_WITH_AUTO
+        .iter()
+        .rposition(|e| e == environment)
+        .map(|i| i + 1)
+}
+
+/// Where `path` ranks among the config files discovery reads from `root`, lowest first, as
+/// [`DEFAULT_CONFIG_FILENAMES`] orders them. The file need not exist yet.
+pub(crate) fn config_filename_precedence(root: &Path, path: &Path) -> Option<usize> {
+    DEFAULT_CONFIG_FILENAMES.iter().rposition(|candidate| {
+        let candidate = root.join(candidate);
+        if is_glob_pattern(&candidate.to_string_lossy()) {
+            glob::Pattern::new(&candidate.to_string_lossy()).is_ok_and(|g| g.matches_path(path))
+        } else {
+            candidate == path
+        }
+    })
 }
 
 pub(crate) fn system_config_files() -> IndexSet<PathBuf> {

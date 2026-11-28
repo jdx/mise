@@ -1124,6 +1124,8 @@ mod tests {
             ".config/mise/conf.d/*/mise.toml",
             ".config/mise/conf.d/*.toml",
             ".config/nothing/*",
+            ".*/mise/conf.d/c.toml",
+            ".config/mise/conf.d/.*",
         ] {
             let escaped = glob::Pattern::escape(&dir.to_string_lossy());
             let mut expected: Vec<_> = glob::glob(

@@ -650,16 +650,19 @@ fn linked_root_file_to_hide(
         .into_iter()
         .chain([PNPM_WORKSPACE, PACKAGE_JSON])
         .map(|name| {
-            let named = message.contains(&canonical_root.join(name).display().to_string());
-            (workspace_root.join(name), named)
+            let at = message.find(&canonical_root.join(name).display().to_string());
+            (workspace_root.join(name), at)
         })
         .collect::<Vec<_>>();
     let linked = |path: &PathBuf| !diagnostic::may_quote(path);
-    if let Some((path, _)) = files.iter().find(|(path, named)| *named && linked(path)) {
-        return Some(path.clone());
-    }
-    if files.iter().any(|(_, named)| *named) {
-        return None;
+    // The file the message names first is the one that failed. A path that comes later is
+    // only quoted from it, so it says nothing about which file the error is about.
+    if let Some((path, _)) = files
+        .iter()
+        .filter_map(|(path, at)| at.map(|at| (path, at)))
+        .min_by_key(|(_, at)| *at)
+    {
+        return linked(path).then(|| path.clone());
     }
     files.into_iter().map(|(path, _)| path).find(linked)
 }

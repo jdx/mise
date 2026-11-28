@@ -217,17 +217,33 @@ pub fn ensure_edit_keeps_tool_request_count(
         .map(|(p, cf)| (p.as_path(), if p == path { edited } else { cf }))
         .collect();
     if !loaded {
-        // Files from the highest priority down: an override or closer file wins over the new
-        // one, which wins over the files in its own directory and above it.
-        let at = files
-            .iter()
-            .position(|(p, cf)| {
-                // an override file outranks every project file, the new one included
+        // Files from the highest priority down. Override files come first, later environments
+        // winning; then a closer file wins over the new one, which wins over the files above
+        // it; files in its own directory rank by their filename, as discovery reads them.
+        let at = if crate::config::is_override_config(path) {
+            let rank = crate::config::override_config_rank(path);
+            files.iter().position(|(p, _)| {
                 !crate::config::is_override_config(p)
-                    && (crate::config::is_global_config(p)
-                        || root.starts_with(discovered_from(p, cf.as_ref())))
+                    || crate::config::override_config_rank(p) < rank
             })
-            .unwrap_or(files.len());
+        } else {
+            let precedence = crate::config::config_filename_precedence(&root, path);
+            files.iter().position(|(p, cf)| {
+                if crate::config::is_override_config(p) {
+                    false
+                } else if crate::config::is_global_config(p) {
+                    true
+                } else {
+                    let other = discovered_from(p, cf.as_ref());
+                    if other == root {
+                        crate::config::config_filename_precedence(&root, p) < precedence
+                    } else {
+                        root.starts_with(other)
+                    }
+                }
+            })
+        }
+        .unwrap_or(files.len());
         files.insert(at, (path, edited));
     }
     let files = files.into_iter().map(|(_, cf)| cf);
@@ -2081,6 +2097,34 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use super::*;
+
+    /// A new file counts at the rank discovery gives its filename, so a loaded
+    /// `mise.local.toml` beside a new `mise.toml` still wins over it.
+    #[test]
+    fn a_new_file_counts_below_a_higher_ranked_file_in_its_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let node = format!("\"1\",{}", "\"1\",".repeat(MAX_TOOL_REQUESTS - 2));
+        let local: Arc<dyn ConfigFile> = Arc::new(
+            MiseToml::from_str(
+                &format!("[tools]\nnode = [{node}]\npython = \"3\"\n"),
+                &dir.path().join("mise.local.toml"),
+            )
+            .unwrap(),
+        );
+        let files: IndexMap<PathBuf, Arc<dyn ConfigFile>> =
+            [(local.get_path().to_path_buf(), local.clone())]
+                .into_iter()
+                .collect();
+        let new: Arc<dyn ConfigFile> = Arc::new(
+            MiseToml::from_str(
+                "[tools]\nnode = \"1\"\nruby = \"3\"\n",
+                &dir.path().join("mise.toml"),
+            )
+            .unwrap(),
+        );
+        let err = ensure_edit_keeps_tool_request_count(&files, &new).unwrap_err();
+        assert!(err.to_string().contains("1001 tool versions"), "{err}");
+    }
 
     /// An edit is checked against what all the config files request together, so a file that
     /// stays under the bound on its own is still not saved when the toolset would go over it.
