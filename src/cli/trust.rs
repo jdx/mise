@@ -265,7 +265,7 @@ fn refused_roots(
             .filter(|file| {
                 file.is_file()
                     && !is_global_config(file)
-                    && !config::lives_in_global_config_dir(file)
+                    && !config::is_global_config_for_any_env(file)
                     && config_file::config_root::linked_project(file).is_none()
                     && config_file::config_project(file) == project
             })

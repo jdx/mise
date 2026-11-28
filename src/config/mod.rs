@@ -3902,26 +3902,36 @@ pub(crate) fn is_project_link_to_global_config(path: &Path) -> bool {
         .is_some_and(|global| global != path && !path.canonicalize().is_ok_and(|real| real == path))
 }
 
-/// Whether `path` lives in the global or system config directory, followed
-/// through links to it such as a dotfiles checkout that the global config dir
-/// links to, whichever environment selects it: a `config.staging.toml` there is
-/// global config as soon as staging is selected, so a project's trust must not
-/// reach it while staging is not. Only the directory is resolved, so a
-/// project's own link to a global file is not in it. A directory that
-/// `MISE_GLOBAL_CONFIG_FILE` or `MISE_SYSTEM_CONFIG_FILE` replaces holds no
-/// global config.
-pub fn lives_in_global_config_dir(path: &Path) -> bool {
-    let Some(dir) = path.parent() else {
+/// Whether global or system config discovery loads `path` from its config
+/// directory, followed through links to it such as a dotfiles checkout that the
+/// global config dir links to, for some environment: a `config.staging.toml`
+/// there is global config as soon as staging is selected, so a project's trust
+/// must not reach it while staging is not. Other files below the directory,
+/// such as a checkout's own `.mise/config.toml`, are project config. Only the
+/// directory is resolved, so a project's own link to a global file does not
+/// count. A directory that `MISE_GLOBAL_CONFIG_FILE` or
+/// `MISE_SYSTEM_CONFIG_FILE` replaces holds no global config.
+pub fn is_global_config_for_any_env(path: &Path) -> bool {
+    let (Some(dir), Some(name)) = (path.parent(), path.file_name()) else {
         return false;
     };
-    let dir = file::desymlink_path_cached(dir);
+    let path = file::desymlink_path_cached(dir).join(name);
+    // The environments that could select the file are among the parts of its name.
+    let environments: Vec<String> = name
+        .to_string_lossy()
+        .split('.')
+        .map(str::to_string)
+        .collect();
+    let incoming = [path.clone()].into_iter().collect();
     [
         (env::MISE_GLOBAL_CONFIG_FILE.is_none()).then_some(*dirs::CONFIG),
         (env::MISE_SYSTEM_CONFIG_FILE.is_none()).then_some(*dirs::SYSTEM_CONFIG),
     ]
     .into_iter()
     .flatten()
-    .any(|global| dir.starts_with(file::desymlink_path_cached(global)))
+    .map(file::desymlink_path_cached)
+    .filter(|global| path.starts_with(global))
+    .any(|global| config_files_for_envs(&global, &incoming, &environments).contains(&path))
 }
 
 /// The path global or system config discovery found `path` at, if `path` is
@@ -4170,6 +4180,15 @@ pub(crate) fn config_files_with_incoming(
     dir: &Path,
     incoming: &std::collections::BTreeSet<PathBuf>,
 ) -> IndexSet<PathBuf> {
+    config_files_for_envs(dir, incoming, &env::MISE_GLOBAL_ENV_WITH_AUTO)
+}
+
+/// [`config_files_with_incoming`] for the given environments instead of the selected ones.
+fn config_files_for_envs(
+    dir: &Path,
+    incoming: &std::collections::BTreeSet<PathBuf>,
+    environments: &[String],
+) -> IndexSet<PathBuf> {
     let mut files = IndexSet::new();
     let env_conf_d = env::global_env_conf_d();
     let conf_dir = dir.join("conf.d");
@@ -4220,7 +4239,7 @@ pub(crate) fn config_files_with_incoming(
     }
     files.extend(conf_folder_files("mise.toml"));
     files.extend([dir.join("config.toml"), dir.join("mise.toml")]);
-    for environment in &*env::MISE_GLOBAL_ENV_WITH_AUTO {
+    for environment in environments {
         if env_conf_d {
             files.extend(conf_d_environment_candidates(
                 &conf_files,
@@ -4236,7 +4255,7 @@ pub(crate) fn config_files_with_incoming(
     }
     files.extend(conf_folder_files("mise.local.toml"));
     files.extend([dir.join("config.local.toml"), dir.join("mise.local.toml")]);
-    for environment in &*env::MISE_GLOBAL_ENV_WITH_AUTO {
+    for environment in environments {
         if env_conf_d {
             files.extend(conf_d_environment_candidates(
                 &conf_files,
