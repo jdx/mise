@@ -385,8 +385,8 @@ These are skipped without an error, so resolution commands keep working:
   working directory or a parent, and the files a global `_.file` entry with
   `find_up = true` or a glob finds. This includes files outside a repository,
   such as `~/.env`, and files you trusted. An absolute `env_file` entry or a
-  global `_.file` entry that names one file still loads, and paranoid mode still
-  needs it approved.
+  global `_.file` entry that names one file still loads. With paranoid mode's
+  `env_files` category on, only the absolute `env_file` entry needs approval.
 - Project `[shell_alias]`.
 - The commands in a project task's usage spec that shell completion would run.
 - Project `[wrappers]` and the `rust` tool's `mr_boxington` option.

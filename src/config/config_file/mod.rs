@@ -1172,8 +1172,21 @@ fn is_trusted_without_config_paths(
 fn trusted_monorepo_ancestor(canonical: &Path) -> bool {
     canonical.ancestors().skip(2).any(|dir| {
         let record = dirs::TRUSTED_CONFIGS.join(record_name(dir));
-        with_appended_extension(&record, "monorepo").exists() && is_trusted_with(dir, false)
+        (with_appended_extension(&record, "monorepo").exists() || has_legacy_monorepo_marker(dir))
+            && is_trusted_with(dir, false)
     })
+}
+
+remove_by!("2027.11.0", "legacy-trust-record-names");
+
+/// Whether `dir` has a monorepo marker beside a record under a name that mise 2026.11.13 and
+/// earlier used. Loading the root's config writes the marker under the current name, but settings
+/// are read before that, so the first run after an upgrade would otherwise leave out the
+/// `[settings]` of a subproject trusted through the root.
+fn has_legacy_monorepo_marker(dir: &Path) -> bool {
+    legacy_records(&dirs::TRUSTED_CONFIGS, dir)
+        .iter()
+        .any(|record| with_appended_extension(record, "monorepo").exists())
 }
 
 static IS_TRUSTED: Lazy<Mutex<HashSet<PathBuf>>> = Lazy::new(|| Mutex::new(HashSet::new()));
@@ -1190,7 +1203,9 @@ pub fn add_ignored(path: PathBuf) -> Result<()> {
     Ok(())
 }
 pub(crate) fn rm_ignored(path: PathBuf) -> Result<()> {
-    let path = path.canonicalize()?;
+    // A path that is gone, such as a nested root `mise untrust` found by its record, still has
+    // its records removed: they hold it as it was resolved.
+    let path = record_identity(&path);
     for ignore_path in records_for(&dirs::IGNORED_CONFIGS, &path) {
         file::remove_file(&ignore_path)?;
     }
@@ -1544,8 +1559,8 @@ pub(crate) fn set_monorepo_root_marker(path: &Path, enabled: bool) -> Result<()>
     }
     let config_root = config_trust_root(path);
     let enabled = enabled && is_trusted(&config_root);
-    // The walk in `trusted_monorepo_ancestor` reads the marker under the current name only, also
-    // for a root whose record has an older one.
+    // The marker is written under the current name, also for a root whose record has an older
+    // one; `trusted_monorepo_ancestor` reads an older name's marker only until this runs.
     let hashed_path = dirs::TRUSTED_CONFIGS.join(hashed_path_filename(&config_root));
     let monorepo_marker = with_appended_extension(&hashed_path, "monorepo");
     if enabled && !monorepo_marker.exists() {
@@ -1561,6 +1576,19 @@ pub(crate) fn set_monorepo_root_marker(path: &Path, enabled: bool) -> Result<()>
         }
     }
     Ok(())
+}
+
+/// The paths strictly below `dir` that have a trust record, whether or not they are still on
+/// disk: a config root that the current checkout lacks keeps its record, and gets it back when
+/// another branch brings its config back.
+pub fn trusted_paths_below(dir: &Path) -> Vec<PathBuf> {
+    let dir = record_identity(dir);
+    file::ls(&dirs::TRUSTED_CONFIGS)
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|record| record_target(&record))
+        .filter(|target| target != &dir && target.starts_with(&dir))
+        .collect()
 }
 
 pub fn untrust(path: &Path) -> eyre::Result<()> {
@@ -2795,5 +2823,34 @@ mod hashed_path_filename_tests {
 
         rm_ignored(sub).unwrap();
         untrust(&mono).unwrap();
+    }
+
+    #[test]
+    fn a_monorepo_marker_under_the_old_name_trusts_the_subprojects() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mono = tmp.path().canonicalize().unwrap().join("mono");
+        let sub = mono.join("apps/sub");
+        std::fs::create_dir_all(&sub).unwrap();
+        std::fs::write(mono.join("mise.toml"), "monorepo_root = true\n").unwrap();
+        std::fs::write(sub.join("mise.toml"), "[settings]\njobs = 3\n").unwrap();
+        let config = sub.join("mise.toml");
+
+        // What mise 2026.11.13 left behind: the root's record and marker under the old name,
+        // and nothing under the current one. Settings are read before the root's config loads
+        // and rewrites the marker, so the old marker has to count on its own.
+        let identity = record_identity(&mono);
+        let legacy =
+            dirs::TRUSTED_CONFIGS.join(prefixed_record_name(&identity, hash_to_str(&identity)));
+        file::create_dir_all(&*dirs::TRUSTED_CONFIGS).unwrap();
+        file::make_symlink_or_file(&identity, &legacy).unwrap();
+        file::write(with_appended_extension(&legacy, "monorepo"), "").unwrap();
+        let current = dirs::TRUSTED_CONFIGS.join(hashed_path_filename(&mono));
+        assert!(!with_appended_extension(&current, "monorepo").exists());
+
+        assert!(is_trusted_with(&config, false));
+        assert!(is_path_trusted(&config));
+
+        untrust(&mono).unwrap();
+        file::remove_file(with_appended_extension(&legacy, "monorepo")).ok();
     }
 }

@@ -44,6 +44,10 @@ done
 for cmd in "mise trust" "mise trust --all"; do
   assert_fail_contains "$cmd 2>&1" "paranoid mode cannot approve it"
 done
+# `mise trust --show` agrees with loading: untrusted despite the target's
+# record, and trusted once `trusted_config_paths` covers the project.
+assert_contains "mise trust --show" "project/mise.toml: untrusted"
+assert_contains "MISE_TRUSTED_CONFIG_PATHS='$PWD' mise trust --show" "project/mise.toml: trusted"
 
 # A linked config that loading accepts, here through `trusted_config_paths`,
 # does not stop `mise trust --all`.

@@ -239,6 +239,28 @@ fn refused_roots(path: &Path, cfr: &Path, named_file: bool) -> Vec<PathBuf> {
     roots.into_iter().unique().collect()
 }
 
+/// The nested roots of the project at `roots[0]` that have a trust record but are not in
+/// `roots`, the roots [`refused_roots`] found from the configs on disk. A nested root whose
+/// configs the checkout lacks, such as one another branch adds, keeps its record, so untrusting
+/// the project removes it as well: otherwise the approval would outlive the project's and count
+/// again once that branch is checked out. An ignore needs no such search, since the project's
+/// ignore already covers the nested roots that arrive later.
+fn recorded_nested_roots(roots: &[PathBuf]) -> Vec<PathBuf> {
+    let canonical = |p: &Path| p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
+    let project = canonical(&roots[0]);
+    let known: HashSet<PathBuf> = roots.iter().map(|root| canonical(root)).collect();
+    config_file::trusted_paths_below(&project)
+        .into_iter()
+        .filter(|recorded| {
+            // A record names a root, not a config in it, so ask where a config there would go.
+            let probe = recorded.join("mise.toml");
+            !known.contains(recorded)
+                && config_trust_root(&probe) == *recorded
+                && config_file::config_root::nested_root_project(&probe).as_ref() == Some(&project)
+        })
+        .collect()
+}
+
 /// The trust root that `mise trust` records for `path`, which `--ignore` and `--untrust` act on.
 /// A directory or no path stands for the project, whichever file in it the names in effect
 /// pick: with only `env_files` on, a name that `.miserc.toml` added would otherwise make that
@@ -280,7 +302,11 @@ pub(super) fn untrust_config_file(
         },
     };
     let cfr = cli_trust_root(&path, named_file);
-    let roots = refused_roots(&path, &cfr, named_file);
+    let mut roots = refused_roots(&path, &cfr, named_file);
+    if !named_file && !Settings::get().paranoid.config() {
+        let recorded = recorded_nested_roots(&roots);
+        roots.extend(recorded);
+    }
     for root in &roots {
         config_file::untrust(root)?;
     }
@@ -293,7 +319,9 @@ pub(super) fn untrust_config_file(
         config_file::untrust(&path)?;
     }
     for root in &roots {
-        info!("untrusted {}", display_path(&root.canonicalize()?));
+        // A recorded nested root may be gone from the checkout; its record holds it resolved.
+        let root = root.canonicalize().unwrap_or_else(|_| root.clone());
+        info!("untrusted {}", display_path(&root));
     }
     let cfr = roots[0].canonicalize()?;
 
@@ -648,7 +676,9 @@ impl Trust {
             .filter(|p| !is_global_config(p))
             .map(|p| config_trust_root(&p))
             .unique()
-            .map(|p| (display_path(&p), config_file::is_trusted(&p)))
+            // The same check as loading: in paranoid mode a linked config's target record does
+            // not count, and `trusted_config_paths` can trust the project that holds the link.
+            .map(|p| (display_path(&p), !needs_trust(&p)))
             .rev()
             .collect::<Vec<_>>();
         if trusted.is_empty() {
