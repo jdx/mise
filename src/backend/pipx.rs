@@ -809,12 +809,32 @@ impl Backend for PIPXBackend {
         // An explicit selector is never a graph-only preference. Bind it
         // before any branch that may fall back to version-only uv or pipx so
         // every installer receives the same exact mise-managed executable.
-        if PipxOptions::new(&request_options)
-            .selected_python()?
-            .is_some()
-        {
-            self.bind_uv_python(ctx, &mut tv).await?;
-            reset_selected_python_install_path(&mut tv)?;
+        if let Some(python) = selected_python_dependency(&tv.request)? {
+            if ctx.dry_run {
+                // The install plan checks this runtime separately. Preparing a
+                // preview must work before it or the installer is on disk.
+                let locked = python.lockfile_resolve(&ctx.config)?;
+                if let Some(backend) = locked.as_ref().and_then(|entry| entry.backend.as_ref()) {
+                    let backend = BackendArg::new(python.ba().short.clone(), Some(backend.clone()));
+                    if backend.full_without_opts() != python.ba().full_without_opts() {
+                        bail!(
+                            "selected Python dependency for '{}' is locked to backend '{}', expected '{}'",
+                            tv.request,
+                            backend.full_without_opts(),
+                            python.ba().full_without_opts()
+                        );
+                    }
+                }
+                if ctx.locked && locked.is_none() {
+                    bail!(
+                        "selected Python dependency '{}' is missing from this lockfile; run `mise lock`",
+                        python
+                    );
+                }
+            } else {
+                self.bind_uv_python(ctx, &mut tv).await?;
+                reset_selected_python_install_path(&mut tv)?;
+            }
         }
         if let Some(lock) = &tv.uv_lock {
             let lock = if !ctx.locked && lock.load().is_err() {
@@ -827,6 +847,9 @@ impl Backend for PIPXBackend {
         } else if self.uv_lock_allowed(&tv) && self.uv_graph_required(&ctx.config, &tv)? {
             if ctx.locked {
                 return Err(self.missing_uv_graph_error(&tv));
+            }
+            if ctx.dry_run {
+                return Ok(tv);
             }
             if !self.uv_lock_options_supported(&tv) {
                 warn!(
@@ -858,7 +881,8 @@ impl Backend for PIPXBackend {
         }
         // A restored identity carries an empty path placeholder; bind the real
         // interpreter so `uv sync --python` never receives an empty argument.
-        if tv.uv_lock.is_some()
+        if !ctx.dry_run
+            && tv.uv_lock.is_some()
             && tv
                 .uv_python
                 .as_ref()
