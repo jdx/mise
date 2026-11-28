@@ -56,8 +56,10 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/api/cask.json":
             self.send_error(404)
             return
-        if self.path in ("/api/cask/legacy.json", "/api/cask/structured.json"):
+        if self.path in ("/api/cask/legacy.json", "/api/cask/structured.json",
+                         "/api/cask/wrapper.json"):
             token = Path(self.path).stem
+            version = "1"
             artifacts = [{"binary": ["payload/bin/tool"],
                           "target": f"{prefix}/bin/{token}"},
                          {"artifact": ["payload/docs/readme", {
@@ -65,6 +67,11 @@ class Handler(BaseHTTPRequestHandler):
                          }]}]
             if token == "legacy":
                 artifacts.append({"postflight": None})
+            elif token == "wrapper":
+                version = "1.5.17,4823843970351104"
+                artifacts = [{"command_wrapper": [token, {
+                    "executable": f"{prefix}/Caskroom/{token}/{version}/payload/bin/tool",
+                }]}]
             else:
                 artifacts.append({"postflight_steps": [{"steps": [{
                     "type": "run",
@@ -72,7 +79,7 @@ class Handler(BaseHTTPRequestHandler):
                     "args": ["postflight"],
                 }]}]})
             body = json.dumps({
-                "token": token, "version": "1", "sha256": hashlib.sha256(payload).hexdigest(),
+                "token": token, "version": version, "sha256": hashlib.sha256(payload).hexdigest(),
                 "url": f"{base}/payload.tar.gz", "artifacts": artifacts,
                 "ruby_source_path": "Casks/legacy.rb",
                 "ruby_source_checksum": {"sha256": hashlib.sha256(ruby).hexdigest()},
@@ -101,7 +108,7 @@ env = dict(os.environ, MISE_SYSTEM_BREW_PREFIX=str(prefix),
 thread = threading.Thread(target=server.serve_forever, daemon=True)
 thread.start()
 try:
-    for token in ("legacy", "structured"):
+    for token in ("legacy", "structured", "wrapper"):
         (root / "mise.toml").write_text(
             f'[bootstrap.packages]\n"brew-cask:{token}" = "latest"\n'
         )
@@ -111,6 +118,18 @@ try:
         print(output, end="", flush=True)
         assert result.returncode == 0, output
         binary = prefix / "bin" / token
+        if token == "wrapper":
+            caskroom = prefix / "Caskroom" / token / "1.5.17,4823843970351104"
+            executable = caskroom / "payload/bin/tool"
+            assert (caskroom / "payload/docs/readme").read_bytes() == readme
+            assert subprocess.check_output([str(binary)], text=True) == "ready\n"
+            # Simulate a broken same-version installation with a valid wrapper link.
+            executable.unlink()
+            assert binary.is_file()
+            subprocess.run(["mise", "bootstrap", "packages", "apply", "--yes"],
+                           env=env, check=True, timeout=60)
+            assert subprocess.check_output([str(binary)], text=True) == "ready\n"
+            continue
         assert binary.read_text().endswith("\n# postflight ran\n"), "postflight changes were lost"
         assert binary.resolve() == prefix / "Caskroom" / token / "1" / "payload/bin/tool"
         readme_link = prefix / "Caskroom" / token / "1" / "payload/docs/readme"

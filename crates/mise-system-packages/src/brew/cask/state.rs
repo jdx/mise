@@ -646,6 +646,13 @@ pub(super) fn package_state(req: &PackageRequest, cask: &Cask) -> Result<Package
         return Ok(state);
     }
     let installed = mise_installed_cask_version(cask)?;
+    // Older receipts can record the wrapper link even when the executable it
+    // invokes was never copied from the staging directory.
+    if installed.as_deref() == Some(cask.version.as_str())
+        && missing_command_wrapper_executable(cask, &artifacts)?
+    {
+        return Ok(PackageState::Missing);
+    }
     // A retarget leaves the recorded version matching while the declared app
     // is not installed anywhere, so reporting it installed would hide work
     // that apply still has to do.
