@@ -3612,7 +3612,7 @@ pub fn netrc_headers(url: &Url) -> HeaderMap {
 }
 
 /// [`netrc_headers`] for a URL that a URL replacement moved to another host.
-fn replacement_netrc_headers(url: &Url) -> HeaderMap {
+pub fn replacement_netrc_headers(url: &Url) -> HeaderMap {
     if crate::untrusted_hosts::netrc_denied_on_replacement_host(url) {
         return HeaderMap::new();
     }
@@ -3634,12 +3634,12 @@ fn netrc_credential_headers(url: &Url) -> HeaderMap {
 /// takes the entry only when its login is that user, as curl does; otherwise
 /// the URL's user would be sent with another user's password.
 fn netrc_authorization(url: &Url, login: &str, password: &str) -> Option<HeaderValue> {
-    if !url.username().is_empty() {
-        // Compare the encoded forms, so `a%40b` in the URL matches the login `a@b`.
-        let mut entry = url.clone();
-        if entry.set_username(login).is_err() || entry.username() != url.username() {
-            return None;
-        }
+    // Compare the decoded name, so `a%40b` and `%75ser` in the URL match the
+    // logins `a@b` and `user`. A name that does not decode takes no entry.
+    if !url.username().is_empty()
+        && urlencoding::decode(url.username()).ok().as_deref() != Some(login)
+    {
+        return None;
     }
     let credentials = BASE64_STANDARD.encode(format!("{login}:{password}"));
     HeaderValue::from_str(&format!("Basic {credentials}")).ok()

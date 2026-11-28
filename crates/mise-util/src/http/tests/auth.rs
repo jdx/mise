@@ -462,6 +462,15 @@ fn netrc_entry_is_used_only_for_the_user_a_url_names() {
     assert_eq!(netrc_authorization(&url, "other", "pw"), None);
     let url: Url = "https://a%40b@example.com/file".parse().unwrap();
     assert_eq!(netrc_authorization(&url, "a@b", "pw"), basic("a@b", "pw"));
+    // The name is compared decoded, however the URL encodes it.
+    let url: Url = "https://%75ser@example.com/file".parse().unwrap();
+    assert_eq!(netrc_authorization(&url, "user", "pw"), basic("user", "pw"));
+    assert_eq!(netrc_authorization(&url, "%75ser", "pw"), None);
+    // A name that does not decode takes no entry.
+    let url: Url = "https://%FF@example.com/file".parse().unwrap();
+    assert_eq!(url.username(), "%FF");
+    assert_eq!(netrc_authorization(&url, "%FF", "pw"), None);
+    assert_eq!(netrc_authorization(&url, "\u{FFFD}", "pw"), None);
 }
 
 /// Credentials stay with the host and port they were written for. A scheme

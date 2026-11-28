@@ -111,3 +111,42 @@ mise install
 assert "mise x 'vfox:file://$PLUGIN_DIR@1.0.0' -- vfox-url-test" "direct-artifact"
 INSTALL_PATH=$(mise where "vfox:file://$PLUGIN_DIR@1.0.0")
 assert "cat '$INSTALL_PATH/supplement.txt'" "lua-http-download"
+
+# In safe mode a project tool gets no netrc login, except on the mirror an
+# operator's URL replacement sends a request to. That holds for an artifact
+# whose plugin sets download headers too, which `mise lock` fetches through
+# vfox to hash it.
+HEADERS_PLUGIN_DIR="$PWD/vfox-url-replacements-headers"
+mkdir -p "$HEADERS_PLUGIN_DIR/hooks"
+cp "$PLUGIN_DIR/metadata.lua" "$HEADERS_PLUGIN_DIR/"
+cp "$PLUGIN_DIR/hooks/available.lua" "$PLUGIN_DIR/hooks/env_keys.lua" "$HEADERS_PLUGIN_DIR/hooks/"
+cat >"$HEADERS_PLUGIN_DIR/hooks/pre_install.lua" <<'LUA'
+function PLUGIN:PreInstall(ctx)
+	return {
+		version = ctx.version,
+		url = "https://upstream.invalid/tool.tar.gz",
+		headers = { ["X-Plugin-Header"] = "plugin" },
+	}
+end
+LUA
+git -C "$HEADERS_PLUGIN_DIR" init -q
+git -C "$HEADERS_PLUGIN_DIR" add .
+git -C "$HEADERS_PLUGIN_DIR" -c user.name=mise -c user.email=mise@example.com commit -q -m "initial plugin"
+
+cat >"$MISE_CONFIG_DIR/config.toml" <<EOF
+[settings]
+netrc_file = "$NETRC_FILE"
+
+[settings.url_replacements]
+"https://upstream.invalid/tool.tar.gz" = "http://127.0.0.1:$HTTP_PORT/mirrored-artifact"
+"https://upstream.invalid/" = "http://127.0.0.1:$HTTP_PORT/"
+EOF
+cat >mise.toml <<EOF
+[tools]
+"vfox:file://$HEADERS_PLUGIN_DIR" = "1.0.0"
+EOF
+# safe mode installs no plugins
+assert_succeed "mise install"
+rm -f mise.lock
+assert_succeed "MISE_LOCKFILE_MODE=generate MISE_SAFE=1 mise lock --platform linux-x64"
+assert_contains "cat mise.lock" "sha256:"
