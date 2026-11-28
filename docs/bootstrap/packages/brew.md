@@ -276,7 +276,8 @@ installed or upgraded.
 
 Like `brew install`, mise copies the `etc` and `var` files a bottle ships into
 the prefix. A file you already have there is never overwritten: the bottle's
-copy is written beside it as `<file>.default`. mise does not copy files through
+copy is written beside it as `<file>.default`, unless `<file>.default` is a
+symlink, which mise leaves alone. mise does not copy files through
 a symlink below `etc` or `var`, and does not install a symlink from there that
 would point outside the prefix or whose target has a `..` after a name; it
 skips each with a warning. It then runs the

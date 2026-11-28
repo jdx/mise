@@ -63,9 +63,14 @@ pub(super) fn install_bottle_config(keg: &Path) -> Result<Vec<PathBuf>> {
         }
         Ok(())
     });
-    let result = copied
-        .and_then(|()| recheck_links(links, &mut created, &roots))
-        .and_then(|()| mise_util::file::remove_all(&bottle));
+    let result = match copied {
+        Ok(()) => recheck_links(links, &mut created, &roots),
+        Err(err) => {
+            undo_links(links);
+            Err(err)
+        }
+    }
+    .and_then(|()| mise_util::file::remove_all(&bottle));
     if let Err(err) = result {
         remove_created(&created);
         return Err(err);
@@ -99,20 +104,24 @@ fn copy_tree(
     // a later link can replace one an earlier link resolves through, so each
     // installed link is checked again once the whole tree is in place
     let mut links = Vec::new();
-    copy_tree_links(src, dst, keep_existing, created, roots, &mut links)?;
+    if let Err(err) = copy_tree_links(src, dst, keep_existing, created, roots, &mut links) {
+        undo_links(links);
+        return Err(err);
+    }
     recheck_links(links, created, roots)
 }
 
 /// [`copy_tree`] without the final check: each link it installs is appended
-/// to `installed_links` as (path, target), for [`recheck_links`] to check once
-/// everything that could change where they lead is in place.
+/// to `installed_links`, for [`recheck_links`] to check once everything that
+/// could change where they lead is in place, or for [`undo_links`] when a
+/// later step fails.
 fn copy_tree_links(
     src: &Path,
     dst: &Path,
     keep_existing: bool,
     created: &mut Vec<PathBuf>,
     roots: &[PathBuf],
-    installed_links: &mut Vec<(PathBuf, PathBuf)>,
+    installed_links: &mut Vec<InstalledLink>,
 ) -> Result<()> {
     let dst = &std::path::absolute(dst).unwrap_or_else(|_| dst.to_path_buf());
     let mut walk = WalkDir::new(src).sort_by_file_name().into_iter();
@@ -179,11 +188,26 @@ fn copy_tree_links(
                         continue;
                     }
                     existed = true;
-                    fs::remove_file(&dest)?;
                 }
             }
-            mise_util::file::make_symlink(&link, &dest)?;
-            installed_links.push((dest.clone(), link));
+            // what the link replaces is kept aside until the link has passed
+            // its check once the whole tree is in place
+            let replaced = if existed {
+                Some(Replaced::set_aside(&dest)?)
+            } else {
+                None
+            };
+            if let Err(err) = mise_util::file::make_symlink(&link, &dest) {
+                if let Some(replaced) = replaced {
+                    replaced.put_back(&dest);
+                }
+                return Err(err);
+            }
+            installed_links.push(InstalledLink {
+                dest: dest.clone(),
+                link,
+                replaced,
+            });
             // only what did not exist before is ours to remove on rollback
             if !existed {
                 created.push(dest);
@@ -204,6 +228,15 @@ fn copy_tree_links(
             let mut name = dest.file_name().unwrap().to_os_string();
             name.push(".default");
             dest.set_file_name(name);
+            // mise only ever writes a file here, so a link is the user's,
+            // and replacing it could not be undone
+            if dest.is_symlink() {
+                warn!(
+                    "brew: not installing {}: it is a symlink, and it is left as it is",
+                    dest.display()
+                );
+                continue;
+            }
         }
         let existed = dest.symlink_metadata().is_ok();
         if dest.is_symlink() {
@@ -218,30 +251,105 @@ fn copy_tree_links(
     Ok(())
 }
 
-/// Check each of `links` (path, target) from where it now is, and remove the
-/// ones that point outside every one of `roots`. Removing one can change
-/// where another leads, so this repeats until a pass removes nothing.
+/// A link [`copy_tree_links`] installed at `dest`, pointing to `link`.
+struct InstalledLink {
+    dest: PathBuf,
+    link: PathBuf,
+    /// the file or link that was at `dest` before
+    replaced: Option<Replaced>,
+}
+
+/// A file or link moved out of the way of a link from the bottle, into a
+/// directory of its own beside it. It is deleted with that directory when
+/// this is dropped, once the new link is known to stay; until then it can be
+/// put back.
+struct Replaced {
+    dir: tempfile::TempDir,
+    path: PathBuf,
+}
+
+impl Replaced {
+    fn set_aside(dest: &Path) -> Result<Self> {
+        let dir = tempfile::Builder::new()
+            .prefix(".mise-replaced-")
+            .tempdir_in(dest.parent().unwrap())?;
+        let path = dir.path().join(dest.file_name().unwrap());
+        fs::rename(dest, &path)?;
+        Ok(Self { dir, path })
+    }
+
+    /// Move the old entry back to `dest`, where the new link has been
+    /// removed. If that fails, it is kept where it is and the warning says
+    /// where that is.
+    fn put_back(self, dest: &Path) {
+        if let Err(err) = fs::rename(&self.path, dest) {
+            let kept = self.dir.keep().join(dest.file_name().unwrap());
+            warn!(
+                "brew: could not put {} back ({err}); it is in {}",
+                dest.display(),
+                kept.display()
+            );
+        }
+    }
+}
+
+/// Remove each link in `links` and put back what it replaced, after a later
+/// step failed.
+fn undo_links(links: Vec<InstalledLink>) {
+    for installed in links {
+        if let Some(replaced) = installed.replaced
+            && fs::remove_file(&installed.dest).is_ok()
+        {
+            replaced.put_back(&installed.dest);
+        }
+    }
+}
+
+/// Check each of `links` from where it now is, and remove the ones that
+/// point outside every one of `roots`, putting back what each replaced.
+/// Removing one can change where another leads, so this repeats until a pass
+/// removes nothing.
 fn recheck_links(
-    mut links: Vec<(PathBuf, PathBuf)>,
+    mut links: Vec<InstalledLink>,
     created: &mut Vec<PathBuf>,
     roots: &[PathBuf],
 ) -> Result<()> {
     loop {
-        let (stay, leave): (Vec<_>, Vec<_>) = links.into_iter().partition(|(dest, link)| {
-            super::pour::link_stays_in(dest.parent().unwrap(), link, None, roots)
+        let (stay, leave): (Vec<_>, Vec<_>) = links.into_iter().partition(|installed| {
+            super::pour::link_stays_in(
+                installed.dest.parent().unwrap(),
+                &installed.link,
+                None,
+                roots,
+            )
         });
         if leave.is_empty() {
             return Ok(());
         }
-        for (dest, link) in leave {
+        let mut failed = None;
+        for installed in leave {
             warn!(
                 "brew: removing {}: once the rest was copied, its link to {} points outside \
                  the Homebrew prefix",
-                dest.display(),
-                link.display(),
+                installed.dest.display(),
+                installed.link.display(),
             );
-            fs::remove_file(&dest)?;
-            created.retain(|path| *path != dest);
+            if let Err(err) = fs::remove_file(&installed.dest) {
+                failed.get_or_insert(err);
+                // the link is still there, so what it replaced stays aside
+                if let Some(replaced) = installed.replaced {
+                    let _ = replaced.dir.keep();
+                }
+                continue;
+            }
+            created.retain(|path| *path != installed.dest);
+            if let Some(replaced) = installed.replaced {
+                replaced.put_back(&installed.dest);
+            }
+        }
+        if let Some(err) = failed {
+            undo_links(stay);
+            return Err(err.into());
         }
         links = stay;
     }
@@ -899,8 +1007,9 @@ mod tests {
         )?;
         assert!(!outside.join("f").exists());
         assert_eq!(fs::read_to_string(outside.join("kept"))?, "kept");
-        assert!(!dst.join("a.default").is_symlink());
-        assert_eq!(fs::read_to_string(dst.join("a.default"))?, "new");
+        // the user's link is neither written through nor replaced
+        assert_eq!(fs::read_link(dst.join("a.default"))?, outside.join("kept"));
+        assert!(!created.contains(&dst.join("a.default")));
 
         // the same without `keep_existing`
         symlink(&outside, dst.join("sub"))?;
@@ -983,6 +1092,31 @@ mod tests {
             fs::read_link(prefix.join("etc/b"))?,
             PathBuf::from("../inside2")
         );
+
+        // a file the removed link replaced is put back, and the link that
+        // stays does not keep what it replaced
+        fs::write(prefix.join("etc/a"), "mine")?;
+        fs::remove_file(prefix.join("etc/b"))?;
+        symlink("../inside", prefix.join("etc/b"))?;
+        let mut created = Vec::new();
+        copy_tree(
+            &src,
+            &prefix.join("etc"),
+            false,
+            &mut created,
+            std::slice::from_ref(&prefix),
+        )?;
+        assert_eq!(fs::read_to_string(prefix.join("etc/a"))?, "mine");
+        assert!(created.is_empty(), "{created:?}");
+        assert_eq!(
+            fs::read_link(prefix.join("etc/b"))?,
+            PathBuf::from("../inside2")
+        );
+        let mut names = fs::read_dir(prefix.join("etc"))?
+            .map(|entry| Ok(entry?.file_name()))
+            .collect::<Result<Vec<_>>>()?;
+        names.sort();
+        assert_eq!(names, ["a", "b"]);
         Ok(())
     }
 
