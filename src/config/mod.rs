@@ -8007,10 +8007,13 @@ pub fn is_glob_pattern(pattern: &str) -> bool {
 /// Expand a task include like `expand_task_include`, but when safe mode bounds it, skip a glob
 /// whose fixed folder already resolves outside the project before walking that folder: a large
 /// folder outside would otherwise be scanned only for every match to be dropped. Callers still
-/// check each match, since a link below a folder inside the project can lead outside.
+/// check each match, since a link below a folder inside the project can lead outside. A folder
+/// that `excludes` covers gives no tasks either way, so it is dropped without counting as
+/// skipped by safe mode, which would stop `mise prune` and `mise lock` from cleaning up.
 fn expand_bounded_task_include(
     dir: &Path,
     pattern: &str,
+    excludes: &[PathBuf],
     bounds: Option<&[PathBuf]>,
 ) -> Vec<PathBuf> {
     if bounds.is_some() {
@@ -8020,7 +8023,10 @@ fn expand_bounded_task_include(
             let literal = glob_literal_parent(&replaced);
             if !literal.as_os_str().is_empty() {
                 let parent = dir.join(literal);
-                if parent.is_dir() && skip_task_file_outside(&parent, bounds) {
+                if parent.is_dir()
+                    && (is_task_path_excluded(&parent, excludes)
+                        || skip_task_file_outside(&parent, bounds))
+                {
                     return vec![];
                 }
             }
@@ -8269,7 +8275,7 @@ fn task_includes_and_bounds_for_dir(
                 note_remote_include_skipped(&p, bounds.as_deref());
                 return vec![];
             }
-            expand_bounded_task_include(&resolve_dir, &p, bounds.as_deref())
+            expand_bounded_task_include(&resolve_dir, &p, &excludes, bounds.as_deref())
         })
         .filter(|p| {
             !is_task_path_excluded(p, &excludes) && !skip_task_file_outside(p, bounds.as_deref())
@@ -8326,7 +8332,9 @@ pub(crate) fn task_creation_dir_for_dir(dir: &Path, config_files: &ConfigMap) ->
     if let Some(path) = includes
         .iter()
         .filter(|include| !is_remote_task_include(include))
-        .flat_map(|include| expand_bounded_task_include(&resolve_dir, include, bounds.as_deref()))
+        .flat_map(|include| {
+            expand_bounded_task_include(&resolve_dir, include, &[], bounds.as_deref())
+        })
         .filter(|path| !skip_task_file_outside(path, bounds.as_deref()))
         .find(|path| path.is_dir())
     {
@@ -8961,7 +8969,7 @@ async fn load_task_sources_from_configs(
         {
             vec![resolve_oci_url_to_path(include).await?]
         } else {
-            expand_bounded_task_include(&resolve_dir, include, local_bounds.as_deref())
+            expand_bounded_task_include(&resolve_dir, include, &excludes, local_bounds.as_deref())
                 .into_iter()
                 .map(TaskFileArtifact::persistent)
                 .collect()
@@ -9821,7 +9829,9 @@ fn included_task_definitions(
                     }
                     !remote
                 })
-                .flat_map(|p| expand_bounded_task_include(&root, p, bounds.as_deref()))
+                .flat_map(|p| {
+                    expand_bounded_task_include(&root, p, &own_excludes, bounds.as_deref())
+                })
                 // An excluded include is dropped, and safe mode did not skip it.
                 .filter(|p| {
                     !is_task_path_excluded(p, &own_excludes)

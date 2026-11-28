@@ -2289,14 +2289,20 @@ impl Lockfile {
                 }) {
                     kept.specifiers.extend(entry.specifiers);
                     // This run may have locked the entry for fewer platforms than the requests
-                    // it did not see use. The platforms it no longer records come back, and
-                    // the ones it locked, or found unsupported, stay as it left them.
+                    // it did not see use. The platforms it no longer records come back, with
+                    // their downloads or as found unsupported, and the ones it locked, or found
+                    // unsupported, stay as it left them.
                     for (platform, info) in entry.platforms {
                         if !kept.platforms.contains_key(&platform)
                             && !kept.unsupported_platforms.contains(&platform)
                         {
                             kept.platforms.insert(platform.clone(), info.clone());
                             restored.insert(platform, info);
+                        }
+                    }
+                    for platform in entry.unsupported_platforms {
+                        if !kept.platforms.contains_key(&platform) {
+                            kept.unsupported_platforms.insert(platform);
                         }
                     }
                 }

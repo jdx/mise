@@ -262,3 +262,28 @@ assert "mise ls -C proj6"
 cd other || exit 1
 assert_not_contains "MISE_SAFE=1 mise prune --dry-run 2>&1" "not pruning: safe mode"
 assert_contains "MISE_SAFE=1 mise prune --dry-run 2>&1" "dummy@10.0.0"
+
+# The same goes for a glob whose folder outside the project is excluded as a whole: safe mode
+# drops it before walking the folder, and the exclusion means it would add no tasks anyway.
+cd .. || exit 1
+mkdir -p outside-glob
+cp outside-tasks.toml outside-glob/tasks.toml
+cat >proj6/mise.toml <<'TOML'
+[task_config]
+includes = ["../outside-glob/*.toml"]
+TOML
+assert "mise trust proj6/mise.toml"
+assert "mise ls -C proj6"
+cd other || exit 1
+assert_contains "MISE_SAFE=1 mise prune --dry-run 2>&1" "not pruning: safe mode"
+cd .. || exit 1
+cat >proj6/mise.toml <<'TOML'
+[task_config]
+includes = ["../outside-glob/*.toml"]
+excludes = ["../outside-glob"]
+TOML
+assert "mise trust proj6/mise.toml"
+assert "mise ls -C proj6"
+cd other || exit 1
+assert_not_contains "MISE_SAFE=1 mise prune --dry-run 2>&1" "not pruning: safe mode"
+assert_contains "MISE_SAFE=1 mise prune --dry-run 2>&1" "dummy@10.0.0"

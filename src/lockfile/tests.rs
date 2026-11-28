@@ -6363,6 +6363,39 @@ fn restore_missing_versions_keeps_the_platforms_this_run_did_not_lock() {
 }
 
 #[test]
+fn restore_missing_versions_keeps_the_platforms_found_unsupported_before() {
+    // A skipped task found 1.0.0 unsupported on two platforms. This run locked one of them and
+    // did not look at the other, whose marker must come back so that `mise lock --check` does
+    // not count it as missing.
+    let mut previous_entry = basic_tool("1.0.0", "aqua:widget");
+    previous_entry.unsupported_platforms =
+        BTreeSet::from(["linux-x64".to_string(), "windows-x64".to_string()]);
+    let mut previous = Lockfile::default();
+    previous
+        .tools
+        .insert("widget".to_string(), vec![previous_entry]);
+
+    let mut rebuilt = basic_tool("1.0.0", "aqua:widget");
+    rebuilt.platforms = BTreeMap::from([(
+        "linux-x64".to_string(),
+        PlatformInfo {
+            checksum: Some("sha256:linux".to_string()),
+            ..Default::default()
+        },
+    )]);
+    let mut current = Lockfile::default();
+    current.tools.insert("widget".to_string(), vec![rebuilt]);
+    current.restore_missing_versions(&previous, "widget");
+
+    let entry = &current.tools["widget"][0];
+    assert_eq!(
+        entry.unsupported_platforms,
+        BTreeSet::from(["windows-x64".to_string()])
+    );
+    assert!(entry.platforms.contains_key("linux-x64"), "{entry:?}");
+}
+
+#[test]
 fn restore_missing_versions_brings_back_conda_package_records() {
     let path = std::env::temp_dir().join("test_restore_conda_records.lock");
     std::fs::write(
