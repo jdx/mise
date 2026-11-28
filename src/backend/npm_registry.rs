@@ -42,14 +42,7 @@ static CLIENT: Lazy<std::result::Result<RegistryClient, String>> = Lazy::new(|| 
     // mise's rather than standalone aube's.
     crate::backend::aube_host::init();
     let config = CONFIG.clone();
-    let settings = Settings::get();
-    let mode = if settings.offline() {
-        NetworkMode::Offline
-    } else if settings.prefer_offline() {
-        NetworkMode::PreferOffline
-    } else {
-        NetworkMode::Online
-    };
+    let mode = network_mode();
     // Create the on-disk packument cache dir once here (client init runs at
     // most once per process) rather than on every async fetch — keeps the
     // blocking mkdir + its sync lock off the Tokio worker in the hot path.
@@ -66,6 +59,25 @@ static CLIENT: Lazy<std::result::Result<RegistryClient, String>> = Lazy::new(|| 
             msg
         })
 });
+
+fn network_mode() -> NetworkMode {
+    let settings = Settings::get();
+    if settings.offline() {
+        NetworkMode::Offline
+    } else if settings.prefer_offline() {
+        NetworkMode::PreferOffline
+    } else {
+        NetworkMode::Online
+    }
+}
+
+/// Whether this process answers from a cached packument however old it is.
+/// In the offline modes aube-registry returns any cached copy without asking
+/// the registry, so what mise derives from it (a version list, the `latest`
+/// dist-tag) may be days old and must not be saved as if it were just fetched.
+pub(crate) fn serves_unrevalidated_packuments() -> bool {
+    network_mode() != NetworkMode::Online
+}
 
 fn client() -> Result<&'static RegistryClient> {
     CLIENT.as_ref().map_err(|err| eyre::eyre!("{err}"))

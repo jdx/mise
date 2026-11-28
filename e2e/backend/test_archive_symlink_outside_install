@@ -62,6 +62,33 @@ ARCHIVES = {
             ("README.md", "file", "readme\n"),
         ]
     ),
+    # The bundle's executable is a link that stays inside where it is shipped,
+    # but rename_exe moves it to the top, where the same target leads out.
+    "bundle": tarball(
+        [
+            ("payload", "file", "#!/bin/sh\necho payload\n"),
+            ("Tool.app/Contents/MacOS/tool", "link", "../../../payload"),
+        ]
+    ),
+    # The same for a nested bin: the link is moved into bin, where q names
+    # another directory than it does at the top.
+    "nested": tarball(
+        [
+            ("payload", "file", "#!/bin/sh\necho payload\n"),
+            ("a/b", "dir", ""),
+            ("q", "link", "a/b"),
+            ("bin", "dir", ""),
+            ("bin/q", "link", ".."),
+            ("nested", "link", "q/../../payload"),
+        ]
+    ),
+    # A bundle that ships its executable as a file is renamed as before.
+    "app": tarball(
+        [
+            ("Tool.app/Contents/MacOS/tool", "file", "#!/bin/sh\necho bundled\n"),
+            ("README.md", "file", "readme\n"),
+        ]
+    ),
 }
 
 
@@ -139,3 +166,31 @@ cat >mise.toml <<EOF
 EOF
 assert_succeed "mise install"
 assert "mise x -- tool" "inside"
+
+# rename_exe moves a bundle's executable up to the install directory. A link
+# is not moved that way: from its new place it would lead out of it.
+cat >mise.toml <<EOF
+[tools]
+"http:bundle" = { version = "1.0.0", url = "$API/download/bundle.tar.gz", rename_exe = "mytool" }
+EOF
+assert_fail "mise install" "cannot move the symlink"
+cat >mise.toml <<EOF
+[tools]
+"github:acme/bundle" = { version = "1.0.0", api_url = "$API", asset_pattern = "tool.tar.gz", rename_exe = "mytool" }
+EOF
+assert_fail "mise install" "cannot move the symlink"
+
+# A nested bin moves the executable down into that directory.
+cat >mise.toml <<EOF
+[tools]
+"github:acme/nested" = { version = "1.0.0", api_url = "$API", asset_pattern = "tool.tar.gz", bin = "bin/tool" }
+EOF
+assert_fail "mise install" "cannot move the symlink"
+
+# A bundle whose executable is a file still installs under the new name.
+cat >mise.toml <<EOF
+[tools]
+"http:app" = { version = "1.0.0", url = "$API/download/app.tar.gz", rename_exe = "mytool" }
+EOF
+assert_succeed "mise install"
+assert "mise x -- mytool" "bundled"

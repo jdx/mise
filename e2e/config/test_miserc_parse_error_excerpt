@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+
+# A project .miserc.toml is parsed without trust, and hook-env reports a
+# broken one at every prompt. A value of the wrong type that spans many lines
+# is marked on its first line, so the report stays short however long the
+# value is.
+{
+  echo 'env = """'
+  for _ in $(seq 5000); do echo; done
+  echo '"""'
+} >.miserc.toml
+
+assert_fail_contains "mise ls" "invalid type: string"
+mise ls >out.txt 2>&1 || true
+size=$(wc -c <out.txt)
+assert "[ $size -lt 8000 ] && echo short || echo $size bytes" "short"
