@@ -24,7 +24,7 @@ use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::file;
 use crate::github;
-use crate::http::{HTTP, HTTP_FETCH};
+use crate::http::{DownloadOptions, HTTP, HTTP_FETCH};
 use crate::toolset::{ConfigScope, ToolSource, ToolVersion, Toolset, ToolsetBuilder};
 use crate::ui::progress_report::SingleReport;
 
@@ -272,8 +272,12 @@ pub(crate) async fn download_file(
     pr: Option<&dyn SingleReport>,
     max_bytes: Option<u64>,
 ) -> Result<()> {
+    let options = DownloadOptions {
+        max_bytes,
+        max_retries: github::release_asset_from_url(url).map(|_| github::BROWSER_ASSET_MAX_RETRIES),
+    };
     let reason = match HTTP
-        .download_file_linked_limited(url, dest, &headers_for(url)?, pin, pr, max_bytes)
+        .download_file_linked_with_options(url, dest, &headers_for(url)?, pin, pr, options)
         .await
     {
         Ok(_) if !downloaded_sign_in_page(url, dest) => return Ok(()),
@@ -283,9 +287,19 @@ pub(crate) async fn download_file(
     let Some(api_url) = retry_url(url, &reason).await else {
         return Err(reason.into_error(url));
     };
-    HTTP.download_file_linked_limited(&api_url, dest, &headers_for(&api_url)?, pin, pr, max_bytes)
-        .await
-        .map(|_| ())
+    HTTP.download_file_linked_with_options(
+        &api_url,
+        dest,
+        &headers_for(&api_url)?,
+        pin,
+        pr,
+        DownloadOptions {
+            max_retries: None,
+            ..options
+        },
+    )
+    .await
+    .map(|_| ())
 }
 
 /// Fetch a document a packslip names — a manifest or a signed release list —
@@ -2457,6 +2471,82 @@ mod tests {
         download_file(&url, &dest, None, None, None).await.unwrap();
         assert_eq!(file::read_to_string(&dest).unwrap(), "payload");
         mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_release_downloads_fall_back_after_one_browser_retry() {
+        use crate::config::SettingsExt;
+        use crate::config::settings::SettingsPartial;
+        use confique::Layer;
+
+        let _config = crate::config::Config::get().await.unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let _settings = crate::test::SettingsGuard::lock();
+        let mut settings = SettingsPartial::empty();
+        settings.http_retries = Some(4);
+        settings.url_replacements = Some(indexmap::indexmap! {
+            "https://github.com".to_string() => format!("{}/browser", server.url()),
+            "https://api.github.com".to_string() => format!("{}/api", server.url()),
+        });
+        Settings::reset(Some(settings));
+
+        let repo = format!(
+            "test/packslip-download-fallback-{}",
+            server.socket_address().port()
+        );
+        let files = ["tool.tar.gz", "tool.bash"];
+        let browser = |name: &str| format!("https://github.com/{repo}/releases/download/v1/{name}");
+        let api = |id| format!("https://api.github.com/repos/{repo}/releases/assets/{id}");
+        let metadata = serde_json::json!({
+            "tag_name": "v1",
+            "draft": false,
+            "prerelease": false,
+            "created_at": "2026-11-01T00:00:00Z",
+            "assets": files.iter().enumerate().map(|(id, name)| serde_json::json!({
+                "name": name,
+                "browser_download_url": browser(name),
+                "url": api(id),
+            })).collect::<Vec<_>>(),
+        });
+        let release = server
+            .mock(
+                "GET",
+                format!("/api/repos/{repo}/releases/tags/v1").as_str(),
+            )
+            .with_body(metadata.to_string())
+            .expect(1)
+            .create_async()
+            .await;
+
+        let dir = tempfile::tempdir().unwrap();
+        for (id, name) in files.into_iter().enumerate() {
+            let browser_download = server
+                .mock(
+                    "GET",
+                    format!("/browser/{repo}/releases/download/v1/{name}").as_str(),
+                )
+                .with_status(504)
+                .expect(2)
+                .create_async()
+                .await;
+            let api_download = server
+                .mock(
+                    "GET",
+                    format!("/api/repos/{repo}/releases/assets/{id}").as_str(),
+                )
+                .match_header("accept", "application/octet-stream")
+                .with_body(name)
+                .create_async()
+                .await;
+            let dest = dir.path().join(name);
+            download_file(&browser(name), &dest, None, None, None)
+                .await
+                .unwrap();
+            assert_eq!(file::read_to_string(&dest).unwrap(), name);
+            browser_download.assert_async().await;
+            api_download.assert_async().await;
+        }
+        release.assert_async().await;
     }
 
     fn statement_with(resources: &str) -> Statement {
