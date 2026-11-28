@@ -188,6 +188,13 @@ can only register the calling app. Apple has deprecated that API since macOS
 instead of changing anything. `mise bootstrap macos defaults apply` applies
 login items together with defaults.
 
+On a Mac enrolled in MDM, a Managed Login Items profile can take over an app
+that mise added. macOS then keeps the app in a managed list that the
+`LSSharedFileList` API does not show. The app still opens at login, but
+`mise bootstrap status` reports it as missing. `apply` tries to add it again,
+macOS declines because the record exists, and mise warns that the app was not
+added instead of reporting the add.
+
 ## Raw defaults
 
 Each key under `[bootstrap.settings.macos.defaults]` is a preferences domain, and each
