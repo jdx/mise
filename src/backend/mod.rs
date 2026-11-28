@@ -926,6 +926,9 @@ fn backend_list_denial(
 /// The error for a tool `short` (such as `ubi:owner/repo[exe=rg]`) that names a
 /// backend mise has removed, with the backend that replaces it.
 pub fn removed_backend_error(short: &str) -> Option<String> {
+    // The message repeats the identifier, so drop URL credentials from it.
+    let short = install_state::state_short(short);
+    let short = short.as_ref();
     let (backend, tool) = short.split_once(':')?;
     if backend != "ubi" {
         return None;
@@ -1539,6 +1542,8 @@ mod tests {
         );
         assert!(!msg.contains("http:https:"), "{msg}");
         assert!(!msg.contains("gitlab:"), "{msg}");
+        let msg = removed_backend_error("ubi:https://user:secret@example.com/tool.tar.gz").unwrap();
+        assert!(!msg.contains("secret"), "{msg}");
         assert_eq!(removed_backend_error("github:BurntSushi/ripgrep"), None);
         assert_eq!(removed_backend_error("ripgrep"), None);
     }
