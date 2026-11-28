@@ -124,6 +124,10 @@ fn lex(code: &str) -> Result<Vec<Token<'_>>> {
     let mut tokens = vec![];
     let mut code = code.trim();
     while !code.is_empty() {
+        // Stop as soon as the tag is too long to parse, without storing the rest of its tokens
+        if tokens.len() > MAX_TAG_TOKENS {
+            bail!("template expression has more than {MAX_TAG_TOKENS} tokens");
+        }
         if code.starts_with(" ") {
             let end = code
                 .char_indices()

@@ -312,6 +312,9 @@ fn test_render_rejects_oversized_expressions() {
     let err = render(&format!("{{{{{}}}}}", pipe(128)), &ctx).unwrap_err();
     assert_eq!(err.to_string(), too_long);
 
+    // The lexer itself stops at the limit instead of storing every token first
+    assert_eq!(lex(&pipe(128)).unwrap_err().to_string(), too_long);
+
     // Every way of nesting deeply is refused before it is parsed
     let n = 200_000;
     for tag in [
