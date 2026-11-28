@@ -497,6 +497,9 @@ struct ForgeChecksumSource<'a> {
 
 impl asset_matcher::ChecksumSource for ForgeChecksumSource<'_> {
     async fn fetch_text(&self, file: &Asset) -> Result<String> {
+        // Before the headers: finding a forge token can refresh it over the
+        // network, and the download would be refused offline anyway.
+        eyre::ensure!(!Settings::get().offline(), "offline mode is enabled");
         let forge_headers = |url: &str| {
             if self.backend.is_gitlab() {
                 gitlab::get_headers(url, &self.api_url)

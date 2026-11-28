@@ -4069,7 +4069,10 @@ fn special_scheme(replacement: &str) -> Option<(&str, &str)> {
 /// `git:///user:password@host/`. There is no authority there, so mise cannot
 /// tell which server a login in it is for ([`replacement_credentials`]), and the
 /// text would land in whatever part of the URL the key matched, such as the
-/// query of a request to another host. Such a rule is refused.
+/// query of a request to another host. Such a rule is refused. Only the text
+/// where a URL parser would look for that server, up to the next `/`, `\`, `?`
+/// or `#`, can hold such a login: `file:///opt/mirror/@scope/` has an `@` in
+/// its path and is a replacement like any other.
 fn ambiguous_replacement_authority(replacement: &str) -> bool {
     let parsed = without_url_tabs(trim_url_start(replacement));
     // Without an `@` there is no login to misplace, so `file:///opt/mirror/`
@@ -4087,8 +4090,13 @@ fn ambiguous_replacement_authority(replacement: &str) -> bool {
         Some((scheme, rest)) if is_scheme(scheme) => rest,
         _ => &parsed,
     };
-    let lead = &rest[..rest.len() - rest.trim_start_matches(['/', '\\']).len()];
-    lead.len() > 2 || lead.contains('\\')
+    let after_lead = rest.trim_start_matches(['/', '\\']);
+    let lead = &rest[..rest.len() - after_lead.len()];
+    let server = after_lead
+        .split(['/', '\\', '?', '#'])
+        .next()
+        .unwrap_or_default();
+    (lead.len() > 2 || lead.contains('\\')) && server.contains('@')
 }
 
 /// The front of a `url_replacements` replacement that carries credentials, up
@@ -4202,7 +4210,7 @@ fn restore_same_host_userinfo(original: &Url, rewritten: &mut Url) {
 /// that writes credentials of its own applies only where they end up as the
 /// userinfo of the server it names ([`credentials_in_place`]), and otherwise is
 /// skipped for this URL so later rules are tried. A rule whose replacement
-/// names no server where its authority would be is skipped for every URL
+/// has a login but names no server for it is skipped for every URL
 /// ([`ambiguous_replacement_authority`]).
 pub fn apply_url_replacements(url: &mut Url) {
     let settings = Settings::get();
@@ -4213,8 +4221,8 @@ pub fn apply_url_replacements(url: &mut Url) {
         for (pattern, replacement) in replacements {
             if ambiguous_replacement_authority(replacement) {
                 warn_once!(
-                    "Ignoring URL replacement for '{pattern}': its replacement starts with more \
-                     than '//' or with a backslash, so it names no server; write it as \
+                    "Ignoring URL replacement for '{pattern}': its replacement has a login after more \
+                     than '//' or after a backslash, so it names no server for it; write it as \
                      'https://host/...' or 'host/...'"
                 );
                 continue;

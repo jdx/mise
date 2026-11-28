@@ -452,6 +452,7 @@ fn test_replacements_that_name_no_server_are_refused() {
         r"\user:secret@mirror.example.com/",
         "/\t//user:secret@mirror.example.com/",
         "git:///user:secret@mirror.example.com/",
+        "file:///user:secret@mirror.example.com/",
     ] {
         let mut rules = IndexMap::new();
         rules.insert("github.com".to_string(), replacement.to_string());
@@ -477,6 +478,12 @@ fn test_replacements_that_name_no_server_are_refused() {
             "file:///opt/mirror/",
             "https://github.com/a/tool.tar.gz",
             "file:///opt/mirror/a/tool.tar.gz",
+        ),
+        (
+            "https://github.com/",
+            "file:///opt/mirror/@scope/",
+            "https://github.com/a/tool.tar.gz",
+            "file:///opt/mirror/@scope/a/tool.tar.gz",
         ),
         (
             "/old/",
@@ -507,6 +514,34 @@ fn test_replacements_that_name_no_server_are_refused() {
         rules.insert(key.to_string(), replacement.to_string());
         assert_eq!(rewritten(&rules, url), expected, "{replacement}");
     }
+}
+
+/// Only the text where the server would be is read for a login: an `@` later
+/// in the path, such as an npm scope, is not one. A special scheme names its
+/// server, so its login is scoped to that server instead of refused outright.
+#[test]
+fn test_only_the_server_part_of_a_replacement_holds_a_login() {
+    assert!(!ambiguous_replacement_authority(
+        "file:///opt/mirror/@scope/"
+    ));
+    assert!(!ambiguous_replacement_authority("file:///opt?x=@scope"));
+    assert!(!ambiguous_replacement_authority("file:///opt#@scope"));
+    assert!(!ambiguous_replacement_authority("///opt/@scope/"));
+    assert!(ambiguous_replacement_authority("file:///user@host/"));
+    assert!(ambiguous_replacement_authority("///user@host/"));
+    assert!(ambiguous_replacement_authority(r"\\user@host\x"));
+
+    let mut rules = IndexMap::new();
+    rules.insert(
+        "https://github.com/".to_string(),
+        "https://user@mirror.example.com/".to_string(),
+    );
+    assert_eq!(
+        rewritten(&rules, "https://github.com/a"),
+        "https://user@mirror.example.com/a"
+    );
+    let elsewhere = "https://evil.example/?u=https://github.com/";
+    assert_eq!(rewritten(&rules, elsewhere), elsewhere);
 }
 
 /// A rule that writes a login for its mirror keeps it, even when the URL had

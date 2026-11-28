@@ -120,6 +120,38 @@ async fn test_pick_reachable_release_link_url_builds_probe_headers_for_the_brows
         ASSET_API_URL
     );
 }
+
+/// Offline, a release link's probe builds no headers, since finding a token
+/// can refresh it over the network, and falls back to the API URL as a refused
+/// probe does.
+#[tokio::test]
+async fn test_pick_reachable_release_link_url_builds_no_headers_offline() {
+    struct Restore<'a> {
+        _lock: std::sync::MutexGuard<'a, ()>,
+    }
+    impl Drop for Restore<'_> {
+        fn drop(&mut self) {
+            crate::testing::reset_settings(None);
+        }
+    }
+    let _restore = {
+        let lock = crate::testing::lock_ignoring_poison(&crate::testing::SETTINGS_LOCK);
+        let mut settings = <mise_settings::SettingsPartial as confique::Layer>::empty();
+        settings.offline = Some(true);
+        crate::testing::reset_settings(Some(settings));
+        Restore { _lock: lock }
+    };
+    let unused = |_: &str| -> Result<HeaderMap> { panic!("no headers are built offline") };
+    assert_eq!(
+        pick_reachable_release_link_url(
+            "https://github.com/o/r/releases/download/v1/SHA256SUMS",
+            ASSET_API_URL,
+            unused
+        )
+        .await,
+        ASSET_API_URL
+    );
+}
 #[tokio::test]
 async fn test_pick_reachable_asset_url_falls_back_on_html_login_page() {
     // Some private repos return a 200 HTML login page at the browser URL instead of a
