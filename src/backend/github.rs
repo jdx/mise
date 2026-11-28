@@ -6510,11 +6510,16 @@ platforms.macos-arm64.url = 'https://example.com/{{ version }}/tool-darwin-arm64
                     backend: &create_test_gitlab_backend(),
                     api_url: "https://gitlab.example/api/v4".to_string(),
                 };
-                let result = ChecksumFetcher::new(&assets)
-                    .fetch_checksum_for("tool-linux.tar.gz", &source)
-                    .await
-                    .unwrap()
-                    .expect("checksum is found");
+                // A project tool's scope, so a developer's netrc entry for
+                // 127.0.0.1 cannot add an Authorization header of its own.
+                let fetch = ChecksumFetcher::new(&assets);
+                let result = mise_util::untrusted_hosts::with_tool_scope(
+                    false,
+                    fetch.fetch_checksum_for("tool-linux.tar.gz", &source),
+                )
+                .await
+                .unwrap()
+                .expect("checksum is found");
                 assert_eq!(
                     result.to_string_formatted(),
                     format!("sha256:{}", "c".repeat(64))
