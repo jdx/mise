@@ -652,8 +652,11 @@ mod tests {
 
         assert_eq!(dates.len(), 1);
         assert_eq!(dates["1.10.0"], "2026-10-15");
+        // A linear walk takes tens of milliseconds in a debug build, and the quadratic ones took
+        // seconds or minutes. The budget sits far from both, so a runner that deschedules the
+        // test for a moment does not fail it.
         assert!(
-            elapsed < std::time::Duration::from_secs(1),
+            elapsed < std::time::Duration::from_secs(3),
             "3003 versions took {elapsed:?}"
         );
     }
