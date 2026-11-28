@@ -714,17 +714,30 @@ fn after_mirror_failure(
 }
 
 /// mise-versions' answer after it was asked again because the set it served
-/// before was `rejected`. An answer of "no attestations" does not erase that
-/// rejection: GitHub has to confirm it ([`MirrorVerdict::ConfirmWithGithub`]).
+/// before was `rejected`. Only a verification, or another failure that cannot
+/// be skipped, replaces that rejection. "No attestations", a failed lookup (a
+/// 404 for an unknown repository, a set without its bundles, an error) and a
+/// referral to GitHub do not erase it: GitHub has to confirm the digest
+/// ([`MirrorVerdict::ConfirmWithGithub`]), and the rejection stands when
+/// GitHub cannot answer.
 fn unless_rejected(
     verdict: MirrorVerdict,
     rejected: &mut Option<AttestationError>,
 ) -> MirrorVerdict {
-    match (verdict, rejected.take()) {
-        (MirrorVerdict::Done(Err(AttestationError::NoAttestations)), Some(rejected)) => {
-            MirrorVerdict::ConfirmWithGithub(rejected)
+    let Some(rejection) = rejected.take() else {
+        return verdict;
+    };
+    match verdict {
+        MirrorVerdict::Done(Ok(verified)) => MirrorVerdict::Done(Ok(verified)),
+        MirrorVerdict::Done(Err(err))
+            if !matches!(err, AttestationError::NoAttestations) && !is_api_failure(&err) =>
+        {
+            MirrorVerdict::Done(Err(err))
         }
-        (verdict, _) => verdict,
+        MirrorVerdict::Done(Err(_))
+        | MirrorVerdict::AskGithub
+        | MirrorVerdict::ConfirmWithGithub(_)
+        | MirrorVerdict::RetryGithub(_) => MirrorVerdict::ConfirmWithGithub(rejection),
     }
 }
 
@@ -764,108 +777,113 @@ async fn verify_with_mirror(
         return MirrorVerdict::AskGithub;
     }
     let digest = format!("sha256:{artifact_digest}");
-    // Why the kept set was rejected, if it was: then the fresh answer must not
-    // turn that rejection into "no attestations" ([`unless_rejected`]).
+    // Why the kept set was rejected, if it was: then only a fresh answer that
+    // settles the digest replaces that rejection ([`unless_rejected`]).
     let mut rejected = None;
-    for fresh in [false, true] {
-        let found = if fresh {
-            refreshed_mirrored_attestations(&full, &digest).await
-        } else {
-            mirrored_attestations(&full, &digest).await
-        };
-        let attestations = match found {
-            Ok(Some(attestations)) => attestations,
-            Ok(None) => {
-                let verdict = verdict_after_attestation_404(
-                    &full,
-                    repo_listing(&full).await,
-                    !mirror_may_answer_none(),
-                    || resolve_token_for_wrapper(None).is_some(),
-                );
-                return unless_rejected(verdict, &mut rejected);
-            }
-            // Paranoid mode has GitHub confirm mise-versions anyway, so it
-            // asks GitHub when mise-versions can't answer.
-            Err(_) if !mirror_may_answer_none() => return MirrorVerdict::AskGithub,
-            Err(err) => return mirror_error_verdict(&full, err),
-        };
-        trace!(
-            "got {} GitHub attestations for {full}@{digest} from mise-versions",
-            attestations.len()
-        );
-        if attestations.is_empty() {
-            // Not kept on disk, so already as fresh as mise-versions has it.
-            return unless_rejected(no_attestations_verdict(&full), &mut rejected);
-        }
-        // Before the predicate filter, which can't read a missing bundle and
-        // would pass it off as "no attestations".
-        if attestations.iter().any(|a| !a.has_inline_bundle()) {
-            if !fresh {
-                continue;
-            }
-            if !mirror_may_answer_none() {
-                return MirrorVerdict::AskGithub;
-            }
-            return MirrorVerdict::Done(Err(AttestationError::Api(format!(
-                "mise-versions returned attestations for {full} without their bundles"
-            ))));
-        }
-        let selected: Vec<_> = attestations
-            .into_iter()
-            .filter(|a| predicate_type.is_none_or(|p| a.matches_predicate_type(p)))
-            .collect();
-        if selected.is_empty() {
-            if fresh {
-                return unless_rejected(no_attestations_verdict(&full), &mut rejected);
-            }
-            continue;
-        }
-        match classify_cached_attestation_verification(
-            mise_sigstore::verify_github_attestation_sources(
-                artifact_path,
-                &selected,
-                tags,
-                expected_workflow,
-            )
-            .await,
-        ) {
-            // Anyone can attest any digest from their own repository;
-            // GitHub's API only lists the requested repository's, but a
-            // mirror could list anyone's.
-            CachedAttestationVerification::Verified(sources)
-                if crate::github::attested_by_repository(owner, repo, &sources).await =>
-            {
-                return MirrorVerdict::Done(Ok(true));
-            }
-            CachedAttestationVerification::Verified(sources) => {
-                let made_by = sources.join(", ");
-                if let Some(verdict) = foreign_attestations_verdict(&full, &digest, &made_by, fresh)
-                {
-                    return verdict;
-                }
-                rejected = Some(AttestationError::Verification(format!(
-                    "the attestations mise-versions had for {full} were made by {made_by}"
-                )));
-            }
-            CachedAttestationVerification::Retry(err) if fresh => {
-                if !mirror_may_answer_none() {
-                    debug!(
-                        "mise-versions GitHub attestations did not verify for {full}; paranoid mode asks GitHub"
+    let verdict = async {
+        for fresh in [false, true] {
+            let found = if fresh {
+                refreshed_mirrored_attestations(&full, &digest).await
+            } else {
+                mirrored_attestations(&full, &digest).await
+            };
+            let attestations = match found {
+                Ok(Some(attestations)) => attestations,
+                Ok(None) => {
+                    return verdict_after_attestation_404(
+                        &full,
+                        repo_listing(&full).await,
+                        !mirror_may_answer_none(),
+                        || resolve_token_for_wrapper(None).is_some(),
                     );
+                }
+                // Paranoid mode has GitHub confirm mise-versions anyway, so it
+                // asks GitHub when mise-versions can't answer.
+                Err(_) if !mirror_may_answer_none() => return MirrorVerdict::AskGithub,
+                Err(err) => return mirror_error_verdict(&full, err),
+            };
+            trace!(
+                "got {} GitHub attestations for {full}@{digest} from mise-versions",
+                attestations.len()
+            );
+            if attestations.is_empty() {
+                // Not kept on disk, so already as fresh as mise-versions has it.
+                return no_attestations_verdict(&full);
+            }
+            // Before the predicate filter, which can't read a missing bundle and
+            // would pass it off as "no attestations".
+            if attestations.iter().any(|a| !a.has_inline_bundle()) {
+                if !fresh {
+                    continue;
+                }
+                if !mirror_may_answer_none() {
                     return MirrorVerdict::AskGithub;
                 }
-                return MirrorVerdict::Done(Err(err.unwrap_or_else(|| {
-                    AttestationError::Verification(format!(
-                        "no attestation mise-versions has for {full} verified this artifact"
-                    ))
-                })));
+                return MirrorVerdict::Done(Err(AttestationError::Api(format!(
+                    "mise-versions returned attestations for {full} without their bundles"
+                ))));
             }
-            CachedAttestationVerification::Retry(_) => debug!(
-                "GitHub attestations kept for {full} did not verify; asking mise-versions again"
-            ),
+            let selected: Vec<_> = attestations
+                .into_iter()
+                .filter(|a| predicate_type.is_none_or(|p| a.matches_predicate_type(p)))
+                .collect();
+            if selected.is_empty() {
+                if fresh {
+                    return no_attestations_verdict(&full);
+                }
+                continue;
+            }
+            match classify_cached_attestation_verification(
+                mise_sigstore::verify_github_attestation_sources(
+                    artifact_path,
+                    &selected,
+                    tags,
+                    expected_workflow,
+                )
+                .await,
+            ) {
+                // Anyone can attest any digest from their own repository;
+                // GitHub's API only lists the requested repository's, but a
+                // mirror could list anyone's.
+                CachedAttestationVerification::Verified(sources)
+                    if crate::github::attested_by_repository(owner, repo, &sources).await =>
+                {
+                    return MirrorVerdict::Done(Ok(true));
+                }
+                CachedAttestationVerification::Verified(sources) => {
+                    let made_by = sources.join(", ");
+                    if let Some(verdict) =
+                        foreign_attestations_verdict(&full, &digest, &made_by, fresh)
+                    {
+                        return verdict;
+                    }
+                    rejected = Some(AttestationError::Verification(format!(
+                        "the attestations mise-versions had for {full} were made by {made_by}"
+                    )));
+                }
+                CachedAttestationVerification::Retry(err) if fresh => {
+                    if !mirror_may_answer_none() {
+                        debug!(
+                            "mise-versions GitHub attestations did not verify for {full}; \
+                             paranoid mode asks GitHub"
+                        );
+                        return MirrorVerdict::AskGithub;
+                    }
+                    return MirrorVerdict::Done(Err(err.unwrap_or_else(|| {
+                        AttestationError::Verification(format!(
+                            "no attestation mise-versions has for {full} verified this artifact"
+                        ))
+                    })));
+                }
+                CachedAttestationVerification::Retry(_) => debug!(
+                    "GitHub attestations kept for {full} did not verify; asking mise-versions again"
+                ),
+            }
         }
+        unreachable!("the second pass always returns")
     }
-    unreachable!("the second pass always returns")
+    .await;
+    unless_rejected(verdict, &mut rejected)
 }
 
 /// Whether mise-versions' attestations for `owner/repo` at `digest` include
@@ -2079,11 +2097,86 @@ mod tests {
             unless_rejected(none(), &mut None),
             MirrorVerdict::Done(Err(AttestationError::NoAttestations))
         ));
-        // an answer other than "none" is kept
+        // a verification is kept
         assert!(matches!(
             unless_rejected(MirrorVerdict::Done(Ok(true)), &mut Some(rejection())),
             MirrorVerdict::Done(Ok(true))
         ));
+        // so is a failure that cannot be skipped
+        assert!(matches!(
+            unless_rejected(
+                MirrorVerdict::Done(Err(AttestationError::Verification("other".to_string()))),
+                &mut Some(rejection())
+            ),
+            MirrorVerdict::Done(Err(AttestationError::Verification(ref msg))) if msg == "other"
+        ));
+    }
+
+    /// A refresh that fails to look the digest up, after a kept set made by
+    /// another repository was rejected, does not turn that rejection into a
+    /// failed lookup that optional verification skips: GitHub has to confirm
+    /// the digest.
+    #[test]
+    fn test_a_failed_refresh_does_not_erase_a_rejected_set() {
+        let rejection = || AttestationError::Verification("made by evil/tool".to_string());
+        let full = "owner/tool";
+        let refreshes = [
+            (
+                "a 404 for a repository mise-versions does not list",
+                verdict_after_attestation_404(full, RepoListing::Unknown, false, || false),
+            ),
+            (
+                "a 404 GitHub is asked about with a token",
+                verdict_after_attestation_404(full, RepoListing::Unknown, false, || true),
+            ),
+            (
+                "a failed repository listing",
+                verdict_after_attestation_404(
+                    full,
+                    RepoListing::Failed(eyre::eyre!("connection reset")),
+                    false,
+                    || false,
+                ),
+            ),
+            (
+                "attestations without their bundles",
+                MirrorVerdict::Done(Err(AttestationError::Api(format!(
+                    "mise-versions returned attestations for {full} without their bundles"
+                )))),
+            ),
+            (
+                "a lookup error",
+                MirrorVerdict::Done(Err(mirror_failure(full, &eyre::eyre!("502")))),
+            ),
+            (
+                "a lookup error GitHub is asked to make up for",
+                MirrorVerdict::RetryGithub(eyre::eyre!("503")),
+            ),
+        ];
+        for (what, verdict) in refreshes {
+            assert!(
+                matches!(
+                    unless_rejected(verdict, &mut Some(rejection())),
+                    MirrorVerdict::ConfirmWithGithub(AttestationError::Verification(ref msg))
+                        if msg.contains("evil/tool")
+                ),
+                "{what} must keep the rejection"
+            );
+        }
+
+        // with nothing rejected, a failed lookup stays a failed lookup
+        assert!(matches!(
+            unless_rejected(
+                verdict_after_attestation_404(full, RepoListing::Unknown, false, || false),
+                &mut None
+            ),
+            MirrorVerdict::Done(Err(AttestationError::Api(_)))
+        ));
+    }
+
+    #[test]
+    fn test_github_failing_to_confirm_keeps_the_rejection() {
+        let rejection = || AttestationError::Verification("made by evil/tool".to_string());
 
         // GitHub could not answer: the rejection stands
         let err = rejection_stands(AttestationError::Api("503".to_string()), Some(rejection()));
