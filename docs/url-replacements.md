@@ -166,10 +166,11 @@ Sigstore TUF metadata, mise ignores such a rewrite and keeps the default HTTPS
 URL.
 
 ::: warning
-mise does not drop or check the query string. A rewrite keeps it as it is, so
-a token in the query, such as the signature of a signed URL, goes to the new
-server, and over plain HTTP after a downgrade. Don't point a signed URL, or any
-URL with a secret in its query, at an `http://` replacement.
+mise does not remove credentials from the query string on its own. A token in
+the query, such as the signature of a signed URL, reaches the replacement
+server unless the rule itself changes or drops it, and goes over plain HTTP
+after a downgrade. Don't point a signed URL, or any URL with a secret in its
+query, at an `http://` replacement.
 :::
 
 Avoid writing credentials into replacement URLs, where they can appear in logs.
