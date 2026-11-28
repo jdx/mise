@@ -897,9 +897,28 @@ impl ToolVersion {
         install_state::is_incomplete(self.ba(), &key)
     }
 
+    /// Whether this is an `npm:` request whose `node` option binds its executables.
+    fn binds_a_node(&self) -> bool {
+        self.ba().backend_type() == crate::backend::backend_type::BackendType::Npm
+            // An installed directory's name already carries its identity.
+            && self.aube_install_path_version().is_none()
+            && self
+                .request
+                .options()
+                .opts_as_strings()
+                .iter()
+                .any(|(key, value)| key == "node" && !value.is_empty())
+    }
+
     pub(crate) fn aube_install_identity(&self) -> Option<String> {
-        let lock = self.aube_lock.as_ref()?;
-        let graph_identity = lock.identity();
+        let graph_identity = match self.aube_lock.as_ref() {
+            Some(lock) => lock.identity(),
+            // A tool bound to a selected Node is its own installation of the version,
+            // as pipx's `python` option is, so two configs that pick different Nodes
+            // (or one that picks none) do not rebind one shared copy back and forth.
+            None if self.binds_a_node() => "version-only".to_string(),
+            None => return None,
+        };
         let options: BTreeMap<_, _> = self
             .request
             .options()

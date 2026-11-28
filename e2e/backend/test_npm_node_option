@@ -8,7 +8,8 @@ cat >mise.toml <<'EOF2'
 EOF2
 mise install
 
-install_dir="$MISE_DATA_DIR/installs/npm-cowsay/1.6.0"
+install_dir="$(mise where npm:cowsay)"
+assert_contains "echo '$install_dir'" "installs/npm-cowsay/1.6.0~aube~"
 node_dir="$MISE_DATA_DIR/installs/node/20.11.1"
 assert_succeed "test -x '$node_dir/bin/node'"
 assert_contains "cat '$install_dir/.mise-node.json'" '"request": "20.11.1"'
@@ -28,12 +29,17 @@ assert_contains "PATH='$PWD/fake-node':\$PATH mise x -- cowsay bound" "bound"
 mise prune --yes
 assert_succeed "test -x '$node_dir/bin/node'"
 
-# Changing the selected Node reinstalls the tool against the new one.
+# Changing the selected Node installs a separate copy bound to the new one, so
+# a project still on the old Node keeps its own.
+first_dir="$install_dir"
 cat >mise.toml <<'EOF2'
 [tools]
 "npm:cowsay" = { version = "1.6.0", node = "20.12.2" }
 EOF2
 mise install
+install_dir="$(mise where npm:cowsay)"
+assert_not_contains "echo '$install_dir'" "$first_dir"
+assert_contains "cat '$first_dir/.mise-node.json'" '"request": "20.11.1"'
 assert_contains "cat '$install_dir/.mise-node.json'" '"request": "20.12.2"'
 assert_contains "cat '$install_dir/node_modules/.bin/cowsay'" "$MISE_DATA_DIR/installs/node/20.12.2/bin/node"
 
@@ -45,12 +51,14 @@ cat >old/mise.toml <<'EOF2'
 "npm:cowsay" = { version = "1.5.0", node = "20.11.1" }
 EOF2
 mise -C old install
+old_dir="$(mise -C old where npm:cowsay)"
 rm -rf old
 MISE_PRUNE_EXCLUDE=npm:cowsay mise prune --yes
-assert_succeed "test -d '$MISE_DATA_DIR/installs/npm-cowsay/1.5.0'"
+assert_succeed "test -d '$old_dir'"
 assert_succeed "test -x '$node_dir/bin/node'"
 mise prune --yes
-assert_fail "test -d '$MISE_DATA_DIR/installs/npm-cowsay/1.5.0'"
+assert_fail "test -d '$old_dir'"
+assert_fail "test -d '$first_dir'"
 assert_fail "test -d '$node_dir'"
 
 # A prefix request binds the installation it resolved to, not the `node/20`
@@ -60,6 +68,7 @@ cat >mise.toml <<'EOF2'
 "npm:cowsay" = { version = "1.6.0", node = "20" }
 EOF2
 mise install
+install_dir="$(mise where npm:cowsay)"
 assert_contains "cat '$install_dir/.mise-node.json'" '"request": "20"'
 assert_succeed "test -L '$MISE_DATA_DIR/installs/node/20'"
 assert_not_contains "cat '$install_dir/node_modules/.bin/cowsay'" "$MISE_DATA_DIR/installs/node/20/bin/node"

@@ -455,9 +455,12 @@ while a tool uses it.
 
 - Only the embedded aube installer can bind executables. With another
   `npm.package_manager`, the option is an error.
-- The binding is fixed when the tool installs. Changing or removing `node`
-  reinstalls the tool; a newer Node matching the same request takes effect on
-  the next reinstall.
+- The binding is fixed when the tool installs. A tool with `node` is installed
+  apart from the same version without it, and each `node` value gets its own
+  copy, so two projects that pin different Nodes do not fight over one install.
+  Changing `node` installs a new copy, and `mise prune` removes the old one once
+  nothing uses it; a newer Node matching the same request takes effect on the
+  next reinstall.
 - The selected Node is not yet recorded in `mise.lock`, so locked mode
   (`--locked`, `locked = true` or `tool_config.locked`) refuses the option.
 
