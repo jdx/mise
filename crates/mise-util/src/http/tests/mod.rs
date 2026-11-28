@@ -792,6 +792,13 @@ fn test_concurrent_pinned_keeps_record_every_url() {
             });
         }
     });
+    // Read the entry itself first, so a lost URL is told apart from a lost blob.
+    let recorded = pinned_urls(cache.path(), &pin);
+    let missing: Vec<_> = urls
+        .iter()
+        .filter(|url| !recorded.contains(&url_hash(url)))
+        .collect();
+    assert!(missing.is_empty(), "the pin entry lost {missing:?}");
     for url in &urls {
         assert!(cas::lookup_pin(&pin, url).is_some(), "{url} was lost");
     }
@@ -878,6 +885,90 @@ fn test_pinned_urls_keep_their_own_file_names() {
     keep(mirror, "demo.gz");
     assert_eq!(name(mirror).as_deref(), Some("demo.gz"));
     assert_eq!(name(vendor).as_deref(), Some("demo.gz"));
+
+    *cas::TEST_ROOT.lock().unwrap() = None;
+}
+
+/// The URLs the pin index records for `pin`, read from its entry on disk, as
+/// the hashes it keeps of them ([`url_hash`]).
+fn pinned_urls(cache: &std::path::Path, pin: &str) -> Vec<String> {
+    let (algo, hex) = pin.split_once(':').unwrap();
+    let entry = cache.join("pins").join(algo).join(format!("{hex}.json"));
+    let entry: serde_json::Value = serde_json::from_slice(&std::fs::read(entry).unwrap()).unwrap();
+    entry["pinned_urls"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|url| url["url_hash"].as_str().unwrap().to_string())
+        .collect()
+}
+
+/// How the pin index names `url`.
+fn url_hash(url: &str) -> String {
+    crate::hash::hash_blake3_to_str(url)
+}
+
+/// A pin entry that exists but can't be read is left as it is, not written
+/// over with only the newest URL: the URLs it already holds stay reusable, and
+/// the download is kept all the same.
+#[cfg(unix)]
+#[test]
+fn test_an_unreadable_pin_entry_keeps_its_urls() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let _settings = set_test_http_retries(0);
+    let cache = tempfile::tempdir().unwrap();
+    *cas::TEST_ROOT.lock().unwrap() = Some(cache.path().to_path_buf());
+    let dir = tempfile::tempdir().unwrap();
+    let store = |name: &str, url: &str, pin: &str| {
+        let path = dir.path().join(name).join("artifact");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, b"hello").unwrap();
+        cas::store(
+            &path,
+            cas::Keep {
+                request_hash: name,
+                url,
+                pin: Some(pin),
+                validator: None,
+                effective_filename: None,
+            },
+        )
+        .unwrap()
+    };
+    let hello = dir.path().join("hello");
+    std::fs::write(&hello, b"hello").unwrap();
+    let pin = format!(
+        "sha256:{}",
+        crate::hash::file_hash_prog::<sha2::Sha256>(&hello, None).unwrap()
+    );
+    let (first, second) = (
+        "https://first.example.com/artifact",
+        "https://second.example.com/artifact",
+    );
+    store("first", first, &pin);
+    let (_, hex) = pin.split_once(':').unwrap();
+    let entry = cache.path().join("pins/sha256").join(format!("{hex}.json"));
+    // Entries stay owner-only, as the cache's other files are.
+    assert_eq!(
+        std::fs::metadata(&entry).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
+    std::fs::set_permissions(&entry, std::fs::Permissions::from_mode(0o000)).unwrap();
+    if std::fs::read(&entry).is_ok() {
+        // Permissions don't stop root from reading it.
+        *cas::TEST_ROOT.lock().unwrap() = None;
+        return;
+    }
+
+    assert!(
+        store("second", second, &pin).is_some(),
+        "the download was not kept"
+    );
+
+    std::fs::set_permissions(&entry, std::fs::Permissions::from_mode(0o644)).unwrap();
+    assert_eq!(pinned_urls(cache.path(), &pin), [url_hash(first)]);
+    assert!(cas::lookup_pin(&pin, first).is_some(), "{first} was lost");
 
     *cas::TEST_ROOT.lock().unwrap() = None;
 }
