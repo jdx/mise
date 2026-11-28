@@ -196,7 +196,8 @@ assert_succeed "mise bootstrap dotfiles status --missing"
 rm -rf "$MISE_STATE_DIR/dotfiles"
 rm "$shared_tree/conf.d/b.toml"
 assert_succeed "mise bootstrap dotfiles apply --yes"
-assert "find '$MISE_STATE_DIR/dotfiles' -type f | wc -l | tr -d ' '" "2"
+# the two link records, besides created_dirs.toml
+assert "find '$MISE_STATE_DIR/dotfiles' -type f ! -name created_dirs.toml | wc -l | tr -d ' '" "2"
 
 # Unapply uses recorded ownership and does not need to traverse composed
 # source trees that have become unreadable.

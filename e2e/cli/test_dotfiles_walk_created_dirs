@@ -65,3 +65,15 @@ assert "cat $HOME/t/new/sub/file" "new"
 assert_succeed "mise dot unapply ~/t --yes"
 assert_fail "test -e $HOME/t/new"
 assert_succeed "test -d $HOME/t/app"
+
+# a target deployed before mise recorded its directories is tracked by the
+# next apply even when nothing changes, and a file of the user's that matches
+# what the copy would write does not make its directory mise's
+rm -rf "$HOME/t" "$MISE_STATE_DIR/dotfiles/created_dirs.toml"
+mkdir -p "$HOME/t/app" "$HOME/t/new/sub"
+echo "app" >"$HOME/t/app/conf"
+echo "new" >"$HOME/t/new/sub/file"
+assert_succeed "mise dot apply --yes"
+assert_contains "cat $MISE_STATE_DIR/dotfiles/created_dirs.toml" "$HOME/t"
+assert_succeed "mise dot unapply ~/t --yes"
+assert_succeed "test -d $HOME/t/app"

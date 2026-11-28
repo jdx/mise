@@ -104,8 +104,9 @@ impl CreatedDirs {
 
 /// Start tracking `target` before an apply writes under it, if it is not tracked yet. What is
 /// already there predates the record, so it is taken as mise's only where it holds something mise
-/// deployed: the directories between `target` and each path of `deployed` that exists. An empty
-/// directory of the user's holds nothing of mise's, so it stays the user's.
+/// deployed: `target` and the directories down to each path of `deployed` that exists, as a
+/// removal took them before the record existed. A directory of the user's that holds nothing
+/// mise deployed stays the user's.
 pub(crate) fn track(target: &Path, deployed: impl IntoIterator<Item = PathBuf>) {
     let target = lexical_normalize(target);
     let mut record = CreatedDirs::load();
@@ -118,7 +119,7 @@ pub(crate) fn track(target: &Path, deployed: impl IntoIterator<Item = PathBuf>) 
             continue;
         }
         for dir in path.ancestors().skip(1) {
-            if !dir.starts_with(&target) || dir == target {
+            if !dir.starts_with(&target) {
                 break;
             }
             record.dirs.insert(dir.to_path_buf());
@@ -141,26 +142,6 @@ pub(crate) fn record(target: &Path, created: &[PathBuf]) {
     );
     if record.dirs.len() != before || !record.targets.contains(&target) {
         record.targets.insert(target);
-        record.save();
-    }
-}
-
-/// Stop tracking `target` once nothing mise deployed is left under it: none of `deployed` exists.
-/// A later apply then starts again from what it finds, which holds nothing of mise's, so nothing
-/// is lost. While anything remains, the record stays to tell mise's directories from the user's.
-pub(crate) fn untrack_if_clear(target: &Path, deployed: impl IntoIterator<Item = PathBuf>) {
-    if deployed
-        .into_iter()
-        .any(|path| std::fs::symlink_metadata(path).is_ok())
-    {
-        return;
-    }
-    let target = lexical_normalize(target);
-    let mut record = CreatedDirs::load();
-    let before = (record.targets.len(), record.dirs.len());
-    record.targets.remove(&target);
-    record.dirs.retain(|dir| !dir.starts_with(&target));
-    if (record.targets.len(), record.dirs.len()) != before {
         record.save();
     }
 }

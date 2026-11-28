@@ -1353,21 +1353,6 @@ pub fn remove_recorded(record: &GroupRecord, opts: &RemoveOpts) -> Result<Vec<Pa
     }
     if !opts.dry_run {
         files::forget_group_symlink_each_states(&record.group);
-        let roots = record
-            .paths
-            .iter()
-            .map(|path| &path.root)
-            .collect::<HashSet<_>>();
-        for root in roots {
-            crate::created_dirs::untrack_if_clear(
-                root,
-                record
-                    .paths
-                    .iter()
-                    .filter(|path| path.root == *root)
-                    .map(|path| path.target.clone()),
-            );
-        }
     }
     Ok(removed)
 }

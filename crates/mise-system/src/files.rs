@@ -20,7 +20,7 @@
 //! (global -> local, local overrides by target key) and are only ever
 //! applied by an explicit command, never implicitly.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -5814,6 +5814,7 @@ fn execute_layer(
     let has_reconciliation = !plan.reconciliation.stale_links.is_empty();
     if plan.todo.is_empty() && !has_reconciliation {
         if !opts.dry_run {
+            track_walking_targets(plan.requests);
             prune_after_apply([], &plan);
             for req in plan.record_symlink_each {
                 let pending = journal::begin_changes(
@@ -5899,6 +5900,9 @@ fn execute_layer(
             return Ok(false);
         }
     }
+    // a walking entry's target is shared with the user's files, so what a later removal may take
+    // with it is only what mise created there; what is there now is told apart before writing
+    track_walking_targets(plan.requests);
     for link in &plan.reconciliation.stale_links {
         if link_points_to(&link.source, &link.target) {
             let item = link.target.display_user().to_string();
@@ -5960,9 +5964,6 @@ fn execute_layer(
                 for (_, target) in walk_source_files(req).unwrap_or_default() {
                     created.extend(missing_ancestors(&target));
                 }
-                // the target is shared with the user's files, so what a later removal may take
-                // with it is only what mise created there
-                crate::created_dirs::track(&req.target, deployed_under(req));
             }
             if let Err(err) = apply_one(req, rendered.as_deref(), written) {
                 settle_failed_apply(req, &created, &stale, pending);
@@ -6877,7 +6878,6 @@ fn unapply_one(plan: &UnapplyPlan<'_>) -> Result<()> {
             dir.starts_with(&plan.req.target) && created.may_remove(&plan.req.target, dir)
         })?;
         crate::created_dirs::forget(&removed);
-        crate::created_dirs::untrack_if_clear(&plan.req.target, deployed_under(plan.req));
     }
     Ok(())
 }
@@ -7487,19 +7487,30 @@ fn walks_source_dir(req: &FileRequest) -> bool {
     req.mode == FileMode::SymlinkEach || req.mode == FileMode::Copy && req.source.is_dir()
 }
 
-/// What `req` may already have deployed under its target: the files of its source, the links its
-/// `symlink-each` record names, and what its group's record names under the target. Used to tell
-/// the directories an earlier mise created from the user's, before mise recorded them.
+/// What `req` has already deployed under its target and still holds there: links of its source,
+/// the links its `symlink-each` record names, and the paths its group's record owns under the
+/// target. Used to tell the directories an earlier mise created from the user's, before mise
+/// recorded them. A file that merely exists where the entry would copy one is not evidence: it may
+/// be the user's.
 fn deployed_under(req: &FileRequest) -> Vec<PathBuf> {
-    let mut paths = walk_source_files(req)
-        .unwrap_or_default()
-        .into_iter()
-        .map(|(_, target)| target)
-        .collect::<Vec<_>>();
-    if req.mode == FileMode::SymlinkEach
-        && let LoadedSymlinkEachState::Present(state) = load_symlink_each_state(req)
-    {
-        paths.extend(state.links.into_iter().map(|link| link.target));
+    let mut paths = vec![];
+    if req.mode == FileMode::SymlinkEach {
+        paths.extend(
+            walk_source_files(req)
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|(source, target)| link_points_to(source, target))
+                .map(|(_, target)| target),
+        );
+        if let LoadedSymlinkEachState::Present(state) = load_symlink_each_state(req) {
+            paths.extend(
+                state
+                    .links
+                    .into_iter()
+                    .filter(|link| link_points_to(&link.source, &link.target))
+                    .map(|link| link.target),
+            );
+        }
     }
     if let Some(group) = &req.group
         && let Some(record) = crate::dotfile_groups::load_record(group)
@@ -7509,11 +7520,29 @@ fn deployed_under(req: &FileRequest) -> Vec<PathBuf> {
             record
                 .paths
                 .into_iter()
-                .filter(|path| lexical_normalize(&path.root) == target)
+                .filter(|path| lexical_normalize(&path.root) == target && path.is_owned())
                 .map(|path| path.target),
         );
     }
     paths
+}
+
+/// Start tracking the targets of the walking entries of `requests` that are not tracked yet,
+/// including those of entries that need no change. Entries can share a target, so what each of
+/// them deployed there counts for all of them.
+fn track_walking_targets<'a>(requests: impl IntoIterator<Item = &'a FileRequest>) {
+    let mut deployed: BTreeMap<PathBuf, Vec<PathBuf>> = BTreeMap::new();
+    for req in requests {
+        if walks_source_dir(req) {
+            deployed
+                .entry(lexical_normalize(&req.target))
+                .or_default()
+                .extend(deployed_under(req));
+        }
+    }
+    for (target, paths) in deployed {
+        crate::created_dirs::track(&target, paths);
+    }
 }
 
 /// Ancestors of `path` that do not exist yet, outermost first.

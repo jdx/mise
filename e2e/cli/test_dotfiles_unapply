@@ -121,9 +121,8 @@ assert_fail "test -e $HOME/.managed-links/stale"
 assert "readlink ~/.managed-links/alias" "$PWD/dotfiles/links/one"
 assert "readlink ~/.managed-links/excluded" "$PWD/dotfiles/links/excluded"
 # symlink-each ownership state is gone; template records live one level down,
-# and created_dirs.toml still tracks ~/.managed-copydir, which is deployed
+# and created_dirs.toml, which tracks the targets that are still there
 assert "find '$MISE_STATE_DIR/dotfiles' -maxdepth 1 -type f ! -name created_dirs.toml | wc -l | tr -d ' '" "0"
-assert_not_contains "cat '$MISE_STATE_DIR/dotfiles/created_dirs.toml'" ".managed-links"
 
 # Modified copies are refused unless forced.
 assert_fail "mise bootstrap dotfiles unapply ~/.managed-copy --yes" "use --force"
