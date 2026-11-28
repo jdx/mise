@@ -60,7 +60,7 @@ fn identity(dir: &Path) -> Option<String> {
         Some(format!("{}:{}:{born}", meta.dev(), meta.ino()))
     }
     #[cfg(not(unix))]
-    Some(born)
+    Some(born.to_string())
 }
 
 impl CreatedDirs {
