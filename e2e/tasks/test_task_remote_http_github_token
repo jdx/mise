@@ -24,6 +24,13 @@ cat <<EOF >mise.toml
 file = "http://127.0.0.1:${HTTP_PORT}/api/v3/build.sh"
 EOF
 
+# Pressing Tab is not a typed command: completion does not contact the URL an
+# untrusted config names, nor wait for it. The task completes from its TOML.
+assert_contains "MISE_YES=0 mise tasks ls --complete" "build"
+assert_contains "MISE_YES=0 mise tasks ls --usage" "cmd build"
+assert_contains "MISE_YES=0 mise __complete_word__ --shell fish --line 'mise run '" "build"
+assert_directory_empty headers
+
 assert_contains "MISE_YES=0 mise tasks ls" "a remote build task"
 assert_contains "cat headers/*.json" "/api/v3/build.sh"
 assert_not_contains "cat headers/*.json" "e2e_victim_token"

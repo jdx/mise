@@ -1,0 +1,117 @@
+#!/usr/bin/env bash
+
+# With the paranoid config category, a trusted project config does not vouch
+# for the script a task names with "file": completion leaves out the commands in
+# its #USAGE spec until the script is trusted itself, bound to its content.
+
+export MISE_TRUSTED_CONFIG_PATHS=""
+unset CI GITHUB_ACTIONS GITHUB_ACTION 2>/dev/null || true
+
+ran="$PWD/ran"
+mkdir -p "$ran" scripts
+
+cat <<'TOML' >mise.toml
+[tasks.build]
+file = "scripts/build.sh"
+TOML
+
+write_script() {
+  cat <<SH >"scripts/$1.sh"
+#!/usr/bin/env bash
+#USAGE arg "<target>"
+#USAGE complete "target" run="touch $ran/$1; echo $2"
+echo "ran \$usage_target"
+SH
+  chmod +x "scripts/$1.sh"
+}
+write_script build from-build
+
+press_tab() {
+  mise __complete_word__ --shell fish --line "$1"
+}
+
+export MISE_PARANOID=config
+mise trust mise.toml
+assert_not_contains "mise tasks --usage" "touch"
+assert_not_contains_text "$(press_tab 'mise run build ')" 'from-build'
+assert_empty "ls $ran"
+
+# What needs no command still completes, and the task still runs when asked to.
+assert_contains "mise tasks --usage" "<target>"
+assert_contains "mise run build x" "ran x"
+
+mise trust scripts/build.sh
+assert_contains "mise tasks --usage" "touch $ran/build"
+assert_contains_text "$(press_tab 'mise run build ')" 'from-build'
+rm "$ran/build"
+
+# Trust is bound to the content of the script.
+write_script build edited
+assert_not_contains "mise tasks --usage" "touch $ran/build"
+assert_not_contains_text "$(press_tab 'mise run build ')" 'edited'
+assert_empty "ls $ran"
+
+# Outside paranoid mode the trusted config vouches for it.
+unset MISE_PARANOID
+mise trust mise.toml
+assert_contains_text "$(press_tab 'mise run build ')" 'edited'
+
+# A file template that names another script each time it renders: the script whose spec
+# is read is the script that is checked, so the trusted one does not vouch for another.
+export MISE_PARANOID=config
+rm -f "$ran"/*
+write_script other from-other
+cat <<'SH' >pick.sh
+n=$(cat picks 2>/dev/null || echo 0)
+echo $((n + 1)) >picks
+if [ "$n" = 0 ]; then echo scripts/other.sh; else echo scripts/build.sh; fi
+SH
+cat <<'TOML' >mise.toml
+[tasks.build]
+file = "{{ exec(command='sh pick.sh') }}"
+TOML
+mise trust mise.toml
+mise trust scripts/build.sh
+rm -f picks
+assert_not_contains "mise tasks --usage" "touch $ran/other"
+rm -f picks
+assert_not_contains_text "$(press_tab 'mise run build ')" 'from-other'
+assert_empty "ls $ran"
+
+# A script reached through a symlink inside the project is the project's to change,
+# so the check and `mise trust` both judge it by that project: `mise trust` refuses
+# to approve it by content, and trust in what the link leads to does not count. The
+# remedy the refusal names, `trusted_config_paths`, is what the check accepts.
+outside="$HOME/outside"
+mkdir -p "$outside/dir"
+for script in "$outside/link.sh" "$outside/dir/indir.sh"; do
+  name=$(basename "$script" .sh)
+  cat <<SH >"$script"
+#!/usr/bin/env bash
+#USAGE arg "<target>"
+#USAGE complete "target" run="echo from-$name"
+echo "ran \$usage_target"
+SH
+  chmod +x "$script"
+done
+ln -s "$outside/link.sh" scripts/link.sh
+ln -s "$outside/dir" linked
+cat <<'TOML' >mise.toml
+[tasks.link]
+file = "scripts/link.sh"
+
+[tasks.indir]
+file = "linked/indir.sh"
+TOML
+mise trust mise.toml
+assert_fail_contains "mise trust scripts/link.sh 2>&1" "reached through a symlink"
+mise trust "$outside/link.sh"
+assert_not_contains_text "$(press_tab 'mise run link ')" 'from-link'
+assert_contains_text "$(MISE_TRUSTED_CONFIG_PATHS="$PWD/scripts" press_tab 'mise run link ')" 'from-link'
+assert_contains "mise run link x" "ran x"
+
+# A script in a linked directory has that directory as its own: `mise trust` records
+# it as it resolves, and the check reads that same record.
+assert_not_contains_text "$(press_tab 'mise run indir ')" 'from-indir'
+mise trust linked/indir.sh
+assert_contains_text "$(press_tab 'mise run indir ')" 'from-indir'

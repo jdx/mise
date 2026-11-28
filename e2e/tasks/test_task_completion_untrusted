@@ -51,6 +51,14 @@ arg "<target>" {
 }
 '''
 
+[tasks.choices-env]
+run = "true"
+usage = '''
+arg "<target>" {
+  choices "declared" env="COMPLETION_SECRET"
+}
+'''
+
 [tasks.mount]
 run = "true"
 usage = '''
@@ -97,8 +105,16 @@ for line in 'mise run named ' 'mise named ' 'mise run choices undeclared ' 'mise
 done
 assert_empty "ls $ran"
 
+# Nor does it read the user's environment: "choices env=" offers a variable's
+# words, and completing one writes it onto the command line.
+export COMPLETION_SECRET="from-env"
+assert_not_contains "mise tasks --usage" "COMPLETION_SECRET"
+assert_not_contains "MISE_SAFE=1 mise tasks --usage" "COMPLETION_SECRET"
+assert_not_contains_text "$(press_tab 'mise run choices-env ')" 'from-env'
+
 # What needs no command still completes.
 assert_contains_text "$(press_tab 'mise run choices ')" 'declared'
+assert_contains_text "$(press_tab 'mise run choices-env ')" 'declared'
 assert_contains_text "$(press_tab 'mise run flag --')" '--target'
 
 # Trusting the project brings its commands back, except in safe mode.
@@ -109,6 +125,8 @@ for name in named inline flag choices choices-run mount subcommand global mise-t
   assert_contains_text "$trusted" "touch $ran/$name"
 done
 assert_contains_text "$(press_tab 'mise run named ')" 'from-run'
+assert_not_contains "MISE_SAFE=1 mise tasks --usage" "COMPLETION_SECRET"
+assert_contains_text "$(press_tab 'mise run choices-env ')" 'from-env'
 mise trust --untrust
 
 # Global tasks are the user's own.

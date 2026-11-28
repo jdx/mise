@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+
+# A `[tasks]`-only config loads without trust, and what an untrusted task's
+# usage spec names is read only once the project is trusted. A command typed on
+# a terminal trusts the project, as it does for config that needs trust, so it
+# reads the spec's include. A command nobody typed there keeps the refusal.
+
+require_cmd script
+
+# script(1) gives mise a pty on stdin, stdout and stderr. macOS's script(1) also
+# wants a terminal on its own stdin, which the harness does not have.
+if ! script -qec true /dev/null >/dev/null 2>&1; then
+  echo "skipping: script(1) cannot allocate a pty here" >&2
+  exit 0
+fi
+
+export MISE_TRUSTED_CONFIG_PATHS=""
+unset CI GITHUB_ACTIONS GITHUB_ACTION 2>/dev/null || true
+
+echo 'flag "--from-include"' >shared.usage.kdl
+cat <<EOF >mise.toml
+[tasks.include]
+run = "true"
+usage = 'include file="$PWD/shared.usage.kdl"'
+EOF
+
+notice="because you ran a mise command there"
+
+# Runs $1 on a pty and answers "No" if the trust prompt appears.
+on_pty() {
+  printf 'n' | timeout 10 script -qec "MISE_YES=0 $1" /dev/null 2>&1
+}
+
+# Without a terminal the include is not read and nothing is trusted.
+assert_not_contains "MISE_YES=0 mise tasks info include </dev/null 2>&1" "from-include"
+assert_contains "mise trust --show" "$(basename "$PWD"): untrusted"
+
+# Output captured: stdin and stderr are the terminal, but nobody typed this here.
+output="$(on_pty 'mise tasks info include | cat')" || true
+assert_not_contains_text "$output" "from-include"
+assert_not_contains_text "$output" "$notice"
+assert_contains "mise trust --show" "$(basename "$PWD"): untrusted"
+ok "[trust] a task command nobody typed does not trust the project"
+
+# Typed on a terminal: trusted, with a notice, and the include is read.
+output="$(on_pty 'mise tasks info include')"
+assert_contains_text "$output" "$notice"
+assert_contains_text "$output" "from-include"
+assert_contains "mise trust --show" "$(basename "$PWD"): trusted"
+ok "[trust] a task command typed on a terminal trusts the project"

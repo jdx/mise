@@ -245,6 +245,13 @@ async fn make_task_executable(
     if windows_has_no_prompt {
         return Ok(None);
     }
+    // A process that requires explicit trust has no typed `mise run` behind it, so nobody is
+    // there to answer and its `yes` (`mise mcp` sets it to answer a task's `confirm`) is not the
+    // user's answer. The file's trust is checked only once it loads as a task, after the mode
+    // has changed, and a symlinked task directory can lead to a file outside the project.
+    if config::config_file::requires_explicit_trust() {
+        return Ok(None);
+    }
     let confirmed = config::Settings::get().yes
         || prompt::confirm("Mark this file as executable to allow it to be run as a task?")?
             .is_yes();

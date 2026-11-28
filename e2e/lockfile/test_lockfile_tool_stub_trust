@@ -5,6 +5,8 @@
 # `mise lock` reads the stubs mise.lock lists, so an untrusted project must not
 # be able to have a file of its own locked that way. Tools declared by tasks
 # are resolved by `mise lock` too, so their options need trust as well.
+# `mise generate tool-stub --lock` locks a stub without running it as well, so
+# it asks for the same.
 
 export MISE_LOCKFILE=1
 export MISE_OFFLINE=1
@@ -25,17 +27,29 @@ cp mise.lock mise.lock.orig
 assert_fail_contains "MISE_YES=0 mise lock 2>&1" "not trusted"
 assert_fail "test -e $HOME/stub-option-ran"
 assert "diff mise.lock mise.lock.orig"
+assert_fail_contains "MISE_YES=0 mise generate tool-stub bin/widget --lock 2>&1" "not trusted"
+assert_fail "test -e $HOME/stub-option-ran"
+assert "diff mise.lock mise.lock.orig"
 
 # Paranoid mode ties trust to each file's contents, so the stub needs its own.
 # The `config` category alone is enough for that.
 for paranoid in config 1; do
   MISE_PARANOID=$paranoid mise trust mise.toml
   assert_fail_contains "MISE_PARANOID=$paranoid MISE_YES=0 mise lock 2>&1" "bin/widget are not trusted"
+  assert_fail_contains "MISE_PARANOID=$paranoid MISE_YES=0 mise generate tool-stub bin/widget --lock 2>&1" "bin/widget are not trusted"
   assert_fail "test -e $HOME/stub-option-ran"
   MISE_PARANOID=$paranoid mise trust bin/widget
   assert_succeed "MISE_PARANOID=$paranoid MISE_YES=0 mise lock"
   assert_succeed "test -e $HOME/stub-option-ran"
   rm "$HOME/stub-option-ran"
+  # a link to the stub from outside the project, such as one on PATH, is the trusted stub
+  mkdir -p "$HOME/linkbin"
+  ln -sf "$PWD/bin/widget" "$HOME/linkbin/widget"
+  assert_succeed "MISE_PARANOID=$paranoid MISE_YES=0 mise generate tool-stub $HOME/linkbin/widget --lock"
+  # and its Windows launcher goes beside the stub that was rewritten, not beside the link
+  assert_succeed "test -f bin/widget.cmd"
+  assert_fail "test -e $HOME/linkbin/widget.cmd"
+  rm -f "$HOME/stub-option-ran"
   MISE_PARANOID=$paranoid mise trust --untrust bin/widget
   MISE_PARANOID=$paranoid mise trust --untrust mise.toml
   cp mise.lock.orig mise.lock
@@ -46,6 +60,62 @@ mise trust mise.toml
 assert_succeed "MISE_YES=0 mise lock"
 assert_succeed "test -e $HOME/stub-option-ran"
 assert_contains "cat mise.lock" '[[tools."http:widget"]]'
+rm "$HOME/stub-option-ran"
+assert_succeed "MISE_YES=0 mise generate tool-stub bin/widget --lock"
+assert_succeed "test -e $HOME/stub-option-ran"
+
+# A stub with no `bin` takes it from its file name, which a link named otherwise
+# would change for runs through the link but not for the target the lock records.
+ln -sf "$PWD/bin/widget" "$HOME/linkbin/gadget"
+cp bin/widget bin/widget.before
+assert_fail_contains "MISE_YES=0 mise generate tool-stub $HOME/linkbin/gadget --lock 2>&1" "hint: lock ~/workdir/proj/bin/widget itself"
+assert "diff bin/widget bin/widget.before"
+# A stub that names both locks through any link.
+cat >bin/named <<'STUB'
+tool = "http:named"
+bin = "named"
+version = "1.0.0"
+url = "file:///nonexistent/named.tar.gz"
+STUB
+ln -sf "$PWD/bin/named" "$HOME/linkbin/alias"
+assert_succeed "MISE_YES=0 mise generate tool-stub $HOME/linkbin/alias --lock"
+assert_contains "cat mise.lock" '[[tools."http:named"]]'
+# So does one that names `tool` and a `bin` for every platform it downloads for:
+# a run never uses the top-level `bin` its file name supplies.
+cat >bin/multi <<'STUB'
+tool = "http:multi"
+version = "1.0.0"
+
+[platforms.linux-x64]
+url = "file:///nonexistent/multi-linux.tar.gz"
+bin = "multi"
+
+[platforms.macos-arm64]
+url = "file:///nonexistent/multi-macos.tar.gz"
+bin = "multi"
+STUB
+ln -sf "$PWD/bin/multi" "$HOME/linkbin/multi-alias"
+assert_succeed "MISE_YES=0 mise generate tool-stub $HOME/linkbin/multi-alias --lock"
+assert_contains "cat mise.lock" '[[tools."http:multi"]]'
+assert_contains "cat mise.lock" "nonexistent/multi-linux"
+cp mise.lock mise.lock.via-link
+assert_succeed "MISE_YES=0 mise generate tool-stub bin/multi --lock"
+assert "diff mise.lock mise.lock.via-link"
+# Without one platform's `bin`, a run there names it after the link.
+cat >bin/partial <<'STUB'
+tool = "http:partial"
+version = "1.0.0"
+
+[platforms.linux-x64]
+url = "file:///nonexistent/partial-linux.tar.gz"
+bin = "partial"
+
+[platforms.macos-arm64]
+url = "file:///nonexistent/partial-macos.tar.gz"
+STUB
+ln -sf "$PWD/bin/partial" "$HOME/linkbin/partial-alias"
+assert_fail_contains "MISE_YES=0 mise generate tool-stub $HOME/linkbin/partial-alias --lock 2>&1" "hint: lock ~/workdir/proj/bin/partial itself"
+assert_not_contains "cat mise.lock" "http:partial"
 
 # Task tools with options need trust; a plain version does not.
 cd ../tasks || exit 1
@@ -76,6 +146,8 @@ assert_not_contains "cat mise.lock" "nonexistent/plain"
 assert_contains "cat ../safe.log" "in safe mode"
 assert_succeed "MISE_SAFE=1 mise lock"
 assert_contains "cat mise.lock" 'tool-stubs = ["bin/plain"]'
+assert_fail_contains "MISE_SAFE=1 mise generate tool-stub bin/plain --lock 2>&1" "in safe mode"
+assert_not_contains "cat mise.lock" "nonexistent/plain"
 assert_succeed "mise lock"
 assert_contains "cat mise.lock" "nonexistent/plain"
 
@@ -107,3 +179,107 @@ rmdir .git
 echo 'tool-stubs = ["../outside-stub"]' >mise.lock
 assert_succeed "mise lock"
 assert_contains "cat mise.lock" "../outside-stub"
+
+# A subproject's stub shares the monorepo root's mise.lock, so the root config
+# that owns that lockfile needs trust too, not only the subproject.
+cd "$HOME/workdir" || exit 1
+mkdir -p mono/packages/a/bin
+cat >mono/mise.toml <<'TOML'
+monorepo_root = true
+
+[monorepo]
+lockfile = true
+config_roots = ["packages/*"]
+TOML
+echo '[tools]' >mono/packages/a/mise.toml
+cat >mono/packages/a/bin/plain <<'STUB'
+tool = "http:plain"
+version = "1.0.0"
+url = "file:///nonexistent/plain.tar.gz"
+STUB
+mise trust mono/packages/a/mise.toml
+# Run from outside the monorepo, where loading the config does not reach the root.
+mkdir -p elsewhere
+assert_fail_contains "cd elsewhere && MISE_EXPERIMENTAL=1 MISE_YES=0 mise generate tool-stub ../mono/packages/a/bin/plain --lock 2>&1" "not trusted"
+assert_fail "test -f mono/mise.lock"
+mise trust mono/mise.toml
+assert_succeed "cd elsewhere && MISE_EXPERIMENTAL=1 MISE_YES=0 mise generate tool-stub ../mono/packages/a/bin/plain --lock"
+assert_contains "cat mono/mise.lock" 'tool-stubs = ["packages/a/bin/plain"]'
+
+# In paranoid mode each root config needs trust of its own, but one that
+# ignored_config_paths names never loads, so it owns nothing.
+echo '[env]' >mono/.mise.toml
+for f in mono/mise.toml mono/packages/a/mise.toml mono/packages/a/bin/plain; do
+  MISE_PARANOID=config mise trust "$f"
+done
+# Outside the work directory, whose `mise` project above holds a config of its own.
+mkdir -p "$HOME/outside"
+lock_plain="cd $HOME/outside && MISE_PARANOID=config MISE_EXPERIMENTAL=1 MISE_YES=0 mise generate tool-stub $PWD/mono/packages/a/bin/plain --lock"
+assert_fail_contains "$lock_plain 2>&1" "mono/.mise.toml are not trusted"
+assert_succeed "MISE_IGNORED_CONFIG_PATHS=$PWD/mono/.mise.toml && export MISE_IGNORED_CONFIG_PATHS && $lock_plain"
+# Nor does one that `mise trust --ignore` recorded.
+MISE_PARANOID=config mise trust --ignore mono/.mise.toml
+assert_succeed "$lock_plain"
+# A stub's own config that discovery ignores owns nothing either: the next config
+# that loads does.
+MISE_PARANOID=config mise trust --untrust mono/packages/a/mise.toml
+assert_fail_contains "$lock_plain 2>&1" "mono/packages/a/mise.toml"
+MISE_PARANOID=config mise trust --ignore mono/packages/a/mise.toml
+assert_succeed "$lock_plain"
+
+# A root config that discovery ignores does not decide where the shared lockfile
+# goes either: here the `.config/` one that loads places it. Paranoid mode, so
+# the ignore record names the one file rather than the directory.
+mkdir -p mono2/.config mono2/packages/a/bin
+cat >mono2/.config/mise.toml <<'TOML'
+monorepo_root = true
+
+[monorepo]
+lockfile = true
+config_roots = ["packages/*"]
+TOML
+cp mono2/.config/mise.toml mono2/mise.toml
+echo '[tools]' >mono2/packages/a/mise.toml
+cat >mono2/packages/a/bin/plain <<'STUB'
+tool = "http:plain"
+version = "1.0.0"
+url = "file:///nonexistent/plain.tar.gz"
+STUB
+for f in mono2/.config/mise.toml mono2/packages/a/mise.toml mono2/packages/a/bin/plain; do
+  MISE_PARANOID=config mise trust "$f"
+done
+MISE_PARANOID=config mise trust --ignore mono2/mise.toml
+assert_succeed "cd $HOME/outside && MISE_PARANOID=config MISE_EXPERIMENTAL=1 MISE_YES=0 mise generate tool-stub $PWD/mono2/packages/a/bin/plain --lock"
+assert_contains "cat mono2/.config/mise.lock" "packages/a/bin/plain"
+assert_fail "test -e mono2/mise.lock"
+
+# A stub at the monorepo root writes the root's mise.lock, which every root base
+# config owns, so in paranoid mode each needs trust, not only the stub's own.
+mkdir -p mono3/bin mono3/packages/a
+cat >mono3/mise.toml <<'TOML'
+monorepo_root = true
+
+[monorepo]
+lockfile = true
+config_roots = ["packages/*"]
+TOML
+echo '[env]' >mono3/.mise.toml
+echo '[tools]' >mono3/packages/a/mise.toml
+cat >mono3/bin/plain <<'STUB'
+tool = "http:plain"
+version = "1.0.0"
+url = "file:///nonexistent/plain.tar.gz"
+STUB
+lock_root="cd $HOME/outside && MISE_PARANOID=config MISE_EXPERIMENTAL=1 MISE_YES=0 mise generate tool-stub $PWD/mono3/bin/plain --lock"
+MISE_PARANOID=config mise trust mono3/bin/plain
+for untrusted in mise.toml .mise.toml; do
+  for f in mise.toml .mise.toml; do
+    MISE_PARANOID=config mise trust "mono3/$f"
+  done
+  MISE_PARANOID=config mise trust --untrust "mono3/$untrusted"
+  assert_fail_contains "$lock_root 2>&1" "mono3/$untrusted are not trusted"
+  assert_fail "test -e mono3/mise.lock"
+done
+MISE_PARANOID=config mise trust mono3/.mise.toml
+assert_succeed "$lock_root"
+assert_contains "cat mono3/mise.lock" 'tool-stubs = ["bin/plain"]'

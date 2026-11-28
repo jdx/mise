@@ -1,8 +1,9 @@
 //! A command the user types on an interactive terminal in an untrusted project trusts that
 //! project without the "Trust them?" prompt.
 //!
-//! Only [`super::trust_check`] reaches this, and only where it would otherwise prompt: safe mode,
-//! `hook-env`, strict trust, explicit-trust callers and ignored paths have already been decided.
+//! Only [`super::trust_check`] reaches this, where it would otherwise prompt, and
+//! [`super::trust_typed_task_source`] under the same conditions: safe mode, `hook-env`, strict
+//! trust, explicit-trust callers and ignored paths have already been decided.
 //! What is left to decide here is whether a person typed this command in this project, which
 //! everything other than a terminal on all three descriptors, run by the owner of the config,
 //! fails to show.

@@ -2249,6 +2249,8 @@ pub fn monorepo_lockfile_dir(root: &Path) -> PathBuf {
                 && !lockfile::is_local_config(path)
                 && lockfile::extract_env_from_config_path(path).is_none()
                 && !is_conf_d_folder_file(path)
+                // A config discovery ignores never loads, so it does not place the lockfile.
+                && !config_path_is_ignored(path, false)
         })
         .collect_vec();
     // Prefer the base config that declares the root (read statically, nothing
@@ -2318,11 +2320,14 @@ pub(crate) fn monorepo_lockfile_root_from_dir(dir: &Path) -> Option<PathBuf> {
     let mut config_files = ConfigMap::new();
     for ancestor in all_dirs_from(dir).unwrap_or_default() {
         for path in config_paths_in_dir(&ancestor) {
-            // The same committed layers the stub's lockfile is chosen from.
+            // The same committed layers the stub's lockfile is chosen from. A config that
+            // discovery ignores (`ignored_config_paths`, or `mise trust --ignore` unless
+            // `trusted_config_paths` names it) never loads, so it declares no root either.
             if path.extension().is_none_or(|ext| ext != "toml")
                 || lockfile::is_local_config(&path)
                 || lockfile::extract_env_from_config_path(&path).is_some()
                 || is_global_config(&path)
+                || config_path_is_ignored(&path, false)
                 || (paranoid && !config_file::is_path_trusted(&path))
             {
                 continue;
@@ -5994,7 +5999,12 @@ async fn apply_task_config_inputs(
     // a tasks-only config nobody trusted stays inert until it is run, even when a trusted
     // ancestor cascades templated entries to it. Such a task renders them without its own
     // `vars` and `env`, and an entry that needs them stays as written.
-    let trusted = task.is_trusted(config);
+    //
+    // The entries, `vars` and `env` all come from config, so the trust that counts is the
+    // trust of the task's definition. The script a `file` task names adds none of them, and
+    // its path, which can be a template, is not rendered here. Plain-text entries need no
+    // context, so no trust is looked up for them.
+    let trusted = task_inputs.has_templates() && task.definition_is_trusted(config);
     let tera_ctx = if !task_inputs.has_templates() {
         tera::Context::new()
     } else if trusted {
@@ -6518,6 +6528,28 @@ async fn inferred_workspace_tasks(
                 run: vec![RunEntry::Script(inferred.command.clone())],
                 ..Default::default()
             };
+            // What a provider imports is text from manifests and directory names, which no
+            // trust decision covers. Only config is a template. A task's command, aliases,
+            // sources, outputs and dependencies are all rendered (some again when it runs),
+            // with `exec()` available, so an import that holds template syntax there cannot
+            // be used as it is written.
+            let suggestions = &inferred.suggestions;
+            if std::iter::once(&inferred.command)
+                .chain(&task.aliases)
+                .chain(&suggestions.inputs)
+                .chain(suggestions.outputs.iter().flatten())
+                .chain(suggestions.depends.iter().flatten())
+                .any(|text| contains_template_syntax(text))
+            {
+                warn!(
+                    "Inferred task {} in {} has template syntax in its name, path, inputs, \
+                     outputs or dependencies, and imported text is not rendered. Task will not \
+                     be available.",
+                    task.name,
+                    display_path(&task.config_source)
+                );
+                continue;
+            }
             inferred.suggestions.apply_before_defaults(&mut task);
             if let Err(err) = resolve_task_template(&mut task, task_definitions) {
                 warn!(
@@ -6528,6 +6560,11 @@ async fn inferred_workspace_tasks(
                 continue;
             }
             inferred.suggestions.apply_after_defaults(&mut task);
+            // The description is the script itself and is only displayed, so it stays out of
+            // `render` and is shown as written, e.g. `docker inspect -f '{{.Id}}' web`. A
+            // description that a root task default supplied is config and still renders.
+            let description =
+                (!inferred.description.is_empty()).then(|| std::mem::take(&mut task.description));
             // `render` leaves a broken `dir` template raw, but an inferred task is not
             // user-authored, so drop it instead of failing later.
             let rendered = match task.render(config, &project_root).await {
@@ -6541,6 +6578,9 @@ async fn inferred_workspace_tasks(
                     display_path(&task.config_source)
                 );
                 continue;
+            }
+            if let Some(description) = description {
+                task.description = description;
             }
             tasks.push(task);
         }

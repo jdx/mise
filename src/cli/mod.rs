@@ -1257,6 +1257,9 @@ impl Cli {
         if let Some(Commands::Install(install)) = &mut cli.command {
             install.inherit_root_yes(cli.yes);
         }
+        if let Some(Commands::ToolStub(tool_stub)) = &mut cli.command {
+            tool_stub.inherit_root_cd(cli.cd.is_some());
+        }
         config_file::set_implicitly_trust_active_config(
             cli.command
                 .as_ref()

@@ -627,6 +627,70 @@ pub(crate) fn lookup_with_fallback(opts: &ToolVersionOptions, key: &str) -> Opti
     lookup_platform_key(opts, key).or_else(|| opts.get_string(key))
 }
 
+/// The `url` a download for this machine takes, and the `bin` named with it.
+pub(crate) struct PlatformDownload {
+    pub(crate) url: Option<String>,
+    pub(crate) bin: Option<String>,
+}
+
+/// The `url` and `bin` of this machine's download.
+///
+/// The `url` is the one [`lookup_with_fallback`] finds: that of the first spelling of this
+/// machine's platform (`macos-arm64`, then `darwin-arm64`, ...) that sets one, else the
+/// top-level `url`. The `bin` is [`platform_bin`] of the spelling that set the `url`. With no
+/// platform `url`, the `bin` is looked up by itself, as for an install whose artifact does not
+/// come from a `url`.
+pub(crate) fn platform_download(opts: &ToolVersionOptions) -> PlatformDownload {
+    for (os, arch) in platform_aliases() {
+        let platform = format!("{os}-{arch}");
+        if let Some(url) = platform_entry_string(opts, &platform, "url") {
+            return PlatformDownload {
+                url: Some(url),
+                bin: platform_bin(opts, &platform),
+            };
+        }
+    }
+    PlatformDownload {
+        url: opts.get_string("url"),
+        bin: lookup_with_fallback(opts, "bin"),
+    }
+}
+
+/// The `bin` a download for `platform`, the `os-arch` spelling whose `url` is downloaded, names
+/// its binary after: the `bin` of that spelling, else the first `bin` among the other spellings
+/// of the same platform (in the order [`lookup_platform_key`] tries them), else the top-level
+/// `bin`. The installer, a stub run and `generate tool-stub --lock` all read it here, so they
+/// agree on the binary's name.
+///
+/// A spelling's own `bin` comes first, so a spelling that sets only a `bin` does not name the
+/// binary of another spelling's archive that names its own. When the spelling with the `url`
+/// sets none, the first other spelling's `bin` is the one earlier releases installed under.
+pub(crate) fn platform_bin(opts: &ToolVersionOptions, platform: &str) -> Option<String> {
+    let (os, arch) = platform.split_once('-')?;
+    platform_entry_string(opts, platform, "bin")
+        .or_else(|| {
+            os_arch_aliases(os, arch)
+                .into_iter()
+                .find_map(|(os, arch)| platform_entry_string(opts, &format!("{os}-{arch}"), "bin"))
+        })
+        .or_else(|| opts.get_string("bin"))
+}
+
+/// `key` as `platform`, an `os-arch` key, sets it, under any of the spellings
+/// [`lookup_platform_key`] reads, in its order: `platforms.<os>-<arch>.<key>`, the flat
+/// `platforms_<os>_<arch>_<key>`, then the same under `platform`.
+pub(crate) fn platform_entry_string(
+    opts: &ToolVersionOptions,
+    platform: &str,
+    key: &str,
+) -> Option<String> {
+    let (os, arch) = platform.split_once('-')?;
+    ["platforms", "platform"].into_iter().find_map(|prefix| {
+        opts.get_nested_string(&format!("{prefix}.{os}-{arch}.{key}"))
+            .or_else(|| opts.get_string(&format!("{prefix}_{os}_{arch}_{key}")))
+    })
+}
+
 /// Looks up a raw option value with platform-specific fallback.
 /// Like [`lookup_with_fallback`] but preserves the original `toml::Value` so
 /// callers can distinguish scalar and table forms (e.g. `rename_exe`).
@@ -941,7 +1005,7 @@ pub(crate) fn install_artifact(
 
     // `bin` historically accepts a path within the install directory (for
     // example `bin/tiny`), while rename_exe names a file in one search dir.
-    if let Some(name) = lookup_with_fallback(opts, "bin") {
+    if let Some(name) = platform_download(opts).bin {
         ensure_safe_relative_bin_path("bin", &name)?;
     }
     // Table-form rename_exe is not a scalar and is validated in apply_rename_exe.
@@ -987,7 +1051,7 @@ pub(crate) fn install_artifact(
             } else {
                 bin_dir.join(decompressed_name)
             }
-        } else if let Some(bin_name) = lookup_with_fallback(opts, "bin") {
+        } else if let Some(bin_name) = platform_download(opts).bin {
             install_path.join(bin_name_for_download(decompressed_name, &bin_name))
         } else if let Some(rename_to) = rename_exe {
             install_path.join(rename_binary_name(decompressed_name, &rename_to))
@@ -1012,7 +1076,7 @@ pub(crate) fn install_artifact(
             let dest = bin_dir.join(dest_name);
             file::copy(file_path, &dest)?;
             file::make_executable(&dest)?;
-        } else if let Some(bin_name) = lookup_with_fallback(opts, "bin") {
+        } else if let Some(bin_name) = platform_download(opts).bin {
             // If bin is specified, rename the file to this name
             let original_name = file_path.file_name().unwrap().to_string_lossy();
             let dest = install_path.join(bin_name_for_download(&original_name, &bin_name));
@@ -1064,7 +1128,7 @@ pub(crate) fn install_artifact(
 
         // Handle bin= option for archives (renames executable to specified name)
         // bin= values are relative to install_path, so always use install_path or explicit bin_path
-        if let Some(bin_name) = lookup_with_fallback(opts, "bin") {
+        if let Some(bin_name) = platform_download(opts).bin {
             let search_dir = explicit_bin_path.as_deref().unwrap_or(&install_path);
             make_configured_bin_executable(search_dir, &bin_name)?;
             rename_executable_in_dir(search_dir, &bin_name, Some(tool_name))?;
@@ -1120,7 +1184,7 @@ fn archive_bin_search_dir(install_path: &Path, explicit_bin_path: Option<&Path>)
 /// already names it.
 fn may_clean_archive_binary(layout: ArchiveLayout, opts: &ToolVersionOptions) -> bool {
     layout == ArchiveLayout::Guessed
-        && lookup_with_fallback(opts, "bin").is_none()
+        && platform_download(opts).bin.is_none()
         && lookup_value_with_fallback(opts, "rename_exe").is_none()
 }
 

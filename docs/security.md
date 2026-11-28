@@ -109,8 +109,9 @@ idea:
   options, as it would for a tool option table.
 - A [tool stub](/dev-tools/tool-stubs.html) needs no trust to run, since running
   it is your approval. `mise lock` also reads the stubs that `mise.lock` lists
-  under `tool-stubs`, and for that the project's config needs trust. In safe
-  mode it does not apply the options of those stubs.
+  under `tool-stubs`, and `mise generate tool-stub --lock` reads the stub it
+  locks, and for that the project's config needs trust. In safe mode neither
+  applies the options of those stubs.
 - A [`.miserc.toml`](/configuration.html#miserc) never needs trust. It only
   holds early settings that choose which config files load, and mise finds it
   by walking up from the current directory. A project's `env` list can add
@@ -138,6 +139,8 @@ Tasks that load without trust run nothing until you run one. Shell completion
 of their arguments leaves out the commands a
 [usage spec](/tasks/task-arguments.html) can name, `complete run=`,
 `complete delegate=`, `choices run=` and `mount`, until the project is trusted.
+It leaves out `choices env=` as well, which would offer the value of an
+environment variable the task names.
 
 [Paranoid mode](/paranoid.html) removes these exemptions apart from
 `.miserc.toml`: every other config file outside global and system config needs
@@ -259,6 +262,11 @@ again and fails with the settings error, since every later command, `mise untrus
 too, would fail on that setting. A directory on the ignore list or
 under `ignored_config_paths` stays ignored, and shell activation still skips
 untrusted config. Only paranoid mode turns this off.
+
+The same holds for a project whose config loads without trust, such as a
+`[tasks]`-only `mise.toml`, when the command needs a task's trust: typing
+`mise tasks info <task>` there trusts the project and reads the files the
+task's usage spec includes, where a script or editor running it does not.
 
 ### CI and `--yes`
 
@@ -447,7 +455,8 @@ These are skipped without an error, so resolution commands keep working:
   global `_.file` entry that names one file still loads. With paranoid mode's
   `env_files` category on, only the absolute `env_file` entry needs approval.
 - Project `[shell_alias]`.
-- The commands in a project task's usage spec that shell completion would run.
+- The commands in a project task's usage spec that shell completion would run,
+  and its `choices env=`, which completion would read from your environment.
 - Project `[wrappers]` and the `rust` tool's `mr_boxington` option.
 - Your credentials, for hosts project config chooses: a project `api_url` gets
   no GitHub, GitLab or Forgejo token (unless global config names the same host),

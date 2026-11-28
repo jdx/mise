@@ -8,8 +8,8 @@ use crate::backend::static_helpers::{
     apply_rename_exe, bin_name_for_download, clean_binary_name, ensure_plain_bin_name,
     ensure_safe_relative_bin_path, eval_checksum_expr, fetch_checksum_from_file_with_headers,
     fetch_checksum_from_shasums_with_headers, get_filename_from_url, lookup_value_with_fallback,
-    pinned_checksum, rename_binary_name, render_bin_path, shasums_has_entries, template_string,
-    template_string_for_target, template_string_strict, verify_artifact,
+    pinned_checksum, platform_download, rename_binary_name, render_bin_path, shasums_has_entries,
+    template_string, template_string_for_target, template_string_strict, verify_artifact,
 };
 use crate::backend::version_list;
 use crate::backend::{MISE_BINS_DIR, runtime_path_for_install_path};
@@ -195,7 +195,7 @@ impl<'a> HttpOptions<'a> {
     }
 
     fn url(&self) -> Option<String> {
-        self.values.platform_string("url")
+        platform_download(self.raw()).url
     }
 
     fn checksum(&self) -> Option<String> {
@@ -210,8 +210,9 @@ impl<'a> HttpOptions<'a> {
         self.values.platform_string("strip_components")
     }
 
+    /// The `bin` named with the [`Self::url`] downloaded (see [`platform_download`]).
     fn bin(&self) -> Option<String> {
-        self.values.platform_string("bin")
+        platform_download(self.raw()).bin
     }
 
     fn rename_exe(&self) -> Option<String> {

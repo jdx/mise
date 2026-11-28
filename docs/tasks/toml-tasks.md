@@ -430,6 +430,9 @@ file = "scripts/release.sh"
 `file` can also fetch the script from a URL. mise downloads it and runs it, so
 use only sources you trust.
 
+Shell completion does not download the remote files of a project you have not
+[trusted](/cli/trust.html). Those tasks complete from their TOML alone.
+
 #### HTTP
 
 ```toml

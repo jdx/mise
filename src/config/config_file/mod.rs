@@ -1040,6 +1040,29 @@ pub fn trust_check(path: &Path) -> eyre::Result<()> {
     Err(UntrustedConfig(path.into(), Untrusted::NotTrusted))?
 }
 
+/// Trusts the project of `path`, a file that defines a task, where [`trust_check`] would have
+/// trusted it because the command was typed on a terminal, and returns whether it did. A task's
+/// config can load without that check, as a `[tasks]`-only `mise.toml` does, and what the task
+/// names is then used only once the project is trusted (`Task::is_trusted`). There is no prompt
+/// here: everything that would have prompted leaves the project untrusted.
+pub(crate) fn trust_typed_task_source(path: &Path) -> eyre::Result<bool> {
+    let hook_env = !*env::IS_RUNNING_AS_SHIM
+        && env::ARGS.read().unwrap().get(1).map(String::as_str) == Some("hook-env");
+    if Settings::safe_mode()
+        || *REQUIRE_EXPLICIT_TRUST
+        || STRICT_TRUST.load(Ordering::Relaxed)
+        || hook_env
+        || mise_util::testing::in_tests()
+    {
+        return Ok(false);
+    }
+    let config_root = config_trust_root(path);
+    if !implicit_trust_may_record(path, &config_root) {
+        return Ok(false);
+    }
+    typed_consent::trust_typed_command(path, &config_root)
+}
+
 /// Fails with [`Untrusted::LinkedInProject`] for a config that paranoid mode reaches through a
 /// symlink inside a project. Paranoid mode approves a file by its content, and a link inside a
 /// project is that project's to change, so no trust record can approve such a config: loading it
@@ -2237,8 +2260,49 @@ impl TrustRecord {
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(false),
             Err(err) => Err(err)?,
         };
-        Ok(hash == hash::file_hash_sha256(path, None)?)
+        let current = match hash_of_read_content(path) {
+            Some(read) => read,
+            None => hash::file_hash_sha256(path, None)?,
+        };
+        Ok(hash == current)
     }
+}
+
+thread_local! {
+    /// The canonical path of a file a caller already read, with the hash of the text it read,
+    /// while [`is_path_trusted_for_content`] checks it.
+    static READ_CONTENT: std::cell::RefCell<Option<(PathBuf, String)>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// The hash of the text read from `path`, when [`is_path_trusted_for_content`] is checking it.
+fn hash_of_read_content(path: &Path) -> Option<String> {
+    READ_CONTENT.with(|read| {
+        let read = read.borrow();
+        let (read_path, hash) = read.as_ref()?;
+        (path.canonicalize().ok().as_ref() == Some(read_path)).then(|| hash.clone())
+    })
+}
+
+/// [`is_path_trusted`] for `content`, the text the caller read from `path` and is about to use.
+///
+/// Where trust is bound to the file's content (the paranoid `config` category, or a record
+/// with a hash), it is judged by the hash of that text instead of the file read again. The file
+/// can change between two reads, and then what was checked is not what is used.
+pub fn is_path_trusted_for_content(path: &Path, content: &str) -> bool {
+    struct Forget;
+    impl Drop for Forget {
+        fn drop(&mut self) {
+            READ_CONTENT.with(|read| read.borrow_mut().take());
+        }
+    }
+    let Ok(canonical) = path.canonicalize() else {
+        return false;
+    };
+    let hash = hash::hash_sha256_to_str(content);
+    READ_CONTENT.with(|read| *read.borrow_mut() = Some((canonical, hash)));
+    let _forget = Forget;
+    is_path_trusted(path)
 }
 
 /// Every record in `dir` that points at `path`, under its current name and under the older
@@ -3291,6 +3355,29 @@ mod env_file_trust_tests {
 
         std::fs::write(&path, "[env]\nA = '2'\n").unwrap();
         assert!(!is_trusted(&path));
+    }
+
+    /// A caller that read a file judges the text it read, not the file read again: the file can
+    /// change in between, and then the check would pass for text that is not the one used.
+    #[test]
+    fn trust_bound_to_content_is_judged_for_the_text_read() {
+        let held = crate::test::SettingsGuard::lock();
+        paranoid_on(&held);
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("build.sh");
+        let approved = "#!/bin/sh\n#USAGE flag \"--release\"\n";
+        let swapped = "#!/bin/sh\n#USAGE include file=\"/etc/passwd\"\n";
+        std::fs::write(&path, approved).unwrap();
+        trust(&path).unwrap();
+
+        assert!(is_path_trusted_for_content(&path, approved));
+        assert!(!is_path_trusted_for_content(&path, swapped));
+        // the file has changed since it was read, and the text read is what is judged
+        std::fs::write(&path, swapped).unwrap();
+        assert!(!is_path_trusted(&path));
+        assert!(is_path_trusted_for_content(&path, approved));
+        // and the text is forgotten after the check
+        assert!(!is_path_trusted(&path));
     }
 
     #[test]

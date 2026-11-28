@@ -103,6 +103,18 @@ mise trust ../scripts_only
 assert_contains "$run_script" "status=ok"
 assert "test -e '$script_marker' && rm '$script_marker' && echo ran" "ran"
 
+# A file that is not executable is not a task yet, so nothing checks its trust.
+# The offer to make it executable is for the user who typed mise run: a
+# client's request does not change the mode of a file, which a symlinked task
+# directory can place outside the project.
+mkdir -p ../not_executable/secrets
+echo "secret" >../not_executable/secrets/credentials
+chmod 600 ../not_executable/secrets/credentials
+ln -s secrets ../not_executable/mise-tasks
+run_chmod="cd ../not_executable && python3 ../workdir/mcp_call.py run_task '{\"task\": \"credentials\"}'"
+assert_contains "$run_chmod" "status=error"
+assert_fail "test -x ../not_executable/secrets/credentials"
+
 # A script given by path is not one of the project's tasks, even from a trusted
 # project.
 cp ../scripts_only/mise-tasks/build ../build.sh

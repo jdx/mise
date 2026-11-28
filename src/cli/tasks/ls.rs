@@ -4,9 +4,9 @@ use crate::config::{self, Config};
 use crate::dirs;
 use crate::file;
 use crate::file::display_rel_path;
-use crate::task::Task;
 use crate::task::task_fetcher::TaskFetcher;
 use crate::task::task_list::find_non_executable_task_files;
+use crate::task::{Task, remove_spec_commands};
 use crate::ui::table::MiseTable;
 use comfy_table::{Attribute, Cell, Row};
 use eyre::{Result, bail};
@@ -200,9 +200,11 @@ impl TasksLs {
         // always pass no_cache=false as the command doesn't take no-cache argument
         // MISE_TASK_REMOTE_NO_CACHE env var is still respected if set
         let fetcher = TaskFetcher::for_inspection(false);
-        // Completion output goes to the shell, so only the human-facing modes warn.
+        // Completion output goes to the shell, so only the human-facing modes warn. Completion
+        // also runs on a Tab press, which fetches nothing an untrusted config names: those tasks
+        // complete from their TOML metadata, as in safe mode.
         let fetcher = if self.complete || self.usage {
-            fetcher.without_warning()
+            fetcher.without_warning().skipping_untrusted()
         } else {
             fetcher
         };
@@ -309,9 +311,12 @@ impl TasksLs {
         for task in tasks {
             // Without experimental a `git::` file was not fetched, so its `#USAGE` header is
             // unknown; complete the task from its TOML metadata alone.
-            let mut task_spec = match TaskFetcher::toml_only(&task) {
-                Some(toml_only) => toml_only.parse_usage_spec_for_display(config).await?,
-                None => task.parse_usage_spec_for_display(config).await?,
+            let (mut task_spec, trusted) = match TaskFetcher::toml_only(&task) {
+                Some(toml_only) => (
+                    toml_only.parse_usage_spec_for_display(config).await?,
+                    task.is_trusted(config).await,
+                ),
+                None => task.parse_usage_spec_for_completion(config).await?,
             };
             for (name, complete) in task_spec.complete {
                 task_spec.cmd.complete.insert(name, complete);
@@ -319,7 +324,7 @@ impl TasksLs {
             // Completion runs the commands a spec names (`complete run=`, `mount`, ...) while
             // it parses the typed words. For a task nobody trusted, that is code from the
             // repository running before `mise run` was ever entered.
-            if !task.is_trusted(config) {
+            if !trusted {
                 remove_spec_commands(&mut task_spec.cmd);
             }
             // Absorb words the caller forwards to the task beyond what it declares, so
@@ -528,39 +533,6 @@ impl TasksLs {
     }
 }
 
-/// Strip from `cmd` everything completing one of its words would execute: `mount`,
-/// `complete run=`, `complete delegate=` and `choices run=`, through every subcommand and
-/// clause. A task that loaded without trust is inert until `mise run`, and pressing Tab is not
-/// that. Names, help, flags and declared choices stay, so the task still completes.
-fn remove_spec_commands(cmd: &mut usage::SpecCommand) {
-    let executes = |c: &usage::SpecComplete| c.run.is_some() || c.delegate.is_some();
-    cmd.mounts.clear();
-    cmd.complete.retain(|_, complete| !executes(complete));
-    let clause = cmd.clause.as_mut().map(|c| (&mut c.args, &mut c.flags));
-    for (args, flags) in std::iter::once((&mut cmd.args, &mut cmd.flags)).chain(clause) {
-        let flag_args = flags.iter_mut().filter_map(|flag| flag.arg.as_mut());
-        for arg in args.iter_mut().chain(flag_args) {
-            arg.complete.take_if(|complete| executes(complete));
-            if let Some(choices) = &mut arg.choices
-                && choices.run.take().is_some()
-            {
-                // Without the command the declared values are no longer the whole set, and
-                // usage rejects a `choices` that declares nothing at all.
-                choices.strict = false;
-                if choices.choices.is_empty()
-                    && choices.details.is_empty()
-                    && choices.env().is_none()
-                {
-                    arg.choices = None;
-                }
-            }
-        }
-    }
-    for subcommand in cmd.subcommands.values_mut() {
-        remove_spec_commands(subcommand);
-    }
-}
-
 /// The name prefix of the current config root's tasks, e.g. `//:` or `//apps/web:`, which
 /// `:task` stands for. `None` outside a monorepo, where `:task` names nothing.
 fn current_root_prefix(config: &Config) -> Option<String> {
@@ -687,8 +659,14 @@ cmd "task" {
     arg "<only-run>" {
         choices run="touch only-run"
     }
+    arg "<only-env>" {
+        choices env="SECRET"
+    }
     flag "--flag <value>" {
         choices "declared" run="touch choices"
+    }
+    flag "--env-flag <value>" {
+        choices "listed" env="SECRET"
     }
     cmd "sub" {
         mount run="touch sub-mount"
@@ -710,12 +688,16 @@ cmd "task" {
         for executed in ["mount", "run=", "delegate=", "touch"] {
             assert!(!kdl.contains(executed), "{executed} is left in:\n{kdl}");
         }
+        // nor anything that reads the user's environment
+        assert!(!kdl.contains("SECRET"), "env= is left in:\n{kdl}");
         for kept in [
             "type=dir",
             "declared",
             "--clause-flag",
             "<clause-arg>",
             "<only-run>",
+            "<only-env>",
+            "listed",
         ] {
             assert!(kdl.contains(kept), "{kept} is missing from:\n{kdl}");
         }

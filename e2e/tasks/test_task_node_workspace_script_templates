@@ -1,0 +1,90 @@
+#!/usr/bin/env bash
+
+# What the node provider imports is text from package.json, turbo.json and
+# directory names, not config, so none of it is a template. Listing and
+# describing tasks ("mise tasks --usage" is what completing "mise run" runs)
+# must not render it and run its exec(). A script body is only the task's
+# description and is shown as written. A script name, directory name or
+# turbo.json pattern becomes a command, alias, source, output or dependency,
+# all of which mise renders, so such a script is not imported.
+
+mkdir -p bin
+cat <<'SH' >bin/npm
+#!/bin/sh
+printf '%s' "$*" >manager-args.txt
+SH
+chmod +x bin/npm
+export PATH="$PWD/bin:$PATH"
+
+cat <<'TOML' >mise.toml
+monorepo_root = true
+
+[monorepo]
+config_roots = ["packages/*"]
+
+[monorepo.task_defaults.image-id]
+sources = ["{{ 'Docker' ~ 'file' }}"]
+
+[settings]
+task.auto_infer = ["node"]
+TOML
+cat <<'JSON' >package.json
+{
+  "packageManager": "npm@11.0.0",
+  "workspaces": ["packages/*"]
+}
+JSON
+cat <<'JSON' >turbo.json
+{
+  "tasks": {
+    "bundle": {
+      "inputs": ["{{ exec(command='touch inputs-marker') }}"]
+    },
+    "package": {
+      "outputs": ["{{ exec(command='touch outputs-marker') }}"]
+    },
+    "publish": {
+      "dependsOn": ["{{ exec(command='touch depends-marker') }}"]
+    }
+  }
+}
+JSON
+mkdir -p packages/app
+cat <<'JSON' >packages/app/package.json
+{
+  "name": "app",
+  "scripts": {
+    "build": "{{ exec(command='touch body-marker') }}",
+    "bundle": "echo bundle",
+    "image-id": "docker inspect -f '{{.Id}}' app",
+    "package": "echo package",
+    "publish": "echo publish",
+    "{{ exec(command='touch name-marker') }}": "echo name"
+  }
+}
+JSON
+dir="packages/{{ exec(command='touch dir-marker') }}"
+mkdir -p "$dir"
+cat <<'JSON' >"$dir/package.json"
+{
+  "name": "templated-dir",
+  "scripts": {
+    "build": "echo dir"
+  }
+}
+JSON
+
+assert "mise tasks --all --json 2>/dev/null | jq -r '.[] | \"\(.name): \(.description)\"'" "node:app#build: {{ exec(command='touch body-marker') }}
+node:app#image-id: docker inspect -f '{{.Id}}' app"
+assert_contains "mise tasks --usage 2>/dev/null" "node:app#image-id"
+assert_contains "mise tasks info node:app#build 2>/dev/null" "Description: {{ exec(command='touch body-marker') }}"
+assert_succeed "mise tasks deps 2>/dev/null"
+assert_contains "mise tasks --all 2>&1" "Inferred task node:app#bundle in"
+assert_contains "mise tasks --all 2>&1" "Inferred task node:templated-dir#build in"
+assert_empty "find . -name '*-marker'"
+
+# The imported script still runs, and a root task default is config, so it still renders.
+assert_contains "mise tasks info //packages/app:image-id 2>/dev/null" "Sources: Dockerfile"
+mise -q run //packages/app:image-id -- forwarded
+assert "cat packages/app/manager-args.txt" "run image-id -- forwarded"
+assert_empty "find . -name '*-marker'"
