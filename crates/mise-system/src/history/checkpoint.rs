@@ -1439,7 +1439,7 @@ fn retain_omitted(
 /// skipping a directory (a cache, say) that holds a separately tracked
 /// entry says nothing about that entry, whose own walk saw every file, so
 /// a file deleted there stays deleted.
-fn omission_covers(omitted: &[PathBuf], path: &Path, entry_root: &Path) -> bool {
+pub(super) fn omission_covers(omitted: &[PathBuf], path: &Path, entry_root: &Path) -> bool {
     omitted
         .iter()
         .any(|omitted| path.starts_with(omitted) && omitted.starts_with(entry_root))

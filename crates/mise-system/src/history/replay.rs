@@ -1727,7 +1727,9 @@ pub fn unsaved_paths(
         }
         if change.status == 'D'
             && let Some(path) = roots.locate(&change.path).path()
-            && carried.iter().any(|omitted| path.starts_with(omitted))
+            && tracked.entry_for(path).is_some_and(|entry| {
+                super::checkpoint::omission_covers(&carried, path, &entry.path)
+            })
             && tracked.would_retain(path)?
         {
             continue;

@@ -982,7 +982,18 @@ impl TrackedSet {
         // to this checkpoint reads its files as omitted rather than
         // deleted, even after the tag is gone and the directory is
         // ordinary content.
-        omitted.extend(walk.caches.iter().cloned());
+        // A cache that is itself local-only is left out: its path would
+        // otherwise reach the shared commit trailer, and an excluded path
+        // needs no omission record to be safe from a rollback.
+        omitted.extend(
+            walk.caches
+                .iter()
+                .filter(|cache| {
+                    let path = file::replace_path(&cache.path);
+                    !self.local.iter().any(|local| path.starts_with(local))
+                })
+                .cloned(),
+        );
         Coverage {
             entries,
             exclude: self.exclude.clone(),
@@ -5150,6 +5161,30 @@ mod tests {
         let walk = set.walk().unwrap();
         assert!(walk.files.contains_key(&target.join("debug/build.o")));
         assert!(set.would_capture(&target.join("debug/build.o")).unwrap());
+    }
+
+    #[test]
+    fn a_local_only_cache_stays_out_of_the_shared_record() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("project");
+        let private = root.join("private");
+        let target = root.join("target");
+        let tag = "Signature: 8a477f597d28d172789f06886806bc55\n";
+        for cache in [&private, &target] {
+            std::fs::create_dir_all(cache).unwrap();
+            std::fs::write(cache.join("CACHEDIR.TAG"), tag).unwrap();
+        }
+        let mut set = TrackedSet {
+            entries: vec![entry(&root)],
+            local: vec![private.clone()],
+            ..Default::default()
+        };
+        set.keep_local_out();
+        let walk = set.walk().unwrap();
+        let shared = set.shared_coverage(set.coverage(&walk), &walk);
+        let omitted: Vec<_> = shared.omitted.iter().map(|o| o.path.clone()).collect();
+        // the shared cache is still recorded, the local-only one is not
+        assert_eq!(omitted, vec![display_path(&target)]);
     }
 
     #[test]
