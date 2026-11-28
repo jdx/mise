@@ -151,6 +151,12 @@ ln -s .config/mise/config.local.toml mise.toml
 assert_fail_contains "mise set --file mise.toml FILELINK=1 2>&1" "Write global config with"
 assert_fail "test -e $HOME/.config/mise/config.local.toml"
 rm mise.toml
+# nor is one to a fragment in a folder of conf.d that does not exist yet, which the write would
+# create and global discovery would load
+ln -s .config/mise/conf.d/newfolder/mise.toml mise.toml
+assert_fail_contains "mise set --file mise.toml NEWFOLDER=1 2>&1" "Write global config with"
+assert_fail "test -e $HOME/.config/mise/conf.d/newfolder"
+rm mise.toml
 # nor is a task script's link to global config, which stays in the home directory's project root
 rm .mise
 mkdir -p mise-tasks
@@ -395,3 +401,16 @@ assert_fail_contains "EDITOR=echo mise tasks edit tt 2>&1" "refusing to write"
 assert "mise tasks edit --path tt" "$PWD/mise.toml"
 assert "mise trust mise.toml"
 assert "EDITOR=echo mise tasks edit tt" "$(cd ../outside/edit-toml && pwd -P)/mise.toml"
+
+echo "=== the config directory MISE_GLOBAL_CONFIG_FILE replaces holds no global config ==="
+# Global discovery then reads only the file the variable names, so a file in the default
+# directory is a project's like any other: in safe mode its link out is not followed.
+override_target="$(dirname "$HOME")/override-target"
+mkdir -p "$override_target" "$HOME/.config/mise/conf.d"
+echo "[env]" >"$override_target/linked.toml"
+ln -s "$override_target/linked.toml" "$HOME/.config/mise/conf.d/linked.toml"
+assert_fail_contains "MISE_GLOBAL_CONFIG_FILE=$HOME/elsewhere.toml MISE_SAFE=1 mise set --file $HOME/.config/mise/conf.d/linked.toml OVERRIDDEN=1 2>&1" "refusing to write"
+assert_not_contains "cat $override_target/linked.toml" "OVERRIDDEN"
+# without the variable the directory is global config, which may link anywhere
+assert "MISE_SAFE=1 mise set --file $HOME/.config/mise/conf.d/linked.toml GLOBAL=1"
+assert_contains "cat $override_target/linked.toml" 'GLOBAL = "1"'
