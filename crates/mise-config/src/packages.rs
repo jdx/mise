@@ -13,7 +13,8 @@ use std::collections::BTreeMap;
 pub enum PackageTomlConfig {
     /// version pin in the manager's native format, or "latest"
     Version(String),
-    Options(PackageOptionsTomlConfig),
+    // Boxed: the options table is much larger than a bare version string.
+    Options(Box<PackageOptionsTomlConfig>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, JsonSchema)]
