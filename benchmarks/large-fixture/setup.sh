@@ -80,6 +80,11 @@ m ls --json --current | while IFS= read -r line; do
 	fi
 done
 
+# The shims `shim-large` runs. reshim links each to the first `mise` on PATH,
+# which would be whatever mise is installed on the machine; putting the binary
+# measured first makes the shims run it.
+PATH="$(dirname "$mise"):$PATH" m reshim
+
 # Prime the caches a second run would find, so the first sample is not the only
 # one to build them.
 m ls >/dev/null
