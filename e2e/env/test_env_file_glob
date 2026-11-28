@@ -57,10 +57,12 @@ cd .. || exit 1
 mkdir -p profiles
 echo "STAR_PROFILE=1" >'profiles/*.env'
 echo "DEV_PROFILE=1" >profiles/dev.env
-cat <<'EOS' >.mise.toml
+for entry in 'profiles/{{ env.PROFILE }}.e*' 'profiles/$PROFILE.e*'; do
+  cat <<EOS >.mise.toml
 [env]
-_.file = ["profiles/{{ env.PROFILE }}.e*", "profiles/$PROFILE.e*"]
+_.file = '$entry'
 EOS
-assert_contains "PROFILE='*' mise env -s bash" "STAR_PROFILE=1"
-assert_not_contains "PROFILE='*' mise env -s bash" "DEV_PROFILE"
-assert_contains "PROFILE=dev mise env -s bash" "DEV_PROFILE=1"
+  assert_contains "PROFILE='*' mise env -s bash" "STAR_PROFILE=1"
+  assert_not_contains "PROFILE='*' mise env -s bash" "DEV_PROFILE"
+  assert_contains "PROFILE=dev mise env -s bash" "DEV_PROFILE=1"
+done
