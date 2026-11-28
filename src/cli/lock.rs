@@ -1705,14 +1705,24 @@ impl Lock {
         ))
         .await?;
         if !generate || self.bump || format_changed {
-            // A package whose pins disagree got no entry for a new version, so it
-            // keeps its previous entries, graphs included, as in generate mode.
+            // A package whose pins disagree got no entry for a version its entries
+            // don't cover, so that version gets no graph either. A version they
+            // already cover keeps its entry, and a new one for changed options,
+            // so its graph is still generated.
             let aube_tools = graph_tools
                 .iter()
-                .filter(|(ba, _)| {
-                    !lockfile
-                        .tools_for(&ba.short)
-                        .is_some_and(|entries| lockfile::package_pins_disagree(entries))
+                .filter(|(ba, tv)| {
+                    let Some(entries) = lockfile.tools_for(&ba.short) else {
+                        return true;
+                    };
+                    if !lockfile::package_pins_disagree(entries) {
+                        return true;
+                    }
+                    let backend_name = ba.stored_full();
+                    entries.iter().any(|entry| {
+                        entry.version == tv.version
+                            && entry.backend.as_deref().is_none_or(|b| b == backend_name)
+                    })
                 })
                 .cloned()
                 .collect::<Vec<_>>();
