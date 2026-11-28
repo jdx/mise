@@ -226,11 +226,17 @@ cargo test --all-features module_name -- --nocapture
 mise --cd crates/vfox run test   # the vfox crate
 ```
 
-Unit tests run one at a time in a shared process: `.cargo/config.toml` sets
-`RUST_TEST_THREADS=1`. `mise::testing::init` in `src/testing.rs` sets up the
-shared fixture directories under `test/` and the process environment. The
-library's tests call it from `src/test.rs`, and the binary's tests from the
-`test` module in `src/main.rs`. When a test changes settings or environment
+With `cargo test`, unit tests run one at a time in a shared process:
+`.cargo/config.toml` sets `RUST_TEST_THREADS=1`. `mise::testing::init` in
+`src/testing.rs` copies the fixtures under `test/` into the home directory the
+tests use, `test/home/0`, and sets up the process environment. The library's
+tests call it from `src/test.rs`, and the binary's tests from the `test` module
+in `src/main.rs`.
+
+`cargo nextest run --all-features` is faster: it runs every test in its own
+process, one per CPU at a time. Each of those processes uses its own home
+directory, `test/home/<slot>`, so tests that run at the same time do not share
+files. When a test changes settings or environment
 variables, use the existing guards, such as `SettingsGuard` and `EnvVarGuard`,
 so the change cannot leak into a later test.
 
@@ -301,7 +307,11 @@ set `MISE_E2E_BIN` to its path; the file must be named `mise`.
 The host still has to provide the shells, compilers, and services a test uses.
 `MISE_E2E_DOCKER=1` runs each test inside
 `ghcr.io/jdx/mise:e2e`, the image CI runs the E2E tests in, which has those
-packages; it needs a Linux build of mise. Set `MISE_GITHUB_TOKEN` or
+packages; it needs a Linux build of mise. Tests that run one after the other
+share a container: the harness kills what the last test left running and
+empties `/tmp`, `/root` and `/home` before the next one, and removes the
+container when a test fails. `MISE_E2E_DOCKER_REUSE=0` gives every test a
+container of its own. Set `MISE_GITHUB_TOKEN` or
 `GITHUB_TOKEN` for tests that call the GitHub API; the harness passes them
 through. When a test fails, the harness keeps its directory and prints the
 path.

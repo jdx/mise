@@ -252,9 +252,16 @@ async fn resolve(
     Ok(cell
         .get_or_init(|| async {
             let backend = tv.backend().ok();
+            let tool = ba.clone();
             let mut resolution = resolve_tool_lock_info(ba, tv, platform, backend).await;
+            // Fetched in the tool's safe mode scope, as its install fetches them: a
+            // project tool's artifact is wherever its release says it is.
             if let Ok(info) = &mut resolution.4
-                && let Err(error) = complete_artifact_checksums(info).await
+                && let Err(error) = crate::toolset::with_safe_mode_tool_scope(
+                    &tool,
+                    complete_artifact_checksums(info),
+                )
+                .await
             {
                 resolution.4 = Err(error.to_string());
             }
@@ -630,6 +637,7 @@ pub async fn generate(
         let semaphore = semaphore.clone();
         tasks.spawn(async move {
             let _permit = semaphore.acquire().await?;
+            let tool = ba.clone();
             let mut resolution = if let Some((info, conda)) = actual {
                 (
                     crate::toolset::install_state::state_short(&ba.short).into_owned(),
@@ -645,9 +653,18 @@ pub async fn generate(
                 resolve(ba, tv.clone(), platform).await?
             };
             if let Ok(info) = &mut resolution.4 {
-                complete_artifact_checksums(info).await?;
+                // Both download the tool's artifacts, so both run in its safe
+                // mode scope, as its install does: a project tool's release
+                // chooses those hosts, and no netrc login goes to them.
+                let checksums = async {
+                    complete_artifact_checksums(info).await?;
+                    if let Some(old) = &previous_info {
+                        check_replaced_weak_pins(old, info).await?;
+                    }
+                    eyre::Ok(())
+                };
+                crate::toolset::with_safe_mode_tool_scope(&tool, checksums).await?;
                 if let Some(old) = previous_info {
-                    check_replaced_weak_pins(&old, info).await?;
                     preserve_legacy_metadata(&old, info);
                 }
             }

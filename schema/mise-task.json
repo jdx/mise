@@ -268,9 +268,6 @@
             "^forgejo:": {
               "$ref": "#/$defs/tool_forgejo"
             },
-            "^ubi:": {
-              "$ref": "#/$defs/tool_ubi"
-            },
             "^http:": {
               "$ref": "#/$defs/tool_http"
             },
@@ -1519,38 +1516,6 @@
         }
       ]
     },
-    "tool_ubi": {
-      "description": "a tool installed with the ubi backend",
-      "oneOf": [
-        {
-          "description": "version of the tool to install",
-          "type": "string"
-        },
-        {
-          "allOf": [
-            {
-              "$ref": "#/$defs/tool"
-            },
-            {
-              "$ref": "#/$defs/tool_ubi_options"
-            },
-            {
-              "properties": {
-                "platforms": {
-                  "description": "per-platform option overrides",
-                  "$ref": "#/$defs/tool_ubi_platforms"
-                },
-                "platform": {
-                  "description": "per-platform option overrides (alias of platforms)",
-                  "$ref": "#/$defs/tool_ubi_platforms"
-                }
-              }
-            }
-          ],
-          "type": "object"
-        }
-      ]
-    },
     "tool_http": {
       "description": "a tool installed with the http backend",
       "oneOf": [
@@ -2285,48 +2250,6 @@
         "api_url": {
           "type": "string",
           "description": "api base url, for self-hosted forgejo or gitea instances"
-        }
-      }
-    },
-    "tool_ubi_options": {
-      "type": "object",
-      "properties": {
-        "exe": {
-          "type": "string",
-          "description": "name of the executable inside the archive to extract"
-        },
-        "rename_exe": {
-          "type": "string",
-          "description": "name to give the extracted executable"
-        },
-        "matching": {
-          "type": "string",
-          "description": "substring to match release filenames when several match the os and arch"
-        },
-        "matching_regex": {
-          "type": "string",
-          "description": "regex release filenames must match before os and arch matching"
-        },
-        "provider": {
-          "type": "string",
-          "description": "forge used to fetch releases and assets",
-          "enum": ["github", "gitlab"]
-        },
-        "api_url": {
-          "type": "string",
-          "description": "provider api base url, for self-hosted instances"
-        },
-        "tag_regex": {
-          "type": "string",
-          "description": "regex release tags must match to be listed as versions"
-        },
-        "extract_all": {
-          "description": "extract every file in the archive instead of only the binary",
-          "$ref": "#/$defs/tool_bool"
-        },
-        "bin_path": {
-          "type": "string",
-          "description": "directory in the install containing binaries, used with extract_all"
         }
       }
     },
@@ -3271,22 +3194,6 @@
           "url": {
             "description": "direct download url for this platform, tera templated; skips release asset selection",
             "type": "string"
-          }
-        }
-      }
-    },
-    "tool_ubi_platforms": {
-      "description": "per-platform option overrides keyed by <os>-<arch>, such as linux-x64 or macos-arm64",
-      "type": "object",
-      "propertyNames": {
-        "pattern": "^[A-Za-z]+-[A-Za-z0-9_]+$"
-      },
-      "additionalProperties": {
-        "description": "options for this platform, overriding the same options set for the whole tool",
-        "type": "object",
-        "properties": {
-          "bin_path": {
-            "$ref": "#/$defs/tool_ubi_options/properties/bin_path"
           }
         }
       }

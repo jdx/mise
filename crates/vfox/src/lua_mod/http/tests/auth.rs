@@ -179,6 +179,30 @@ fn test_add_default_headers_skips_raw_githubusercontent() {
 }
 
 #[test]
+fn test_add_default_headers_sends_no_token_off_https_or_to_another_port() {
+    let lua = Lua::new();
+    lua.set_named_registry_value("github_token", "ghp_registry")
+        .unwrap();
+
+    for url in [
+        "http://api.github.com/repos/owner/repo",
+        "https://api.github.com:8443/repos/owner/repo",
+        "http://api.octocorp.ghe.com/repos/owner/repo",
+    ] {
+        let headers = add_default_headers(&lua, url, HeaderMap::default());
+        assert!(!headers.contains_key(AUTHORIZATION), "{url}");
+        assert!(!headers.contains_key("x-github-api-version"), "{url}");
+    }
+    // The default port written out is the same origin.
+    let headers = add_default_headers(
+        &lua,
+        "https://api.github.com:443/repos/owner/repo",
+        HeaderMap::default(),
+    );
+    assert!(headers.contains_key(AUTHORIZATION));
+}
+
+#[test]
 fn test_add_default_headers_attaches_to_ghe_api_host() {
     let lua = Lua::new();
     lua.set_named_registry_value("github_token", "ghe_token")

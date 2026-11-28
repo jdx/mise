@@ -56,7 +56,13 @@ release downloads, keep only the first rule.
 A plain key matches anywhere in the URL, including the path and query, and every
 occurrence is replaced. `github.com` also matches `api.github.com` and
 `github.com.example.org`. Include the scheme and a trailing slash, such as
-`https://github.com/`, to match one host.
+`https://github.com/`, to match one host. Such a key still matches where that
+text appears in the path or query of a URL on another host; only a regex
+anchored with `^` matches at the start of the URL alone.
+
+Rules see the URL without any `user:password@` it carries, so a key such as
+`https://github.com/` also matches `https://user:token@github.com/...`, and a
+capture never picks up the login.
 
 A key that starts with `regex:` is a regular expression; see
 [Regex rules](#regex-rules).
@@ -140,18 +146,28 @@ make an untrusted server trustworthy.
 
 ## Credentials
 
-When a rule sends a request to a different host, mise drops the credentials
-meant for the original host: the `Authorization` header, cookies, API key
-headers, and any `user:password` in the URL. It then adds
-[netrc](#netrc) credentials for the new host, if there are any. A rule that
-keeps the host keeps the credentials.
+When a rule sends a request to a different server, meaning another host or
+another port of the same host, mise drops the credentials meant for the
+original server: the `Authorization` header, cookies, API key headers, and any
+`user:password` in the URL. It then adds [netrc](#netrc) credentials for the
+host the request goes to, if there are any. A rule that keeps both the host and
+the port keeps the credentials.
+
+A rule whose replacement contains `user:password@` is used only when the
+rewritten URL has that login as its own and is on the scheme, host, and port
+the replacement names. Where the key matches somewhere else, such as in the
+path or query of a URL on another host, mise skips the rule for that URL and
+tries the next one, so the login is not pasted into a request to a different
+server.
 
 mise refuses to send credentials over plain HTTP after an HTTPS-to-HTTP rewrite,
 whether they came from the original request or are written into the rule. A
 downgrade without credentials is allowed, and so is one whose credentials come
-from a netrc entry for the new host. These rules also cover GitHub attestation
-requests and Conda channels. For Sigstore TUF metadata, mise ignores such a
-rewrite and keeps the default HTTPS URL.
+from a netrc entry for the host the request goes to: netrc is keyed by host, so
+its login goes to a plain HTTP URL of that host without a rewrite as well.
+These rules also cover GitHub attestation requests and Conda channels. For
+Sigstore TUF metadata, mise ignores such a rewrite and keeps the default HTTPS
+URL.
 
 Avoid writing credentials into replacement URLs, where they can appear in logs.
 Only route requests to servers you trust with both the artifacts and the

@@ -200,9 +200,12 @@ impl Vfox {
         self.url_rewriter = Some(Arc::new(rewriter));
     }
 
+    /// Set the default headers of plugin requests. The resolver gets the URL requested and the
+    /// URL the plugin named before the URL rewriter ran, so it can tell a mirror the rewriter
+    /// chose from a host the plugin asked for.
     pub fn set_http_headers_resolver<F>(&mut self, resolver: F)
     where
-        F: Fn(&Url) -> HeaderMap + Send + Sync + 'static,
+        F: Fn(&Url, &Url) -> HeaderMap + Send + Sync + 'static,
     {
         self.http_headers_resolver = Some(Arc::new(resolver));
     }

@@ -33,11 +33,14 @@ jobs:
   classify-changes:
     permissions:
       contents: read
+      actions: read
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
       full-ci: ${{ steps.classify.outputs.full-ci }}
       deps-changed: ${{ steps.deps.outputs.deps-changed }}
+      # 'true' runs the Windows jobs on the self-hosted pool, anything else on windows-latest.
+      windows-self-hosted: ${{ steps.windows-queue.outputs.windows-self-hosted || steps.windows-runner.outputs.windows-self-hosted }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         if: github.event_name == 'pull_request'
@@ -90,6 +93,95 @@ jobs:
           fi
           echo "deps-changed=$deps_changed" >> "$GITHUB_OUTPUT"
 
+      # Windows jobs use the self-hosted pool only for trusted runs with
+      # WINDOWS_SELF_HOSTED=true. This step is the default and makes no API call.
+      - name: Choose Windows runner
+        id: windows-runner
+        env:
+          SELF_HOSTED: ${{ inputs.trusted && vars.WINDOWS_SELF_HOSTED == 'true' && 'true' || 'false' }}
+        run: |
+          echo "windows-self-hosted=$SELF_HOSTED" >> "$GITHUB_OUTPUT"
+          echo "Windows jobs: self-hosted=$SELF_HOSTED (trusted=${{ inputs.trusted }}, WINDOWS_SELF_HOSTED=${{ vars.WINDOWS_SELF_HOSTED }})"
+
+      # Overflow to hosted runners when the self-hosted queue is deep. GitHub has no
+      # "queued jobs by label" API and listing runners needs admin rights, so walk the
+      # oldest in-flight runs of the test workflow (2 + MAX_RUNS requests, plus one
+      # for every 100 runs in flight past the first 100 of a status) and measure
+      # how long the oldest job still queued for the label has waited. A failed
+      # request, an empty result or a parse failure ends the step without an
+      # override, which leaves the self-hosted decision above.
+      # So does a request that stalls: the step's own time limit fails the step,
+      # which continue-on-error passes over, where the job's limit would cancel
+      # the job and skip every job that needs it.
+      # Only API data is used here; nothing from the checkout runs with this token.
+      - name: Check Windows queue depth
+        id: windows-queue
+        if: ${{ inputs.trusted && vars.WINDOWS_SELF_HOSTED == 'true' }}
+        continue-on-error: true
+        timeout-minutes: 2
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUNNER_LABEL: jdx-win-trusted-v1
+          # Fall back to hosted runners when the oldest queued job has waited longer than this.
+          MAX_WAIT_MINUTES: "15"
+          MAX_RUNS: "8"
+        run: |
+          set +e
+          set -o pipefail
+          now=$(date +%s)
+          max_wait=$((MAX_WAIT_MINUTES * 60))
+          # Every failure ends here, before anything is written to GITHUB_OUTPUT.
+          keep_self_hosted() {
+            echo "$1: using the self-hosted runners"
+            exit 0
+          }
+
+          listed=""
+          # The API lists the newest runs first, so the oldest are on the last
+          # page: read them all.
+          for status in in_progress queued; do
+            page=$(gh api --paginate "repos/$REPO/actions/workflows/test.yml/runs?status=$status&per_page=100" \
+              --jq '.workflow_runs[] | [.created_at, .id] | @tsv') ||
+              keep_self_hosted "Could not list the $status test runs"
+            listed+="$page"$'\n'
+          done
+          # Keep the run ids before counting: a status with no runs leaves an empty
+          # line, which sorts first and would take one of the MAX_RUNS places.
+          runs=$(printf '%s' "$listed" | sort | cut -f2 | grep -E '^[0-9]+$' | head -n "$MAX_RUNS")
+
+          # A run created earlier can queue its Windows jobs later, so the oldest
+          # queued job is the minimum over the runs, not the first one found.
+          oldest=""
+          for id in $runs; do
+            created=$(gh api "repos/$REPO/actions/runs/$id/jobs?per_page=100" | jq -r --arg label "$RUNNER_LABEL" \
+              '[.jobs[] | select(.status == "queued" and ((.labels // []) | index($label))) | .created_at] | min // empty') ||
+              keep_self_hosted "Could not read the jobs of run $id"
+            [ -n "$created" ] || continue
+            queued_at=$(date -d "$created" +%s) ||
+              keep_self_hosted "Could not parse the queue time of a job in run $id"
+            if [ -z "$oldest" ] || [ "$queued_at" -lt "$oldest" ]; then
+              oldest=$queued_at
+            fi
+            # Past the threshold already: an older job elsewhere would not change the decision.
+            if [ $((now - oldest)) -gt "$max_wait" ]; then
+              break
+            fi
+          done
+
+          if [ -z "$oldest" ]; then
+            keep_self_hosted "No job is queued for $RUNNER_LABEL"
+          fi
+          # Compared in seconds: whole minutes would let a job wait up to a minute longer.
+          waited=$((now - oldest))
+          shown="$((waited / 60))m$((waited % 60))s"
+          if [ "$waited" -gt "$max_wait" ]; then
+            echo "A job queued for $RUNNER_LABEL has waited $shown (> ${MAX_WAIT_MINUTES}m): using windows-latest"
+            echo "windows-self-hosted=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "The oldest job queued for $RUNNER_LABEL has waited $shown (<= ${MAX_WAIT_MINUTES}m): using the self-hosted runners"
+          fi
+
   build-ubuntu:
     runs-on: ${{ !inputs.trusted && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64-large;overrides.cache-tag=cache' }}
     timeout-minutes: 60
@@ -118,16 +210,16 @@ jobs:
           path: target/ci-artifacts/mise
 
   build-windows:
-    runs-on: ${{ inputs.trusted && vars.WINDOWS_SELF_HOSTED == 'true' && fromJSON('["self-hosted", "jdx-win-trusted-v1"]') || 'windows-latest' }}
+    runs-on: ${{ needs.classify-changes.outputs.windows-self-hosted == 'true' && fromJSON('["self-hosted", "jdx-win-trusted-v1"]') || 'windows-latest' }}
     timeout-minutes: 60
     needs: [classify-changes]
     if: needs.classify-changes.outputs.full-ci == 'true'
     env:
       MISE_DATA_DIR: ~/.local/share/mise
       MISE_CACHE_DIR: ~/.cache/mise
-      # Runs on the self-hosted runner (repository variable WINDOWS_SELF_HOSTED=true, trusted runs
-      # only) use its shared mbx cache.
-      MBX_DISABLE: ${{ inputs.trusted && vars.WINDOWS_SELF_HOSTED == 'true' && '0' || '1' }}
+      # Runs on the self-hosted runner (see classify-changes: trusted, WINDOWS_SELF_HOSTED=true and
+      # a short queue) use its shared mbx cache.
+      MBX_DISABLE: ${{ needs.classify-changes.outputs.windows-self-hosted == 'true' && '0' || '1' }}
       MBX_TARGET_VIEWS: "0"
       CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS: -C link-arg=/STACK:8000000 -C target-feature=+crt-static -D warnings
     steps:
@@ -137,14 +229,14 @@ jobs:
       # The self-hosted runner keeps its Cargo state and mbx store between jobs, so there is
       # nothing to restore, and saving would upload gigabytes from a home connection.
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
-        if: ${{ !(inputs.trusted && vars.WINDOWS_SELF_HOSTED == 'true') }}
+        if: ${{ needs.classify-changes.outputs.windows-self-hosted != 'true' }}
         with:
           shared-key: build-windows
           save-if: ${{ inputs.trusted && github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/release' || startsWith(github.ref, 'refs/tags/v')) }}
       - shell: pwsh
         run: |
-          ${{ inputs.trusted && vars.WINDOWS_SELF_HOSTED == 'true' && 'mbx' || 'cargo' }} build --no-default-features --features rustls-native-roots,vfox/vendored-lua,self_update --all-targets
-          ${{ inputs.trusted && vars.WINDOWS_SELF_HOSTED == 'true' && 'mbx' || 'cargo' }} build -p mise-shim
+          ${{ needs.classify-changes.outputs.windows-self-hosted == 'true' && 'mbx' || 'cargo' }} build --no-default-features --features rustls-native-roots,vfox/vendored-lua,self_update --all-targets
+          ${{ needs.classify-changes.outputs.windows-self-hosted == 'true' && 'mbx' || 'cargo' }} build -p mise-shim
           Add-Content $env:GITHUB_PATH "$env:GITHUB_WORKSPACE\target\debug"
       - parallel:
           - run: mise -v
@@ -165,6 +257,13 @@ jobs:
       # Enable the mise Cargo wrapper for unit tests and E2E rebuilds.
       MBX_DISABLE: "0"
       MBX_CACHE_DIR: ${{ github.workspace }}/.mbx-cache
+      # One mbx for the whole job: the copy the action installs, which builds
+      # the bootstrap binary before mise exists. mbx points build scripts at a
+      # C compiler shim (HOST_CC) under a directory named after its own install
+      # path, so a second copy from mise.toml gives the Cargo wrapper a
+      # different HOST_CC. The cc build scripts (aws-lc-sys, ring, zstd-sys, ...)
+      # then rerun, and everything built on them is compiled again.
+      MISE_DISABLE_TOOLS: mr-boxington
       # Keep the bootstrap binary at target/debug/mise with either backend.
       MBX_TARGET_VIEWS: "0"
       MISE_CARGO_BUILD_COMMAND: cargo build
@@ -208,27 +307,6 @@ jobs:
       # The CI profile fails ordinary tests after one second and explicitly
       # budgeted full-command-graph tests after two seconds.
       - run: mise run test:unit-ci
-        if: ${{ !(inputs.trusted && github.event_name == 'push' && github.ref == 'refs/heads/main') }}
-      # On main the same run goes through jouet so its timing is recorded. The
-      # `jouet-cost` job in test.yml pushes the timings, so this job needs no write token.
-      # `--display human` streams the output, and the baseline rerun is off so a
-      # failure stays a failure.
-      - name: Test with jouet
-        if: ${{ inputs.trusted && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-        env:
-          JOUET_TEST_BASELINE: "off"
-        run: |
-          mise x -- jouet test --display human --cmd -- mise run test:unit-ci
-      - name: Bundle jouet timings
-        if: ${{ always() && inputs.trusted && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-        run: git bundle create "$RUNNER_TEMP/cost-${{ github.job }}-${{ strategy.job-index }}.bundle" refs/notes/jouet-cost || true
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: ${{ always() && inputs.trusted && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-        continue-on-error: true
-        with:
-          name: jouet-cost-${{ github.job }}-${{ strategy.job-index }}
-          path: ${{ runner.temp }}/cost-${{ github.job }}-${{ strategy.job-index }}.bundle
-          if-no-files-found: ignore
       # The full E2E suite runs on Linux. Tests whose filenames contain `macos`
       # are also discovered and exercised here for platform-specific coverage.
       - run: mise run test:e2e macos
@@ -390,8 +468,12 @@ jobs:
           - name: Pull e2e Docker image
             run: docker pull ghcr.io/jdx/mise:e2e
       - run: echo "$PWD/target/debug" >> "$GITHUB_PATH" && chmod +x target/debug/mise
+      # With the image and the build in place, the tests that start real
+      # containers have to run here, not skip.
       - name: Test e2e runner
         run: python3 scripts/test-e2e-runner.py
+        env:
+          MISE_E2E_RUNNER_DOCKER: "1"
       # Tests run in ephemeral containers and do not need host mise tools.
       # Four branches on a large runner; each handles two token-isolated
       # tranches sequentially, capped at eight containers total.
@@ -500,16 +582,16 @@ jobs:
         run: scripts/test-bootstrap-linux-host.sh target/debug/mise
 
   windows-unit:
-    runs-on: ${{ inputs.trusted && vars.WINDOWS_SELF_HOSTED == 'true' && fromJSON('["self-hosted", "jdx-win-trusted-v1"]') || 'windows-latest' }}
+    runs-on: ${{ needs.classify-changes.outputs.windows-self-hosted == 'true' && fromJSON('["self-hosted", "jdx-win-trusted-v1"]') || 'windows-latest' }}
     timeout-minutes: 60
     needs: [classify-changes]
     if: needs.classify-changes.outputs.full-ci == 'true'
     env:
       MISE_DATA_DIR: ~/.local/share/mise
       MISE_CACHE_DIR: ~/.cache/mise
-      # Runs on the self-hosted runner (repository variable WINDOWS_SELF_HOSTED=true, trusted runs
-      # only) use its shared mbx cache.
-      MBX_DISABLE: ${{ inputs.trusted && vars.WINDOWS_SELF_HOSTED == 'true' && '0' || '1' }}
+      # Runs on the self-hosted runner (see classify-changes: trusted, WINDOWS_SELF_HOSTED=true and
+      # a short queue) use its shared mbx cache.
+      MBX_DISABLE: ${{ needs.classify-changes.outputs.windows-self-hosted == 'true' && '0' || '1' }}
       MBX_TARGET_VIEWS: "0"
       CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS: -C link-arg=/STACK:8000000 -C target-feature=+crt-static -D warnings
     steps:
@@ -517,7 +599,7 @@ jobs:
         with:
           persist-credentials: false
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
-        if: ${{ !(inputs.trusted && vars.WINDOWS_SELF_HOSTED == 'true') }}
+        if: ${{ needs.classify-changes.outputs.windows-self-hosted != 'true' }}
         with:
           shared-key: windows-unit
           save-if: ${{ inputs.trusted && github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/release' || startsWith(github.ref, 'refs/tags/v')) }}
@@ -527,20 +609,20 @@ jobs:
           timeout_minutes: 30
           retry_wait_seconds: 30
           max_attempts: 2
-          command: ${{ inputs.trusted && vars.WINDOWS_SELF_HOSTED == 'true' && 'mbx' || 'cargo' }} test
+          command: ${{ needs.classify-changes.outputs.windows-self-hosted == 'true' && 'mbx' || 'cargo' }} test
       # Windows is where the members rot fastest: their tests assume POSIX paths and shells
       # unless something runs them here.
       - name: cargo test (workspace members)
-        run: ${{ inputs.trusted && vars.WINDOWS_SELF_HOSTED == 'true' && 'mbx' || 'cargo' }} test --workspace --exclude mise
+        run: ${{ needs.classify-changes.outputs.windows-self-hosted == 'true' && 'mbx' || 'cargo' }} test --workspace --exclude mise
   # Not a duplicate of the Linux lint: `#[cfg]` decides whether code exists, so
   # Windows-only code is never seen by Clippy on Linux. A job of its own keeps it
   # off windows-unit's time limit. Default features only: `aws-lc-sys` needs NASM
   # to build on Windows, and feature combinations are covered on Linux.
   windows-lint:
-    runs-on: ${{ inputs.trusted && vars.WINDOWS_SELF_HOSTED == 'true' && fromJSON('["self-hosted", "jdx-win-trusted-v1"]') || 'windows-latest' }}
+    runs-on: ${{ needs.classify-changes.outputs.windows-self-hosted == 'true' && fromJSON('["self-hosted", "jdx-win-trusted-v1"]') || 'windows-latest' }}
     timeout-minutes: 40
     env:
-      MBX_DISABLE: ${{ inputs.trusted && vars.WINDOWS_SELF_HOSTED == 'true' && '0' || '1' }}
+      MBX_DISABLE: ${{ needs.classify-changes.outputs.windows-self-hosted == 'true' && '0' || '1' }}
       MBX_TARGET_VIEWS: "0"
     needs: [classify-changes]
     if: needs.classify-changes.outputs.full-ci == 'true'
@@ -550,7 +632,7 @@ jobs:
         with:
           persist-credentials: false
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
-        if: ${{ !(inputs.trusted && vars.WINDOWS_SELF_HOSTED == 'true') }}
+        if: ${{ needs.classify-changes.outputs.windows-self-hosted != 'true' }}
         with:
           shared-key: windows-lint
           save-if: ${{ inputs.trusted && github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/release' || startsWith(github.ref, 'refs/tags/v')) }}
@@ -564,7 +646,7 @@ jobs:
           timeout_minutes: 17
           retry_wait_seconds: 30
           max_attempts: 2
-          command: ${{ inputs.trusted && vars.WINDOWS_SELF_HOSTED == 'true' && 'mbx' || 'cargo' }} clippy --workspace --all-targets --ignore-rust-version -- -D warnings
+          command: ${{ needs.classify-changes.outputs.windows-self-hosted == 'true' && 'mbx' || 'cargo' }} clippy --workspace --all-targets --ignore-rust-version -- -D warnings
       # Read-only: records the state of the runner when both attempts failed.
       - name: Print runner diagnostics
         if: failure()

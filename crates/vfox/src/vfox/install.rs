@@ -226,7 +226,7 @@ impl Vfox {
                     None => {
                         let mut request = client.get(request_url.clone());
                         if let Some(resolver) = &self.http_headers_resolver {
-                            request = request.headers(resolver(&request_url));
+                            request = request.headers(resolver(&request_url, url));
                         }
                         request.send().await?
                     }
@@ -257,7 +257,7 @@ impl Vfox {
             let mut headers = self
                 .http_headers_resolver
                 .as_ref()
-                .map(|resolver| resolver(&current))
+                .map(|resolver| resolver(&current, trusted))
                 .unwrap_or_default();
             if current.origin() == trusted.origin() {
                 headers.extend(plugin_headers.clone());
@@ -266,7 +266,7 @@ impl Vfox {
             if !resp.status().is_redirection() {
                 return Ok(Some(resp));
             }
-            let Some(next) = resp
+            let Some(mut next) = resp
                 .headers()
                 .get(reqwest::header::LOCATION)
                 .and_then(|l| l.to_str().ok())
@@ -274,6 +274,7 @@ impl Vfox {
             else {
                 return Ok(Some(resp));
             };
+            carry_login_to_same_origin(&current, &mut next);
             current = next;
         }
         Ok(None)
@@ -477,6 +478,23 @@ impl Vfox {
         }
         Ok(())
     }
+}
+
+/// Give `next`, a redirect from `current`, the login written in `current`
+/// when both are on one origin and `next` names none, as a relative
+/// `Location` already does. Without it, an absolute same-origin `Location`
+/// would drop a mirror URL's explicit password, and the header resolver
+/// would put a netrc login in its place. A redirect to another origin
+/// keeps no login, so the login never leaves the origin it was written for.
+fn carry_login_to_same_origin(current: &Url, next: &mut Url) {
+    if next.origin() != current.origin() || !next.username().is_empty() || next.password().is_some()
+    {
+        return;
+    }
+    // Both setters only fail for a URL that cannot have a login, which
+    // `next` cannot be when it shares an http(s) origin with `current`.
+    let _ = next.set_username(current.username());
+    let _ = next.set_password(current.password());
 }
 
 /// Fails if a symlink under `root` points outside of it. Each target is resolved component

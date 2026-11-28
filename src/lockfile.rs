@@ -7594,11 +7594,14 @@ fn find_locked_backend_for_version(
     // Discovery includes parent lockfiles and runs before registry fallback.
     // A recorded backend must not revive a disabled backend for a shorthand,
     // and one mise cannot construct must not hide a usable entry, the same
-    // test lockfile resolution applies to its candidates.
+    // test lockfile resolution applies to its candidates. A removed backend is
+    // kept, so the tool fails with the removal error instead of quietly
+    // installing from whatever backend the registry names.
     let usable = |tool: &&LockfileTool| {
         tool.backend.as_ref().is_some_and(|full| {
-            backend::arg_to_backend(BackendArg::new(full.clone(), Some(full.clone())))
-                .is_some_and(|backend| !backend::is_disabled_backend_type(&backend.get_type()))
+            backend::removed_backend_error(full).is_some()
+                || backend::arg_to_backend(BackendArg::new(full.clone(), Some(full.clone())))
+                    .is_some_and(|backend| !backend::is_disabled_backend_type(&backend.get_type()))
         })
     };
     // The lockfile with the highest precedence that locks the tool decides

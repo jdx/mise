@@ -1,7 +1,12 @@
+# The unit tests' home directories, one per nextest slot: see src/testing.rs.
+home/
+test-build-output.txt
+# What the unit tests wrote here while `test/` itself was their home directory.
 data/
 !data/plugins
 cache/
 .cache/
 state/
 cwd/
-test-build-output.txt
+config/config.toml
+.test-tool-versions

@@ -36,9 +36,17 @@ async fn test_url_rewriter_applies_to_all_lua_http_methods() {
         .unwrap();
     lua.set_named_registry_value(crate::http::URL_REWRITER_REGISTRY_KEY, rewriter)
         .unwrap();
+    // The login comes only for the mirror URL first and the plugin's own URL
+    // second, so the requests below miss it if the resolver is handed the
+    // URLs swapped or one of them twice.
+    let mirror_resource = format!("{}/resource", server.uri());
     let headers_resolver = lua
-        .create_function(|lua, _: String| {
-            lua.create_table_from([("Authorization", "Basic bWlycm9yOnNlY3JldA==")])
+        .create_function(move |lua, (url, named): (String, String)| {
+            if url == mirror_resource && named == "https://api.github.com/resource" {
+                lua.create_table_from([("Authorization", "Basic bWlycm9yOnNlY3JldA==")])
+            } else {
+                lua.create_table()
+            }
         })
         .unwrap();
     lua.set_named_registry_value(
