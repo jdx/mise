@@ -54,6 +54,14 @@ pub fn direct_command(
     }
 }
 
+/// The file [`direct_command`] would run for `program` with `path` as PATH,
+/// found by the same lookup, or `None` when the command would go through the
+/// shell instead. Tests use it to tell whether a direct run is possible.
+#[cfg(all(test, unix))]
+pub(crate) fn direct_program(program: &str, path: &std::ffi::OsStr) -> Option<std::path::PathBuf> {
+    unix::resolve(program, path)
+}
+
 #[cfg(unix)]
 mod unix {
     use std::collections::BTreeMap;
@@ -87,7 +95,7 @@ mod unix {
         Some(words)
     }
 
-    fn resolve(program: &str, path: &std::ffi::OsStr) -> Option<PathBuf> {
+    pub(super) fn resolve(program: &str, path: &std::ffi::OsStr) -> Option<PathBuf> {
         let dirs: Vec<_> = std::env::split_paths(path).collect();
         if dirs.iter().any(|dir| !dir.is_absolute()) {
             return None;

@@ -1,5 +1,7 @@
 use crate::args::BackendArg;
+use crate::config::config_file::{is_ignored, is_project_dir_trusted, project_dir_trust_hint};
 use crate::config::env_directive::venv::{PythonVenvOptions, Venv, create_python_venv, load_venv};
+use crate::config::settings::SettingsExt;
 use crate::config::{Config, Settings};
 use crate::env_diff::EnvMap;
 use crate::file::display_path;
@@ -24,10 +26,9 @@ pub(crate) async fn uv_venv(config: &Arc<Config>, ts: &Toolset) -> Result<&'stat
             if !uv_auto.should_source() {
                 return Ok(None);
             }
-            let Some(uv_root) = uv_root() else {
+            let Some((uv_root, venv_path)) = uv_project(config) else {
                 return Ok(None);
             };
-            let venv_path = uv_venv_path(config, &uv_root);
             if !venv_path.exists() {
                 if uv_auto.should_create() {
                     match create_python_venv(
@@ -78,8 +79,38 @@ pub(crate) async fn uv_venv(config: &Arc<Config>, ts: &Toolset) -> Result<&'stat
         .await
 }
 
-pub(crate) fn uv_root() -> Option<PathBuf> {
+fn uv_root() -> Option<PathBuf> {
     file::find_up(dirs::CWD.as_ref()?, &["uv.lock"]).map(|p| p.parent().unwrap().to_path_buf())
+}
+
+/// The uv project around the current directory and the virtualenv `python.uv_venv_auto` may
+/// activate or create for it.
+///
+/// The project is the nearest directory with a `uv.lock`, which any repository can ship. A
+/// virtualenv inside it, or one mise would create (with `uv` run there), is used only when that
+/// directory is trusted, because activating it puts the project's own files first on PATH.
+/// A virtualenv elsewhere that already exists, such as an absolute `UV_PROJECT_ENVIRONMENT` the
+/// user set, holds nothing the project wrote.
+pub(crate) fn uv_project(config: &Config) -> Option<(PathBuf, PathBuf)> {
+    let root = uv_root()?;
+    let venv = uv_venv_path(config, &root);
+    let needs_trust = venv.starts_with(&root) || !venv.exists();
+    if needs_trust && !is_project_dir_trusted(config, &root) {
+        if Settings::safe_mode() || is_ignored(&root) {
+            debug!(
+                "uv project {} not activated: it is not trusted",
+                display_path(&root)
+            );
+        } else {
+            warn_once!(
+                "uv project {root} is not trusted, {hint} to activate its virtualenv",
+                root = display_path(&root),
+                hint = project_dir_trust_hint(&root),
+            );
+        }
+        return None;
+    }
+    Some((root, venv))
 }
 
 pub(crate) fn uv_venv_path(config: &Config, uv_root: &Path) -> PathBuf {

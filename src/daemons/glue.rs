@@ -21,8 +21,45 @@ use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource, Toolset, ToolsetBu
 
 pub async fn config_for_root(config: &Arc<Config>, root: &Path) -> Result<Arc<Config>> {
     let (paths, idiomatic) = crate::config::load_config_hierarchy_from_dir(root).await?;
+    ensure_foreign_root_trusted(config, root, &paths)?;
     let files = crate::config::load_config_files_from_paths(&paths, &idiomatic).await?;
     Ok(config.with_config_files(files))
+}
+
+/// A root can be one a `project =` reference named, inside this project's
+/// directory or outside it. The commands that load it trust their own config
+/// implicitly, and loading the other project's files through that branch
+/// would trust them too, with no prompt. Every file of its hierarchy that is
+/// not already part of this project's loaded config has to be trusted
+/// beforehand: `.tool-versions` and idiomatic version files as much as
+/// `mise.toml`, since each can carry a template or a `path:` version. Being
+/// below this project's directory does not count: this project never loaded
+/// those files, and trust is given per config root, not per directory tree.
+fn ensure_foreign_root_trusted(config: &Config, root: &Path, paths: &[PathBuf]) -> Result<()> {
+    use crate::config::config_file::{config_trust_root, is_path_trusted};
+    use crate::config::{Settings, SettingsExt};
+    if Settings::safe_mode() {
+        return Ok(());
+    }
+    let canonical = |path: &Path| path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+    let root = canonical(root);
+    let active: std::collections::HashSet<PathBuf> =
+        config.config_files.keys().map(|p| canonical(p)).collect();
+    for path in paths {
+        if crate::config::is_global_config(path)
+            || active.contains(&canonical(path))
+            || is_path_trusted(path)
+        {
+            continue;
+        }
+        bail!(
+            "daemons in {} need {}, which is not trusted; run `mise trust {}` after reviewing it",
+            mise_util::file::display_path(&root),
+            mise_util::file::display_path(path),
+            config_trust_root(path).display()
+        );
+    }
+    Ok(())
 }
 
 /// Build the daemon toolset without installing anything.

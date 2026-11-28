@@ -29,7 +29,7 @@ pub use vfox::InstallResult;
 pub use vfox::TerminalLock;
 pub use vfox::Vfox;
 
-pub use http::cancel_http_requests;
+pub use http::{cancel_http_requests, set_http_timeout};
 
 mod config;
 mod context;

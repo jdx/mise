@@ -301,6 +301,43 @@ fn an_untrusted_referenced_project_is_not_imported() {
 }
 
 #[test]
+fn an_untrusted_tool_versions_file_above_a_referenced_project_is_not_imported() {
+    let serial = import_lock();
+    // The referenced project is reloaded through its whole hierarchy, with
+    // the commands that start daemons trusting what they load, so a
+    // `.tool-versions` above it needs the same trust its mise.toml does.
+    let tmp = tempfile::tempdir().unwrap();
+    let platform = tmp.path().join("platform");
+    let auth = platform.join("services").join("auth");
+    let auth_config = untrusted_project(&auth, "[daemons.auth]\nrun = 'exec auth'\n");
+    let tool_versions = platform.join(&*crate::env::MISE_DEFAULT_TOOL_VERSIONS_FILENAME);
+    std::fs::write(&tool_versions, "# {{ exec(command='true') }}\n").unwrap();
+    let app = tmp.path().join("app");
+    std::fs::create_dir_all(&app).unwrap();
+    let config = files(&[(
+        app.join("mise.toml").to_str().unwrap(),
+        "[daemons.auth]\nproject = '../platform/services/auth'\n",
+    )]);
+    // Paranoid mode is the only way past the unit-test trust bypass; see
+    // `an_untrusted_referenced_project_is_not_imported`.
+    paranoid_on(&serial);
+    crate::config::config_file::trust(&auth_config).unwrap();
+    let set = load(&config).unwrap();
+    assert!(set.find("auth").is_none());
+    let err = &failure(&set, "auth");
+    assert!(err.contains("not trusted"), "{err}");
+    assert!(
+        err.contains(&*crate::env::MISE_DEFAULT_TOOL_VERSIONS_FILENAME),
+        "{err}"
+    );
+    assert!(!host::is_path_trusted(&tool_versions));
+
+    crate::config::config_file::trust(&tool_versions).unwrap();
+    let set = load(&config).unwrap();
+    assert_eq!(set.find("auth").map(|d| d.imported), Some(true));
+}
+
+#[test]
 fn referenced_projects_with_tool_versions_files_still_import() {
     let _serial = import_lock();
     // `.tool-versions` sits in the same config list but is not TOML; parsing
