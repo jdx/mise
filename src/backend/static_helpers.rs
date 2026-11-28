@@ -180,7 +180,7 @@ async fn fetch_published_checksum(
 }
 
 /// Whether `e` is an HTTP 404 response, by its status rather than its message.
-fn is_not_found(e: &eyre::Report) -> bool {
+pub(crate) fn is_not_found(e: &eyre::Report) -> bool {
     e.chain().any(|cause| {
         cause
             .downcast_ref::<reqwest::Error>()

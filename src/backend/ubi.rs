@@ -5,7 +5,7 @@ use crate::backend::options::BackendOptions;
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::runtime_path_for_install_path;
 use crate::backend::static_helpers::{
-    ensure_safe_relative_bin_dir, ensure_safe_relative_bin_path, try_with_v_prefix,
+    ensure_safe_relative_bin_dir, ensure_safe_relative_bin_path, is_not_found, try_with_v_prefix,
 };
 use crate::config::{Config, Settings};
 use crate::env::{
@@ -89,12 +89,13 @@ impl<'a> UbiOptions<'a> {
     }
 
     /// `exe` and `rename_exe` are joined onto the install directory, and ubi
-    /// writes the executable to the result.
+    /// writes the executable to the result. `rename_exe` is passed to ubi only
+    /// when it installs one file, so `extract_all` does not check it.
     fn ensure_safe_exe_paths(&self) -> Result<()> {
         if let Some(exe) = self.exe() {
             ensure_safe_relative_bin_path("exe", exe)?;
         }
-        if let Some(rename_exe) = self.rename_exe() {
+        if let Some(rename_exe) = self.rename_exe().filter(|_| !self.extract_all()) {
             ensure_safe_relative_bin_path("rename_exe", rename_exe)?;
         }
         Ok(())
@@ -894,8 +895,13 @@ impl TokenHosts {
             return Ok(None);
         };
         // GitLab release links can point at any host, and ubi downloads from them.
-        // The release is read now and with ubi's token, as ubi reads it.
-        let release = gitlab::get_release_now(&self.api_url, name, v, Some(token)).await?;
+        // The release is read now and with ubi's token, as ubi reads it. A tag
+        // with no release has no links, and ubi installs from the tag itself.
+        let release = match gitlab::get_release_now(&self.api_url, name, v, Some(token)).await {
+            Ok(release) => release,
+            Err(err) if is_not_found(&err) => return Ok(None),
+            Err(err) => return Err(err),
+        };
         Ok(release
             .assets
             .links
@@ -1130,6 +1136,38 @@ mod tests {
             .unwrap();
         assert_eq!(host.as_deref(), Some("downloads.example"));
         elsewhere.assert_async().await;
+        elsewhere.remove_async().await;
+
+        // A tag with no release has no links to protect; ubi installs from the tag.
+        let no_release = server
+            .mock("GET", path)
+            .with_status(404)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"message":"404 Not Found"}"#)
+            .expect(1)
+            .create_async()
+            .await;
+        let host = hosts
+            .foreign_host("o/r", "v1", Some("job-token"))
+            .await
+            .unwrap();
+        assert_eq!(host, None);
+        no_release.assert_async().await;
+        no_release.remove_async().await;
+
+        // Any other failure still stops the install.
+        let failing = server
+            .mock("GET", path)
+            .with_status(403)
+            .with_body(r#"{"message":"403 Forbidden"}"#)
+            .create_async()
+            .await;
+        let err = hosts
+            .foreign_host("o/r", "v1", Some("job-token"))
+            .await
+            .unwrap_err();
+        assert!(!is_not_found(&err), "{err}");
+        failing.remove_async().await;
 
         // With no token there is nothing to send, and nothing is read.
         let host = hosts.foreign_host("o/r", "v1", None).await.unwrap();
@@ -1380,6 +1418,23 @@ mod tests {
                     .unwrap();
             }
         }
+
+        // `extract_all` ignores `rename_exe`, so it does not refuse the install.
+        let mut extract_all = opts("rename_exe", "../../../.bashrc");
+        extract_all
+            .opts
+            .insert("extract_all".to_string(), toml::Value::Boolean(true));
+        UbiOptions::new(&extract_all)
+            .ensure_safe_exe_paths()
+            .unwrap();
+        extract_all.opts.insert(
+            "exe".to_string(),
+            toml::Value::String("../../../.bashrc".to_string()),
+        );
+        let err = UbiOptions::new(&extract_all)
+            .ensure_safe_exe_paths()
+            .unwrap_err();
+        assert!(err.to_string().starts_with("exe"), "{err}");
     }
 
     #[test]
