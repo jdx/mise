@@ -223,55 +223,67 @@ fn update_or_warn(change: impl FnOnce(&mut CreatedDirs) -> bool) {
     }
 }
 
-/// Start tracking `target` before an apply writes under it, if it is not tracked yet. What is
-/// already there predates the record, so it is taken as mise's only where it holds something mise
-/// deployed: `target` and the directories down to each path of `deployed` that exists, as a
-/// removal took them before the record existed. A directory of the user's that holds nothing
-/// mise deployed stays the user's.
+/// Start tracking each target of `targets` before an apply writes under it, if it is not tracked
+/// yet. What is already there predates the record, so it is taken as mise's only where it holds
+/// something mise deployed: the target and the directories down to each of its deployed paths
+/// that exists, as a removal took them before the record existed. A directory of the user's that
+/// holds nothing mise deployed stays the user's.
 ///
-/// An error means `target` is not tracked, so a later removal would take any directory it
-/// empties there, including the user's: the apply must not write under it.
-pub(crate) fn track(
-    target: &Path,
-    deployed: impl IntoIterator<Item = PathBuf>,
-) -> eyre::Result<()> {
-    let target = lexical_normalize(target);
+/// Targets that start being tracked together are seeded alike, whichever is nested in which; only
+/// a target tracked before has its own record, which seeding leaves alone.
+///
+/// An error means the targets are not tracked, so a later removal would take any directory it
+/// empties there, including the user's: the apply must not write under them.
+pub(crate) fn track(targets: Vec<(PathBuf, Vec<PathBuf>)>) -> eyre::Result<()> {
+    let names = targets
+        .iter()
+        .map(|(target, _)| target.display_user().to_string())
+        .collect::<Vec<_>>()
+        .join(", ");
     update(|record| {
-        if record.tracks(&target) {
-            return false;
-        }
-        // beneath a tracked target, what mise created is already recorded, and anything else
-        // there is the user's
-        let nested = target.ancestors().skip(1).any(|dir| record.tracks(dir));
-        for path in deployed.into_iter().filter(|_| !nested) {
-            let path = lexical_normalize(&path);
-            if std::fs::symlink_metadata(&path).is_err() {
+        // what was tracked before this apply: beneath such a target, what mise created is already
+        // recorded, and anything else there is the user's
+        let before = CreatedDirs {
+            targets: record.targets.clone(),
+            ..CreatedDirs::default()
+        };
+        let mut changed = false;
+        for (target, deployed) in targets {
+            let target = lexical_normalize(&target);
+            if before.tracks(&target) {
                 continue;
             }
-            let dirs = path
-                .ancestors()
-                .skip(1)
-                .take_while(|dir| dir.starts_with(&target))
-                .collect::<Vec<_>>();
-            // a path in a tracked target beneath this one is that target's to account for, and
-            // one reached through a link says nothing of whose the directories it shows are
-            if dirs.iter().any(|dir| {
-                (*dir != target && record.tracks(dir)) || file::is_symlink_or_junction(dir)
-            }) {
-                continue;
+            if !target.ancestors().skip(1).any(|dir| before.tracks(dir)) {
+                for path in deployed {
+                    let path = lexical_normalize(&path);
+                    if std::fs::symlink_metadata(&path).is_err() {
+                        continue;
+                    }
+                    let dirs = path
+                        .ancestors()
+                        .skip(1)
+                        .take_while(|dir| dir.starts_with(&target))
+                        .collect::<Vec<_>>();
+                    // a path in a target tracked before, beneath this one, is that target's to
+                    // account for, and one reached through a link says nothing of whose the
+                    // directories it shows are
+                    if dirs.iter().any(|dir| {
+                        (*dir != target && before.tracks(dir)) || file::is_symlink_or_junction(dir)
+                    }) {
+                        continue;
+                    }
+                    for dir in dirs {
+                        record.insert(dir.to_path_buf());
+                    }
+                }
             }
-            for dir in dirs {
-                record.insert(dir.to_path_buf());
-            }
+            record.targets.insert(target);
+            changed = true;
         }
-        record.targets.insert(target.clone());
-        true
+        changed
     })
     .wrap_err_with(|| {
-        format!(
-            "files: cannot record what mise creates under {}, so it does not write there",
-            target.display_user()
-        )
+        format!("files: cannot record what mise creates under {names}, so it does not write there")
     })
 }
 
