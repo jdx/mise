@@ -8228,8 +8228,11 @@ pub fn safe_mode_skipped_task_source() -> Option<String> {
 /// config that declared it is limited (see [`safe_mode_task_include_bounds`]). Code that
 /// lists only local task files drops remote includes without fetching them, and must
 /// still note that their tasks are unknown.
+///
+/// Remote includes are experimental, so without `experimental` the include loads in no mode and
+/// safe mode hides nothing by skipping it: nothing is recorded.
 fn note_remote_include_skipped(include: &str, bounds: Option<&[PathBuf]>) {
-    if bounds.is_some() {
+    if bounds.is_some() && Settings::get().experimental {
         record_safe_mode_skip(|| format!("the remote task include `{include}`"));
     }
 }
@@ -9082,13 +9085,9 @@ async fn load_task_sources_from_configs(
             );
             continue;
         }
-        if skip_remote_includes && is_remote_task_include(include) {
-            record_safe_mode_skip(|| format!("the remote task include `{include}`"));
-            debug!("ignoring task include `{include}`: safe mode (MISE_SAFE=1)");
-            continue;
-        }
         // A remote include is experimental. Without it, skip just that include so
-        // the config's other tasks still list, complete and run.
+        // the config's other tasks still list, complete and run. This comes before safe
+        // mode's skip: an include that loads in no mode hides no tasks from safe mode.
         let remote_source = if include.starts_with("git::") {
             Some("a `git::` source")
         } else if include.starts_with(OCI_INCLUDE_PREFIX) {
@@ -9104,6 +9103,11 @@ async fn load_task_sources_from_configs(
             warn_once!(
                 "skipping task include `{include}`: including tasks from {source} is experimental. Enable it with `mise settings experimental=true`"
             );
+            continue;
+        }
+        if skip_remote_includes && is_remote_task_include(include) {
+            record_safe_mode_skip(|| format!("the remote task include `{include}`"));
+            debug!("ignoring task include `{include}`: safe mode (MISE_SAFE=1)");
             continue;
         }
         let artifacts = if include.starts_with("git::") {

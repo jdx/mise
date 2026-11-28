@@ -2287,9 +2287,16 @@ impl Lockfile {
             .collect();
         for entry in entries {
             let mut entry = entry.clone();
-            let version = entry.version.clone();
-            let is_excluded = |platform: &String| {
-                excluded.contains(&(key.clone(), version.clone(), platform.clone()))
+            let mut record = ExcludedPlatform {
+                tool: key.clone(),
+                version: entry.version.clone(),
+                backend: entry.backend.clone().unwrap_or_default(),
+                options: entry.options.clone(),
+                platform: String::new(),
+            };
+            let mut is_excluded = |platform: &String| {
+                record.platform.clone_from(platform);
+                entry.backend.is_some() && excluded.contains(&record)
             };
             let recorded = entry.platforms.len() + entry.unsupported_platforms.len();
             let platforms = std::mem::take(&mut entry.platforms)
@@ -5822,10 +5829,22 @@ impl UnsupportedPlatforms {
     }
 }
 
-/// The platforms of a tool's versions that `mise lock` left out on purpose, because the
-/// request's `os` option excludes them: `(tool key, version, platform key)`. Generation drops
-/// their records, so restoring what a skipped task file may still use must not bring them back.
-pub type ExcludedPlatforms = BTreeSet<(String, String, String)>;
+/// A platform record of one lockfile entry that `mise lock` left out on purpose, because the
+/// `os` option of the request that entry is for excludes it. The entry is the tool's key, its
+/// version, backend and options, so a request for the same version from another backend, or
+/// with other options, is not affected.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct ExcludedPlatform {
+    pub tool: String,
+    pub version: String,
+    pub backend: String,
+    pub options: BTreeMap<String, String>,
+    pub platform: String,
+}
+
+/// The [`ExcludedPlatform`]s of a run. Generation drops their records, so restoring what a
+/// skipped task file may still use must not bring them back.
+pub type ExcludedPlatforms = BTreeSet<ExcludedPlatform>;
 
 pub type LockResolutionResult = (
     String,
