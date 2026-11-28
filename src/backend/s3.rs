@@ -504,17 +504,25 @@ async fn create_s3_client(region: Option<&str>, endpoint: Option<&str>) -> Resul
 
 /// A new, uniquely named file beside `dest` to download into, so that no name
 /// `dest` can have (one ending in `.tmp` included) makes it `dest` itself.
+///
+/// The name is short and fixed rather than built from `dest`'s, which may
+/// already be close to the filesystem's limit on a name. Its first character
+/// differs from `dest`'s, so the two can never be the same name.
 fn download_temp_path(dest: &Path) -> Result<tempfile::TempPath> {
     let dir = match dest.parent() {
         Some(dir) if !dir.as_os_str().is_empty() => dir,
         _ => Path::new("."),
     };
-    let prefix = format!(
-        ".{}.",
-        dest.file_name().unwrap_or_default().to_string_lossy()
-    );
+    let dest_is_dotted = dest
+        .file_name()
+        .is_some_and(|name| name.as_encoded_bytes().starts_with(b"."));
+    let prefix = if dest_is_dotted {
+        "_mise-s3-"
+    } else {
+        ".mise-s3-"
+    };
     Ok(tempfile::Builder::new()
-        .prefix(&prefix)
+        .prefix(prefix)
         .suffix(".tmp")
         .tempfile_in(dir)?
         .into_temp_path())
@@ -1256,7 +1264,13 @@ checksum = "sha256:abc123"
     #[test]
     fn test_download_temp_path_is_never_the_destination() {
         let dir = tempfile::tempdir().unwrap();
-        for name in ["tool.tar.gz", "tool.tmp", "tool"] {
+        for name in [
+            "tool.tar.gz",
+            "tool.tmp",
+            "tool",
+            ".tool.tmp",
+            ".mise-s3-x.tmp",
+        ] {
             let dest = dir.path().join(name);
             let tmp = download_temp_path(&dest).unwrap();
             assert_ne!(&*tmp, dest.as_path());
@@ -1271,6 +1285,20 @@ checksum = "sha256:abc123"
         }
         let dest = dir.path().join("tool.tmp");
         let tmp = download_temp_path(&dest).unwrap();
+        std::fs::write(&tmp, "done").unwrap();
+        tmp.persist(&dest).unwrap();
+        assert_eq!(std::fs::read_to_string(&dest).unwrap(), "done");
+    }
+
+    #[test]
+    fn test_download_temp_path_fits_beside_a_long_name() {
+        // 255 bytes is the longest name common filesystems allow; a temp name
+        // built from it would not fit.
+        let dir = tempfile::tempdir().unwrap();
+        let dest = dir.path().join(format!("{}.tar.gz", "a".repeat(248)));
+        assert_eq!(dest.file_name().unwrap().len(), 255);
+        let tmp = download_temp_path(&dest).unwrap();
+        assert!(tmp.file_name().unwrap().len() < 32);
         std::fs::write(&tmp, "done").unwrap();
         tmp.persist(&dest).unwrap();
         assert_eq!(std::fs::read_to_string(&dest).unwrap(), "done");
