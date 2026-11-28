@@ -452,7 +452,7 @@ pub(crate) fn ensure_node_option_unlocked(
 }
 
 /// The file in an install directory that records the Node its executables were bound to.
-fn bound_node_receipt(install_path: &Path) -> PathBuf {
+pub(crate) fn bound_node_receipt(install_path: &Path) -> PathBuf {
     install_path.join(".mise-node.json")
 }
 

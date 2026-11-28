@@ -595,11 +595,25 @@ impl ToolVersion {
         let Some(version) = tv.install_path_identity_version().map(str::to_string) else {
             return tv;
         };
-        if crate::install_layout::resolver::applies_to(&tv) {
+        if crate::install_layout::resolver::applies_to(&tv) || tv.is_node_bound_variant() {
             return Self::new(tv.request, version);
         }
         tv.strip_install_path_identity();
         tv
+    }
+
+    /// Whether this npm version, found by scanning installs, is or would become a copy
+    /// bound to a selected Node. Such a copy belongs to the `node` value that made it,
+    /// so a request that selects another Node (or none) gets its own copy instead of
+    /// reinstalling, and rebinding, the one it found.
+    fn is_node_bound_variant(&self) -> bool {
+        if self.ba().backend_type() != crate::backend::backend_type::BackendType::Npm {
+            return false;
+        }
+        let mut stripped = self.clone();
+        stripped.strip_install_path_identity();
+        stripped.binds_a_node()
+            || crate::backend::npm::bound_node_receipt(&self.install_path()).exists()
     }
 
     pub(crate) fn aube_install_path_version(&self) -> Option<&str> {

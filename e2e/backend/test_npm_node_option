@@ -43,6 +43,20 @@ assert_contains "cat '$first_dir/.mise-node.json'" '"request": "20.11.1"'
 assert_contains "cat '$install_dir/.mise-node.json'" '"request": "20.12.2"'
 assert_contains "cat '$install_dir/node_modules/.bin/cowsay'" "$MISE_DATA_DIR/installs/node/20.12.2/bin/node"
 
+# A prefix request finds the copy bound to its own Node, not another one.
+cat >mise.toml <<'EOF2'
+[tools]
+"npm:cowsay" = { version = "1.6", node = "20.11.1" }
+EOF2
+assert "mise where npm:cowsay" "$first_dir"
+mise install
+assert_contains "cat '$first_dir/node_modules/.bin/cowsay'" "$node_dir/bin/node"
+assert_contains "cat '$install_dir/node_modules/.bin/cowsay'" "$MISE_DATA_DIR/installs/node/20.12.2/bin/node"
+cat >mise.toml <<'EOF2'
+[tools]
+"npm:cowsay" = { version = "1.6.0", node = "20.12.2" }
+EOF2
+
 # A version that `prune.exclude` keeps still runs on the Node it is bound to,
 # even after no tracked config needs that Node.
 mkdir old
