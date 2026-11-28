@@ -413,9 +413,9 @@ fn can_reuse(info: &PlatformInfo, version: &str) -> bool {
         && !Settings::get().force_provenance_verify()
 }
 
-/// A conda entry is reused only while every `[conda-packages]` entry it names is in the
-/// lockfile under a key that names its channel, has a checksum that can be verified and
-/// may be installed with it; otherwise the tool is resolved again, which rewrites its
+/// A conda entry is reused only while its own checksum is a full digest and every
+/// `[conda-packages]` entry it names is in the lockfile under a key that names its
+/// channel, has a checksum that can be verified and may be installed with it; otherwise the tool is resolved again, which rewrites its
 /// dependencies under keys that name their channel, with the checksums their channel
 /// declares.
 fn conda_deps_reusable(previous: &Lockfile, platform: &str, info: &PlatformInfo) -> bool {
@@ -425,6 +425,14 @@ fn conda_deps_reusable(previous: &Lockfile, platform: &str, info: &PlatformInfo)
     let Some(main_url) = info.url.as_deref() else {
         return false;
     };
+    // The tool's own package is verified against its whole digest when installed.
+    if !info
+        .checksum
+        .as_deref()
+        .is_some_and(crate::hash::is_well_formed_checksum)
+    {
+        return false;
+    }
     deps.iter().all(|key| {
         key.contains('@')
             && previous
@@ -1849,6 +1857,16 @@ mod tests {
         assert!(!conda_deps_reusable(&Lockfile::default(), platform, &info));
         let untagged = lockfile_with(bare, &dep_url, Some(&sha256));
         assert!(!conda_deps_reusable(&untagged, platform, &info_with(bare)));
+        for main_checksum in [None, Some("sha256:"), Some("sha256:00"), Some("md5:zz")] {
+            let info = PlatformInfo {
+                checksum: main_checksum.map(str::to_string),
+                ..info_with(&tagged)
+            };
+            assert!(
+                !conda_deps_reusable(&same, platform, &info),
+                "{main_checksum:?}"
+            );
+        }
     }
 
     #[test]

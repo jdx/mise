@@ -789,6 +789,22 @@ impl CondaBackend {
         Ok(())
     }
 
+    /// Why `--locked` refuses the checksum the lockfile entry of `tool` on
+    /// `platform_key` records for the tool's own package: the download is verified
+    /// against the whole digest, so one that is not a full digest of its algorithm
+    /// would fail only after downloading.
+    fn locked_main_checksum_problem(
+        tool: &str,
+        platform_key: &str,
+        checksum: Option<&str>,
+    ) -> Option<eyre::Report> {
+        let checksum = checksum.filter(|c| !hash::is_well_formed_checksum(c))?;
+        Some(eyre::eyre!(
+            "Invalid lockfile checksum {checksum:?} for {tool} on platform {platform_key} (--locked mode)\n\
+            hint: Run `mise lock` to record checksums"
+        ))
+    }
+
     /// Why `--locked` refuses the dependency packages `deps` that the lockfile entry of
     /// `tool` on `platform_key`, whose own package is at `main_url`, names in
     /// `[conda-packages]`: one is missing, comes from another channel, has a checksum
@@ -1399,6 +1415,13 @@ impl Backend for CondaBackend {
         locked_platform: Option<&PlatformInfo>,
     ) -> Option<eyre::Report> {
         let locked_platform = locked_platform?;
+        if let Some(err) = Self::locked_main_checksum_problem(
+            &tv.style(),
+            platform_key,
+            locked_platform.checksum.as_deref(),
+        ) {
+            return Some(err);
+        }
         let deps = locked_platform.conda_deps.as_deref()?;
         let main_url = locked_platform.url.as_deref()?;
         if deps.is_empty() {
@@ -2438,6 +2461,25 @@ mod tests {
         assert!(!verify(md5).unwrap());
         assert!(verify("crc32:352441c2").is_err());
         assert!(verify("900150983cd24fb0d6963f7d28e17f72").is_err());
+    }
+
+    #[test]
+    fn locked_mode_refuses_a_main_checksum_that_is_not_a_full_digest() {
+        let problem = |checksum: Option<&str>| {
+            CondaBackend::locked_main_checksum_problem("conda:tool", "linux-x64", checksum)
+                .map(|e| e.to_string())
+        };
+        let sha256 = "sha256:ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+        assert_eq!(problem(None), None);
+        assert_eq!(problem(Some(sha256)), None);
+        assert_eq!(problem(Some("md5:900150983cd24fb0d6963f7d28e17f72")), None);
+        for malformed in ["md5:", "sha256:", "sha256:00", "md5:zz", "crc32:00"] {
+            let err = problem(Some(malformed)).unwrap();
+            assert!(
+                err.contains("Invalid lockfile checksum") && err.contains("conda:tool"),
+                "{malformed}: {err}"
+            );
+        }
     }
 
     #[test]
