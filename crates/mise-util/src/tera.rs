@@ -194,6 +194,19 @@ pub fn render_str(tera: &mut TeraEngine, input: &str, context: &Context) -> Tera
     tera.render_str(input, &safe_context(context))
 }
 
+/// [`render_str`] for a template in project config. It is rendered without the
+/// trust of an enclosing [`with_trusted_templates`] scope, so in safe mode it
+/// gets no `env` or `vars` even when the render happens during work for an
+/// operator's task or tool, such as an operator task's render building the
+/// toolset that reads the project's `[tools]` for the first time.
+pub fn render_untrusted_str(
+    tera: &mut TeraEngine,
+    input: &str,
+    context: &Context,
+) -> TeraResult<String> {
+    TRUSTED_TEMPLATES.sync_scope(false, || render_str(tera, input, context))
+}
+
 /// [`render_str`] for a template the operator wrote, in global or system
 /// config, which keeps `env` in safe mode.
 pub fn render_str_with_env(

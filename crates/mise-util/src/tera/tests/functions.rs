@@ -655,6 +655,21 @@ fn test_safe_mode_hides_env_and_files() {
                 render_str(&mut get_tera(None), "{{ env.SECRET }}", &ctx)
             }));
         assert_eq!(trusted.unwrap(), "hunter2");
+        // project config rendered during that work does not inherit its trust
+        let project = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap()
+            .block_on(with_trusted_templates(async {
+                let mut tera = get_tera(None);
+                (
+                    render_untrusted_str(&mut tera, "{{ env.SECRET }}", &ctx).is_err(),
+                    render_untrusted_str(&mut tera, "{{ vars.token | default(value='-') }}", &ctx)
+                        .unwrap(),
+                    // and the scope is back once that render is done
+                    render_str(&mut tera, "{{ env.SECRET }}", &ctx).unwrap(),
+                )
+            }));
+        assert_eq!(project, (true, "-".to_string(), "hunter2".to_string()));
     }
     // outside safe mode nothing changes
     crate::testing::reset_settings(None);

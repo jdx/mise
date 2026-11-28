@@ -214,7 +214,7 @@ pub fn render_config_str(
 ) -> tera::TeraResult<String> {
     let _source = mise_util::tera::template_source(config_path);
     if safe_mode_ignores_bootstrap(config_path) {
-        mise_util::tera::render_str(tera, input, context)
+        mise_util::tera::render_untrusted_str(tera, input, context)
     } else {
         mise_util::tera::render_str_with_env(tera, input, context)
     }
