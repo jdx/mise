@@ -121,7 +121,7 @@ assert_fail "test -e $HOME/.managed-links/stale"
 assert "readlink ~/.managed-links/alias" "$PWD/dotfiles/links/one"
 assert "readlink ~/.managed-links/excluded" "$PWD/dotfiles/links/excluded"
 # symlink-each ownership state is gone; template records live one level down,
-# and created_dirs.toml, which tracks the targets that are still there
+# and created_dirs.toml, which keeps tracking the targets
 assert "find '$MISE_STATE_DIR/dotfiles' -maxdepth 1 -type f ! -name created_dirs.toml | wc -l | tr -d ' '" "0"
 
 # Modified copies are refused unless forced.

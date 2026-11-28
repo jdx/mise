@@ -125,8 +125,9 @@ impl CreatedDirs {
     }
 
     /// Write the record, dropping directories that are gone or no longer the ones recorded. One that
-    /// cannot be read now may still be there, so it is kept. Targets are kept even when they are not
-    /// there yet: one is tracked before the apply that creates it; [`forget`] drops those gone.
+    /// cannot be read now may still be there, so it is kept. Targets are kept even when they are gone:
+    /// one is tracked before the apply that creates it, and no removal can tell that apart from a
+    /// target it took. A tracked target that is gone costs only its line here.
     fn save(mut self) -> eyre::Result<()> {
         self.version = VERSION;
         self.dirs
@@ -298,22 +299,14 @@ pub(crate) fn forget(removed: &[PathBuf]) {
         return;
     }
     update_or_warn(|record| {
-        let before = (record.dirs.len(), record.targets.len());
+        let before = record.dirs.len();
         for dir in removed {
             let dir = lexical_normalize(dir);
             record
                 .dirs
                 .retain(|recorded, _| !file::same_location_ignoring_case(recorded, &dir));
         }
-        // a removal may have taken a target with it; a target that is gone for another reason may
-        // be one an apply is about to create, so it stays
-        record.targets.retain(|target| {
-            !(gone(target)
-                && removed
-                    .iter()
-                    .any(|dir| file::same_location_ignoring_case(&lexical_normalize(dir), target)))
-        });
-        (record.dirs.len(), record.targets.len()) != before
+        record.dirs.len() != before
     });
 }
 
