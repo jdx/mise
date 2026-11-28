@@ -143,6 +143,13 @@ assert_not_contains "cd pipenv-repo && mise --cd ../other env" "/pipenv-repo/.ve
 # MISE_PROJECT_ROOT can name a project other than the current directory
 rooted_exec="cd other && MISE_PROJECT_ROOT=$PWD/poetry-repo MISE_ENV_CACHE=1 __MISE_ENV_CACHE_KEY=dGVzdGtleXRlc3RrZXl0ZXN0a2V5dGVzdGtleXRlc3Q= mise exec -- printenv PATH"
 assert_contains "$rooted_exec" "/poetry-repo/.venv/bin"
+# pointing it at another trusted project, with nothing else changed, gives
+# that project's virtualenv rather than the cached one
+make_repo poetry-repo2 pyproject.toml
+mise trust poetry-repo2
+rooted_exec2="cd other && MISE_PROJECT_ROOT=$PWD/poetry-repo2 MISE_ENV_CACHE=1 __MISE_ENV_CACHE_KEY=dGVzdGtleXRlc3RrZXl0ZXN0a2V5dGVzdGtleXRlc3Q= mise exec -- printenv PATH"
+assert_contains "$rooted_exec2" "/poetry-repo2/.venv/bin"
+assert_not_contains "$rooted_exec2" "/poetry-repo/.venv/bin"
 
 # and no longer once the trust is withdrawn
 mise trust --untrust pipenv-repo
@@ -166,3 +173,51 @@ assert_empty "$pwned_files"
 # that mise.toml gives the same tool
 assert_contains "cd safe-repo && MISE_SAFE=1 mise x poetry@1.8.0 -- env" "POETRY_HOME="
 assert_empty "$pwned_files"
+
+# a root that config [env] sets, handed by the hook to a command rather than
+# read with os.getenv, is withheld once untrusted, though a result for it is
+# cached
+ROOT_PLUGIN="$PWD/vfox-hook-root"
+mkdir -p "$ROOT_PLUGIN/hooks"
+cat >"$ROOT_PLUGIN/metadata.lua" <<'LUA'
+PLUGIN = {}
+PLUGIN.name = "hook-root"
+PLUGIN.version = "0.1.0"
+PLUGIN.homepage = "https://example.com/hook-root"
+PLUGIN.license = "MIT"
+PLUGIN.description = "env hook that passes MISE_PROJECT_ROOT to a command"
+LUA
+cat >"$ROOT_PLUGIN/hooks/available.lua" <<'LUA'
+function PLUGIN:Available(ctx)
+	return { { version = "1.0.0" } }
+end
+LUA
+cat >"$ROOT_PLUGIN/hooks/pre_install.lua" <<'LUA'
+function PLUGIN:PreInstall(ctx)
+	return { version = ctx.version }
+end
+LUA
+cat >"$ROOT_PLUGIN/hooks/env_keys.lua" <<'LUA'
+function PLUGIN:EnvKeys(ctx)
+	local cmd = require("cmd")
+	local root = cmd.exec("printf '%s' \"$MISE_PROJECT_ROOT\"")
+	return { { key = "HOOK_ROOT", value = "root:" .. root } }
+end
+LUA
+git -C "$ROOT_PLUGIN" init -q
+git -C "$ROOT_PLUGIN" add .
+git -C "$ROOT_PLUGIN" -c user.name="mise" -c user.email="mise@example.com" commit -qm "initial plugin"
+mkdir -p env-root env-root-target
+cat >env-root/mise.toml <<EOF
+[tools]
+"vfox:file://$ROOT_PLUGIN" = "1.0.0"
+
+[env]
+MISE_PROJECT_ROOT = "$PWD/env-root-target"
+EOF
+mise trust env-root/mise.toml
+mise trust env-root-target
+(cd env-root && mise install --yes)
+assert "cd env-root && mise exec -- printenv HOOK_ROOT" "root:$PWD/env-root-target"
+mise trust --untrust env-root-target
+assert "cd env-root && mise exec -- printenv HOOK_ROOT" "root:"

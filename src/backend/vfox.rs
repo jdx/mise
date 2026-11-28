@@ -169,14 +169,24 @@ fn lua_sources_fingerprint(plugin_path: &Path) -> String {
 /// The value of `key` in `env`, matching the name case-insensitively on
 /// Windows, where environment names are.
 fn get_env_var<'a>(env: &'a indexmap::IndexMap<String, String>, key: &str) -> Option<&'a String> {
+    find_env_var(env, key, cfg!(windows))
+}
+
+/// [`get_env_var`], with the case rule given: the exact name first, then,
+/// when `ignore_case`, the first name that differs from it only in case.
+fn find_env_var<'a>(
+    env: &'a indexmap::IndexMap<String, String>,
+    key: &str,
+    ignore_case: bool,
+) -> Option<&'a String> {
     env.get(key).or_else(|| {
-        if cfg!(windows) {
-            env.iter()
-                .find(|(k, _)| k.eq_ignore_ascii_case(key))
-                .map(|(_, v)| v)
-        } else {
-            None
-        }
+        ignore_case
+            .then(|| {
+                env.iter()
+                    .find(|(k, _)| k.eq_ignore_ascii_case(key))
+                    .map(|(_, v)| v)
+            })
+            .flatten()
     })
 }
 
@@ -305,33 +315,64 @@ fn dir_is_trusted(config: &Config, dir: &Path) -> bool {
 
 /// The `MISE_PROJECT_ROOT` an environment hook gets before
 /// [`withhold_untrusted_dirs`]: config `[env]` over the environment mise
-/// started with, as in [`Backend::dependency_env`]. Before the config env is
-/// resolved, only the starting environment.
+/// started with, as in [`Backend::dependency_env`]. It reads the config env
+/// only once resolved, so a caller resolves it first; until then it gives only
+/// the starting environment's.
 fn hook_project_root(config: &Config) -> Option<String> {
-    const KEY: &str = "MISE_PROJECT_ROOT";
-    if let Some(results) = config.env_results_cached() {
-        if let Some((value, _)) = results.env.get(KEY) {
-            return Some(value.clone());
-        }
-        if results.env_remove.contains(KEY) {
-            return None;
-        }
-    }
-    env::PRISTINE_ENV.get(KEY).cloned()
+    layered_project_root(
+        &env::PRISTINE_ENV,
+        config.env_results_cached(),
+        cfg!(windows),
+    )
 }
 
-/// The trust that decides what an environment hook sees of the project:
-/// whether the current directory is trusted, which gives the hook `PWD` and
-/// starts its commands there, and whether the directory its
-/// `MISE_PROJECT_ROOT` names is (`None` when unset), which keeps that
-/// variable. `mise trust` changes these without changing a config file, so
-/// cached environments are keyed on them.
-pub(crate) fn env_hook_trust(config: &Config) -> (bool, Option<bool>) {
+/// [`hook_project_root`] for a given starting environment, config env and
+/// case rule. The variables go through a sorted map, as they do into the
+/// hook's env, so a name that differs from `MISE_PROJECT_ROOT` only in case is
+/// found by the same [`find_env_var`] lookup [`withhold_untrusted_dirs`] makes.
+fn layered_project_root(
+    pristine: &BTreeMap<String, String>,
+    config_env: Option<&crate::config::env_directive::EnvResults>,
+    ignore_case: bool,
+) -> Option<String> {
+    let named = |k: &String| k.eq_ignore_ascii_case(PROJECT_ROOT_KEY);
+    let mut env: BTreeMap<String, String> = pristine
+        .iter()
+        .filter(|(k, _)| named(k))
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
+    if let Some(results) = config_env {
+        for key in &results.env_remove {
+            env.remove(key);
+        }
+        env.extend(
+            results
+                .env
+                .iter()
+                .filter(|(k, _)| named(k))
+                .map(|(k, (v, _))| (k.clone(), v.clone())),
+        );
+    }
+    let env: indexmap::IndexMap<String, String> = env.into_iter().collect();
+    find_env_var(&env, PROJECT_ROOT_KEY, ignore_case).cloned()
+}
+
+const PROJECT_ROOT_KEY: &str = "MISE_PROJECT_ROOT";
+
+/// What decides what an environment hook sees of the project: whether the
+/// current directory is trusted, which gives the hook `PWD` and starts its
+/// commands there, and the directory its `MISE_PROJECT_ROOT` names with
+/// whether that is trusted, which keeps the variable (`None` when unset).
+/// `mise trust` and a different `MISE_PROJECT_ROOT` change these without
+/// changing a config file, so cached environments are keyed on them.
+pub(crate) fn env_hook_trust(config: &Config) -> (bool, Option<(String, bool)>) {
     let cwd = dirs::CWD
         .as_deref()
         .is_some_and(|cwd| dir_is_trusted(config, cwd));
-    let project_root =
-        hook_project_root(config).map(|root| dir_is_trusted(config, Path::new(&root)));
+    let project_root = hook_project_root(config).map(|root| {
+        let trusted = dir_is_trusted(config, Path::new(&root));
+        (root, trusted)
+    });
     (cwd, project_root)
 }
 
@@ -386,10 +427,10 @@ fn withhold_untrusted_dirs(
     if !pwd_ok {
         remove_env_var(env, "PWD");
     }
-    if get_env_var(env, "MISE_PROJECT_ROOT")
+    if get_env_var(env, PROJECT_ROOT_KEY)
         .is_some_and(|root| !dir_is_trusted(config, Path::new(root)))
     {
-        remove_env_var(env, "MISE_PROJECT_ROOT");
+        remove_env_var(env, PROJECT_ROOT_KEY);
     }
 }
 
@@ -1359,12 +1400,18 @@ impl VfoxBackend {
             cmd_env
         };
         let install_path = tv.install_path();
+        // The hook's `MISE_PROJECT_ROOT` can come from config `[env]`, which
+        // the key below reads only once it is resolved, so it is resolved
+        // first. When it fails, the hook's env is empty too, so it sees no
+        // root, and results from such a run are kept apart.
+        let env_resolved = config.env_results().await.is_ok();
         let opts_hash = {
             use std::hash::{Hash, Hasher};
             let mut hasher = std::collections::hash_map::DefaultHasher::new();
             opts.hash(&mut hasher);
             // A hook that hands `MISE_PROJECT_ROOT` to a command rather than
             // reading it with `os.getenv` leaves no record of the read.
+            env_resolved.hash(&mut hasher);
             env_hook_trust(config).hash(&mut hasher);
             // The hook gets the install path as an absolute path, and a
             // relative data directory puts the same relative path in a
@@ -1619,6 +1666,59 @@ mod test {
         assert!(!could_be_alias("system"));
         assert!(!could_be_alias("ref:main"));
         assert!(!could_be_alias(""));
+    }
+
+    #[test]
+    fn test_project_root_lookup_matches_the_hook_filter() {
+        let vars = |pairs: &[(&str, &str)]| {
+            pairs
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect::<BTreeMap<_, _>>()
+        };
+        let hook_env = |vars: &BTreeMap<String, String>| {
+            vars.clone()
+                .into_iter()
+                .collect::<indexmap::IndexMap<_, _>>()
+        };
+        for ignore_case in [false, true] {
+            for pristine in [
+                vars(&[("MISE_PROJECT_ROOT", "/a")]),
+                vars(&[("Mise_Project_Root", "/a")]),
+                vars(&[("Mise_Project_Root", "/a"), ("MISE_PROJECT_ROOT", "/b")]),
+                vars(&[("PATH", "/bin")]),
+            ] {
+                // The key reads the root the filter would keep or remove.
+                assert_eq!(
+                    layered_project_root(&pristine, None, ignore_case),
+                    find_env_var(&hook_env(&pristine), PROJECT_ROOT_KEY, ignore_case).cloned(),
+                    "{pristine:?} ignore_case={ignore_case}"
+                );
+            }
+        }
+        let differently_cased = vars(&[("Mise_Project_Root", "/a")]);
+        assert_eq!(
+            layered_project_root(&differently_cased, None, true).as_deref(),
+            Some("/a")
+        );
+        assert_eq!(layered_project_root(&differently_cased, None, false), None);
+
+        let mut results = crate::config::env_directive::EnvResults::default();
+        results.env.insert(
+            "MISE_PROJECT_ROOT".to_string(),
+            ("/config".to_string(), PathBuf::new()),
+        );
+        assert_eq!(
+            layered_project_root(&vars(&[("MISE_PROJECT_ROOT", "/a")]), Some(&results), true)
+                .as_deref(),
+            Some("/config")
+        );
+        let mut removed = crate::config::env_directive::EnvResults::default();
+        removed.env_remove.insert("MISE_PROJECT_ROOT".to_string());
+        assert_eq!(
+            layered_project_root(&vars(&[("MISE_PROJECT_ROOT", "/a")]), Some(&removed), false),
+            None
+        );
     }
 
     #[test]
