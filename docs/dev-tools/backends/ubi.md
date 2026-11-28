@@ -20,7 +20,10 @@ to install it, with an error that names the replacement:
 ubi:cli/cli: the ubi backend was removed from mise. Use github:cli/cli (gitlab:cli/cli for a GitLab project) instead. See https://mise.jdx.dev/dev-tools/backends/ubi.html for how ubi options map to it
 ```
 
-Other commands skip the tool and print the same message as a warning.
+Any command that names the tool, such as `mise ls-remote ubi:cli/cli`, fails
+with that error too. Commands that read every tool from your config without
+naming one, such as `mise ls` and `mise env`, skip the tool and print the
+message as a warning.
 
 ## Migrate a tool {#usage}
 
@@ -47,9 +50,15 @@ works.
    mise exec -- <command> --version
    ```
 
+   For a tool you configure by its registry name, run
+   `mise install --force <tool>` instead. Its old installation is in the
+   directory the registry's backend installs to (`installs/gh` for `gh`), and
+   without `--force` mise would keep the version ubi installed there.
+
 4. If you use a lockfile, run `mise lock` to write entries for the new tool.
-   The old installation stays in mise's data directory; delete its
-   `installs/ubi-owner-repo` directory when you no longer need it.
+   The old installation of a `ubi:owner/repo` tool stays in mise's data
+   directory; delete its `installs/ubi-owner-repo` directory when you no longer
+   need it.
 
 A tool that named its executable with `exe` usually needs no option on the new
 backend, because the github backend extracts the archive and finds the
