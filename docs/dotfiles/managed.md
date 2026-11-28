@@ -798,7 +798,10 @@ mise recorded about earlier applies to decide what each entry owns:
 
 When a `symlink-each` or `copy` directory entry removes its files, the
 directories under its target that mise created go too, once they are empty.
-A directory you made there stays, even when it is empty.
+A directory you made there stays, even when it is empty. A target that an
+older mise deployed is tracked from its first `mise dot apply` after the
+upgrade: until then, any directory a removal empties goes, and from then on a
+directory that already held something mise deployed counts as mise's.
 
 When a `symlink`, `copy`, `template`, or inline `content` target is removed,
 the parent directories that mise created for it go too, once they are empty.

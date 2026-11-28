@@ -5953,9 +5953,12 @@ fn execute_layer(
             current = Some((*req, written.len()));
             recheck_removal(req, rendered.as_deref(), opts.force)?;
             refuse_untrusted_parents(req)?;
+            // a link to a source directory unfolded into a real one is a directory mise made
+            let unfolded = written.len();
             if req.mode == FileMode::SymlinkEach {
                 unfold_source_links(req, written)?;
             }
+            let unfolded = written[unfolded..].to_vec();
             // the links the entry recorded as its own, which a failed apply may finish pruning
             // (see `settle_failed_apply`)
             // each with where it points now, which the captured link must match exactly
@@ -5972,7 +5975,7 @@ fn execute_layer(
             let start = written.len();
             // what is missing now is what a failed apply may have to take away again
             let mut created = missing_ancestors(&req.target);
-            let walks = walks_source_dir(req);
+            let walks = shares_target(req);
             if walks {
                 if std::fs::symlink_metadata(&req.target).is_err() {
                     created.push(req.target.clone());
@@ -5985,12 +5988,12 @@ fn execute_layer(
             if let Err(err) = apply_one(req, rendered.as_deref(), written) {
                 settle_failed_apply(req, &created, &stale, pending);
                 if walks {
-                    crate::created_dirs::record(&req.target, &created);
+                    crate::created_dirs::record(&req.target, &[created, unfolded].concat());
                 }
                 return Err(err);
             }
             if walks {
-                crate::created_dirs::record(&req.target, &created);
+                crate::created_dirs::record(&req.target, &[created, unfolded].concat());
             }
             // a target that appeared since planning is left alone and not
             // written, so it is not this group's to prune
@@ -7561,7 +7564,7 @@ fn remove_empty_dirs_upward<'a>(
 
 /// Whether `req` deploys each file of a source directory under its target, which it shares with
 /// files mise does not manage.
-fn walks_source_dir(req: &FileRequest) -> bool {
+fn shares_target(req: &FileRequest) -> bool {
     req.mode == FileMode::SymlinkEach || req.mode == FileMode::Copy && req.source.is_dir()
 }
 
@@ -7612,7 +7615,7 @@ fn track_walking_targets<'a>(config: &Config, requests: impl IntoIterator<Item =
     let record = crate::created_dirs::CreatedDirs::load();
     let requests = requests
         .into_iter()
-        .filter(|req| walks_source_dir(req) && !record.tracks(&req.target))
+        .filter(|req| shares_target(req) && !record.tracks(&req.target))
         .collect::<Vec<_>>();
     if requests.is_empty() {
         return;
@@ -7623,7 +7626,7 @@ fn track_walking_targets<'a>(config: &Config, requests: impl IntoIterator<Item =
         .collect();
     let active = files_from_config(config).unwrap_or_default();
     for req in requests.into_iter().chain(&active) {
-        if walks_source_dir(req)
+        if shares_target(req)
             && let Some(paths) = deployed.get_mut(&lexical_normalize(&req.target))
         {
             paths.extend(deployed_under(req));

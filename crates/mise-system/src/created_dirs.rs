@@ -119,17 +119,36 @@ impl CreatedDirs {
 
     /// Whether removing files deployed under `target` may remove the emptied directory `dir`.
     pub(crate) fn may_remove(&self, target: &Path, dir: &Path) -> bool {
-        if !self.targets.contains(&lexical_normalize(target)) {
+        if !self.tracks(target) {
             return true;
         }
-        self.dirs
-            .get(&lexical_normalize(dir))
-            .is_some_and(|id| identity(dir).as_deref() == Some(id.as_str()))
+        self.recorded(dir)
+            .is_some_and(|id| identity(dir).as_deref() == Some(id))
     }
 
     /// Whether `target` is tracked.
     pub(crate) fn tracks(&self, target: &Path) -> bool {
-        self.targets.contains(&lexical_normalize(target))
+        let target = lexical_normalize(target);
+        self.targets.contains(&target)
+            || self
+                .targets
+                .iter()
+                .any(|tracked| file::same_location_ignoring_case(tracked, &target))
+    }
+
+    /// The identity recorded for `dir`, under whatever letter case the record spells it in where
+    /// the directory ignores case.
+    fn recorded(&self, dir: &Path) -> Option<&str> {
+        let dir = lexical_normalize(dir);
+        self.dirs
+            .get(&dir)
+            .or_else(|| {
+                self.dirs
+                    .iter()
+                    .find(|(recorded, _)| file::same_location_ignoring_case(recorded, &dir))
+                    .map(|(_, id)| id)
+            })
+            .map(String::as_str)
     }
 
     /// Record `dir` as mise's, as the directory that is there now. Whether that changed the record.
@@ -141,6 +160,26 @@ impl CreatedDirs {
     }
 }
 
+/// Load the record, let `change` modify it, and write it back when `change` says it changed it,
+/// holding a lock so that two mise processes do not each overwrite what the other recorded.
+fn update(change: impl FnOnce(&mut CreatedDirs) -> bool) {
+    let path = record_path();
+    let _lock = match mise_util::lock_file::LockFile::new(&path).lock() {
+        Ok(lock) => Some(lock),
+        Err(err) => {
+            warn!(
+                "files: failed to lock dotfiles state {}: {err}",
+                path.display_user()
+            );
+            None
+        }
+    };
+    let mut record = CreatedDirs::load();
+    if change(&mut record) {
+        record.save();
+    }
+}
+
 /// Start tracking `target` before an apply writes under it, if it is not tracked yet. What is
 /// already there predates the record, so it is taken as mise's only where it holds something mise
 /// deployed: `target` and the directories down to each path of `deployed` that exists, as a
@@ -148,40 +187,43 @@ impl CreatedDirs {
 /// mise deployed stays the user's.
 pub(crate) fn track(target: &Path, deployed: impl IntoIterator<Item = PathBuf>) {
     let target = lexical_normalize(target);
-    let mut record = CreatedDirs::load();
-    if record.targets.contains(&target) {
-        return;
-    }
-    for path in deployed {
-        let path = lexical_normalize(&path);
-        if std::fs::symlink_metadata(&path).is_err() {
-            continue;
+    update(|record| {
+        if record.tracks(&target) {
+            return false;
         }
-        for dir in path.ancestors().skip(1) {
-            if !dir.starts_with(&target) {
-                break;
+        for path in deployed {
+            let path = lexical_normalize(&path);
+            if std::fs::symlink_metadata(&path).is_err() {
+                continue;
             }
-            record.insert(dir.to_path_buf());
+            for dir in path.ancestors().skip(1) {
+                if !dir.starts_with(&target) {
+                    break;
+                }
+                record.insert(dir.to_path_buf());
+            }
         }
-    }
-    record.targets.insert(target);
-    record.save();
+        record.targets.insert(target);
+        true
+    });
 }
 
 /// Record the directories of `created` at or beneath `target` that an apply made.
 pub(crate) fn record(target: &Path, created: &[PathBuf]) {
     let target = lexical_normalize(target);
-    let mut record = CreatedDirs::load();
-    let mut changed = false;
-    for dir in created.iter().map(|dir| lexical_normalize(dir)) {
-        if dir.starts_with(&target) {
-            changed |= record.insert(dir);
+    update(|record| {
+        let mut changed = false;
+        for dir in created.iter().map(|dir| lexical_normalize(dir)) {
+            if dir.starts_with(&target) {
+                changed |= record.insert(dir);
+            }
         }
-    }
-    if changed || !record.targets.contains(&target) {
-        record.targets.insert(target);
-        record.save();
-    }
+        if !record.tracks(&target) {
+            record.targets.insert(target);
+            changed = true;
+        }
+        changed
+    });
 }
 
 /// Drop `removed` from the record.
@@ -189,14 +231,16 @@ pub(crate) fn forget(removed: &[PathBuf]) {
     if removed.is_empty() {
         return;
     }
-    let mut record = CreatedDirs::load();
-    let before = record.dirs.len();
-    for dir in removed {
-        record.dirs.remove(&lexical_normalize(dir));
-    }
-    if record.dirs.len() != before {
-        record.save();
-    }
+    update(|record| {
+        let before = record.dirs.len();
+        for dir in removed {
+            let dir = lexical_normalize(dir);
+            record
+                .dirs
+                .retain(|recorded, _| !file::same_location_ignoring_case(recorded, &dir));
+        }
+        record.dirs.len() != before
+    });
 }
 
 #[cfg(test)]
