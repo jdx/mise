@@ -88,7 +88,7 @@ A GitLab tool moves to the gitlab backend:
 | `matching`                    | Breaks a tie between assets that already match your platform, and is ignored when only one matches | Filters assets before platform detection; a value that matches no asset for your platform is an error                      |
 | What is installed             | One executable, unless `extract_all` is set                                                        | The whole archive; the directories with executables go on `PATH`, so other executables in the archive can appear there     |
 | Repositories without releases | Lists Git tags as versions                                                                         | Lists only releases with assets, so a repository that publishes only tags has no versions                                  |
-| Verification                  | Records a checksum of the installed executable                                                     | Checks the release's digest or checksum file and GitHub artifact attestations, and records the download URL in `mise.lock` |
+| Verification                  | Records a checksum of the installed executable, or of the whole install with `extract_all`         | Checks the release's digest or checksum file and GitHub artifact attestations, and records the download URL in `mise.lock` |
 
 Neither backend keeps two entries for the same `owner/repo` apart:
 `ubi:owner/repo[matching=a]` and `ubi:owner/repo[matching=b]` resolve to one
@@ -124,6 +124,16 @@ A tool is written as `ubi:owner/repo`, `ubi:owner/repo@1.25.1`, or a direct
 download URL such as
 `ubi:https://github.com/goreleaser/goreleaser/releases/download/v1.16.2/goreleaser_Darwin_arm64.tar.gz`,
 which has only the version `latest`.
+
+ubi sends a GitHub or GitLab token with every request it makes, the download
+included, and reads one from `GITHUB_TOKEN`, `GITLAB_TOKEN`, `CI_JOB_TOKEN`,
+`CODEBERG_TOKEN` or `FORGEJO_TOKEN` when mise gives it none. mise gives it a
+token only when every request goes to the provider's API (or, for GitHub, to
+`github.com`). A download URL on another host, or a GitLab release whose asset
+links point at another host, installs only while none of those variables is
+set; otherwise mise refuses it. Install such a tool with the github, gitlab or
+http backend instead. For a GitLab project, mise reads the release just before
+ubi does, with the token ubi will send, to see where its asset links point.
 
 mise puts `bin_path` on `PATH` when it is set. Otherwise it uses the install
 directory when `extract_all` is set, then the install's `bin/` directory if it

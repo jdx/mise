@@ -722,6 +722,42 @@ pub fn list() -> BackendList {
         .unwrap_or_default()
 }
 
+/// Installed tools that [`list`] leaves out because `enable_tools` or `disable_tools` excludes
+/// them. Those settings narrow what one mise process uses, often only through an environment
+/// variable, while the shims directory serves every process; reshim lists these tools so a
+/// filtered command does not delete their shims. Tools of a disabled backend type stay out.
+pub(crate) fn list_installed_excluded_by_tool_filters() -> BackendList {
+    let settings = Settings::get();
+    let enable_tools = settings.enable_tools();
+    let disable_tools = settings.disable_tools();
+    if enable_tools.is_none() && disable_tools.is_empty() {
+        return vec![];
+    }
+    install_state::list_tools()
+        .values()
+        .filter_map(|ist| {
+            if ist.full.is_some() {
+                return arg_to_backend(ist.clone().into());
+            }
+            // Without manifest metadata an install is listed only through the seed of
+            // `build_tools`: a core tool, or a registry tool with idiomatic files.
+            CORE_PLUGINS.get(&ist.short).cloned().or_else(|| {
+                REGISTRY
+                    .get(ist.short.as_str())
+                    .filter(|rt| !rt.idiomatic_files.is_empty() && rt.is_supported_os())
+                    .and_then(|rt| arg_to_backend(rt.short.into()))
+            })
+        })
+        .filter(|backend| {
+            !tool_enabled(
+                enable_tools.as_ref(),
+                &disable_tools,
+                &backend.id().to_string(),
+            ) && !is_disabled_backend_type(&backend.get_type())
+        })
+        .collect()
+}
+
 /// Backends that can contribute version aliases.
 ///
 /// Only core tools and asdf/vfox plugins override `get_aliases`; every other
