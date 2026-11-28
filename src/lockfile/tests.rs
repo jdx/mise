@@ -6396,6 +6396,49 @@ fn restore_missing_versions_keeps_the_platforms_found_unsupported_before() {
 }
 
 #[test]
+fn restore_missing_versions_keeps_platform_results_of_another_backend_out() {
+    // The tool moved from aqua to github at the same version and options. What aqua downloaded,
+    // or found no build of, says nothing about github, so none of it comes back.
+    let mut previous_entry = basic_tool("1.0.0", "aqua:widget");
+    previous_entry.unsupported_platforms = BTreeSet::from(["windows-x64".to_string()]);
+    previous_entry.platforms = BTreeMap::from([(
+        "macos-arm64".to_string(),
+        PlatformInfo {
+            checksum: Some("sha256:aqua".to_string()),
+            ..Default::default()
+        },
+    )]);
+    previous_entry.specifiers = BTreeSet::from(["1".to_string()]);
+    let mut previous = Lockfile::default();
+    previous
+        .tools
+        .insert("widget".to_string(), vec![previous_entry]);
+
+    let mut rebuilt = basic_tool("1.0.0", "github:owner/widget");
+    rebuilt.platforms = BTreeMap::from([(
+        "linux-x64".to_string(),
+        PlatformInfo {
+            checksum: Some("sha256:linux".to_string()),
+            ..Default::default()
+        },
+    )]);
+    let mut current = Lockfile::default();
+    current.tools.insert("widget".to_string(), vec![rebuilt]);
+    current.restore_missing_versions(&previous, "widget");
+
+    let entries = &current.tools["widget"];
+    assert_eq!(entries.len(), 1, "{entries:?}");
+    let entry = &entries[0];
+    assert!(entry.unsupported_platforms.is_empty(), "{entry:?}");
+    assert_eq!(
+        entry.platforms.keys().collect::<Vec<_>>(),
+        ["linux-x64"],
+        "{entry:?}"
+    );
+    assert!(entry.specifiers.contains("1"), "{entry:?}");
+}
+
+#[test]
 fn restore_missing_versions_brings_back_conda_package_records() {
     let path = std::env::temp_dir().join("test_restore_conda_records.lock");
     std::fs::write(

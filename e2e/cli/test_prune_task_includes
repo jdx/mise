@@ -287,3 +287,35 @@ assert "mise ls -C proj6"
 cd other || exit 1
 assert_not_contains "MISE_SAFE=1 mise prune --dry-run 2>&1" "not pruning: safe mode"
 assert_contains "MISE_SAFE=1 mise prune --dry-run 2>&1" "dummy@10.0.0"
+
+# A glob folder that is excluded only once its link is followed is not dropped whole: a match
+# below it can be a link to a folder no exclude covers, whose tasks still count. A match that
+# resolves into the excluded folder stays excluded.
+cd .. || exit 1
+mkdir -p proj7/vendor proj7/allowed
+cat >proj7/allowed/deploy.toml <<'TOML'
+[deploy]
+run = "true"
+tools.dummy = "11.0.0"
+TOML
+cat >proj7/vendor/skip.toml <<'TOML'
+[skip]
+run = "true"
+tools.dummy = "12.0.0"
+TOML
+ln -s ../allowed/deploy.toml proj7/vendor/deploy.toml
+ln -s vendor proj7/linked
+cat >proj7/mise.toml <<'TOML'
+[task_config]
+includes = ["linked/*.toml"]
+excludes = ["vendor"]
+TOML
+assert "mise trust proj7/mise.toml"
+assert "mise install dummy@11.0.0 dummy@12.0.0"
+assert "mise ls -C proj7"
+cd other || exit 1
+assert_not_contains "MISE_SAFE=1 mise prune --dry-run 2>&1" "not pruning: safe mode"
+assert_not_contains "MISE_SAFE=1 mise prune --dry-run 2>&1" "dummy@11.0.0"
+assert_contains "MISE_SAFE=1 mise prune --dry-run 2>&1" "dummy@12.0.0"
+assert_not_contains "mise prune --dry-run 2>&1" "dummy@11.0.0"
+assert_contains "mise prune --dry-run 2>&1" "dummy@12.0.0"

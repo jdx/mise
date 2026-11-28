@@ -2291,7 +2291,12 @@ impl Lockfile {
                     // This run may have locked the entry for fewer platforms than the requests
                     // it did not see use. The platforms it no longer records come back, with
                     // their downloads or as found unsupported, and the ones it locked, or found
-                    // unsupported, stay as it left them.
+                    // unsupported, stay as it left them. Only from the same backend, though: what
+                    // another backend downloaded, or found no build of, says nothing about this
+                    // one, and `mise lock --check` would take its marker as this backend's.
+                    if kept.backend != entry.backend {
+                        continue;
+                    }
                     for (platform, info) in entry.platforms {
                         if !kept.platforms.contains_key(&platform)
                             && !kept.unsupported_platforms.contains(&platform)

@@ -7701,6 +7701,17 @@ pub fn is_task_path_excluded(path: &Path, excludes: &[PathBuf]) -> bool {
         .any(|exclude| file::path_starts_with_resolved(path, exclude))
 }
 
+/// [`is_task_path_excluded`] by the paths as written, without following links, so that whatever
+/// is below such a path is excluded as well.
+fn is_task_path_excluded_as_written(path: &Path, excludes: &[PathBuf]) -> bool {
+    Settings::get()
+        .task
+        .disable_paths
+        .iter()
+        .chain(excludes)
+        .any(|exclude| path.starts_with(exclude))
+}
+
 /// Most entries one task directory walk may visit. Links are followed, and links
 /// that keep leading forward into the same directories (or one into `/sys`)
 /// give a small checkout an exponential number of paths, which walkdir's loop
@@ -8021,8 +8032,11 @@ pub fn is_glob_pattern(pattern: &str) -> bool {
 /// whose fixed folder already resolves outside the project before walking that folder: a large
 /// folder outside would otherwise be scanned only for every match to be dropped. Callers still
 /// check each match, since a link below a folder inside the project can lead outside. A folder
-/// that `excludes` covers gives no tasks either way, so it is dropped without counting as
-/// skipped by safe mode, which would stop `mise prune` and `mise lock` from cleaning up.
+/// that `excludes` covers as written gives no tasks either way, as every match below it is
+/// excluded as written too, so it is dropped without counting as skipped by safe mode, which
+/// would stop `mise prune` and `mise lock` from cleaning up. A folder excluded only once its
+/// links are followed is not dropped for that: a match below it can be a link to a folder no
+/// exclude covers, so its matches are checked one by one like any other.
 fn expand_bounded_task_include(
     dir: &Path,
     pattern: &str,
@@ -8037,7 +8051,7 @@ fn expand_bounded_task_include(
             if !literal.as_os_str().is_empty() {
                 let parent = dir.join(literal);
                 if parent.is_dir()
-                    && (is_task_path_excluded(&parent, excludes)
+                    && (is_task_path_excluded_as_written(&parent, excludes)
                         || skip_task_file_outside(&parent, bounds))
                 {
                     return vec![];
