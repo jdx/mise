@@ -31,7 +31,9 @@ use std::sync::Arc;
 /// that file.
 ///
 /// Trusting a config file in a repository's main checkout also trusts the same
-/// path in its git worktrees. Paranoid mode (https://mise.jdx.dev/paranoid.html)
+/// path in its git worktrees. `--worktrees` trusts it in every checkout of the
+/// repository instead, from any of them, which is how worktrees of a bare
+/// repository share trust. Paranoid mode (https://mise.jdx.dev/paranoid.html)
 /// turns off automatic and worktree trust and requires trust, tied to the
 /// file's contents, for every config outside the global and system config.
 /// See https://mise.jdx.dev/security.html#configuration-trust
@@ -45,6 +47,10 @@ use std::sync::Arc;
     example(
         r###"mise trust ~/src/app/mise.toml"###,
         help = r###"Trust a specific file"###
+    ),
+    example(
+        r###"mise trust --worktrees"###,
+        help = r###"Trust the nearest config here in every worktree of this git repository"###
     ),
     example(
         r###"mise trust --show"###,
@@ -78,6 +84,16 @@ pub(crate) struct Trust {
     #[usage(long)]
     untrust: bool,
 
+    /// Trust this config in every checkout of its git repository
+    ///
+    /// Covers the same path in the main checkout and in every linked worktree,
+    /// including worktrees created later and worktrees of a bare repository.
+    /// A config at another path in a worktree still needs its own trust. With
+    /// `--untrust`, removes this grant. Not available in paranoid mode, which
+    /// ties trust to each file's contents.
+    #[usage(long, conflicts = &["all", "ignore", "show"])]
+    worktrees: bool,
+
     /// The config filenames to look for, which in paranoid mode include the
     /// idiomatic version files that need trust there.
     #[usage(skip)]
@@ -94,7 +110,9 @@ impl Trust {
         if self.show {
             return self.show();
         }
-        if self.untrust {
+        if self.worktrees {
+            self.worktrees()
+        } else if self.untrust {
             untrust_config_file(self.config_file()?, &self.config_filenames)
         } else if self.ignore {
             self.ignore()
@@ -254,6 +272,13 @@ pub(super) fn untrust_config_file(
         );
     }
 
+    if !Settings::get().paranoid.config() && config_file::is_trusted_in_worktrees(&cfr) {
+        warn!(
+            "{} is trusted in all worktrees of its git repository, so it will still be trusted. Use `mise trust --untrust --worktrees` or `mise trust --ignore`.",
+            display_path(&cfr)
+        );
+    }
+
     Ok(())
 }
 
@@ -291,6 +316,56 @@ pub(super) fn resolve_config_file(config_file: Option<&PathBuf>) -> Result<Optio
 }
 
 impl Trust {
+    /// `--worktrees`: trust, or with `--untrust` stop trusting, a config's path in every checkout
+    /// of its git repository.
+    fn worktrees(&self) -> Result<()> {
+        if Settings::get().paranoid.config() {
+            bail!(
+                "`mise trust --worktrees` is not available in paranoid mode, which ties trust to \
+                 each config file's contents. Run `mise trust` in each worktree instead."
+            );
+        }
+        let path = match self.config_file()? {
+            Some(filename) => filename,
+            None => match nearest_local_config_file(&self.config_filenames) {
+                Some(path) => path,
+                None => bail!("No config file found to trust."),
+            },
+        };
+        if is_global_config(&path) {
+            bail!(
+                "{} is global config, which is always trusted.",
+                display_path(&path)
+            );
+        }
+        let root = config_trust_root(&path);
+        let shown = display_path(root.canonicalize()?);
+        if self.untrust {
+            if config_file::untrust_in_worktrees(&root)? {
+                info!("untrusted {shown} in all worktrees");
+            } else {
+                warn!("{shown} was not trusted in all worktrees.");
+            }
+            if config_file::is_trusted(&root) {
+                warn!(
+                    "{shown} is still trusted here. Run `mise trust --untrust` to remove that too."
+                );
+            }
+            return Ok(());
+        }
+        let Some(repo) = config_file::trust_in_worktrees(&root)? else {
+            bail!(
+                "{shown} is not in a checkout of a git repository. Run `mise trust` without \
+                 --worktrees to trust it here."
+            );
+        };
+        info!(
+            "trusted {shown} in all worktrees of {}",
+            display_path(&repo)
+        );
+        Ok(())
+    }
+
     fn ignore(&self) -> Result<()> {
         let path = match self.config_file()? {
             Some(filename) => filename,
