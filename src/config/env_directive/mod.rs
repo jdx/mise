@@ -524,13 +524,15 @@ impl SubstitutionMarks {
             current: usize,
             /// All the `*`s of the run.
             stars: usize,
-            /// The `*`s of the run that are in a written `**`.
+            /// The longest written `**` (or longer run) in the run. Two that a tag joins are
+            /// one, so `**{% if x %}/dev/{% endif %}**` with `x` false is `**`, not `****`,
+            /// which the walk would not read as recursive.
             written: usize,
         }
         impl Run {
             fn cross(&mut self) {
                 if self.current > 1 {
-                    self.written += self.current;
+                    self.written = self.written.max(self.current);
                 }
                 self.current = 0;
             }
@@ -2187,6 +2189,10 @@ mod tests {
         assert_eq!(split("env/**/.env", true), owned("env/", "**/.env"));
         assert_eq!(split("env/**{# c #}/.env", true), owned("env/", "**/.env"));
         assert_eq!(split("env/**{# c #}*/.env", true), owned("env/", "**/.env"));
+        // two written `**`s that a tag which renders nothing joins are one `**`, not `****`
+        let input = "env/**{% if x %}/dev/{% endif %}**/.env";
+        assert_eq!(split(input, true), owned("env/", "**/dev/**/.env"));
+        assert_eq!(split(input, false), owned("env/", "**/.env"));
         // an escaped `*` is a name, not part of a run
         #[cfg(unix)]
         assert_eq!(

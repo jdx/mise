@@ -525,13 +525,29 @@ where
     }
 }
 
-/// Take a private cache's directory away from everyone but its owner.
+/// Take a private cache's directory away from everyone but its owner. The directory is opened
+/// without following a symlink in its place, checked to belong to this user, and changed
+/// through that handle, so a link or a directory swapped in between cannot make mise change
+/// someone else's directory. A symlink or another user's directory is an error.
 #[cfg(unix)]
 fn restrict_dir(dir: &Path) -> Result<()> {
-    use std::os::unix::fs::PermissionsExt;
-    if dir.metadata()?.permissions().mode() & 0o077 != 0 {
-        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))
-            .wrap_err_with(|| format!("failed to make {} private", display_path(dir)))?;
+    use nix::fcntl::OFlag;
+    use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
+    let private = || format!("failed to make {} private", display_path(dir));
+    let handle = File::options()
+        .read(true)
+        .custom_flags((OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW).bits())
+        .open(dir)
+        .wrap_err_with(|| format!("{} is not a directory of its own", display_path(dir)))
+        .wrap_err_with(private)?;
+    let metadata = handle.metadata().wrap_err_with(private)?;
+    if metadata.uid() != nix::unistd::geteuid().as_raw() {
+        eyre::bail!("{}: it belongs to another user", private());
+    }
+    if metadata.permissions().mode() & 0o077 != 0 {
+        handle
+            .set_permissions(std::fs::Permissions::from_mode(0o700))
+            .wrap_err_with(private)?;
     }
     Ok(())
 }
@@ -1037,6 +1053,43 @@ mod tests {
             assert_eq!(mode(&file.unwrap().path()), 0o600);
         }
         assert_eq!(cache.get_cached().unwrap(), "secret");
+    }
+
+    /// A private cache whose directory is a symlink leaves the link's target as it is, and does
+    /// not write a value there.
+    #[cfg(unix)]
+    #[test]
+    fn a_private_cache_does_not_follow_a_symlinked_directory() {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = |path: &Path| path.metadata().unwrap().permissions().mode() & 0o777;
+        let dir = tempfile::tempdir().unwrap();
+        let shared = dir.path().join("shared");
+        fs::create_dir(&shared).unwrap();
+        fs::set_permissions(&shared, fs::Permissions::from_mode(0o755)).unwrap();
+        let exec = dir.path().join("exec");
+        std::os::unix::fs::symlink(&shared, &exec).unwrap();
+        let builder = || CacheManagerBuilder::new(exec.join("value"));
+
+        let err = builder()
+            .private()
+            .build::<String>()
+            .write(&"secret".to_string())
+            .unwrap_err();
+        assert!(
+            format!("{err:#}").contains("is not a directory of its own"),
+            "{err:#}"
+        );
+        assert_eq!(mode(&shared), 0o755);
+        assert_eq!(fs::read_dir(&shared).unwrap().count(), 0);
+
+        // A value written there before is still read, and the target keeps its mode.
+        builder().build().write(&"earlier".to_string()).unwrap();
+        let cache = builder().private().build::<String>();
+        assert_eq!(
+            cache.get_or_try_init(|| Ok("fetched".to_string())).unwrap(),
+            "earlier"
+        );
+        assert_eq!(mode(&shared), 0o755);
     }
 
     fn environment(values: &[(&str, &str)]) -> impl Fn(&str) -> Option<String> {

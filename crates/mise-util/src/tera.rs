@@ -59,18 +59,30 @@ pub fn contains_template_syntax(input: &str) -> bool {
 /// re-emitted `os()` call, the `{{ version }}` placeholder). It holds a per-process random
 /// number, so a value substituted by the first render cannot produce it, and only digits
 /// between control characters, so no filter in the first render changes it by accident. A span
-/// opens with this stem and `(`, and closes with it and `)`, so a filter that cuts off one end of
-/// a span leaves a marker with no partner, which [`escape_rendered_data`] refuses, instead of
-/// shifting which parts of the output count as code.
+/// opens with this stem and `(`, and closes with it, `)`, a check number of the code and the
+/// stem's control character. A filter that cuts off one end of a span leaves a marker with no
+/// partner, and one that changes the code (an `upper` filter over `{{ version }}`) leaves a
+/// check number that no longer fits; [`escape_rendered_data`] refuses both, instead of shifting
+/// which parts of the output count as code or passing changed code on.
 static DEFERRED_STEM: Lazy<String> = Lazy::new(|| format!("\u{1f}{}", rand::rng().random::<u64>()));
 const DEFERRED_OPEN: &str = "(\u{1f}";
-const DEFERRED_CLOSE: &str = ")\u{1f}";
+const DEFERRED_CLOSE: char = ')';
+const DEFERRED_END: char = '\u{1f}';
+
+/// The check number a deferred span carries for its code: FNV-1a, written in digits, which no
+/// case or whitespace filter changes.
+fn deferred_check(code: &str) -> u64 {
+    code.bytes().fold(0xcbf2_9ce4_8422_2325, |hash, byte| {
+        (hash ^ u64::from(byte)).wrapping_mul(0x0100_0000_01b3)
+    })
+}
 
 /// Wrap template code a first render emits for a later render, so that
 /// [`escape_rendered_data`] keeps it live.
 pub fn mark_deferred(code: &str) -> String {
     let stem = &*DEFERRED_STEM;
-    format!("{stem}{DEFERRED_OPEN}{code}{stem}{DEFERRED_CLOSE}")
+    let check = deferred_check(code);
+    format!("{stem}{DEFERRED_OPEN}{code}{stem}{DEFERRED_CLOSE}{check}{DEFERRED_END}")
 }
 
 /// Make the output of a first render safe to render again: the spans marked with
@@ -79,7 +91,8 @@ pub fn mark_deferred(code: &str) -> String {
 /// itself instead of being evaluated as template code.
 ///
 /// Fails when a marker has no partner, as when a filter in the first render cut off one end of
-/// a span: the output can then no longer be split into code and data.
+/// a span, since the output can then no longer be split into code and data, and when a filter
+/// changed the code of a span, as a `{% filter upper %}` around `{{ version }}` does.
 pub fn escape_rendered_data(rendered: &str) -> eyre::Result<String> {
     let stem = DEFERRED_STEM.as_str();
     let unmatched = || {
@@ -95,10 +108,18 @@ pub fn escape_rendered_data(rendered: &str) -> eyre::Result<String> {
             .strip_prefix(DEFERRED_OPEN)
             .ok_or_else(unmatched)?;
         let end = code.find(stem).ok_or_else(unmatched)?;
-        rest = code[end + stem.len()..]
+        let after = code[end + stem.len()..]
             .strip_prefix(DEFERRED_CLOSE)
             .ok_or_else(unmatched)?;
-        out.push_str(&code[..end]);
+        let (check, after) = after.split_once(DEFERRED_END).ok_or_else(unmatched)?;
+        let code = &code[..end];
+        if check != deferred_check(code).to_string() {
+            eyre::bail!(
+                "a filter or section changed `{code}`, code that mise keeps for the backend's render, such as `os()` or `version`; move it out of the filter"
+            );
+        }
+        rest = after;
+        out.push_str(code);
     }
     out.push_str(&escape_template_syntax(rest));
     Ok(out)

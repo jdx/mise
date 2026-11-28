@@ -166,9 +166,10 @@ left for the backend to render at install time. If an environment variable, a
 directory name, or the output of `exec()` contains <span v-pre>`{{`</span>,
 <span v-pre>`{%`</span> or <span v-pre>`{#`</span>, it is escaped. An option
 the backend renders again, such as an http `url`, `checksum_url` or header, or
-a github `asset_pattern`, gets those characters as they are. Any other option,
-such as `version_list_url`, gets the escaped text, for example
-<span v-pre>`{{ "{{" }}`</span> in place of <span v-pre>`{{`</span>.
+a github `asset_pattern`, gets those characters as they are once it renders.
+The escaping is internal: an option mise uses as written, such as
+`version_list_url`, `rename_exe` or `bin`, gets the substituted text itself,
+without rendering it again.
 
 ## OS-specific tools {#os-specific-tools}
 

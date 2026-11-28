@@ -240,6 +240,22 @@ async fn test_cut_deferred_marker_is_an_error() {
         let err = escape_rendered_data(&rendered).unwrap_err().to_string();
         assert!(err.contains("a filter cut into code"), "{template}: {err}");
     }
+    // A filter that changes the code of a span is an error too; one that leaves it alone is not.
+    let rendered = render_str(
+        &mut deferred,
+        "{% filter upper %}{{ os() }}{% endfilter %}",
+        &ctx,
+    )
+    .unwrap();
+    let err = escape_rendered_data(&rendered).unwrap_err().to_string();
+    assert!(err.contains("changed `{{ OS() }}`"), "{err}");
+    let rendered = render_str(
+        &mut deferred,
+        "{% filter lower %}{{ os() }}{% endfilter %}",
+        &ctx,
+    )
+    .unwrap();
+    assert_eq!(escape_rendered_data(&rendered).unwrap(), "{{ os() }}");
     // Whole spans keep working, next to each other and next to data.
     let rendered = render_str(
         &mut deferred,

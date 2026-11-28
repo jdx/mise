@@ -1767,8 +1767,6 @@ impl MiseToml {
     }
 }
 
-static VERSION_EXPRESSION: std::sync::LazyLock<regex::Regex> =
-    std::sync::LazyLock::new(|| regex::Regex::new(r"\{\{.*?\}\}").unwrap());
 static VERSION_WORD: std::sync::LazyLock<regex::Regex> =
     std::sync::LazyLock::new(|| regex::Regex::new(r"(^|[^.\w])version\b").unwrap());
 
@@ -1873,21 +1871,18 @@ pub(crate) fn render_option_for_backend(
     Ok(deferred.restore(rendered))
 }
 
-/// What [`scan_template`] finds in an option.
+/// What [`scan_template`] finds in an option. Each item says whether it sits in the body of a
+/// `{% filter %}`, `{% macro %}` or block `{% set %}` section. The template changes or moves what
+/// such a body renders to before it reaches the option, so code taken out of one for the
+/// backend's render could not be put back where it belongs.
 #[derive(Default)]
 struct TemplateScan<'a> {
-    /// The `{% raw %}` blocks: each block's start and its regex captures.
-    blocks: Vec<(usize, regex::Captures<'a>)>,
-    /// The bodies of the `{% filter %}`, `{% macro %}` and block `{% set %}` sections. The
-    /// template changes or moves what such a body renders to before it reaches the option, so
-    /// code taken out of one for the backend's render could not be put back where it belongs.
-    sections: Vec<std::ops::Range<usize>>,
-}
-
-impl TemplateScan<'_> {
-    fn in_section(&self, at: usize) -> bool {
-        self.sections.iter().any(|section| section.contains(&at))
-    }
+    /// The `{% raw %}` blocks: each block's start, its regex captures and whether it is in a
+    /// section.
+    blocks: Vec<(usize, regex::Captures<'a>, bool)>,
+    /// The `{{ }}` expressions: each one's span and whether it is in a section. An expression
+    /// in a comment, a string literal or a raw block is text, not one of these.
+    exprs: Vec<(std::ops::Range<usize>, bool)>,
 }
 
 /// Whether a `{% %}` tag opens a section whose body the template renders somewhere other than
@@ -1907,11 +1902,14 @@ fn section_tag(tag: &str) -> Option<bool> {
     }
 }
 
-/// The `{% raw %}` blocks and sections of `input` that are template syntax, not text inside a
-/// string literal of a `{{ }}` or `{% %}` tag or inside a comment.
+/// The `{% raw %}` blocks and `{{ }}` expressions of `input` that are template syntax, not text
+/// inside a string literal of a `{{ }}` or `{% %}` tag or inside a comment, each with whether it
+/// is in a section. One pass, so the work grows with the length of `input` alone.
 fn scan_template(input: &str) -> TemplateScan<'_> {
     let mut scan = TemplateScan::default();
-    let mut open_sections = vec![];
+    // How many sections are open here. Tera rejects a section left open; until then it runs to
+    // the end.
+    let mut open_sections = 0usize;
     let mut at = 0;
     while let Some(offset) = input[at..].find('{') {
         let start = at + offset;
@@ -1919,7 +1917,7 @@ fn scan_template(input: &str) -> TemplateScan<'_> {
         let close = if rest.starts_with("{%") {
             if let Some(caps) = RAW_BLOCK.captures(rest) {
                 at = start + caps[0].len();
-                scan.blocks.push((start, caps));
+                scan.blocks.push((start, caps, open_sections > 0));
                 continue;
             }
             if RAW_OPEN.is_match(rest) {
@@ -1937,16 +1935,14 @@ fn scan_template(input: &str) -> TemplateScan<'_> {
         };
         match crate::tera::template_tag_end(rest, close) {
             Some(end) => {
-                if close == "%}" {
-                    match section_tag(&rest[..end]) {
-                        Some(true) => open_sections.push(start + end),
-                        Some(false) => {
-                            if let Some(body) = open_sections.pop() {
-                                scan.sections.push(body..start);
-                            }
-                        }
+                match close {
+                    "%}" => match section_tag(&rest[..end]) {
+                        Some(true) => open_sections += 1,
+                        Some(false) => open_sections = open_sections.saturating_sub(1),
                         None => {}
-                    }
+                    },
+                    "}}" => scan.exprs.push((start..start + end, open_sections > 0)),
+                    _ => {}
                 }
                 at = start + end;
             }
@@ -1954,14 +1950,11 @@ fn scan_template(input: &str) -> TemplateScan<'_> {
             None => break,
         }
     }
-    // Tera rejects a section left open; until then it runs to the end.
-    scan.sections
-        .extend(open_sections.into_iter().map(|body| body..input.len()));
     scan
 }
 
 /// The error for code to keep for the backend's render that sits in a section (see
-/// [`TemplateScan::sections`]).
+/// [`TemplateScan`]).
 fn deferred_code_in_section(code: &str) -> eyre::Report {
     eyre!(
         "`{code}` is inside a `{{% filter %}}`, `{{% macro %}}` or `{{% set %}}` section, \
@@ -1988,7 +1981,7 @@ pub(crate) fn shield_raw_blocks(input: &str) -> eyre::Result<(String, Deferred)>
     let scan = scan_template(input);
     let mut shielded = String::with_capacity(input.len());
     let mut copied = 0;
-    for (start, caps) in &scan.blocks {
+    for (start, caps, in_section) in &scan.blocks {
         let start = *start;
         let mut body = &caps[3];
         if !caps[2].is_empty() {
@@ -1997,7 +1990,7 @@ pub(crate) fn shield_raw_blocks(input: &str) -> eyre::Result<(String, Deferred)>
         if !caps[4].is_empty() {
             body = body.trim_end();
         }
-        if scan.in_section(start) {
+        if *in_section {
             if contains_template_syntax(body) {
                 return Err(deferred_code_in_section(&caps[0]));
             }
@@ -2020,7 +2013,9 @@ pub(crate) fn shield_raw_blocks(input: &str) -> eyre::Result<(String, Deferred)>
 /// that placeholder text, so every other `{{ }}` expression that reads `version` is swapped for
 /// a marker here and put back verbatim afterwards, to be rendered once the version is known.
 /// Raw blocks are deferred as [`shield_raw_blocks`] does, and an expression to defer that sits in
-/// a section is an error for the same reason.
+/// a section is an error for the same reason. A bare `{{ version }}` in a section is left to the
+/// render: it may read a local `version`, and a section that changes the placeholder makes
+/// [`crate::tera::escape_rendered_data`] fail.
 fn shield_version_expressions(input: &str) -> eyre::Result<(String, Deferred)> {
     let (input, mut deferred) = shield_raw_blocks(input)?;
     if !input.contains("{{") {
@@ -2029,9 +2024,8 @@ fn shield_version_expressions(input: &str) -> eyre::Result<(String, Deferred)> {
     let scan = scan_template(&input);
     let mut shielded = String::with_capacity(input.len());
     let mut copied = 0;
-    for caps in VERSION_EXPRESSION.captures_iter(&input) {
-        let whole = caps.get(0).unwrap();
-        let expr = whole.as_str();
+    for (span, in_section) in &scan.exprs {
+        let expr = &input[span.clone()];
         let inner = expr
             .trim_start_matches("{{")
             .trim_end_matches("}}")
@@ -2040,12 +2034,12 @@ fn shield_version_expressions(input: &str) -> eyre::Result<(String, Deferred)> {
         if inner == "version" || !VERSION_WORD.is_match(&code) {
             continue;
         }
-        if scan.in_section(whole.start()) {
+        if *in_section {
             return Err(deferred_code_in_section(expr));
         }
-        shielded.push_str(&input[copied..whole.start()]);
+        shielded.push_str(&input[copied..span.start]);
         shielded.push_str(&deferred.defer(expr.to_string()));
-        copied = whole.end();
+        copied = span.end;
     }
     shielded.push_str(&input[copied..]);
     Ok((shielded, deferred))
@@ -4786,6 +4780,71 @@ mod tests {
             let (_, deferred) = shield_version_expressions(input).unwrap();
             assert_eq!(deferred.exprs, vec!["{{ version }}"], "{input}");
         }
+    }
+
+    /// An expression in a comment is text, in a section too: Tera drops the comment, so the
+    /// option renders as the section makes it.
+    #[test]
+    fn test_a_comment_in_a_section_is_no_expression() {
+        use crate::tera::{TeraEngine, render_str};
+        let input = "{% filter lower %}RELEASE{# {{ version | upper }} #}{% endfilter %}";
+        for mut tera in [
+            TeraEngine::V1(Box::default()),
+            TeraEngine::V2(Box::default()),
+        ] {
+            let option = render_option_for_backend(shield_version_expressions(input), |s| {
+                Ok(render_str(&mut tera, s, &tera::Context::new())?)
+            })
+            .unwrap();
+            assert_eq!(option, "release");
+        }
+    }
+
+    /// A bare `{{ version }}` renders to the placeholder. A section that changes it is an error,
+    /// one that leaves it as it is keeps it for the backend, and a local `version` is a value.
+    #[test]
+    fn test_a_section_that_changes_the_version_placeholder_is_an_error() {
+        use crate::tera::{TeraEngine, render_str};
+        let mut ctx = tera::Context::new();
+        ctx.insert("version", &crate::tera::mark_deferred("{{ version }}"));
+        for mut tera in [
+            TeraEngine::V1(Box::default()),
+            TeraEngine::V2(Box::default()),
+        ] {
+            let mut render = |input: &str| {
+                render_option_for_backend(shield_version_expressions(input), |s| {
+                    Ok(render_str(&mut tera, s, &ctx)?)
+                })
+            };
+            let err = render("{% filter upper %}{{ version }}{% endfilter %}")
+                .unwrap_err()
+                .to_string();
+            assert!(err.contains("changed `{{ VERSION }}`"), "{err}");
+            assert_eq!(
+                render("{% filter lower %}v{{ version }}{% endfilter %}").unwrap(),
+                "v{{ version }}"
+            );
+            assert_eq!(
+                render("{% set version = 'x' %}{% filter upper %}{{ version }}{% endfilter %}")
+                    .unwrap(),
+                "X"
+            );
+        }
+    }
+
+    /// Whether a block or an expression is in a section is found in the same single pass, so
+    /// an option with many sections costs no more than its length.
+    #[test]
+    fn test_many_sections_are_scanned_once() {
+        let input =
+            "{% filter upper %}{% raw %}a{% endraw %}{{ 'b' }}{% endfilter %}".repeat(20000);
+        let scan = scan_template(&input);
+        assert_eq!(scan.blocks.len(), 20000);
+        assert!(scan.blocks.iter().all(|(_, _, in_section)| *in_section));
+        assert_eq!(scan.exprs.len(), 20000);
+        assert!(scan.exprs.iter().all(|(_, in_section)| *in_section));
+        let scan = scan_template("{% filter upper %}{% endfilter %}{{ version | x }}");
+        assert_eq!(scan.exprs, vec![(33..50, false)]);
     }
 
     /// A raw block whose body ends in `{` cannot join substituted text after it into code: the
