@@ -459,9 +459,11 @@ jobs:
 
   # FreeBSD release binaries are best-effort and nothing runs them, so this
   # only checks that the release feature set still compiles for the target.
-  # It is not one of test-ci's required jobs: a red check here is a heads-up
+  # It is not required: a red check here is a heads-up
   # that the next release will ship without the FreeBSD archive.
   check-freebsd:
+    # A failure here must not fail the reusable workflow that test.yml requires.
+    continue-on-error: true
     permissions:
       contents: read
     runs-on: ${{ !inputs.trusted && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64;overrides.cache-tag=cache' }}

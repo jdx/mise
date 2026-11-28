@@ -106,7 +106,7 @@ case "$RUST_TRIPLE" in
 	;;
 esac
 
-if [[ $os == "linux" ]] && command -v docker >/dev/null 2>&1; then
+if [[ $os == "linux" || $os == "freebsd" ]] && command -v docker >/dev/null 2>&1; then
 	# When the retry action's timeout kills a hung attempt it stops the cross
 	# client but not its container, which keeps compiling and holds the target
 	# directory lock against the next attempt. Each attempt runs on a
@@ -140,7 +140,8 @@ if [[ -n ${MISE_PGO:-} ]]; then
 	fi
 	MISE_PGO_BUILD_TOOL="$build_tool" MISE_PGO_TARGET="$RUST_TRIPLE" \
 		bash scripts/pgo.bash --ignore-rust-version --no-default-features --features "$features"
-elif [[ $os == "linux" ]]; then
+elif [[ $os == "linux" || $os == "freebsd" ]]; then
+	# FreeBSD is cross-compiled too, with the image Cross.toml pins.
 	cross build --profile=serious --target "$RUST_TRIPLE" --ignore-rust-version --no-default-features --features "$features"
 else
 	cargo build --profile=serious --target "$RUST_TRIPLE" --ignore-rust-version --no-default-features --features "$features"
