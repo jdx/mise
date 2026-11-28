@@ -46,9 +46,16 @@ impl TasksEdit {
                 .or_else(|_| Task::new(&path, path.parent().unwrap(), &project_root))?
         };
         let file = &task.config_source;
-        if !file.exists() {
-            // Write to the destination the check approved, not through the links again.
-            let destination = super::write::script_check_before_write(file).await?;
+        let create = !file.exists();
+        // A script the editor will write is checked like one mise writes, also when it exists:
+        // the editor follows its links, and the check refuses one out of the project. The
+        // editor then opens the destination the check approved, not the links again.
+        let destination = if create || (!self.path && !super::write::is_toml(file)) {
+            super::write::script_check_before_write(file).await?
+        } else {
+            file.clone()
+        };
+        if create {
             if let Some(parent) = destination.parent() {
                 file::create_dir_all(parent)?;
             }
@@ -58,7 +65,7 @@ impl TasksEdit {
         if self.path {
             miseprintln!("{}", file.display());
         } else {
-            crate::cli::editor::open_in_editor(file.as_path())?;
+            crate::cli::editor::open_in_editor(&destination)?;
         }
 
         Ok(())

@@ -1743,13 +1743,7 @@ fn in_state_dir(destination: &Path) -> bool {
 /// the write itself but does not close it: mise opens the file by its path, not through a
 /// directory it holds open.
 pub fn checked_write_destination(path: &Path) -> Result<PathBuf> {
-    if let Some(link) = link_left_through_parent_dir(path)? {
-        return Err(eyre!(
-            "refusing to write {}: its `..` goes up from {}, a link, so it names the directory above where that link leads rather than the one it appears to. Write the path without `..`",
-            style::display_path_escaped(path),
-            style::display_path_escaped(&link)
-        ));
-    }
+    refuse_parent_dir_out_of_link("write", path)?;
     // The directory is resolved from the absolute path: a bare file name such as `mise.toml`
     // has an empty parent, which does not resolve. A directory the write is about to create is
     // resolved through the part of it that exists, so a link above it is judged where it leads.
@@ -1842,6 +1836,19 @@ pub fn checked_write_destination(path: &Path) -> Result<PathBuf> {
         style::display_path_escaped(&target),
         style::display_path_escaped(&project)
     ))
+}
+
+/// Refuses to `verb` `path` when a `..` in it goes up from a link: see
+/// [`link_left_through_parent_dir`]. Checked on the path as written, before it is made absolute.
+pub fn refuse_parent_dir_out_of_link(verb: &str, path: &Path) -> Result<()> {
+    if let Some(link) = link_left_through_parent_dir(path)? {
+        return Err(eyre!(
+            "refusing to {verb} {}: its `..` goes up from {}, a link, so it names the directory above where that link leads rather than the one it appears to. Use a path without `..`",
+            style::display_path_escaped(path),
+            style::display_path_escaped(&link)
+        ));
+    }
+    Ok(())
 }
 
 /// The link that `path` goes up from with `..`, if any. The system resolves `link/..` to the
@@ -1950,6 +1957,22 @@ fn script_link_check(script: &Path, root: &Path, follow_own_link: bool) -> Resul
             style::display_path_escaped(&target)
         ))
     };
+    // A link that stays in the root can still lead into global or system config, as a home
+    // directory project's task linked to `.config/mise/config.toml` does. That config loads
+    // without trust, and the project's author chose the link, so it is never followed there, as
+    // a config write through such a link is not.
+    if [&*dirs::CONFIG, &*dirs::SYSTEM_CONFIG]
+        .into_iter()
+        .any(|config_dir| {
+            config_dir
+                .canonicalize()
+                .is_ok_and(|dir| target.starts_with(dir))
+        })
+    {
+        return refuse(
+            "the link leads into global config, which loads without trust. Edit global config directly",
+        );
+    }
     if root
         .canonicalize()
         .is_ok_and(|root| target.starts_with(root))

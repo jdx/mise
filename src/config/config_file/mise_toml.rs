@@ -492,11 +492,22 @@ fn drop_unverified_platform_urls(
     // falls back to it. When such a platform lost the checksum that checked it, the top-level url
     // would download it unchecked, so that url goes, unless it was given on the command line.
     // This is decided after the removals above: a platform whose own url just went falls back
-    // to the top-level one too.
-    let with_url = platforms_with_url(opts);
+    // to the top-level one too. Whether a platform has a url of its own is the backend's lookup
+    // without that fallback, so a url it passes over (an array or a table, say) counts as none.
+    let after = ToolVersionOptions {
+        opts: opts.clone().into(),
+        ..Default::default()
+    };
+    let has_own_url = |platform: &str| {
+        crate::platform::Platform::parse(platform).is_ok_and(|p| {
+            let target = crate::backend::platform_target::PlatformTarget::new(p);
+            crate::backend::static_helpers::lookup_platform_key_for_target(&after, "url", &target)
+                .is_some()
+        })
+    };
     let inherits_unchecked = lost
         .iter()
-        .any(|platform| !with_url.contains(platform) && !checked(platform));
+        .any(|platform| !has_own_url(platform) && !checked(platform));
     if inherits_unchecked && !explicit.contains_key("url") && opts.shift_remove("url").is_some() {
         removed.push("url".to_string());
     }
@@ -3816,6 +3827,23 @@ checksum_url = ["c"]"#,
             super::drop_unverified_platform_urls(&mut o, &Default::default(), &[], lost(), false);
         assert!(removed.is_empty(), "{removed:?}");
         assert!(o.contains_key("url"));
+    }
+
+    #[test]
+    fn a_platform_url_the_http_backend_does_not_read_leaves_the_top_level_url_in_use() {
+        // linux-x64's own url, given on the command line, is an array, which the backend passes
+        // over for the top-level url. Its checksum went, so the top-level url goes too.
+        let given: indexmap::IndexMap<String, toml::Value> =
+            toml::from_str::<toml::Table>(r#"platforms = { linux-x64 = { url = ["l"] } }"#)
+                .unwrap()
+                .into_iter()
+                .collect();
+        let mut o = given.clone();
+        o.insert("url".to_string(), "u".into());
+        let lost = vec![vec!["platforms".to_string(), "linux-x64".to_string()]];
+        let removed = super::drop_unverified_platform_urls(&mut o, &given, &[], lost, false);
+        assert_eq!(removed, ["url"]);
+        assert!(!o.contains_key("url"));
     }
 
     #[test]
