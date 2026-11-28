@@ -10882,6 +10882,10 @@
           "type": "string",
           "description": "email used for history commit authors and committers; {hostname} expands to this machine's hostname"
         },
+        "git_name": {
+          "type": "string",
+          "description": "name used for history commit authors and committers; {hostname} expands to this machine's hostname"
+        },
         "machine": {
           "type": "string",
           "description": "this machine's name in per-machine streams (variants = [{ machine = true }]) instead of the name generated with the history store",
