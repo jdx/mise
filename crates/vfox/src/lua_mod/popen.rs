@@ -17,7 +17,7 @@
 
 use mlua::prelude::*;
 use mlua::{AnyUserData, Function, IntoLuaMulti, Table, UserData, UserDataMethods, Variadic};
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{BufRead, BufReader, BufWriter, Read, Write};
 use std::process::{Child, ChildStdin, ChildStdout, Stdio};
 
 use super::cmd::{apply_mise_env, cmd_shell, command_from_shell, detached_cwd, start_in};
@@ -116,7 +116,7 @@ fn popen(
         Err(err) => return (LuaNil, format!("{command}: {err}")).into_lua_multi(lua),
     };
     let file = PopenFile {
-        stdin: child.stdin.take(),
+        stdin: child.stdin.take().map(BufWriter::new),
         stdout: child
             .stdout
             .take()
@@ -133,11 +133,14 @@ fn popen(
 ///
 /// It answers as a Lua 5.1 popen file does, the version mlua is built with: `close`
 /// returns `true` once the child is reaped, whatever its exit status (5.1's
-/// `pclose` reports no status), `write` returns `true`, a failed read, write or
-/// flush returns `nil, message, errno` (see [`IoFailure`]), and any use of a
-/// closed handle, a second `close` included, raises "attempt to use a closed file".
+/// `pclose` reports no status), `write` returns `true`, writes are buffered,
+/// a failed read, write or flush returns `nil, message, errno` (see
+/// [`IoFailure`]), and any use of a closed handle, a second `close` included,
+/// raises "attempt to use a closed file".
 struct PopenFile {
-    stdin: Option<ChildStdin>,
+    /// Buffered as a C `FILE` is, so a short write fails only once it is
+    /// flushed, by `flush` or by `close`, which reports no failure.
+    stdin: Option<BufWriter<ChildStdin>>,
     stdout: Option<Box<dyn BufRead + Send + Sync>>,
     /// Whether writes go through [`lf_as_crlf`]: a pipe opened with `"w"`, not
     /// `"wb"`, on Windows.
@@ -646,6 +649,17 @@ mod tests {
             local gone = io.popen("exec 0<&-", "w")
             note(gone:write(string.rep("x", 1048576)))
             note(gone:close())
+            // a short write waits in the handle's buffer, so it is the flush that
+            // finds the child gone; the marker file says it has closed its stdin
+            local closed = $out .. ".closed"
+            local short = io.popen("exec 0<&-; : > '" .. closed .. "'", "w")
+            repeat
+                local marker = io.open(closed)
+                if marker then marker:close() end
+            until marker
+            note(short:write("x"))
+            note(short:flush())
+            note(short:close())
             // a bad argument still raises
             local b = io.popen("cat >/dev/null", "w")
             note((pcall(b.write, b, {})))
@@ -667,6 +681,8 @@ mod tests {
         assert_eq!(expected[3], "nil,Bad file descriptor,9");
         assert_eq!(expected[5], "nil,Bad file descriptor,9");
         assert_eq!(expected[8], "nil,Broken pipe,32");
+        assert_eq!(expected[10], "true");
+        assert_eq!(expected[11], "nil,Broken pipe,32");
         assert_eq!(
             std::fs::read_to_string(dir.path().join("out")).unwrap(),
             std::fs::read_to_string(stock_dir.path().join("out")).unwrap()
