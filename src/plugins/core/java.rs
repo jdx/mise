@@ -541,16 +541,20 @@ impl Backend for JavaPlugin {
     fn list_installed_versions_matching(&self, query: &str) -> Vec<String> {
         let versions = self.list_installed_versions();
         if let Some(query) = SdkmanQuery::parse(query) {
-            // A build in a shared install dir is listed too, so read its
-            // `release` file from where it is, as `ToolVersion::install_path` does.
-            let installs_path = self.ba().installs_path();
-            let tool_dir_name = self.ba().tool_dir_name();
+            // The listing includes identity-layout and shared installations, so
+            // read each build's `release` file from where it actually is, as
+            // `ToolVersion::install_path` does.
+            let ba = self.ba();
+            let installs_path = ba.installs_path();
+            let tool_dir_name = ba.tool_dir_name();
             return sdkman_installed_match(versions, &query, |version| {
-                crate::env::find_in_shared_installs(
-                    installs_path.join(version),
-                    &tool_dir_name,
-                    version,
-                )
+                crate::install_layout::resolver::physical_dir(ba, version).unwrap_or_else(|| {
+                    crate::env::find_in_shared_installs(
+                        installs_path.join(version),
+                        &tool_dir_name,
+                        version,
+                    )
+                })
             });
         }
         // Java doesn't support the `prerelease` opt-in; always filter.
