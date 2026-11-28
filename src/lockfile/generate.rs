@@ -1141,7 +1141,11 @@ fn conda_pin_conflict(
                 .split_once(':')
                 .map(|(algorithm, _)| algorithm.to_ascii_lowercase())
         };
-        if old.eq_ignore_ascii_case(new) || algorithm(old) != algorithm(new) {
+        // A malformed checksum pins nothing: it is what `mise lock` repairs.
+        if !crate::hash::is_well_formed_checksum(old)
+            || old.eq_ignore_ascii_case(new)
+            || algorithm(old) != algorithm(new)
+        {
             continue;
         }
         return Some(format!(
@@ -1645,6 +1649,9 @@ mod tests {
             let same = BTreeMap::from([(dep.clone(), row(checksum))]);
             assert!(conda_pin_conflict(&candidate, platform, &same).is_none());
         }
+        // A malformed pin is repaired, not defended.
+        candidate.set_conda_package(platform, &dep, row("sha256:abc".into()));
+        assert!(conda_pin_conflict(&candidate, platform, &incoming).is_none());
     }
 
     #[tokio::test]
