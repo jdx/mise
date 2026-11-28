@@ -667,7 +667,7 @@ fn lands_in(resolved: Option<&Path>, roots: &[PathBuf]) -> bool {
 /// and None for a `..` after a missing component: where that lands depends on
 /// what is created there later (a directory or a link elsewhere), so no answer
 /// given now holds once the prefix changes.
-fn resolve_symlinks(path: &Path, keg: Option<(&Path, &Path)>) -> Option<PathBuf> {
+pub(super) fn resolve_symlinks(path: &Path, keg: Option<(&Path, &Path)>) -> Option<PathBuf> {
     use std::path::Component;
     const MAX_LINK_HOPS: usize = 40;
     fn pending(path: &Path) -> impl Iterator<Item = PathBuf> + '_ {
@@ -1202,6 +1202,16 @@ mod tests {
                 None => mise_util::env::remove_var("MISE_SYSTEM_BREW_PREFIX"),
             }
         }
+    }
+
+    /// every consumer of a relative prefix sees it from the working directory
+    #[test]
+    fn a_relative_prefix_is_made_absolute() {
+        let _lock = ENV_LOCK.blocking_lock();
+        let _guard = BrewPrefixGuard::set(Path::new("brew"));
+        let expected = std::env::current_dir().unwrap().join("brew");
+        assert_eq!(prefix::prefix(), expected);
+        assert_eq!(prefix::cellar(), expected.join("Cellar"));
     }
 
     #[test]

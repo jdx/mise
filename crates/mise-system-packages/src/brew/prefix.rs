@@ -185,15 +185,27 @@ fn sudo_invoking_uid() -> Option<u32> {
 ///
 /// A prefix spelled with `..` is refused for every user, before anything is
 /// checked or created: see [`refuse_parent_steps`].
+///
+/// The sticky bit protects only entries that exist: in `/tmp`, another user
+/// can still create a missing `/tmp/brew` as a symlink after this check and
+/// before root's `mkdir -p`, which accepts a link to a directory. So
+/// [`bootstrap`] runs the same checks again once it has created what was
+/// missing, before anything is written into the prefix. What passes then is
+/// owned by root (or the `sudo mise` user) in directories nobody else can
+/// rename entries in, so it stays put.
 pub(super) fn refuse_foreign_as_root() -> Result<()> {
     let prefix = prefix();
     refuse_parent_steps(&prefix)?;
     if !nix::unistd::geteuid().is_root() {
         return Ok(());
     }
-    if let Some((path, uid)) =
-        foreign_component(&prefix, &bootstrap_dirs(&prefix), sudo_invoking_uid())
-    {
+    refuse_redirectable(&prefix, &bootstrap_dirs(&prefix), sudo_invoking_uid())
+}
+
+/// The checks of [`refuse_foreign_as_root`] for `prefix` and `dirs`, with
+/// `trusted_uid` trusted as much as root.
+fn refuse_redirectable(prefix: &Path, dirs: &[PathBuf], trusted_uid: Option<u32>) -> Result<()> {
+    if let Some((path, uid)) = foreign_component(prefix, dirs, trusted_uid) {
         let owner = nix::unistd::User::from_uid(nix::unistd::Uid::from_raw(uid))
             .ok()
             .flatten()
@@ -207,7 +219,7 @@ pub(super) fn refuse_foreign_as_root() -> Result<()> {
             path.display(),
         );
     }
-    if let Some((path, mode)) = world_writable_component(&prefix, &bootstrap_dirs(&prefix)) {
+    if let Some((path, mode)) = world_writable_component(prefix, dirs) {
         bail!(
             "{} is writable by every user (mode {:04o}) and has no sticky bit, so mise will not \
              install into or change the Homebrew prefix {} as root: any user could rename what \
@@ -413,7 +425,8 @@ pub(super) fn bootstrap(dry_run: bool) -> Result<()> {
         && sudo_invoking_user().is_none()
         && dirs.iter().try_for_each(std::fs::create_dir_all).is_ok()
     {
-        return Ok(());
+        // what was missing could have been created as a link meanwhile
+        return refuse_foreign_as_root();
     }
     if needs_create || needs_chown {
         let Some(user) = prefix_owner() else {
@@ -441,6 +454,17 @@ pub(super) fn bootstrap(dry_run: bool) -> Result<()> {
         }
         info!("creating {} (requires sudo once)", prefix.display());
         sudo::run("mkdir", &mkdir_args, &[])?;
+        // root has just run `mkdir -p` on paths that did not all exist, and
+        // is about to `chown -R` the prefix: a link created meanwhile in
+        // place of a missing one would send both elsewhere, so the chain is
+        // checked for that before the chown, whether or not mise is root
+        let euid = nix::unistd::geteuid();
+        let trusted = if euid.is_root() {
+            sudo_invoking_uid()
+        } else {
+            Some(euid.as_raw())
+        };
+        refuse_redirectable(&prefix, &dirs, trusted)?;
         sudo::run("chown", &chown_args, &[])?;
         if !writable(&prefix) {
             bail!("{} is still not writable after bootstrap", prefix.display());
@@ -456,6 +480,7 @@ pub(super) fn bootstrap(dry_run: bool) -> Result<()> {
         for dir in missing_subdirs {
             mise_util::file::create_dir_all(&dir)?;
         }
+        refuse_foreign_as_root()?;
     }
     Ok(())
 }
@@ -635,6 +660,34 @@ mod tests {
         .unwrap();
         let (path, _) = world_writable_component(&prefix, &[prefix.join("Cellar")]).unwrap();
         assert_eq!(path, prefix.join("Cellar"));
+    }
+
+    /// a prefix still to be created in a sticky directory passes, but a link
+    /// that appears in its place before `mkdir -p` (here to a directory every
+    /// user can write to) is caught when the chain is checked again
+    #[test]
+    fn a_link_created_in_place_of_a_missing_prefix_is_caught_by_the_recheck() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path().canonicalize().unwrap();
+        let sticky = base.join("tmp");
+        std::fs::create_dir(&sticky).unwrap();
+        std::fs::set_permissions(&sticky, std::fs::Permissions::from_mode(0o1777)).unwrap();
+        let prefix = sticky.join("brew");
+        let dirs = [prefix.join("Cellar")];
+        let me = Some(nix::unistd::geteuid().as_raw());
+        refuse_redirectable(&prefix, &dirs, me).unwrap();
+
+        let planted = sticky.join("attacker");
+        std::fs::create_dir_all(planted.join("Cellar")).unwrap();
+        std::fs::set_permissions(&planted, std::fs::Permissions::from_mode(0o777)).unwrap();
+        std::os::unix::fs::symlink(&planted, &prefix).unwrap();
+        let err = refuse_redirectable(&prefix, &dirs, me).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains(&format!("{} is writable by every user", planted.display())),
+            "{err}"
+        );
     }
 
     #[test]

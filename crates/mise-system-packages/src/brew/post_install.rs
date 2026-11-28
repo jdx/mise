@@ -75,7 +75,8 @@ pub(super) fn remove_created(created: &[PathBuf]) {
 /// `src` can come from a bottle, so nothing is written through a symlink at
 /// or below `dst` (a `dst` that is a link is skipped), and a link in `src`
 /// that would point outside every one of `roots` (the Homebrew prefix) from
-/// its new place is not installed.
+/// its new place is not installed. A relative `dst` is taken from the working
+/// directory, since that check resolves a link from `/`.
 fn copy_tree(
     src: &Path,
     dst: &Path,
@@ -83,6 +84,10 @@ fn copy_tree(
     created: &mut Vec<PathBuf>,
     roots: &[PathBuf],
 ) -> Result<()> {
+    let dst = &std::path::absolute(dst).unwrap_or_else(|_| dst.to_path_buf());
+    // a later link can replace one an earlier link resolves through, so each
+    // installed link is checked again once the whole tree is in place
+    let mut installed_links = Vec::new();
     let mut walk = WalkDir::new(src).sort_by_file_name().into_iter();
     while let Some(entry) = walk.next() {
         let entry = entry?;
@@ -151,6 +156,7 @@ fn copy_tree(
                 }
             }
             mise_util::file::make_symlink(&link, &dest)?;
+            installed_links.push((dest.clone(), link));
             // only what did not exist before is ours to remove on rollback
             if !existed {
                 created.push(dest);
@@ -180,6 +186,18 @@ fn copy_tree(
         fs::copy(entry.path(), &dest)?;
         if !existed {
             created.push(dest);
+        }
+    }
+    for (dest, link) in installed_links {
+        if !super::pour::link_stays_in(dest.parent().unwrap(), &link, None, roots) {
+            warn!(
+                "brew: removing {}: once the rest was copied, its link to {} points outside \
+                 the Homebrew prefix",
+                dest.display(),
+                link.display(),
+            );
+            fs::remove_file(&dest)?;
+            created.retain(|path| *path != dest);
         }
     }
     Ok(())
@@ -614,14 +632,16 @@ fn prefix_roots() -> Vec<PathBuf> {
 /// the deepest of `roots` the destination lies under, and the destination
 /// itself, is resolved, and the copy goes on only where it lands below one of
 /// `roots` again: `opt/<name>` leading to the formula's keg is followed, while
-/// a link out of the prefix, or one that dangles, is an error. The roots
-/// themselves may be links (a Cellar on another disk), which
-/// `prefix::refuse_foreign_as_root` judges; a destination below no root has
-/// only its own link checked.
+/// a link out of the prefix is an error. A link to something not there yet
+/// (a file in the keg the step itself creates) is resolved as far as the
+/// filesystem goes and taken as written from there, like the kernel does when
+/// it creates the file. The roots themselves may be links (a Cellar on
+/// another disk), which `prefix::refuse_foreign_as_root` judges; a
+/// destination below no root has only its own link checked.
 fn resolve_copy_destination(destination: &Path, roots: &[PathBuf]) -> Result<PathBuf> {
     let follow = |link: &Path| -> Result<PathBuf> {
-        let real = link.canonicalize().wrap_err_with(|| {
-            format!(
+        let real = super::pour::resolve_symlinks(link, None).ok_or_else(|| {
+            eyre!(
                 "not copying to {}: {} is a symlink mise cannot follow",
                 destination.display(),
                 link.display(),
@@ -880,6 +900,68 @@ mod tests {
             assert!(created.is_empty(), "{created:?}");
             assert_eq!(fs::read_dir(&outside)?.count(), 0);
         }
+        Ok(())
+    }
+
+    /// `etc/a -> b/x` passes while `etc/b` leads to `inside`, but the tree
+    /// then replaces `etc/b` with a link to `inside2`, where `x` leads out of
+    /// the prefix: `etc/a` is checked again and removed
+    #[cfg(unix)]
+    #[test]
+    fn copy_tree_rechecks_links_once_the_tree_is_in_place() -> Result<()> {
+        use std::os::unix::fs::symlink;
+        let tmp = tempfile::tempdir()?;
+        let root = tmp.path().canonicalize()?;
+        let prefix = root.join("prefix");
+        let outside = root.join("outside");
+        fs::create_dir_all(&outside)?;
+        fs::create_dir_all(prefix.join("inside"))?;
+        fs::create_dir_all(prefix.join("inside2"))?;
+        fs::create_dir_all(prefix.join("etc"))?;
+        symlink(&outside, prefix.join("inside2/x"))?;
+        symlink("../inside", prefix.join("etc/b"))?;
+        let src = root.join("src");
+        fs::create_dir_all(&src)?;
+        symlink("b/x", src.join("a"))?;
+        symlink("../inside2", src.join("b"))?;
+        let mut created = Vec::new();
+        copy_tree(
+            &src,
+            &prefix.join("etc"),
+            false,
+            &mut created,
+            std::slice::from_ref(&prefix),
+        )?;
+        assert!(prefix.join("etc/a").symlink_metadata().is_err());
+        assert!(!created.contains(&prefix.join("etc/a")), "{created:?}");
+        assert_eq!(
+            fs::read_link(prefix.join("etc/b"))?,
+            PathBuf::from("../inside2")
+        );
+        Ok(())
+    }
+
+    /// a relative destination (a relative `MISE_SYSTEM_BREW_PREFIX`) has its
+    /// links checked from the working directory, not from `/`
+    #[cfg(unix)]
+    #[test]
+    fn copy_tree_checks_links_of_a_relative_destination_from_the_working_directory() -> Result<()> {
+        use std::os::unix::fs::symlink;
+        let cwd = std::env::current_dir()?;
+        let tmp = tempfile::tempdir_in(&cwd)?;
+        let name = PathBuf::from(tmp.path().file_name().unwrap());
+        let src = tmp.path().join("src");
+        fs::create_dir_all(&src)?;
+        fs::write(src.join("file"), "f")?;
+        symlink("file", src.join("link"))?;
+        let prefix = cwd.join(&name).join("prefix");
+        fs::create_dir_all(&prefix)?;
+        let roots = [prefix.canonicalize()?];
+        let mut created = Vec::new();
+        copy_tree(&src, &name.join("prefix/etc"), false, &mut created, &roots)?;
+        let link = prefix.join("etc/link");
+        assert_eq!(fs::read_link(&link)?, PathBuf::from("file"));
+        assert!(created.contains(&link), "{created:?}");
         Ok(())
     }
 
@@ -1154,6 +1236,19 @@ mod tests {
         assert_eq!(
             resolve_copy_destination(&prefix.join("var/inside"), &roots)?,
             prefix.join("etc/real")
+        );
+        // a link to a file the step is about to create in the keg, and one to
+        // a missing file outside the prefix
+        symlink("../Cellar/demo/1.0/later", prefix.join("var/later"))?;
+        assert_eq!(
+            resolve_copy_destination(&prefix.join("var/later"), &roots)?,
+            prefix.join("Cellar/demo/1.0/later")
+        );
+        symlink(root.join("outside/missing"), prefix.join("var/gone"))?;
+        let err = resolve_copy_destination(&prefix.join("var/gone"), &roots).unwrap_err();
+        assert!(
+            err.to_string().contains("outside the Homebrew prefix"),
+            "{err}"
         );
 
         // the step itself, with a destination link outside the (default) prefix

@@ -53,9 +53,17 @@ it leads to. The one exception is the user who ran `sudo mise`. For the same
 reason, mise refuses a prefix when any of those directories is writable by every
 user (`chmod o+w`) and has no sticky bit. The sticky bit is set on `/tmp`, for
 example, and with it only an entry's owner can rename or remove that entry.
+It does not protect a name that does not exist yet, such as a prefix of
+`/tmp/brew` that mise is about to create: another user could create it first
+as a symlink. So once mise has created the missing prefix and standard
+directories, and before it changes their owner or writes a file, it checks them
+again and refuses a link or directory that appeared in the meantime.
 Directories that their group can write to are allowed, because Homebrew's usual
 layout gives an admin group write access. mise trusts the members of that group
-as much as the owner. mise changes nothing in a refused prefix, including the
+as much as the owner. This check reads only the owner and the mode bits:
+access control lists (ACLs) that grant write access to other users or groups
+are not checked, so remove any such entries from these directories yourself.
+mise changes nothing in a refused prefix, including the
 lock files it cleans up otherwise.
 
 Linked commands go into `<prefix>/bin`. These packages get no mise shims, and
