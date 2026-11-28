@@ -884,13 +884,9 @@ async fn resolve_version_status(
     active: bool,
 ) -> VersionStatus {
     let install_path = tv.install_path();
-    if install_path.is_symlink() && !is_runtime_symlink(&install_path) {
-        // `exists()` resolves the link, so this is asking whether it still leads anywhere.
-        if install_path.exists() {
-            VersionStatus::Symlink(tv.display_version().to_string(), active)
-        } else {
-            VersionStatus::BrokenSymlink(tv.display_version().to_string())
-        }
+    let symlink = install_path.is_symlink() && !is_runtime_symlink(&install_path);
+    if symlink && !install_path.exists() {
+        VersionStatus::BrokenSymlink(tv.display_version().to_string())
     } else if !p.is_version_installed(config, tv, true) {
         // A lazy declaration safe mode refuses, or with no command left to shim,
         // does not install on first use, so it is just missing.
@@ -899,6 +895,8 @@ async fn resolve_version_status(
         } else {
             VersionStatus::Missing(tv.display_version().to_string())
         }
+    } else if symlink {
+        VersionStatus::Symlink(tv.display_version().to_string(), active)
     } else {
         let category = env::install_path_category(&install_path);
         if category != env::InstallPathCategory::Local {

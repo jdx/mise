@@ -351,6 +351,7 @@ impl RubyPlugin {
         pr: &dyn crate::ui::progress_report::SingleReport,
         tarball_path: &std::path::Path,
         version: &str,
+        url: &str,
     ) -> Result<bool> {
         let settings = Settings::get();
 
@@ -380,12 +381,24 @@ impl RubyPlugin {
             }
         };
 
+        // The release `version` was built in is tagged `version`, or a build
+        // revision of it. `url` names that tag but comes from the API, which
+        // can't vouch for itself, so no other tag in it counts.
+        let mut tags = vec![version.to_string()];
+        let repo_url = format!("https://github.com/{source}");
+        if let Some(tag) = crate::backend::release_tag_from_download_url(url, &repo_url)
+            && Self::is_build_revision_tag(version, &tag)
+        {
+            tags.push(tag);
+        }
+
         pr.set_message("verify GitHub artifact attestations".to_string());
 
         match crate::github::sigstore::verify_attestation(
             tarball_path,
             owner,
             repo,
+            &tags,
             None, // Accept any workflow from repo
             None,
             Self::use_versions_host_for_precompiled_source(source),
@@ -502,6 +515,7 @@ impl RubyPlugin {
                         &crate::ui::progress_report::QuietReport::new(),
                         &artifact.path().join("artifact"),
                         &tv.version,
+                        &url,
                     )
                     .await?
                 {

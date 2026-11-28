@@ -18,13 +18,13 @@ Bug reports are only for problems someone ran into while using mise. If a user w
 
 Before adding a **new** tool or shorthand to `registry/`, follow the `registry-submission` skill ([`.agents/skills/registry-submission/SKILL.md`](.agents/skills/registry-submission/SKILL.md)). In short:
 
-- Warn the user about the bar, look up real popularity numbers, and stop if the tool is personal, internal, a fork, or niche.
+- Verify popularity with real usage data. Skip personal, internal, forked, or niche tools.
 - Put a `## Popularity` section with those numbers in the PR description.
 - Confirm `mise ls-remote <backend>` lists installable versions.
 - Prefer `packslip:`, then `aqua:`, `github:`, or `gitlab:`. `conda:` has a high bar; `npm:`, `pipx:`, `gem:`, `cargo:`, `go:`, and `dotnet:` are almost never accepted. New `asdf:`, `vfox:`, and `ubi:` entries are not accepted.
 - Users can install any tool without a registry entry (`mise use github:owner/repo`, `mise use cargo:name`, …); the registry only adds a shorthand.
 
-None of this applies to editing an existing registry entry; do not ask the user about popularity for maintenance or fixes.
+The popularity check applies only to new tools and shorthands.
 
 ## Vendored aqua registry: do not edit
 

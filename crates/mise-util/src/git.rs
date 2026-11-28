@@ -1254,6 +1254,91 @@ fn main_checkout_root(dotgit_file: &Path) -> Option<PathBuf> {
 /// `gitdir`, so a directory the entry does not point at is not that worktree,
 /// whatever its `.git` file says.
 fn registered_main_checkout_root(dotgit_file: &Path) -> Option<PathBuf> {
+    registered_worktree_gitdir(dotgit_file)?;
+    main_checkout_root(dotgit_file)
+}
+
+/// A checkout of a git repository: the repository's shared git dir, and a
+/// path's place within the checkout that holds it.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct RepositoryPath {
+    /// The canonical git dir every checkout of the repository shares: the
+    /// main checkout's `.git`, or the bare repository itself.
+    pub common_dir: PathBuf,
+    /// The path relative to the root of the checkout holding it.
+    pub relative: PathBuf,
+}
+
+/// Where a canonical `path` sits in a git repository, so the same path in
+/// every checkout of that repository has one name: the main checkout and every
+/// linked worktree, including worktrees of a bare repository.
+///
+/// None outside any git repository, and for a checkout that has no claim on
+/// the repository it names. Only the repository can say which directories are
+/// its checkouts: a main checkout's `.git` must be a real directory, not a
+/// link to someone else's repository, and a linked worktree must be the one
+/// its `worktrees/<name>` entry points back at (see
+/// [`registered_worktree_gitdir`]). A copy of a checkout is therefore
+/// never a checkout of the original repository.
+///
+/// Detection is filesystem-only, as in [`main_checkout_equivalent`], and a
+/// submodule is passed over to the checkout that contains it in the same way.
+pub fn repository_path(path: &Path) -> Option<RepositoryPath> {
+    static CACHE: LazyLock<Mutex<HashMap<PathBuf, Option<PathBuf>>>> =
+        LazyLock::new(Default::default);
+    for root in path.ancestors() {
+        let dotgit = root.join(".git");
+        let Ok(meta) = dotgit.symlink_metadata() else {
+            continue;
+        };
+        let common_dir = if meta.is_dir() {
+            // The main checkout, or a nested independent repository, which
+            // is a repository of its own. Either way the walk ends here.
+            CACHE
+                .lock()
+                .unwrap()
+                .entry(root.to_path_buf())
+                .or_insert_with(|| {
+                    let common = dotgit.canonicalize().ok()?;
+                    common.join("HEAD").is_file().then_some(common)
+                })
+                .clone()
+        } else if meta.is_file() {
+            if worktree_gitdir(&dotgit).is_some() {
+                CACHE
+                    .lock()
+                    .unwrap()
+                    .entry(root.to_path_buf())
+                    .or_insert_with(|| worktree_common_dir(&registered_worktree_gitdir(&dotgit)?))
+                    .clone()
+            } else if is_submodule_gitdir(&dotgit) {
+                // A submodule belongs to whatever checkout contains it.
+                continue;
+            } else {
+                // A `--separate-git-dir` clone. Its `.git` file may name any
+                // repository, and nothing there points back at it.
+                None
+            }
+        } else {
+            // A `.git` symlink may name any repository, so it names none.
+            None
+        };
+        return Some(RepositoryPath {
+            common_dir: common_dir?,
+            relative: path.strip_prefix(root).ok()?.to_path_buf(),
+        });
+    }
+    None
+}
+
+/// The private git dir of the linked worktree at this `.git` file's
+/// directory, or None unless the repository registered this very directory as
+/// that worktree.
+///
+/// Anyone can write a `.git` file naming an existing `worktrees/<name>` entry
+/// of somebody else's repository; only that repository can make the entry name
+/// the directory back.
+fn registered_worktree_gitdir(dotgit_file: &Path) -> Option<PathBuf> {
     let gitdir = worktree_gitdir(dotgit_file)?;
     let pointer = PathBuf::from(read_pointer_file(&gitdir.join("gitdir"))?.trim());
     // `worktree.useRelativePaths` writes the pointer relative to the entry
@@ -1270,7 +1355,7 @@ fn registered_main_checkout_root(dotgit_file: &Path) -> Option<PathBuf> {
     {
         return None;
     }
-    main_checkout_root(dotgit_file)
+    Some(gitdir)
 }
 
 /// A git binary mise can run unattended for its own plumbing, or None.

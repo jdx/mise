@@ -1,0 +1,105 @@
+#!/usr/bin/env bash
+
+# `mise trust --worktrees` shares trust across every checkout of a repository,
+# including worktrees of a bare repository, which have no main checkout.
+
+export MISE_TRUSTED_CONFIG_PATHS=""
+
+git_e2e() {
+  git -c user.email=e2e@example.com -c user.name=e2e "$@"
+}
+
+mkdir -p seed
+cd seed || exit 1
+git init -q .
+cat <<EOF >mise.toml
+[env]
+TRUSTED_ENV = "1"
+EOF
+mkdir -p sub
+cat <<EOF >sub/mise.toml
+[env]
+SUB_ENV = "1"
+EOF
+git add mise.toml sub/mise.toml
+git_e2e commit -qm init
+cd .. || exit 1
+git clone -q --bare seed repo.git
+git -C repo.git worktree add -q ../wt-a
+git -C repo.git worktree add -q -b other ../elsewhere/wt-b
+
+# a bare repository's worktrees start out untrusted, and trust in one is not shared
+cd wt-a || exit 1
+assert_contains "mise trust --show" ": untrusted"
+mise trust
+cd ../elsewhere/wt-b || exit 1
+assert_contains "mise trust --show" ": untrusted"
+cd ../../wt-a || exit 1
+mise untrust
+
+# --worktrees shares trust with every worktree, including ones created later
+assert_contains "mise trust --worktrees 2>&1" "in all worktrees"
+assert_contains "mise trust --show" ": trusted"
+cd ../elsewhere/wt-b || exit 1
+assert_contains "mise trust --show" ": trusted"
+assert_contains "mise env" "TRUSTED_ENV=1"
+git -C ../../repo.git worktree add -q -b later ../wt-c
+cd ../../wt-c || exit 1
+assert_contains "mise env" "TRUSTED_ENV=1"
+
+# only the trusted path is shared: a config at another path needs its own trust
+cd sub || exit 1
+assert_contains "mise trust --show" "sub: untrusted"
+
+# a copy of a worktree is not a worktree of the repository
+cd ../.. || exit 1
+cp -r wt-a copied
+cd copied || exit 1
+assert_contains "mise trust --show" ": untrusted"
+assert_not_contains "mise hook-env -s bash 2>&1" "TRUSTED_ENV"
+
+# a .git symlink to the repository does not make a checkout of it
+cd .. || exit 1
+mkdir -p linked
+cp seed/mise.toml linked/
+ln -s "$PWD/repo.git" linked/.git
+cd linked || exit 1
+assert_contains "mise trust --show" ": untrusted"
+
+# untrusting in one worktree warns that the shared grant still applies
+cd ../wt-a || exit 1
+assert_contains "mise trust --untrust 2>&1" "trusted in all worktrees"
+assert_contains "mise trust --show" ": trusted"
+
+# --ignore in one worktree still stops it loading there
+cd ../wt-c || exit 1
+mise trust --ignore
+assert_contains "mise trust --show" ": untrusted"
+# and --worktrees still finds the ignored config, re-trusting it here
+assert_contains "mise trust --worktrees 2>&1" "wt-c in all worktrees"
+assert_contains "mise trust --show" ": trusted"
+mise trust --ignore
+assert_contains "mise trust --show" ": untrusted"
+cd ../elsewhere/wt-b || exit 1
+assert_contains "mise trust --show" ": trusted"
+
+# --untrust --worktrees removes the grant everywhere
+assert_contains "mise trust --untrust --worktrees 2>&1" "untrusted"
+assert_contains "mise trust --show" ": untrusted"
+cd ../../wt-a || exit 1
+assert_contains "mise trust --show" ": untrusted"
+
+# outside a git repository there is nothing to share trust with
+cd .. || exit 1
+mkdir -p plain
+cp seed/mise.toml plain/
+cd plain || exit 1
+assert_fail "mise trust --worktrees" "not in a checkout of a git repository"
+
+# paranoid mode ties trust to contents, so it refuses a grant by path
+cd ../wt-a || exit 1
+assert_fail "MISE_PARANOID=1 mise trust --worktrees" "paranoid"
+# the config category alone is enough
+assert_fail "MISE_PARANOID=config mise trust --worktrees" "paranoid"
+# and the other categories alone leave it available
+assert_contains "MISE_PARANOID=env_files mise trust --worktrees 2>&1" "in all worktrees"

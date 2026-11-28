@@ -55,6 +55,30 @@ fn render_git_email(template: &str, hostname: &str) -> Result<String> {
     Ok(email)
 }
 
+/// The history commit author and committer name, resolved like
+/// [`git_email`].
+pub(crate) fn git_name() -> Result<String> {
+    let template = layers()?
+        .into_iter()
+        .filter_map(|(_, layer)| layer.git_name)
+        .next_back()
+        .unwrap_or_else(|| "mise".to_string());
+    render_git_name(&template, &super::store::machine().name)
+}
+
+fn render_git_name(template: &str, hostname: &str) -> Result<String> {
+    let name = template.replace("{hostname}", hostname);
+    // Git strips these from an identity, or rejects a name made only of them.
+    eyre::ensure!(
+        !name.trim().is_empty()
+            && !name.contains('{')
+            && !name.contains('}')
+            && !name.chars().any(|c| c.is_control() || "<>".contains(c)),
+        "[history].git_name must resolve to a Git author name"
+    );
+    Ok(name)
+}
+
 pub(crate) fn file_recipients() -> Result<Vec<String>> {
     let mut recipients = Vec::new();
     for (path, layer) in layers()? {
@@ -218,6 +242,20 @@ pub(crate) fn exclusion_sources(pattern: &str) -> Vec<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn history_git_name_resolves_hostname_and_rejects_invalid_name() {
+        let config: HistoryTomlConfig = toml::from_str("git_name = 'mise on {hostname}'").unwrap();
+        assert_eq!(
+            render_git_name(config.git_name.as_deref().unwrap(), "work-mbp.local").unwrap(),
+            "mise on work-mbp.local"
+        );
+        assert_eq!(render_git_name("Jane Doe", "host").unwrap(), "Jane Doe");
+        assert!(render_git_name("{host}", "host").is_err());
+        assert!(render_git_name("  ", "host").is_err());
+        assert!(render_git_name("a <b>", "host").is_err());
+        assert!(render_git_name("a\nb", "host").is_err());
+    }
 
     #[test]
     fn history_git_email_resolves_hostname_and_rejects_invalid_email() {

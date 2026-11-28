@@ -283,7 +283,11 @@ launch agent, stays in place. `--force` never removes a cask Homebrew installed,
 a cask with no mise receipt, an interrupted install, or files shared with
 another cask.
 
-Deleting a `brew-cask:` entry does not uninstall the cask until you prune.
+Deleting a `brew-cask:` entry leaves the cask installed. Run prune to remove
+eligible casks.
+
+Prune keeps casks installed from a `.pkg`, including with `--force`. Follow
+the vendor's uninstall instructions to remove the installed software.
 
 ## Troubleshooting
 

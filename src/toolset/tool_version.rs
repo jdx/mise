@@ -708,11 +708,25 @@ impl ToolVersion {
         let Some(version) = tv.install_path_identity_version().map(str::to_string) else {
             return tv;
         };
-        if crate::install_layout::resolver::applies_to(&tv) {
+        if crate::install_layout::resolver::applies_to(&tv) || tv.is_node_bound_variant() {
             return Self::new(tv.request, version);
         }
         tv.strip_install_path_identity();
         tv
+    }
+
+    /// Whether this npm version, found by scanning installs, is or would become a copy
+    /// bound to a selected Node. Such a copy belongs to the `node` value that made it,
+    /// so a request that selects another Node (or none) gets its own copy instead of
+    /// reinstalling, and rebinding, the one it found.
+    fn is_node_bound_variant(&self) -> bool {
+        if self.ba().backend_type() != crate::backend::backend_type::BackendType::Npm {
+            return false;
+        }
+        let mut stripped = self.clone();
+        stripped.strip_install_path_identity();
+        stripped.binds_a_node()
+            || crate::backend::npm::bound_node_receipt(&self.install_path()).exists()
     }
 
     pub(crate) fn aube_install_path_version(&self) -> Option<&str> {
@@ -1010,9 +1024,28 @@ impl ToolVersion {
         install_state::is_incomplete(self.ba(), &key)
     }
 
+    /// Whether this is an `npm:` request whose `node` option binds its executables.
+    fn binds_a_node(&self) -> bool {
+        self.ba().backend_type() == crate::backend::backend_type::BackendType::Npm
+            // An installed directory's name already carries its identity.
+            && self.aube_install_path_version().is_none()
+            && self
+                .request
+                .options()
+                .opts_as_strings()
+                .iter()
+                .any(|(key, value)| key == "node" && !value.is_empty())
+    }
+
     pub(crate) fn aube_install_identity(&self) -> Option<String> {
-        let lock = self.aube_lock.as_ref()?;
-        let graph_identity = lock.identity();
+        let graph_identity = match self.aube_lock.as_ref() {
+            Some(lock) => lock.identity(),
+            // A tool bound to a selected Node is its own installation of the version,
+            // as pipx's `python` option is, so two configs that pick different Nodes
+            // (or one that picks none) do not rebind one shared copy back and forth.
+            None if self.binds_a_node() => "version-only".to_string(),
+            None => return None,
+        };
         let options: BTreeMap<_, _> = self
             .request
             .options()

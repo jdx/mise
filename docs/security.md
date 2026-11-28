@@ -270,6 +270,24 @@ worktree by hand, run `git worktree repair`. A path in the main checkout that is
 a symlink, or sits below one, shares nothing either; trust the worktree's config
 directly instead.
 
+To trust a config in every checkout of a repository, run `mise trust --worktrees`
+in any of them. This is how worktrees of a bare repository, which have no main
+checkout, share trust. It covers the same path in the main checkout and in every
+linked worktree, including worktrees created later, and nothing else: a config at
+another path in a worktree still needs its own trust.
+
+```sh
+git -C ~/src/app.git worktree add ~/work/feature-x
+cd ~/work/feature-x
+mise trust --worktrees
+```
+
+The grant is kept in mise's trust store, keyed by the repository's git directory,
+not in the repository, so a copy of the repository does not carry it.
+`mise trust --untrust --worktrees` removes it, and `mise trust --ignore` in one
+worktree still stops the config loading there. Paranoid mode refuses
+`--worktrees`.
+
 ## Safe mode
 
 Set `MISE_SAFE=1` when automation has to read config it does not control, such

@@ -1041,6 +1041,15 @@ fn is_trusted_without_config_paths(
             add_trusted(canonicalized_path.to_path_buf());
             return true;
         }
+        // Or the same path was trusted for every checkout of the repository with
+        // `mise trust --worktrees`, which is how worktrees of a bare repository,
+        // having no main checkout, share trust.
+        if crate::git::repository_path(canonicalized_path)
+            .is_some_and(|repo_path| worktrees_trust_path(&repo_path).exists())
+        {
+            add_trusted(canonicalized_path.to_path_buf());
+            return true;
+        }
         return false;
     }
     add_trusted(canonicalized_path.to_path_buf());
@@ -1424,6 +1433,67 @@ pub fn untrust(path: &Path) -> eyre::Result<()> {
         file::remove_file(&monorepo_path)?;
     }
     Ok(())
+}
+
+/// Trusts the trust root `path` in every checkout of its git repository: the main checkout and
+/// every linked worktree, present and future, including worktrees of a bare repository. Returns
+/// the repository's git dir, or None when `path` is not in a checkout of one.
+///
+/// The record stays in mise's own trust store, keyed by the repository's git dir and the path
+/// within a checkout, so it covers that one path in each checkout, as sharing trust with a main
+/// checkout does, and never travels with a copy of the repository.
+pub fn trust_in_worktrees(path: &Path) -> Result<Option<PathBuf>> {
+    let Some(repo_path) = crate::git::repository_path(&path.canonicalize()?) else {
+        return Ok(None);
+    };
+    rm_ignored(path.to_path_buf())?;
+    let record = worktrees_trust_path(&repo_path);
+    if !record.exists() {
+        file::create_dir_all(&*dirs::TRUSTED_CONFIGS)?;
+        // Pointing at the repository lets `mise prune --configs` remove the record with it.
+        file::make_symlink_or_file(&repo_path.common_dir, &record)?;
+    }
+    Ok(Some(repo_path.common_dir))
+}
+
+/// Removes the record [`trust_in_worktrees`] keeps for `path`. Returns whether there was one.
+pub fn untrust_in_worktrees(path: &Path) -> Result<bool> {
+    let Some(repo_path) = path
+        .canonicalize()
+        .ok()
+        .and_then(|path| crate::git::repository_path(&path))
+    else {
+        return Ok(false);
+    };
+    let record = worktrees_trust_path(&repo_path);
+    if record.exists() {
+        file::remove_file(&record)?;
+        return Ok(true);
+    }
+    Ok(false)
+}
+
+/// Whether `path` is trusted for every checkout of its repository by [`trust_in_worktrees`].
+pub fn is_trusted_in_worktrees(path: &Path) -> bool {
+    path.canonicalize()
+        .ok()
+        .and_then(|path| crate::git::repository_path(&path))
+        .is_some_and(|repo_path| worktrees_trust_path(&repo_path).exists())
+}
+
+/// generates a path like ~/.mise/trusted-configs/worktrees-3e8b8c44c3
+///
+/// The prefix keeps these apart from the records of single paths, whose names start with the
+/// trusted path's parent directory and file name.
+///
+/// The key joins the two paths with a NUL, which no path contains, rather than hashing them one
+/// after the other: `Path` hashes its components without marking where the path ends, so two
+/// different splits of the same components would otherwise share one record.
+fn worktrees_trust_path(repo_path: &crate::git::RepositoryPath) -> PathBuf {
+    let mut key = repo_path.common_dir.as_os_str().to_owned();
+    key.push("\0");
+    key.push(repo_path.relative.as_os_str());
+    dirs::TRUSTED_CONFIGS.join(format!("worktrees-{}", hash_to_str(&key)))
 }
 
 /// generates a path like ~/.mise/trusted-configs/dir-file-3e8b8c44c3.toml
@@ -2391,5 +2461,19 @@ mod hashed_path_filename_tests {
             hashed_path_filename(&relative),
             hashed_path_filename(&absolute)
         );
+    }
+
+    #[test]
+    fn worktrees_trust_records_do_not_depend_on_where_the_paths_split() {
+        use crate::git::RepositoryPath;
+        let record = |common: &str, relative: &str| {
+            worktrees_trust_path(&RepositoryPath {
+                common_dir: PathBuf::from(common),
+                relative: PathBuf::from(relative),
+            })
+        };
+        assert_ne!(record("/a/b", "c"), record("/a", "b/c"));
+        assert_ne!(record("/a/b", ""), record("/a", "b"));
+        assert_eq!(record("/a", "b/c"), record("/a", "b/c"));
     }
 }

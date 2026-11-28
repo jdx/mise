@@ -479,6 +479,127 @@ fn git_package_install_spec(name: &str, version: &str, has_checksum: bool) -> Re
     Ok(git_requirement(name, version))
 }
 
+/// The Node an `npm:` tool's `node` option selects, as a dependency the tool owns rather
+/// than one it takes from the active toolset, so the project's Node never decides it.
+pub(crate) fn selected_node_dependency(request: &ToolRequest) -> Result<Option<ToolRequest>> {
+    if request.ba().backend_type() != BackendType::Npm {
+        return Ok(None);
+    }
+    let options = request.options();
+    let Some(selector) = NpmOptions::new(&options).selected_node()? else {
+        return Ok(None);
+    };
+    let mut dependency = ToolRequest::new(
+        Arc::new(BackendArg::from("node")),
+        selector,
+        request.source().clone(),
+    )?;
+    // Share the npm tool's lockfile scope, as pipx's `python` does, so a project `node`
+    // with the same request is the same install request rather than a private twin.
+    // Locked mode refuses the option (`ensure_node_option_unlocked`) until `mise lock`
+    // records the selected Node.
+    dependency.set_lockfile_scope(request.lockfile_scope().clone());
+    Ok(Some(dependency))
+}
+
+/// Refuse a locked install of an npm tool that selects its own Node.
+///
+/// `mise lock` does not record that Node yet, so locked mode has no pinned download for it.
+/// Say so up front rather than failing later on a Node the lockfile cannot name.
+pub(crate) fn ensure_node_option_unlocked(
+    config: &Config,
+    request: &ToolRequest,
+    invocation_locked: bool,
+) -> Result<()> {
+    if selected_node_dependency(request)?.is_none() || !Settings::get().lockfile_enabled() {
+        return Ok(());
+    }
+    // `--locked` and the `locked` setting both go through `invocation_locked_for`, which
+    // exempts tools the global override file declares.
+    let locked = config.invocation_locked_for(
+        request.source(),
+        invocation_locked || Settings::get().locked,
+    ) || request.tool_config_locked(config, true);
+    if locked {
+        eyre::bail!(
+            "{} sets the node option, which locked mode does not support yet: mise.lock does not record the selected Node\n\
+             hint: install without --locked, or remove the node option",
+            request.ba().short
+        );
+    }
+    Ok(())
+}
+
+/// The file in an install directory that records the Node its executables were bound to.
+pub(crate) fn bound_node_receipt(install_path: &Path) -> PathBuf {
+    install_path.join(".mise-node.json")
+}
+
+/// The Node an install was bound to: the `node` request it came from, the version that
+/// request resolved to, and the executable its launchers run.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct BoundNode {
+    pub(crate) request: String,
+    pub(crate) version: String,
+    pub(crate) node: PathBuf,
+}
+
+impl BoundNode {
+    /// The binding recorded in `install_path`: `None` when its executables were not bound to
+    /// a Node, an error when the record exists but cannot be read.
+    pub(crate) fn read(install_path: &Path) -> Result<Option<Self>> {
+        let receipt = bound_node_receipt(install_path);
+        let contents = match std::fs::read_to_string(&receipt) {
+            Ok(contents) => contents,
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(err) => {
+                return Err(eyre::Report::new(err)
+                    .wrap_err(format!("failed to read {}", receipt.display())));
+            }
+        };
+        let value: Value = serde_json::from_str(&contents).map_err(|err| {
+            eyre::Report::new(err).wrap_err(format!("invalid Node binding {}", receipt.display()))
+        })?;
+        let field = |name: &str| {
+            value
+                .get(name)
+                .and_then(Value::as_str)
+                .map(str::to_string)
+                .ok_or_else(|| {
+                    eyre::eyre!("invalid Node binding {}: missing {name}", receipt.display())
+                })
+        };
+        Ok(Some(Self {
+            request: field("request")?,
+            version: field("version")?,
+            node: PathBuf::from(field("node")?),
+        }))
+    }
+
+    fn write(&self, install_path: &Path) -> Result<()> {
+        let contents = serde_json::json!({
+            "request": self.request,
+            "version": self.version,
+            "node": self.node.to_string_lossy(),
+        });
+        crate::file::write(
+            bound_node_receipt(install_path),
+            serde_json::to_string_pretty(&contents)?,
+        )
+    }
+}
+
+/// Whether an install's executables are bound the way `selected` asks: to a Node that
+/// still exists for the same request, or to none when nothing is selected.
+fn bound_node_matches(install_path: &Path, selected: Option<&str>) -> bool {
+    // An unreadable record matches nothing, so the reinstall rewrites it.
+    match (BoundNode::read(install_path), selected) {
+        (Ok(None), None) => true,
+        (Ok(Some(bound)), Some(selected)) => bound.request == selected && bound.node.exists(),
+        _ => false,
+    }
+}
+
 /// One registry's `latest` version for a package.
 type LatestVersionCache = Arc<TokioMutex<CacheManager<Option<String>>>>;
 
@@ -538,6 +659,15 @@ impl<'a> NpmOptions<'a> {
 
     fn checksum(&self) -> Option<&'a str> {
         self.values.str("checksum")
+    }
+
+    /// The version request of the mise-managed Node this tool's executables are bound to.
+    fn selected_node(&self) -> eyre::Result<Option<&'a str>> {
+        match self.values.raw().opts.get("node") {
+            None => Ok(None),
+            Some(toml::Value::String(value)) if !value.trim().is_empty() => Ok(Some(value)),
+            Some(_) => eyre::bail!("node must be a Node version request, such as \"24\""),
+        }
     }
 
     fn trust_policy_excludes(&self) -> eyre::Result<Vec<String>> {
@@ -1579,6 +1709,15 @@ impl Backend for NPMBackend {
         tv: &ToolVersion,
         check_symlink: bool,
     ) -> Result<bool> {
+        // A `node` added, changed or removed since the install, or a bound Node that has
+        // since been uninstalled, needs the executables bound again.
+        let request_options = tv.request.options();
+        let selected_node = NpmOptions::new(&request_options).selected_node()?;
+        if self.is_version_installed(config, tv, check_symlink)
+            && !bound_node_matches(&tv.install_path(), selected_node)
+        {
+            return Ok(false);
+        }
         if tv.aube_lock.is_some() && !Self::uses_embedded_aube() {
             return Ok(false);
         }
@@ -1643,6 +1782,9 @@ impl Backend for NPMBackend {
                 self.display_tool_name()
             );
         }
+        let bound_node = self
+            .selected_node_binding(ctx, &tv, &options, package_manager)
+            .await?;
         let package = self.package_install_spec(ctx, &tv, &options).await?;
         let install_before_args = match ctx.before_date {
             Some(before_date) => {
@@ -1680,8 +1822,23 @@ impl Backend for NPMBackend {
             NpmPackageManager::Auto => unreachable!("auto package manager should be resolved"),
             NpmPackageManager::Aube => {
                 let verifier = self.provenance_verifier(&tv);
-                self.install_via_aube_embed(ctx, &tv, &options, &package, verifier.as_ref())
-                    .await?;
+                let install_path = tv.install_path();
+                let receipt = bound_node_receipt(&install_path);
+                if receipt.exists() {
+                    crate::file::remove_file(&receipt)?;
+                }
+                self.install_via_aube_embed(
+                    ctx,
+                    &tv,
+                    &options,
+                    &package,
+                    verifier.as_ref(),
+                    bound_node.as_ref().map(|bound| bound.node.as_path()),
+                )
+                .await?;
+                if let Some(bound) = &bound_node {
+                    bound.write(&install_path)?;
+                }
                 if let Some(verifier) = verifier {
                     match verifier.verified_repository() {
                         Some(repository) => {
@@ -2744,6 +2901,7 @@ impl NPMBackend {
         options: &NpmOptions<'_>,
         package: &str,
         verifier: Option<&Arc<NpmProvenanceVerifier>>,
+        bound_node: Option<&Path>,
     ) -> Result<()> {
         crate::backend::aube_host::init();
         let install_path = tv.install_path();
@@ -2785,7 +2943,7 @@ impl NPMBackend {
                     })),
                 verifier,
             );
-            install_options.runtime = self.aube_embed_runtime(ctx).await;
+            install_options.runtime = self.aube_embed_runtime(ctx, bound_node).await;
             let install = aube::embed::install_with_overrides(
                 install_options,
                 Self::aube_embed_install_overrides(),
@@ -2834,7 +2992,7 @@ impl NPMBackend {
             // dependency, so `allow_builds` installs work even when node isn't
             // on the ambient PATH (the in-process installer doesn't inherit the
             // per-command PATH the old `aube add --global` subprocess got).
-            runtime: self.aube_embed_runtime(ctx).await,
+            runtime: self.aube_embed_runtime(ctx, bound_node).await,
             ..Default::default()
         };
         opts.ignore_scripts = matches!(allow_builds, AllowBuilds::None);
@@ -2963,10 +3121,80 @@ impl NPMBackend {
     /// holding `node`/`npm`/`npx`, aube prepends it to PATH and uses that node
     /// for both `NODE` and `npm_node_execpath`. (`wrapper` is for hosts that
     /// interpose a shim on `node`; mise resolves the real binary here.)
-    async fn aube_embed_runtime(&self, ctx: &InstallContext) -> Option<EmbedderRuntime> {
+    ///
+    /// A tool with a `node` option instead gets the Node it selects, and aube binds its
+    /// executables to that Node: their launchers run it by absolute path and leave `PATH`
+    /// alone, so whatever they start still finds the project's own `node`.
+    async fn aube_embed_runtime(
+        &self,
+        ctx: &InstallContext,
+        bound_node: Option<&Path>,
+    ) -> Option<EmbedderRuntime> {
+        if let Some(node) = bound_node {
+            return node
+                .parent()
+                .map(|dir| EmbedderRuntime::selector(dir).bind_bins_to(node));
+        }
         let ts = self.dependency_toolset(&ctx.config).await.ok()?;
         let node = ts.which_bin(&ctx.config, "node").await?;
         node.parent().map(EmbedderRuntime::selector)
+    }
+
+    /// The Node a `node` option selects for this install, already installed as the tool's
+    /// private dependency. Only the embedded aube writes launchers that name a Node, so
+    /// another installer is refused rather than leaving the option without effect.
+    async fn selected_node_binding(
+        &self,
+        ctx: &InstallContext,
+        tv: &ToolVersion,
+        options: &NpmOptions<'_>,
+        package_manager: NpmPackageManager,
+    ) -> Result<Option<BoundNode>> {
+        let Some(request) = options.selected_node()? else {
+            return Ok(None);
+        };
+        if package_manager != NpmPackageManager::Aube {
+            eyre::bail!(
+                "npm:{} sets node = {request:?}, which needs the embedded aube installer, but it installs with {package_manager}; \
+                 remove the node option or set npm.package_manager to aube",
+                self.display_tool_name()
+            );
+        }
+        let dependencies = ctx.dependency_context(&tv.request).await?;
+        let (_, selected) = dependencies
+            .toolset
+            .list_current_versions()
+            .into_iter()
+            .find(|(_, candidate)| candidate.ba().short == "node")
+            .ok_or_else(|| {
+                eyre::eyre!(
+                    "missing selected node dependency for npm:{}",
+                    self.display_tool_name()
+                )
+            })?;
+        let node = dependencies
+            .toolset
+            .which_bin_spawnable(&ctx.config, "node")
+            .await
+            .ok_or_else(|| {
+                eyre::eyre!(
+                    "node@{} selected for npm:{} has no node executable",
+                    selected.version,
+                    self.display_tool_name()
+                )
+            })?;
+        // The executable is found through the runtime path, which for an unlocked request
+        // is a link such as `installs/node/24` that moves when a newer 24.x installs. Name
+        // the installation itself so the tool keeps the Node it was bound to.
+        let node = match node.strip_prefix(selected.runtime_path()) {
+            Ok(relative) => selected.install_path().join(relative),
+            Err(_) => node,
+        };
+        Ok(Some(BoundNode {
+            request: request.to_string(),
+            version: selected.version.clone(),
+            node,
+        }))
     }
 
     /// Keep embedded aube's regenerable state inside mise's npm cache tree.
@@ -3930,6 +4158,55 @@ mod tests {
     use super::*;
     use crate::args::{BackendArg, BackendResolution};
     use crate::toolset::{ToolRequest, ToolSource, ToolVersion};
+
+    fn npm_request(options: &str) -> ToolRequest {
+        ToolRequest::new_with_options(
+            Arc::new(BackendArg::from("npm:prettier")),
+            "3.0.0",
+            crate::toolset::parse_tool_options(options),
+            ToolSource::Argument,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn node_option_selects_a_node_dependency_from_the_same_source() {
+        let request = npm_request(r#"node = "24""#);
+        let node = selected_node_dependency(&request).unwrap().unwrap();
+        assert_eq!(node.ba().short, "node");
+        assert_eq!(node.version(), "24");
+        assert_eq!(node.source(), request.source());
+
+        assert!(
+            selected_node_dependency(&npm_request(""))
+                .unwrap()
+                .is_none()
+        );
+        assert!(selected_node_dependency(&npm_request(r#"node = """#)).is_err());
+    }
+
+    #[test]
+    fn bound_node_matches_only_the_selected_request_while_its_node_exists() {
+        let install = tempfile::tempdir().unwrap();
+        assert!(bound_node_matches(install.path(), None));
+        assert!(!bound_node_matches(install.path(), Some("24")));
+
+        let node = install.path().join("node");
+        std::fs::write(&node, "").unwrap();
+        let bound = BoundNode {
+            request: "24".into(),
+            version: "24.1.0".into(),
+            node: node.clone(),
+        };
+        bound.write(install.path()).unwrap();
+        assert_eq!(BoundNode::read(install.path()).unwrap(), Some(bound));
+        assert!(bound_node_matches(install.path(), Some("24")));
+        assert!(!bound_node_matches(install.path(), Some("26")));
+        assert!(!bound_node_matches(install.path(), None));
+
+        std::fs::remove_file(&node).unwrap();
+        assert!(!bound_node_matches(install.path(), Some("24")));
+    }
 
     #[test]
     fn install_has_executables_matches_what_shims_link() {

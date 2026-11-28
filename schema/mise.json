@@ -3815,7 +3815,7 @@
           "unevaluatedProperties": false,
           "properties": {
             "dotfiles": {
-              "description": "Global config file where `mise dot add` creates new `[dotfiles]` entries.",
+              "description": "Global config file where `mise dot add` and `mise dot track` create new `[dotfiles]` entries.",
               "type": "string"
             },
             "packages": {
@@ -6067,6 +6067,10 @@
         "npm_args": {
           "type": "string",
           "description": "extra arguments for npm installs (shell-split)"
+        },
+        "node": {
+          "type": "string",
+          "description": "mise-managed Node version this tool's executables always run on (embedded aube only)"
         }
       }
     },
@@ -10881,6 +10885,10 @@
         "git_email": {
           "type": "string",
           "description": "email used for history commit authors and committers; {hostname} expands to this machine's hostname"
+        },
+        "git_name": {
+          "type": "string",
+          "description": "name used for history commit authors and committers; {hostname} expands to this machine's hostname"
         },
         "machine": {
           "type": "string",
