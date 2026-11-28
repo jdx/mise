@@ -2886,7 +2886,9 @@ impl TextRequest<'_> {
     /// URL that a third party chose, such as a link in a release. Sending them
     /// would fetch for the third party whatever the user can read there; the
     /// caller passes the credentials the request is meant to carry with
-    /// [`Self::headers`].
+    /// [`Self::headers`]. A netrc login still follows the tool's scope, as
+    /// on any other request for the tool: a trusted tool sends it, and a
+    /// project tool in safe mode does not.
     pub fn without_host_auth(mut self) -> Self {
         self.host_auth = false;
         self
@@ -3634,6 +3636,11 @@ fn netrc_credential_headers(url: &Url) -> HeaderMap {
 /// takes the entry only when its login is that user, as curl does; otherwise
 /// the URL's user would be sent with another user's password.
 fn netrc_authorization(url: &Url, login: &str, password: &str) -> Option<HeaderValue> {
+    // A URL with a user and a password carries the login written for this
+    // request, as on the default download path: netrc does not replace it.
+    if url.password().is_some() {
+        return None;
+    }
     // Compare the decoded name, so `a%40b` and `%75ser` in the URL match the
     // logins `a@b` and `user`. A name that does not decode takes no entry.
     if !url.username().is_empty()

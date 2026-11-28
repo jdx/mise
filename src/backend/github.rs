@@ -509,7 +509,8 @@ impl asset_matcher::ChecksumSource for ForgeChecksumSource<'_> {
         // point anywhere. The response is recorded as the asset's checksum (in
         // `mise.lock`, or a mismatch error), so the request carries only the
         // forge headers above: the GitHub token the shared client adds by host
-        // would read a private GitHub file for the release's author.
+        // would read a private GitHub file for the release's author. A netrc
+        // login follows the tool's scope, as for the release's assets.
         HTTP.get_text_request(url)
             .without_host_auth()
             .headers(&headers)

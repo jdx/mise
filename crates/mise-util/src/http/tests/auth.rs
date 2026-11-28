@@ -471,6 +471,15 @@ fn netrc_entry_is_used_only_for_the_user_a_url_names() {
     assert_eq!(url.username(), "%FF");
     assert_eq!(netrc_authorization(&url, "%FF", "pw"), None);
     assert_eq!(netrc_authorization(&url, "\u{FFFD}", "pw"), None);
+    // `+` in a user name is a plus sign, not a space.
+    let url: Url = "https://user+tag@example.com/file".parse().unwrap();
+    assert_eq!(
+        netrc_authorization(&url, "user+tag", "pw"),
+        basic("user+tag", "pw")
+    );
+    // A URL that has its own password keeps it.
+    let url: Url = "https://user:other@example.com/file".parse().unwrap();
+    assert_eq!(netrc_authorization(&url, "user", "pw"), None);
 }
 
 /// Credentials stay with the host and port they were written for. A scheme

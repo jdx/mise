@@ -79,8 +79,14 @@ class Handler(TestHandler):
         return False
 
     def do_GET(self):
-        if self.authenticate():
-            super().do_GET()
+        if not self.authenticate():
+            return
+        if self.path == "/redirect-artifact":
+            self.send_response(302)
+            self.send_header("Location", "/mirrored-artifact")
+            self.end_headers()
+            return
+        super().do_GET()
 
     def do_HEAD(self):
         if self.authenticate():
@@ -115,7 +121,7 @@ assert "cat '$INSTALL_PATH/supplement.txt'" "lua-http-download"
 # In safe mode a project tool gets no netrc login, except on the mirror an
 # operator's URL replacement sends a request to. That holds for an artifact
 # whose plugin sets download headers too, which `mise lock` fetches through
-# vfox to hash it.
+# vfox to hash it, and for a redirect the mirror sends to its own origin.
 HEADERS_PLUGIN_DIR="$PWD/vfox-url-replacements-headers"
 mkdir -p "$HEADERS_PLUGIN_DIR/hooks"
 cp "$PLUGIN_DIR/metadata.lua" "$HEADERS_PLUGIN_DIR/"
@@ -138,7 +144,7 @@ cat >"$MISE_CONFIG_DIR/config.toml" <<EOF
 netrc_file = "$NETRC_FILE"
 
 [settings.url_replacements]
-"https://upstream.invalid/tool.tar.gz" = "http://127.0.0.1:$HTTP_PORT/mirrored-artifact"
+"https://upstream.invalid/tool.tar.gz" = "http://127.0.0.1:$HTTP_PORT/redirect-artifact"
 "https://upstream.invalid/" = "http://127.0.0.1:$HTTP_PORT/"
 EOF
 cat >mise.toml <<EOF
