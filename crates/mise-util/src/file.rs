@@ -865,14 +865,30 @@ fn read_failed(path: &Path) -> String {
 }
 
 fn read_config_body(path: &Path, file: File) -> Result<String> {
-    let mut body = String::new();
-    file.take(CONFIG_FILE_LIMIT + 1)
-        .read_to_string(&mut body)
+    read_config_from(path, file)
+}
+
+/// The text of the config file at `path` that `reader` yields, refused when it is
+/// longer than [`CONFIG_FILE_LIMIT`]. The limit is judged on the bytes before they
+/// are decoded, so a cutoff that splits a character reports the size, not invalid
+/// UTF-8.
+pub fn read_config_from<R: Read>(path: &Path, reader: R) -> Result<String> {
+    let mut body = Vec::new();
+    reader
+        .take(CONFIG_FILE_LIMIT + 1)
+        .read_to_end(&mut body)
         .wrap_err_with(|| read_failed(path))?;
     if body.len() as u64 > CONFIG_FILE_LIMIT {
         return Err(config_file_too_large(path));
     }
-    Ok(body)
+    String::from_utf8(body)
+        .map_err(|_| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "stream did not contain valid UTF-8",
+            )
+        })
+        .wrap_err_with(|| read_failed(path))
 }
 
 /// Fails when `path` is a config file larger than [`CONFIG_FILE_LIMIT`], for

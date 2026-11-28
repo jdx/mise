@@ -14,8 +14,15 @@ pub(crate) fn completion_request(argv: &[OsString]) -> Option<String> {
     let argv = split_line_option(argv);
     let argv = argv.as_slice();
     let request = usage_rs::complete::CompletionRequest::parse(argv)?;
-    if request.candidates_for.is_some() || at_typed_completer(&request) {
+    // A `--candidates` answer goes back to usage, which reads values, not to a shell.
+    if request.candidates_for.is_some() {
         return Cli::completion_request(argv);
+    }
+    let shell = request.shell;
+    let compiled =
+        || Cli::completion_request(argv).map(|answer| quote_for_insertion(answer, shell));
+    if at_typed_completer(&request) {
+        return compiled();
     }
 
     let mut spec = super::usage::completion_spec();
@@ -27,10 +34,97 @@ pub(crate) fn completion_request(argv: &[OsString]) -> Option<String> {
         .words
         .get(request.split.cword)
         .map_or("", String::as_str);
-    tell_task_mounts_the_word(&mut spec.cmd, word);
-    complete_spec(&spec, request)
-        .ok()
-        .or_else(|| Cli::completion_request(argv))
+    // Rewrite the fixed scripts before the typed word goes into one, so a `mise` the user typed
+    // is left as typed.
+    let exe = exe_word(&crate::env::MISE_BIN);
+    if let Some(exe) = &exe {
+        run_mise_by_path(&mut spec, exe);
+    }
+    tell_task_mounts_the_word(&mut spec.cmd, word, exe.as_deref().unwrap_or("mise"));
+    complete_spec(&spec, request).ok().or_else(compiled)
+}
+
+/// Start the running mise, written as `exe`, wherever a completer or mount of `spec` starts
+/// `mise`.
+///
+/// A completer runs in the directory where TAB was pressed, and when Windows has no `sh`, usage
+/// hands it to `cmd /c`, which looks for a bare `mise` in that directory before `PATH`. A
+/// repository could then ship a `mise.bat` that runs on TAB, before anything is trusted.
+fn run_mise_by_path(spec: &mut usage::Spec, exe: &str) {
+    for complete in spec.complete.values_mut() {
+        if let Some(run) = &mut complete.run {
+            *run = run_mise_as(run, exe);
+        }
+    }
+    run_mise_as_in(&mut spec.cmd, exe);
+}
+
+fn run_mise_as_in(cmd: &mut usage::SpecCommand, exe: &str) {
+    for complete in cmd.complete.values_mut() {
+        if let Some(run) = &mut complete.run {
+            *run = run_mise_as(run, exe);
+        }
+    }
+    let flag_args = cmd.flags.iter_mut().filter_map(|f| f.arg.as_mut());
+    for arg in cmd.args.iter_mut().chain(flag_args) {
+        if let Some(run) = arg.complete.as_mut().and_then(|c| c.run.as_mut()) {
+            *run = run_mise_as(run, exe);
+        }
+    }
+    for mount in &mut cmd.mounts {
+        mount.run = run_mise_as(&mount.run, exe);
+    }
+    for sub in cmd.subcommands.values_mut() {
+        run_mise_as_in(sub, exe);
+    }
+}
+
+/// `script` with every `mise` in command position replaced by `exe`: at the start of a line,
+/// after `;`, `|` or `&`, and at the start of a `$(…)`.
+fn run_mise_as(script: &str, exe: &str) -> String {
+    static PROGRAM: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(r"(?m)(^|\$\(|[;|&])([ \t]*)mise([ \t\n]|$)").unwrap()
+    });
+    PROGRAM
+        .replace_all(script, |c: &regex::Captures<'_>| {
+            format!("{}{}{exe}{}", &c[1], &c[2], &c[3])
+        })
+        .into_owned()
+}
+
+/// `exe` as one word that `sh -c` and, on Windows, `cmd /c` read back as the path, or
+/// `None` when it is not absolute or cannot be written that way, which leaves `mise` bare.
+fn exe_word(exe: &std::path::Path) -> Option<String> {
+    if !exe.is_absolute() {
+        return None;
+    }
+    let exe = exe.to_str()?;
+    if cfg!(windows) {
+        windows_exe_word(exe)
+    } else {
+        Some(shell_words::quote(exe).into_owned())
+    }
+}
+
+/// A Windows path written with forward slashes and no quotes, which `cmd /c` and `sh -c` both
+/// read as the path, or `None` unless it is a drive path holding only ASCII letters, digits and
+/// `_ . - :` between its separators. No quoted form works for both: usage passes the script to
+/// `cmd /c` as one argument, so Rust escapes every `"` in it as `\"`, which `cmd` does not undo.
+/// Where this is `None`, `mise` stays bare and `NoDefaultCurrentDirectoryInExePath` keeps `cmd`
+/// from finding it in the current directory.
+fn windows_exe_word(exe: &str) -> Option<String> {
+    let mut chars = exe.chars();
+    let drive = matches!(
+        (chars.next(), chars.next(), chars.next()),
+        (Some(d), Some(':'), Some('\\' | '/')) if d.is_ascii_alphabetic()
+    );
+    // The first three characters are ASCII when `drive` holds, so `3..` is a char boundary.
+    let plain = || {
+        exe[3..]
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '-' | '\\' | '/'))
+    };
+    (drive && plain()).then(|| exe.replace('\\', "/"))
 }
 
 /// Pass the word being completed to the mounts that list tasks.
@@ -38,17 +132,15 @@ pub(crate) fn completion_request(argv: &[OsString]) -> Option<String> {
 /// A mount's command is fixed text, so without this `mise tasks --usage` cannot tell `mise run
 /// <TAB>` from `mise run //<TAB>` and offers every spelling of every task. With the word it
 /// offers the one that fits, and keeps the others as hidden aliases.
-fn tell_task_mounts_the_word(cmd: &mut usage::SpecCommand, word: &str) {
+fn tell_task_mounts_the_word(cmd: &mut usage::SpecCommand, word: &str, program: &str) {
+    let task_mount = format!("{program} tasks --usage");
     for mount in &mut cmd.mounts {
-        if mount.run == "mise tasks --usage" {
-            mount.run = format!(
-                "mise tasks --usage --complete-word={}",
-                shell_words::quote(word)
-            );
+        if mount.run == task_mount {
+            mount.run = format!("{task_mount} --complete-word={}", shell_words::quote(word));
         }
     }
     for sub in cmd.subcommands.values_mut() {
-        tell_task_mounts_the_word(sub, word);
+        tell_task_mounts_the_word(sub, word, program);
     }
 }
 
@@ -143,6 +235,11 @@ fn complete_spec(
     spec: &usage::Spec,
     request: &usage_rs::complete::CompletionRequest,
 ) -> Result<String> {
+    // Completers run in the directory where TAB was pressed, and on Windows without `sh` usage
+    // runs them with `cmd /c`, which looks for every bare program name (`awk`, `sed`, and `mise`
+    // where it cannot be named by path) in that directory before `PATH` unless this is set. Only
+    // `cmd` reads it, and what a completer starts inherits it.
+    crate::env::set_var("NoDefaultCurrentDirectoryInExePath", "1");
     let answer = usage_cli::complete_answer(
         spec,
         &request.split.words,
@@ -174,7 +271,73 @@ fn complete_spec(
         candidates,
         files: answer.files.then_some(usage_rs::complete::Files::Any),
     };
-    Ok(usage_rs::complete::render_request(&answer, request))
+    let rendered = usage_rs::complete::render_request(&answer, request);
+    Ok(quote_for_insertion(rendered, request.shell))
+}
+
+/// A rendered answer, with each candidate written the way `shell` reads it back.
+///
+/// usage-rs escapes what bash inserts and gives zsh a quoted form beside the value, and fish
+/// escapes a candidate itself. Nushell and PowerShell put a completer's text on the command line
+/// as it is, and usage-rs answers them with the bare value, so a task named `build;make` in a
+/// config nobody trusted would be inserted as two statements. Every script that asks mise, the
+/// completer `mise activate nu` defines included, inserts the first field of a line untouched,
+/// so the value is quoted here. A value made only of characters that mean nothing to either
+/// shell stays as it is, so flags and ordinary names complete as before. Nushell matches a
+/// quoted candidate against the unquoted prefix typed so far.
+///
+/// Plain means letters, digits and `_ - . / : @ + = ~`, with neither `@` (a splat in
+/// PowerShell) nor `~` (a home directory in both) first. Everything else is quoted, `,`
+/// included: PowerShell reads `build,check` as an array of two names.
+fn quote_for_insertion(answer: String, shell: usage_rs::complete::Shell) -> String {
+    let quote: fn(&str) -> String = match shell {
+        usage_rs::complete::Shell::Nu => nu_quote,
+        usage_rs::complete::Shell::PowerShell => powershell_quote,
+        _ => return answer,
+    };
+    let plain = |value: &str| {
+        !value.starts_with(['@', '~'])
+            && value
+                .chars()
+                .all(|c| c.is_alphanumeric() || "_-./:@+=~".contains(c))
+    };
+    answer
+        .split_inclusive('\n')
+        .map(|line| {
+            // One candidate per line, its value up to the first tab; `\x01` opens an instruction.
+            let end = line.find(['\t', '\n']).unwrap_or(line.len());
+            let (value, rest) = line.split_at(end);
+            if value.is_empty() || line.starts_with('\u{1}') || plain(value) {
+                line.to_string()
+            } else {
+                format!("{}{rest}", quote(value))
+            }
+        })
+        .collect()
+}
+
+/// `value` as a Nushell string. Nothing is special between single quotes; a value holding one
+/// takes double quotes, where `\` and `"` are the characters to escape.
+fn nu_quote(value: &str) -> String {
+    if value.contains('\'') {
+        format!("\"{}\"", value.replace('\\', "\\\\").replace('"', "\\\""))
+    } else {
+        format!("'{value}'")
+    }
+}
+
+/// `value` as a PowerShell single-quoted string. PowerShell also closes one at a typographic
+/// single quote, and reads any of them doubled as the character itself.
+fn powershell_quote(value: &str) -> String {
+    let mut quoted = String::from("'");
+    for c in value.chars() {
+        if matches!(c, '\'' | '\u{2018}' | '\u{2019}' | '\u{201a}' | '\u{201b}') {
+            quoted.push(c);
+        }
+        quoted.push(c);
+    }
+    quoted.push('\'');
+    quoted
 }
 
 /// Treat the words after the last `:::` of a `mise run` line as a fresh `mise run` line.
@@ -603,6 +766,219 @@ mod shell_name_tests {
         .collect();
         let answer = usage_spec_request(&argv).unwrap().unwrap();
         assert!(answer.contains("--from-spec"), "{answer}");
+    }
+
+    #[test]
+    fn a_typed_mise_reaches_the_task_mount_as_typed() {
+        let exe = "'/opt/my mise/mise'";
+        let word = "a|mise b";
+        let mut spec = super::super::usage::completion_spec();
+        run_mise_by_path(&mut spec, exe);
+        tell_task_mounts_the_word(&mut spec.cmd, word, exe);
+        fn mounts(cmd: &usage::SpecCommand, out: &mut Vec<String>) {
+            out.extend(cmd.mounts.iter().map(|m| m.run.clone()));
+            for sub in cmd.subcommands.values() {
+                mounts(sub, out);
+            }
+        }
+        let mut found = vec![];
+        mounts(&spec.cmd, &mut found);
+        let expected = format!(
+            "{exe} tasks --usage --complete-word={}",
+            shell_words::quote(word)
+        );
+        assert!(found.contains(&expected), "{found:?}");
+    }
+
+    #[test]
+    fn completers_start_mise_by_path() {
+        let exe = "'/opt/my mise/mise'";
+        assert_eq!(
+            run_mise_as("mise ls -i | awk '{print $1}' | uniq", exe),
+            "'/opt/my mise/mise' ls -i | awk '{print $1}' | uniq"
+        );
+        assert_eq!(
+            run_mise_as(
+                "case x in\n  *)\n    v=$(mise ls -- \"$t\")\n    mise x\n",
+                exe
+            ),
+            "case x in\n  *)\n    v=$('/opt/my mise/mise' ls -- \"$t\")\n    '/opt/my mise/mise' x\n"
+        );
+        assert_eq!(run_mise_as("mise", exe), exe);
+        assert_eq!(
+            run_mise_as("echo mise; mise-x a", exe),
+            "echo mise; mise-x a"
+        );
+
+        let mut spec = super::super::usage::completion_spec();
+        run_mise_by_path(&mut spec, exe);
+        fn scripts(cmd: &usage::SpecCommand, out: &mut Vec<String>) {
+            out.extend(cmd.complete.values().filter_map(|c| c.run.clone()));
+            out.extend(cmd.mounts.iter().map(|m| m.run.clone()));
+            for sub in cmd.subcommands.values() {
+                scripts(sub, out);
+            }
+        }
+        let mut found: Vec<String> = spec
+            .complete
+            .values()
+            .filter_map(|c| c.run.clone())
+            .collect();
+        scripts(&spec.cmd, &mut found);
+        assert!(found.iter().any(|s| s.starts_with(exe)), "{found:?}");
+        assert!(
+            found.iter().any(|s| s.contains("tasks --usage")),
+            "{found:?}"
+        );
+        for script in found {
+            assert!(
+                !script.trim_start().starts_with("mise ") && !script.contains("$(mise "),
+                "{script}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_windows_path_is_one_unquoted_word_for_sh_and_cmd() {
+        assert_eq!(
+            windows_exe_word(r"C:\Users\me\AppData\Local\mise-en.place\bin\mise.exe").as_deref(),
+            Some("C:/Users/me/AppData/Local/mise-en.place/bin/mise.exe")
+        );
+        assert_eq!(
+            windows_exe_word("d:/tools/mise_1/mise.exe").as_deref(),
+            Some("d:/tools/mise_1/mise.exe")
+        );
+        for path in [
+            r"C:\Program Files (x86)\a&b\mise.exe",
+            r"C:\Users\John Doe\mise.exe",
+            r"C:\100%\mise.exe",
+            r"C:\a!b\mise.exe",
+            r"C:\$x\mise.exe",
+            r"C:\a:b\mise.exe",
+            r"C:\é\mise.exe",
+            r"\\host\share\mise.exe",
+            r"\\?\C:\mise\mise.exe",
+            "C:",
+            "é",
+        ] {
+            assert_eq!(windows_exe_word(path), None, "{path}");
+        }
+        assert_eq!(exe_word(std::path::Path::new("mise")), None);
+    }
+
+    #[test]
+    fn completers_run_without_cmd_searching_the_current_directory() {
+        crate::env::remove_var("NoDefaultCurrentDirectoryInExePath");
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("probe.kdl");
+        // A builtin `echo` that `sh -c` and `cmd /c` both run, each expanding its own form:
+        // `cmd` prints `seen-1-$…`, `sh` prints `seen-%…%-1`.
+        std::fs::write(
+            &path,
+            "name \"probe\"\narg \"<x>\"\ncomplete \"x\" run=\"echo seen-%NoDefaultCurrentDirectoryInExePath%-$NoDefaultCurrentDirectoryInExePath\"\n",
+        )
+        .unwrap();
+        let encoded = crate::packslip::completions::encode_spec_path(&path);
+        let argv: Vec<OsString> = [
+            "__usage_complete_word",
+            &encoded,
+            "--shell",
+            "nu",
+            "--line",
+            "probe ",
+        ]
+        .into_iter()
+        .map(OsString::from)
+        .collect();
+        let answer = usage_spec_request(&argv).unwrap().unwrap();
+        assert!(
+            answer.contains("seen-1-") || answer.contains("%-1'"),
+            "{answer}"
+        );
+    }
+
+    #[test]
+    fn nushell_and_powershell_candidates_are_quoted_for_insertion() {
+        use usage_rs::complete::Shell;
+        let answer = "b1;x\tdesc\nplain-name\nnode@22\n~home\nit's\n\u{1}files\n".to_string();
+        assert_eq!(
+            quote_for_insertion(answer.clone(), Shell::Nu),
+            "'b1;x'\tdesc\nplain-name\nnode@22\n'~home'\n\"it's\"\n\u{1}files\n"
+        );
+        assert_eq!(
+            quote_for_insertion(answer.clone(), Shell::PowerShell),
+            "'b1;x'\tdesc\nplain-name\nnode@22\n'~home'\n'it''s'\n\u{1}files\n"
+        );
+        assert_eq!(quote_for_insertion(answer.clone(), Shell::Bash), answer);
+        assert_eq!(nu_quote(r#"a'b"c\d"#), r#""a'b\"c\\d""#);
+        assert_eq!(powershell_quote("a\u{2019}b"), "'a\u{2019}\u{2019}b'");
+    }
+
+    #[test]
+    fn only_word_characters_complete_unquoted() {
+        use usage_rs::complete::Shell;
+        let plain = [
+            "build", "--force", "node@22", "lint:fix", "a/b.c", "c++", "k=v", "x~y", "é",
+        ];
+        let quoted = [
+            "build,check",
+            "@all",
+            "~home",
+            "a b",
+            "a;b",
+            "a|b",
+            "a&b",
+            "$x",
+            "a(b)",
+            "{a}",
+            "a`b",
+            "a#b",
+            "a<b",
+            "a\"b",
+        ];
+        for shell in [Shell::Nu, Shell::PowerShell] {
+            for value in plain {
+                let line = format!("{value}\n");
+                assert_eq!(quote_for_insertion(line.clone(), shell), line, "{value}");
+            }
+            for value in quoted {
+                let line = format!("{value}\n");
+                let answer = quote_for_insertion(line.clone(), shell);
+                assert!(
+                    answer.starts_with(['\'', '"']) && answer != line,
+                    "{shell:?} {value}: {answer}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_usage_spec_answer_for_nushell_is_quoted() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("probe.kdl");
+        std::fs::write(
+            &path,
+            "name \"probe\"\narg \"<x>\" {\n  choices \"b1;^touch marker\" \"b2\"\n}\n",
+        )
+        .unwrap();
+        let encoded = crate::packslip::completions::encode_spec_path(&path);
+        let argv: Vec<OsString> = [
+            "__usage_complete_word",
+            &encoded,
+            "--shell",
+            "nu",
+            "--line",
+            "probe b",
+        ]
+        .into_iter()
+        .map(OsString::from)
+        .collect();
+        let answer = usage_spec_request(&argv).unwrap().unwrap();
+        let values: Vec<&str> = answer
+            .lines()
+            .map(|l| l.split('\t').next().unwrap())
+            .collect();
+        assert_eq!(values, ["'b1;^touch marker'", "b2"], "{answer}");
     }
 
     #[test]
