@@ -278,9 +278,7 @@ impl S3Backend {
         // temp file is deleted when it is dropped before the rename.
         let tmp_path = download_temp_path(dest)?;
         write_body(resp.body, s3_url, &tmp_path, max_bytes, pr).await?;
-        tmp_path.persist(dest)?;
-
-        Ok(())
+        persist_download(tmp_path, dest)
     }
 
     /// Fetch versions from a manifest file URL
@@ -521,11 +519,38 @@ fn download_temp_path(dest: &Path) -> Result<tempfile::TempPath> {
     } else {
         ".mise-s3-"
     };
+    // Created by std as an ordinary file: tempfile's own files are marked
+    // temporary on Windows, which the rename would carry over to `dest`.
     Ok(tempfile::Builder::new()
         .prefix(prefix)
         .suffix(".tmp")
-        .tempfile_in(dir)?
+        .make_in(dir, |path| {
+            std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(path)
+        })?
         .into_temp_path())
+}
+
+/// Move a finished download from `tmp` to `dest`. If that fails, `tmp` is
+/// dropped, which removes the file.
+///
+/// `std::fs::rename` rather than `TempPath::persist` or `keep`: only std turns
+/// a path past `MAX_PATH` into the extended-length form Windows needs without
+/// long-path support, and tempfile's calls would fail on one only once the
+/// whole object has been downloaded.
+fn persist_download(mut tmp: tempfile::TempPath, dest: &Path) -> Result<()> {
+    std::fs::rename(&tmp, dest).map_err(|err| {
+        eyre!(
+            "failed to move {} to {}: {err}",
+            file::display_path(&tmp),
+            file::display_path(dest)
+        )
+    })?;
+    // The file is `dest` now; there is nothing left at `tmp` to remove.
+    tmp.disable_cleanup(true);
+    Ok(())
 }
 
 /// Write an S3 object body to `path` chunk by chunk, failing once it passes `max_bytes`.
@@ -1285,9 +1310,25 @@ checksum = "sha256:abc123"
         }
         let dest = dir.path().join("tool.tmp");
         let tmp = download_temp_path(&dest).unwrap();
+        let tmp_file = tmp.to_path_buf();
         std::fs::write(&tmp, "done").unwrap();
-        tmp.persist(&dest).unwrap();
+        persist_download(tmp, &dest).unwrap();
         assert_eq!(std::fs::read_to_string(&dest).unwrap(), "done");
+        assert!(!tmp_file.exists());
+    }
+
+    #[test]
+    fn test_persist_download_removes_the_temp_file_when_the_rename_fails() {
+        let dir = tempfile::tempdir().unwrap();
+        // A directory with an entry in it cannot be replaced by a file.
+        let dest = dir.path().join("tool.tar.gz");
+        std::fs::create_dir_all(dest.join("inside")).unwrap();
+        let tmp = download_temp_path(&dest).unwrap();
+        let tmp_file = tmp.to_path_buf();
+        std::fs::write(&tmp, "done").unwrap();
+        assert!(persist_download(tmp, &dest).is_err());
+        assert!(!tmp_file.exists());
+        assert!(dest.join("inside").is_dir());
     }
 
     #[test]
@@ -1300,7 +1341,7 @@ checksum = "sha256:abc123"
         let tmp = download_temp_path(&dest).unwrap();
         assert!(tmp.file_name().unwrap().len() < 32);
         std::fs::write(&tmp, "done").unwrap();
-        tmp.persist(&dest).unwrap();
+        persist_download(tmp, &dest).unwrap();
         assert_eq!(std::fs::read_to_string(&dest).unwrap(), "done");
     }
 }
