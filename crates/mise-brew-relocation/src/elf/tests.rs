@@ -209,6 +209,44 @@ fn test_patch_rejects_an_interpreter_past_the_end() {
 }
 
 #[test]
+fn test_patch_rejects_an_interpreter_without_a_nul_in_its_segment() {
+    // PT_INTERP ends just before the NUL, so the string's end lies past the
+    // segment; both the in-place and the moving rewrite must refuse it
+    for opts in [short_prefix_opts(), test_opts()] {
+        let interp = "@@HOMEBREW_PREFIX@@/lib/ld.so";
+        let mut elf = synthetic_elf(interp, "@@HOMEBREW_PREFIX@@/lib");
+        wr_u64(&mut elf, phdr_off(1) + 32, interp.len() as u64);
+        let before = elf.clone();
+        let err = patch(&mut elf, &opts, Path::new("test")).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("interpreter does not lie inside PT_INTERP"),
+            "{err}"
+        );
+        assert_eq!(elf, before);
+    }
+}
+
+#[test]
+fn test_patch_rejects_a_truncated_program_header() {
+    // the table moved to the end of the file, cut 8 bytes short: the last
+    // entry's p_align is missing
+    let mut elf = synthetic_elf("@@HOMEBREW_PREFIX@@/lib/ld.so", GROWING_RPATH);
+    let phnum = rd_u16(&elf, 56).unwrap() as usize;
+    let table = elf[phdr_off(0)..phdr_off(phnum) - 8].to_vec();
+    let phoff = elf.len();
+    elf.extend_from_slice(&table);
+    wr_u64(&mut elf, 32, phoff as u64);
+    let before = elf.clone();
+    let err = patch(&mut elf, &test_opts(), Path::new("test")).unwrap_err();
+    assert!(
+        err.to_string().contains("truncated ELF program header"),
+        "{err}"
+    );
+    assert_eq!(elf, before);
+}
+
+#[test]
 fn test_patch_skips_a_section_table_whose_offset_wraps() {
     let mut elf = synthetic_elf("@@HOMEBREW_PREFIX@@/lib/ld.so", GROWING_RPATH);
     wr_u64(&mut elf, 40, u64::MAX - 19); // e_shoff

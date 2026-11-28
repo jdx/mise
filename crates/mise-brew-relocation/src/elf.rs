@@ -127,7 +127,14 @@ fn read_phdrs(content: &[u8]) -> Result<Vec<Phdr>> {
     }
     let mut phdrs = Vec::with_capacity(e_phnum);
     for i in 0..e_phnum {
-        let off = table_entry(e_phoff, i, PHDR_SIZE).ok_or_else(|| eyre::eyre!("truncated ELF"))?;
+        // the whole entry, p_align included: growing the file copies the
+        // table, and bytes past the end would be the new zero padding
+        let off = table_entry(e_phoff, i, PHDR_SIZE)
+            .filter(|off| {
+                off.checked_add(PHDR_SIZE)
+                    .is_some_and(|end| end <= content.len())
+            })
+            .ok_or_else(|| eyre::eyre!("truncated ELF program header"))?;
         phdrs.push(Phdr {
             p_type: rd_u32(content, off)?,
             p_offset: rd_u64(content, off + 8)?,
@@ -157,6 +164,18 @@ fn read_cstr(content: &[u8], off: usize) -> Result<Vec<u8>> {
         .position(|&b| b == 0)
         .ok_or_else(|| eyre::eyre!("unterminated string in ELF"))?;
     Ok(bytes[..end].to_vec())
+}
+
+/// The NUL-terminated string at the start of `p`, read from the part of the
+/// segment that lies in the file.
+fn read_interp(content: &[u8], p: &Phdr) -> Result<Vec<u8>> {
+    let start =
+        usize::try_from(p.p_offset).map_err(|_| eyre::eyre!("string offset out of bounds"))?;
+    let end = usize::try_from(p.p_filesz)
+        .ok()
+        .and_then(|sz| start.checked_add(sz))
+        .map_or(content.len(), |end| end.min(content.len()));
+    read_cstr(&content[..end], start)
 }
 
 fn replace_placeholders(s: &[u8], opts: &LinkageOpts) -> Vec<u8> {
@@ -224,8 +243,15 @@ pub(super) fn patch(content: &mut Vec<u8>, opts: &LinkageOpts, path: &Path) -> R
 
     // current interpreter
     let interp = phdrs.iter().find(|p| p.p_type == PT_INTERP).copied();
+    // the string and its NUL lie inside PT_INTERP, so bytes after the
+    // segment never decide whether, or how, it is rewritten
     let old_interp = match &interp {
-        Some(p) => Some(read_cstr(content, p.p_offset as usize)?),
+        Some(p) => Some(read_interp(content, p).map_err(|e| {
+            eyre::eyre!(
+                "cannot relocate {}: its interpreter does not lie inside PT_INTERP ({e})",
+                path.display()
+            )
+        })?),
         None => None,
     };
     // brew sets the interpreter to <prefix>/lib/ld.so (which

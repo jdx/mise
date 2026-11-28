@@ -72,10 +72,10 @@ pub(super) fn remove_created(created: &[PathBuf]) {
 /// preserved and the new one is written to `<file>.default`. Every file or
 /// link it writes is appended to `created`.
 ///
-/// `src` can come from a bottle, so nothing is written through a symlink
-/// below `dst` (`dst` itself may be one), and a link in `src` that would point
-/// outside every one of `roots` (the Homebrew prefix) from its new place is
-/// not installed.
+/// `src` can come from a bottle, so nothing is written through a symlink at
+/// or below `dst` (a `dst` that is a link is skipped), and a link in `src`
+/// that would point outside every one of `roots` (the Homebrew prefix) from
+/// its new place is not installed.
 fn copy_tree(
     src: &Path,
     dst: &Path,
@@ -87,7 +87,12 @@ fn copy_tree(
     while let Some(entry) = walk.next() {
         let entry = entry?;
         let rel = entry.path().strip_prefix(src)?;
-        let mut dest = dst.join(rel);
+        // `dst.join("")` ends in a slash, which `is_symlink` would follow
+        let mut dest = if rel.as_os_str().is_empty() {
+            dst.to_path_buf()
+        } else {
+            dst.join(rel)
+        };
         let ft = entry.file_type();
         if ft.is_dir() {
             // `create_dir_all` accepts a link to a directory and everything
@@ -95,7 +100,9 @@ fn copy_tree(
             // ships: it lands as `<name>.default` when `<name>` is taken. A
             // directory is visited before its contents and is never replaced
             // by a link, so every directory written to below `dst` is real.
-            if entry.depth() > 0 && dest.is_symlink() {
+            // `dst` itself (`<prefix>/etc`) is checked too: a link there would
+            // take the whole tree outside the prefix.
+            if dest.is_symlink() {
                 warn!(
                     "brew: not installing {}: it is a symlink, and files are not copied through one",
                     dest.display()
@@ -780,6 +787,38 @@ mod tests {
         assert!(!outside.join("g").exists());
         assert_eq!(fs::read_to_string(outside.join("kept"))?, "kept");
         assert_eq!(fs::read_to_string(dst.join("b"))?, "b");
+        Ok(())
+    }
+
+    /// `<prefix>/etc` itself is a link out of the prefix
+    #[cfg(unix)]
+    #[test]
+    fn copy_tree_does_not_write_through_a_destination_root_symlink() -> Result<()> {
+        use std::os::unix::fs::symlink;
+        let tmp = tempfile::tempdir()?;
+        let root = tmp.path().canonicalize()?;
+        let prefix = root.join("prefix");
+        let src = root.join("src");
+        let dst = prefix.join("etc");
+        let outside = root.join("outside");
+        fs::create_dir_all(&outside)?;
+        fs::create_dir_all(src.join("sub"))?;
+        fs::create_dir_all(&prefix)?;
+        fs::write(src.join("a"), "a")?;
+        fs::write(src.join("sub/b"), "b")?;
+        symlink(&outside, &dst)?;
+        for keep_existing in [true, false] {
+            let mut created = Vec::new();
+            copy_tree(
+                &src,
+                &dst,
+                keep_existing,
+                &mut created,
+                std::slice::from_ref(&prefix),
+            )?;
+            assert!(created.is_empty(), "{created:?}");
+            assert_eq!(fs::read_dir(&outside)?.count(), 0);
+        }
         Ok(())
     }
 

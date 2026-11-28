@@ -221,25 +221,80 @@ fn foreign_component(
 
 /// The paths whose owners could redirect root's writes in the prefix: the
 /// prefix and the directories above it, and each of `dirs`, all spelled as
-/// given and as resolved with the directories above the resolved path. A
+/// given and every path met while resolving them (see `resolution_paths`). A
 /// standard directory that is a link (a Cellar on another disk) is written
-/// through, so the directories it leads to count as much as the link. A path
-/// that does not exist yet is resolved through its nearest existing ancestor,
-/// which a link above a prefix still to be created can lead anywhere from.
+/// through, so the links and directories it leads through count as much as
+/// the link itself. A path that does not exist yet is resolved as far as it
+/// exists, which a link above a prefix still to be created can lead anywhere
+/// from.
 fn guarded_paths(prefix: &Path, dirs: &[PathBuf]) -> Vec<PathBuf> {
     std::iter::once(prefix)
         .chain(dirs.iter().map(PathBuf::as_path))
         .flat_map(|path| {
-            let real = path.ancestors().find_map(|path| path.canonicalize().ok());
             path.ancestors()
                 .map(Path::to_path_buf)
-                .chain(
-                    real.iter()
-                        .flat_map(|real| real.ancestors().map(Path::to_path_buf)),
-                )
+                .chain(resolution_paths(path))
                 .collect::<Vec<_>>()
         })
         .collect()
+}
+
+/// Most links followed while resolving one path, as Linux's MAXSYMLINKS.
+const MAX_LINK_HOPS: usize = 40;
+
+/// Every path the kernel looks up while resolving `path`, one link at a
+/// time: each directory reached, each link, and each path in the link's
+/// target. A chain `Cellar -> /a/bridge -> /b/cellar` lists `/a` and
+/// `/a/bridge` as well as `/b/cellar`, since whoever controls `/a` can
+/// repoint `bridge`. Every path's parent is listed before it, so each owner
+/// that could change where `path` leads is checked. Stops at the first
+/// component that does not exist.
+fn resolution_paths(path: &Path) -> Vec<PathBuf> {
+    // components still to resolve, last first; one component per entry
+    let mut rest: Vec<PathBuf> = path
+        .components()
+        .rev()
+        .map(|c| PathBuf::from(c.as_os_str()))
+        .collect();
+    let mut resolved = PathBuf::new();
+    let mut visited = Vec::new();
+    let mut hops = 0;
+    while let Some(next) = rest.pop() {
+        match next.components().next() {
+            Some(std::path::Component::Normal(name)) => {
+                let here = resolved.join(name);
+                let Ok(meta) = here.symlink_metadata() else {
+                    break;
+                };
+                visited.push(here.clone());
+                if !meta.is_symlink() {
+                    resolved = here;
+                    continue;
+                }
+                hops += 1;
+                let Ok(target) = std::fs::read_link(&here) else {
+                    break;
+                };
+                if hops > MAX_LINK_HOPS {
+                    break;
+                }
+                // a relative target resolves from `resolved`, the link's
+                // directory; an absolute one starts again at its root
+                rest.extend(
+                    target
+                        .components()
+                        .rev()
+                        .map(|c| PathBuf::from(c.as_os_str())),
+                );
+            }
+            Some(std::path::Component::ParentDir) => {
+                resolved.pop();
+            }
+            Some(std::path::Component::CurDir) | None => {}
+            Some(root) => resolved = PathBuf::from(root.as_os_str()),
+        }
+    }
+    visited
 }
 
 /// Who should own the prefix. Under `sudo mise`, the invoking user
@@ -427,6 +482,40 @@ mod tests {
         assert!(paths.contains(&alias));
         assert!(paths.contains(&target));
         assert!(paths.contains(&base.join("foreign")));
+    }
+
+    /// a link in the middle of a chain is checked, with the directory that
+    /// holds it, even though the chain ends somewhere root owns
+    #[test]
+    fn root_checks_every_link_in_a_chain() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path().canonicalize().unwrap();
+        let prefix = base.join("prefix");
+        let cellar = base.join("safe/cellar");
+        std::fs::create_dir_all(&prefix).unwrap();
+        std::fs::create_dir_all(&cellar).unwrap();
+        std::fs::create_dir_all(base.join("foreign/sub")).unwrap();
+        // Cellar -> foreign/bridge -> ../safe/cellar, the last hop relative
+        // and through `..`
+        std::os::unix::fs::symlink(base.join("foreign/bridge"), prefix.join("Cellar")).unwrap();
+        std::os::unix::fs::symlink("sub/../../safe/cellar", base.join("foreign/bridge")).unwrap();
+        let paths = guarded_paths(&prefix, &[prefix.join("Cellar")]);
+        for path in [
+            prefix.join("Cellar"),
+            base.join("foreign"),
+            base.join("foreign/bridge"),
+            base.join("foreign/sub"),
+            base.join("safe"),
+            cellar.clone(),
+        ] {
+            assert!(paths.contains(&path), "{} not in {paths:?}", path.display());
+        }
+        // a loop ends instead of resolving forever
+        std::os::unix::fs::symlink(base.join("b"), base.join("a")).unwrap();
+        std::os::unix::fs::symlink(base.join("a"), base.join("b")).unwrap();
+        let paths = resolution_paths(&base.join("a/prefix"));
+        assert!(paths.contains(&base.join("a")));
+        assert!(paths.contains(&base.join("b")));
     }
 
     #[test]
