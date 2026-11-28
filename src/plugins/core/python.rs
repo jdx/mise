@@ -1007,9 +1007,11 @@ impl PythonPlugin {
         // versions, all attested for its tag, so the tag alone does not name
         // the version: `url` must be that release's build of `version`, and
         // the attestation must be made for that release.
+        // The URL is left out of the error: a mirror's URL can carry a login
+        // or a signed query.
         let Some(tag) = python_precompiled_release_from_url(url, version) else {
             return Err(eyre!(
-                "{url} is not a python-build-standalone build of python@{version}, so its GitHub artifact attestations cannot vouch for python@{version}\n{ATTESTATION_HELP}"
+                "The download URL is not a python-build-standalone build of python@{version}, so its GitHub artifact attestations cannot vouch for python@{version}\n{ATTESTATION_HELP}"
             ));
         };
 
@@ -2169,6 +2171,8 @@ plugins/python-build/share/python-build/patches/3.14.5/foo.patch
         for url in [
             "https://github.com/astral-sh/python-build-standalone/releases/download/20260728/cpython-3.11.15+20260728-x86_64-unknown-linux-gnu-install_only.tar.gz",
             "https://example.com/cpython-3.12.13+20260728-x86_64-unknown-linux-gnu-install_only.tar.gz",
+            // a signed mirror URL: the error must not print its signature
+            "https://ci:hunter2@mirror.example/cpython-3.12.13.tar.gz?X-Amz-Signature=sig-1234",
         ] {
             let err = backend
                 .verify_github_artifact_attestations(&pr, &tarball, "3.12.13", url)
@@ -2179,6 +2183,9 @@ plugins/python-build/share/python-build/patches/3.14.5/foo.patch
                 err.contains("is not a python-build-standalone build of python@3.12.13"),
                 "{url}: {err}"
             );
+            for secret in ["hunter2", "sig-1234", "mirror.example"] {
+                assert!(!err.contains(secret), "{url}: {err}");
+            }
         }
     }
 

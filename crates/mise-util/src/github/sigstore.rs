@@ -224,6 +224,7 @@ async fn verify_attestation_uncached(
     mise_sigstore::set_tuf_url(routed_tuf_url());
     let mut digest = None;
     let mut mirror_err = None;
+    let mut rejected = None;
     if use_versions_host_for_attestations(api_url, use_versions_host) {
         let artifact_digest = mise_sigstore::calculate_file_digest(artifact_path).await?;
         match verify_with_mirror(
@@ -239,6 +240,7 @@ async fn verify_attestation_uncached(
         {
             MirrorVerdict::Done(result) => return result,
             MirrorVerdict::AskGithub => {}
+            MirrorVerdict::ConfirmWithGithub(err) => rejected = Some(err),
             MirrorVerdict::RetryGithub(err) => mirror_err = Some(err),
         }
         digest = Some(artifact_digest);
@@ -264,7 +266,12 @@ async fn verify_attestation_uncached(
     .await;
     accept_renamed_repository(owner, repo, api_url, result)
         .await
-        .map_err(|err| after_mirror_failure(err, owner, repo, mirror_err.as_ref()))
+        .map_err(|err| {
+            rejection_stands(
+                after_mirror_failure(err, owner, repo, mirror_err.as_ref()),
+                rejected,
+            )
+        })
 }
 
 /// Attestations name the repository as it was when they were made, so after
@@ -336,6 +343,7 @@ pub async fn verify_attestation_with_predicate_type(
 
     let artifact_digest = mise_sigstore::calculate_file_digest(artifact_path).await?;
     let mut mirror_err = None;
+    let mut rejected = None;
     if use_versions_host_for_attestations(api_url, use_versions_host) {
         match verify_with_mirror(
             artifact_path,
@@ -350,6 +358,7 @@ pub async fn verify_attestation_with_predicate_type(
         {
             MirrorVerdict::Done(result) => return result,
             MirrorVerdict::AskGithub => {}
+            MirrorVerdict::ConfirmWithGithub(err) => rejected = Some(err),
             MirrorVerdict::RetryGithub(err) => mirror_err = Some(err),
         }
     }
@@ -363,7 +372,12 @@ pub async fn verify_attestation_with_predicate_type(
             predicate_type: Some(predicate_type.to_string()),
         })
         .await
-        .map_err(|err| after_mirror_failure(err, owner, repo, mirror_err.as_ref()))?;
+        .map_err(|err| {
+            rejection_stands(
+                after_mirror_failure(err, owner, repo, mirror_err.as_ref()),
+                rejected,
+            )
+        })?;
     let result = mise_sigstore::verify_github_attestation_with_attestations(
         artifact_path,
         &attestations,
@@ -421,10 +435,12 @@ pub async fn detect_attestations(
     use_versions_host: bool,
 ) -> Result<bool, DetectError> {
     let mut mirror_err = None;
+    let mut rejected = None;
     if use_versions_host_for_attestations(Some(api_url), use_versions_host) {
         match detect_with_mirror(owner, repo, digest, None).await {
             MirrorVerdict::Done(found) => return found,
             MirrorVerdict::AskGithub => {}
+            MirrorVerdict::ConfirmWithGithub(err) => rejected = Some(err),
             MirrorVerdict::RetryGithub(err) => mirror_err = Some(err),
         }
     }
@@ -438,7 +454,10 @@ pub async fn detect_attestations(
         .fetch_attestations(&artifact_ref)
         .await
         .map_err(|err| {
-            DetectError::Fetch(after_mirror_failure(err, owner, repo, mirror_err.as_ref()))
+            DetectError::Fetch(rejection_stands(
+                after_mirror_failure(err, owner, repo, mirror_err.as_ref()),
+                rejected,
+            ))
         })?;
     Ok(!attestations.is_empty())
 }
@@ -458,10 +477,12 @@ pub async fn detect_attestations_with_predicate_type(
         return detect_attestations(owner, repo, api_url, digest, use_versions_host).await;
     };
     let mut mirror_err = None;
+    let mut rejected = None;
     if use_versions_host_for_attestations(Some(api_url), use_versions_host) {
         match detect_with_mirror(owner, repo, digest, Some(predicate_type)).await {
             MirrorVerdict::Done(found) => return found,
             MirrorVerdict::AskGithub => {}
+            MirrorVerdict::ConfirmWithGithub(err) => rejected = Some(err),
             MirrorVerdict::RetryGithub(err) => mirror_err = Some(err),
         }
     }
@@ -482,7 +503,10 @@ pub async fn detect_attestations_with_predicate_type(
         })
         .await
         .map_err(|err| {
-            DetectError::Fetch(after_mirror_failure(err, owner, repo, mirror_err.as_ref()))
+            DetectError::Fetch(rejection_stands(
+                after_mirror_failure(err, owner, repo, mirror_err.as_ref()),
+                rejected,
+            ))
         })?;
     Ok(!attestations.is_empty())
 }
@@ -645,6 +669,11 @@ enum MirrorVerdict<T = AttestationResult<bool>> {
     /// said, or a repository mise-versions doesn't know (a private one) while
     /// the user has a token to read it with.
     AskGithub,
+    /// mise-versions has no attestations for an artifact whose earlier set
+    /// it served was rejected ([`foreign_attestations_verdict`]). GitHub has
+    /// to confirm that there are none; if GitHub cannot answer, the rejection
+    /// stands ([`rejection_stands`]).
+    ConfirmWithGithub(AttestationError),
     /// mise-versions failed in a way GitHub is asked to make up for (see
     /// [`crate::github::MirrorAnswer`]). GitHub answers, and when its
     /// lookup fails too, the error names both failures; whether that fails
@@ -684,6 +713,31 @@ fn after_mirror_failure(
     }
 }
 
+/// mise-versions' answer after it was asked again because the set it served
+/// before was `rejected`. An answer of "no attestations" does not erase that
+/// rejection: GitHub has to confirm it ([`MirrorVerdict::ConfirmWithGithub`]).
+fn unless_rejected(
+    verdict: MirrorVerdict,
+    rejected: &mut Option<AttestationError>,
+) -> MirrorVerdict {
+    match (verdict, rejected.take()) {
+        (MirrorVerdict::Done(Err(AttestationError::NoAttestations)), Some(rejected)) => {
+            MirrorVerdict::ConfirmWithGithub(rejected)
+        }
+        (verdict, _) => verdict,
+    }
+}
+
+/// GitHub's `err` when it was asked to confirm that an artifact whose set
+/// mise-versions served was `rejected` has no attestations: if GitHub could
+/// not answer, the rejection stands.
+fn rejection_stands(err: AttestationError, rejected: Option<AttestationError>) -> AttestationError {
+    match rejected {
+        Some(rejected) if is_api_failure(&err) => rejected,
+        _ => err,
+    }
+}
+
 /// Verify `artifact_path` against mise-versions' attestations for `owner/repo`,
 /// keeping only those of `predicate_type` when it is set.
 ///
@@ -710,6 +764,9 @@ async fn verify_with_mirror(
         return MirrorVerdict::AskGithub;
     }
     let digest = format!("sha256:{artifact_digest}");
+    // Why the kept set was rejected, if it was: then the fresh answer must not
+    // turn that rejection into "no attestations" ([`unless_rejected`]).
+    let mut rejected = None;
     for fresh in [false, true] {
         let found = if fresh {
             refreshed_mirrored_attestations(&full, &digest).await
@@ -719,12 +776,13 @@ async fn verify_with_mirror(
         let attestations = match found {
             Ok(Some(attestations)) => attestations,
             Ok(None) => {
-                return verdict_after_attestation_404(
+                let verdict = verdict_after_attestation_404(
                     &full,
                     repo_listing(&full).await,
                     !mirror_may_answer_none(),
                     || resolve_token_for_wrapper(None).is_some(),
                 );
+                return unless_rejected(verdict, &mut rejected);
             }
             // Paranoid mode has GitHub confirm mise-versions anyway, so it
             // asks GitHub when mise-versions can't answer.
@@ -737,7 +795,7 @@ async fn verify_with_mirror(
         );
         if attestations.is_empty() {
             // Not kept on disk, so already as fresh as mise-versions has it.
-            return no_attestations_verdict(&full);
+            return unless_rejected(no_attestations_verdict(&full), &mut rejected);
         }
         // Before the predicate filter, which can't read a missing bundle and
         // would pass it off as "no attestations".
@@ -758,7 +816,7 @@ async fn verify_with_mirror(
             .collect();
         if selected.is_empty() {
             if fresh {
-                return no_attestations_verdict(&full);
+                return unless_rejected(no_attestations_verdict(&full), &mut rejected);
             }
             continue;
         }
@@ -785,6 +843,9 @@ async fn verify_with_mirror(
                 {
                     return verdict;
                 }
+                rejected = Some(AttestationError::Verification(format!(
+                    "the attestations mise-versions had for {full} were made by {made_by}"
+                )));
             }
             CachedAttestationVerification::Retry(err) if fresh => {
                 if !mirror_may_answer_none() {
@@ -940,6 +1001,7 @@ fn verdict_after_attestation_404(
 fn detect_verdict(verdict: MirrorVerdict) -> MirrorVerdict<Result<bool, DetectError>> {
     match verdict {
         MirrorVerdict::AskGithub => MirrorVerdict::AskGithub,
+        MirrorVerdict::ConfirmWithGithub(err) => MirrorVerdict::ConfirmWithGithub(err),
         MirrorVerdict::RetryGithub(err) => MirrorVerdict::RetryGithub(err),
         MirrorVerdict::Done(Err(AttestationError::NoAttestations)) => {
             MirrorVerdict::Done(Ok(false))
@@ -1995,6 +2057,49 @@ mod tests {
             ),
             "a fresh set made by another repository must fail"
         );
+    }
+
+    /// After a kept set made by another repository is rejected, mise-versions
+    /// answering "none" when asked again does not let an optional verification
+    /// pass: GitHub has to confirm it, and the rejection stands when GitHub
+    /// cannot answer.
+    #[test]
+    fn test_an_empty_refresh_does_not_erase_a_rejected_set() {
+        let rejection = || AttestationError::Verification("made by evil/tool".to_string());
+        let none = || MirrorVerdict::Done(Err(AttestationError::NoAttestations));
+
+        let mut rejected = Some(rejection());
+        assert!(matches!(
+            unless_rejected(none(), &mut rejected),
+            MirrorVerdict::ConfirmWithGithub(AttestationError::Verification(ref msg))
+                if msg.contains("evil/tool")
+        ));
+        // with nothing rejected, "none" stays mise-versions' answer
+        assert!(matches!(
+            unless_rejected(none(), &mut None),
+            MirrorVerdict::Done(Err(AttestationError::NoAttestations))
+        ));
+        // an answer other than "none" is kept
+        assert!(matches!(
+            unless_rejected(MirrorVerdict::Done(Ok(true)), &mut Some(rejection())),
+            MirrorVerdict::Done(Ok(true))
+        ));
+
+        // GitHub could not answer: the rejection stands
+        let err = rejection_stands(AttestationError::Api("503".to_string()), Some(rejection()));
+        assert!(
+            matches!(err, AttestationError::Verification(ref msg) if msg.contains("evil/tool"))
+        );
+        // GitHub confirmed there are none
+        assert!(matches!(
+            rejection_stands(AttestationError::NoAttestations, Some(rejection())),
+            AttestationError::NoAttestations
+        ));
+        // nothing was rejected: GitHub's failure is the error
+        assert!(matches!(
+            rejection_stands(AttestationError::Api("503".to_string()), None),
+            AttestationError::Api(_)
+        ));
     }
 
     #[tokio::test]
