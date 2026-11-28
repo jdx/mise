@@ -687,10 +687,6 @@ impl PIPXBackend {
         tv: &ToolVersion,
     ) -> Result<GraphRef<UvLock>> {
         self.validate_lock_options(tv)?;
-        // uv fetches a git source to lock it, so this is refused in safe mode
-        // for a URL that would get the user's logins, even for a version that
-        // is installed already.
-        tv.request.ensure_safe_url_tool_key()?;
         let uv = self.lock_uv_program(config).await?;
         let registry = self.get_registry_url(config).await?;
         let requirements = self.lock_requirements(tv)?;

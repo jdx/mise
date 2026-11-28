@@ -1562,8 +1562,13 @@ impl Backend for HttpBackend {
         let raw_opts = tv.request.options();
         let opts = HttpOptions::new(&raw_opts);
         match opts.url() {
-            // An install that safe mode refuses is not one `--dry-run` promises.
-            Some(url) => local_artifact_url(&tv.request, &template_string(&url, tv)).map(|_| ()),
+            // An install that safe mode refuses is not one `--dry-run` promises. The URL is
+            // rendered only then: outside safe mode the policy can't refuse it, and the
+            // template may run commands that only the install should run.
+            Some(url) if Settings::safe_mode() => {
+                local_artifact_url(&tv.request, &template_string(&url, tv)).map(|_| ())
+            }
+            Some(_) => Ok(()),
             None => Err(self.missing_url_error(&opts)),
         }
     }
