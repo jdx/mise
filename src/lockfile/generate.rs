@@ -505,10 +505,14 @@ fn keep_pins_recorded_with_a_login(old: &PlatformInfo, new: &mut PlatformInfo) {
 /// checksum just resolved. [`complete_artifact_checksums`] would download it
 /// from `new`'s URL, which leaves the login out, and a server that needs the
 /// login would refuse it.
+///
+/// Returns the URLs in `new` whose artifact it checked against the old pin, so
+/// [`check_replaced_weak_pins`] does not download them again without the login.
 async fn upgrade_weak_pins_recorded_with_a_login(
     old: &PlatformInfo,
     new: &mut PlatformInfo,
-) -> Result<()> {
+) -> Result<Vec<String>> {
+    let mut verified = Vec::new();
     use crate::backend::static_helpers::is_lock_url;
     let weak = |checksum: Option<&str>| checksum.filter(|c| is_weak_checksum(c)).map(str::to_owned);
     if let Some(pin) = weak(old.checksum.as_deref())
@@ -528,6 +532,7 @@ async fn upgrade_weak_pins_recorded_with_a_login(
             .await?,
         );
         new.checksum_source = None;
+        verified.extend(new.url.clone());
     }
     for artifact in &mut new.additional_artifacts {
         let Some((old, pin)) = old.additional_artifacts.iter().find_map(|old| {
@@ -550,8 +555,9 @@ async fn upgrade_weak_pins_recorded_with_a_login(
             .await?,
         );
         artifact.checksum_source = None;
+        verified.push(artifact.url.clone());
     }
-    Ok(())
+    Ok(verified)
 }
 
 /// The checksum of `old`, a conda package recorded with the channel's login,
@@ -768,13 +774,14 @@ pub async fn generate(
                 resolve(ba, tv.clone(), platform).await?
             };
             if let Ok(info) = &mut resolution.4 {
+                let mut verified = Vec::new();
                 if let Some(old) = &previous_info {
-                    upgrade_weak_pins_recorded_with_a_login(old, info).await?;
+                    verified = upgrade_weak_pins_recorded_with_a_login(old, info).await?;
                     keep_pins_recorded_with_a_login(old, info);
                 }
                 complete_artifact_checksums(info).await?;
                 if let Some(old) = previous_info {
-                    check_replaced_weak_pins(&old, info).await?;
+                    check_replaced_weak_pins(&old, info, &verified).await?;
                     preserve_legacy_metadata(&old, info);
                 }
             }
@@ -1429,14 +1436,21 @@ const LOCKED_CHECKSUM: &str = "the checksum mise.lock pinned it by";
 /// A refreshed entry replaces the md5 or sha1 checksum `old` pinned an
 /// artifact by. When the artifact is still at the same URL, it is downloaded
 /// and checked against that pin as well as the new checksum, so the refresh
-/// cannot move the pin to other bytes the URL now serves.
-async fn check_replaced_weak_pins(old: &PlatformInfo, new: &PlatformInfo) -> Result<()> {
+/// cannot move the pin to other bytes the URL now serves. The URLs in
+/// `verified` were already checked against the old pin, through the login the
+/// old entry recorded, and are not downloaded again.
+async fn check_replaced_weak_pins(
+    old: &PlatformInfo,
+    new: &PlatformInfo,
+    verified: &[String],
+) -> Result<()> {
     let replaced = |old: &Option<String>, new: &Option<String>| {
         old.as_deref()
             .filter(|old| is_weak_checksum(old) && Some(*old) != new.as_deref())
             .map(str::to_owned)
     };
     if let Some(url) = &new.url
+        && !verified.contains(url)
         && old.url == new.url
         && let Some(pin) = replaced(&old.checksum, &new.checksum)
     {
@@ -1451,6 +1465,9 @@ async fn check_replaced_weak_pins(old: &PlatformInfo, new: &PlatformInfo) -> Res
         .await?;
     }
     for artifact in &new.additional_artifacts {
+        if verified.contains(&artifact.url) {
+            continue;
+        }
         let Some(pin) = old
             .additional_artifacts
             .iter()
@@ -2196,12 +2213,14 @@ mod tests {
 
         // The bytes the URL serves are the ones mise.lock pinned.
         let old = entry(&url, "md5:8e5b948a454515dbabfc7eb718daa52f");
-        check_replaced_weak_pins(&old, &refreshed).await.unwrap();
+        check_replaced_weak_pins(&old, &refreshed, &[])
+            .await
+            .unwrap();
 
         // Other bytes at the same URL stop the refresh, for the primary
         // artifact and for an additional one.
         let other = "md5:00000000000000000000000000000000";
-        let err = check_replaced_weak_pins(&entry(&url, other), &refreshed)
+        let err = check_replaced_weak_pins(&entry(&url, other), &refreshed, &[])
             .await
             .unwrap_err();
         assert!(
@@ -2210,15 +2229,19 @@ mod tests {
         );
         let mut old = entry(&url, &sha256);
         old.additional_artifacts[0].checksum = Some(other.into());
-        assert!(check_replaced_weak_pins(&old, &refreshed).await.is_err());
+        assert!(
+            check_replaced_weak_pins(&old, &refreshed, &[])
+                .await
+                .is_err()
+        );
 
         // A pin for another URL, or a strong one, says nothing about these bytes.
         let elsewhere = entry("file:///nonexistent/other", other);
-        check_replaced_weak_pins(&elsewhere, &refreshed)
+        check_replaced_weak_pins(&elsewhere, &refreshed, &[])
             .await
             .unwrap();
         let blake3 = format!("blake3:{}", "0".repeat(64));
-        check_replaced_weak_pins(&entry(&url, &blake3), &refreshed)
+        check_replaced_weak_pins(&entry(&url, &blake3), &refreshed, &[])
             .await
             .unwrap();
     }
@@ -2700,6 +2723,65 @@ mod tests {
                 .await
                 .is_err()
         );
+    }
+
+    /// A private forge asset whose login is only in `url_api` is checked
+    /// against its old pin once, through the login. The check of replaced weak
+    /// pins that follows would download the API URL without the login, which
+    /// the forge refuses.
+    #[tokio::test]
+    async fn a_weak_pin_checked_through_the_api_login_is_not_checked_again() {
+        let mut server = mockito::Server::new_async().await;
+        // Unique paths: downloads are cached per invocation, and mockito
+        // reuses ports across tests.
+        let browser = server
+            .mock("HEAD", "/api-login/browser.tar.gz")
+            .with_status(404)
+            .expect_at_least(1)
+            .create_async()
+            .await;
+        let with_login = server
+            .mock("GET", "/api-login/asset.tar.gz")
+            .match_header("authorization", "Basic Y2k6dG9rZW4=")
+            .with_body("artifact")
+            .expect(1)
+            .create_async()
+            .await;
+        let without_login = server
+            .mock("GET", "/api-login/asset.tar.gz")
+            .match_header("authorization", mockito::Matcher::Missing)
+            .with_status(401)
+            .expect(0)
+            .create_async()
+            .await;
+        let url = format!("{}/api-login/browser.tar.gz", server.url());
+        let api = format!("{}/api-login/asset.tar.gz", server.url());
+        let old = PlatformInfo {
+            url: Some(url.clone()),
+            url_api: Some(api.replace("http://", "http://ci:token@")),
+            checksum: Some(format!("md5:{ARTIFACT_MD5}")),
+            ..Default::default()
+        };
+        let mut new = PlatformInfo {
+            url: Some(url.clone()),
+            url_api: Some(api.clone()),
+            ..Default::default()
+        };
+
+        let verified = upgrade_weak_pins_recorded_with_a_login(&old, &mut new)
+            .await
+            .unwrap();
+        assert_eq!(verified, vec![url.clone()]);
+        let sha256 = format!("sha256:{ARTIFACT_SHA256}");
+        assert_eq!(new.checksum.as_deref(), Some(sha256.as_str()));
+        complete_artifact_checksums(&mut new).await.unwrap();
+        check_replaced_weak_pins(&old, &new, &verified)
+            .await
+            .unwrap();
+        assert_eq!(new.url_api.as_deref(), Some(api.as_str()));
+        browser.assert_async().await;
+        with_login.assert_async().await;
+        without_login.assert_async().await;
     }
 
     /// An artifact whose resolved checksum is an md5 is hashed through the URL

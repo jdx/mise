@@ -9,7 +9,7 @@ use xx::regex;
 
 use crate::args::BackendArg;
 use crate::backend::platform_target::PlatformTarget;
-use crate::backend::static_helpers::{is_lock_url, lock_checksum};
+use crate::backend::static_helpers::{forget_locked_login, is_lock_url, lock_checksum};
 use crate::backend::{Backend, VersionInfo, normalize_idiomatic_contents, strict_metadata};
 use crate::cmd::CmdLineRunner;
 use crate::config::{CompilePurpose, Config, Settings, SettingsExt};
@@ -648,6 +648,27 @@ impl RubyPlugin {
         Ok(dates)
     }
 
+    /// The verified entry in `tv`'s lockfile of the archive at `url`, as
+    /// [`forget_locked_login`] leaves it: written back to mise.lock without the
+    /// login an older mise.lock recorded, as a fresh install writes it. An entry
+    /// for another artifact, such as the source tarball, is left alone.
+    fn forget_locked_archive_login(
+        tv: &mut ToolVersion,
+        platform_key: &str,
+        url: &str,
+        download_url: &str,
+        archive: &Path,
+    ) -> Result<()> {
+        match tv
+            .lock_platforms
+            .get_mut(platform_key)
+            .filter(|info| is_lock_url(info.url.as_deref(), url))
+        {
+            Some(info) => forget_locked_login(info, download_url, archive),
+            None => Ok(()),
+        }
+    }
+
     /// Try to install from precompiled binary
     /// Returns Ok(None) if no precompiled version is available for this version/platform
     async fn install_precompiled(
@@ -800,6 +821,8 @@ impl RubyPlugin {
                 ));
             }
         }
+
+        Self::forget_locked_archive_login(tv, &platform_key, &url, &download_url, &tarball_path)?;
 
         ctx.pr.set_message(format!("extract {}", filename));
         let install_path = tv.install_path();
@@ -1270,6 +1293,62 @@ mod tests {
         );
         assert!(lock_checksum(&tv, "linux-x64", locked).is_some());
         assert!(lock_checksum(&tv, "linux-x64", "https://mirror.example:8443/x.tar.gz").is_none());
+    }
+
+    /// A precompiled Ruby installed from an older mise.lock whose URL holds the
+    /// mirror login goes back to mise.lock without it. A strong pin is kept as
+    /// it is; an md5 one, already checked, is replaced by the sha256 of the
+    /// archive, which `mise lock` could not fetch without the login.
+    #[test]
+    fn test_ruby_locked_install_forgets_the_lockfile_login() {
+        use crate::lockfile::PlatformInfo;
+
+        let login = "https://ci:token@mirror.example/3.3.0/ruby-3.3.0.x86_64_linux.tar.gz";
+        let plain = "https://mirror.example/3.3.0/ruby-3.3.0.x86_64_linux.tar.gz";
+        let dir = tempfile::tempdir().unwrap();
+        let archive = dir.path().join("ruby.tar.gz");
+        std::fs::write(&archive, "artifact").unwrap();
+        let backend = RubyPlugin::new();
+        let entry = |url: &str, checksum: String| {
+            let mut tv = ToolVersion::new(
+                ToolRequest::new(backend.ba().clone(), "3.3.0", ToolSource::Unknown).unwrap(),
+                "3.3.0".to_string(),
+            );
+            tv.lock_platforms.insert(
+                "linux-x64".to_string(),
+                PlatformInfo {
+                    url: Some(url.to_string()),
+                    checksum: Some(checksum),
+                    ..Default::default()
+                },
+            );
+            tv
+        };
+        let strong = format!("sha256:{}", "a".repeat(64));
+
+        let mut tv = entry(login, strong.clone());
+        RubyPlugin::forget_locked_archive_login(&mut tv, "linux-x64", login, login, &archive)
+            .unwrap();
+        let info = &tv.lock_platforms["linux-x64"];
+        assert_eq!(info.url.as_deref(), Some(plain));
+        assert_eq!(info.checksum.as_deref(), Some(strong.as_str()));
+
+        let mut tv = entry(login, "md5:8e5b948a454515dbabfc7eb718daa52f".to_string());
+        RubyPlugin::forget_locked_archive_login(&mut tv, "linux-x64", login, login, &archive)
+            .unwrap();
+        let info = &tv.lock_platforms["linux-x64"];
+        assert_eq!(info.url.as_deref(), Some(plain));
+        assert_eq!(
+            info.checksum.as_deref(),
+            Some("sha256:c7c5c1d70c5dec4416ab6158afd0b223ef40c29b1dc1f97ed9428b94d4cadb1c")
+        );
+
+        // the entry pins another artifact: left as it is
+        let source = "https://ci:token@mirror.example/ruby-3.3.0.tar.gz";
+        let mut tv = entry(source, strong.clone());
+        RubyPlugin::forget_locked_archive_login(&mut tv, "linux-x64", login, login, &archive)
+            .unwrap();
+        assert_eq!(tv.lock_platforms["linux-x64"].url.as_deref(), Some(source));
     }
 
     #[test]

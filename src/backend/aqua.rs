@@ -5,7 +5,7 @@ use crate::backend::{SecurityFeature, VersionInfo};
 use crate::args::BackendArg;
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::{
-    ensure_safe_relative_bin_path, get_filename_from_url, is_weak_checksum, lock_url,
+    ensure_safe_relative_bin_path, forget_locked_login, get_filename_from_url, lock_url,
     resolve_lock_url, with_login_of,
 };
 use crate::config::{Settings, SettingsExt};
@@ -4511,27 +4511,6 @@ fn cosign_opt_value<'a>(opts: &'a [String], flag: &str) -> Option<&'a str> {
 /// package's own `url` put back when that is a URL on the same server (scheme,
 /// host and port). mise.lock records it without the login ([`lock_url`]), and
 /// an `http` package from a registry that needs one is downloaded from it.
-/// The locked entry `info`, whose archive `archive` was just downloaded from
-/// `download_url` and verified, as the lockfile update writes it: without the
-/// login an older mise.lock recorded in its URLs, as a fresh install records
-/// them. When the download sent a login, from mise.lock or from the package's
-/// `url`, and `info` has no sha256, blake3 or sha512 pin, the archive is pinned
-/// by its sha256 now: `mise lock` could not fetch it through the recorded URL,
-/// which has no login.
-fn forget_locked_login(info: &mut PlatformInfo, download_url: &str, archive: &Path) -> Result<()> {
-    let has_login = |url: &str| lock_url(url) != url;
-    if has_login(download_url) && info.checksum.as_deref().is_none_or(is_weak_checksum) {
-        info.checksum = Some(format!(
-            "sha256:{}",
-            crate::hash::file_hash_sha256(archive, None)?
-        ));
-        info.checksum_source = None;
-    }
-    info.url = info.url.as_deref().map(lock_url);
-    info.url_api = info.url_api.as_deref().map(lock_url);
-    Ok(())
-}
-
 fn locked_download_url(pkg: &AquaPackage, v: &str, url: String) -> String {
     if pkg.package_type() != AquaPackageType::Http {
         return url;

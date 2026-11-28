@@ -1254,6 +1254,28 @@ pub(crate) async fn resolve_lock_url(url: &str, checksum: &mut Option<String>) -
     Ok(lock_url)
 }
 
+/// The locked entry `info`, whose archive `archive` was just downloaded from
+/// `download_url` and verified, as the lockfile update writes it: without the
+/// login an older mise.lock recorded in its URLs, as a fresh install records
+/// them. When the download sent a login, from mise.lock or from the user's
+/// config, and `info` has no sha256, blake3 or sha512 pin, the archive is
+/// pinned by its sha256 now: `mise lock` could not fetch it through the
+/// recorded URL, which has no login. A strong pin is left as it is.
+pub(crate) fn forget_locked_login(
+    info: &mut crate::lockfile::PlatformInfo,
+    download_url: &str,
+    archive: &Path,
+) -> Result<()> {
+    let has_login = |url: &str| lock_url(url) != url;
+    if has_login(download_url) && info.checksum.as_deref().is_none_or(is_weak_checksum) {
+        info.checksum = Some(format!("sha256:{}", hash::file_hash_sha256(archive, None)?));
+        info.checksum_source = None;
+    }
+    info.url = info.url.as_deref().map(lock_url);
+    info.url_api = info.url_api.as_deref().map(lock_url);
+    Ok(())
+}
+
 /// The checksum a tool pinned for this platform, in its options or in the
 /// lockfile.
 pub(crate) fn pinned_checksum(

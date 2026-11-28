@@ -8,8 +8,8 @@ use crate::backend::static_helpers::{
     apply_rename_exe, bin_name_for_download, clean_binary_name, ensure_plain_bin_name,
     ensure_safe_relative_bin_path, eval_checksum_expr, fetch_checksum_from_file_with_headers,
     fetch_checksum_from_shasums_with_headers, get_filename_from_url, lookup_value_with_fallback,
-    pinned_checksum, rename_binary_name, render_bin_path, shasums_has_entries, template_string,
-    template_string_for_target, template_string_strict, verify_artifact,
+    pinned_checksum, rename_binary_name, render_bin_path, resolve_lock_url, shasums_has_entries,
+    template_string, template_string_for_target, template_string_strict, verify_artifact,
 };
 use crate::backend::version_list;
 use crate::backend::{MISE_BINS_DIR, runtime_path_for_install_path};
@@ -1576,12 +1576,10 @@ impl Backend for HttpBackend {
 
         // The lockfile is committed, so it names the artifact without the
         // credentials that fetch it. Installs take the URL from config.
-        let lock_url = strip_url_credentials_in_value(&url).into_owned();
-        if checksum.is_none() && lock_url != url && Settings::get().generate_lockfiles() {
-            // `generate` would otherwise hash what the recorded URL serves,
-            // which without the credentials is an authentication error.
-            crate::lockfile::generate::download_for_verification(&url, &mut checksum).await?;
-        }
+        // `generate` would otherwise hash what the recorded URL serves, which
+        // without the credentials is an authentication error, so a missing or
+        // md5/sha1 checksum is settled here from the URL with its login.
+        let lock_url = resolve_lock_url(&url, &mut checksum).await?;
 
         Ok(PlatformInfo {
             url: Some(lock_url),
