@@ -582,20 +582,22 @@ impl InvocationScratch {
     /// is put back and locked again, so later sweeps keep treating the folder as live and
     /// the downloads already staged in it stay usable. A lost folder cannot be restored.
     fn still_held(&mut self, root: &Path) -> Result<bool> {
+        // Under the claims lock, like a claim, so no sweep runs between the checks below
+        // or sees a put-back lock file unlocked.
+        let mut claims = fslock::LockFile::open(&root.join(CLAIMS_LOCK))?;
+        claims.lock()?;
         if !self.dir.is_dir() {
             return Ok(false);
         }
-        if self.lock_path.exists() {
-            return Ok(true);
-        }
-        // Under the claims lock, like a claim, so no sweep sees the new lock file unlocked.
-        let mut claims = fslock::LockFile::open(&root.join(CLAIMS_LOCK))?;
-        claims.lock()?;
+        // Opening creates the file if it is gone. The path may also name a different file
+        // than the one this claim locked: one a sweep recreated after pruning unlinked
+        // ours. Locking through a new handle tells them apart: it fails while the file
+        // at the path is the one this claim holds, and succeeds on any other, which then
+        // becomes this claim's lock.
         let mut lock = fslock::LockFile::open(&self.lock_path)?;
-        if !lock.try_lock()? {
-            return Ok(false);
+        if lock.try_lock()? {
+            self.lock = lock;
         }
-        self.lock = lock;
         Ok(true)
     }
 

@@ -1225,6 +1225,14 @@ fn a_claim_survives_its_folder_or_lock_file_being_pruned() {
     let other = InvocationScratch::claim(root, Duration::ZERO).unwrap();
     assert!(held.dir.join("artifact").exists());
 
+    // A lock file replaced by a new one at the same path is taken over too.
+    std::fs::remove_file(&held.lock_path).unwrap();
+    std::fs::write(&held.lock_path, b"").unwrap();
+    assert!(held.still_held(root).unwrap());
+    let other2 = InvocationScratch::claim(root, Duration::ZERO).unwrap();
+    assert!(held.dir.join("artifact").exists());
+    other2.remove();
+
     // A deleted folder cannot be restored, so the claim is reported lost.
     std::fs::remove_dir_all(&held.dir).unwrap();
     assert!(!held.still_held(root).unwrap());
