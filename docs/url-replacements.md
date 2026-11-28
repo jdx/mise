@@ -142,27 +142,35 @@ make an untrusted server trustworthy.
 
 When a rule sends a request to another server (a different host, or the same
 host on another port), mise drops the credentials meant for the original URL:
-the `Authorization` header, cookies, API key headers, and any `user:password`
-in the URL. For a different host it then adds [netrc](#netrc) credentials for
-the new host, if there are any. A rule that keeps the host and port keeps the
-credentials, including one that only switches between HTTP and HTTPS on their
-default ports.
+the `Authorization`, `Proxy-Authorization` and `Cookie` headers, headers whose
+name marks them as an API key, token, secret or credential, and the
+`user:password` the original URL carried. For a different host it then adds
+[netrc](#netrc) credentials for the new host, if there are any; for another
+port of the same host it adds none. A rule that keeps the host and port keeps
+the credentials, including one that only switches between HTTP and HTTPS on
+their default ports.
 
 An HTTPS-to-HTTP rewrite is refused only when the request would still carry
-credentials over plain HTTP:
+one of those credentials over plain HTTP:
 
 - the original request's credentials, when the rule keeps the host and port;
 - a `user:password` written into the rule itself, whatever host it names;
 - a netrc login for the original host, when the rule keeps the host and port.
 
-Any other downgrade goes ahead. A rule to another port of the original host
-drops the original credentials and adds no netrc login, so it is sent without
-credentials. A rule to another host is sent with that host's netrc login, if it
-has one. These rules also cover Conda channels.
+Any other downgrade goes ahead. A rule to another port of the original host is
+sent without those credentials, and one to another host with that host's netrc
+login, if it has one. These rules also cover Conda channels.
 For GitHub attestation requests, mise drops the GitHub token when the rule
 changes the host, and refuses an HTTPS-to-HTTP rewrite that keeps the host. For
 Sigstore TUF metadata, mise ignores such a rewrite and keeps the default HTTPS
 URL.
+
+::: warning
+mise does not drop or check the query string. A rewrite keeps it as it is, so
+a token in the query, such as the signature of a signed URL, goes to the new
+server, and over plain HTTP after a downgrade. Don't point a signed URL, or any
+URL with a secret in its query, at an `http://` replacement.
+:::
 
 Avoid writing credentials into replacement URLs, where they can appear in logs.
 Only route requests to servers you trust with both the artifacts and the
