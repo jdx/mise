@@ -265,7 +265,7 @@ fn template_pieces(input: &str, shell_expand: bool) -> Vec<(Piece, std::ops::Ran
                     i += 2;
                     continue;
                 }
-                Some(b'{') if raw_end.is_some() || !is_tag_open(bytes, i + 1) => {
+                Some(b'{') if opens_braced_expr(bytes, i + 1, raw_end) => {
                     let end =
                         braced_expr_end(input, i + 2, raw_end).map_or(input.len(), |end| end + 1);
                     Some((Piece::Substituted, i, end))
@@ -302,6 +302,17 @@ fn template_pieces(input: &str, shell_expand: bool) -> Vec<(Piece, std::ops::Ran
 /// Whether a template tag (`{{`, `{%` or `{#`) opens at `at`.
 fn is_tag_open(bytes: &[u8], at: usize) -> bool {
     bytes.get(at) == Some(&b'{') && matches!(bytes.get(at + 1), Some(b'{' | b'%' | b'#'))
+}
+
+/// Whether the `{` at `at`, after a `$`, makes a `${`: it does in the body of a raw block, which
+/// ends at `raw_end`, and elsewhere when it opens no template tag. A `$` that ends a raw body is
+/// followed by its `{% endraw %}`, so it comes before a tag and is written text, as the `$` in
+/// `cost$*` is once rendered.
+fn opens_braced_expr(bytes: &[u8], at: usize, raw_end: Option<usize>) -> bool {
+    match raw_end {
+        Some(end) if at < end => true,
+        _ => !is_tag_open(bytes, at),
+    }
 }
 
 /// The closer of the tag whose opener's second byte is `kind`.
@@ -349,7 +360,7 @@ fn braced_expr_end(input: &str, start: usize, mut raw_end: Option<usize>) -> Opt
             b'(' if command_depth > 0 => command_depth += 1,
             b')' if command_depth > 0 => command_depth -= 1,
             _ if command_depth > 0 => {}
-            b'$' if next == Some(&b'{') && (raw_end.is_some() || !is_tag_open(bytes, i + 1)) => {
+            b'$' if next == Some(&b'{') && opens_braced_expr(bytes, i + 1, raw_end) => {
                 depth += 1;
                 i += 1;
             }
@@ -2282,6 +2293,35 @@ mod tests {
             template_pieces("{% raw %}$HOME/{{x{% endraw %}", false),
             vec![(Tag, 0..9), (Written, 9..18), (Tag, 18..30)]
         );
+        // a `$` that ends the body comes before the `{% endraw %}` tag, not a `{`: once rendered
+        // it is followed by what comes after the tag, and `cost$*` expands to itself
+        assert_eq!(
+            pieces("env/{% raw %}cost${% endraw %}*.env"),
+            vec![
+                (Written, 0..4),
+                (Tag, 4..13),
+                (Written, 13..18),
+                (Tag, 18..30),
+                (Written, 30..35),
+            ]
+        );
+        assert!(writes_a_star("env/{% raw %}cost${% endraw %}*.env", true));
+        assert_eq!(
+            split_path(
+                &mut TeraEngine::V2(Box::default()),
+                "env/{% raw %}cost${% endraw %}*.env",
+                &glob_context(),
+                true
+            )
+            .unwrap(),
+            Some(("env/".to_string(), "cost$*.env".to_string()))
+        );
+        // and in a `${` fallback it does not open another one: `${A:-$}` closes at the `}`
+        assert_eq!(
+            pieces("{% raw %}${A:-${% endraw %}}*.env"),
+            vec![(Tag, 0..9), (Substituted, 9..28), (Written, 28..33)]
+        );
+        assert!(writes_a_star("{% raw %}${A:-${% endraw %}}*.env", true));
         // a raw block in a `${` fallback is text too
         assert_eq!(
             pieces("${A:-{% raw %}}{% endraw %}}"),
