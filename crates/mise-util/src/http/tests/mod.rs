@@ -152,7 +152,13 @@ async fn test_generation_downloads_again_when_staging_was_pruned() {
     client.download_file(&url, &first, None).await.unwrap();
 
     // What cache pruning does to a long-running process's staging folder.
-    let staging = INVOCATION_SCRATCH.lock().unwrap().as_ref().unwrap().dir.clone();
+    let staging = INVOCATION_SCRATCH
+        .lock()
+        .unwrap()
+        .as_ref()
+        .unwrap()
+        .dir
+        .clone();
     std::fs::remove_dir_all(&staging).unwrap();
 
     client.download_file(&url, &second, None).await.unwrap();
