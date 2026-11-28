@@ -633,22 +633,20 @@ pub(crate) struct PlatformDownload {
     pub(crate) bin: Option<String>,
 }
 
-/// The `url` and `bin` of this machine's download, read from one platform entry.
+/// The `url` and `bin` of this machine's download.
 ///
 /// The `url` is the one [`lookup_with_fallback`] finds: that of the first spelling of this
 /// machine's platform (`macos-arm64`, then `darwin-arm64`, ...) that sets one, else the
-/// top-level `url`. The `bin` is the one that same platform sets, else the top-level `bin`: a
-/// platform that sets only a `bin` names no file of the archive another platform's `url`
-/// downloads. With no platform `url`, the `bin` is looked up by itself, as for an install whose
-/// artifact does not come from a `url`.
+/// top-level `url`. The `bin` is [`platform_bin`] of the spelling that set the `url`. With no
+/// platform `url`, the `bin` is looked up by itself, as for an install whose artifact does not
+/// come from a `url`.
 pub(crate) fn platform_download(opts: &ToolVersionOptions) -> PlatformDownload {
     for (os, arch) in platform_aliases() {
         let platform = format!("{os}-{arch}");
         if let Some(url) = platform_entry_string(opts, &platform, "url") {
             return PlatformDownload {
                 url: Some(url),
-                bin: platform_entry_string(opts, &platform, "bin")
-                    .or_else(|| opts.get_string("bin")),
+                bin: platform_bin(opts, &platform),
             };
         }
     }
@@ -656,6 +654,26 @@ pub(crate) fn platform_download(opts: &ToolVersionOptions) -> PlatformDownload {
         url: opts.get_string("url"),
         bin: lookup_with_fallback(opts, "bin"),
     }
+}
+
+/// The `bin` a download for `platform`, the `os-arch` spelling whose `url` is downloaded, names
+/// its binary after: the `bin` of that spelling, else the first `bin` among the other spellings
+/// of the same platform (in the order [`lookup_platform_key`] tries them), else the top-level
+/// `bin`. The installer, a stub run and `generate tool-stub --lock` all read it here, so they
+/// agree on the binary's name.
+///
+/// A spelling's own `bin` comes first, so a spelling that sets only a `bin` does not name the
+/// binary of another spelling's archive that names its own. When the spelling with the `url`
+/// sets none, the first other spelling's `bin` is the one earlier releases installed under.
+pub(crate) fn platform_bin(opts: &ToolVersionOptions, platform: &str) -> Option<String> {
+    let (os, arch) = platform.split_once('-')?;
+    platform_entry_string(opts, platform, "bin")
+        .or_else(|| {
+            os_arch_aliases(os, arch)
+                .into_iter()
+                .find_map(|(os, arch)| platform_entry_string(opts, &format!("{os}-{arch}"), "bin"))
+        })
+        .or_else(|| opts.get_string("bin"))
 }
 
 /// `key` as `platform`, an `os-arch` key, sets it, under any of the spellings

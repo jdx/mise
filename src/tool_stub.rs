@@ -3,8 +3,7 @@
 use std::path::Path;
 
 use crate::backend::static_helpers::{
-    list_available_platforms_with_key, lookup_platform_key, platform_download,
-    platform_entry_string,
+    list_available_platforms_with_key, lookup_platform_key, platform_bin, platform_download,
 };
 use crate::config::env_directive::EnvValue;
 use crate::file;
@@ -193,22 +192,23 @@ impl ToolStubFile {
     /// Whether every platform the stub downloads for has its own `bin`, so a run never uses the
     /// top-level `bin`, which defaults to the stub's file name. Only an `http:` stub without a
     /// top-level `url` lists the platforms it supports: any other runs on platforms it does not
-    /// name. A run looks a platform's `bin` up as its download looks up the `url`, under an
-    /// `os-arch` key or an alias of one, so a qualified key such as `linux-x64-musl` counts as a
-    /// platform without its own `bin`.
+    /// name. A platform's `bin` is the one [`platform_bin`] reads for the download, from the
+    /// platform's `os-arch` key or another spelling of it, so a qualified key such as
+    /// `linux-x64-musl` counts as a platform without its own `bin`.
     pub fn sets_bin_for_every_platform(&self) -> bool {
         if !self.tool_name.starts_with("http:") || self.opts.contains_key("url") {
             return false;
         }
+        // `self.opts` holds no top-level `bin`, so `platform_bin` finds only a platform's own
         let opts = ToolVersionOptions {
             opts: self.opts.clone().into(),
             ..Default::default()
         };
         let platforms = list_available_platforms_with_key(&opts, "url");
         !platforms.is_empty()
-            && platforms.iter().all(|platform| {
-                is_os_arch_key(platform) && platform_entry_string(&opts, platform, "bin").is_some()
-            })
+            && platforms
+                .iter()
+                .all(|platform| is_os_arch_key(platform) && platform_bin(&opts, platform).is_some())
     }
 
     // Create a ToolRequest directly using ToolVersionOptions
@@ -391,8 +391,59 @@ bin = "t"
             )
         );
 
-        // and a later spelling with a url and no bin of its own takes the top-level bin
+        // a later spelling with a url and no bin of its own takes the bin another spelling of
+        // the same platform sets
         let no_bin = bin_only.replace("bin = \"later-bin\"\n", "");
-        assert_eq!(installed_and_run(&no_bin).1.as_deref(), Some("stub"));
+        assert_eq!(installed_and_run(&no_bin).1.as_deref(), Some("unused-bin"));
+
+        // and with none anywhere, the top-level bin
+        let none = no_bin.replace("bin = \"unused-bin\"\n", "");
+        assert_eq!(installed_and_run(&none).1.as_deref(), Some("stub"));
+    }
+
+    #[test]
+    fn test_a_run_finds_the_binary_an_earlier_install_named() {
+        let aliases = crate::backend::static_helpers::platform_aliases();
+        let [(os, arch), (later_os, later_arch), ..] = aliases.as_slice() else {
+            return; // a platform with one spelling cannot split its url and bin
+        };
+        let later = format!("{later_os}-{later_arch}");
+        // the url and the bin under different spellings of this machine's platform, nested
+        // or flat
+        for content in [
+            format!(
+                "tool = \"http:t\"\n\
+                [platforms.{later}]\nurl = \"https://example.com/t.tar.gz\"\n\
+                [platforms.{os}-{arch}]\nbin = \"split-bin\"\n"
+            ),
+            format!(
+                "tool = \"http:t\"\n\
+                platforms_{os}_{arch}_url = \"https://example.com/t.tar.gz\"\n\
+                [platforms.{later}]\nbin = \"split-bin\"\n"
+            ),
+        ] {
+            let stub = stub(&content);
+            // earlier releases named the installed binary after the bin looked up by itself
+            let install = tempfile::tempdir().unwrap();
+            let earlier =
+                crate::backend::static_helpers::lookup_with_fallback(&stub.tool_options(), "bin")
+                    .unwrap();
+            assert_eq!(earlier, "split-bin", "{content}");
+            std::fs::write(install.path().join(&earlier), "").unwrap();
+
+            let installed = platform_download(&stub.tool_options()).bin.unwrap();
+            let run = stub.bin_for_this_platform().unwrap();
+            assert_eq!(installed, run, "{content}");
+            assert!(install.path().join(&run).exists(), "{content}");
+
+            // and a run through a link does not fall back to the file name
+            let opts = ToolVersionOptions {
+                opts: stub.opts.clone().into(),
+                ..Default::default()
+            };
+            let downloaded = list_available_platforms_with_key(&opts, "url");
+            assert_eq!(downloaded.len(), 1, "{content}");
+            assert!(stub.sets_bin_for_every_platform(), "{content}");
+        }
     }
 }
