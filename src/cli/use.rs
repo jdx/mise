@@ -429,6 +429,7 @@ impl Use {
         }
 
         if !self.is_dry_run() {
+            config_file::ensure_edit_keeps_tool_request_count(&config.config_files, &cf)?;
             cf.save()?;
             drop(config_lock.take());
             for tv in &mut versions {

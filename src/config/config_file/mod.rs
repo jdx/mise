@@ -170,6 +170,36 @@ impl EffectiveToolRequests {
     }
 }
 
+/// Refuse an edit to `edited` that would take what the config files request together over
+/// [`MAX_TOOL_REQUESTS`], before it is written: each file can stay under the bound on its own and
+/// still leave a toolset that no longer builds, which would also stop the next `mise use` from
+/// undoing the edit.
+///
+/// `config_files` are the loaded config files from the highest priority down. `edited` takes the
+/// place of the loaded file at its path; a file not loaded yet is created next to the closest
+/// configs, so it is counted first.
+pub fn ensure_edit_keeps_tool_request_count(
+    config_files: &IndexMap<PathBuf, Arc<dyn ConfigFile>>,
+    edited: &Arc<dyn ConfigFile>,
+) -> Result<()> {
+    let path = edited.get_path();
+    let mut files: Vec<&Arc<dyn ConfigFile>> = config_files
+        .iter()
+        .map(|(p, cf)| if p == path { edited } else { cf })
+        .collect();
+    if !config_files.contains_key(path) {
+        files.insert(0, edited);
+    }
+    let mut effective = EffectiveToolRequests::default();
+    for cf in files {
+        let mut trs = cf.to_tool_request_set()?;
+        effective
+            .add(&mut trs.tools, Vec::len)
+            .map_err(|e| eyre!("not saving {}: {e}", display_path(path)))?;
+    }
+    Ok(())
+}
+
 /// A templated tool entry's options as written and as the config that declares them renders
 /// them, so a rewrite can put the template back in place of the value it rendered to.
 #[derive(Debug, Clone)]
@@ -1933,6 +1963,35 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use super::*;
+
+    /// An edit is checked against what all the config files request together, so a file that
+    /// stays under the bound on its own is still not saved when the toolset would go over it.
+    #[test]
+    fn an_edit_that_takes_the_config_files_over_the_bound_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let toml = |name: &str, body: &str| -> Arc<dyn ConfigFile> {
+            Arc::new(MiseToml::from_str(body, &dir.path().join(name)).unwrap())
+        };
+        let parent_body = format!("[tools]\nnode = [{}]\n", "\"1\",".repeat(MAX_TOOL_REQUESTS));
+        let parent = toml("parent.toml", &parent_body);
+        let child = toml("mise.toml", "[tools]\n");
+        let files: IndexMap<PathBuf, Arc<dyn ConfigFile>> = [&child, &parent]
+            .into_iter()
+            .map(|cf| (cf.get_path().to_path_buf(), cf.clone()))
+            .collect();
+
+        ensure_edit_keeps_tool_request_count(&files, &child).unwrap();
+        // replacing the parent's node versions keeps the toolset small
+        ensure_edit_keeps_tool_request_count(&files, &toml("mise.toml", "[tools]\nnode = \"1\"\n"))
+            .unwrap();
+        // a new tool in the loaded file, or in a file not loaded yet, goes over
+        for name in ["mise.toml", "mise.local.toml"] {
+            let edited = toml(name, "[tools]\npython = \"3\"\n");
+            let err = ensure_edit_keeps_tool_request_count(&files, &edited).unwrap_err();
+            assert!(err.to_string().contains("1001 tool versions"), "{err}");
+            assert!(err.to_string().contains("not saving"), "{err}");
+        }
+    }
 
     /// Files from the highest priority down; a tool's list in a closer file replaces the lists
     /// below it, so only the lists that take effect count toward the bound.
