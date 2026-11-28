@@ -1,0 +1,53 @@
+name: release-notes-preview
+
+# Writes the release notes for the commits since the last release to this run's
+# summary page, with the list of commits they cover or leave out. Nothing is
+# tagged or published, so the notes and communique.toml can be checked before a
+# release goes out.
+#
+# Each run is a full communique generation (several minutes and a few hundred
+# thousand model tokens), so it only runs when started by hand:
+#   gh workflow run release-notes-preview.yml
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  preview:
+    if: github.repository == 'jdx/mise'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      # communique picks the previous release from the tags reachable from
+      # HEAD, so it needs the full history and the tags.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: jdx/mise-action@90f833d396d0cc3674b631d2d225e306476c303a # v5.2.10
+        with:
+          install_args: communique
+          github_token: ${{ github.token }}
+      - name: Generate release notes
+        run: |
+          # HEAD stands for the unreleased commits; --dry-run publishes nothing.
+          communique generate HEAD --dry-run --tag-pattern 'v[0-9]*' \
+            -o "$RUNNER_TEMP/release-notes.md" \
+            --review-report "$RUNNER_TEMP/release-coverage.md"
+          {
+            cat "$RUNNER_TEMP/release-notes.md"
+            printf '\n---\n\n'
+            cat "$RUNNER_TEMP/release-coverage.md"
+          } >> "$GITHUB_STEP_SUMMARY"
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GITHUB_TOKEN: ${{ github.token }}

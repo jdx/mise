@@ -588,9 +588,15 @@ jobs:
         run: |
           set -o pipefail
           VERSION="$(./scripts/get-version.sh)"
-          if mise x -- communique generate "$VERSION" --tag-pattern 'v[0-9]*' -o /tmp/release-notes.txt; then
+          if mise x -- communique generate "$VERSION" --tag-pattern 'v[0-9]*' -o /tmp/release-notes.txt --review-report /tmp/release-coverage.md; then
+            # communique writes the file as "# <tag>: <title>", a blank line, then the body.
             TITLE="$(head -1 /tmp/release-notes.txt | sed 's/^#* //' | sed "s/^$VERSION: //")"
             echo "RELEASE_TITLE=$VERSION: $TITLE" >> "$GITHUB_ENV"
+            # Show on the run's summary page which commits the notes cover or
+            # leave out, and why.
+            if [[ -f /tmp/release-coverage.md ]]; then
+              cat /tmp/release-coverage.md >> "$GITHUB_STEP_SUMMARY"
+            fi
             # Remove the title line (and any blank line after it) from the notes body
             tail -n +2 /tmp/release-notes.txt | sed '/./,$!d' > /tmp/release-notes-body.txt
             mv /tmp/release-notes-body.txt /tmp/release-notes.txt
