@@ -85,7 +85,6 @@ pub(crate) mod s3;
 pub(crate) mod spinel;
 pub(crate) mod spm;
 pub mod static_helpers;
-pub(crate) mod ubi;
 pub(crate) mod version_list;
 pub(crate) mod vfox;
 
@@ -451,6 +450,38 @@ fn listing_option_digest(opts: &ToolVersionOptions, version_listing_opt_keys: &[
         })
         .collect();
     hash::hash_to_str(&values)
+}
+
+/// Drops the bin paths of `tv` that cannot be an entry of PATH, with a warning.
+///
+/// Backends discover bin paths from what is on disk in the install directory,
+/// and a directory shipped in a tool's archive may have the PATH separator in
+/// its name (`linux:x64/bin`). Such a path cannot go on PATH: joining it fails
+/// for the whole list, and splitting it yields directories the tool never
+/// listed, one of them relative.
+pub(crate) fn retain_path_entries(tv: &ToolVersion, paths: &mut Vec<PathBuf>) {
+    paths.retain(|path| match path_entry_error(path) {
+        None => true,
+        Some(err) => {
+            warn!("ignoring bin path {} of {tv}: {err}", display_path(path));
+            false
+        }
+    });
+}
+
+/// Why `path` cannot be one entry of PATH, if it cannot. Joining is not enough
+/// on Windows: `join_paths` quotes an entry that holds `;` and accepts it, but
+/// what adds the path to PATH later splits it unquoted. So the path must also
+/// split back into exactly itself.
+fn path_entry_error(path: &Path) -> Option<String> {
+    if let Err(err) = std::env::join_paths([path]) {
+        return Some(err.to_string());
+    }
+    let mut entries = std::env::split_paths(path.as_os_str());
+    match (entries.next(), entries.next()) {
+        (Some(only), None) if only == path => None,
+        _ => Some("path contains the PATH separator".to_string()),
+    }
 }
 
 /// Remaps a backend-discovered path from the concrete install dir to the
@@ -940,6 +971,32 @@ fn backend_list_denial(
     }
 }
 
+/// The error for a tool `short` (such as `ubi:owner/repo[exe=rg]`) that names a
+/// backend mise has removed, with the backend that replaces it.
+pub fn removed_backend_error(short: &str) -> Option<String> {
+    // The message repeats the identifier, so drop URL credentials from it.
+    let short = install_state::state_short(short);
+    let short = short.as_ref();
+    let (backend, tool) = short.split_once(':')?;
+    if backend != "ubi" {
+        return None;
+    }
+    let tool = crate::args::split_bracketed_opts(tool).map_or(tool, |(name, _)| name);
+    let replacement = if tool.contains("://") {
+        // The http backend downloads its `url` option, not the tool name.
+        format!(
+            "an http: tool that sets url and a version, such as \
+             \"http:<name>\" = {{ version = \"1.0.0\", url = \"{tool}\" }},"
+        )
+    } else {
+        format!("github:{tool} (gitlab:{tool} for a GitLab project)")
+    };
+    Some(format!(
+        "{short}: the ubi backend was removed from mise. Use {replacement} instead. \
+         See https://mise.jdx.dev/dev-tools/backends/ubi.html for how ubi options map to it"
+    ))
+}
+
 pub fn arg_to_backend(ba: BackendArg) -> Option<ABackend> {
     // `asdf:` selects a backend and names no tool in it. The plugin types assert a name.
     if ba.tool_name.trim().is_empty() {
@@ -964,7 +1021,6 @@ pub fn arg_to_backend(ba: BackendArg) -> Option<ABackend> {
         BackendType::Spm => Some(Arc::new(spm::SPMBackend::from_arg(ba))),
         BackendType::Http => Some(Arc::new(http::HttpBackend::from_arg(ba))),
         BackendType::S3 => Some(Arc::new(s3::S3Backend::from_arg(ba))),
-        BackendType::Ubi => Some(Arc::new(ubi::UbiBackend::from_arg(ba))),
         BackendType::Vfox => Some(Arc::new(vfox::VfoxBackend::from_arg(ba, None))),
         BackendType::VfoxBackend(plugin_name) => {
             // The name is joined onto the plugins directory, where its Lua is loaded from.
@@ -990,7 +1046,6 @@ pub(crate) fn install_time_option_keys_for_type(backend_type: &BackendType) -> V
         BackendType::Github | BackendType::Gitlab | BackendType::Forgejo => {
             github::install_time_option_keys()
         }
-        BackendType::Ubi => ubi::install_time_option_keys(),
         BackendType::Cargo => cargo::install_time_option_keys(),
         BackendType::Go => go::install_time_option_keys(),
         BackendType::Npm => npm::install_time_option_keys(),
@@ -1560,6 +1615,28 @@ mod tests {
 
     fn names(list: &[&str]) -> Vec<String> {
         list.iter().map(|name| name.to_string()).collect()
+    }
+
+    #[test]
+    fn removed_ubi_backend_names_its_replacement() {
+        let msg = removed_backend_error("ubi:BurntSushi/ripgrep[exe=rg]").unwrap();
+        assert!(msg.contains("Use github:BurntSushi/ripgrep ("), "{msg}");
+        assert!(
+            msg.contains("gitlab:BurntSushi/ripgrep for a GitLab"),
+            "{msg}"
+        );
+        assert!(msg.contains("/dev-tools/backends/ubi.html"), "{msg}");
+        let msg = removed_backend_error("ubi:https://example.com/tool.tar.gz").unwrap();
+        assert!(
+            msg.contains(r#"url = "https://example.com/tool.tar.gz""#),
+            "{msg}"
+        );
+        assert!(!msg.contains("http:https:"), "{msg}");
+        assert!(!msg.contains("gitlab:"), "{msg}");
+        let msg = removed_backend_error("ubi:https://user:secret@example.com/tool.tar.gz").unwrap();
+        assert!(!msg.contains("secret"), "{msg}");
+        assert_eq!(removed_backend_error("github:BurntSushi/ripgrep"), None);
+        assert_eq!(removed_backend_error("ripgrep"), None);
     }
 
     #[test]
@@ -2590,6 +2667,53 @@ mod tests {
         assert_eq!(tool("packslip:jdx/fnox", true), None);
         // The registry entry itself inherits that option, so it keeps its list.
         assert_eq!(tool("fnox", true), Some("fnox"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_retain_path_entries_drops_path_with_separator() {
+        let backend = BackendArg::new_raw(
+            "path-entries".into(),
+            None,
+            "path-entries".into(),
+            None,
+            BackendResolution::new(false),
+        );
+        let request = ToolRequest::new(Arc::new(backend), "1.0.0", ToolSource::Argument).unwrap();
+        let tv = ToolVersion::new(request, "1.0.0".into());
+
+        // `linux:x64` is one directory of the archive, not two PATH entries
+        let with_separator = PathBuf::from("/installs/path-entries/1.0.0/linux:x64/bin");
+        let plain = PathBuf::from("/installs/path-entries/1.0.0/extras/bin");
+        // `;` is an ordinary character of a unix path
+        let with_semicolon = PathBuf::from("/installs/path-entries/1.0.0/linux;x64/bin");
+        let mut paths = vec![with_separator, plain.clone(), with_semicolon.clone()];
+        retain_path_entries(&tv, &mut paths);
+        assert_eq!(paths, vec![plain, with_semicolon]);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn test_retain_path_entries_drops_path_with_separator() {
+        let backend = BackendArg::new_raw(
+            "path-entries".into(),
+            None,
+            "path-entries".into(),
+            None,
+            BackendResolution::new(false),
+        );
+        let request = ToolRequest::new(Arc::new(backend), "1.0.0", ToolSource::Argument).unwrap();
+        let tv = ToolVersion::new(request, "1.0.0".into());
+
+        // `join_paths` quotes and accepts this one, but splitting it gives
+        // `C:\install\linux` and a relative `x64\bin`.
+        let with_separator = PathBuf::from(r"C:\install\linux;x64\bin");
+        let quoted = PathBuf::from(r#"C:\install\"linux"\bin"#);
+        // `:` after the drive letter is not a separator on Windows
+        let plain = PathBuf::from(r"C:\install\extras\bin");
+        let mut paths = vec![with_separator, quoted, plain.clone()];
+        retain_path_entries(&tv, &mut paths);
+        assert_eq!(paths, vec![plain]);
     }
 
     #[test]
@@ -6416,7 +6540,8 @@ pub trait Backend: Debug + Send + Sync {
         // Use the backend's list_bin_paths to get the correct binary directories
         // instead of hardcoding install_path/bin, which may not match the actual
         // binary location for backends like aqua.
-        let bin_paths = self.list_bin_paths(&ctx.config, &tv_exact).await?;
+        let mut bin_paths = self.list_bin_paths(&ctx.config, &tv_exact).await?;
+        retain_path_entries(&tv_exact, &mut bin_paths);
         let mut path_env = PathEnv::new();
         for p in bin_paths {
             path_env.add(p);
@@ -7889,7 +8014,7 @@ mod latest_version_tests {
         }
 
         /// Declare tool options that shape this backend's version listing, the way the real
-        /// github/spm/ubi/http/s3 backends do.
+        /// github/spm/http/s3 backends do.
         fn with_listing_keys(mut self, listing_keys: &'static [&'static str]) -> Self {
             self.listing_keys = listing_keys;
             self
@@ -10584,7 +10709,6 @@ mod option_spec_tests {
             (BackendType::S3, &["tool_s3_options"]),
             (BackendType::Spinel, &["tool_spinel_options"]),
             (BackendType::Spm, &["tool_spm_options"]),
-            (BackendType::Ubi, &["tool_ubi_options"]),
         ] {
             let documented: Vec<String> = defs
                 .iter()

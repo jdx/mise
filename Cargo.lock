@@ -1580,16 +1580,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "binstall-tar"
-version = "0.4.42"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e3620d72763b5d8df3384f3b2ec47dc5885441c2abbd94dd32197167d08b014a"
-dependencies = [
- "filetime",
- "libc",
-]
-
-[[package]]
 name = "bit-set"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6725,12 +6715,6 @@ dependencies = [
 
 [[package]]
 name = "lzma-rust2"
-version = "0.21.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fde178a3caf126c440fa15628147772d8ee590a39477d711353fbe2e58a73a5b"
-
-[[package]]
-name = "lzma-rust2"
 version = "0.25.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ef1d73c59a56771343712b22ea5615092c612c16ba291c0979e3105dfeec4890"
@@ -7028,7 +7012,6 @@ dependencies = [
  "toml 1.2.2+spec-1.1.0",
  "toml_edit 0.25.20+spec-1.1.0",
  "toml_writer",
- "ubi",
  "url",
  "urlencoding",
  "usage-cli",
@@ -7484,7 +7467,7 @@ dependencies = [
  "serde",
  "serde-saphyr",
  "serde_json",
- "sevenz-rust2 0.25.0",
+ "sevenz-rust2",
  "sha1 0.11.0",
  "sha2 0.11.1",
  "shell-escape",
@@ -8711,12 +8694,6 @@ name = "pkg-config"
 version = "0.3.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f6b464fbc74e149a392436b17d523f769e057cb6877f6a5c4618bc6f11800548"
-
-[[package]]
-name = "platforms"
-version = "4.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "de73ddc074e1136275d0853b8dd36ab20037e48347d381459ba89dc694601ea8"
 
 [[package]]
 name = "plist"
@@ -10231,7 +10208,6 @@ checksum = "48e13bd8c0e9365c43cfa5c9e8f9ad49d3c8444926c9aac819e0e4dc503c8fdf"
 dependencies = [
  "aws-lc-rs",
  "once_cell",
- "ring",
  "rustls-pki-types",
  "rustls-webpki",
  "subtle",
@@ -10757,40 +10733,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "serial_test"
-version = "4.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a6df5ed973ad8d834e09f824f9e9f449af6b9a3745f78dec7cc752770bd3bf11"
-dependencies = [
- "once_cell",
- "parking_lot 0.12.5",
- "serial_test_derive",
-]
-
-[[package]]
-name = "serial_test_derive"
-version = "4.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a22144e767da4ddd8416dbf383700542ffd8a5dc493dfecedfe1fe3ad03c98ae"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 3.0.10",
-]
-
-[[package]]
-name = "sevenz-rust2"
-version = "0.23.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0a4f883677093690e91fef8ae81fad8bce9e2c3a079b61054f05ce0d3ecf681e"
-dependencies = [
- "crc32fast",
- "js-sys",
- "lzma-rust2 0.21.0",
- "wasm-bindgen",
-]
-
-[[package]]
 name = "sevenz-rust2"
 version = "0.25.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -10802,7 +10744,7 @@ dependencies = [
  "crc32fast",
  "getrandom 0.4.3",
  "js-sys",
- "lzma-rust2 0.25.0",
+ "lzma-rust2",
  "ppmd-rust",
  "sha2 0.11.1",
  "wasm-bindgen",
@@ -12378,41 +12320,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b6f5e870be6c3b371b77fe0ee0bafb859fa4964b4404c27de1d380043c4dda20"
 
 [[package]]
-name = "ubi"
-version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "49639742af17ddc4fff5afbe9d223f800b7d8d82816cf7c939c3aebcdb60c16d"
-dependencies = [
- "anyhow",
- "async-trait",
- "binstall-tar",
- "bzip2",
- "chrono",
- "document-features",
- "flate2",
- "itertools 0.15.0",
- "lazy-regex",
- "log",
- "platforms",
- "regex",
- "reqwest",
- "rustls",
- "serde",
- "serde_json",
- "serial_test",
- "sevenz-rust2 0.23.0",
- "strum 0.28.0",
- "tempfile",
- "thiserror 2.0.21",
- "url",
- "walkdir",
- "which",
- "xz2",
- "zip",
- "zstd",
-]
-
-[[package]]
 name = "ucd-trie"
 version = "0.1.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -13849,7 +13756,7 @@ dependencies = [
  "hmac 0.13.0",
  "indexmap 2.14.2",
  "libc",
- "lzma-rust2 0.25.0",
+ "lzma-rust2",
  "memchr",
  "nix 0.32.0",
  "pbkdf2 0.13.0",

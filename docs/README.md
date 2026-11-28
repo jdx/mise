@@ -72,7 +72,7 @@ pages. Keep the README short enough for someone deciding whether to try mise.
 - Use a small observable result, such as printing an environment variable. Avoid live deployment as a first example.
 - Distinguish version requests from exact pins and lockfile resolutions. Avoid output that becomes stale with each release.
 - Keep platform-specific commands in labeled code groups. Use `mise exec` or `mise run` when activation is unnecessary.
-- Use `packslip`, `aqua`, or `github` backends in examples, not the deprecated `ubi`.
+- Use `packslip`, `aqua`, or `github` backends in examples.
 
 Use descriptive headings and link text. Internal website links start at the
 docs root and end in `.html`, for example `/dev-tools/backends/github.html`, or

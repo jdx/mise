@@ -329,13 +329,13 @@ impl<'a> GitBackendOptions<'a> {
     }
 
     /// Substring an asset name must contain to remain a candidate, applied as a
-    /// pre-filter before platform autodetection (ported from the ubi backend).
+    /// pre-filter before platform autodetection.
     fn matching(&self) -> Option<&'a str> {
         self.values.str("matching")
     }
 
     /// Regex an asset name must match to remain a candidate, applied as a
-    /// pre-filter before platform autodetection (ported from the ubi backend).
+    /// pre-filter before platform autodetection.
     fn matching_regex(&self) -> Option<&'a str> {
         self.values.str("matching_regex")
     }

@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+
+# A vendor's minisign key signs every release, so a download host could answer the request for
+# 2.0.0 with the 1.0.0 file and its genuine signature. The signed trusted comment names the file
+# (`file:tool-1.0.0`), and mise refuses a signature made for another file.
+
+export MISE_AQUA_BAKED_REGISTRY=0
+export MISE_USE_VERSIONS_HOST=0
+unset GITHUB_TOKEN GH_TOKEN MISE_GITHUB_TOKEN GITHUB_API_TOKEN
+
+mkdir -p server/api/repos/example/tool server/real
+cat <<'JSON' >server/api/repos/example/tool/releases
+[
+  {"tag_name": "2.0.0", "draft": false, "prerelease": false, "created_at": "2026-01-02T00:00:00Z", "assets": []},
+  {"tag_name": "1.0.0", "draft": false, "prerelease": false, "created_at": "2026-01-01T00:00:00Z", "assets": []}
+]
+JSON
+printf '#!/bin/sh\necho tool-1.0.0\n' >server/tool-1.0.0
+cat <<'SIG' >server/tool-1.0.0.minisig
+untrusted comment: signature from minisign secret key
+RUTDdBlCBmdz0GMx2o1zQTmH3v+0HUT8K9Nlzf0FJ651WdGlQ74Lb0XhrvfU7zxIl/8AE2X9r918A4FipTOmuHQk3kZj43skZQo=
+trusted comment: timestamp:1795477130	file:tool-1.0.0	hashed
+ifDTQQqJNDFNPKGdDIUViLkr+LPmAb7bhbkmmT9Va102ziw8Km5HUG+EBPhNJRjGWoeoCIZd64RLTqwVDCutBQ==
+SIG
+printf '#!/bin/sh\necho tool-2.0.0\n' >server/real/tool-2.0.0
+cat <<'SIG' >server/real/tool-2.0.0.minisig
+untrusted comment: signature from minisign secret key
+RUTDdBlCBmdz0IoT3CXwIxNxWd31btqPeOPJ2fzzffI0hrhDMSKhcAMXdEsiZzWJ6FlFicG/yH8gy8gp79E0qnmhqZIrDNTHAA4=
+trusted comment: timestamp:1795477130	file:tool-2.0.0	hashed
+MQh/OiMBFKKcEOBTXDpkcltnWvAyDPX6RJfGQlNPe+rKc+jqQpVkP52Bn6OD8mtH5zW4CTcDK/87f/VLDM6gAQ==
+SIG
+start_http_server --dir server
+export MISE_URL_REPLACEMENTS="{\"https://api.github.com\":\"http://127.0.0.1:$HTTP_PORT/api\"}"
+
+REGISTRY_DIR="$PWD/aqua-registry-local"
+mkdir -p "$REGISTRY_DIR"
+cat <<YAML >"$REGISTRY_DIR/registry.yaml"
+packages:
+  - type: http
+    repo_owner: example
+    repo_name: tool
+    url: http://127.0.0.1:$HTTP_PORT/tool-{{.Version}}
+    format: raw
+    minisign:
+      type: http
+      url: http://127.0.0.1:$HTTP_PORT/tool-{{.Version}}.minisig
+      public_key: RWTDdBlCBmdz0E3pL1SzxsLf2iSQtJqVNe5TzRsUmi97h09J0hNMqJcb
+    supported_envs:
+      - linux
+      - darwin
+YAML
+export MISE_AQUA_REGISTRY_URL="file://$REGISTRY_DIR"
+
+cat <<'TOML' >mise.toml
+[tools]
+"aqua:example/tool" = "2.0.0"
+TOML
+
+# The host serves the 1.0.0 file and signature at the 2.0.0 URLs
+cp server/tool-1.0.0 server/tool-2.0.0
+cp server/tool-1.0.0.minisig server/tool-2.0.0.minisig
+assert_fail_contains "mise install" "minisign signature was made for tool-1.0.0, not for the downloaded tool-2.0.0"
+assert_fail "mise x -- tool"
+
+# The real 2.0.0 release installs
+cp server/real/tool-2.0.0 server/tool-2.0.0
+cp server/real/tool-2.0.0.minisig server/tool-2.0.0.minisig
+assert "mise install"
+assert "mise x -- tool" "tool-2.0.0"

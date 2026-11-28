@@ -211,10 +211,6 @@ const keyGuides: Record<string, Guide> = {
     text: "The forgejo backend",
     link: "/dev-tools/backends/forgejo.html",
   },
-  "tools.<ubi:…>": {
-    text: "The ubi backend",
-    link: "/dev-tools/backends/ubi.html",
-  },
   "tools.<http:…>": {
     text: "The http backend",
     link: "/dev-tools/backends/http.html",

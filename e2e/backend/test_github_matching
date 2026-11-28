@@ -7,7 +7,7 @@
 # neither binary is named after the repo so the repo-name preference gives no
 # signal. `matching` narrows to the intended binary WHILE keeping platform
 # autodetection — so the same config is portable across OS/arch (unlike
-# asset_pattern, which discards autodetection). Ported from the ubi backend.
+# asset_pattern, which discards autodetection).
 #
 # Note: the oxc assets are per-platform archives named with the platform triple
 # (e.g. oxlint-aarch64-apple-darwin.tar.gz / .zip); each extracts to a triple-named
@@ -65,6 +65,5 @@ assert_contains 'mise x "github:oxc-project/oxc[matching=oxlint,rename_exe=oxlin
 # Second real repo to prove the behavior isn't oxc-specific: bazelbuild/buildtools
 # ships buildifier, buildozer and unused_deps as separate per-platform bare
 # binaries. Plain autodetection picks buildozer (shortest-name tiebreak), so
-# matching=buildifier is required to select buildifier. This is the same repo the
-# ubi backend covers in e2e/cli/test_upgrade — exercised here for the github backend.
+# matching=buildifier is required to select buildifier.
 assert_contains 'mise x "github:bazelbuild/buildtools[matching=buildifier,rename_exe=buildifier]@7.1.2" -- buildifier --version' "buildifier version: 7.1.2"
