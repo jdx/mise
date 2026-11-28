@@ -473,21 +473,62 @@ pub async fn detect_attestations(
         }
     }
 
-    let (base_url, token) = routed_api_url(api_url, resolve_token_for_wrapper(Some(api_url)))
-        .map_err(DetectError::SourceCreation)?;
-    let source = GitHubSource::with_base_url(owner, repo, token.as_deref(), &base_url)
-        .map_err(DetectError::SourceCreation)?;
-    let artifact_ref = ArtifactRef::from_digest(digest);
-    let attestations = source
-        .fetch_attestations(&artifact_ref)
-        .await
-        .map_err(|err| {
-            DetectError::Fetch(rejection_stands(
-                after_mirror_failure(err, owner, repo, mirror_err.as_ref()),
-                rejected,
-            ))
-        })?;
-    Ok(!attestations.is_empty())
+    let found = async {
+        let (base_url, token) = routed_api_url(api_url, resolve_token_for_wrapper(Some(api_url)))
+            .map_err(DetectError::SourceCreation)?;
+        let source = GitHubSource::with_base_url(owner, repo, token.as_deref(), &base_url)
+            .map_err(DetectError::SourceCreation)?;
+        let artifact_ref = ArtifactRef::from_digest(digest);
+        let attestations = source
+            .fetch_attestations(&artifact_ref)
+            .await
+            .map_err(|err| {
+                DetectError::Fetch(after_mirror_failure(err, owner, repo, mirror_err.as_ref()))
+            })?;
+        Ok(!attestations.is_empty())
+    }
+    .await;
+    github_probe_verdict(found, rejected, owner, repo, digest)
+}
+
+/// GitHub's answer to a probe, `found`, once mise-versions' answer was
+/// `rejected` ([`MirrorVerdict::ConfirmWithGithub`]): GitHub confirming that
+/// there are no attestations settles the artifact for probes, and the
+/// rejection stands when GitHub cannot answer ([`rejection_stands`]).
+fn github_probe_verdict(
+    found: Result<bool, DetectError>,
+    rejected: Option<AttestationError>,
+    owner: &str,
+    repo: &str,
+    digest: &str,
+) -> Result<bool, DetectError> {
+    let Some(rejected) = rejected else {
+        return found;
+    };
+    match found {
+        Ok(found) => {
+            if !found {
+                KeptRejection::for_probe(&format!("{owner}/{repo}"), &sha256_digest(digest))
+                    .forget();
+            }
+            Ok(found)
+        }
+        Err(DetectError::SourceCreation(err)) => Err(DetectError::SourceCreation(
+            rejection_stands(err, Some(rejected)),
+        )),
+        Err(DetectError::Fetch(err)) => {
+            Err(DetectError::Fetch(rejection_stands(err, Some(rejected))))
+        }
+    }
+}
+
+/// `digest` with the `sha256:` prefix GitHub's API takes.
+fn sha256_digest(digest: &str) -> String {
+    if digest.contains(':') {
+        digest.to_string()
+    } else {
+        format!("sha256:{digest}")
+    }
 }
 
 /// Probe the GitHub attestation API for the given digest and predicate type.
@@ -515,28 +556,24 @@ pub async fn detect_attestations_with_predicate_type(
         }
     }
 
-    let client = attestation_client(api_url).map_err(DetectError::SourceCreation)?;
-    let digest = if digest.contains(':') {
-        digest.to_string()
-    } else {
-        format!("sha256:{digest}")
-    };
-    let attestations = client
-        .fetch_attestations(FetchParams {
-            owner: owner.to_string(),
-            repo: Some(format!("{owner}/{repo}")),
-            digest,
-            limit: 30,
-            predicate_type: Some(predicate_type.to_string()),
-        })
-        .await
-        .map_err(|err| {
-            DetectError::Fetch(rejection_stands(
-                after_mirror_failure(err, owner, repo, mirror_err.as_ref()),
-                rejected,
-            ))
-        })?;
-    Ok(!attestations.is_empty())
+    let found = async {
+        let client = attestation_client(api_url).map_err(DetectError::SourceCreation)?;
+        let attestations = client
+            .fetch_attestations(FetchParams {
+                owner: owner.to_string(),
+                repo: Some(format!("{owner}/{repo}")),
+                digest: sha256_digest(digest),
+                limit: 30,
+                predicate_type: Some(predicate_type.to_string()),
+            })
+            .await
+            .map_err(|err| {
+                DetectError::Fetch(after_mirror_failure(err, owner, repo, mirror_err.as_ref()))
+            })?;
+        Ok(!attestations.is_empty())
+    }
+    .await;
+    github_probe_verdict(found, rejected, owner, repo, digest)
 }
 
 /// Whether mise-versions saying an artifact has no attestations is taken as
@@ -680,9 +717,19 @@ fn forget_mirrored_attestations(repo: &str, digest: &str) {
 /// GitHub confirming that there are no attestations, forgets it. Only a set
 /// that was checked and refused is kept ([`is_rejection`]): one left
 /// unchecked because a trust root could not be loaded rejects nothing.
+///
+/// Each rejection is also kept for the digest alone, under any policy: the
+/// lock-time probe ([`detect_with_mirror`]) asks only whether an artifact
+/// has attestations, with no tags or signer to match, and must not take a
+/// "none" from mise-versions as final for an artifact whose set was
+/// rejected either ([`KeptRejection::for_probe`]).
 struct KeptRejection {
     full: String,
+    /// The record [`KeptRejection::load`] reads.
     key: String,
+    /// The record for the digest under any policy, written and dropped
+    /// with `key`.
+    digest_key: String,
 }
 
 impl KeptRejection {
@@ -693,9 +740,10 @@ impl KeptRejection {
         expected_workflow: Option<&str>,
         predicate_type: Option<&str>,
     ) -> Self {
+        let digest = format!("sha256:{artifact_digest}");
         let policy = (
             full.to_ascii_lowercase(),
-            format!("sha256:{artifact_digest}"),
+            &digest,
             tags,
             expected_workflow,
             predicate_type,
@@ -706,19 +754,39 @@ impl KeptRejection {
                 "attestation-rejection-{}",
                 crate::hash::hash_to_str(&policy)
             ),
+            digest_key: Self::digest_key(full, &digest),
         }
     }
 
-    fn cache(&self) -> crate::cache::CacheManager<String> {
+    /// The rejection kept for `full` at `digest` (`sha256:<hex>`) under any
+    /// policy, as the lock-time probe reads it.
+    fn for_probe(full: &str, digest: &str) -> Self {
+        let digest_key = Self::digest_key(full, digest);
+        Self {
+            full: full.to_string(),
+            key: digest_key.clone(),
+            digest_key,
+        }
+    }
+
+    fn digest_key(full: &str, digest: &str) -> String {
+        let artifact = (full.to_ascii_lowercase(), digest.to_ascii_lowercase());
+        format!(
+            "attestation-rejection-digest-{}",
+            crate::hash::hash_to_str(&artifact)
+        )
+    }
+
+    fn cache(key: &str) -> crate::cache::CacheManager<String> {
         crate::cache::CacheManagerBuilder::new(
-            attestations_cache_dir().join(format!("{}.msgpack.z", self.key)),
+            attestations_cache_dir().join(format!("{key}.msgpack.z")),
         )
         .build()
     }
 
     /// The rejection a command before this one kept.
     fn load(&self) -> Option<AttestationError> {
-        let cache = self.cache();
+        let cache = Self::cache(&self.key);
         if !cache.has_fresh_value() {
             return None;
         }
@@ -737,21 +805,32 @@ impl KeptRejection {
         }
     }
 
+    /// Both records, or the one a probe's holds.
+    fn keys(&self) -> impl Iterator<Item = &str> {
+        std::iter::once(self.key.as_str())
+            .chain((self.digest_key != self.key).then_some(self.digest_key.as_str()))
+    }
+
     fn keep(&self, rejection: &AttestationError) {
-        if let Err(err) = self.cache().write(&rejection.to_string()) {
-            debug!(
-                "failed to keep the attestation rejection for {}: {err:#}",
-                self.full
-            );
+        let rejection = rejection.to_string();
+        for key in self.keys() {
+            if let Err(err) = Self::cache(key).write(&rejection) {
+                debug!(
+                    "failed to keep the attestation rejection for {}: {err:#}",
+                    self.full
+                );
+            }
         }
     }
 
     fn forget(&self) {
-        if let Err(err) = self.cache().clear() {
-            debug!(
-                "failed to drop the attestation rejection kept for {}: {err:#}",
-                self.full
-            );
+        for key in self.keys() {
+            if let Err(err) = Self::cache(key).clear() {
+                debug!(
+                    "failed to drop the attestation rejection kept for {}: {err:#}",
+                    self.full
+                );
+            }
         }
     }
 
@@ -860,12 +939,16 @@ fn after_mirror_failure(
 }
 
 /// mise-versions' answer after it was asked again because the set it served
-/// before was `rejected`. Only a verification, or another failure that cannot
-/// be skipped, replaces that rejection. "No attestations", a failed lookup (a
-/// 404 for an unknown repository, a set without its bundles, an error) and a
-/// referral to GitHub do not erase it: GitHub has to confirm the digest
+/// before was `rejected`. Only a verification, or another rejection
+/// ([`is_rejection`]), replaces that rejection. "No attestations", a failed
+/// lookup (a 404 for an unknown repository, a set without its bundles, an
+/// error), a set left unchecked (a trust root that could not be loaded, an
+/// artifact that could not be read) and a referral to GitHub do not erase
+/// it: GitHub has to confirm the digest
 /// ([`MirrorVerdict::ConfirmWithGithub`]), and the rejection stands when
-/// GitHub cannot answer.
+/// GitHub cannot answer. Otherwise a failure [`KeptRejection::record`] does
+/// not keep would take the rejection's place, and the next command would
+/// find nothing kept.
 fn unless_rejected(
     verdict: MirrorVerdict,
     rejected: &mut Option<AttestationError>,
@@ -875,11 +958,7 @@ fn unless_rejected(
     };
     match verdict {
         MirrorVerdict::Done(Ok(verified)) => MirrorVerdict::Done(Ok(verified)),
-        MirrorVerdict::Done(Err(err))
-            if !matches!(err, AttestationError::NoAttestations) && !is_api_failure(&err) =>
-        {
-            MirrorVerdict::Done(Err(err))
-        }
+        MirrorVerdict::Done(Err(err)) if is_rejection(&err) => MirrorVerdict::Done(Err(err)),
         MirrorVerdict::Done(Err(_))
         | MirrorVerdict::AskGithub
         | MirrorVerdict::ConfirmWithGithub(_)
@@ -1083,31 +1162,61 @@ async fn detect_with_mirror(
         // Rerouted by url_replacements, as in `verify_with_mirror`.
         return MirrorVerdict::AskGithub;
     }
-    let digest = if digest.contains(':') {
-        digest.to_string()
-    } else {
-        format!("sha256:{digest}")
-    };
+    let digest = sha256_digest(digest);
+    let verdict = probe_mirror(&full, &digest, predicate_type).await;
+    // A set mise-versions served for this artifact was rejected, in this
+    // command or an earlier one ([`KeptRejection`]): only a "yes" stands,
+    // which leads to verification. Taking a "none" as final would let
+    // `mise lock` write the entry without provenance.
+    match KeptRejection::for_probe(&full, &digest).load() {
+        Some(rejection) => probe_unless_rejected(verdict, rejection),
+        None => verdict,
+    }
+}
+
+/// [`unless_rejected`] for a probe: once a set mise-versions served for the
+/// artifact was rejected, anything but finding attestations has GitHub
+/// confirm the digest, and the rejection stands when GitHub cannot answer.
+fn probe_unless_rejected(
+    verdict: MirrorVerdict<Result<bool, DetectError>>,
+    rejection: AttestationError,
+) -> MirrorVerdict<Result<bool, DetectError>> {
+    match verdict {
+        MirrorVerdict::Done(Ok(true)) => MirrorVerdict::Done(Ok(true)),
+        MirrorVerdict::Done(Err(DetectError::Fetch(err))) if is_rejection(&err) => {
+            MirrorVerdict::Done(Err(DetectError::Fetch(err)))
+        }
+        _ => MirrorVerdict::ConfirmWithGithub(rejection),
+    }
+}
+
+/// What mise-versions says about whether `full` has attestations at
+/// `digest`, before any kept rejection is consulted.
+async fn probe_mirror(
+    full: &str,
+    digest: &str,
+    predicate_type: Option<&str>,
+) -> MirrorVerdict<Result<bool, DetectError>> {
     // As in `verify_with_mirror`: a set kept from earlier may predate the
     // attestation looked for, so a miss is asked of mise-versions again.
     for fresh in [false, true] {
         let found = if fresh {
-            refreshed_mirrored_attestations(&full, &digest).await
+            refreshed_mirrored_attestations(full, digest).await
         } else {
-            mirrored_attestations(&full, &digest).await
+            mirrored_attestations(full, digest).await
         };
         let attestations = match found {
             Ok(Some(attestations)) => attestations,
             Ok(None) => {
                 return detect_verdict(verdict_after_attestation_404(
-                    &full,
-                    repo_listing(&full).await,
+                    full,
+                    repo_listing(full).await,
                     !mirror_may_answer_none(),
                     || resolve_token_for_wrapper(None).is_some(),
                 ));
             }
             Err(_) if !mirror_may_answer_none() => return MirrorVerdict::AskGithub,
-            Err(err) => return detect_verdict(mirror_error_verdict(&full, err)),
+            Err(err) => return detect_verdict(mirror_error_verdict(full, err)),
         };
         trace!(
             "got {} GitHub attestation probes for {full}@{digest} from mise-versions",
@@ -2323,6 +2432,24 @@ mod tests {
             ),
             MirrorVerdict::Done(Err(AttestationError::Verification(ref msg))) if msg == "other"
         ));
+        // a set left unchecked, because the signing keys could not be loaded
+        // or the artifact could not be read, rejects nothing and so does not
+        // replace the rejection, which `KeptRejection::record` would not keep
+        let unchecked = [
+            AttestationError::TrustRoot("tuf-repo-cdn.sigstore.dev unreachable".to_string()),
+            AttestationError::Io(std::io::Error::other("read failed")),
+        ];
+        for err in unchecked {
+            let what = err.to_string();
+            assert!(
+                matches!(
+                    unless_rejected(MirrorVerdict::Done(Err(err)), &mut Some(rejection())),
+                    MirrorVerdict::ConfirmWithGithub(AttestationError::Verification(ref msg))
+                        if msg.contains("evil/tool")
+                ),
+                "{what} replaced the rejection"
+            );
+        }
     }
 
     /// A refresh that fails to look the digest up, after a kept set made by
@@ -2563,6 +2690,116 @@ mod tests {
             verify_with_mirror(Path::new("unread"), owner, repo, &tags, None, None, &digest).await,
             MirrorVerdict::Done(Err(AttestationError::NoAttestations))
         ));
+    }
+
+    /// `mise lock` probes an artifact after a set mise-versions served for it
+    /// failed to verify, and mise-versions has none on the retry: the probe
+    /// has GitHub confirm the digest instead of writing the entry without
+    /// provenance, and the rejection stands when GitHub cannot answer.
+    #[tokio::test]
+    async fn test_a_probe_after_a_rejection_does_not_take_none_as_final() {
+        let _settings = empty_mise_versions();
+        let _cache = temp_cache();
+        let owner = "acme";
+        let repo = "probed-after-rejection";
+        let full = format!("{owner}/{repo}");
+        let digest = "5".repeat(64);
+
+        // nothing rejected yet: mise-versions' "none" is the answer
+        assert!(matches!(
+            detect_with_mirror(owner, repo, &digest, None).await,
+            MirrorVerdict::Done(Ok(false))
+        ));
+
+        // a fresh set that failed its check, as `verify_with_mirror` keeps it
+        let tags = vec!["v1.0.0".to_string()];
+        KeptRejection::new(&full, &digest, &tags, Some("release.yml"), None).record(
+            &MirrorVerdict::Done(Err(AttestationError::Verification(
+                "made for refs/tags/v0.9.0".to_string(),
+            ))),
+            false,
+        );
+
+        // the probe matches no policy, with or without a predicate type, and
+        // reads the digest in either spelling
+        for (probed, predicate_type) in [
+            (digest.clone(), None),
+            (format!("sha256:{digest}"), None),
+            (digest.clone(), Some("https://slsa.dev/provenance/v1")),
+        ] {
+            let MirrorVerdict::ConfirmWithGithub(rejection) =
+                detect_with_mirror(owner, repo, &probed, predicate_type).await
+            else {
+                panic!("an empty mirror erased the rejection for {probed} ({predicate_type:?})");
+            };
+            assert!(
+                rejection.to_string().contains("refs/tags/v0.9.0"),
+                "{rejection}"
+            );
+
+            // GitHub cannot answer: the rejection stands, so the lockfile
+            // is not written without provenance
+            let err = github_probe_verdict(
+                Err(DetectError::Fetch(AttestationError::Api("503".to_string()))),
+                Some(rejection),
+                owner,
+                repo,
+                &probed,
+            )
+            .unwrap_err();
+            let DetectError::Fetch(err) = err else {
+                panic!("{err}");
+            };
+            assert!(!is_api_failure(&err), "{err}");
+        }
+
+        // another digest of the same repository was not rejected
+        assert!(matches!(
+            detect_with_mirror(owner, repo, &"6".repeat(64), None).await,
+            MirrorVerdict::Done(Ok(false))
+        ));
+
+        // GitHub finding attestations leaves the rejection for verification
+        let MirrorVerdict::ConfirmWithGithub(rejection) =
+            detect_with_mirror(owner, repo, &digest, None).await
+        else {
+            panic!("the rejection was not kept");
+        };
+        assert!(github_probe_verdict(Ok(true), Some(rejection), owner, repo, &digest).unwrap());
+        let MirrorVerdict::ConfirmWithGithub(rejection) =
+            detect_with_mirror(owner, repo, &digest, None).await
+        else {
+            panic!("finding attestations settled the probe");
+        };
+
+        // GitHub confirming that there are none settles it for probes
+        assert!(!github_probe_verdict(Ok(false), Some(rejection), owner, repo, &digest).unwrap());
+        assert!(matches!(
+            detect_with_mirror(owner, repo, &digest, None).await,
+            MirrorVerdict::Done(Ok(false))
+        ));
+    }
+
+    /// A verification forgets the rejection for probes too.
+    #[test]
+    fn test_a_verification_forgets_the_rejection_for_probes() {
+        let _settings = SettingsGuard::new(None);
+        let _cache = temp_cache();
+        let full = "acme/verified-after-rejection";
+        let digest = "7".repeat(64);
+        let kept = KeptRejection::new(full, &digest, &[], None, None);
+        let probe = KeptRejection::for_probe(full, &format!("sha256:{digest}"));
+
+        kept.record(
+            &MirrorVerdict::Done(Err(AttestationError::WorkflowMismatch(
+                "release.yml".to_string(),
+            ))),
+            false,
+        );
+        assert!(probe.load().is_some());
+        kept.settle(&Ok(true));
+        assert!(kept.load().is_none());
+        assert!(probe.load().is_none());
     }
 
     #[test]
