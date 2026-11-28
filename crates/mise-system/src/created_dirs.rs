@@ -40,7 +40,9 @@ fn record_path() -> PathBuf {
 }
 
 /// What tells the directory at `dir` from another made later at the same path: its device, inode
-/// and birth time where the platform has them. `None` when `dir` is not a directory.
+/// and birth time. `None` when `dir` is not a directory, or when the platform cannot tell its birth
+/// time: an inode alone can be reused by a directory the user makes later, so such a directory is
+/// never recorded, and mise leaves it behind rather than risk removing the user's.
 fn identity(dir: &Path) -> Option<String> {
     let meta = std::fs::symlink_metadata(dir).ok()?;
     if !meta.is_dir() || file::is_symlink_or_junction(dir) {
@@ -48,9 +50,10 @@ fn identity(dir: &Path) -> Option<String> {
     }
     let born = meta
         .created()
-        .ok()
-        .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
-        .map_or_else(|| "-".to_string(), |since| since.as_nanos().to_string());
+        .ok()?
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?
+        .as_nanos();
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
