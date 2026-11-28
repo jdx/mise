@@ -334,14 +334,17 @@ this to your system or global config:
 
 ```toml
 [history]
+git_name = "{hostname}"
 git_email = "mise@{hostname}"
 ```
 
 mise replaces `{hostname}` with the machine's hostname when it creates a
-commit, so a save on `work-mbp.local` uses `mise <mise@work-mbp.local>`. This
-also applies to the watcher's commits and to merge commits that mise makes.
-The value can also be a fixed email address. It affects new commits only;
-existing commits keep their identity.
+commit, so a save on `work-mbp.local` uses
+`work-mbp.local <mise@work-mbp.local>`. Commit lists such as GitHub's show the
+name, so `git_name` is what makes the machine visible there. This also applies
+to the watcher's commits and to merge commits that mise makes. Either value can
+also be fixed text, such as your own name and email. It affects new commits
+only; existing commits keep their identity.
 
 ## Move from a symlinked dotfiles repository {#move-from-a-symlinked-repository}
 

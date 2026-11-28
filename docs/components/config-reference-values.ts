@@ -379,6 +379,7 @@ export const values: Record<string, string> = {
     '["age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p"]',
   "history.exclude": '["~/.ssh/**", "!~/.ssh/config"]',
   "history.git_email": '"dotfiles@{hostname}"',
+  "history.git_name": '"{hostname}"',
   "history.machine": '"work-laptop"',
   "history.reload": '{ "~/.zshrc" = "exec zsh" }',
   "history.reload.<key>": '"tmux source-file ~/.tmux.conf"',

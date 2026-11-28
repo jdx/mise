@@ -135,6 +135,99 @@ async fn test_generation_shares_concurrent_artifact_downloads() {
     assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 1);
 }
 
+#[tokio::test(flavor = "current_thread")]
+async fn test_generation_downloads_again_when_staging_was_pruned() {
+    let lock = crate::testing::lock_ignoring_poison(&crate::testing::SETTINGS_LOCK);
+    let mut settings = mise_settings::SettingsPartial::empty();
+    settings.lockfile_mode = Some("generate".into());
+    crate::testing::reset_settings(Some(settings));
+    let _settings = SettingsGuard { _lock: lock };
+    let _downloads = InvocationDownloads;
+    let (port, count) = spawn_canned_server(vec![ok_response(), ok_response()]).await;
+    let url = format!("http://127.0.0.1:{port}/artifact");
+    let client = Client::new(Duration::from_secs(2), ClientKind::Http).unwrap();
+    let temp = tempfile::tempdir().unwrap();
+    let first = temp.path().join("first");
+    let second = temp.path().join("second");
+    client.download_file(&url, &first, None).await.unwrap();
+
+    // What cache pruning does to a long-running process's staging folder.
+    let staging = INVOCATION_SCRATCH
+        .lock()
+        .unwrap()
+        .as_ref()
+        .unwrap()
+        .dir
+        .clone();
+    std::fs::remove_dir_all(&staging).unwrap();
+
+    client.download_file(&url, &second, None).await.unwrap();
+    assert_eq!(
+        std::fs::read(&first).unwrap(),
+        std::fs::read(&second).unwrap()
+    );
+    assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 2);
+}
+
+#[test]
+fn sweep_removes_staging_of_dead_processes_and_keeps_live_ones() {
+    let root = tempfile::tempdir().unwrap();
+    let root = root.path();
+    // A live process: its lock is held, so its folder must survive.
+    let live = InvocationScratch::claim(root, Duration::from_secs(3600)).unwrap();
+    std::fs::write(live.dir.join("artifact"), b"live").unwrap();
+    // A process that was killed or replaced by `exec()`: its lock file and folder
+    // remain, but nothing holds the lock.
+    let dead_lock = root.join("pdead.lock");
+    std::fs::write(&dead_lock, b"").unwrap();
+    std::fs::create_dir(root.join("pdead")).unwrap();
+    std::fs::write(root.join("pdead/artifact"), b"dead").unwrap();
+    // What an older mise left: a folder with no lock file at all.
+    std::fs::create_dir_all(root.join(".tmpold/.tmpinner")).unwrap();
+
+    sweep_abandoned_scratch(root, &live.lock_path, Duration::from_secs(3600));
+    assert!(live.dir.join("artifact").exists());
+    assert!(!root.join("pdead").exists());
+    assert!(!dead_lock.exists());
+    // Too recent: an older mise may still be downloading into it.
+    assert!(root.join(".tmpold").exists());
+
+    sweep_abandoned_scratch(root, &live.lock_path, Duration::ZERO);
+    assert!(!root.join(".tmpold").exists());
+    assert!(live.dir.join("artifact").exists());
+
+    let (dir, lock_path) = (live.dir.clone(), live.lock_path.clone());
+    live.remove();
+    assert!(!dir.exists());
+    assert!(!lock_path.exists());
+}
+
+#[test]
+fn concurrent_claims_never_sweep_a_live_folder() {
+    let root = tempfile::tempdir().unwrap();
+    let root = root.path().to_path_buf();
+    let threads: Vec<_> = (0..8)
+        .map(|_| {
+            let root = root.clone();
+            std::thread::spawn(move || {
+                for _ in 0..25 {
+                    // Each claim sweeps. Without claims and sweeps taking turns, one
+                    // could take another's lock file before its owner locked it and
+                    // delete the folder the owner then made.
+                    let scratch = InvocationScratch::claim(&root, Duration::ZERO).unwrap();
+                    std::fs::write(scratch.dir.join("artifact"), b"x").unwrap();
+                    std::thread::yield_now();
+                    assert!(scratch.dir.join("artifact").exists());
+                    scratch.remove();
+                }
+            })
+        })
+        .collect();
+    for thread in threads {
+        thread.join().unwrap();
+    }
+}
+
 #[test]
 fn shared_download_retention_evicts_idle_bytes_but_never_active_callers() {
     let make_entry = || {
@@ -1265,4 +1358,55 @@ async fn test_locked_mode_keeps_only_pinned_downloads() {
     assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 3);
 
     *cas::TEST_ROOT.lock().unwrap() = None;
+}
+
+// Unix only: Windows does not let anything delete a lock file this process holds open.
+#[cfg(unix)]
+#[test]
+fn a_claim_survives_its_folder_or_lock_file_being_pruned() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    let mut held = InvocationScratch::claim(root, Duration::from_secs(3600)).unwrap();
+    std::fs::write(held.dir.join("artifact"), "x").unwrap();
+
+    // The lock file is put back, so a sweep still sees the folder as live.
+    std::fs::remove_file(&held.lock_path).unwrap();
+    assert!(held.still_held(root).unwrap());
+    assert!(held.lock_path.exists());
+    let other = InvocationScratch::claim(root, Duration::ZERO).unwrap();
+    assert!(held.dir.join("artifact").exists());
+
+    // A lock file replaced by a new one at the same path is taken over too.
+    std::fs::remove_file(&held.lock_path).unwrap();
+    std::fs::write(&held.lock_path, b"").unwrap();
+    assert!(held.still_held(root).unwrap());
+    let other2 = InvocationScratch::claim(root, Duration::ZERO).unwrap();
+    assert!(held.dir.join("artifact").exists());
+    other2.remove();
+
+    // A deleted folder cannot be restored, so the claim is reported lost.
+    std::fs::remove_dir_all(&held.dir).unwrap();
+    assert!(!held.still_held(root).unwrap());
+
+    held.remove();
+    other.remove();
+}
+
+// Unix only: Windows does not let anything delete the lock file this process holds open.
+#[cfg(unix)]
+#[test]
+fn a_new_folder_is_claimed_after_the_staging_root_is_cleared() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("invocation-downloads");
+    let mut slot = None;
+    let first = scratch_in(&mut slot, &root).unwrap();
+    assert_eq!(scratch_in(&mut slot, &root).unwrap(), first);
+
+    // What `mise cache clear` does while this process is still running.
+    std::fs::remove_dir_all(&root).unwrap();
+    let second = scratch_in(&mut slot, &root).unwrap();
+    assert!(second.is_dir());
+    tempfile::tempdir_in(&second).unwrap();
+
+    slot.take().unwrap().remove();
 }

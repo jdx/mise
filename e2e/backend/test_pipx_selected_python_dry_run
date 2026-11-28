@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+
+# Preview a fresh install with either managed installer and a per-tool Python.
+# The installer URL need not exist because the preview installs nothing.
+for installer in uv pipx; do
+  if [[ $installer == uv ]]; then
+    tool=pipx:cowsay
+    version=6.1.0
+    uvx=true
+  else
+    tool=pypi:yamllint
+    version=1.38.0
+    uvx=false
+  fi
+  cat <<EOF_CONFIG >mise.toml
+[tool_alias]
+$installer = "http:$installer"
+
+[tools]
+$installer = { version = "1.0.0", url = "https://example.invalid/$installer.tar.gz" }
+"$tool" = { version = "$version", python = "3.12.11", uvx = $uvx }
+EOF_CONFIG
+
+  preview="$(mise install --dry-run 2>&1)" || {
+    printf '%s\n' "$preview" >&2
+    exit 1
+  }
+  assert_contains_text "$preview" 'python@3.12.11'
+  assert_contains_text "$preview" "$installer@1.0.0"
+  assert_contains_text "$preview" "$tool@$version"
+  assert_contains_text "$preview" 'would install'
+  assert_directory_not_exists "$MISE_DATA_DIR/installs"
+done

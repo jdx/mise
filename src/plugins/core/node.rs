@@ -437,7 +437,12 @@ impl NodePlugin {
         let shasums_url = self.shasums_url(v, tarball_name)?;
         let sig_url = format!("{shasums_url}.sig");
         if let Err(e) = HTTP
-            .download_file(sig_url, &sig_file, Some(ctx.pr.as_ref()))
+            .download_file_limited(
+                sig_url,
+                &sig_file,
+                gpg::MAX_SIGNATURE_BYTES,
+                Some(ctx.pr.as_ref()),
+            )
             .await
         {
             if matches!(http::error_code(&e), Some(404)) {
@@ -988,6 +993,7 @@ impl Backend for NodePlugin {
                     ),
                 )));
             }
+            Err(e) if lock_needs_shasum(&settings) => return Err(e),
             Err(e) => {
                 debug!(
                     "Failed to fetch SHASUMS from {}: {e}",
@@ -1018,7 +1024,12 @@ impl NodePlugin {
             .join(&format!("v{version}/{filename}"))
             .map_err(|e| eyre::eyre!("Failed to construct Node.js source URL: {e}"))?;
         let mut checksum = match self.resolve_shasum(&mirror, version, &filename).await {
+            Ok(None) if lock_needs_shasum(&settings) => bail!(
+                "{filename} not found in {}",
+                mirror.join(&format!("v{version}/SHASUMS256.txt"))?
+            ),
             Ok(checksum) => checksum,
+            Err(e) if lock_needs_shasum(&settings) => return Err(e),
             Err(e) => {
                 debug!(
                     "Failed to fetch source SHASUMS from {}: {e}",
@@ -1058,8 +1069,9 @@ impl NodePlugin {
     }
 
     /// `verify_with_gpg` for the `SHASUMS256.txt` that `mise lock` holds in memory. On an
-    /// error the caller locks the artifact without a checksum, so the install that follows
-    /// checks the signature itself and fails the same way.
+    /// error the caller fails the platform when the lock would otherwise hash the download
+    /// (`lock_needs_shasum`). In `merge` mode it locks the artifact without a checksum, so the
+    /// install that follows checks the signature itself and fails the same way.
     async fn verify_shasums_with_gpg(&self, shasums_url: &Url, shasums: &str) -> Result<()> {
         // unofficial-builds signs nothing, and `mise lock` records its musl entries from any
         // host, so a warning here would print on every lock with nothing to act on. An
@@ -1076,8 +1088,19 @@ impl NodePlugin {
         if verified.get(&key) == Some(&digest) {
             return Ok(());
         }
-        let result = match HTTP.get_bytes(format!("{shasums_url}.sig")).await {
-            Ok(signature) => gpg::verify_node(shasums.as_bytes(), signature.as_ref()),
+        let sig_dir = tempfile::tempdir()?;
+        let sig_file = sig_dir.path().join("SHASUMS256.txt.sig");
+        let result = match HTTP
+            .download_file_limited(
+                format!("{shasums_url}.sig"),
+                &sig_file,
+                gpg::MAX_SIGNATURE_BYTES,
+                None,
+            )
+            .await
+        {
+            Ok(()) => file::read(&sig_file)
+                .and_then(|signature| gpg::verify_node(shasums.as_bytes(), &signature)),
             Err(e) if matches!(http::error_code(&e), Some(404)) => missing_signature(shasums_url),
             Err(e) => Err(e),
         };
@@ -1312,6 +1335,17 @@ fn missing_signature(shasums_url: &Url) -> Result<()> {
 fn publishes_signatures(shasums_url: &Url) -> bool {
     let unofficial = Url::parse(UNOFFICIAL_NODE_MIRROR_URL).unwrap();
     shasums_url.host_str() != unofficial.host_str()
+}
+
+/// Whether `mise lock` fails a platform whose checksum `SHASUMS256.txt` did not give.
+///
+/// `lockfile_mode = "generate"` completes an entry that has a URL and no checksum by hashing
+/// what the URL serves, and an install that finds a checksum in the lockfile does not fetch
+/// `SHASUMS256.txt` or its signature. Such an entry would pin a download that the install
+/// refuses. In `merge` mode the entry stays without a checksum and the install verifies the
+/// download itself; with `node.verify = false` the install does not verify it either.
+fn lock_needs_shasum(settings: &Settings) -> bool {
+    settings.node.verify && settings.generate_lockfiles()
 }
 
 fn node_flavor_not_found_message(opts: &BuildOpts) -> Option<String> {

@@ -1,6 +1,7 @@
 use super::*;
 use crate::cosign::{
-    verify_dsse_artifact_subject, verify_keyless_bundle, verify_public_key_bundle,
+    verify_dsse_artifact_subject, verify_keyless_bundle, verify_legacy_cosign_bundle,
+    verify_public_key_bundle,
 };
 
 #[test]
@@ -302,4 +303,68 @@ async fn keyless_bundle_verification_enforces_signer_identity() {
         matches!(err, AttestationError::WorkflowMismatch(_)),
         "{err}"
     );
+}
+
+/// A legacy cosign v1 bundle for `LEGACY_COSIGN_BLOB`: the certificate,
+/// signature and Rekor entry of sigstore-verify's `cosign-v3-blob` test
+/// bundle, in the layout `cosign sign-blob --bundle` 2.x writes.
+const LEGACY_COSIGN_BUNDLE: &str = include_str!("../../tests/fixtures/cosign_legacy_blob.bundle");
+const LEGACY_COSIGN_BLOB: &[u8] = b"test content for cosign\n";
+
+fn legacy_cosign_signer() -> CosignIdentity {
+    CosignIdentity {
+        identity: Some("w.vollprecht@gmail.com".to_string()),
+        oidc_issuer: Some("https://github.com/login/oauth".to_string()),
+        ..Default::default()
+    }
+}
+
+#[test]
+fn legacy_cosign_bundle_verifies_against_its_rekor_entry() {
+    let root = embedded_sigstore_root();
+    let verify = |artifact: &[u8], signer: &CosignIdentity| {
+        verify_legacy_cosign_bundle(artifact, LEGACY_COSIGN_BUNDLE, &root, signer)
+    };
+    let signer = legacy_cosign_signer();
+    verify(LEGACY_COSIGN_BLOB, &signer).unwrap();
+
+    let err = verify(b"other content", &signer).unwrap_err();
+    assert!(matches!(err, AttestationError::Sigstore(_)), "{err}");
+
+    let other_signer = CosignIdentity {
+        identity: Some("someone@example.com".to_string()),
+        ..signer
+    };
+    let err = verify(LEGACY_COSIGN_BLOB, &other_signer).unwrap_err();
+    assert!(
+        matches!(err, AttestationError::WorkflowMismatch(_)),
+        "{err}"
+    );
+}
+
+/// Nothing but the Rekor entry says when a signature was made, so without a
+/// genuine one the long-expired certificate must not verify anything.
+#[test]
+fn legacy_cosign_bundle_requires_a_genuine_rekor_entry() {
+    let root = embedded_sigstore_root();
+    let signer = legacy_cosign_signer();
+    let verify = |bundle: &serde_json::Value| {
+        verify_legacy_cosign_bundle(LEGACY_COSIGN_BLOB, &bundle.to_string(), &root, &signer)
+    };
+    let genuine: serde_json::Value = serde_json::from_str(LEGACY_COSIGN_BUNDLE).unwrap();
+    verify(&genuine).unwrap();
+
+    let mut without_entry = genuine.clone();
+    without_entry["rekorBundle"] = serde_json::Value::Null;
+    let err = verify(&without_entry).unwrap_err().to_string();
+    assert!(err.contains("no rekorBundle"), "{err}");
+    without_entry.as_object_mut().unwrap().remove("rekorBundle");
+    let err = verify(&without_entry).unwrap_err().to_string();
+    assert!(err.contains("no rekorBundle"), "{err}");
+
+    // The SignedEntryTimestamp covers the time the log recorded.
+    let mut other_time = genuine.clone();
+    let time = &mut other_time["rekorBundle"]["Payload"]["integratedTime"];
+    *time = (time.as_i64().unwrap() + 1).into();
+    assert!(verify(&other_time).is_err());
 }

@@ -59,6 +59,63 @@ pub(crate) fn bundle_source_repository(bundle: &Bundle) -> Option<String> {
     release_statement_repository(envelope.payload.as_bytes())
 }
 
+/// The release tag a bundle's signature names: the tag a GitHub Actions run
+/// was started for, or the tag of the release GitHub attested. `None` when it
+/// names none (a run on a branch, say). Like [`bundle_source_repository`],
+/// only meaningful for a bundle that already verified, and only for one that
+/// function returns a repository for: any other is rejected for naming none.
+pub(crate) fn bundle_source_tag(bundle: &Bundle) -> Option<String> {
+    use x509_cert::Certificate;
+    use x509_cert::der::Decode;
+    let cert = Certificate::from_der(bundle.signing_certificate()?.as_bytes()).ok()?;
+    if certificate_source_repository(&cert).is_some() {
+        return certificate_source_ref(&cert)?
+            .strip_prefix("refs/tags/")
+            .map(str::to_string);
+    }
+    let sigstore_verify::types::SignatureContent::DsseEnvelope(envelope) = &bundle.content else {
+        return None;
+    };
+    let statement: serde_json::Value = serde_json::from_slice(envelope.payload.as_bytes()).ok()?;
+    let tag = statement.get("predicate")?.get("tag")?.as_str()?;
+    Some(tag.to_string())
+}
+
+/// Why a verified bundle does not count for a release tagged one of `tags`
+/// (`v1.2.3`, not `refs/tags/v1.2.3`): it names another tag. Every release of
+/// a repository is attested under the same repository name, so without this
+/// an older release's genuine attestation and artifact would pass as a newer
+/// version's. A bundle that names no tag counts, and no `tags` skips the
+/// check.
+pub(crate) fn bundle_tag_mismatch(bundle: &Bundle, tags: &[String]) -> Option<String> {
+    if tags.is_empty() {
+        return None;
+    }
+    let named = bundle_source_tag(bundle).filter(|named| !tags.contains(named))?;
+    Some(format!(
+        "attestation was made for tag {}, not {}",
+        shown_tag(&named),
+        tags.join(" or ")
+    ))
+}
+
+/// A tag read from an attestation, for a message: the payload is not yet
+/// trusted when the tag is checked, so line breaks and control characters
+/// are escaped and a long tag is cut short.
+fn shown_tag(tag: &str) -> String {
+    const MAX_CHARS: usize = 128;
+    let shown: String = tag
+        .chars()
+        .take(MAX_CHARS)
+        .flat_map(char::escape_default)
+        .collect();
+    if tag.chars().count() > MAX_CHARS {
+        format!("{shown}...")
+    } else {
+        shown
+    }
+}
+
 fn certificate_extension<'c>(cert: &'c x509_cert::Certificate, oid: &str) -> Option<&'c [u8]> {
     cert.tbs_certificate()
         .extensions()?
@@ -385,3 +442,14 @@ pub(crate) fn extract_spki_der(cert_der: &[u8]) -> Result<Vec<u8>> {
 /// `None` means "use the crate default" (unchanged behavior).
 pub(crate) static TUF_URL_OVERRIDE: std::sync::RwLock<Option<String>> =
     std::sync::RwLock::new(None);
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_a_tag_from_an_attestation_is_escaped_and_cut_short() {
+        assert_eq!(super::shown_tag("v1.2.3"), "v1.2.3");
+        assert_eq!(super::shown_tag("v1\n\u{1b}[2J"), "v1\\n\\u{1b}[2J");
+        let long = super::shown_tag(&"x".repeat(1000));
+        assert_eq!(long, format!("{}...", "x".repeat(128)));
+    }
+}

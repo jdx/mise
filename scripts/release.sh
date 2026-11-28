@@ -37,6 +37,27 @@ for platform in "${platforms[@]}"; do
 	cp -v mise/bin/mise "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform"
 done
 
+# Best-effort platforms: built without e2e coverage by a job that may fail
+# without blocking the release, so ship them only when their build succeeded.
+# They get no mise-latest-* aliases, which a release that skipped them would
+# leave pointing at an older version.
+best_effort_platforms=(
+	freebsd-x64
+)
+for platform in "${best_effort_platforms[@]}"; do
+	if ! compgen -G "artifacts/*/mise-$MISE_VERSION-$platform.tar.gz" >/dev/null; then
+		echo "::warning::no $platform build for $MISE_VERSION; releasing without it"
+		continue
+	fi
+	for extension in tar.gz tar.xz tar.zst; do
+		cp artifacts/*/"mise-$MISE_VERSION-$platform.$extension" "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.$extension"
+	done
+	zipsign sign tar "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.tar.gz" ~/.zipsign/mise.priv
+	zipsign verify tar "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.tar.gz" "$BASE_DIR/zipsign.pub"
+	tar -xvzf "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.tar.gz"
+	cp -v mise/bin/mise "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform"
+done
+
 windows_platforms=(
 	windows-arm64
 	windows-x64
