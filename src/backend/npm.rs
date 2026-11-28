@@ -3062,6 +3062,10 @@ impl NPMBackend {
                 self.display_tool_name()
             );
         }
+        // Resolving fetches the source, so it is refused in safe mode for a
+        // URL that would get the user's logins, even for a version that is
+        // installed already.
+        tv.request.ensure_safe_url_tool_key()?;
         crate::backend::aube_host::init();
         let temp = tempfile::tempdir()?;
         let request_options = tv.request.options();
