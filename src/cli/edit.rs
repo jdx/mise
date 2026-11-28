@@ -40,6 +40,20 @@ impl ToolProvider for MiseToolProvider {
     }
 }
 
+/// Whether the config file `path`, which may not exist yet, is trusted. Global config needs no
+/// trust record, but one that does not exist yet, as on a first `mise edit -g`, is recognized
+/// by where it is, unless a project's link leads there.
+fn edited_file_is_trusted(path: &Path) -> bool {
+    config_file::is_path_trusted(path) || is_global_config_by_location(path)
+}
+
+/// Whether `path` is global config by where it is, whether or not it exists yet, rather than a
+/// project file that leads there through a link.
+fn is_global_config_by_location(path: &Path) -> bool {
+    crate::config::is_global_config_write(path)
+        && !crate::config::write_reaches_global_config_through_link(path)
+}
+
 /// Version provider that fetches latest versions from backends
 struct MiseVersionProvider {
     /// The file being edited. The editor reads it itself, not through the config loader, so
@@ -54,7 +68,7 @@ impl VersionProvider for MiseVersionProvider {
         // host, which then gets the user's forge token. The config loader applies such a key
         // only from a trusted config, and so does the editor: without trust it looks nothing
         // up and the version is typed in by hand.
-        if config_file::tool_key_requires_trust(tool) && !config_file::is_path_trusted(&self.path) {
+        if config_file::tool_key_requires_trust(tool) && !edited_file_is_trusted(&self.path) {
             return None;
         }
 
@@ -569,6 +583,26 @@ fn extract_version(tool: &str, path: &Path) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn a_global_config_file_that_does_not_exist_yet_is_trusted_for_version_lookups() {
+        // Unit tests trust every path with a trust root, so `is_path_trusted` cannot show the
+        // gap here: what is checked is the part that needs no trust record.
+        let global = crate::dirs::CONFIG.join("edit-trust-test-config.toml");
+        assert!(!global.exists());
+        assert!(is_global_config_by_location(&global));
+        assert!(edited_file_is_trusted(&global));
+
+        // A project file that only links to it is not global config by location.
+        let tmp = tempfile::tempdir().unwrap();
+        let link = tmp.path().join("mise.toml");
+        std::os::unix::fs::symlink(&global, &link).unwrap();
+        assert!(!is_global_config_by_location(&link));
+        assert!(!is_global_config_by_location(
+            &tmp.path().join("other.toml")
+        ));
+    }
 
     #[test]
     fn offerable_version_keeps_a_plain_version() {

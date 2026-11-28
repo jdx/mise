@@ -689,7 +689,8 @@ pub fn config_project(path: &Path) -> PathBuf {
 /// A record belongs to the project its own path names, not the one a link now at that path
 /// leads to: a config replaced by a link to global config keeps its record in the project, so
 /// that record goes with the project's and the file asks again if it comes back. Global config
-/// itself, such as a dotfiles checkout the global config dir links to, is left out.
+/// itself, such as a dotfiles checkout the global config dir links to, is left out, also a file
+/// there for an environment that is not selected.
 pub fn trusted_configs_of_project(project: &Path) -> Vec<PathBuf> {
     let project = record_identity(project);
     trusted_paths_below(&project)
@@ -698,6 +699,7 @@ pub fn trusted_configs_of_project(project: &Path) -> Vec<PathBuf> {
             config_root::project_by_name(path) == project
                 && !(config::is_global_config(path)
                     && !config::is_project_link_to_global_config(path))
+                && !config::lives_in_global_config_dir(path)
                 && !TrustRecord::find(path).is_env_file_approval()
         })
         .collect()
@@ -1983,6 +1985,7 @@ fn script_link_check(script: &Path, root: &Path, follow_own_link: bool) -> Resul
                 .canonicalize()
                 .is_ok_and(|dir| target.starts_with(dir))
         })
+        || config::is_global_config_write(&target)
     {
         return refuse(
             "the link leads into global config, which loads without trust. Edit global config directly",
