@@ -797,7 +797,7 @@ impl CondaBackend {
             if let Some(pkg_info) = lockfile.get_conda_package(platform_key, basename) {
                 tv.conda_packages.insert(
                     (platform_key.to_string(), basename.clone()),
-                    pkg_info.clone(),
+                    Self::locked_dependency(pkg_info),
                 );
             }
         }
@@ -813,10 +813,22 @@ impl CondaBackend {
     }
 
     /// Leave the channel login out of the main package URL an older lockfile
-    /// recorded, as the dependencies' are, so the lockfile update does not
-    /// write it back. The package is the same, so its checksum stays.
+    /// recorded, as [`Self::locked_dependency`] does for the dependencies', so
+    /// the lockfile update does not write it back. The package is the same, so
+    /// its checksum stays.
     fn forget_locked_login(info: &mut PlatformInfo) {
         info.url = info.url.as_deref().map(lock_url);
+    }
+
+    /// A dependency entry from mise.lock as a locked install hands it to the
+    /// lockfile update: without the channel login an older lockfile may hold,
+    /// which the install took back from the configured channel. The writer
+    /// drops it too; this keeps it out of `tv.conda_packages` as well.
+    fn locked_dependency(pkg_info: &CondaPackageInfo) -> CondaPackageInfo {
+        CondaPackageInfo {
+            url: lock_url(&pkg_info.url),
+            checksum: pkg_info.checksum.clone(),
+        }
     }
 
     /// The checksum to record for `archive`, downloaded from `url`, when the
@@ -1545,7 +1557,7 @@ fn exact_match_spec(tool_name: &str, version: &str) -> Result<MatchSpec> {
 
 #[cfg(test)]
 mod tests {
-    use super::{CondaBackend, CondaOptions, MISE_BINS_DIR, rewrite_request_url};
+    use super::{CondaBackend, CondaOptions, CondaPackageInfo, MISE_BINS_DIR, rewrite_request_url};
     #[cfg(unix)]
     use crate::file;
     use crate::toolset::ToolVersionOptions;
@@ -1577,6 +1589,22 @@ mod tests {
             Some("https://conda.example/main/linux-64/tool-1.0-0.conda")
         );
         assert_eq!(info.checksum.as_deref(), Some("sha256:abcd"));
+    }
+
+    /// The same for a dependency entry the locked install copies from mise.lock.
+    #[test]
+    fn locked_install_leaves_the_channel_login_out_of_the_dependencies() {
+        let dependency = CondaPackageInfo {
+            url: "https://ci:token@conda.example/main/linux-64/libfoo-1.0-0.conda".to_string(),
+            checksum: Some("sha256:abcd".to_string()),
+        };
+        assert_eq!(
+            CondaBackend::locked_dependency(&dependency),
+            CondaPackageInfo {
+                url: "https://conda.example/main/linux-64/libfoo-1.0-0.conda".to_string(),
+                checksum: Some("sha256:abcd".to_string()),
+            }
+        );
     }
 
     /// An archive fetched through the channel login with no checksum is hashed

@@ -138,15 +138,19 @@ impl GoPlugin {
         )
         .await?;
 
+        let platform_key = self.get_platform_key();
+        // The lockfile names the archive without the login of `go.download_mirror`.
         if !settings.go.skip_checksum {
-            let platform_key = self.get_platform_key();
             let platform_info = tv.lock_platforms.entry(platform_key).or_default();
-            // The lockfile names the archive without the login of `go.download_mirror`.
             platform_info.url = Some(lock_url(&tarball_url));
             if platform_info.checksum.is_none() {
                 let checksum = checksum_handle.await.unwrap()?;
                 platform_info.checksum = Some(format!("sha256:{checksum}"));
             }
+        } else if let Some(platform_info) = tv.lock_platforms.get_mut(&platform_key) {
+            // Without a checksum the entry from mise.lock is written back as it
+            // came, and one an older mise wrote can hold that login.
+            platform_info.url = platform_info.url.as_deref().map(lock_url);
         }
         Ok(tarball_path)
     }
@@ -636,6 +640,55 @@ mod tests {
             info.url.as_deref(),
             Some("https://corp.example/go/go1.26.8.linux-amd64.tar.gz")
         );
+    }
+
+    #[test]
+    fn test_skip_checksum_download_drops_an_old_lock_url_login() {
+        let _guard = crate::test::SettingsGuard::lock();
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let mut server = runtime.block_on(mockito::Server::new_async());
+        let backend = GoPlugin::new();
+        let request = ToolRequest::new(backend.ba().clone(), "1.26.8", ToolSource::Unknown)
+            .expect("valid go request");
+        let mut tv = ToolVersion::new(request, "1.26.8".to_string());
+        let mirror = format!(
+            "http://ci:token@{}/go-skip-checksum-{}",
+            server.host_with_port(),
+            std::process::id()
+        );
+        let mut settings = SettingsPartial::empty();
+        settings.go.download_mirror = Some(mirror);
+        settings.go.skip_checksum = Some(true);
+        Settings::reset(Some(settings));
+
+        let tarball_url = runtime
+            .block_on(backend.get_tarball_url(&tv, &PlatformTarget::from_current()))
+            .unwrap()
+            .unwrap();
+        let path = url::Url::parse(&tarball_url).unwrap().path().to_string();
+        let archive = server.mock("GET", path.as_str()).with_body("go").create();
+        // An older mise recorded the mirror's login in mise.lock.
+        tv.lock_platforms.insert(
+            backend.get_platform_key(),
+            PlatformInfo {
+                url: Some(tarball_url.clone()),
+                ..Default::default()
+            },
+        );
+
+        runtime
+            .block_on(backend.download(&mut tv, &crate::ui::progress_report::QuietReport::new()))
+            .unwrap();
+
+        archive.assert();
+        assert_eq!(
+            tv.lock_platforms[&backend.get_platform_key()].url,
+            Some(lock_url(&tarball_url))
+        );
+        assert!(!lock_url(&tarball_url).contains("token"));
     }
 
     #[tokio::test]

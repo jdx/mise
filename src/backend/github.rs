@@ -693,6 +693,24 @@ async fn locked_lock_asset(
     primary: bool,
     headers_for: impl Fn(&str) -> Result<reqwest::header::HeaderMap>,
 ) -> Result<(ReleaseAsset, bool)> {
+    let mut locked = locked_asset_of(&asset, logins, primary);
+    if !loses_login(&asset, &locked) {
+        return Ok((locked, false));
+    }
+    let (download_url, headers) = asset_download(&locked, headers_for).await?;
+    let checksum = checksum_of_download(&download_url, &headers, locked.digest.as_deref())
+        .await
+        .wrap_err_with(|| lost_login_error(&asset.name, &download_url))?;
+    locked.digest = Some(checksum);
+    Ok((locked, true))
+}
+
+/// The asset a locked install downloads for the entry that records `asset`:
+/// its URLs without a login, with only the logins `logins` puts back
+/// ([`ConfiguredLogins::locked_primary`], or
+/// [`ConfiguredLogins::locked_additional`] when `primary` is false). The
+/// name, release tag and digest are `asset`'s.
+fn locked_asset_of(asset: &ReleaseAsset, logins: &ConfiguredLogins, primary: bool) -> ReleaseAsset {
     let (url, url_api) = (
         lock_url(&asset.url),
         lock_url_api(&asset.url_api).unwrap_or_default(),
@@ -705,25 +723,44 @@ async fn locked_lock_asset(
     locked.name = asset.name.clone();
     locked.release_tag = asset.release_tag.clone();
     locked.digest = asset.digest.clone();
+    locked
+}
+
+/// Whether a URL of `asset` holds a login that `locked`, the asset a locked
+/// install downloads for it ([`locked_asset_of`]), does not get back.
+fn loses_login(asset: &ReleaseAsset, locked: &ReleaseAsset) -> bool {
     let lost = |given: &str, kept: &str| lock_url(given) != given && !same_url(given, kept);
-    if !lost(&asset.url, &locked.url) && !lost(&asset.url_api, &locked.url_api) {
-        return Ok((locked, false));
-    }
-    let (download_url, headers) = asset_download(&locked, headers_for).await?;
-    let checksum = checksum_of_download(&download_url, &headers, locked.digest.as_deref())
-        .await
-        .wrap_err_with(|| {
-            format!(
-                "{}: the release gives a URL with a login, which mise.lock does not record. \
-                 A locked install downloads {} with only the logins of the `api_url` and \
-                 `url` options, and that download failed. Put the login in one of those \
-                 options, or give the server a token mise sends.",
-                asset.name,
-                lock_url(&download_url)
-            )
-        })?;
-    locked.digest = Some(checksum);
-    Ok((locked, true))
+    lost(&asset.url, &locked.url) || lost(&asset.url_api, &locked.url_api)
+}
+
+/// Why a download of `name` from `download_url` without the release's login
+/// failed, for `mise lock` and for an install that records the asset.
+fn lost_login_error(name: &str, download_url: &str) -> String {
+    format!(
+        "{name}: the release gives a URL with a login, which mise.lock does not record. \
+         A locked install downloads {} with only the logins of the `api_url` and \
+         `url` options, and that download failed. Put the login in one of those \
+         options, or give the server a token mise sends.",
+        lock_url(download_url)
+    )
+}
+
+/// The asset an install downloads in place of `asset`, when lockfiles are
+/// on and a URL of `asset` holds a login nothing in the configuration puts
+/// back, such as a GitLab release link's: the asset a locked install of the
+/// entry downloads ([`locked_asset_of`]). The install records the entry
+/// without that login, so it downloads as the locked install will: a server
+/// that needs the login fails it before anything is installed or recorded,
+/// as it fails `mise lock`, and otherwise the checksum pins the bytes a
+/// locked install gets. With `lockfile = false` nothing is recorded, and the
+/// release's URL is downloaded as it is.
+fn locked_download_in_place_of(
+    asset: &ReleaseAsset,
+    logins: &ConfiguredLogins,
+    primary: bool,
+) -> Option<ReleaseAsset> {
+    let locked = locked_asset_of(asset, logins, primary);
+    (Settings::get().lockfile_enabled() && loses_login(asset, &locked)).then_some(locked)
 }
 
 /// Whether `a` and `b` name the same URL, login included, however each is
@@ -2489,21 +2526,30 @@ impl UnifiedGitBackend {
             .is_some_and(PlatformInfo::has_vouched_checksum);
         // Read before the asset's digest is recorded below.
         let pinned = pinned_checksum(tv, &platform_key, opts.raw());
+        let logins = ConfiguredLogins::new(opts, tv, &PlatformTarget::from_current());
+        let locked = locked_download_in_place_of(asset, &logins, true);
         let platform_info = tv.lock_platforms.entry(platform_key).or_default();
         let pinned = record_release_asset(platform_info, asset, pinned);
 
-        let (url, headers) =
-            asset_download(asset, |url| self.forge_headers(url, &opts.api_url())).await?;
+        let (url, headers) = asset_download(locked.as_ref().unwrap_or(asset), |url| {
+            self.forge_headers(url, &opts.api_url())
+        })
+        .await?;
 
         ctx.pr.set_message(format!("download {filename}"));
-        HTTP.download_file_linked(
-            &url,
-            &file_path,
-            &headers,
-            pinned.as_deref(),
-            Some(ctx.pr.as_ref()),
-        )
-        .await?;
+        let downloaded = HTTP
+            .download_file_linked(
+                &url,
+                &file_path,
+                &headers,
+                pinned.as_deref(),
+                Some(ctx.pr.as_ref()),
+            )
+            .await;
+        match locked {
+            Some(_) => downloaded.wrap_err_with(|| lost_login_error(&filename, &url))?,
+            None => downloaded?,
+        };
 
         // Verify and install
         ctx.pr.next_operation();
@@ -2631,12 +2677,23 @@ impl UnifiedGitBackend {
             artifact_info.checksum = Some(digest.clone());
         }
 
-        let (url, headers) =
-            asset_download(asset, |url| self.forge_headers(url, &opts.api_url())).await?;
+        // As for the main asset: a locked install could not send a login
+        // the release gave, so neither does this one when it is recorded.
+        let logins = ConfiguredLogins::new(opts, tv, &PlatformTarget::from_current());
+        let locked = locked_download_in_place_of(asset, &logins, false);
+        let (url, headers) = asset_download(locked.as_ref().unwrap_or(asset), |url| {
+            self.forge_headers(url, &opts.api_url())
+        })
+        .await?;
 
         ctx.pr.set_message(format!("download {filename}"));
-        HTTP.download_file_with_headers(&url, &file_path, &headers, Some(ctx.pr.as_ref()))
-            .await?;
+        let downloaded = HTTP
+            .download_file_with_headers(&url, &file_path, &headers, Some(ctx.pr.as_ref()))
+            .await;
+        match locked {
+            Some(_) => downloaded.wrap_err_with(|| lost_login_error(&filename, &url))?,
+            None => downloaded?,
+        };
         ctx.pr.next_operation();
 
         if let Err(err) =
@@ -4751,6 +4808,55 @@ mod tests {
         assert!(err.contains("mise.lock does not record"), "{err}");
         assert!(!err.contains("secret"), "{err}");
         link.assert_async().await;
+    }
+
+    /// An install records an asset as `mise lock` does, so it downloads one
+    /// whose URL holds a login nothing in the configuration puts back (a
+    /// GitLab release link's) as the locked install of that entry will:
+    /// without the login. A login `api_url` gives back, or an asset with
+    /// none, downloads as the release gives it, and so does every asset with
+    /// `lockfile = false`, which records nothing.
+    #[test]
+    fn test_install_downloads_a_release_login_asset_as_a_locked_install() {
+        let _guard = crate::test::SettingsGuard::lock();
+        let lockfile = |on: bool| {
+            let mut settings =
+                <crate::config::settings::SettingsPartial as confique::Layer>::empty();
+            settings.lockfile = Some(on);
+            Settings::reset(Some(settings));
+        };
+        lockfile(true);
+        let link = ReleaseAsset {
+            name: "t.tar.gz".to_string(),
+            url: "https://gitlab.example/o/r/-/releases/v1/downloads/t.tar.gz".to_string(),
+            url_api: "https://link:secret@files.example/t.tar.gz".to_string(),
+            digest: Some("sha256:aaaa".to_string()),
+            release_tag: Some("v1".to_string()),
+        };
+        let none = ConfiguredLogins::default();
+        for primary in [true, false] {
+            let locked = locked_download_in_place_of(&link, &none, primary)
+                .expect("downloaded without the release's login");
+            assert_eq!(locked.url, link.url);
+            assert_eq!(locked.url_api, "https://files.example/t.tar.gz");
+            assert_eq!(locked.name, link.name);
+            assert_eq!(locked.digest, link.digest);
+        }
+
+        let api = ConfiguredLogins {
+            direct: None,
+            api: Some(url::Url::parse("https://link:secret@files.example/api/v4").unwrap()),
+        };
+        assert!(locked_download_in_place_of(&link, &api, true).is_none());
+        assert!(locked_download_in_place_of(&link, &api, false).is_none());
+        let plain = ReleaseAsset {
+            url_api: "https://files.example/t.tar.gz".to_string(),
+            ..link.clone()
+        };
+        assert!(locked_download_in_place_of(&plain, &none, true).is_none());
+
+        lockfile(false);
+        assert!(locked_download_in_place_of(&link, &none, true).is_none());
     }
 
     /// A mock path no other test or earlier run requests, ending in `file`.
