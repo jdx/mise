@@ -1773,9 +1773,14 @@ static VERSION_WORD: std::sync::LazyLock<regex::Regex> =
 static QUOTED_LITERAL: std::sync::LazyLock<regex::Regex> =
     std::sync::LazyLock::new(|| regex::Regex::new(r#""[^"]*"|'[^']*'|`[^`]*`"#).unwrap());
 
+/// A `{% raw %}` block at the start of the text. Anchored, so trying it at a tag that is no
+/// block reads that tag alone and not the rest of the option.
 static RAW_BLOCK: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
-    regex::Regex::new(r"(?s)\{%(-?)\s*raw\s*(-?)%\}(.*?)\{%(-?)\s*endraw\s*(-?)%\}").unwrap()
+    regex::Regex::new(r"(?s)^\{%(-?)\s*raw\s*(-?)%\}(.*?)\{%(-?)\s*endraw\s*(-?)%\}").unwrap()
 });
+/// A `{% raw %}` tag at the start of the text.
+static RAW_OPEN: std::sync::LazyLock<regex::Regex> =
+    std::sync::LazyLock::new(|| regex::Regex::new(r"^\{%-?\s*raw\s*-?%\}").unwrap());
 
 /// Template code taken out of a tool option for the backend's render, and the marker its
 /// placeholders carry. The marker holds a random number drawn for each option, so text an env
@@ -1831,12 +1836,14 @@ fn raw_blocks(input: &str) -> Vec<(usize, regex::Captures<'_>)> {
         let start = at + offset;
         let rest = &input[start..];
         let close = if rest.starts_with("{%") {
-            if let Some(caps) = RAW_BLOCK.captures(rest)
-                && caps.get(0).is_some_and(|m| m.start() == 0)
-            {
+            if let Some(caps) = RAW_BLOCK.captures(rest) {
                 at = start + caps[0].len();
                 blocks.push((start, caps));
                 continue;
+            }
+            if RAW_OPEN.is_match(rest) {
+                // No `{% endraw %}` follows this tag, so none follows a later one either.
+                break;
             }
             "%}"
         } else if rest.starts_with("{{") {
@@ -4526,6 +4533,20 @@ mod tests {
         let input = r#"{{ "\"" }}{% raw %}{{ version }}{% endraw %}"#;
         let (_, deferred) = shield_raw_blocks(input);
         assert_eq!(deferred.exprs, vec!["{{ version }}"]);
+    }
+
+    /// Each tag is read once, whatever follows it: a block after many ordinary tags is still
+    /// found, and raw tags that no `{% endraw %}` closes leave no block.
+    #[test]
+    fn test_raw_blocks_after_many_tags() {
+        let tags = "{% if true %}x{% endif %}".repeat(2000);
+        let input = format!("{tags}{{% raw %}}{{{{ version }}}}{{% endraw %}}");
+        let (_, deferred) = shield_raw_blocks(&input);
+        assert_eq!(deferred.exprs, vec!["{{ version }}"]);
+        let input = format!("{}{tags}", "{% raw %}".repeat(2000));
+        let (out, deferred) = shield_raw_blocks(&input);
+        assert!(deferred.exprs.is_empty());
+        assert_eq!(out, input);
     }
 
     #[tokio::test]
