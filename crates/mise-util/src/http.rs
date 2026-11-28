@@ -1816,12 +1816,19 @@ impl Client {
                 self,
                 download_request_hash(&url, headers)
             );
-            let shared = INVOCATION_DOWNLOADS
-                .lock()
-                .unwrap()
-                .entry(key)
-                .or_default()
-                .clone();
+            let shared = {
+                let mut downloads = INVOCATION_DOWNLOADS.lock().unwrap();
+                let entry = downloads.entry(key).or_default();
+                // Cache pruning or `mise cache clear` can delete a staged download under a
+                // long-running process. Download it again rather than copy from nothing.
+                if entry
+                    .get()
+                    .is_some_and(|(directory, _)| !directory.path().join("artifact").is_file())
+                {
+                    *entry = SharedDownload::default();
+                }
+                entry.clone()
+            };
             let (directory, metadata) = shared
                 .get_or_try_init(|| async {
                     let directory = tempfile::tempdir_in(invocation_scratch()?)?;

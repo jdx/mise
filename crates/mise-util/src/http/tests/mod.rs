@@ -135,6 +135,34 @@ async fn test_generation_shares_concurrent_artifact_downloads() {
     assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 1);
 }
 
+#[tokio::test(flavor = "current_thread")]
+async fn test_generation_downloads_again_when_staging_was_pruned() {
+    let lock = crate::testing::lock_ignoring_poison(&crate::testing::SETTINGS_LOCK);
+    let mut settings = mise_settings::SettingsPartial::empty();
+    settings.lockfile_mode = Some("generate".into());
+    crate::testing::reset_settings(Some(settings));
+    let _settings = SettingsGuard { _lock: lock };
+    let _downloads = InvocationDownloads;
+    let (port, count) = spawn_canned_server(vec![ok_response(), ok_response()]).await;
+    let url = format!("http://127.0.0.1:{port}/artifact");
+    let client = Client::new(Duration::from_secs(2), ClientKind::Http).unwrap();
+    let temp = tempfile::tempdir().unwrap();
+    let first = temp.path().join("first");
+    let second = temp.path().join("second");
+    client.download_file(&url, &first, None).await.unwrap();
+
+    // What cache pruning does to a long-running process's staging folder.
+    let staging = INVOCATION_SCRATCH.lock().unwrap().as_ref().unwrap().dir.clone();
+    std::fs::remove_dir_all(&staging).unwrap();
+
+    client.download_file(&url, &second, None).await.unwrap();
+    assert_eq!(
+        std::fs::read(&first).unwrap(),
+        std::fs::read(&second).unwrap()
+    );
+    assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 2);
+}
+
 #[test]
 fn sweep_removes_staging_of_dead_processes_and_keeps_live_ones() {
     let root = tempfile::tempdir().unwrap();
