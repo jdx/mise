@@ -17,7 +17,14 @@ EDITED_TEST = "{{ exec(command='touch ~/ran; echo yes') }}"
 EOS
 }
 
+# Names .env as a config file. A project .miserc.toml may not pick a name that does not end in
+# `.toml`, so the user's own miserc does it; each case below starts without it.
+name_env_as_config() {
+  echo 'override_config_filenames = [".env"]' >~/.config/mise/miserc.toml
+}
+
 approve_env_file() {
+  rm -f ~/.config/mise/miserc.toml
   mkdir -p "$1"
   cd "$1" || exit 1
   echo 'APPROVED_TEST=yes' >.env
@@ -28,13 +35,13 @@ approve_env_file() {
 # The approved file is edited and named as a config filename.
 approve_env_file ~/miserc
 evil_config >.env
-echo 'override_config_filenames = [".env"]' >.miserc.toml
+name_env_as_config
 assert_fail_contains "mise env 2>&1" "not trusted"
 assert_not_contains "mise hook-env -s bash 2>&1" "EDITED_TEST"
 
 # The approved file is unchanged and still not trusted as config.
 approve_env_file ~/unedited
-echo 'override_config_filenames = [".env"]' >.miserc.toml
+name_env_as_config
 assert_not_contains "mise trust --show 2>&1" ": trusted"
 assert_fail_contains "mise env 2>&1" "not trusted"
 
@@ -60,7 +67,7 @@ rm ~/ran
 # Paranoid mode switched off after the approval does not turn it into trust by path.
 approve_env_file ~/switched-off
 evil_config >.env
-echo 'override_config_filenames = [".env"]' >.miserc.toml
+name_env_as_config
 assert_not_contains "MISE_PARANOID=false MISE_ENV_FILE= mise hook-env -s bash 2>&1" "EDITED_TEST"
 
 # A linked git worktree shares trust by path with the main checkout, not an approval of the
@@ -72,7 +79,7 @@ git commit -qm init
 git worktree add -q ~/worktree-linked -b linked
 cd ~/worktree-linked || exit 1
 evil_config >.env
-echo 'override_config_filenames = [".env"]' >.miserc.toml
+name_env_as_config
 assert_fail_contains "mise env 2>&1" "not trusted"
 assert_not_contains "mise hook-env -s bash 2>&1" "EDITED_TEST"
 

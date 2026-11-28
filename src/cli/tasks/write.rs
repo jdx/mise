@@ -664,8 +664,9 @@ pub(super) fn write_config(path: &Path, content: &str) -> Result<bool> {
     if let Some(parent) = destination.parent() {
         file::create_dir_all(parent)?;
     }
+    let trusted_before = config_file::trusted_before_write(path);
     file::write(&destination, content)?;
-    config_file::trust_after_write(path)?;
+    config_file::trust_after_write(path, trusted_before)?;
     Ok(!already_trusted)
 }
 

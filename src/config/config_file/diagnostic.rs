@@ -1,7 +1,6 @@
 #![allow(unused_assignments)] // Fields are read by miette's derive macros at runtime
 
 use crate::dirs;
-use crate::file::display_path;
 use crate::ui::style::display_path_escaped;
 use miette::{Diagnostic, NamedSource, SourceSpan};
 use std::fmt;
@@ -12,7 +11,7 @@ use thiserror::Error;
 ///
 /// The message deliberately does not name the file. `src` already does, and miette prints it above
 /// the snippet, so repeating it here rendered the same path twice in two different forms -- raw
-/// from `Path::display` in the message, shortened by [`display_path`] in the snippet header. On
+/// from `Path::display` in the message, shortened by [`display_path_escaped`] in the snippet header. On
 /// Windows the duplicate was also the one that wrapped, mid drive letter. Every caller that shows
 /// this error without the snippet names the file itself.
 #[derive(Debug, Error, Diagnostic)]
@@ -217,7 +216,7 @@ pub(crate) fn warn_linked_version_file(path: &Path, is_version_file: impl Fn(&Pa
     }
     warn_once!(
         "not reading {}: it is a symlink to a file of another name, and mise reads a linked version file only when the target has the same name",
-        display_path(path)
+        display_path_escaped(path)
     );
 }
 
@@ -335,7 +334,7 @@ pub(crate) fn toml_parse_error(err: &toml::de::Error, source: &str, path: &Path)
         let (line, column) = position(source, span.offset());
         return eyre::eyre!(
             "Invalid TOML in config file {}:{line}:{column}: {message}",
-            display_path(path)
+            display_path_escaped(path)
         );
     }
 
@@ -380,6 +379,23 @@ mod tests {
         let path = dir.join("mise.toml");
         std::fs::write(&path, BODY).unwrap();
         let report = reports(&path);
+        assert!(!report.contains('\x1b'), "{report:?}");
+        assert!(report.contains("a\\u{1b}[2Jb"), "{report}");
+    }
+
+    /// The path is escaped too when the excerpt is too long to quote and the
+    /// error names the file in its message instead.
+    #[test]
+    fn escapes_the_path_of_an_error_too_long_to_quote() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().canonicalize().unwrap().join("a\x1b[2Jb");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("mise.toml");
+        let source = format!("# {}\ntoken s3cr3t\n", "1,".repeat(EXCERPT_MAX));
+        std::fs::write(&path, &source).unwrap();
+        let err = toml::from_str::<toml::Value>(&source).unwrap_err();
+        let report = format!("{:?}", toml_parse_error(&err, &source, &path));
+        assert!(report.contains("Invalid TOML in config file"), "{report}");
         assert!(!report.contains('\x1b'), "{report:?}");
         assert!(report.contains("a\\u{1b}[2Jb"), "{report}");
     }
