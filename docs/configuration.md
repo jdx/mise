@@ -427,8 +427,9 @@ dotfiles = "~/.config/mise/conf.d/30-dotfiles.toml"
 
 New declarations from `mise use --global`,
 `mise bootstrap packages use --global`,
-`mise bootstrap packages import --global`, and `mise dotfiles add` (which
-writes global config by default) then go to those files. A target must point to
+`mise bootstrap packages import --global`, `mise dotfiles add` (which
+writes global config by default), and `mise dotfiles track` then go to those
+files. A target must point to
 a file mise loads from the global config directory: `config.toml`, `mise.toml`,
 or a `conf.d` fragment. A path such as `~/.config/mise/tools.toml` is not
 loaded, so mise rejects it.

@@ -19,9 +19,10 @@ use crate::system::history::tracked::{
 
 /// Track a file or directory in place
 ///
-/// Adds a `[dotfiles]` entry with `mode = "track"` to your global config: the
-/// file stays where it is, nothing is copied or linked, and mise saves a
-/// checkpoint of it right away. While the watcher service runs, later edits are
+/// Adds a `[dotfiles]` entry with `mode = "track"` to your global config (or to
+/// the `write_targets.dotfiles` file when that setting is set): the file stays
+/// where it is, nothing is copied or linked, and mise saves a checkpoint of it
+/// right away. While the watcher service runs, later edits are
 /// saved automatically; without it, `mise dot save` saves them. Use
 /// `--dry-run` to see what a large directory would add before tracking it.
 ///
@@ -150,6 +151,9 @@ impl DotfilesTrack {
         }
         let managed = crate::system::files::composed_files_from_config(&config)?;
         let global = declaration_file(false)?;
+        // where new entries go, resolved on first use so a run that only
+        // updates existing entries never consults `write_targets.dotfiles`
+        let mut new_entry_file: Option<PathBuf> = None;
         let mut edits: BTreeMap<PathBuf, DeclarationEdit> = BTreeMap::new();
         let mut locations = BTreeMap::new();
         // targets another declaration already owns in a mode that is not
@@ -382,8 +386,15 @@ impl DotfilesTrack {
                     );
                 }
                 tracking
+            } else if let Some(path) = &new_entry_file {
+                path.clone()
             } else {
-                global.clone()
+                let path = crate::config::global_section_write_path(
+                    crate::config::GlobalWriteSection::Dotfiles,
+                    || global.clone(),
+                )?;
+                new_entry_file = Some(path.clone());
+                path
             };
             let edit = match edits.entry(config_path.clone()) {
                 std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),

@@ -5260,11 +5260,11 @@ env = "MISE_WINDOWS_SHIM_MODE"
 type = "String"
 
 [write_targets.dotfiles]
-description = "Global config file where `mise dot add` creates new `[dotfiles]` entries."
+description = "Global config file where `mise dot add` and `mise dot track` create new `[dotfiles]` entries."
 docs = """
-`mise dot edit` uses it too when it adds an entry. `mise dot track` does not:
-it writes new track entries to the global `config.toml`, or to
-`conf.d/dotfiles-tracking.toml` when another entry already manages the target.
+`mise dot edit` uses it too when it adds an entry. `mise dot track` writes a
+new track entry for a target that another entry already manages to
+`conf.d/dotfiles-tracking.toml` instead.
 Existing entries stay in the file that declares them. The path may be absolute,
 start with `~/`, or be relative to the `config_root` of the config file that sets it, and may use
 templates such as `{{ config_source | dirname }}`. It must name a file that mise loads from the global config
