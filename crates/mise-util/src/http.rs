@@ -177,6 +177,22 @@ fn attempt_options(
     (headers, options)
 }
 
+/// The headers and options for the https attempt after the http one could not
+/// reach the server. A retry inside the http attempt may have settled on other
+/// credentials first (netrc turned off after its login earned a 401, a refreshed
+/// or dropped token) before it failed, so the https attempt starts from those.
+fn https_fallback_attempt(
+    headers: &HeaderMap,
+    mut options: SendOnceOptions,
+) -> (HeaderMap, SendOnceOptions) {
+    let Some(retry_state) = options.retry_state.clone() else {
+        return (headers.clone(), options);
+    };
+    let headers = with_saved_authorization(headers, &retry_state);
+    options.use_netrc &= retry_state.lock().unwrap().use_netrc;
+    (headers, options)
+}
+
 /// The parts of a request that stay fixed across retry attempts.
 struct RetryableRequest<'a> {
     method: Method,
@@ -2741,7 +2757,8 @@ impl Client {
             Err(err) if url.scheme() == "http" && is_unreachable(&err) => {
                 let mut url = url;
                 url.set_scheme("https").unwrap();
-                self.send_once_with_retry_headers(method, url, headers, verb_label, options)
+                let (headers, options) = https_fallback_attempt(headers, options);
+                self.send_once_with_retry_headers(method, url, &headers, verb_label, options)
                     .await
             }
             Err(err) => Err(err),
