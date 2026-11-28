@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# The fixture's indexes publish no upload times, so a release-age cutoff
+# rejects every release they serve unless the index sets exclude-newer = false.
+mise install uv@0.12.10 python@3.12.11
+python3 "$ROOT/e2e/fixtures/pypi/server.py" "$PWD/index" &
+server_pid=$!
+trap 'kill "$server_pid"' EXIT
+for _ in {1..100}; do
+  [[ -s index/port ]] && break
+  sleep 0.1
+done
+port=$(cat index/port)
+touch index/private-extra
+write_config() {
+  cat >mise.toml <<EOF_CONFIG
+[tools]
+uv = "0.12.10"
+python = "3.12.11"
+"pypi:mise-exposed" = { version = "1.0.0", with = ["mise-lock-extra==1.0.0"], indexes = [{ name = "private", url = "http://127.0.0.1:$port/private/simple/", explicit = true$1 }], sources = { mise-lock-extra = { index = "private" } } }
+[settings]
+lockfile = true
+minimum_release_age = "7d"
+pypi.registry_url = "http://127.0.0.1:$port/pypi/{}/json"
+EOF_CONFIG
+  rm -rf mise.lock .mise
+}
+
+# Without the setting the cutoff holds back the undated dependency.
+write_config ""
+mise trust
+assert_contains "mise lock 2>&1" "dependency graph unavailable"
+
+# With it, the dependency from that index is exempt from the cutoff.
+write_config ", exclude-newer = false"
+assert_not_contains "mise lock 2>&1" "dependency graph unavailable"
+sidecar=$(find .mise/locks/pypi-mise-exposed -mindepth 1 -maxdepth 1)
+assert_contains "grep -A3 '^name = \"mise-lock-extra\"' $sidecar/uv.lock" "registry = \"http://127.0.0.1:$port/private/simple/\""
+assert_contains "cat $sidecar/pyproject.toml" "exclude-newer = false"

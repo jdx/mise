@@ -2,7 +2,7 @@ use std::sync::OnceLock;
 pub use std::time::Duration;
 
 use eyre::{Result, bail};
-use jiff::{Span, Timestamp, Zoned, civil::date};
+use jiff::{Span, Timestamp, ZonedDateTime, civil::date};
 
 pub const HOURLY: Duration = Duration::from_secs(60 * 60);
 pub const DAILY: Duration = Duration::from_secs(60 * 60 * 24);
@@ -75,20 +75,22 @@ pub fn parse_into_timestamp(s: &str) -> Result<Timestamp> {
         if duration.is_negative() {
             bail!("duration must not be negative: {}", s);
         }
-        let now_zoned = process_now().to_zoned(jiff::tz::TimeZone::UTC);
+        let now_zoned = process_now().to_zoned_datetime(jiff::tz::TimeZone::UTC);
         let past = now_zoned.checked_sub(span)?;
         return Ok(past.timestamp());
     }
 
     // Try parsing as a Zoned datetime (handles various formats)
-    if let Ok(zoned) = s.parse::<Zoned>() {
+    if let Ok(zoned) = s.parse::<ZonedDateTime>() {
         return Ok(zoned.timestamp());
     }
 
     // Try parsing as date only (YYYY-MM-DD) - use end of day UTC
     if let Ok(civil_date) = s.parse::<jiff::civil::Date>() {
         let datetime = civil_date.at(23, 59, 59, 0);
-        let ts = datetime.to_zoned(jiff::tz::TimeZone::UTC)?.timestamp();
+        let ts = datetime
+            .to_zoned_datetime(jiff::tz::TimeZone::UTC)?
+            .timestamp();
         return Ok(ts);
     }
 
