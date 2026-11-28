@@ -264,8 +264,12 @@ impl ToolVersion {
         // installed: resolve it without remote lookups, and refuse it unless
         // that finds a version on disk, or, for a lock check, the lock entry.
         if let Err(refused) = request.ensure_safe_url_tool_key() {
-            if Self::sub_base_is_alias_for_latest(config, &request).await {
-                // An offline resolve still asks the host for `latest` here.
+            // An offline resolve still asks the host for `latest` here, unless
+            // it finds the lock entry before it gets that far.
+            if Self::sub_base_is_alias_for_latest(config, &request).await
+                && !(lock_entry_suffices
+                    && Self::resolves_from_lockfile_first(config, &request, opts).await)
+            {
                 return Err(refused);
             }
             let offline = ResolveOptions {
@@ -312,6 +316,32 @@ impl ToolVersion {
                 .is_ok_and(|v| v == "latest")
     }
 
+    /// Whether [`Self::resolve_`] takes `request`'s version from its lock
+    /// entry before any lookup of versions.
+    async fn resolves_from_lockfile_first(
+        config: &Arc<Config>,
+        request: &ToolRequest,
+        opts: &ResolveOptions,
+    ) -> bool {
+        opts.use_locked_version
+            && !has_linked_version(request.ba(), &Self::linked_query(config, request).await)
+            && request
+                .lockfile_resolve(config)
+                .is_ok_and(|entry| entry.is_some())
+    }
+
+    /// What `request` asks for with its aliases expanded (`lts` -> `24`):
+    /// a link is chosen by what the request means.
+    async fn linked_query(config: &Arc<Config>, request: &ToolRequest) -> String {
+        match request.backend() {
+            Ok(backend) => config
+                .resolve_alias(&backend, &request.version())
+                .await
+                .unwrap_or_else(|_| request.version()),
+            Err(_) => request.version(),
+        }
+    }
+
     /// [`Self::resolve`] for a request whose tool key safe mode lets mise fetch.
     async fn resolve_fetchable(
         config: &Arc<Config>,
@@ -353,14 +383,7 @@ impl ToolVersion {
         opts.apply_before_date_for_tool(request.ba(), minimum_release_age.as_deref())?;
 
         trace!("resolving {} {}", &request, opts);
-        // A link is chosen by what the request means, so expand aliases (`lts` -> `24`) first.
-        let linked_query = match request.backend() {
-            Ok(backend) => config
-                .resolve_alias(&backend, &request.version())
-                .await
-                .unwrap_or_else(|_| request.version()),
-            Err(_) => request.version(),
-        };
+        let linked_query = Self::linked_query(config, &request).await;
         if opts.use_locked_version
             && !has_linked_version(request.ba(), &linked_query)
             && let Some(lt) = request.lockfile_resolve(config)?

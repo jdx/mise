@@ -65,6 +65,26 @@ backend = "npm:https://pkg.example.invalid/tool.tgz"
 EOF
 assert_contains "MISE_SAFE=1 mise lock --check --platform linux-x64" "is up to date"
 assert_fail "MISE_SAFE=1 mise install" "$refused"
+# So does an alias that stands for the latest version, which only its entry
+# resolves without asking the host.
+cat <<EOF >mise.toml
+[tool_alias."npm:https://pkg.example.invalid/tool.tgz".versions]
+newest = "latest"
+
+[tools]
+"npm:https://pkg.example.invalid/tool.tgz" = "sub-1:newest"
+EOF
+cat <<EOF >mise.lock
+lockfile_version = 4
+
+[[tools."npm:https://pkg.example.invalid/tool.tgz"]]
+version = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+backend = "npm:https://pkg.example.invalid/tool.tgz"
+specifiers = ["sub-1:newest"]
+EOF
+assert_contains "MISE_SAFE=1 mise lock --check --platform linux-x64" "is up to date"
+assert_not_contains "MISE_SAFE=1 MISE_DEBUG=1 mise lock --check --platform linux-x64 2>&1 || true" "GET https://pkg.example.invalid"
+assert_fail "MISE_SAFE=1 mise where npm:https://pkg.example.invalid/tool.tgz" "$refused"
 rm mise.lock
 
 # A tool that only a task declares is a project tool too.
