@@ -417,10 +417,12 @@ impl Backend for GoPlugin {
         } else {
             None
         };
+        let download_url = crate::lockfile::LoginUrl::of(&url);
         let url = resolve_lock_url(&url, None, &mut checksum).await?;
 
         Ok(PlatformInfo {
             url: Some(url),
+            download_url,
             checksum,
             size: None,
             url_api: None,

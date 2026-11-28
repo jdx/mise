@@ -294,11 +294,19 @@ impl CondaBackend {
         Ok(actual_hex == expected_hex)
     }
 
+    /// Whether `dest` is a cached archive that `checksum` pins. Archives are
+    /// cached by file name, which channels share, so a cached file with no
+    /// sha256 to check it by may have come from another channel.
+    fn cached_archive_matches(dest: &std::path::Path, checksum: Option<&str>) -> Result<bool> {
+        let pinned = checksum.is_some_and(|c| c.starts_with("sha256:"));
+        Ok(pinned && dest.exists() && Self::verify_checksum(dest, checksum)?)
+    }
+
     /// Download a file to dest with optional checksum verification.
     /// Uses atomic writes: downloads to a temp file, verifies, then renames.
-    /// If dest already exists and checksum matches, skips download.
+    /// If dest already exists and the sha256 checksum matches, skips download.
     async fn download_to(url: &str, dest: &std::path::Path, checksum: Option<&str>) -> Result<()> {
-        if dest.exists() && Self::verify_checksum(dest, checksum)? {
+        if Self::cached_archive_matches(dest, checksum)? {
             return Ok(());
         }
 
@@ -322,7 +330,7 @@ impl CondaBackend {
 
             // Another concurrent installer may have won the race and written `dest`.
             // If `dest` now exists and verifies, treat this as success.
-            if dest.exists() && Self::verify_checksum(dest, checksum)? {
+            if Self::cached_archive_matches(dest, checksum)? {
                 return Ok(());
             }
 
@@ -1975,5 +1983,21 @@ mod tests {
 
         let deduped = CondaBackend::dedup_records_by_identifier(records.iter());
         assert_eq!(deduped.len(), 2);
+    }
+
+    #[test]
+    fn cached_archive_is_reused_only_when_a_sha256_pins_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let dest = dir.path().join("pkg-1.0-0.conda");
+        std::fs::write(&dest, b"archive").unwrap();
+        let sha = format!(
+            "sha256:{}",
+            crate::hash::file_hash_sha256(&dest, None).unwrap()
+        );
+        assert!(CondaBackend::cached_archive_matches(&dest, Some(&sha)).unwrap());
+        assert!(!CondaBackend::cached_archive_matches(&dest, None).unwrap());
+        assert!(!CondaBackend::cached_archive_matches(&dest, Some("md5:abc")).unwrap());
+        let other = format!("sha256:{}", "0".repeat(64));
+        assert!(!CondaBackend::cached_archive_matches(&dest, Some(&other)).unwrap());
     }
 }

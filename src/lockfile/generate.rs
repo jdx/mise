@@ -499,6 +499,24 @@ fn keep_pins_recorded_with_a_login(old: &PlatformInfo, new: &mut PlatformInfo) {
     }
 }
 
+/// `headers`, resolved for the endpoint `new_url` and `new_api` name, when
+/// [`artifact_checksum`] would send them to an endpoint of `old_url` and
+/// `old_api` on the same server and scheme. A forge that moved its API keeps
+/// its token: the old endpoint in `mise.lock` is another server.
+fn headers_for_old_urls<'a>(
+    old_url: &str,
+    old_api: Option<&str>,
+    new_url: Option<&str>,
+    new_api: Option<&str>,
+    headers: Option<&'a DownloadHeaders>,
+) -> Option<&'a DownloadHeaders> {
+    let sent_to = url::Url::parse(old_api.unwrap_or(old_url)).ok()?;
+    let built_for = url::Url::parse(new_api.or(new_url)?).ok()?;
+    (sent_to.scheme() == built_for.scheme() && crate::http::same_server(&built_for, &sent_to))
+        .then_some(headers)
+        .flatten()
+}
+
 /// The md5 or sha1 pins of `old`, an entry whose URLs held a login, replaced in
 /// `new` by the sha256 of each artifact both name. The artifact is downloaded
 /// from `old`'s URL, with the login, and checked against the old pin and the
@@ -527,7 +545,13 @@ async fn upgrade_weak_pins_recorded_with_a_login(
             artifact_checksum(
                 old_url,
                 old.url_api.as_deref(),
-                new.download_headers.as_ref(),
+                headers_for_old_urls(
+                    old_url,
+                    old.url_api.as_deref(),
+                    new.url.as_deref(),
+                    new.url_api.as_deref(),
+                    new.download_headers.as_ref(),
+                ),
                 &expected,
             )
             .await?,
@@ -553,7 +577,13 @@ async fn upgrade_weak_pins_recorded_with_a_login(
             artifact_checksum(
                 &old.url,
                 old.url_api.as_deref(),
-                artifact.download_headers.as_ref(),
+                headers_for_old_urls(
+                    &old.url,
+                    old.url_api.as_deref(),
+                    Some(&artifact.url),
+                    artifact.url_api.as_deref(),
+                    artifact.download_headers.as_ref(),
+                ),
                 &expected,
             )
             .await?,
@@ -3497,5 +3527,32 @@ mod tests {
         head.assert_async().await;
         api.assert_async().await;
         assert!(checksum.starts_with("sha256:"));
+    }
+
+    #[test]
+    fn headers_for_old_urls_keeps_headers_only_for_the_same_server_and_scheme() {
+        let headers = DownloadHeaders::Client(reqwest::header::HeaderMap::new());
+        let h = Some(&headers);
+        let new = Some("https://forge.example/api/v4/asset");
+        assert!(
+            headers_for_old_urls("https://forge.example/old/asset", None, None, new, h).is_some()
+        );
+        assert!(
+            headers_for_old_urls("https://old-forge.example/asset", None, None, new, h).is_none()
+        );
+        assert!(
+            headers_for_old_urls("http://forge.example/old/asset", None, None, new, h).is_none()
+        );
+        assert!(
+            headers_for_old_urls(
+                "https://forge.example/browser",
+                Some("https://api.other.example/asset"),
+                Some("https://forge.example/browser"),
+                None,
+                h
+            )
+            .is_none()
+        );
+        assert!(headers_for_old_urls("https://forge.example/a", None, None, None, h).is_none());
     }
 }

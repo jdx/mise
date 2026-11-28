@@ -1003,9 +1003,11 @@ impl Backend for NodePlugin {
             }
         };
 
+        let download_url = crate::lockfile::LoginUrl::of(url.as_str());
         let url = resolve_lock_url(url.as_str(), None, &mut checksum).await?;
         Ok(PlatformInfo {
             url: Some(url),
+            download_url,
             checksum,
             size: None,
             url_api: None,
@@ -1039,11 +1041,13 @@ impl NodePlugin {
             }
         };
 
+        let download_url = crate::lockfile::LoginUrl::of(url.as_str());
         let url = resolve_lock_url(url.as_str(), None, &mut checksum).await?;
         Ok(PlatformInfo {
             install: Some("source".to_string()),
             checksum,
             url: Some(url),
+            download_url,
             ..Default::default()
         })
     }

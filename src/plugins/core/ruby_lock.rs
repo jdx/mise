@@ -549,9 +549,11 @@ impl RubyPlugin {
                 }
             }
             // A `ruby.precompiled_url` template can carry a login.
+            let download_url = crate::lockfile::LoginUrl::of(&url);
             let url = resolve_lock_url(&url, None, &mut checksum).await?;
             return Ok(PlatformInfo {
                 url: Some(url),
+                download_url,
                 checksum,
                 provenance,
                 ..Default::default()
