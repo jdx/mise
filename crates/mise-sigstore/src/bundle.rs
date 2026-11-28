@@ -1,10 +1,13 @@
 use super::*;
-use crate::github::{log_attestation_method_failure, warn_if_trust_root_unreachable};
+use crate::github::{
+    log_attestation_method_failure, no_attestation_verified, warn_if_trust_root_unreachable,
+};
 
 pub(crate) async fn verify_attestation_bundles(
     attestations: &[Attestation],
     artifact: &[u8],
     repository: &str,
+    tags: &[String],
     signer_workflow: Option<&str>,
     trust_roots: &mut TrustRoots,
 ) -> Result<bool> {
@@ -12,6 +15,7 @@ pub(crate) async fn verify_attestation_bundles(
         Artifact::from(artifact),
         attestations,
         repository,
+        tags,
         signer_workflow,
         trust_roots,
     )
@@ -19,7 +23,8 @@ pub(crate) async fn verify_attestation_bundles(
 }
 
 /// Passes when one attestation verifies and `repository` (`owner/repo`)
-/// made it.
+/// made it, for one of `tags` if it names a tag (see
+/// [`bundle_tag_mismatch`]).
 ///
 /// A valid signature only says that someone attested these bytes, and any
 /// repository can attest any digest. GitHub's API lists only the requested
@@ -30,6 +35,7 @@ pub(crate) async fn verify_attestation_bundles_for_artifact(
     artifact: Artifact<'_>,
     attestations: &[Attestation],
     repository: &str,
+    tags: &[String],
     signer_workflow: Option<&str>,
     trust_roots: &mut TrustRoots,
 ) -> Result<bool> {
@@ -49,14 +55,21 @@ pub(crate) async fn verify_attestation_bundles_for_artifact(
                 continue;
             }
         };
-        match verify_bundle_with_trust_roots(
-            artifact.clone(),
-            &bundle,
-            signer_workflow,
-            trust_roots,
-        )
-        .await
+        let verified =
+            verify_bundle_with_trust_roots(artifact.clone(), &bundle, signer_workflow, trust_roots)
+                .await;
+        // Before the repository is looked at: an attestation that names
+        // another one may still be accepted, when the repository was renamed.
+        if verified.is_ok()
+            && let Some(error) = bundle_tag_mismatch(&bundle, tags)
         {
+            log::debug!(
+                "GitHub attestation verification method failed; continuing with other attestations: {error}"
+            );
+            errors.push(error);
+            continue;
+        }
+        match verified {
             Ok(()) => match bundle_source_repository(&bundle) {
                 Some(source) if source.eq_ignore_ascii_case(repository) => {
                     warn_if_trust_root_unreachable(trust_root_failures);
@@ -95,10 +108,7 @@ pub(crate) async fn verify_attestation_bundles_for_artifact(
         });
     }
 
-    Err(AttestationError::Verification(join_error_strings(
-        errors,
-        || "No valid attestations found".to_string(),
-    )))
+    Err(no_attestation_verified(errors, trust_root_failures))
 }
 
 pub(crate) fn is_snappy_content_type(headers: &HeaderMap) -> bool {

@@ -1907,8 +1907,8 @@ fn may_send_token_with(url: &url::Url, api_url: &str, enterprise_hosts: &[String
     }
 }
 
-/// Retries the reachability probe gets before the API asset endpoint is used.
-const PROBE_RETRIES: i64 = 1;
+/// Max retries a browser asset request gets before switching to the API endpoint.
+pub const BROWSER_ASSET_MAX_RETRIES: i64 = 1;
 
 /// Pick which URL to use for a GitHub download.
 ///
@@ -1928,7 +1928,7 @@ pub async fn pick_reachable_asset_url(browser_url: &str, api_url: &str) -> Strin
     // for a URL, it tends to keep doing so while the API endpoint still serves
     // the file.
     match crate::http::HTTP
-        .head_without_netrc(browser_url, PROBE_RETRIES)
+        .head_without_netrc(browser_url, BROWSER_ASSET_MAX_RETRIES)
         .await
     {
         Ok(resp) => {

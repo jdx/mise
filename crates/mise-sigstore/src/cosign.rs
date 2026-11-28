@@ -23,9 +23,8 @@ pub async fn verify_cosign_signature(
         return Ok(true);
     }
     // Legacy cosign v1 bundle (`{base64Signature, cert, rekorBundle}`).
-    // sigstore-verify only consumes the modern bundle shape, so we verify
-    // these manually: chain-validate the embedded cert against Sigstore
-    // Fulcio, then ECDSA-verify the signature over the artifact bytes.
+    // sigstore-verify only consumes the modern bundle shape, so these are
+    // rewritten into it and then verified the same way.
     let trusted_root = trust_roots.sigstore_root().await?;
     verify_legacy_cosign_bundle(&artifact, &content, trusted_root, identity)?;
     Ok(true)
@@ -195,22 +194,23 @@ pub(crate) fn verify_dsse_artifact_subject(payload: &[u8], artifact: &[u8]) -> R
 /// Cosign 2.x and earlier `cosign sign-blob --bundle` writes this format. The
 /// modern sigstore Bundle (with `verificationMaterial`/`messageSignature`)
 /// replaces it, but tools like goreleaser still produce v1 bundles in their
-/// release artifacts. Verification mirrors what we do for raw DSSE envelopes:
-/// decode the embedded Fulcio cert (PEM in `cert`), chain-validate it against
-/// the public Sigstore trust root, then ECDSA-verify `base64Signature` over
-/// the raw artifact bytes with the cert's public key.
+/// release artifacts. A v1 bundle holds what a v0.1 sigstore Bundle holds, so
+/// it is rewritten as one and takes the same `verify_bundle` path: whoever
+/// serves the file picks its format, and that must not decide how much of it
+/// gets checked.
 ///
-/// The Rekor `SignedEntryTimestamp` and the artifact hash recorded in the
-/// rekord entry aren't independently re-checked here — re-verifying them
-/// would require a Rekor public key lookup and adds little: the cert+sig
-/// step already cryptographically binds the signer to the artifact bytes,
-/// which is what every downstream consumer cares about.
+/// `rekorBundle` is required. Its `SignedEntryTimestamp` is the only proof of
+/// when the signature was made, and a Fulcio cert vouches for its key only
+/// during the ~10 min it is valid; without it an expired cert would keep
+/// verifying new signatures for whoever kept the key.
 pub(crate) fn verify_legacy_cosign_bundle(
     artifact: &[u8],
     bundle_json: &str,
     trusted_root: &TrustedRoot,
     identity: &CosignIdentity,
 ) -> Result<()> {
+    use sigstore_verify::types::bundle::MediaType;
+
     let value: serde_json::Value = serde_json::from_str(bundle_json).map_err(|e| {
         AttestationError::UnsupportedFormat(format!("not a sigstore or cosign bundle: {e}"))
     })?;
@@ -235,15 +235,61 @@ pub(crate) fn verify_legacy_cosign_bundle(
         AttestationError::Verification(format!("legacy cosign cert is not UTF-8 PEM: {e}"))
     })?;
     let cert = DerCertificate::from_pem(cert_pem)?;
-    verify_cert_chain(cert.as_bytes(), trusted_root)?;
-    verify_certificate_identity(cert.as_bytes(), identity)?;
 
-    let sig_bytes = base64::engine::general_purpose::STANDARD
-        .decode(sig_b64.as_bytes())
-        .map_err(|e| AttestationError::Verification(format!("invalid base64 signature: {e}")))?;
-    let spki_der = extract_spki_der(cert.as_bytes())?;
-    let public_key = DerPublicKey::new(spki_der);
-    verify_raw_signature(artifact, &sig_bytes, &public_key)
+    let rekor_bundle = value
+        .get("rekorBundle")
+        .filter(|v| !v.is_null())
+        .ok_or_else(|| {
+            AttestationError::Verification(
+                "legacy cosign bundle has no rekorBundle to prove when it was signed".to_string(),
+            )
+        })?;
+    let tlog_entry = legacy_rekor_bundle_to_tlog_entry(rekor_bundle)?;
+
+    let bundle: Bundle = serde_json::from_value(serde_json::json!({
+        "mediaType": MediaType::Bundle0_1.as_str(),
+        "verificationMaterial": {
+            "x509CertificateChain": { "certificates": [{ "rawBytes": cert }] },
+            "tlogEntries": [tlog_entry],
+        },
+        "messageSignature": { "signature": sig_b64 },
+    }))
+    .map_err(|e| AttestationError::Verification(format!("invalid legacy cosign bundle: {e}")))?;
+    verify_bundle(artifact, &bundle, None, trusted_root)?;
+    verify_certificate_identity(cert.as_bytes(), identity)
+}
+
+/// Rewrite the `rekorBundle` of a legacy cosign bundle as a `tlogEntries` item
+/// of a sigstore Bundle. Both hold a Rekor v1 entry and its
+/// `SignedEntryTimestamp`; only field names and encodings differ.
+fn legacy_rekor_bundle_to_tlog_entry(
+    rekor_bundle: &serde_json::Value,
+) -> Result<serde_json::Value> {
+    let b64 = base64::engine::general_purpose::STANDARD;
+    let invalid = |field: &str| {
+        AttestationError::Verification(format!("invalid {field} in legacy cosign rekorBundle"))
+    };
+    let payload = &rekor_bundle["Payload"];
+    // The entry's kind and version are only recorded in its body.
+    let body: serde_json::Value = payload["body"]
+        .as_str()
+        .and_then(|body| b64.decode(body).ok())
+        .and_then(|body| serde_json::from_slice(&body).ok())
+        .ok_or_else(|| invalid("body"))?;
+    // Hex here, base64 in a sigstore Bundle.
+    let log_id = payload["logID"]
+        .as_str()
+        .and_then(|log_id| hex::decode(log_id).ok())
+        .ok_or_else(|| invalid("logID"))?;
+
+    Ok(serde_json::json!({
+        "logIndex": payload["logIndex"],
+        "logId": { "keyId": b64.encode(log_id) },
+        "kindVersion": { "kind": body["kind"], "version": body["apiVersion"] },
+        "integratedTime": payload["integratedTime"],
+        "inclusionPromise": { "signedEntryTimestamp": rekor_bundle["SignedEntryTimestamp"] },
+        "canonicalizedBody": payload["body"],
+    }))
 }
 
 pub(crate) fn decode_cosign_signature(bytes: &[u8]) -> Vec<u8> {

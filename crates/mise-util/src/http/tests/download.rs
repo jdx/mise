@@ -522,7 +522,7 @@ async fn test_download_total_timeout_bounds_trickling_response() {
             None,
             DownloadLimits {
                 time: Duration::from_millis(500),
-                ..DownloadLimits::new(None, &HeaderMap::new())
+                ..DownloadLimits::new(DownloadOptions::default(), &HeaderMap::new())
             },
         ),
     )
@@ -573,7 +573,8 @@ async fn test_download_retries_under_prefer_offline() {
 async fn test_invocation_downloads_are_kept_apart_by_tool_scope() {
     let client = Client::new(Duration::from_secs(2), ClientKind::Http).unwrap();
     let url = Url::parse("https://files.example.com/tool.tar.gz").unwrap();
-    let key = || invocation_download_key(&client, &url, &HeaderMap::new(), None);
+    let key =
+        || invocation_download_key(&client, &url, &HeaderMap::new(), DownloadOptions::default());
     let outside = key();
     let trusted = crate::untrusted_hosts::with_tool_scope(true, async { key() }).await;
     let untrusted = crate::untrusted_hosts::with_tool_scope(false, async { key() }).await;
