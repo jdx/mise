@@ -6278,8 +6278,8 @@ fn restore_missing_versions_brings_back_a_variant_with_other_options() {
         .tools
         .insert("http:widget".to_string(), vec![plain.clone()]);
 
-    current.restore_missing_versions(&previous, "http:widget");
-    current.restore_missing_versions(&previous, "http:widget");
+    current.restore_missing_versions(&previous, "http:widget", &ExcludedPlatforms::new());
+    current.restore_missing_versions(&previous, "http:widget", &ExcludedPlatforms::new());
 
     let entries = &current.tools["http:widget"];
     assert_eq!(entries.len(), 2, "{entries:?}");
@@ -6303,7 +6303,7 @@ fn restore_missing_versions_keeps_the_requests_this_run_did_not_bind() {
     rebuilt.specifiers = BTreeSet::from(["1".to_string()]);
     let mut current = Lockfile::default();
     current.tools.insert("widget".to_string(), vec![rebuilt]);
-    current.restore_missing_versions(&previous, "widget");
+    current.restore_missing_versions(&previous, "widget", &ExcludedPlatforms::new());
     let entries = &current.tools["widget"];
     assert_eq!(entries.len(), 1, "{entries:?}");
     assert_eq!(entries[0].specifiers, shared.specifiers);
@@ -6314,8 +6314,8 @@ fn restore_missing_versions_keeps_the_requests_this_run_did_not_bind() {
     moved.specifiers = BTreeSet::from(["1".to_string()]);
     let mut current = Lockfile::default();
     current.tools.insert("widget".to_string(), vec![moved]);
-    current.restore_missing_versions(&previous, "widget");
-    current.restore_missing_versions(&previous, "widget");
+    current.restore_missing_versions(&previous, "widget", &ExcludedPlatforms::new());
+    current.restore_missing_versions(&previous, "widget", &ExcludedPlatforms::new());
     let entries = &current.tools["widget"];
     assert_eq!(entries.len(), 2, "{entries:?}");
     let restored = entries.iter().find(|e| e.version == "1.0.0").unwrap();
@@ -6341,7 +6341,7 @@ fn restore_missing_versions_drops_an_entry_whose_requests_all_moved() {
         .tools
         .insert("widget".to_string(), vec![moved.clone()]);
 
-    current.restore_missing_versions(&previous, "widget");
+    current.restore_missing_versions(&previous, "widget", &ExcludedPlatforms::new());
 
     let versions = current.tools["widget"]
         .iter()
@@ -6388,7 +6388,7 @@ fn restore_missing_versions_keeps_the_conda_records_this_run_wrote() {
     };
     current.set_conda_package(platform, "libzlib-1.3", fresh.clone());
 
-    current.restore_missing_versions(&previous, "conda:old");
+    current.restore_missing_versions(&previous, "conda:old", &ExcludedPlatforms::new());
 
     assert_eq!(current.tools["conda:old"].len(), 1);
     assert_eq!(
@@ -6425,7 +6425,7 @@ fn restore_missing_versions_keeps_the_platforms_this_run_did_not_lock() {
     rebuilt.unsupported_platforms = BTreeSet::from(["windows-x64".to_string()]);
     let mut current = Lockfile::default();
     current.tools.insert("widget".to_string(), vec![rebuilt]);
-    current.restore_missing_versions(&previous, "widget");
+    current.restore_missing_versions(&previous, "widget", &ExcludedPlatforms::new());
 
     let entries = &current.tools["widget"];
     assert_eq!(entries.len(), 1, "{entries:?}");
@@ -6464,7 +6464,7 @@ fn restore_missing_versions_keeps_the_platforms_found_unsupported_before() {
     )]);
     let mut current = Lockfile::default();
     current.tools.insert("widget".to_string(), vec![rebuilt]);
-    current.restore_missing_versions(&previous, "widget");
+    current.restore_missing_versions(&previous, "widget", &ExcludedPlatforms::new());
 
     let entry = &current.tools["widget"][0];
     assert_eq!(
@@ -6503,7 +6503,7 @@ fn restore_missing_versions_keeps_platform_results_of_another_backend_out() {
     )]);
     let mut current = Lockfile::default();
     current.tools.insert("widget".to_string(), vec![rebuilt]);
-    current.restore_missing_versions(&previous, "widget");
+    current.restore_missing_versions(&previous, "widget", &ExcludedPlatforms::new());
 
     let entries = &current.tools["widget"];
     assert_eq!(entries.len(), 1, "{entries:?}");
@@ -6536,7 +6536,7 @@ backend = "conda:jq"
     let previous = Lockfile::read(&path).unwrap();
 
     let mut current = Lockfile::default();
-    current.restore_missing_versions(&previous, "jq");
+    current.restore_missing_versions(&previous, "jq", &ExcludedPlatforms::new());
 
     assert!(current.has_platforms("jq", "1.7.1"));
     assert!(

@@ -2257,7 +2257,16 @@ impl Lockfile {
     /// those this lockfile binds again, maybe to another version. They also
     /// come back to an entry this lockfile still has: a request only a skipped
     /// task makes can share a version with one this run locked.
-    pub fn restore_missing_versions(&mut self, previous: &Lockfile, short: &str) {
+    ///
+    /// The platforms in `excluded` were left out on purpose (see
+    /// [`ExcludedPlatforms`]), so their records do not come back, and neither does an
+    /// entry that had nothing else.
+    pub fn restore_missing_versions(
+        &mut self,
+        previous: &Lockfile,
+        short: &str,
+        excluded: &ExcludedPlatforms,
+    ) {
         let Some(entries) = previous.tools_for(short) else {
             return;
         };
@@ -2278,6 +2287,22 @@ impl Lockfile {
             .collect();
         for entry in entries {
             let mut entry = entry.clone();
+            let version = entry.version.clone();
+            let is_excluded = |platform: &String| {
+                excluded.contains(&(key.clone(), version.clone(), platform.clone()))
+            };
+            let recorded = entry.platforms.len() + entry.unsupported_platforms.len();
+            let platforms = std::mem::take(&mut entry.platforms)
+                .into_iter()
+                .filter(|(platform, _)| !is_excluded(platform))
+                .collect();
+            let unsupported = std::mem::take(&mut entry.unsupported_platforms)
+                .into_iter()
+                .filter(|platform| !is_excluded(platform))
+                .collect();
+            entry.platforms = platforms;
+            entry.unsupported_platforms = unsupported;
+            let left_out = recorded != entry.platforms.len() + entry.unsupported_platforms.len();
             let was_bound = !entry.specifiers.is_empty();
             entry
                 .specifiers
@@ -2321,6 +2346,11 @@ impl Lockfile {
                     }
                 }
                 self.restore_conda_packages(previous, &restored);
+                continue;
+            }
+            // Generation wrote nothing for this version because its `os` option excludes every
+            // platform it had, as it would with the skipped task file read.
+            if left_out && entry.platforms.is_empty() && entry.unsupported_platforms.is_empty() {
                 continue;
             }
             self.restore_conda_packages(previous, &entry.platforms);
@@ -5791,6 +5821,11 @@ impl UnsupportedPlatforms {
             .collect()
     }
 }
+
+/// The platforms of a tool's versions that `mise lock` left out on purpose, because the
+/// request's `os` option excludes them: `(tool key, version, platform key)`. Generation drops
+/// their records, so restoring what a skipped task file may still use must not bring them back.
+pub type ExcludedPlatforms = BTreeSet<(String, String, String)>;
 
 pub type LockResolutionResult = (
     String,

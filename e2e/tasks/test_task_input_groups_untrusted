@@ -114,3 +114,40 @@ assert_contains "mise tasks ls" "build"
 assert_not_contains "mise tasks info build --json" "lib/**"
 assert "mise trust"
 assert_contains "mise tasks info build --json" "$(dirname "$PWD")/lib/**"
+
+echo "=== a project task that declares global = true is still the project's ==="
+cd .. || exit 1
+rm "$ran/sourced"
+cat <<'EOF' >mise.toml
+[task_config]
+cascade = true
+
+[task_config.input_groups]
+src = ["{{ vars.dir }}/**"]
+EOF
+mise trust >/dev/null
+mkdir -p child3/mise-tasks
+cat <<EOF >child3/setup.sh
+touch "$ran/sourced"
+export dir=lib
+EOF
+cat <<'EOF' >child3/mise.toml
+[tasks.build]
+run = "true"
+global = true
+sources = ["@group:src"]
+vars._.source = "./setup.sh"
+EOF
+cat <<'EOF' >child3/mise-tasks/script
+#!/usr/bin/env bash
+#MISE global=true
+#MISE sources=["@group:src"]
+#MISE vars={_={source="./setup.sh"}}
+EOF
+chmod +x child3/mise-tasks/script
+cd child3 || exit 1
+assert_contains "mise trust --show" "child3: untrusted"
+assert_contains "mise tasks ls" "build"
+assert_contains "mise tasks ls" "script"
+mise __complete_word__ --shell fish --line 'mise run ' >/dev/null 2>&1 || true
+assert_empty "ls $ran"

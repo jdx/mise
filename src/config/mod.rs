@@ -8247,7 +8247,7 @@ fn safe_mode_task_include_bounds(
     if is_global || !Settings::safe_mode() {
         return None;
     }
-    let dir = file::desymlink_path(dir);
+    let dir = task_include_bound_dir(dir);
     let mut bounds = vec![dir.clone()];
     if let Some(checkout) = dir.ancestors().find(|d| d.join(".git").exists())
         && holds_only_project_files(checkout)
@@ -8261,6 +8261,22 @@ fn safe_mode_task_include_bounds(
         }
     }
     Some(bounds)
+}
+
+/// The resolved directory that bounds the task includes of the config whose root is `dir`
+/// in safe mode. That is `dir` itself while it resolves inside the project that holds it by
+/// name, and the project otherwise: a `conf.d` folder that links outside the checkout keeps
+/// its includes resolving in the folder, but the folder's target is not the project's.
+fn task_include_bound_dir(dir: &Path) -> PathBuf {
+    let project = file::desymlink_path(&config_file::config_root::spelled_project(
+        &dir.join("mise.toml"),
+    ));
+    let resolved = file::desymlink_path(dir);
+    if resolved.starts_with(&project) {
+        resolved
+    } else {
+        project
+    }
 }
 
 /// Whether `root`, the checkout or monorepo holding a project, can bound its task includes in

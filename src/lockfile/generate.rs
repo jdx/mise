@@ -441,6 +441,28 @@ impl PlatformSelection {
     }
 }
 
+/// The platforms [`generate`] leaves out of `tools` on purpose, with the same
+/// backend variants it skips: those a request's `os` option excludes.
+pub fn os_excluded_platforms(
+    tools: &[Tool],
+    platforms: &[Platform],
+) -> Result<super::ExcludedPlatforms> {
+    let mut excluded = super::ExcludedPlatforms::new();
+    for (ba, tv) in tools {
+        let backend = tv.backend()?;
+        let short = crate::toolset::install_state::state_short(&ba.short).into_owned();
+        for platform in platforms {
+            if tv.request.is_os_supported_on(platform) {
+                continue;
+            }
+            for platform in backend.platform_variants_for(tv, platform) {
+                excluded.insert((short.clone(), tv.version.clone(), platform.to_key()));
+            }
+        }
+    }
+    Ok(excluded)
+}
+
 pub async fn generate(
     previous: &Lockfile,
     tools: &[Tool],
@@ -2051,6 +2073,76 @@ mod tests {
         let platforms = &generated.tools_for("fixture").unwrap()[0].platforms;
         assert!(platforms.contains_key("linux-x64"));
         assert!(!platforms.contains_key("macos-arm64"));
+    }
+
+    fn fixture_with_os(os: &str) -> Vec<Tool> {
+        let ba = BackendArg::new("fixture".into(), Some("http:fixture".into()));
+        let mut options = ToolVersionOptions::default();
+        options.core.os = Some(vec![os.into()]);
+        let request =
+            ToolRequest::new_with_options(Arc::new(ba.clone()), "1", options, ToolSource::Argument)
+                .unwrap();
+        vec![(ba, ToolVersion::new(request, "1.0".into()))]
+    }
+
+    /// Safe mode skipped a task file, so `mise lock` restores what generation dropped. A
+    /// platform the `os` option now excludes was dropped on purpose and stays dropped.
+    #[tokio::test]
+    async fn restoring_for_a_skipped_task_file_keeps_os_excluded_platforms_out() {
+        crate::backend::load_tools().await.unwrap();
+        let platforms = [
+            Platform::parse("linux-x64").unwrap(),
+            Platform::parse("macos-arm64").unwrap(),
+        ];
+        let tools = fixture_with_os("linux");
+        let generated = generate(
+            &previous(),
+            &tools,
+            &platforms,
+            false,
+            PlatformSelection::Default,
+            2,
+            &[],
+        )
+        .await
+        .unwrap();
+        let excluded = os_excluded_platforms(&tools, &platforms).unwrap();
+        assert_eq!(
+            excluded,
+            BTreeSet::from([("fixture".into(), "1.0".into(), "macos-arm64".into())])
+        );
+        let mut restored = generated.clone();
+        restored.restore_missing_versions(&previous(), "fixture", &excluded);
+        let entries = restored.tools_for("fixture").unwrap();
+        assert_eq!(entries.len(), 1);
+        assert!(entries[0].platforms.contains_key("linux-x64"));
+        assert!(!entries[0].platforms.contains_key("macos-arm64"));
+        // A platform nothing excludes is still restored.
+        let mut restored = generated;
+        restored.restore_missing_versions(&previous(), "fixture", &ExcludedPlatforms::new());
+        assert!(
+            restored.tools_for("fixture").unwrap()[0]
+                .platforms
+                .contains_key("macos-arm64")
+        );
+
+        // Excluded from every target, the tool has no entry, and gets none back.
+        let tools = fixture_with_os("windows");
+        let mut generated = generate(
+            &previous(),
+            &tools,
+            &platforms,
+            false,
+            PlatformSelection::Default,
+            2,
+            &[],
+        )
+        .await
+        .unwrap();
+        assert!(generated.tools_for("fixture").is_none());
+        let excluded = os_excluded_platforms(&tools, &platforms).unwrap();
+        generated.restore_missing_versions(&previous(), "fixture", &excluded);
+        assert!(generated.tools_for("fixture").is_none());
     }
 
     /// A tool configured with URL credentials is selected under its

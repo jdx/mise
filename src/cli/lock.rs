@@ -1512,15 +1512,17 @@ impl Lock {
             run.setup.installed.unwrap_or_default(),
         )
         .await?;
+        // What a request's `os` option excludes was dropped on purpose, so it stays dropped.
+        let excluded = lockfile::generate::os_excluded_platforms(tools, target_platforms)?;
         for short in withheld {
-            lockfile.restore_missing_versions(previous, short);
+            lockfile.restore_missing_versions(previous, short, &excluded);
         }
         // Safe mode left out a task file, so `tools` lacks what its tasks request, and a
         // version only they pin was dropped above. Keep every locked version, as
         // `prune_stale_versions` does outside generate mode.
         if crate::config::safe_mode_skipped_task_file() {
             for short in previous.tools().keys() {
-                lockfile.restore_missing_versions(previous, short);
+                lockfile.restore_missing_versions(previous, short, &excluded);
             }
         }
         Ok((Vec::new(), Vec::new()))
@@ -4397,7 +4399,7 @@ mod tests {
 
         // A pin the skipped task still holds stays in the lockfile and is not replaced.
         let mut kept = generated.clone();
-        kept.restore_missing_versions(&previous, "dummy");
+        kept.restore_missing_versions(&previous, "dummy", &Default::default());
         assert!(
             cmd.replaced_versions(&previous, &kept, &tools, &BTreeMap::new(), true)
                 .is_empty()
