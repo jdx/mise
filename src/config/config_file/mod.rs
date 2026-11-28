@@ -175,24 +175,44 @@ impl EffectiveToolRequests {
 /// still leave a toolset that no longer builds, which would also stop the next `mise use` from
 /// undoing the edit.
 ///
-/// `config_files` are the loaded config files from the highest priority down. `edited` takes the
-/// place of the loaded file at its path; a file not loaded yet is created next to the closest
-/// configs, so it is counted first.
+/// `config_files` are the loaded config files from the highest priority down. Only those that
+/// load together with `edited` are counted: for a global file, the other global files; for a
+/// file that is not loaded here, such as one `--path` names, the global files and the loaded
+/// files whose directory holds it. `edited` takes the place of the loaded file at its path; a
+/// file not loaded yet is created next to the closest configs, so it is counted first. A file
+/// other than `edited` that cannot list its tools is left out, since the edit does not change it.
 pub fn ensure_edit_keeps_tool_request_count(
     config_files: &IndexMap<PathBuf, Arc<dyn ConfigFile>>,
     edited: &Arc<dyn ConfigFile>,
 ) -> Result<()> {
     let path = edited.get_path();
+    let loaded = config_files.contains_key(path);
+    let global = crate::config::is_global_config(path);
+    let root = edited.config_root();
+    let loads_with_edited = |p: &Path, cf: &Arc<dyn ConfigFile>| {
+        if crate::config::is_global_config(p) {
+            true
+        } else if global {
+            false
+        } else {
+            loaded || root.starts_with(cf.config_root())
+        }
+    };
     let mut files: Vec<&Arc<dyn ConfigFile>> = config_files
         .iter()
+        .filter(|(p, cf)| *p == path || loads_with_edited(p, cf))
         .map(|(p, cf)| if p == path { edited } else { cf })
         .collect();
-    if !config_files.contains_key(path) {
+    if !loaded {
         files.insert(0, edited);
     }
     let mut effective = EffectiveToolRequests::default();
     for cf in files {
-        let mut trs = cf.to_tool_request_set()?;
+        let mut trs = match cf.to_tool_request_set() {
+            Ok(trs) => trs,
+            Err(_) if !Arc::ptr_eq(cf, edited) => continue,
+            Err(e) => return Err(e),
+        };
         effective
             .add(&mut trs.tools, Vec::len)
             .map_err(|e| eyre!("not saving {}: {e}", display_path(path)))?;
@@ -2064,6 +2084,17 @@ mod tests {
             assert!(err.to_string().contains("1001 tool versions"), "{err}");
             assert!(err.to_string().contains("not saving"), "{err}");
         }
+        // a file in another project, as `mise use --path` names, never loads with these
+        let other = tempfile::tempdir().unwrap();
+        let elsewhere: Arc<dyn ConfigFile> = Arc::new(
+            MiseToml::from_str("[tools]\npython = \"3\"\n", &other.path().join("mise.toml"))
+                .unwrap(),
+        );
+        ensure_edit_keeps_tool_request_count(&files, &elsewhere).unwrap();
+        // a file in a subdirectory of the loaded ones loads with them
+        std::fs::create_dir_all(dir.path().join("sub")).unwrap();
+        let below = toml("sub/mise.toml", "[tools]\npython = \"3\"\n");
+        assert!(ensure_edit_keeps_tool_request_count(&files, &below).is_err());
     }
 
     /// Files from the highest priority down; a tool's list in a closer file replaces the lists
