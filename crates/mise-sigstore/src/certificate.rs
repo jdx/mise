@@ -93,9 +93,27 @@ pub(crate) fn bundle_tag_mismatch(bundle: &Bundle, tags: &[String]) -> Option<St
     }
     let named = bundle_source_tag(bundle).filter(|named| !tags.contains(named))?;
     Some(format!(
-        "attestation was made for tag {named}, not {}",
+        "attestation was made for tag {}, not {}",
+        shown_tag(&named),
         tags.join(" or ")
     ))
+}
+
+/// A tag read from an attestation, for a message: the payload is not yet
+/// trusted when the tag is checked, so line breaks and control characters
+/// are escaped and a long tag is cut short.
+fn shown_tag(tag: &str) -> String {
+    const MAX_CHARS: usize = 128;
+    let shown: String = tag
+        .chars()
+        .take(MAX_CHARS)
+        .flat_map(char::escape_default)
+        .collect();
+    if tag.chars().count() > MAX_CHARS {
+        format!("{shown}...")
+    } else {
+        shown
+    }
 }
 
 fn certificate_extension<'c>(cert: &'c x509_cert::Certificate, oid: &str) -> Option<&'c [u8]> {
@@ -424,3 +442,14 @@ pub(crate) fn extract_spki_der(cert_der: &[u8]) -> Result<Vec<u8>> {
 /// `None` means "use the crate default" (unchanged behavior).
 pub(crate) static TUF_URL_OVERRIDE: std::sync::RwLock<Option<String>> =
     std::sync::RwLock::new(None);
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_a_tag_from_an_attestation_is_escaped_and_cut_short() {
+        assert_eq!(super::shown_tag("v1.2.3"), "v1.2.3");
+        assert_eq!(super::shown_tag("v1\n\u{1b}[2J"), "v1\\n\\u{1b}[2J");
+        let long = super::shown_tag(&"x".repeat(1000));
+        assert_eq!(long, format!("{}...", "x".repeat(128)));
+    }
+}

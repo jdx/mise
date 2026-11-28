@@ -260,6 +260,7 @@ async fn verify_attestation_uncached(
         api_url.unwrap_or(crate::github::API_URL),
         resolve_token_for_wrapper(api_url),
     )?;
+    let asked = std::time::SystemTime::now();
     let result = mise_sigstore::verify_github_attestation_with_base_url_and_digest(
         mise_sigstore::GithubAttestationRequest {
             artifact_path,
@@ -276,7 +277,7 @@ async fn verify_attestation_uncached(
     .await;
     let result = accept_renamed_repository(owner, repo, api_url, result).await;
     if let Some(kept) = &confirming {
-        kept.settle(&result);
+        kept.settle(&result, asked);
     }
     result.map_err(|err| {
         rejection_stands(
@@ -385,6 +386,7 @@ pub async fn verify_attestation_with_predicate_type(
         }
     }
     let client = attestation_client(api_url.unwrap_or(crate::github::API_URL))?;
+    let asked = std::time::SystemTime::now();
     let result = match client
         .fetch_attestations(FetchParams {
             owner: owner.to_string(),
@@ -413,7 +415,7 @@ pub async fn verify_attestation_with_predicate_type(
         )),
     };
     if let Some(kept) = &confirming {
-        kept.settle(&result);
+        kept.settle(&result, asked);
     }
     result
 }
@@ -473,6 +475,7 @@ pub async fn detect_attestations(
         }
     }
 
+    let asked = std::time::SystemTime::now();
     let found = async {
         let (base_url, token) = routed_api_url(api_url, resolve_token_for_wrapper(Some(api_url)))
             .map_err(DetectError::SourceCreation)?;
@@ -488,17 +491,19 @@ pub async fn detect_attestations(
         Ok(!attestations.is_empty())
     }
     .await;
-    github_probe_verdict(found, rejected, owner, repo, digest, None)
+    github_probe_verdict(found, rejected, owner, repo, digest, None, asked)
 }
 
-/// GitHub's answer to a probe, `found`, once mise-versions' answer was
-/// `rejected` ([`MirrorVerdict::ConfirmWithGithub`]): GitHub confirming that
-/// there are no attestations settles the artifact for probes, unless the
-/// lookup was filtered by `predicate_type`, which leaves attestations of
-/// other types unasked for. The rejection stands when GitHub cannot answer
-/// ([`rejection_stands`]). GitHub finding attestations leaves it kept, so
-/// that the verification that follows has GitHub confirm a "none" from
-/// mise-versions too ([`verify_with_mirror`]).
+/// GitHub's answer to a probe, `found`, from a request made at `asked`,
+/// once mise-versions' answer was `rejected`
+/// ([`MirrorVerdict::ConfirmWithGithub`]): GitHub confirming that there are
+/// no attestations settles every record kept for the artifact
+/// ([`KeptRejection::settle_artifact`]), unless the lookup was filtered by
+/// `predicate_type`, which leaves attestations of other types unasked for.
+/// The rejection stands when GitHub cannot answer ([`rejection_stands`]).
+/// GitHub finding attestations leaves the records as they are, so that the
+/// verification that follows has GitHub confirm a "none" from mise-versions
+/// too ([`verify_with_mirror`]).
 fn github_probe_verdict(
     found: Result<bool, DetectError>,
     rejected: Option<AttestationError>,
@@ -506,6 +511,7 @@ fn github_probe_verdict(
     repo: &str,
     digest: &str,
     predicate_type: Option<&str>,
+    asked: std::time::SystemTime,
 ) -> Result<bool, DetectError> {
     let Some(rejected) = rejected else {
         return found;
@@ -514,7 +520,7 @@ fn github_probe_verdict(
         Ok(found) => {
             if !found && predicate_type.is_none() {
                 KeptRejection::for_probe(&format!("{owner}/{repo}"), &sha256_digest(digest))
-                    .forget();
+                    .settle_artifact(asked);
             }
             Ok(found)
         }
@@ -561,6 +567,7 @@ pub async fn detect_attestations_with_predicate_type(
         }
     }
 
+    let asked = std::time::SystemTime::now();
     let found = async {
         let client = attestation_client(api_url).map_err(DetectError::SourceCreation)?;
         let attestations = client
@@ -578,7 +585,15 @@ pub async fn detect_attestations_with_predicate_type(
         Ok(!attestations.is_empty())
     }
     .await;
-    github_probe_verdict(found, rejected, owner, repo, digest, Some(predicate_type))
+    github_probe_verdict(
+        found,
+        rejected,
+        owner,
+        repo,
+        digest,
+        Some(predicate_type),
+        asked,
+    )
 }
 
 /// Whether mise-versions saying an artifact has no attestations is taken as
@@ -709,37 +724,65 @@ fn forget_mirrored_attestations(repo: &str, digest: &str) {
     MIRRORED_ATTESTATIONS.lock().unwrap().remove(&key);
 }
 
-/// That a set of attestations mise-versions served for one artifact was
-/// rejected under one policy (the tags, signer workflow and predicate type
-/// asked for), kept on disk until an answer settles the artifact.
+/// What mise has learned about one artifact's attestations under one policy
+/// (the tags, signer workflow and predicate type asked for), kept once a set
+/// mise-versions served for the artifact was rejected.
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+enum KeptAnswer {
+    /// A set mise-versions served was checked and refused, for this reason.
+    Rejected(String),
+    /// GitHub's attestations verified the artifact.
+    Present,
+    /// GitHub has no attestations of the policy's predicate type for it.
+    Absent,
+}
+
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+struct KeptRecord {
+    answer: KeptAnswer,
+    /// When it was written, in nanoseconds since the Unix epoch.
+    written_at: u64,
+}
+
+/// An artifact's records, by policy.
+type KeptRecords = std::collections::BTreeMap<String, KeptRecord>;
+
+/// The records kept for one artifact once a set of attestations
+/// mise-versions served for it was rejected, one per policy, in one file.
 ///
 /// A rejected set is dropped, and mise-versions asked again
-/// ([`refreshed_mirrored_attestations`]), so without this the next command
-/// would find nothing kept and take a "none" from mise-versions as final.
-/// While one is kept, a "none" or a failed lookup from mise-versions has
-/// GitHub confirm the digest ([`unless_rejected`]), and the rejection stands
-/// when GitHub cannot answer ([`rejection_stands`]). A set that verifies, or
-/// GitHub confirming that there are no attestations, forgets it. Only a set
-/// that was checked and refused is kept ([`is_rejection`]): one left
-/// unchecked because a trust root could not be loaded rejects nothing.
+/// ([`refreshed_mirrored_attestations`]), so without a record the next
+/// command would find nothing kept and take a "none" from mise-versions as
+/// final. The rejection is written before the set is dropped, so a command
+/// stopped in between still leaves it. Only a set that was checked and
+/// refused is recorded ([`is_rejection`]): one left unchecked because a
+/// trust root could not be loaded rejects nothing.
 ///
-/// Each rejection is also kept for the digest alone, under any policy: the
-/// lock-time probe ([`detect_with_mirror`]) asks only whether an artifact
-/// has attestations, with no tags or signer to match, and must not take a
-/// "none" from mise-versions as final for an artifact whose set was
-/// rejected either ([`KeptRejection::for_probe`]). A verification under
-/// another policy reads it too, when its own policy has nothing kept: after
-/// the probe has GitHub find attestations, the verification that follows
-/// must not take a "none" from mise-versions as final either. GitHub saying
-/// there are none of one predicate type leaves it kept, since attestations
-/// of another type may exist ([`KeptRejection::forget_after_none`]).
+/// While a record says that a set was rejected, or that GitHub's
+/// attestations verified the artifact, a "none" or a failed lookup from
+/// mise-versions has GitHub confirm the digest ([`unless_rejected`]), and
+/// the rejection stands when GitHub cannot answer ([`rejection_stands`]).
+/// A verification reads its own policy's record first; with none of its
+/// own, any other policy's counts, since the lock-time probe may have just
+/// had GitHub find attestations, and so does one written after GitHub found
+/// none for its own. The probe ([`detect_with_mirror`]) has no policy and
+/// reads them all.
+///
+/// Answers settle records ([`KeptRejection::settle`]): a set from
+/// mise-versions that verifies drops its policy's record; GitHub verifying
+/// records that attestations are present, and GitHub finding none of a
+/// predicate type records that for the policy, leaving other types'
+/// records as they are. Only GitHub finding no attestations at all, in an
+/// unfiltered lookup, settles every policy's record. GitHub's answer
+/// settles only records written before it was asked, and the file is
+/// changed under a lock, so a rejection another command writes meanwhile
+/// stays.
 struct KeptRejection {
     full: String,
-    /// The record [`KeptRejection::load`] reads.
+    /// The file holding the artifact's records.
     key: String,
-    /// The record for the digest under any policy, written and dropped
-    /// with `key`.
-    digest_key: String,
+    /// This policy's record in it, or `None` for the probe.
+    policy: Option<String>,
     /// Whether the policy names a predicate type, so that GitHub's "none"
     /// for it says nothing about attestations of other types.
     typed: bool,
@@ -754,168 +797,251 @@ impl KeptRejection {
         predicate_type: Option<&str>,
     ) -> Self {
         let digest = format!("sha256:{artifact_digest}");
-        let policy = (
-            full.to_ascii_lowercase(),
-            &digest,
-            tags,
-            expected_workflow,
-            predicate_type,
-        );
         Self {
             full: full.to_string(),
-            key: format!(
-                "attestation-rejection-{}",
-                crate::hash::hash_to_str(&policy)
-            ),
-            digest_key: Self::digest_key(full, &digest),
+            key: Self::artifact_key(full, &digest),
+            policy: Some(crate::hash::hash_to_str(&(
+                tags,
+                expected_workflow,
+                predicate_type,
+            ))),
             typed: predicate_type.is_some(),
         }
     }
 
-    /// The rejection kept for `full` at `digest` (`sha256:<hex>`) under any
-    /// policy, as the lock-time probe reads it.
+    /// The records for `full` at `digest` (`sha256:<hex>`), as the lock-time
+    /// probe, which has no policy, reads them.
     fn for_probe(full: &str, digest: &str) -> Self {
-        let digest_key = Self::digest_key(full, digest);
         Self {
             full: full.to_string(),
-            key: digest_key.clone(),
-            digest_key,
+            key: Self::artifact_key(full, digest),
+            policy: None,
             typed: false,
         }
     }
 
-    fn digest_key(full: &str, digest: &str) -> String {
+    fn artifact_key(full: &str, digest: &str) -> String {
         let artifact = (full.to_ascii_lowercase(), digest.to_ascii_lowercase());
         format!(
-            "attestation-rejection-digest-{}",
+            "attestation-answers-{}",
             crate::hash::hash_to_str(&artifact)
         )
     }
 
-    fn cache(key: &str) -> crate::cache::CacheManager<String> {
+    fn cache(&self) -> crate::cache::CacheManager<KeptRecords> {
         crate::cache::CacheManagerBuilder::new(
-            attestations_cache_dir().join(format!("{key}.msgpack.z")),
+            attestations_cache_dir().join(format!("{}.msgpack.z", self.key)),
         )
         .build()
     }
 
-    /// The rejection a command before this one kept.
-    fn load(&self) -> Option<AttestationError> {
-        let cache = Self::cache(&self.key);
+    fn records(&self) -> KeptRecords {
+        let cache = self.cache();
         if !cache.has_fresh_value() {
-            return None;
+            return KeptRecords::new();
         }
-        match cache.get_cached() {
-            Ok(rejection) => Some(AttestationError::Verification(format!(
-                "attestations mise-versions served for {} were rejected, and nothing has settled this artifact since: {rejection}",
+        cache.get_cached().unwrap_or_else(|err| {
+            debug!(
+                "failed to read the attestation answers kept for {}: {err:#}",
                 self.full
-            ))),
+            );
+            KeptRecords::new()
+        })
+    }
+
+    /// Why GitHub has to confirm a "none" or a failed lookup from
+    /// mise-versions, if it has to.
+    fn load(&self) -> Option<AttestationError> {
+        let records = self.records();
+        let own = self.policy.as_ref().and_then(|policy| records.get(policy));
+        let record = match own {
+            Some(own) if !matches!(own.answer, KeptAnswer::Absent) => own,
+            // GitHub's "none" for this policy stands unless another policy's
+            // record was written since.
+            own => records.values().find(|record| {
+                !matches!(record.answer, KeptAnswer::Absent)
+                    && own.is_none_or(|own| record.written_at > own.written_at)
+            })?,
+        };
+        let full = &self.full;
+        let why = match &record.answer {
+            KeptAnswer::Rejected(rejection) => format!(
+                "attestations mise-versions served for {full} were rejected, and nothing has settled this artifact since: {rejection}"
+            ),
+            KeptAnswer::Present => format!(
+                "GitHub's attestations for {full} verified this artifact, and mise-versions does not have them"
+            ),
+            KeptAnswer::Absent => return None,
+        };
+        Some(AttestationError::Verification(why))
+    }
+
+    /// Change the artifact's records under a lock, so that concurrent
+    /// commands keep each other's. One lock serves every artifact: it is
+    /// held only to read and write one small file, and leaves no lock file
+    /// behind per artifact. Whether the change was written.
+    fn update(&self, change: impl FnOnce(&mut KeptRecords)) -> bool {
+        let lock = crate::lock_file::LockFile::at(&kept_answers_lock_path()).lock();
+        let _lock = match lock {
+            Ok(lock) => lock,
             Err(err) => {
                 debug!(
-                    "failed to read the attestation rejection kept for {}: {err:#}",
+                    "failed to lock the attestation answers kept for {}: {err:#}",
                     self.full
                 );
-                None
+                return false;
             }
+        };
+        let mut records = self.records();
+        change(&mut records);
+        let mut cache = self.cache();
+        let written = if records.is_empty() {
+            cache.clear()
+        } else {
+            cache.write(&records)
+        };
+        if let Err(err) = &written {
+            debug!(
+                "failed to keep the attestation answers for {}: {err:#}",
+                self.full
+            );
         }
+        written.is_ok()
     }
 
-    /// Both records, or the one a probe's holds.
-    fn keys(&self) -> impl Iterator<Item = &str> {
-        std::iter::once(self.key.as_str())
-            .chain((self.digest_key != self.key).then_some(self.digest_key.as_str()))
+    /// Record that a set mise-versions served was rejected under this
+    /// policy. Whether it was written.
+    fn keep(&self, rejection: &AttestationError) -> bool {
+        let Some(policy) = &self.policy else {
+            return false;
+        };
+        let record = KeptRecord {
+            answer: KeptAnswer::Rejected(rejection.to_string()),
+            written_at: nanos_since_epoch(std::time::SystemTime::now()),
+        };
+        self.update(|records| {
+            records.insert(policy.clone(), record);
+        })
     }
 
-    fn keep(&self, rejection: &AttestationError) {
-        let rejection = rejection.to_string();
-        for key in self.keys() {
-            if let Err(err) = Self::cache(key).write(&rejection) {
-                debug!(
-                    "failed to keep the attestation rejection for {}: {err:#}",
-                    self.full
-                );
-            }
-        }
-    }
-
-    fn forget(&self) {
-        self.clear(self.keys());
-    }
-
-    /// GitHub confirmed that there are no attestations under this policy.
-    /// That settles its own record, and the digest's only when no predicate
-    /// type filtered the lookup: attestations of another type may exist,
-    /// and an unfiltered probe or verification must still have GitHub
-    /// confirm a "none" from mise-versions.
-    fn forget_after_none(&self) {
-        self.clear(
-            self.keys()
-                .filter(|key| !self.typed || *key != self.digest_key),
-        );
-    }
-
-    fn clear<'a>(&self, keys: impl Iterator<Item = &'a str>) {
-        for key in keys {
-            if let Err(err) = Self::cache(key).clear() {
-                debug!(
-                    "failed to drop the attestation rejection kept for {}: {err:#}",
-                    self.full
-                );
-            }
-        }
-    }
-
-    /// Record mise-versions' `verdict` once `rejection_is_new` says whether
-    /// the rejection it carries, if any, was made in this command.
-    fn record(&self, verdict: &MirrorVerdict, rejection_is_new: bool) {
+    /// Record mise-versions' `verdict`: a verification drops this policy's
+    /// record, and a rejection replaces it.
+    fn record(&self, verdict: &MirrorVerdict) {
         match verdict {
-            MirrorVerdict::Done(Ok(_)) => self.forget(),
-            MirrorVerdict::Done(Err(err)) if is_rejection(err) => self.keep(err),
-            MirrorVerdict::ConfirmWithGithub(err) if rejection_is_new => self.keep(err),
+            MirrorVerdict::Done(Ok(_)) => {
+                if let Some(policy) = &self.policy
+                    && self.records().contains_key(policy)
+                {
+                    self.update(|records| {
+                        records.remove(policy);
+                    });
+                }
+            }
+            MirrorVerdict::Done(Err(err)) if is_rejection(err) => {
+                self.keep(err);
+            }
             _ => {}
         }
     }
 
-    /// GitHub's `result` once it was asked to confirm the artifact
-    /// ([`MirrorVerdict::ConfirmWithGithub`]): a verification or "no
-    /// attestations" settles it ([`KeptRejection::forget_after_none`]);
-    /// anything else leaves the rejection kept.
-    fn settle(&self, result: &AttestationResult<bool>) {
+    /// GitHub's `result`, from a request made at `asked`, once it was asked
+    /// to confirm the artifact ([`MirrorVerdict::ConfirmWithGithub`]).
+    fn settle(&self, result: &AttestationResult<bool>, asked: std::time::SystemTime) {
         match result {
-            Ok(_) => self.forget(),
-            Err(AttestationError::NoAttestations) => self.forget_after_none(),
+            Ok(_) => self.settle_policy(KeptAnswer::Present, asked),
+            Err(AttestationError::NoAttestations) if self.typed => {
+                self.settle_policy(KeptAnswer::Absent, asked)
+            }
+            Err(AttestationError::NoAttestations) => self.settle_artifact(asked),
             Err(_) => {}
+        }
+    }
+
+    /// Replace this policy's record with GitHub's `answer`, unless the
+    /// record was written after GitHub was asked.
+    fn settle_policy(&self, answer: KeptAnswer, asked: std::time::SystemTime) {
+        let Some(policy) = &self.policy else {
+            return;
+        };
+        let asked = nanos_since_epoch(asked);
+        let record = KeptRecord {
+            answer,
+            written_at: nanos_since_epoch(std::time::SystemTime::now()),
+        };
+        self.update(|records| {
+            if records
+                .get(policy)
+                .is_none_or(|kept| kept.written_at <= asked)
+            {
+                records.insert(policy.clone(), record);
+            }
+        });
+    }
+
+    /// GitHub, asked at `asked` without a predicate type, has no
+    /// attestations for the artifact: every record written before then is
+    /// settled.
+    fn settle_artifact(&self, asked: std::time::SystemTime) {
+        let asked = nanos_since_epoch(asked);
+        if self
+            .records()
+            .values()
+            .any(|record| record.written_at <= asked)
+        {
+            self.update(|records| records.retain(|_, record| record.written_at > asked));
         }
     }
 }
 
+fn kept_answers_lock_path() -> std::path::PathBuf {
+    attestations_cache_dir().join("attestation-answers.lock")
+}
+
+fn nanos_since_epoch(time: std::time::SystemTime) -> u64 {
+    time.duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| {
+            u64::try_from(since.as_nanos()).unwrap_or(u64::MAX)
+        })
+}
+
 /// The verdict on attestations from mise-versions for `full` that verify but
-/// were made by `made_by`, or `None` to ask mise-versions again. A kept set
-/// is dropped and asked for again, since one wrong answer would otherwise
-/// fail the artifact for as long as it is kept, with nobody asked; a fresh
-/// one is refused. Paranoid mode has GitHub answer instead.
+/// were made by `made_by`: `Continue` with the rejection to ask
+/// mise-versions again. A kept set is dropped and asked for again, since one
+/// wrong answer would otherwise fail the artifact for as long as it is kept,
+/// with nobody asked; a fresh one is refused. Either way the rejection is
+/// written to `kept` before the set is dropped, and when it cannot be, the
+/// set stays and the rejection is the verdict. Paranoid mode has GitHub
+/// answer instead.
 fn foreign_attestations_verdict(
     full: &str,
     digest: &str,
     made_by: &str,
     fresh: bool,
-) -> Option<MirrorVerdict> {
+    kept: &KeptRejection,
+) -> std::ops::ControlFlow<MirrorVerdict, AttestationError> {
+    use std::ops::ControlFlow;
     if !mirror_may_answer_none() {
         warn!(
             "mise-versions returned attestations for {full} made by {made_by}; verifying with GitHub instead"
         );
-        return Some(MirrorVerdict::AskGithub);
+        return ControlFlow::Break(MirrorVerdict::AskGithub);
+    }
+    let rejection = AttestationError::Verification(if fresh {
+        format!("the attestations mise-versions has for {full} were made by {made_by}")
+    } else {
+        format!("the attestations mise-versions had for {full} were made by {made_by}")
+    });
+    if !kept.keep(&rejection) {
+        return ControlFlow::Break(MirrorVerdict::Done(Err(rejection)));
     }
     forget_mirrored_attestations(full, digest);
-    if !fresh {
-        debug!(
-            "GitHub attestations kept for {full} were made by {made_by}; asking mise-versions again"
-        );
-        return None;
+    if fresh {
+        return ControlFlow::Break(MirrorVerdict::Done(Err(rejection)));
     }
-    Some(MirrorVerdict::Done(Err(AttestationError::Verification(
-        format!("the attestations mise-versions has for {full} were made by {made_by}"),
-    ))))
+    debug!(
+        "GitHub attestations kept for {full} were made by {made_by}; asking mise-versions again"
+    );
+    ControlFlow::Continue(rejection)
 }
 
 /// What mise-versions settled about an artifact's attestations: `T` is a
@@ -1055,6 +1181,15 @@ async fn verify_with_mirror(
         return MirrorVerdict::AskGithub;
     }
     let digest = format!("sha256:{artifact_digest}");
+    // What is kept about the artifact under this policy, across commands
+    // ([`KeptRejection`]).
+    let kept = KeptRejection::new(
+        &full,
+        artifact_digest,
+        tags,
+        expected_workflow,
+        predicate_type,
+    );
     // Why the kept set was rejected, if it was: then only a fresh answer that
     // settles the digest replaces that rejection ([`unless_rejected`]).
     let mut rejected = None;
@@ -1130,14 +1265,10 @@ async fn verify_with_mirror(
                 }
                 CachedAttestationVerification::Verified(sources) => {
                     let made_by = sources.join(", ");
-                    if let Some(verdict) =
-                        foreign_attestations_verdict(&full, &digest, &made_by, fresh)
-                    {
-                        return verdict;
+                    match foreign_attestations_verdict(&full, &digest, &made_by, fresh, &kept) {
+                        std::ops::ControlFlow::Break(verdict) => return verdict,
+                        std::ops::ControlFlow::Continue(rejection) => rejected = Some(rejection),
                     }
-                    rejected = Some(AttestationError::Verification(format!(
-                        "the attestations mise-versions had for {full} were made by {made_by}"
-                    )));
                 }
                 CachedAttestationVerification::Retry(err) if fresh => {
                     if !mirror_may_answer_none() {
@@ -1158,32 +1289,26 @@ async fn verify_with_mirror(
                         "GitHub attestations kept for {full} did not verify; asking mise-versions again"
                     );
                     rejected = kept_set_rejection(err);
+                    // On disk before the refresh drops the set, so that a
+                    // command stopped in between still leaves it; when it
+                    // cannot be written, the set stays and the rejection is
+                    // the verdict.
+                    if let Some(rejection) = rejected.take_if(|r| !kept.keep(r)) {
+                        return MirrorVerdict::Done(Err(rejection));
+                    }
                 }
             }
         }
         unreachable!("the second pass always returns")
     }
     .await;
-    // A rejection made in an earlier command stands until something settles
-    // the artifact ([`KeptRejection`]).
-    let kept = KeptRejection::new(
-        &full,
-        artifact_digest,
-        tags,
-        expected_workflow,
-        predicate_type,
-    );
-    let rejection_is_new = rejected.is_some();
-    if !rejection_is_new {
-        // A rejection under another policy (another tag or signer) still
-        // has GitHub confirm a "none": the lock-time probe may have had
-        // GitHub find attestations just before this verification.
-        rejected = kept
-            .load()
-            .or_else(|| KeptRejection::for_probe(&full, &digest).load());
+    if rejected.is_none() {
+        // A rejection made in an earlier command, or under another policy,
+        // stands until something settles the artifact ([`KeptRejection`]).
+        rejected = kept.load();
     }
     let verdict = unless_rejected(verdict, &mut rejected);
-    kept.record(&verdict, rejection_is_new);
+    kept.record(&verdict);
     verdict
 }
 
@@ -1817,6 +1942,9 @@ mod tests {
             let mut settings = mise_settings::SettingsPartial::empty();
             settings.url_replacements = replacements;
             settings.use_versions_host = use_versions_host;
+            // Paranoid provenance has GitHub confirm mise-versions, which
+            // these tests do not expect unless they turn it on themselves.
+            settings.paranoid = Some(mise_settings::Paranoid::none());
             crate::testing::reset_settings(Some(settings));
             Self { _lock: lock }
         }
@@ -2415,11 +2543,23 @@ mod tests {
         let digest = "sha256:1";
         let attestation: mise_sigstore::Attestation =
             serde_json::from_value(serde_json::json!({"bundle": {}, "bundle_url": null})).unwrap();
-        keep_for_test(repo, digest, Some(vec![attestation]));
+        keep_for_test(repo, digest, Some(vec![attestation.clone()]));
         assert!(kept_on_disk(repo, digest));
+        let kept = KeptRejection::new(repo, "1", &[], None, None);
 
-        // the set kept from an earlier command: asked for again, and gone
-        assert!(foreign_attestations_verdict(repo, digest, "evil/tool", false).is_none());
+        // the set kept from an earlier command: its rejection is written,
+        // then the set is asked for again, and gone
+        let std::ops::ControlFlow::Continue(rejection) =
+            foreign_attestations_verdict(repo, digest, "evil/tool", false, &kept)
+        else {
+            panic!("a kept foreign set was not asked for again");
+        };
+        assert!(rejection.to_string().contains("made by evil/tool"));
+        assert!(
+            kept.load()
+                .is_some_and(|err| err.to_string().contains("made by evil/tool")),
+            "the rejection was not written before the set was dropped"
+        );
         assert!(
             !kept_on_disk(repo, digest),
             "the foreign set stayed on disk"
@@ -2427,14 +2567,34 @@ mod tests {
         assert!(!kept_in_this_command(repo, digest));
 
         // the answer mise-versions gives now is refused
-        let verdict = foreign_attestations_verdict(repo, digest, "evil/tool", true);
+        let verdict = foreign_attestations_verdict(repo, digest, "evil/tool", true, &kept);
         assert!(
             matches!(
                 verdict,
-                Some(MirrorVerdict::Done(Err(AttestationError::Verification(ref msg))))
-                    if msg.contains("made by evil/tool")
+                std::ops::ControlFlow::Break(MirrorVerdict::Done(Err(
+                    AttestationError::Verification(ref msg)
+                ))) if msg.contains("made by evil/tool")
             ),
             "a fresh set made by another repository must fail"
+        );
+
+        // when the rejection cannot be written, the kept set stays and the
+        // rejection is the verdict, so no command takes a "none" after it
+        let other = "acme/unwritable";
+        keep_for_test(other, digest, Some(vec![attestation]));
+        // a directory where the lock goes: the records cannot be changed
+        std::fs::remove_file(kept_answers_lock_path()).unwrap();
+        std::fs::create_dir(kept_answers_lock_path()).unwrap();
+        let unwritable = KeptRejection::new(other, "1", &[], None, None);
+        assert!(matches!(
+            foreign_attestations_verdict(other, digest, "evil/tool", false, &unwritable),
+            std::ops::ControlFlow::Break(MirrorVerdict::Done(Err(AttestationError::Verification(
+                _
+            ))))
+        ));
+        assert!(
+            kept_on_disk(other, digest),
+            "the set was dropped unrecorded"
         );
     }
 
@@ -2687,7 +2847,7 @@ mod tests {
 
         // the command that rejected the set, then had GitHub confirm
         let rejection = AttestationError::Verification("made by evil/tool".to_string());
-        kept.record(&MirrorVerdict::ConfirmWithGithub(rejection), true);
+        assert!(kept.keep(&rejection));
 
         let verdict =
             verify_with_mirror(Path::new("unread"), owner, repo, &tags, None, None, &digest).await;
@@ -2703,7 +2863,10 @@ mod tests {
             rejection_stands(AttestationError::Api("503".to_string()), Some(err)),
             AttestationError::Verification(_)
         ));
-        kept.settle(&Err(AttestationError::Api("503".to_string())));
+        kept.settle(
+            &Err(AttestationError::Api("503".to_string())),
+            std::time::SystemTime::now(),
+        );
         assert!(kept.load().is_some());
 
         // another policy (another release's tag) has GitHub confirm too:
@@ -2726,7 +2889,10 @@ mod tests {
         ));
 
         // GitHub confirming that there are none settles the artifact
-        kept.settle(&Err(AttestationError::NoAttestations));
+        kept.settle(
+            &Err(AttestationError::NoAttestations),
+            std::time::SystemTime::now(),
+        );
         assert!(kept.load().is_none());
         assert!(matches!(
             verify_with_mirror(Path::new("unread"), owner, repo, &tags, None, None, &digest).await,
@@ -2754,11 +2920,11 @@ mod tests {
         let full = format!("{owner}/{repo}");
         let digest = "8".repeat(64);
         let slsa = "https://slsa.dev/provenance/v1";
+        let now = std::time::SystemTime::now;
         KeptRejection::new(&full, &digest, &["v0.9.0".to_string()], None, None).record(
             &MirrorVerdict::Done(Err(AttestationError::Verification(
                 "made for refs/tags/v0.9.0".to_string(),
             ))),
-            false,
         );
 
         // GitHub has no attestations of one predicate type: the probe
@@ -2769,8 +2935,16 @@ mod tests {
             panic!("the rejection was not read by a typed probe");
         };
         assert!(
-            !github_probe_verdict(Ok(false), Some(rejection), owner, repo, &digest, Some(slsa))
-                .unwrap()
+            !github_probe_verdict(
+                Ok(false),
+                Some(rejection),
+                owner,
+                repo,
+                &digest,
+                Some(slsa),
+                now()
+            )
+            .unwrap()
         );
         let MirrorVerdict::ConfirmWithGithub(rejection) =
             detect_with_mirror(owner, repo, &digest, None).await
@@ -2779,21 +2953,47 @@ mod tests {
         };
 
         // a typed verification that GitHub finds none for settles only its
-        // own policy
+        // own policy: it takes mise-versions' "none" from then on, while
+        // the probe and other policies still ask
         let tags = vec!["v1.0.0".to_string()];
         let typed = KeptRejection::new(&full, &digest, &tags, Some("release.yml"), Some(slsa));
-        typed.settle(&Err(AttestationError::NoAttestations));
+        assert!(typed.load().is_some());
+        typed.settle(&Err(AttestationError::NoAttestations), now());
+        assert!(typed.load().is_none());
+        assert!(matches!(
+            verify_with_mirror(
+                Path::new("unread"),
+                owner,
+                repo,
+                &tags,
+                Some("release.yml"),
+                Some(slsa),
+                &digest,
+            )
+            .await,
+            MirrorVerdict::Done(Err(AttestationError::NoAttestations))
+        ));
         assert!(
             KeptRejection::for_probe(&full, &format!("sha256:{digest}"))
                 .load()
                 .is_some()
         );
+        // a rejection written since, under another policy, counts again
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        let later = KeptRejection::new(&full, &digest, &["v0.8.0".to_string()], None, None);
+        assert!(later.keep(&AttestationError::WorkflowMismatch(
+            "release.yml".to_string()
+        )));
+        assert!(typed.load().is_some());
+        later.record(&MirrorVerdict::Done(Ok(true)));
+        assert!(typed.load().is_none());
 
         // the unfiltered probe has GitHub find attestations, and the
         // verification under another tag and signer, which has nothing kept
         // for its own policy, has GitHub confirm mise-versions' "none"
         assert!(
-            github_probe_verdict(Ok(true), Some(rejection), owner, repo, &digest, None).unwrap()
+            github_probe_verdict(Ok(true), Some(rejection), owner, repo, &digest, None, now())
+                .unwrap()
         );
         let verdict = verify_with_mirror(
             Path::new("unread"),
@@ -2818,7 +3018,7 @@ mod tests {
 
         // GitHub confirming, unfiltered, that there are none settles it
         KeptRejection::new(&full, &digest, &tags, Some("release.yml"), None)
-            .settle(&Err(AttestationError::NoAttestations));
+            .settle(&Err(AttestationError::NoAttestations), now());
         assert!(matches!(
             detect_with_mirror(owner, repo, &digest, None).await,
             MirrorVerdict::Done(Ok(false))
@@ -2850,8 +3050,8 @@ mod tests {
             &MirrorVerdict::Done(Err(AttestationError::Verification(
                 "made for refs/tags/v0.9.0".to_string(),
             ))),
-            false,
         );
+        let now = std::time::SystemTime::now;
 
         // the probe matches no policy, with or without a predicate type, and
         // reads the digest in either spelling
@@ -2879,6 +3079,7 @@ mod tests {
                 repo,
                 &probed,
                 predicate_type,
+                now(),
             )
             .unwrap_err();
             let DetectError::Fetch(err) = err else {
@@ -2900,7 +3101,8 @@ mod tests {
             panic!("the rejection was not kept");
         };
         assert!(
-            github_probe_verdict(Ok(true), Some(rejection), owner, repo, &digest, None).unwrap()
+            github_probe_verdict(Ok(true), Some(rejection), owner, repo, &digest, None, now())
+                .unwrap()
         );
         let MirrorVerdict::ConfirmWithGithub(rejection) =
             detect_with_mirror(owner, repo, &digest, None).await
@@ -2910,7 +3112,16 @@ mod tests {
 
         // GitHub confirming that there are none settles it for probes
         assert!(
-            !github_probe_verdict(Ok(false), Some(rejection), owner, repo, &digest, None).unwrap()
+            !github_probe_verdict(
+                Ok(false),
+                Some(rejection),
+                owner,
+                repo,
+                &digest,
+                None,
+                now()
+            )
+            .unwrap()
         );
         assert!(matches!(
             detect_with_mirror(owner, repo, &digest, None).await,
@@ -2918,26 +3129,93 @@ mod tests {
         ));
     }
 
-    /// A verification forgets the rejection for probes too.
+    /// GitHub verifying under one policy records that attestations are
+    /// present, so the probe and other policies still have GitHub confirm a
+    /// "none" from mise-versions; a set from mise-versions that verifies
+    /// drops only its own policy's record.
     #[test]
-    fn test_a_verification_forgets_the_rejection_for_probes() {
+    fn test_a_verification_settles_only_its_own_policy() {
         let _settings = SettingsGuard::new(None);
         let _cache = temp_cache();
         let full = "acme/verified-after-rejection";
         let digest = "7".repeat(64);
+        let now = std::time::SystemTime::now;
         let kept = KeptRejection::new(full, &digest, &[], None, None);
+        let other = KeptRejection::new(full, &digest, &["v2.0.0".to_string()], None, None);
         let probe = KeptRejection::for_probe(full, &format!("sha256:{digest}"));
 
-        kept.record(
-            &MirrorVerdict::Done(Err(AttestationError::WorkflowMismatch(
-                "release.yml".to_string(),
-            ))),
-            false,
-        );
+        kept.record(&MirrorVerdict::Done(Err(
+            AttestationError::WorkflowMismatch("release.yml".to_string()),
+        )));
         assert!(probe.load().is_some());
-        kept.settle(&Ok(true));
+        assert!(other.load().is_some());
+
+        // GitHub verifies: attestations are present, which the probe and
+        // the other policy still read
+        kept.settle(&Ok(true), now());
+        for kept in [&kept, &other, &probe] {
+            assert!(
+                kept.load()
+                    .is_some_and(|err| err.to_string().contains("verified this artifact")),
+                "GitHub's verification was not kept"
+            );
+        }
+
+        // a rejection under another policy outlives a verification under
+        // this one, from GitHub or from mise-versions
+        assert!(other.keep(&AttestationError::Verification(
+            "made for refs/tags/v1.0.0".to_string()
+        )));
+        kept.record(&MirrorVerdict::Done(Ok(true)));
+        assert!(
+            probe
+                .load()
+                .is_some_and(|err| err.to_string().contains("refs/tags/v1.0.0"))
+        );
+        assert!(kept.load().is_some(), "another policy's rejection was lost");
+    }
+
+    /// GitHub's answer settles only records written before it was asked: a
+    /// rejection another command writes while the request is in flight
+    /// stays.
+    #[test]
+    fn test_a_rejection_written_while_github_answers_stays() {
+        let _settings = SettingsGuard::new(None);
+        let _cache = temp_cache();
+        let full = "acme/raced";
+        let digest = "9".repeat(64);
+        let kept = KeptRejection::new(full, &digest, &[], None, None);
+        let typed = KeptRejection::new(
+            full,
+            &digest,
+            &[],
+            None,
+            Some("https://slsa.dev/provenance/v1"),
+        );
+        let rejection = || AttestationError::Verification("made by evil/tool".to_string());
+
+        let asked = std::time::SystemTime::now();
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        assert!(kept.keep(&rejection()));
+        assert!(typed.keep(&rejection()));
+        kept.settle(&Err(AttestationError::NoAttestations), asked);
+        typed.settle(&Ok(true), asked);
+        typed.settle(&Err(AttestationError::NoAttestations), asked);
+        for kept in [&kept, &typed] {
+            assert!(
+                kept.load()
+                    .is_some_and(|err| err.to_string().contains("evil/tool")),
+                "a rejection written after GitHub was asked was settled"
+            );
+        }
+
+        // asked after it was written, GitHub settles it
+        kept.settle(
+            &Err(AttestationError::NoAttestations),
+            std::time::SystemTime::now(),
+        );
         assert!(kept.load().is_none());
-        assert!(probe.load().is_none());
+        assert!(typed.load().is_none());
     }
 
     #[test]
@@ -2947,46 +3225,28 @@ mod tests {
         let kept = KeptRejection::new("acme/kept-rejection", &"4".repeat(64), &[], None, None);
 
         // a set left unchecked because the signing keys could not be loaded
-        kept.record(
-            &MirrorVerdict::Done(Err(AttestationError::TrustRoot(
-                "tuf-repo-cdn.sigstore.dev unreachable".to_string(),
-            ))),
-            false,
-        );
-        kept.record(
-            &MirrorVerdict::Done(Err(AttestationError::NoAttestations)),
-            false,
-        );
+        kept.record(&MirrorVerdict::Done(Err(AttestationError::TrustRoot(
+            "tuf-repo-cdn.sigstore.dev unreachable".to_string(),
+        ))));
+        kept.record(&MirrorVerdict::Done(Err(AttestationError::NoAttestations)));
         assert!(kept.load().is_none());
 
-        // a fresh set that fails is kept, and so is one rejected in this
-        // command that GitHub is asked to confirm
-        kept.record(
-            &MirrorVerdict::Done(Err(AttestationError::Verification(
-                "made for refs/tags/v0.9.0".to_string(),
-            ))),
-            false,
-        );
+        // a fresh set that fails is kept
+        kept.record(&MirrorVerdict::Done(Err(AttestationError::Verification(
+            "made for refs/tags/v0.9.0".to_string(),
+        ))));
         assert!(
             matches!(kept.load(), Some(AttestationError::Verification(ref msg)) if msg.contains("refs/tags/v0.9.0"))
         );
-        // one loaded from an earlier command is not written again
+        // asking GitHub to confirm one loaded from an earlier command does
+        // not write it again
         let loaded = kept.load().unwrap();
-        kept.record(&MirrorVerdict::ConfirmWithGithub(loaded), false);
+        kept.record(&MirrorVerdict::ConfirmWithGithub(loaded));
         let reloaded = kept.load().unwrap().to_string();
         assert_eq!(reloaded.matches("were rejected").count(), 1, "{reloaded}");
 
-        // a set that verifies forgets it, and so does GitHub verifying
-        kept.record(&MirrorVerdict::Done(Ok(true)), false);
-        assert!(kept.load().is_none());
-        kept.record(
-            &MirrorVerdict::ConfirmWithGithub(AttestationError::WorkflowMismatch(
-                "release.yml".to_string(),
-            )),
-            true,
-        );
-        assert!(kept.load().is_some());
-        kept.settle(&Ok(true));
+        // a set that verifies forgets it
+        kept.record(&MirrorVerdict::Done(Ok(true)));
         assert!(kept.load().is_none());
     }
 
