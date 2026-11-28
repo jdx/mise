@@ -59,3 +59,49 @@ assert_not_contains "mise -C named env" "NESTED"
 assert_contains "mise -C named env" "TOP=top"
 assert_contains "mise -C named env" "FRAGMENT=fragment"
 assert_contains "MISE_ENV=staging mise -C named env" "STAGED=staged"
+
+# A directory's idiomatic version files are its configs too.
+export MISE_IDIOMATIC_VERSION_FILE_ENABLE_TOOLS=dummy
+mkdir idiomatic
+printf '[env]\nTOP = "top"\n' >idiomatic/mise.toml
+echo "1.0.0" >idiomatic/.dummy-version
+mise trust idiomatic/mise.toml
+mise trust idiomatic/.dummy-version
+assert "mise -C idiomatic current dummy" "1.0.0"
+assert_contains "mise trust --ignore idiomatic 2>&1" "ignored ~/workdir/idiomatic/.dummy-version"
+assert_not_contains "mise -C idiomatic current dummy 2>&1" "1.0.0"
+mise trust idiomatic/mise.toml
+mise trust idiomatic/.dummy-version
+assert_contains "mise untrust idiomatic 2>&1" "untrusted ~/workdir/idiomatic/.dummy-version"
+mise trust idiomatic/mise.toml
+assert_fail_contains "mise -C idiomatic current dummy 2>&1" ".dummy-version are not trusted"
+unset MISE_IDIOMATIC_VERSION_FILE_ENABLE_TOOLS
+
+# A config reached through a link stays out of the sweep: its record is the target's, which
+# belongs to another checkout.
+mkdir other linked onlylink
+printf '[env]\nOTHER = "other"\n' >other/mise.toml
+mise trust other/mise.toml
+printf '[env]\nOWN = "own"\n' >linked/mise.toml
+ln -s ../other/mise.toml linked/mise.local.toml
+ln -s ../other/mise.toml onlylink/mise.toml
+mise trust linked/mise.toml
+assert "mise untrust linked 2>&1" "mise untrusted ~/workdir/linked/mise.toml"
+assert_contains "mise -C other env" "OTHER=other"
+assert "mise trust --ignore linked 2>&1" "mise ignored ~/workdir/linked/mise.toml"
+assert_contains "mise -C other env" "OTHER=other"
+assert_contains "mise untrust onlylink 2>&1" "No trusted config files found"
+assert_contains "mise trust --ignore onlylink 2>&1" "has no config of its own to ignore"
+assert_contains "mise -C other env" "OTHER=other"
+
+# A project's link to global config stands only for itself, and the home directory's configs
+# keep their trust.
+printf '[env]\nGLOBAL = "global"\n' >"$MISE_CONFIG_DIR/config.toml"
+mkdir globallink
+ln -s "$MISE_CONFIG_DIR/config.toml" globallink/mise.toml
+assert_contains "mise untrust globallink 2>&1" "untrusted"
+printf '[env]\nHOME_VAR = "home"\n' >"$HOME/mise.toml"
+mise trust "$HOME/mise.toml"
+assert_contains "mise -C ~ env" "HOME_VAR=home"
+assert_not_contains "mise untrust globallink 2>&1" "~/mise.toml"
+assert_contains "mise -C ~ env" "HOME_VAR=home"
