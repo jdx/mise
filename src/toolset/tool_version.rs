@@ -182,7 +182,7 @@ impl ToolVersion {
         } else {
             format!(
                 " newer than the {} cutoff",
-                before.to_zoned(tz).strftime("%Y-%m-%d %H:%M %Z")
+                before.to_zoned_datetime(tz).strftime("%Y-%m-%d %H:%M %Z")
             )
         };
         let count = hidden.len();

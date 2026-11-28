@@ -295,14 +295,19 @@ fn placing(err: std::io::Error, dest: &Path) -> eyre::Report {
     eyre::Report::new(err).wrap_err(msg)
 }
 
-/// Write `contents` to `path` so a reader never sees a partial file.
+/// Write `contents` to `path` so a reader never sees a partial file. The
+/// rename into place is retried while Windows briefly refuses to replace the
+/// entry, which it does while another process has it open. The file stays
+/// owner-only on Unix, as `tempfile` creates it: entries hold full download
+/// URLs, which can carry private query tokens.
 fn write_atomic(path: &Path, contents: &[u8]) -> Result<()> {
+    use std::io::Write;
+
     let parent = path.parent().expect("index paths have a parent");
     file::create_dir_all(parent)?;
-    let tmp = tempfile::NamedTempFile::new_in(parent)?.into_temp_path();
-    file::write(&tmp, contents)?;
-    tmp.persist(path).map_err(|err| err.error)?;
-    Ok(())
+    let mut tmp = tempfile::NamedTempFile::new_in(parent)?;
+    tmp.write_all(contents)?;
+    file::persist_atomic(tmp, path)
 }
 
 /// What kept a download: how to find it again.
@@ -449,12 +454,7 @@ fn record_pin(root: &Path, algo: &str, hex: &str, blake3: String, keep: &Keep<'_
         std::thread::sleep(std::time::Duration::from_millis(10));
     };
     let path = pin_path(root, algo, hex);
-    let mut urls = std::fs::read(&path)
-        .ok()
-        .and_then(|bytes| serde_json::from_slice::<PinEntry>(&bytes).ok())
-        .filter(|existing| existing.blake3 == blake3)
-        .map(|existing| existing.urls)
-        .unwrap_or_default();
+    let mut urls = recorded_urls(&path, &blake3)?;
     if !urls.iter().any(|kept| kept == keep.url) {
         urls.push(keep.url.to_string());
     }
@@ -464,6 +464,30 @@ fn record_pin(root: &Path, algo: &str, hex: &str, blake3: String, keep: &Keep<'_
         urls,
     };
     write_atomic(&path, &serde_json::to_vec(&entry)?)
+}
+
+/// The URLs the pin entry at `path` already holds for the blob `blake3`. Only
+/// a missing entry has none. One that exists but can't be read is an error,
+/// not an empty list: writing over it would drop every URL it holds, and
+/// Windows refuses to open a file for a moment while it is being replaced or
+/// scanned. An entry that doesn't parse, or names another blob, is of no use
+/// to [`lookup_pin`] and is started over.
+fn recorded_urls(path: &Path, blake3: &str) -> Result<Vec<String>> {
+    let bytes = match file::retry_transient_lock(|| std::fs::read(path)) {
+        Ok(bytes) => bytes,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(err) => {
+            return Err(eyre::Report::new(err).wrap_err(format!(
+                "failed to read the pin entry {}",
+                file::display_path(path)
+            )));
+        }
+    };
+    Ok(serde_json::from_slice::<PinEntry>(&bytes)
+        .ok()
+        .filter(|existing| existing.blake3 == blake3)
+        .map(|existing| existing.urls)
+        .unwrap_or_default())
 }
 
 /// Past `download_cache_max_size` the least recently used blobs go first, except

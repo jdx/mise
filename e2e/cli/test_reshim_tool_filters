@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+
+# enable_tools and disable_tools narrow what one command uses, often only through an environment
+# variable, but the shims directory serves every process. A filtered `mise install` or
+# `mise reshim` must keep the shims of the installed tools it was told to ignore (#16069).
+
+shimdir="$MISE_DATA_DIR/shims"
+
+# A second installed tool that no config names, made by hand so the test needs no network.
+other_install="$MISE_DATA_DIR/installs/othertool/1.0.0"
+mkdir -p "$other_install/bin"
+cat >"$other_install/bin/othertool" <<'SH'
+#!/usr/bin/env bash
+echo "other tool"
+SH
+chmod +x "$other_install/bin/othertool"
+cat >>"$MISE_DATA_DIR/installs/.mise-installs.toml" <<'TOML'
+
+[othertool]
+short = "othertool"
+full = "github:jdx/othertool"
+explicit_backend = false
+TOML
+
+cat >mise.toml <<'TOML'
+[tools]
+dummy = "1.0.0"
+TOML
+mise install dummy@1.0.0
+mise reshim
+assert "readlink $shimdir/dummy" "$(which mise)"
+assert "readlink $shimdir/othertool" "$(which mise)"
+
+MISE_ENABLE_TOOLS=dummy mise install
+assert "readlink $shimdir/othertool" "$(which mise)"
+MISE_ENABLE_TOOLS=dummy mise reshim --force
+assert "readlink $shimdir/othertool" "$(which mise)"
+MISE_DISABLE_TOOLS=dummy mise reshim
+assert "readlink $shimdir/dummy" "$(which mise)"
+MISE_DISABLE_TOOLS=dummy mise reshim --force
+assert "readlink $shimdir/dummy" "$(which mise)"
+
+# A core tool installed without manifest metadata keeps its shims too.
+core_install="$MISE_DATA_DIR/installs/node/20.0.0"
+mkdir -p "$core_install/bin"
+printf '#!/usr/bin/env bash\necho node\n' >"$core_install/bin/node"
+chmod +x "$core_install/bin/node"
+mise reshim
+assert "readlink $shimdir/node" "$(which mise)"
+MISE_ENABLE_TOOLS=dummy mise reshim --force
+assert "readlink $shimdir/node" "$(which mise)"
+
+# Uninstalling a tool still removes its shims.
+mise uninstall dummy@1.0.0
+MISE_DISABLE_TOOLS=dummy mise reshim
+assert_fail "test -e $shimdir/dummy"

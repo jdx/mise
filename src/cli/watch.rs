@@ -331,8 +331,8 @@ impl Watch {
         }
         let mut env = ts.env_with_path(&config).await?;
         // Propagate profiles selected with -E/--env to the nested `mise run` command.
-        if !env::MISE_ENV.is_empty() {
-            env.insert("MISE_ENV".to_string(), env::MISE_ENV.join(","));
+        for (key, value) in env::mise_env_for_child() {
+            env.insert(key.to_string(), value);
         }
         if self.once {
             return self.run_once(args, env, &tasks).await;

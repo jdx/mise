@@ -304,6 +304,11 @@ update never changes where a locked tool installs from. `mise install` and
 mise WARN  communique is locked to github:jdx/communique, but the registry now installs it from packslip:github.com/jdx/communique. Run `mise backends switch communique` to switch.
 ```
 
+This applies once the project is [trusted](/security.html#configuration-trust).
+Until then mise ignores a lock entry whose backend is not the one the registry
+selects, including one the registry still lists as a fallback, and warns that
+the entry needs trust.
+
 [`mise backends switch`](/cli/backends/switch.html) moves the lock entries to the
 registry's backend at the same versions, records the new backend's checksums and
 URLs, and reinstalls installed versions from it:
@@ -639,6 +644,11 @@ When an entry has both a checksum and provenance, `mise install` can skip
 repeating the provenance check. That makes the lockfile a trust input: review
 changes to it, and take it only from a trusted project source. Checksums are
 still verified on every download.
+
+The lockfile of a project whose config is not
+[trusted](/security.html#what-needs-trust) is not such an input, and neither is
+a checksum recorded without its URL. Their checksums are still compared with
+every download, but the provenance check runs as it would without a lockfile.
 
 To repeat provenance checks on every install, set
 [`locked_verify_provenance`](/configuration/settings.html#locked_verify_provenance),

@@ -850,9 +850,9 @@ fn warn_outdated_lockfile(path: &Path, remedy: &str) {
         && outdated_lockfile_version_today(
             version,
             jiff::Timestamp::now()
-                .to_zoned(jiff::tz::TimeZone::UTC)
+                .to_zoned_datetime(jiff::tz::TimeZone::UTC)
                 .date(),
-            || jiff::Zoned::now().date(),
+            || jiff::ZonedDateTime::now().date(),
         )
     {
         warn_once!(
@@ -1437,6 +1437,11 @@ impl ArtifactInfo {
         self.checksum.is_some() && self.provenance.is_some()
     }
 
+    /// See [`PlatformInfo::has_vouched_checksum`].
+    pub(crate) fn has_vouched_checksum(&self) -> bool {
+        self.checksum.is_some() && !self.url.is_empty()
+    }
+
     fn merge_with(&self, other: &ArtifactInfo) -> ArtifactInfo {
         if self.url != other.url {
             return self.clone();
@@ -1635,6 +1640,15 @@ impl PlatformInfo {
     /// True when the lockfile has checksum-backed, successfully verified provenance.
     pub(crate) fn has_checksum_and_provenance(&self) -> bool {
         self.checksum.is_some() && self.provenance.is_some()
+    }
+
+    /// True when the checksum may stand in for verifying the download again:
+    /// the entry still has the URL it was recorded with. A checksum without
+    /// one ([`Self::is_pinned_without_url`]) pins the bytes, but a lockfile
+    /// that is not trusted does not get to say they were verified, so an
+    /// install checks them as it would with no lockfile.
+    pub(crate) fn has_vouched_checksum(&self) -> bool {
+        self.checksum.is_some() && self.url.is_some()
     }
 
     /// True for an entry that pins the artifact by checksum alone, which is
@@ -6371,7 +6385,12 @@ fn backend_names_no_tool(full: &str) -> bool {
 /// project is trusted its lock may confirm the backend the tool key or the
 /// registry selects, or that the user installed the tool with, but not
 /// replace it.
-fn locked_backend_needs_trust(short: &str, full: &str) -> bool {
+///
+/// The registry selects one backend for a tool at `version`: the first that
+/// this platform and configuration allow. The others it lists are fallbacks,
+/// often a third-party asdf or vfox plugin, and moving a tool onto one of them
+/// is a choice of backend like any other.
+fn locked_backend_needs_trust(short: &str, full: &str, version: &str) -> bool {
     if crate::args::split_bracketed_opts(full).is_some() {
         return true;
     }
@@ -6383,7 +6402,8 @@ fn locked_backend_needs_trust(short: &str, full: &str) -> bool {
         |full: &'static str| crate::args::split_bracketed_opts(full).map_or(full, |(full, _)| full);
     let registry = crate::registry::REGISTRY
         .get(short.as_ref())
-        .is_some_and(|tool| tool.backends.iter().any(|b| without_opts(b.full) == full));
+        .and_then(|tool| tool.backends_for_version(Some(version)).first().copied())
+        .is_some_and(|selected| without_opts(selected) == full);
     !registry && crate::toolset::install_state::get_tool_full(&short).as_deref() != Some(full)
 }
 
@@ -6402,12 +6422,25 @@ impl Lockfile {
         for (short, entries) in &mut self.tools {
             entries.retain_mut(|entry| {
                 if let Some(full) = &entry.backend
-                    && locked_backend_needs_trust(short, full)
+                    && locked_backend_needs_trust(short, full, &entry.version)
                 {
                     // The same file is read for each config and for the
                     // merged view, so warn once per entry.
                     warn_once!(
                         "{} locks {short}@{} to {full}, which needs its config to be trusted; ignoring the entry. Run `mise trust` to use it",
+                        display_path(path),
+                        entry.version,
+                    );
+                    return false;
+                }
+                // A version that needs trust in the config needs it here too, or the lockfile
+                // would turn a `latest` request into it. Safe mode loads such a config without
+                // trust, so it keeps the pin as well.
+                if !Settings::safe_mode()
+                    && crate::config::config_file::version_requires_trust(&entry.version)
+                {
+                    warn_once!(
+                        "{} locks {short} to {}, which needs its config to be trusted; ignoring the entry. Run `mise trust` to use it",
                         display_path(path),
                         entry.version,
                     );
@@ -6428,12 +6461,14 @@ impl Lockfile {
                     info.url = None;
                     info.url_api = None;
                     info.conda_deps = None;
+                    info.provenance = None;
                     // Extra archives are matched to the backend's patterns by
                     // position, so each keeps its checksum. Without a URL the
                     // backend resolves the asset itself.
                     for artifact in &mut info.additional_artifacts {
                         artifact.url.clear();
                         artifact.url_api = None;
+                        artifact.provenance = None;
                     }
                 }
                 true

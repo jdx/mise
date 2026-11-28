@@ -126,6 +126,24 @@ fn expand_with(
     expanded.into_iter().collect()
 }
 
+/// Get the env value from the system and global miserc files only. It
+/// selects the environment files of the global and system config directories,
+/// which need no trust, so a project `.miserc.toml`, read without trust, must
+/// not add to it or remove from it.
+pub(crate) fn get_global_env() -> Option<&'static Vec<String>> {
+    global()?.env.as_ref()
+}
+
+/// [`expand_env_sets`] with the sets of the system and global miserc files only.
+pub(crate) fn expand_global_env_sets(names: Vec<String>) -> Vec<String> {
+    expand_with(names, global().and_then(|global| global.env_sets.as_ref()))
+}
+
+/// Get the auto_env value from the system and global miserc files only.
+pub(crate) fn get_global_auto_env() -> Option<bool> {
+    global()?.auto_env
+}
+
 /// Get the auto_env value from miserc, if set.
 pub(crate) fn get_auto_env() -> Option<bool> {
     get().auto_env
@@ -472,6 +490,8 @@ fn load_miserc_files(files: Vec<PathBuf>) -> Result<MisercSettings> {
     let mut global_env: Vec<String> = vec![];
     // The names of the sets they define; a project file cannot redefine one.
     let mut global_sets: Vec<String> = vec![];
+    // How many more names the project files may put in `env_sets`.
+    let mut project_set_names = PROJECT_NAMES_MAX;
 
     for path in files.into_iter().rev() {
         file::ensure_config_file_size(&path)?;
@@ -481,8 +501,9 @@ fn load_miserc_files(files: Vec<PathBuf>) -> Result<MisercSettings> {
             let mut settings = toml::from_str::<MisercSettings>(&content)
                 .map_err(|e| toml_parse_error(&e, &content, &path))?;
             resolve_ignored_config_paths(&mut settings, config_root);
-            drop_names_leaving_the_directory(&mut settings, &path);
-            if is_global_miserc_dir(config_root) {
+            let global = is_global_miserc_dir(config_root);
+            check_names(&mut settings, &mut project_set_names, &path, global);
+            if global {
                 merge_settings(&mut merged, settings);
                 global_env = merged.env.clone().unwrap_or_default();
                 global_sets = merged
@@ -492,6 +513,10 @@ fn load_miserc_files(files: Vec<PathBuf>) -> Result<MisercSettings> {
                     .unwrap_or_default();
             } else {
                 keep_global_envs(&mut settings, &global_env);
+                keep_inherited_ignored_config_paths(
+                    &mut settings,
+                    merged.ignored_config_paths.as_ref(),
+                );
                 if let Some(sets) = settings.env_sets.as_mut() {
                     sets.retain(|name, _| {
                         !global_sets.contains(name) && !global_env.contains(name)
@@ -503,6 +528,72 @@ fn load_miserc_files(files: Vec<PathBuf>) -> Result<MisercSettings> {
     }
 
     Ok(merged)
+}
+
+/// Caps the lists of a project file, then drops the names mise may not use.
+/// Capping first keeps the first entries as written and bounds the names that
+/// are checked, and with them the warnings.
+fn check_names(settings: &mut MisercSettings, set_names: &mut usize, path: &Path, global: bool) {
+    if !global {
+        limit_project_names(settings, set_names, path);
+    }
+    for warning in drop_names_leaving_the_directory(settings, path, global) {
+        warn_while_loading_settings(warning);
+    }
+}
+
+/// The most names a project `.miserc.toml` may list in `env` and in each
+/// override filename list, and the most the `env_sets` of all project files may
+/// hold between them.
+const PROJECT_NAMES_MAX: usize = 64;
+
+/// A project `.miserc.toml` loads without trust, and every command, the shell
+/// hook included, looks for the config files of each selected environment and
+/// for each override filename in every directory up to the root. A long list
+/// would stall them all, so `env` and the override filenames keep their first
+/// [`PROJECT_NAMES_MAX`] entries. `env_sets` merge across the project files and
+/// each selected name can expand to one, so they share `set_names`, what is
+/// left of that many names: a set that no longer fits is dropped, and its name
+/// is then an environment like any other.
+fn limit_project_names(settings: &mut MisercSettings, set_names: &mut usize, path: &Path) {
+    for (key, names) in [
+        ("env", settings.env.as_mut()),
+        (
+            "override_config_filenames",
+            settings.override_config_filenames.as_mut(),
+        ),
+        (
+            "override_tool_versions_filenames",
+            settings.override_tool_versions_filenames.as_mut(),
+        ),
+    ] {
+        let Some(names) = names.filter(|names| names.len() > PROJECT_NAMES_MAX) else {
+            continue;
+        };
+        warn_while_loading_settings(format!(
+            "{}: using only the first {PROJECT_NAMES_MAX} of the {} entries in {key}",
+            file::display_path(path),
+            names.len()
+        ));
+        names.truncate(PROJECT_NAMES_MAX);
+    }
+    if let Some(sets) = settings.env_sets.as_mut() {
+        let defined = sets.len();
+        sets.retain(|_, members| {
+            let fits = members.len() <= *set_names;
+            if fits {
+                *set_names -= members.len();
+            }
+            fits
+        });
+        if sets.len() < defined {
+            warn_while_loading_settings(format!(
+                "{}: ignoring {} of the sets in env_sets: project files may name at most {PROJECT_NAMES_MAX} environments in sets",
+                file::display_path(path),
+                defined - sets.len()
+            ));
+        }
+    }
 }
 
 /// A project `.miserc.toml` loads without trust, so its `env` adds to the
@@ -520,62 +611,151 @@ fn keep_global_envs(settings: &mut MisercSettings, global_env: &[String]) {
     settings.env = Some(kept.into_iter().collect());
 }
 
+/// `ignored_config_paths` is a hard block that overrides `trusted_config_paths`
+/// and `mise trust`. A project `.miserc.toml` loads without trust, so its list
+/// adds to the one it inherits from the system and global files and from the
+/// project files above it and cannot drop an entry: a checkout under an
+/// ignored path would otherwise un-ignore itself with `ignored_config_paths = []`.
+fn keep_inherited_ignored_config_paths(
+    settings: &mut MisercSettings,
+    inherited: Option<&BTreeSet<PathBuf>>,
+) {
+    if let (Some(paths), Some(inherited)) = (settings.ignored_config_paths.as_mut(), inherited) {
+        paths.extend(inherited.iter().cloned());
+    }
+}
+
 /// `env` and the override filenames only choose which files mise loads from the
 /// directories it already searches: an environment name is one part of a filename
 /// (`mise.<env>.toml`, `mise.<env>.lock`) and an override filename is relative to
 /// each directory. A project `.miserc.toml` is read without trust, so a value that
 /// would lead out of the directory must not become a path: `mise lock` deletes
 /// the lockfiles it migrates and rewrites the ones it finds.
-fn drop_names_leaving_the_directory(settings: &mut MisercSettings, path: &Path) {
-    if let Some(envs) = settings.env.as_mut() {
-        envs.retain(|name| {
-            let valid = !name.contains(['/', '\\']);
-            if !valid {
-                warn_while_loading_settings(format!(
-                    "{}: ignoring environment {name:?}: a name cannot contain a path separator",
-                    file::display_path(path)
-                ));
-            }
-            valid
-        });
+///
+/// The override filenames are looked up in every directory above the project
+/// too, and they decide how mise parses a file of that name anywhere, so a
+/// name from a project file is a plain file name with the suffix of its kind,
+/// `.toml` or `tool-versions`: it cannot name a file of the user's such as
+/// `~/.netrc`, `~/.npmrc` or `~/.ssh/authorized_keys`, or make mise read
+/// `mise.toml` or `config.toml` as a `.tool-versions` file.
+///
+/// The names also become the `mise_env` template variable of every config,
+/// including global config and projects trusted earlier, so a name from a
+/// project file is limited to letters, digits, `_`, `-` and `.`, starting with
+/// a letter or digit: it cannot carry shell or template syntax into a trusted
+/// command built from `{{ mise_env }}`.
+fn drop_names_leaving_the_directory(
+    settings: &mut MisercSettings,
+    path: &Path,
+    global: bool,
+) -> Vec<String> {
+    let invalid_env_name = |name: &str| {
+        if name.contains(['/', '\\']) {
+            Some("a name cannot contain a path separator")
+        } else if !global && !is_plain_env_name(name) {
+            Some(
+                "a name in a project .miserc.toml may use only letters, digits, `_`, `-` and `.`, starting with a letter or digit; select it with -E or MISE_ENV instead",
+            )
+        } else {
+            None
+        }
+    };
+    let mut warnings = vec![];
+    let mut envs = RejectedNames::default();
+    if let Some(names) = settings.env.as_mut() {
+        envs.retain(names, invalid_env_name);
     }
+    envs.warn(&mut warnings, path, "environment", "", "");
+    let mut set_members = RejectedNames::default();
     for members in settings
         .env_sets
         .iter_mut()
         .flat_map(|sets| sets.values_mut())
     {
-        members.retain(|name| {
-            let valid = !name.contains(['/', '\\']);
-            if !valid {
-                warn_while_loading_settings(format!(
-                    "{}: ignoring environment {name:?} in env_sets: a name cannot contain a path separator",
-                    file::display_path(path)
-                ));
-            }
-            valid
-        });
+        set_members.retain(members, invalid_env_name);
     }
-    for filenames in [
-        settings.override_config_filenames.as_mut(),
-        settings.override_tool_versions_filenames.as_mut(),
-    ]
-    .into_iter()
-    .flatten()
-    {
-        filenames.retain(|filename| {
-            let valid = !filename.contains('\\')
-                && Path::new(filename)
+    set_members.warn(&mut warnings, path, "environment", " in env_sets", "");
+    for (filenames, suffix) in [
+        (settings.override_config_filenames.as_mut(), ".toml"),
+        (
+            settings.override_tool_versions_filenames.as_mut(),
+            "tool-versions",
+        ),
+    ] {
+        let Some(filenames) = filenames else {
+            continue;
+        };
+        let mut rejected = RejectedNames::default();
+        rejected.retain(filenames, |filename| {
+            if filename.contains('\\')
+                || !Path::new(filename)
                     .components()
-                    .all(|c| matches!(c, Component::Normal(_) | Component::CurDir));
-            if !valid {
-                warn_while_loading_settings(format!(
-                    "{}: ignoring override filename {filename:?}: it must stay in its directory",
-                    file::display_path(path)
-                ));
+                    .all(|c| matches!(c, Component::Normal(_) | Component::CurDir))
+            {
+                Some("it must stay in its directory")
+            } else if global {
+                None
+            } else if filename.contains('/') {
+                Some("a name in a project .miserc.toml must be a file name, without a directory")
+            } else if !filename.ends_with(suffix) || filename.len() == suffix.len() {
+                if suffix == ".toml" {
+                    Some("a name in a project .miserc.toml must end in `.toml`")
+                } else {
+                    Some("a name in a project .miserc.toml must end in `tool-versions`")
+                }
+            } else {
+                None
             }
-            valid
+        });
+        rejected.warn(
+            &mut warnings,
+            path,
+            "override filename",
+            "",
+            "; set it in ~/.config/mise/miserc.toml instead",
+        );
+    }
+    warnings
+}
+
+/// The names a list dropped, by the reason it dropped them, so a long list of
+/// bad names gives one warning per reason rather than one per name.
+#[derive(Default)]
+struct RejectedNames(indexmap::IndexMap<&'static str, IndexSet<String>>);
+
+impl RejectedNames {
+    fn retain(&mut self, names: &mut Vec<String>, reason: impl Fn(&str) -> Option<&'static str>) {
+        names.retain(|name| {
+            let Some(reason) = reason(name) else {
+                return true;
+            };
+            self.0.entry(reason).or_default().insert(name.clone());
+            false
         });
     }
+
+    fn warn(self, warnings: &mut Vec<String>, path: &Path, what: &str, place: &str, hint: &str) {
+        for (reason, names) in self.0 {
+            let plural = if names.len() == 1 { "" } else { "s" };
+            let names = names
+                .iter()
+                .map(|name| format!("{name:?}"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            warnings.push(format!(
+                "{}: ignoring {what}{plural} {names}{place}: {reason}{hint}",
+                file::display_path(path)
+            ));
+        }
+    }
+}
+
+/// Whether `name` is a letter or digit followed by letters, digits, `_`, `-`
+/// and `.`, which no shell or template treats as syntax.
+fn is_plain_env_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    chars.next().is_some_and(|c| c.is_ascii_alphanumeric())
+        && chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.'))
 }
 
 fn resolve_ignored_config_paths(settings: &mut MisercSettings, config_root: &Path) {
@@ -744,6 +924,84 @@ mod tests {
     }
 
     #[test]
+    fn test_keep_inherited_ignored_config_paths() {
+        let paths = |v: &[&str]| v.iter().map(PathBuf::from).collect::<BTreeSet<_>>();
+        let inherited = paths(&["/home/user/work/vendor"]);
+        let mut settings = MisercSettings {
+            ignored_config_paths: Some(paths(&[])),
+            ..Default::default()
+        };
+        keep_inherited_ignored_config_paths(&mut settings, Some(&inherited));
+        assert_eq!(settings.ignored_config_paths, Some(inherited.clone()));
+
+        let mut settings = MisercSettings {
+            ignored_config_paths: Some(paths(&["/home/user/work/app/legacy"])),
+            ..Default::default()
+        };
+        keep_inherited_ignored_config_paths(&mut settings, Some(&inherited));
+        assert_eq!(
+            settings.ignored_config_paths,
+            Some(paths(&[
+                "/home/user/work/app/legacy",
+                "/home/user/work/vendor"
+            ]))
+        );
+
+        let mut settings = MisercSettings::default();
+        keep_inherited_ignored_config_paths(&mut settings, Some(&inherited));
+        assert_eq!(settings.ignored_config_paths, None);
+    }
+
+    #[test]
+    fn test_limit_project_names() {
+        let names = |n: usize| (0..n).map(|i| format!("e{i}")).collect::<Vec<_>>();
+        let path = Path::new("/work/.miserc.toml");
+
+        // an ordinary file is left alone
+        let mut set_names = PROJECT_NAMES_MAX;
+        let mut settings: MisercSettings =
+            toml::from_str("env = [\"dev\"]\n[env_sets]\nteam = [\"ssh\", \"pac\"]").unwrap();
+        limit_project_names(&mut settings, &mut set_names, path);
+        assert_eq!(settings.env, Some(vec!["dev".to_string()]));
+        assert_eq!(settings.env_sets.unwrap()["team"], ["ssh", "pac"]);
+        assert_eq!(set_names, PROJECT_NAMES_MAX - 2);
+
+        // long lists keep their first entries
+        let long = names(PROJECT_NAMES_MAX + 1000);
+        let mut settings = MisercSettings {
+            env: Some(long.clone()),
+            override_config_filenames: Some(long.clone()),
+            override_tool_versions_filenames: Some(long.clone()),
+            ..Default::default()
+        };
+        limit_project_names(&mut settings, &mut set_names, path);
+        let kept = Some(names(PROJECT_NAMES_MAX));
+        assert_eq!(settings.env, kept);
+        assert_eq!(settings.override_config_filenames, kept);
+        assert_eq!(settings.override_tool_versions_filenames, kept);
+
+        // the sets of every project file count against one limit, so neither a
+        // large set nor many small ones, in one file or several, get past it
+        let mut set_names = PROJECT_NAMES_MAX;
+        let mut settings = MisercSettings {
+            env_sets: Some(indexmap::IndexMap::from([
+                ("big".to_string(), long),
+                ("a".to_string(), names(PROJECT_NAMES_MAX - 1)),
+                ("b".to_string(), names(2)),
+                ("c".to_string(), names(1)),
+            ])),
+            ..Default::default()
+        };
+        limit_project_names(&mut settings, &mut set_names, path);
+        let sets = settings.env_sets.unwrap();
+        assert_eq!(sets.keys().collect::<Vec<_>>(), ["a", "c"]);
+        assert_eq!(set_names, 0);
+        let mut settings: MisercSettings = toml::from_str("[env_sets]\nd = [\"x\"]").unwrap();
+        limit_project_names(&mut settings, &mut set_names, path);
+        assert!(settings.env_sets.unwrap().is_empty());
+    }
+
+    #[test]
     fn test_expand_env_sets() {
         let sets: indexmap::IndexMap<String, Vec<String>> = toml::from_str(
             r#"
@@ -819,7 +1077,7 @@ ceiling_paths = ["/home/user"]
             ..Default::default()
         };
 
-        drop_names_leaving_the_directory(&mut settings, Path::new("/work/.miserc.toml"));
+        drop_names_leaving_the_directory(&mut settings, Path::new("/work/.miserc.toml"), false);
 
         assert_eq!(
             settings.env,
@@ -827,11 +1085,7 @@ ceiling_paths = ["/home/user"]
         );
         assert_eq!(
             settings.override_config_filenames,
-            Some(
-                ["mise.ci.toml", ".config/mise.toml"]
-                    .map(String::from)
-                    .to_vec()
-            )
+            Some(["mise.ci.toml"].map(String::from).to_vec())
         );
         assert_eq!(
             settings.override_tool_versions_filenames,
@@ -840,10 +1094,130 @@ ceiling_paths = ["/home/user"]
     }
 
     #[test]
+    fn test_project_override_filenames_are_file_names_of_their_kind() {
+        let toml = r#"
+override_config_filenames = ["mise.ci.toml", ".config/mise.toml", ".netrc", ".npmrc", ".toml", "config.toml"]
+override_tool_versions_filenames = [".tool-versions", "ci.tool-versions", "mise.toml", ".ssh/authorized_keys", "tool-versions"]
+"#;
+
+        let mut settings: MisercSettings = toml::from_str(toml).unwrap();
+        drop_names_leaving_the_directory(&mut settings, Path::new("/work/.miserc.toml"), false);
+        assert_eq!(
+            settings.override_config_filenames.unwrap(),
+            ["mise.ci.toml", "config.toml"]
+        );
+        assert_eq!(
+            settings.override_tool_versions_filenames.unwrap(),
+            [".tool-versions", "ci.tool-versions"]
+        );
+
+        // the user's own global file keeps any name that stays in its directory
+        let mut settings: MisercSettings = toml::from_str(toml).unwrap();
+        drop_names_leaving_the_directory(
+            &mut settings,
+            Path::new("/home/user/.config/mise/miserc.toml"),
+            true,
+        );
+        assert_eq!(settings.override_config_filenames.unwrap().len(), 6);
+        assert_eq!(settings.override_tool_versions_filenames.unwrap().len(), 5);
+    }
+
+    #[test]
+    fn test_project_env_names_are_plain() {
+        let names = [
+            "staging",
+            "ci.local",
+            "linux-x64",
+            "my_env",
+            "staging$(id)",
+            "a b",
+            "x;y",
+            "`id`",
+            "{{ x }}",
+            "-E",
+            ".hidden",
+            "",
+        ];
+        let toml = format!(
+            "env = {names:?}\n[env_sets]\nteam = {names:?}",
+            names = names.to_vec()
+        );
+        let plain = ["staging", "ci.local", "linux-x64", "my_env"];
+
+        let mut settings: MisercSettings = toml::from_str(&toml).unwrap();
+        drop_names_leaving_the_directory(&mut settings, Path::new("/work/.miserc.toml"), false);
+        assert_eq!(settings.env.unwrap(), plain);
+        assert_eq!(settings.env_sets.unwrap()["team"], plain);
+
+        // the user's own global file keeps any name without a path separator
+        let mut settings: MisercSettings = toml::from_str(&toml).unwrap();
+        drop_names_leaving_the_directory(
+            &mut settings,
+            Path::new("/home/user/.config/mise/miserc.toml"),
+            true,
+        );
+        assert_eq!(settings.env.unwrap(), names);
+    }
+
+    #[test]
+    fn test_project_lists_are_capped_before_names_are_checked() {
+        let path = Path::new("/work/.miserc.toml");
+        let valid = |n: usize| (0..n).map(|i| format!("ok{i}")).collect::<Vec<_>>();
+        let invalid = |n: usize| (0..n).map(|i| format!("bad/{i}")).collect::<Vec<_>>();
+        // (entries, names kept)
+        let cases = [
+            ([valid(70)].concat(), valid(PROJECT_NAMES_MAX)),
+            ([invalid(70), valid(5)].concat(), vec![]),
+            ([valid(60), invalid(10), valid(5)].concat(), valid(60)),
+        ];
+        for (entries, kept) in cases {
+            let mut settings = MisercSettings {
+                env: Some(entries.clone()),
+                override_config_filenames: Some(
+                    entries.iter().map(|name| format!("{name}.toml")).collect(),
+                ),
+                env_sets: Some([("team".to_string(), entries.clone())].into()),
+                ..Default::default()
+            };
+            let mut set_names = PROJECT_NAMES_MAX;
+            check_names(&mut settings, &mut set_names, path, false);
+            assert_eq!(settings.env.unwrap(), kept, "{entries:?}");
+            assert_eq!(
+                settings.override_config_filenames.unwrap(),
+                kept.iter()
+                    .map(|name| format!("{name}.toml"))
+                    .collect::<Vec<_>>()
+            );
+        }
+
+        // one warning for each list and reason, naming every name it drops
+        let mut settings = MisercSettings {
+            env: Some([invalid(3), vec!["a b".into()]].concat()),
+            env_sets: Some(
+                [
+                    ("one".to_string(), invalid(2)),
+                    ("two".to_string(), invalid(3)),
+                ]
+                .into(),
+            ),
+            ..Default::default()
+        };
+        let warnings = drop_names_leaving_the_directory(&mut settings, path, false);
+        assert_eq!(warnings.len(), 3, "{warnings:#?}");
+        assert!(warnings[0].contains(
+            r#"ignoring environments "bad/0", "bad/1", "bad/2": a name cannot contain a path separator"#
+        ));
+        assert!(warnings[1].contains(r#"ignoring environment "a b": a name in a project"#));
+        assert!(warnings[2].contains(
+            r#"ignoring environments "bad/0", "bad/1", "bad/2" in env_sets: a name cannot"#
+        ));
+    }
+
+    #[test]
     fn test_drop_env_set_members_leaving_the_directory() {
         let mut settings: MisercSettings =
             toml::from_str("[env_sets]\nteam = [\"ssh\", \"x/../../other\", \"a\\\\b\"]").unwrap();
-        drop_names_leaving_the_directory(&mut settings, Path::new("/work/.miserc.toml"));
+        drop_names_leaving_the_directory(&mut settings, Path::new("/work/.miserc.toml"), false);
         assert_eq!(settings.env_sets.unwrap()["team"], ["ssh"]);
     }
 

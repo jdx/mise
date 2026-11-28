@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# A tool key that is a backend prefix with no tool after it is reported, and
+# does not keep hook-env or the commands that walk tracked configs from running.
+
+cat <<'EOF_TOML' >mise.toml
+[tools]
+"asdf:" = "1"
+
+[env]
+FOO = "bar"
+EOF_TOML
+assert_contains "mise hook-env -s bash 2>&1" "'asdf:' does not name a tool"
+assert_contains "mise hook-env -s bash 2>/dev/null" "export FOO=bar"
+assert_succeed "mise ls"
+assert_succeed "mise current"
+assert_succeed "mise prune --dry-run"
