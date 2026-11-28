@@ -608,10 +608,18 @@ pub async fn generate(
                 resolve(ba, tv.clone(), platform).await?
             };
             if let Ok(info) = &mut resolution.4 {
-                let checksums = complete_artifact_checksums(info);
+                // Both download the tool's artifacts, so both run in its safe
+                // mode scope, as its install does: a project tool's release
+                // chooses those hosts, and no netrc login goes to them.
+                let checksums = async {
+                    complete_artifact_checksums(info).await?;
+                    if let Some(old) = &previous_info {
+                        check_replaced_weak_pins(old, info).await?;
+                    }
+                    eyre::Ok(())
+                };
                 crate::toolset::with_safe_mode_tool_scope(&tool, checksums).await?;
                 if let Some(old) = previous_info {
-                    check_replaced_weak_pins(&old, info).await?;
                     preserve_legacy_metadata(&old, info);
                 }
             }
