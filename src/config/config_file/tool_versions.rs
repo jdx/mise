@@ -309,7 +309,7 @@ impl ConfigFile for ToolVersions {
             );
         }
         let s = self.dump()?;
-        file::write_atomic(&self.path, s)
+        file::write_atomic(super::checked_write_destination(&self.path)?, s)
     }
 
     fn dump(&self) -> eyre::Result<String> {

@@ -561,31 +561,44 @@ where
 /// Returns all possible aliases for the current platform (os, arch),
 /// with the preferred spelling first (macos/x64, linux/x64, etc).
 pub(crate) fn platform_aliases() -> Vec<(String, String)> {
-    let os = std::env::consts::OS;
-    let arch = std::env::consts::ARCH;
-    let mut aliases = vec![];
+    os_arch_aliases(std::env::consts::OS, std::env::consts::ARCH)
+}
 
-    // OS aliases
-    let os_aliases = match os {
+/// The spellings an option key may give `os`, the preferred one first.
+fn os_aliases(os: &str) -> Vec<&str> {
+    match os {
         "macos" | "darwin" => vec!["macos", "darwin"],
-        "linux" => vec!["linux"],
-        "windows" => vec!["windows"],
         _ => vec![os],
-    };
+    }
+}
 
-    // Arch aliases
-    let arch_aliases = match arch {
-        "x86_64" | "amd64" => vec!["x64", "amd64", "x86_64"],
-        "aarch64" | "arm64" => vec!["arm64", "aarch64"],
+/// The spellings an option key may give `arch`, the preferred one first.
+fn arch_aliases(arch: &str) -> Vec<&str> {
+    match arch {
+        "x64" | "amd64" | "x86_64" => vec!["x64", "amd64", "x86_64"],
+        "arm64" | "aarch64" => vec!["arm64", "aarch64"],
         _ => vec![arch],
-    };
+    }
+}
 
-    for os in &os_aliases {
-        for arch in &arch_aliases {
+fn os_arch_aliases(os: &str, arch: &str) -> Vec<(String, String)> {
+    let mut aliases = vec![];
+    for os in os_aliases(os) {
+        for arch in arch_aliases(arch) {
             aliases.push((os.to_string(), arch.to_string()));
         }
     }
     aliases
+}
+
+/// The preferred spelling of `platform`, an `os-arch` key such as `darwin-amd64`
+/// (`macos-x64`). The platform option lookups try every spelling of a platform, so
+/// two keys with the same preferred spelling name the same platform.
+pub(crate) fn preferred_platform_spelling(platform: &str) -> String {
+    let Some((os, arch)) = platform.split_once('-') else {
+        return platform.to_string();
+    };
+    format!("{}-{}", os_aliases(os)[0], arch_aliases(arch)[0])
 }
 
 /// Looks up a value in ToolVersionOptions using nested platform key format.
@@ -662,31 +675,7 @@ fn lookup_platform_value_for_aliases<T>(
 
 /// Returns all possible aliases for a given platform target (os, arch).
 fn target_platform_aliases(target: &PlatformTarget) -> Vec<(String, String)> {
-    let os = target.os_name();
-    let arch = target.arch_name();
-    let mut aliases = vec![];
-
-    // OS aliases
-    let os_aliases = match os {
-        "macos" | "darwin" => vec!["macos", "darwin"],
-        "linux" => vec!["linux"],
-        "windows" => vec!["windows"],
-        _ => vec![os],
-    };
-
-    // Arch aliases
-    let arch_aliases = match arch {
-        "x64" | "amd64" | "x86_64" => vec!["x64", "amd64", "x86_64"],
-        "arm64" | "aarch64" => vec!["arm64", "aarch64"],
-        _ => vec![arch],
-    };
-
-    for os in &os_aliases {
-        for arch in &arch_aliases {
-            aliases.push((os.to_string(), arch.to_string()));
-        }
-    }
-    aliases
+    os_arch_aliases(target.os_name(), target.arch_name())
 }
 
 /// Looks up a value in ToolVersionOptions for a specific target platform.

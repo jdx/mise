@@ -381,7 +381,7 @@ pub(super) fn ensure_toml(path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn is_toml(path: &Path) -> bool {
+pub(super) fn is_toml(path: &Path) -> bool {
     path.extension().is_some_and(|ext| ext == "toml")
 }
 
@@ -609,9 +609,51 @@ pub(super) async fn choose_definition(name: &str, target: &TargetArgs) -> Result
     }
 }
 
+/// Refuses to write task script `script` through a link out of its project; see
+/// [`config_file::script_check_before_write`]. Returns the path to write, with the links this
+/// check approved resolved.
+pub(super) async fn script_check_before_write(script: &Path) -> Result<PathBuf> {
+    // A task include can name its directory with `..` after a link, which discovery follows
+    // before going up, so the path made absolute below would be another script.
+    config_file::refuse_parent_dir_out_of_link("write task", script)?;
+    let script = path_absolutize::Absolutize::absolutize(script)?;
+    match script_project_root(&script).await? {
+        Some(root) => config_file::script_check_before_write(&script, &root),
+        None => Ok(script.into_owned()),
+    }
+}
+
+/// Refuses to remove task script `script` through a directory link out of its project; see
+/// [`config_file::script_check_before_remove`]. Returns the path to remove, in the directory
+/// this check approved.
+pub(super) async fn script_check_before_remove(script: &Path) -> Result<PathBuf> {
+    config_file::refuse_parent_dir_out_of_link("remove task", script)?;
+    let script = path_absolutize::Absolutize::absolutize(script)?;
+    match script_project_root(&script).await? {
+        Some(root) => config_file::script_check_before_remove(&script, &root),
+        None => Ok(script.into_owned()),
+    }
+}
+
+/// The project of absolute task script path `script`: the deepest root, of the loaded config
+/// or the one mise runs in, that the path as written lies in.
+async fn script_project_root(script: &Path) -> Result<Option<PathBuf>> {
+    let config = Config::get().await?;
+    Ok(config
+        .config_files
+        .values()
+        .map(|cf| cf.config_root())
+        .chain(config.project_root.clone())
+        .chain(crate::dirs::CWD.clone())
+        .filter(|root| script.starts_with(root))
+        .max_by_key(|root| root.components().count()))
+}
+
 /// Whether config file `path` loads without asking for trust already, before a write.
 fn is_already_trusted(path: &Path) -> bool {
-    Settings::safe_mode() || config::is_global_config(path) || config_file::is_path_trusted(path)
+    Settings::safe_mode()
+        || config::is_global_config_write(path)
+        || config_file::is_path_trusted(path)
 }
 
 /// Writes config file `path` the way `mise set` does: asks for trust beforehand, for the files the
@@ -619,12 +661,17 @@ fn is_already_trusted(path: &Path) -> bool {
 /// write newly trusted that root.
 pub(super) fn write_config(path: &Path, content: &str) -> Result<bool> {
     let already_trusted = is_already_trusted(path);
+    config_file::symlink_check_before_write(path)?;
     config_file::trust_check_before_write(path)?;
-    if let Some(parent) = path.parent() {
+    // The trust prompt can wait on the user while the checkout changes, so where the file leads
+    // is checked again, and the write goes to the destination that passed.
+    let destination = config_file::checked_write_destination(path)?;
+    if let Some(parent) = destination.parent() {
         file::create_dir_all(parent)?;
     }
-    file::write(path, content)?;
-    config_file::trust_after_write(path)?;
+    let trusted_before = config_file::trusted_before_write(path);
+    file::write(&destination, content)?;
+    config_file::trust_after_write(path, trusted_before)?;
     Ok(!already_trusted)
 }
 

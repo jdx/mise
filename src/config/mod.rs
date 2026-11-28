@@ -3867,6 +3867,88 @@ pub fn is_global_config(path: &Path) -> bool {
         || is_system_config(path)
 }
 
+/// [`is_global_config`] for a file a write may be about to create.
+///
+/// Discovery lists the global config files that exist, so the `config.toml` that a first
+/// `mise use -g` creates is not among them. A file directly in the global or system config
+/// directory, or in its `conf.d`, is global config by where it is, and so is a folder fragment
+/// in that `conf.d` (see [`global_folder_fragment`]); a file deeper below it is a project like
+/// any other. A directory that `MISE_GLOBAL_CONFIG_FILE` or `MISE_SYSTEM_CONFIG_FILE` replaces
+/// holds no global config, as discovery reads only the file the variable names.
+pub fn is_global_config_write(path: &Path) -> bool {
+    if is_global_config(path) || env::MISE_GLOBAL_CONFIG_FILE.as_deref() == Some(path) {
+        return true;
+    }
+    let Some(parent) = path.parent() else {
+        return false;
+    };
+    global_config_dirs()
+        .flat_map(|dir| [dir.to_path_buf(), dir.join("conf.d")])
+        .any(|dir| file::same_file(parent, &dir))
+        || global_folder_fragment(path).is_some()
+}
+
+/// Whether global or system config discovery loads `path`, or will once it exists, for some
+/// environment: a discovered global file, the file `MISE_GLOBAL_CONFIG_FILE` names, an override
+/// file, a file [`is_global_config_for_any_env`] recognizes by its name (`config.toml`,
+/// `mise.prod.local.toml`, any `conf.d/*.toml`, ...), or a folder fragment, also in a folder
+/// linked into `conf.d`. Unlike [`is_global_config_write`], which goes by directory so that a
+/// write there never records trust for the home directory, a file in the global config
+/// directory that discovery would never load is not global config.
+pub fn is_global_config_by_name(path: &Path) -> bool {
+    is_global_config(path)
+        || env::MISE_GLOBAL_CONFIG_FILE.as_deref() == Some(path)
+        || is_global_config_for_any_env(path)
+        || global_folder_fragment(path).is_some()
+}
+
+/// The global and system config directories that discovery reads, as
+/// [`is_global_config_for_any_env`] has them: one that `MISE_GLOBAL_CONFIG_FILE` or
+/// `MISE_SYSTEM_CONFIG_FILE` replaces is left out.
+fn global_config_dirs() -> impl Iterator<Item = &'static Path> {
+    [
+        env::MISE_GLOBAL_CONFIG_FILE
+            .is_none()
+            .then_some(*dirs::CONFIG),
+        env::MISE_SYSTEM_CONFIG_FILE
+            .is_none()
+            .then_some(*dirs::SYSTEM_CONFIG),
+    ]
+    .into_iter()
+    .flatten()
+}
+
+/// The spelling in the global or system config directory of `path`, when `path` is a folder
+/// fragment there, one that discovery would load from a folder of `conf.d`, whether or not the
+/// file or its folder exists yet. The folder is found as an entry of `conf.d` that `path`'s
+/// directory resolves to, so a link to the folder, or a folder the user linked into `conf.d`,
+/// is spelled as discovery spells it; a folder that does not exist yet is spelled in `conf.d`.
+fn global_folder_fragment(path: &Path) -> Option<PathBuf> {
+    let name = path.file_name()?;
+    let dir = path.parent()?;
+    let real_dir = dir.canonicalize().ok();
+    global_config_dirs()
+        .find_map(|config| {
+            let conf_d = config.join("conf.d");
+            let folder = match &real_dir {
+                Some(real) => std::fs::read_dir(&conf_d)
+                    .ok()?
+                    .flatten()
+                    .map(|entry| conf_d.join(entry.file_name()))
+                    .find(|folder| folder.canonicalize().is_ok_and(|c| c == *real))?,
+                None => {
+                    let folder_name = dir.file_name()?;
+                    if !file::same_file(dir.parent()?, &conf_d) {
+                        return None;
+                    }
+                    conf_d.join(folder_name)
+                }
+            };
+            Some(folder.join(name))
+        })
+        .filter(|file| is_conf_d_folder_file(file))
+}
+
 /// Whether `path` is one of the global override files, which outrank all project config.
 /// See [`override_config_files`].
 ///
@@ -3900,6 +3982,115 @@ pub fn is_override_config(path: &Path) -> bool {
 pub(crate) fn is_project_link_to_global_config(path: &Path) -> bool {
     discovered_global_config(path)
         .is_some_and(|global| global != path && !path.canonicalize().is_ok_and(|real| real == path))
+}
+
+/// Whether writing `path` would reach global or system config through a link a project placed:
+/// a project file linked to a global config file, or a project's `.mise` or `.config` linked to
+/// the global config directory, where the file need not exist yet.
+///
+/// What decides is where each link on the way to the file is placed and what it stands for, not
+/// where the file finally lands: two spellings of global config resolve to the same file whoever
+/// placed the link between them, and the user's global config directory may itself link into a
+/// dotfiles checkout anywhere. A link that global config's own spelling also passes through is
+/// the user's layout (a linked `~/.config`). Any other link is the user's own only when it is
+/// another name for a directory above the global config directory, placed in such a directory
+/// itself, and not below the directory the path spells as its project: a linked `/home`, or a
+/// link to the home directory placed beside it (see [`is_alias_above_global_config_dir`]). A
+/// link to the global config directory itself (`~/cfg` or a project's `.mise`), one below the
+/// project directory, or one placed in a directory that does not hold global config, such as a
+/// checkout's `home` linked to the home directory, is a project's link to global config.
+pub fn write_reaches_global_config_through_link(path: &Path) -> bool {
+    let Some(global) = global_config_spelling(path) else {
+        return false;
+    };
+    if global == path || resolve_for_write(path).is_none_or(|real| real == path) {
+        return false;
+    }
+    let users_links = link_placements(&global)
+        .map(|(_, placement)| placement)
+        .collect::<Vec<_>>();
+    let project = config_file::config_root::spelled_project(path);
+    link_placements(path).any(|(spelled, placement)| {
+        let below_project = spelled.starts_with(&project) && spelled != project;
+        !users_links.contains(&placement)
+            && (below_project
+                || !is_alias_above_global_config_dir(spelled, &placement.0, path, &global))
+    })
+}
+
+/// Whether `link`, a symlink on `path` placed in `link_dir` (resolved), is another name for a
+/// directory above the directory of `global`, the spelling of the global config file `path`
+/// reaches, and is placed in such a directory too: `/usr/home` for `/home`, or `~/../linkhome`
+/// for `~`. The rest of `path` below the link must spell the global config file as `global`
+/// does below that directory, so the link stands above the global config directory, which is
+/// compared as spelled, before any link the two paths share is followed.
+fn is_alias_above_global_config_dir(
+    link: &Path,
+    link_dir: &Path,
+    path: &Path,
+    global: &Path,
+) -> bool {
+    let (Ok(rest), Ok(target)) = (path.strip_prefix(link), link.canonicalize()) else {
+        return false;
+    };
+    let Some(config_dir) = global.parent().map(|dir| match dir.parent() {
+        Some(owner) if dir.ends_with("conf.d") => owner,
+        _ => dir,
+    }) else {
+        return false;
+    };
+    let (mut placed_above, mut stands_above) = (false, false);
+    for holder in config_dir.ancestors().skip(1) {
+        let Ok(resolved) = holder.canonicalize() else {
+            continue;
+        };
+        placed_above |= resolved == link_dir;
+        stands_above |= resolved == target && global.strip_prefix(holder).is_ok_and(|r| r == rest);
+    }
+    placed_above && stands_above
+}
+
+/// The links (symlinks, and junctions on Windows) `path` passes through on the way to its file,
+/// the file itself included: each as spelled in `path`, with where it is placed, the directory
+/// that holds it (resolved) and its name there.
+fn link_placements(
+    path: &Path,
+) -> impl Iterator<Item = (&Path, (PathBuf, std::ffi::OsString))> + '_ {
+    path.ancestors()
+        .filter(|p| config_file::config_root::is_link(p))
+        .filter_map(|p| {
+            let dir = p.parent()?.canonicalize().ok()?;
+            Some((p, (dir, p.file_name()?.to_os_string())))
+        })
+}
+
+/// Where global or system config is spelled for a file `path` resolves to: where discovery
+/// found it, or for a file that does not exist yet, the global or system config directory (or
+/// its `conf.d`, or a folder fragment's folder there) that `path`'s directory resolves to.
+fn global_config_spelling(path: &Path) -> Option<PathBuf> {
+    if let Some(global) = discovered_global_config(path) {
+        return Some(global);
+    }
+    // A file that does not exist yet can still be a link, as `~/mise.toml` linked to a missing
+    // `~/.config/mise/config.toml` is: the write creates the file the link leads to, so that is
+    // the one compared with the global config directories.
+    let real = resolve_for_write(path)?;
+    let dir = real.parent()?;
+    let name = real.file_name()?;
+    global_config_dirs()
+        .flat_map(|config| [config.to_path_buf(), config.join("conf.d")])
+        .find(|candidate| candidate.canonicalize().is_ok_and(|c| c == dir))
+        .map(|candidate| candidate.join(name))
+        .or_else(|| global_folder_fragment(&real))
+}
+
+/// `path` with every link resolved, for a file that may not exist yet: its own link, if it is a
+/// dangling one, and then its directory, through the part of it that exists, so a folder of
+/// `conf.d` that the write would create is compared where the write creates it.
+fn resolve_for_write(path: &Path) -> Option<PathBuf> {
+    path.canonicalize()
+        .ok()
+        .or_else(|| crate::file::atomic_write_target(path).ok())
 }
 
 /// Whether global or system config discovery loads `path` from its config

@@ -189,7 +189,26 @@ mise also trusts a config file when it writes one, for example with
 the file's whole config root, so if another config file there is not trusted
 yet, such as a `mise.local.toml` or a `mise.staging.toml`, mise asks about it
 first, the way it does when that file loads. In safe mode a write records no
-trust.
+trust, and neither does a write to global or system config, which is trusted
+without a record: writing `~/.config/mise/config.toml` does not trust a
+`mise.toml` in your home directory, and does not undo `mise trust --ignore` for
+it.
+
+When a project config file is a symlink, or sits in a linked directory of the
+project such as a `.config` or `.mise` that leads out of it, mise writes through
+the link only if it stays in the config's directory, or the project was trusted before the command
+started and safe mode is off. Trust that the same command grants does not
+count, however it grants it: because you typed it in the project (see
+[Typed in a terminal](#typed-in-a-terminal)), because you answered yes to the
+prompt, or because `--yes` or `MISE_YES` is set. The prompt names the
+directory, not where its links lead. Otherwise the write fails and names the link and
+its target. Outside safe mode it tells you to run `mise trust` there and run the
+command again. In safe mode trust does not help, so it tells you to write the file
+the link leads to directly, or to replace the link. A link into mise's
+state directory, a dangling link that leads out of the directory, and a
+project's link to global config are never followed, trusted or not; write
+global config with `-g`. A global config file that links into a dotfiles
+checkout is written through.
 
 ### Typed in a terminal
 
@@ -471,8 +490,10 @@ its directory.
 
 Safe mode loads untrusted config without a prompt or an error, in paranoid mode
 too. It does not mark the config trusted for later runs without safe mode, not
-even when a command such as `mise use` or `mise set` edits it. Syntax errors and
-refused operations still fail.
+even when a command such as `mise use` or `mise set` edits it. A tool option
+that `mise use` writes to another config file, such as global config with `-g`,
+is written as its value and not as the template a project declares for it.
+Syntax errors and refused operations still fail.
 
 Safe mode limits what project config can do. It is not an operating-system
 sandbox for mise, its network requests or the plugins the operator installed.

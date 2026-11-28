@@ -58,3 +58,62 @@ MISE_YES=1 mise tasks rm --dry-run rendered >/dev/null 2>&1 || true
 assert_fail "test -e $marker"
 MISE_YES=1 mise tasks set --dry-run --path mise.toml rendered --hide >/dev/null 2>&1 || true
 assert_fail "test -e $marker"
+
+echo "=== renewing trust on the first removal does not refuse the next one ==="
+# Paranoid mode trusts a config reached through a link out of the project only through
+# `trusted_config_paths`, which is trust from before the command. Each removal may follow the
+# link, also after the first one changed the file and renewed its record.
+# Outside the project above, whose config and task scripts would load as a parent.
+base="$HOME/linked"
+mkdir -p "$base/shared" "$base/project" "$base/shared-dir/mise" "$base/dir-project/.config"
+write_tasks() {
+  cat <<'TOML' >"$1"
+[tasks.a]
+run = "echo a"
+
+[tasks.b]
+run = "echo b"
+
+[tasks.keep]
+run = "echo keep"
+TOML
+}
+kept="[tasks.keep]"
+
+# a linked file, with `trusted_config_paths` covering the project but not the link's target
+write_tasks "$base/shared/mise.toml"
+ln -s "$base/shared/mise.toml" "$base/project/mise.toml"
+cd "$base/project" || exit 1
+MISE_TRUSTED_CONFIG_PATHS="$base/project" MISE_YES=1 mise tasks rm a b
+assert "grep '^\[tasks' $base/shared/mise.toml" "$kept"
+
+# the same file, trusted through `trusted_config_paths` at the target as well
+write_tasks "$base/shared/mise.toml"
+MISE_TRUSTED_CONFIG_PATHS="$base/project:$base/shared" MISE_YES=1 mise tasks rm a b
+assert "grep '^\[tasks' $base/shared/mise.toml" "$kept"
+
+# a linked `.config/mise` directory
+write_tasks "$base/shared-dir/mise/config.toml"
+ln -s "$base/shared-dir/mise" "$base/dir-project/.config/mise"
+cd "$base/dir-project" || exit 1
+MISE_TRUSTED_CONFIG_PATHS="$base/dir-project" MISE_YES=1 mise tasks rm a b
+assert "grep '^\[tasks' $base/shared-dir/mise/config.toml" "$kept"
+
+echo "=== a task directory that links out of the project needs trusted_config_paths ==="
+# Paranoid mode trusts each config file by its content, not the directory, and does not load a
+# task reached through a link inside the project, so `mise trust` cannot approve the link and
+# the refusal says what does.
+mkdir -p "$base/tasks-out" "$base/task-project"
+printf '#!/usr/bin/env bash\necho out\n' >"$base/tasks-out/out"
+chmod +x "$base/tasks-out/out"
+cd "$base/task-project" || exit 1
+echo "[tools]" >mise.toml
+ln -s "$base/tasks-out" mise-tasks
+mise trust mise.toml
+assert_fail_contains "mise tasks add --file --force out -- echo replaced 2>&1" "trusted_config_paths"
+assert_not_contains "cat $base/tasks-out/out" "replaced"
+export MISE_TRUSTED_CONFIG_PATHS="$base/task-project"
+assert "mise tasks add --file --force out -- echo replaced"
+assert_contains "cat $base/tasks-out/out" "replaced"
+assert "MISE_YES=1 mise tasks rm out"
+assert_fail "test -e $base/tasks-out/out"

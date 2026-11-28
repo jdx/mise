@@ -68,6 +68,20 @@ impl TasksRm {
             }
             definitions.push((task.as_str(), definition));
         }
+        // Every config file must be writable, and every script removable, before any task is
+        // removed. A script's own link is removed rather than followed, so only the
+        // directories that lead to it are checked.
+        if !self.dry_run {
+            for (_, definition) in &definitions {
+                match definition {
+                    Definition::Toml(path) => config_file::symlink_check_before_write(path)?,
+                    Definition::File(path) => {
+                        write::script_check_before_remove(path).await?;
+                    }
+                    Definition::Other(_) => {}
+                }
+            }
+        }
         if !self.dry_run && !Settings::get().yes {
             let list = definitions
                 .iter()
@@ -78,13 +92,28 @@ impl TasksRm {
             }
         }
 
+        // The links may have changed while the prompt waited, so every definition is checked
+        // again, and each change goes to the destination that passed. As before the prompt, all
+        // are checked before anything is removed.
+        let mut destinations = vec![];
+        for (_, definition) in &definitions {
+            destinations.push(match definition {
+                _ if self.dry_run => None,
+                Definition::Toml(path) => Some(config_file::checked_write_destination(path)?),
+                Definition::File(path) => Some(write::script_check_before_remove(path).await?),
+                Definition::Other(_) => None,
+            });
+        }
+
         let mut reports = vec![];
-        for (task, definition) in definitions {
+        for ((task, definition), destination) in definitions.into_iter().zip(destinations) {
             let mut report = match definition {
-                Definition::Toml(path) => self.remove_toml_task(task, &path)?,
+                Definition::Toml(path) => {
+                    self.remove_toml_task(task, &path, destination.as_deref())?
+                }
                 Definition::File(path) => {
-                    if !self.dry_run {
-                        file::remove_file(&path)?;
+                    if let Some(destination) = destination {
+                        file::remove_file(&destination)?;
                     }
                     Report::new(task, Action::Removed, Kind::File, &path)
                 }
@@ -101,8 +130,15 @@ impl TasksRm {
         Ok(())
     }
 
-    fn remove_toml_task(&self, task: &str, path: &std::path::Path) -> Result<Report> {
-        let before = file::read_to_string(path)?;
+    /// Removes `task` from config file `path`, through `destination`, the file the check after
+    /// the prompt approved; with none, as in a dry run, nothing is written.
+    fn remove_toml_task(
+        &self,
+        task: &str,
+        path: &std::path::Path,
+        destination: Option<&std::path::Path>,
+    ) -> Result<Report> {
+        let before = file::read_to_string(destination.unwrap_or(path))?;
         let mut doc: toml_edit::DocumentMut = before.parse()?;
         let tasks = write::tasks_table(&mut doc, path, false)?.unwrap();
         tasks.remove(task);
@@ -110,15 +146,15 @@ impl TasksRm {
             doc.remove("tasks");
         }
         write::hide_empty_tasks_header(&mut doc);
-        if !self.dry_run {
+        if let Some(destination) = destination {
             // Removing a task needs no trust, so none is asked for or recorded. A paranoid trust
             // record is bound to the file's content, though, so it is renewed for a file that
-            // was trusted before the edit.
+            // was trusted before the edit, as trust from before the command still.
             let renew_trust =
-                Settings::get().paranoid.config() && config_file::is_path_trusted(path);
-            file::write(path, doc.to_string())?;
+                Settings::get().paranoid.config() && config_file::trusted_before_write(path);
+            file::write(destination, doc.to_string())?;
             if renew_trust {
-                config_file::trust_after_write(path)?;
+                config_file::trust_after_write(path, true)?;
             }
         }
         Report::new(task, Action::Removed, Kind::Toml, path)

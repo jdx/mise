@@ -271,7 +271,17 @@ impl Renderer {
         let style = Style::new().yellow().bold();
         writeln!(self.term, "{}", style.apply_to(message))?;
         self.term.flush()?;
-        std::thread::sleep(std::time::Duration::from_millis(500));
+        hold(std::time::Duration::from_millis(500));
+        self.term.clear_last_lines(1)?;
+        Ok(())
+    }
+
+    /// Show an error long enough to read it
+    pub(crate) fn flash_error(&mut self, message: &str) -> io::Result<()> {
+        let style = Style::new().red().bold();
+        writeln!(self.term, "{}", style.apply_to(message))?;
+        self.term.flush()?;
+        hold(std::time::Duration::from_secs(3));
         self.term.clear_last_lines(1)?;
         Ok(())
     }
@@ -424,6 +434,15 @@ impl Renderer {
 impl Default for Renderer {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// Keep a flashed message on screen for `duration`, so it can be read. Unit tests
+/// have no one to read it: they drive the editor through refused saves, whose
+/// error would otherwise hold each test for 3s, over the per-test ceiling.
+fn hold(duration: std::time::Duration) {
+    if !cfg!(test) {
+        std::thread::sleep(duration);
     }
 }
 

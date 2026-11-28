@@ -223,7 +223,7 @@ pub(super) fn set(
         // validate
         let _: SettingsFile = toml::from_str(&config.to_string())?;
 
-        file::write(path, config.to_string())?;
+        super::write_settings_file(&path, &config.to_string())?;
     }
     Ok(())
 }

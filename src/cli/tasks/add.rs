@@ -126,9 +126,13 @@ impl TasksAdd {
             Action::Replaced
         };
         if action != Action::Unchanged && !self.dry_run {
-            file::create_dir_all(path.parent().unwrap())?;
-            file::write(&path, content)?;
-            file::make_executable(&path)?;
+            // Write to the destination the check approved, not through the links again.
+            let destination = write::script_check_before_write(&path).await?;
+            if let Some(parent) = destination.parent() {
+                file::create_dir_all(parent)?;
+            }
+            file::write(&destination, content)?;
+            file::make_executable(&destination)?;
         }
         Ok(Report::new(&self.task, action, Kind::File, &path))
     }

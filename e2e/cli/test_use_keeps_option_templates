@@ -59,3 +59,123 @@ assert "mise use dummy@2.0.0"
 assert_contains "cat mise.toml" 'url = "https://{{ env.DUMMY_TOKEN }}@example.com"'
 assert_contains "cat mise.toml" 'note = "/'
 assert_not_contains "cat mise.toml" "config_root"
+
+# safe mode loads project config without trust, so a template the project
+# declares stays in its own file: copied into another one, a later run without
+# safe mode would render it there
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[tools]
+dummy = { version = "1.0.0", url = "https://example.com/1" }
+TOML
+cat >mise.toml <<'TOML'
+[tools]
+dummy = { version = "1.0.0", url = "https://example.com/{{ 1 }}" }
+TOML
+assert "MISE_SAFE=1 mise use -g dummy@2.0.0"
+assert "cat $MISE_CONFIG_DIR/config.toml" '[tools]
+dummy = { version = "2.0.0", url = "https://example.com/1" }'
+mkdir other
+assert "MISE_SAFE=1 mise use --path other/mise.toml dummy@2.0.0"
+assert "cat other/mise.toml" '[tools]
+dummy = { version = "2.0.0", url = "https://example.com/1" }'
+assert "MISE_SAFE=1 mise use dummy@2.0.0"
+assert "cat mise.toml" '[tools]
+dummy = { version = "2.0.0", url = "https://example.com/{{ 1 }}" }'
+
+# an expression that reads `version` is left unrendered until the version is
+# known, so in safe mode a project's option can still hold one after loading.
+# Copied into another file, a later run without safe mode would render it
+# there, so that option is left out of the other file
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[tools]
+TOML
+cat >mise.toml <<'TOML'
+[tools]
+dummy = { version = "1.0.0", url = "https://example.com/{{ version | upper }}", note = "kept" }
+TOML
+rm -rf other
+mkdir other
+assert "MISE_SAFE=1 mise use --path other/mise.toml dummy@2.0.0"
+assert_not_contains "cat other/mise.toml" "version |"
+assert_contains "cat other/mise.toml" 'note = "kept"'
+assert "MISE_SAFE=1 mise use -g dummy@2.0.0"
+assert_not_contains "cat $MISE_CONFIG_DIR/config.toml" "version |"
+assert "MISE_SAFE=1 mise use dummy@2.0.0"
+assert_contains "cat mise.toml" 'url = "https://example.com/{{ version | upper }}"'
+
+# in a table such as `platforms`, only the entry holding the template is left out
+cat >mise.toml <<'TOML'
+[tools]
+dummy = { version = "1.0.0", platforms = { linux-x64 = { url = "https://example.com/{{ version | upper }}" }, macos-arm64 = { url = "https://example.com/plain" } } }
+TOML
+rm -rf other
+mkdir other
+assert "MISE_SAFE=1 mise use --path other/mise.toml dummy@2.0.0"
+assert_not_contains "cat other/mise.toml" "version |"
+assert_not_contains "cat other/mise.toml" "linux-x64"
+assert_contains "cat other/mise.toml" 'url = "https://example.com/plain"'
+
+# a checksum left out would leave its url to download unchecked, so the url
+# goes too, unless another checksum is pinned beside it
+cat >mise.toml <<'TOML'
+[tools]
+dummy = { version = "1.0.0", url = "https://example.com/top", checksum_url = "https://example.com/{{ version | upper }}.sha256", platforms = { linux-x64 = { url = "https://example.com/linux", checksum_url = "https://example.com/{{ version | upper }}/SHA256SUMS" }, macos-arm64 = { url = "https://example.com/mac", checksum = "sha256:0000000000000000000000000000000000000000000000000000000000000000", checksum_url = "https://example.com/{{ version | upper }}/SHA256SUMS" } } }
+TOML
+rm -rf other
+mkdir other
+assert_contains "MISE_SAFE=1 mise use --path other/mise.toml dummy@2.0.0 2>&1" "without it the download would not be checked"
+assert_not_contains "cat other/mise.toml" "version |"
+assert_not_contains "cat other/mise.toml" "example.com/top"
+assert_not_contains "cat other/mise.toml" "example.com/linux"
+assert_contains "cat other/mise.toml" 'url = "https://example.com/mac"'
+assert_contains "cat other/mise.toml" 'checksum = "sha256:0000'
+
+# a platform with no checksum of its own is checked against the top-level one,
+# so a pinned top-level checksum keeps the platform's url
+cat >mise.toml <<'TOML'
+[tools]
+dummy = { version = "1.0.0", checksum = "sha256:1111111111111111111111111111111111111111111111111111111111111111", platforms = { linux-x64 = { url = "https://example.com/linux", checksum_url = "https://example.com/{{ version | upper }}/SHA256SUMS" } } }
+TOML
+rm -rf other
+mkdir other
+assert_not_contains "MISE_SAFE=1 mise use --path other/mise.toml dummy@2.0.0 2>&1" "without it the download would not be checked"
+assert_not_contains "cat other/mise.toml" "version |"
+assert_contains "cat other/mise.toml" 'url = "https://example.com/linux"'
+assert_contains "cat other/mise.toml" 'checksum = "sha256:1111'
+
+# and a platform with no checksum of its own loses its url along with the
+# top-level checksum it was checked against
+cat >mise.toml <<'TOML'
+[tools]
+dummy = { version = "1.0.0", checksum_url = "https://example.com/{{ version | upper }}.sha256", platforms = { linux-x64 = { url = "https://example.com/linux" }, macos-arm64 = { url = "https://example.com/mac", checksum = "sha256:2222222222222222222222222222222222222222222222222222222222222222" } } }
+TOML
+rm -rf other
+mkdir other
+assert_contains "MISE_SAFE=1 mise use --path other/mise.toml dummy@2.0.0 2>&1" "platforms.linux-x64.url"
+assert_not_contains "cat other/mise.toml" "version |"
+assert_not_contains "cat other/mise.toml" "example.com/linux"
+assert_contains "cat other/mise.toml" 'url = "https://example.com/mac"'
+
+# the same goes for the flat per-platform keys the http backend reads
+cat >mise.toml <<'TOML'
+[tools]
+dummy = { version = "1.0.0", platforms_linux_x64_url = "https://example.com/linux", platforms_linux_x64_checksum_url = "https://example.com/{{ version | upper }}/SHA256SUMS", platforms_macos_arm64_url = "https://example.com/mac" }
+TOML
+rm -rf other
+mkdir other
+assert_contains "MISE_SAFE=1 mise use --path other/mise.toml dummy@2.0.0 2>&1" "platforms_linux_x64_url"
+assert_not_contains "cat other/mise.toml" "version |"
+assert_not_contains "cat other/mise.toml" "example.com/linux"
+assert_contains "cat other/mise.toml" 'platforms_macos_arm64_url = "https://example.com/mac"'
+
+# a checksum_expr picks a checksum out of the file at checksum_url, so with
+# that file left out it checks nothing, and the url goes too
+cat >mise.toml <<'TOML'
+[tools]
+dummy = { version = "1.0.0", url = "https://example.com/top", checksum_url = "https://example.com/{{ version | upper }}.json", checksum_expr = "fromJSON(body)[filename]" }
+TOML
+rm -rf other
+mkdir other
+assert_contains "MISE_SAFE=1 mise use --path other/mise.toml dummy@2.0.0 2>&1" "without it the download would not be checked"
+assert_not_contains "cat other/mise.toml" "version |"
+assert_not_contains "cat other/mise.toml" "example.com/top"

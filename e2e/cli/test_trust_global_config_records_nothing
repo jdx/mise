@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+
+# Global config is trusted without a trust record. Its trust root is the home
+# directory, so writing or loading it must not record trust for "~": that
+# would trust a project config there and clear a decision to ignore it.
+export MISE_TRUSTED_CONFIG_PATHS=""
+export MISE_YES=0
+unset CI GITHUB_ACTIONS GITHUB_ACTION 2>/dev/null || true
+
+assert_no_trust_records() {
+  assert "find $MISE_STATE_DIR -path '*trusted-configs/*' -print | wc -l | tr -d ' '" "0"
+}
+
+echo "=== the first global task reports no trust ==="
+cd "$HOME" || exit 1
+assert_not_contains "mise tasks add -g first -- echo first 2>&1" "trusted"
+assert_no_trust_records
+rm "$MISE_CONFIG_DIR/config.toml"
+
+echo "=== writing global config records nothing ==="
+assert "mise set -g FOO=bar"
+assert_contains "cat $MISE_CONFIG_DIR/config.toml" 'FOO = "bar"'
+assert_no_trust_records
+assert "mise tasks add -g hi -- echo hi"
+assert_no_trust_records
+assert "mise use -g dummy@1.0.0"
+assert_no_trust_records
+
+echo "=== loading global config records nothing ==="
+assert "mise run hi" "hi"
+assert "mise x -- true"
+assert_no_trust_records
+assert_contains "mise env" "FOO=bar"
+
+echo "=== an ignored project in ~ stays ignored ==="
+cat <<'TOML' >"$HOME/mise.toml"
+[env]
+HOME_PROJECT_PAYLOAD = "{{ exec(command='echo ran') }}"
+TOML
+assert "mise trust --ignore $HOME/mise.toml"
+assert "mise set -g BAZ=qux"
+assert "mise x -- true"
+assert_no_trust_records
+assert_not_contains "mise hook-env -s bash 2>&1 || true" "HOME_PROJECT_PAYLOAD"
+assert_not_contains "mise env 2>&1 || true" "HOME_PROJECT_PAYLOAD"

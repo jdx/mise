@@ -938,7 +938,7 @@ pub(crate) fn validate_resolved_version(s: &str) -> Result<()> {
 /// (`>=20 <21 || >=22`). A version that gets installed never holds them, nor URL syntax
 /// (`% # ?`), and plugin hooks put the install path into shell commands and the version into
 /// download URLs. A range that never resolved fails here instead of inside a plugin.
-pub(crate) fn validate_installable_version(s: &str) -> Result<()> {
+pub fn validate_installable_version(s: &str) -> Result<()> {
     validate_resolved_version(s)?;
     if let Some(c) = s.chars().find(|c| {
         c.is_whitespace() || matches!(c, ';' | '&' | '|' | '<' | '>' | '(' | ')' | '%' | '#' | '?')

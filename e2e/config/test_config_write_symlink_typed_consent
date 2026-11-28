@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+
+# A command typed on a terminal trusts the project it runs in without a prompt.
+# That trust does not let the same command write through a link that leaves the
+# project: nobody had looked at where the link leads. Trust that existed before
+# the command does.
+
+require_cmd script
+
+# script(1) gives mise a pty on stdin, stdout and stderr. macOS's script(1) also
+# wants a terminal on its own stdin, which the harness does not have.
+if ! script -qec true /dev/null >/dev/null 2>&1; then
+  echo "skipping: script(1) cannot allocate a pty here" >&2
+  exit 0
+fi
+
+export MISE_TRUSTED_CONFIG_PATHS=""
+unset CI GITHUB_ACTIONS GITHUB_ACTION 2>/dev/null || true
+
+# Runs $1 on a pty and answers "No" if the trust prompt appears.
+on_pty() {
+  printf 'n' | timeout 10 script -qec "MISE_YES=0 $1" /dev/null 2>&1
+}
+
+mkdir -p proj outside
+cat <<'TOML' >outside/victim.toml
+[env]
+LINKED = "1"
+TOML
+
+# A link to a file in a directory another account may write, here or anywhere above, keeps the
+# trust prompt, so a typed command trusts nothing and the write below is never reached. The e2e
+# harness runs in a container whose /tmp is a 777 directory that is not sticky. As in
+# test_trust_typed_on_terminal, this says no to a directory writable by the user's private
+# group too, which only skips the test.
+entries_guarded_up_from() {
+  local dir uid owner
+  dir="$(cd "$1" && pwd -P)" || return 1
+  uid="$(id -u)" || return 1
+  while :; do
+    owner="$(stat -c %u "$dir" 2>/dev/null || stat -f %u "$dir")" || return 1
+    [[ $owner == 0 || $owner == "$uid" ]] || return 1
+    [[ -z "$(find "$dir" -maxdepth 0 -perm /022 ! -perm -1000)" ]] || return 1
+    [[ $dir == / ]] && return 0
+    dir="$(dirname "$dir")"
+  done
+}
+# The test's own directories, up to the harness's temporary root, are made by this account, under a
+# umask that may leave them group-writable.
+test_root="$(cd "$HOME/.." && pwd -P)"
+dir="$(cd outside && pwd -P)"
+while [[ $dir == "$test_root"* && $dir != / ]]; do
+  chmod go-w "$dir" || true
+  dir="$(dirname "$dir")"
+done
+if ! entries_guarded_up_from outside; then
+  echo "skipping: a directory above the link target may be written by another account" >&2
+  exit 0
+fi
+
+cd proj || exit 1
+ln -s ../outside/victim.toml mise.toml
+
+# Typed on a terminal: the project is trusted by this command, so the link out
+# is not followed.
+output="$(on_pty 'mise set FOO=bar')" || true
+assert_contains_text "$output" "because you ran a mise command there"
+assert_contains_text "$output" "refusing to write"
+assert_contains_text "$output" "victim.toml"
+assert_contains_text "$output" "mise trust"
+assert_not_contains "cat ../outside/victim.toml" "FOO"
+ok "[trust] trust a typed command grants does not cover a link out of the project"
+
+# Trust recorded before the command, here by the previous command, covers it.
+output="$(on_pty 'mise set FOO=bar')"
+assert_not_contains_text "$output" "refusing to write"
+assert_contains "cat ../outside/victim.toml" 'FOO = "bar"'
+ok "[trust] trust that existed before the command covers a link out of the project"

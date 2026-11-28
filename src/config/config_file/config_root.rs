@@ -66,7 +66,7 @@ fn project_of_root(path: &Path, root: PathBuf) -> PathBuf {
     if is_conf_d_folder_file(path)
         && let Some(conf_d) = root.parent()
     {
-        return root_by_name(&conf_d.join("mise.toml"));
+        return spelled_config_root(&conf_d.join("mise.toml"));
     }
     root
 }
@@ -126,7 +126,7 @@ pub fn project_by_name(path: &Path) -> PathBuf {
         path.parent()
             .map_or_else(|| path.to_path_buf(), Path::to_path_buf)
     } else {
-        root_by_name(path)
+        spelled_config_root(path)
     };
     outside_config_dir(project_of_root(path, root))
 }
@@ -217,14 +217,36 @@ pub fn config_root(path: &Path) -> PathBuf {
         CONFIG_ROOT_CACHE.lock().unwrap().insert(path, root.clone());
         return root;
     }
-    let out = root_by_name(&path);
+    let out = spelled_config_root(&path);
     CONFIG_ROOT_CACHE.lock().unwrap().insert(path, out.clone());
     out
 }
 
+/// The project directory a config at `path` would belong to by how `path` is spelled, as if it
+/// were not global config: the directory that holds its `.config`, `.mise` or `mise` directory,
+/// or for a `conf.d` entry, the one that holds that `conf.d`'s config directory.
+pub(crate) fn spelled_project(path: &Path) -> PathBuf {
+    let conf_d_owner = path
+        .ancestors()
+        .skip(1)
+        .take(2)
+        .find(|dir| dir.file_name().is_some_and(|name| name == "conf.d"))
+        .and_then(Path::parent);
+    let root = match conf_d_owner {
+        Some(owner) => spelled_config_root(&owner.join("config.toml")),
+        None => spelled_config_root(path),
+    };
+    if root.ends_with(".config/mise")
+        && let Some(outer) = root.parent().and_then(Path::parent)
+    {
+        return outer.to_path_buf();
+    }
+    root
+}
+
 /// The root of the config at the absolute `path` from its name and the directories it is in,
 /// whatever file is there: [`config_root`] without its global config lookup.
-fn root_by_name(path: &Path) -> PathBuf {
+fn spelled_config_root(path: &Path) -> PathBuf {
     let path = path.to_path_buf();
     let parts = path
         .components()

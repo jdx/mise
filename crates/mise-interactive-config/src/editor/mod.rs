@@ -50,7 +50,13 @@ pub struct InteractiveConfig {
     pub(crate) undo_stack: Vec<UndoAction>,
     /// Cached display path for rendering
     pub(crate) path_display: String,
+    /// Runs right before each save; an error stops the save.
+    pub(crate) before_save: Option<BeforeSave>,
 }
+
+/// A check run on the config path right before the editor writes it, returning the file to write.
+pub(crate) type BeforeSave =
+    Box<dyn Fn(&std::path::Path) -> io::Result<std::path::PathBuf> + Send + Sync>;
 
 impl InteractiveConfig {
     /// Create a new config editor for a new file with default sections
@@ -70,6 +76,7 @@ impl InteractiveConfig {
             preferred_specificity: 0, // Default to "latest"
             undo_stack: Vec::new(),
             path_display,
+            before_save: None,
         }
     }
 
@@ -99,6 +106,7 @@ impl InteractiveConfig {
             preferred_specificity,
             undo_stack: Vec::new(),
             path_display,
+            before_save: None,
         })
     }
 
@@ -146,6 +154,19 @@ impl InteractiveConfig {
     /// Set dry-run mode (no file writes)
     pub fn dry_run(mut self, dry_run: bool) -> Self {
         self.dry_run = dry_run;
+        self
+    }
+
+    /// Run `check` on the config path right before each save. When it fails, the editor writes
+    /// nothing and returns its error. Otherwise it returns the file the check approved, which
+    /// the editor writes instead of the path, so the save goes to the file the check saw. The
+    /// file can change while the editor is open, so a check made before the editor started does
+    /// not cover the save.
+    pub fn before_save(
+        mut self,
+        check: impl Fn(&std::path::Path) -> io::Result<std::path::PathBuf> + Send + Sync + 'static,
+    ) -> Self {
+        self.before_save = Some(Box::new(check));
         self
     }
 

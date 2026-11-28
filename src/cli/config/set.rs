@@ -288,10 +288,11 @@ impl ConfigSet {
 
         let raw = config.to_string();
         MiseToml::from_str(&raw, &file)?;
-        if let Some(parent) = file.parent() {
+        let destination = crate::config::config_file::checked_write_destination(&file)?;
+        if let Some(parent) = destination.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        std::fs::write(&file, raw)?;
+        std::fs::write(&destination, raw)?;
         Ok(())
     }
 }

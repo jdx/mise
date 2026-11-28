@@ -160,6 +160,29 @@ struct HttpOptions<'a> {
     values: BackendOptions<'a>,
 }
 
+/// The options a download is checked against: a pinned `checksum`, or a `checksum_url` to read
+/// the publisher's checksum from. `checksum_expr` only picks a checksum out of the file at
+/// `checksum_url`, so it is no checksum on its own. Each one is read at the top level and per
+/// platform (`HttpOptions::checksum`, `HttpOptions::checksum_url_for_target`).
+pub(crate) const CHECKSUM_SOURCES: [&str; 2] = ["checksum", "checksum_url"];
+
+/// Whether `opts` give a download for `target` a checksum to check it against, as an install
+/// reads them: a `checksum` or a `checksum_url` set for the platform under any of its spellings,
+/// or at the top level. These are the lookups the install makes, so only a value it reads counts:
+/// a `checksum` that is an array or a table is no checksum.
+pub(crate) fn download_is_checked(opts: &ToolVersionOptions, target: &PlatformTarget) -> bool {
+    let opts = HttpOptions::new(opts);
+    opts.checksum_for_target(target).is_some() || opts.checksum_url_for_target(target).is_some()
+}
+
+/// Whether `opts` set a checksum at the top level that an install reads, which then checks the
+/// download of each platform that does not set one of its own (see [`download_is_checked`]).
+pub(crate) fn has_top_level_checksum(opts: &ToolVersionOptions) -> bool {
+    CHECKSUM_SOURCES
+        .into_iter()
+        .any(|source| opts.get_string(source).is_some())
+}
+
 impl<'a> HttpOptions<'a> {
     fn new(raw: &'a ToolVersionOptions) -> Self {
         Self {

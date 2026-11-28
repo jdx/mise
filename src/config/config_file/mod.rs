@@ -39,6 +39,7 @@ use eyre::{Result, eyre};
 use globset::{GlobBuilder, GlobSet, GlobSetBuilder};
 use idiomatic_version::IdiomaticVersionFile;
 use indexmap::{IndexMap, IndexSet};
+use path_absolutize::Absolutize;
 use std::sync::LazyLock as Lazy;
 use tool_versions::ToolVersions;
 
@@ -454,7 +455,10 @@ impl dyn ConfigFile {
     }
 }
 
-async fn init(path: &Path) -> Result<Arc<dyn ConfigFile>> {
+/// Starts a new, empty config for `path` without reading it. Nothing is written until the
+/// config is saved, so a preview of a new config uses this even where `path` is a dangling
+/// link that [`parse_or_init`] refuses.
+pub async fn init(path: &Path) -> Result<Arc<dyn ConfigFile>> {
     let settings = IdiomaticVersionFileSettings::current();
     let detection = detect_config_file_with_settings(path, &settings).await;
     match detection {
@@ -477,6 +481,11 @@ pub async fn parse_or_init(path: &Path) -> eyre::Result<Arc<dyn ConfigFile>> {
     } else {
         path.into()
     };
+    // A dangling link is not a missing config: starting a new one would create the file the
+    // link names, wherever that is. The write checks where a link leads before it follows one.
+    if !path.exists() && path.is_symlink() {
+        symlink_check_before_write(&path)?;
+    }
     let cf = match path.exists() {
         true => parse(&path).await?,
         false => init(&path).await?,
@@ -579,7 +588,7 @@ pub(super) async fn parse_detected(
 /// shim or the not-found handler builds such a version from source when another version of
 /// the tool is installed. `tag:` and `branch:` only name what the repository's maintainers
 /// pushed, as a plain version names what they released.
-pub(crate) fn version_requires_trust(version: &str) -> bool {
+pub fn version_requires_trust(version: &str) -> bool {
     is_path_version(version) || matches!(version.split_once([':', '-']), Some(("ref" | "rev", _)))
 }
 
@@ -597,7 +606,7 @@ pub(crate) fn is_path_version(version: &str) -> bool {
 ///
 /// The key is checked as `BackendArg` reads it, after `unalias_backend` drops
 /// leading `core:` prefixes, so `core:spm:<url>` is the same `spm:` key.
-fn tool_key_requires_trust(tool: &str) -> bool {
+pub fn tool_key_requires_trust(tool: &str) -> bool {
     let tool = crate::backend::unalias_backend(tool.trim());
     tool.contains('[') || crate::backend::spm::tool_key_selects_api_host(&tool)
 }
@@ -833,6 +842,7 @@ pub fn trust_active_config() -> Result<()> {
         }
         if !is_trusted(&config_root) {
             trust(&config_root)?;
+            granted_by_this_command(&config_root);
             newly_trusted = true;
         }
     }
@@ -849,10 +859,49 @@ pub fn trust_active_config() -> Result<()> {
 fn trust_and_reload_settings(config_root: &Path) -> eyre::Result<()> {
     let was_trusted = is_trusted(config_root);
     trust(config_root)?;
+    if !was_trusted {
+        granted_by_this_command(config_root);
+    }
     if !was_trusted && settings::is_loaded() {
         Settings::reload()?;
     }
     Ok(())
+}
+
+/// The config roots this process trusted that were not trusted when it started, resolved.
+static GRANTED_BY_THIS_COMMAND: Mutex<Option<HashSet<PathBuf>>> = Mutex::new(None);
+
+fn resolved_root(path: &Path) -> PathBuf {
+    path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
+}
+
+/// Notes that this process trusted `config_root`. Every way a command grants trust on its own
+/// comes through here: a command that implies trust, one typed on a terminal, a yes to the
+/// prompt, and the `yes` setting.
+fn granted_by_this_command(config_root: &Path) {
+    GRANTED_BY_THIS_COMMAND
+        .lock()
+        .unwrap()
+        .get_or_insert_with(HashSet::new)
+        .insert(resolved_root(config_root));
+}
+
+/// Whether this process trusted `config_root`, rather than finding it trusted when it started.
+/// A root below a monorepo root that this process trusted counts too: the monorepo root's
+/// marker trusts it, so it needs no record of its own, and its trust came from this command
+/// just the same. Such a root counts even when it was also trusted on its own before, as the
+/// monorepo root's trust would hide that.
+fn trusted_by_this_command(config_root: &Path) -> bool {
+    let granted = GRANTED_BY_THIS_COMMAND.lock().unwrap();
+    let Some(roots) = granted.as_ref() else {
+        return false;
+    };
+    let root = resolved_root(config_root);
+    roots.contains(&root)
+        || root
+            .ancestors()
+            .skip(1)
+            .any(|dir| roots.contains(dir) && has_monorepo_marker(dir))
 }
 
 /// Whether a command that implies trust may record it for `path`. An ignore always wins: the user
@@ -875,6 +924,9 @@ pub fn project_is_ignored(path: &Path) -> bool {
 fn trust_and_reload_settings_or_roll_back(config_root: &Path) -> eyre::Result<()> {
     let was_trusted = is_trusted(config_root);
     trust(config_root)?;
+    if !was_trusted {
+        granted_by_this_command(config_root);
+    }
     if !was_trusted
         && settings::is_loaded()
         && let Err(err) = Settings::reload()
@@ -902,7 +954,10 @@ pub fn trust_check(path: &Path) -> eyre::Result<()> {
     // to trust their active config in normal mode. Persist the decision here
     // so unsafe config can load before the command starts; safe config is
     // persisted by `trust_active_config` after settings initialization.
+    // Global config is trusted without a record; its root is the home directory,
+    // so a record would trust a project in `~` and clear an ignore for it.
     if implicitly_trusts_active_config()
+        && !config::is_global_config(path)
         && !*mise_util::env::IS_CI
         && Settings::try_get().is_ok_and(|settings| !settings.paranoid.config())
     {
@@ -1217,11 +1272,17 @@ fn is_trusted_without_config_paths(
 /// project trusted as one, and its grandparent when it is a file, which lies in its root.
 fn trusted_monorepo_ancestor(canonical: &Path) -> bool {
     let own_levels = if canonical.is_dir() { 1 } else { 2 };
-    canonical.ancestors().skip(own_levels).any(|dir| {
-        let record = dirs::TRUSTED_CONFIGS.join(record_name(dir));
-        (with_appended_extension(&record, "monorepo").exists() || has_legacy_monorepo_marker(dir))
-            && is_trusted_with(dir, false)
-    })
+    canonical
+        .ancestors()
+        .skip(own_levels)
+        .any(|dir| has_monorepo_marker(dir) && is_trusted_with(dir, false))
+}
+
+/// Whether `dir`, resolved, is marked as a monorepo root, under the current record name or an
+/// older one.
+fn has_monorepo_marker(dir: &Path) -> bool {
+    let record = dirs::TRUSTED_CONFIGS.join(record_name(dir));
+    with_appended_extension(&record, "monorepo").exists() || has_legacy_monorepo_marker(dir)
 }
 
 remove_by!("2027.11.0", "legacy-trust-record-names");
@@ -1585,12 +1646,37 @@ fn has_trust_hash(path: &Path) -> bool {
 
 /// Records trust for the root of a config file mise has just written for the user, as
 /// `mise use` and `mise set` do. Safe mode loads config without a trust decision, so a write
-/// there has none to record and leaves trust as it was.
-pub fn trust_after_write(path: &Path) -> Result<()> {
-    if Settings::safe_mode() {
+/// there has none to record and leaves trust as it was. Global config is trusted without a
+/// record, and its trust root is the home directory: a record for it would trust a project
+/// in `~`, and clear a decision to ignore that project.
+///
+/// `trusted_before` is [`trusted_before_write`], taken before the write changed the file. Trust
+/// the record adds is this command's, so a later write in the same root does not count it as
+/// trust from before the command and follow a link out of the project. A record that only renews
+/// trust from before, as paranoid mode's content-bound one does, is not.
+pub fn trust_after_write(path: &Path, trusted_before: bool) -> Result<()> {
+    if Settings::safe_mode() || config::is_global_config_write(path) {
         return Ok(());
     }
-    trust(&config_trust_root(path))
+    let config_root = config_trust_root(path);
+    trust(&config_root)?;
+    if !trusted_before {
+        granted_by_this_command(&config_root);
+    }
+    Ok(())
+}
+
+/// Whether the trust [`trust_after_write`] records for `path` is already there, asked before the
+/// write. It has to be asked then: in paranoid mode the record is the file's own and bound to its
+/// content, so once the write changes the file it no longer counts. The file's trust in paranoid
+/// mode is also the trust loading goes by, a linked project's `trusted_config_paths` included.
+/// Otherwise the record is the config root's, so the root's own trust has to be there already
+/// too: a file record does not make the root's new record trust from before. Either way the file
+/// has to load as trusted, so a nested root of an ignored project, which its directory's trust
+/// does not cover, counts as newly trusted.
+pub fn trusted_before_write(path: &Path) -> bool {
+    let config_root = config_trust_root(path);
+    is_path_trusted(path) && (config_root == path || is_trusted(&config_root))
 }
 
 /// Asks for the trust that [`trust_after_write`] is about to record, before the write.
@@ -1605,7 +1691,7 @@ pub fn trust_after_write(path: &Path) -> Result<()> {
 ///
 /// Global config is trusted without a record, so writing it decides nothing about a project.
 pub fn trust_check_before_write(path: &Path) -> Result<()> {
-    if Settings::safe_mode() || config::is_global_config(path) {
+    if Settings::safe_mode() || config::is_global_config_write(path) {
         return Ok(());
     }
     let config_root = config_trust_root(path);
@@ -1625,6 +1711,303 @@ pub fn trust_check_before_write(path: &Path) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// Refuses to write config file `path` through a symlink to a file the user did not choose.
+///
+/// The symlink is `path` itself, or a directory between the project and `path`, such as a
+/// linked `.config` or `.mise`: the lockfile writer checks the same directories.
+///
+/// A project's links come with its working tree, so in a checkout nobody reviewed their author
+/// would choose which file `mise use` or `mise set` replaces: a file elsewhere in the user's
+/// home, or a trust record in mise's state directory. A link that stays in the config root is
+/// followed. One that leaves it is followed only for global or system config, which the user
+/// links into place themselves (a dotfiles checkout), or for a project outside safe mode that
+/// was trusted before this command started. A project's link to global config, a link into the
+/// state directory, and a link out of the root whose target does not exist are never followed,
+/// so a write never creates a file outside the project.
+///
+/// A writer that asks a question before it writes, such as a trust prompt, checks again with
+/// [`checked_write_destination`] after the answer, as the links can change while it waits.
+pub fn symlink_check_before_write(path: &Path) -> Result<()> {
+    checked_write_destination(path).map(drop)
+}
+
+/// Whether `destination` is in mise's state directory, where trust records live. Neither a config
+/// write nor a task change goes there, whatever links lead to it.
+fn in_state_dir(destination: &Path) -> bool {
+    destination.starts_with(file::desymlink_path(&dirs::STATE))
+}
+
+/// [`symlink_check_before_write`], returning the file the check approved: `path` in its
+/// directory resolved, or the file its link leads to. Writing there rather than to `path` goes to
+/// the destination this check saw even if a link changes afterwards. That narrows the window to
+/// the write itself but does not close it: mise opens the file by its path, not through a
+/// directory it holds open.
+pub fn checked_write_destination(path: &Path) -> Result<PathBuf> {
+    refuse_parent_dir_out_of_link("write", path)?;
+    // The directory is resolved from the absolute path: a bare file name such as `mise.toml`
+    // has an empty parent, which does not resolve. A directory the write is about to create is
+    // resolved through the part of it that exists, so a link above it is judged where it leads.
+    let abs = path.absolutize()?;
+    let dir = abs.parent().map(file::desymlink_path);
+    // The project is the one a config in this directory would be found in. A file mise does not
+    // look for there, such as `.mise/mise.local.toml`, is its own root by name, which would leave
+    // a linked `.mise` out of the directories checked; the config mise reads there, here
+    // `.mise/config.toml`, takes it back to the project around it, as for a lockfile.
+    let linked_project =
+        config_root::linked_project(path).or_else(|| config_root::linked_lockfile_project(&abs));
+    let dir_leads_out = linked_project.is_some_and(|project| {
+        let project = project.canonicalize().ok();
+        !matches!((&dir, project), (Some(dir), Some(project)) if dir.starts_with(&project))
+    });
+    // A directory link that stays in the project can still lead to global config, as a home
+    // directory's `.mise` linked to `.config/mise` does, so that case is never waved through,
+    // and neither is one that would create a global config file that does not exist yet.
+    let to_global = || config::write_reaches_global_config_through_link(&abs);
+    // When the state directory is inside the project, a directory link that stays in the project
+    // can still lead into it, so no destination there is accepted.
+    if !path.is_symlink() && !dir_leads_out && !to_global() {
+        let destination = match (dir, abs.file_name()) {
+            (Some(dir), Some(name)) => dir.join(name),
+            _ => abs.to_path_buf(),
+        };
+        if in_state_dir(&destination) {
+            return Err(eyre!(
+                "refusing to write {} to {}: it is in mise's state directory. Write the config somewhere else, or replace the linked directory with a regular one",
+                style::display_path_escaped(path),
+                style::display_path_escaped(&destination)
+            ));
+        }
+        return Ok(destination);
+    }
+    let target = file::atomic_write_target(path)?;
+    let through = if path.is_symlink() {
+        "its symlink"
+    } else {
+        "a linked directory"
+    };
+    let refuse = |why: &str| -> Result<PathBuf> {
+        Err(eyre!(
+            "refusing to write {} through {through} to {}: {why}. Write the file it links to directly, or replace the link with a regular file",
+            style::display_path_escaped(path),
+            style::display_path_escaped(&target)
+        ))
+    };
+    let unresolved = target
+        .components()
+        .any(|c| matches!(c, std::path::Component::ParentDir));
+    if unresolved || in_state_dir(&target) {
+        return refuse("the target is in mise's state directory or cannot be resolved");
+    }
+    // Global config's root is the home directory, which holds the project too, so a project's
+    // link to global config would pass every check below, and the trust it would need is the
+    // home directory's. The project's author chose that link, and `-g` writes the same file.
+    if to_global() {
+        return refuse(
+            "a project's link to global config is not followed. Write global config with `-g`",
+        );
+    }
+    // Below a directory link that leaves the project, the config root and the link's own
+    // directory resolve to wherever that link leads, so neither says the target stays.
+    let root = config_root::config_root(path).canonicalize().ok();
+    let in_root = !dir_leads_out
+        && (root.is_some_and(|root| target.starts_with(root))
+            || dir.is_some_and(|dir| target.starts_with(dir)));
+    if in_root || config::is_global_config_write(path) {
+        return Ok(target);
+    }
+    if !target.exists() {
+        return refuse("the link leaves the config's directory and its target does not exist");
+    }
+    if Settings::safe_mode() {
+        return refuse(
+            "a link out of the config's directory is only followed for global config, or for a trusted project outside safe mode",
+        );
+    }
+    // Only trust from before the command started covers a link out of the project. Trust the
+    // command granted itself, however it was granted, came before anyone looked at where the
+    // project's links lead: the prompt names the directory, not the files its links reach.
+    let project = config_trust_root(path);
+    if is_path_trusted(path) && !trusted_by_this_command(&project) {
+        return Ok(target);
+    }
+    Err(eyre!(
+        "refusing to write {} through {through} to {}: the link leaves the project, and mise follows such a link only for a project that was trusted before this command. Check where the link leads, run `mise trust` in {} and run the command again, or replace the link with a regular file",
+        style::display_path_escaped(path),
+        style::display_path_escaped(&target),
+        style::display_path_escaped(&project)
+    ))
+}
+
+/// Refuses to `verb` `path` when a `..` in it goes up from a link: see
+/// [`link_left_through_parent_dir`]. Checked on the path as written, before it is made absolute.
+pub fn refuse_parent_dir_out_of_link(verb: &str, path: &Path) -> Result<()> {
+    if let Some(link) = link_left_through_parent_dir(path)? {
+        return Err(eyre!(
+            "refusing to {verb} {}: its `..` goes up from {}, a link, so it names the directory above where that link leads rather than the one it appears to. Use a path without `..`",
+            style::display_path_escaped(path),
+            style::display_path_escaped(&link)
+        ));
+    }
+    Ok(())
+}
+
+/// The link that `path` goes up from with `..`, if any. The system resolves `link/..` to the
+/// directory above where the link leads, while [`Absolutize`] drops both by name, so a path such
+/// as `linked/../mise.toml` opens one file and would be checked, and written, as another. Windows
+/// resolves `..` by name too, and `std::path::absolute` already removes it there.
+fn link_left_through_parent_dir(path: &Path) -> Result<Option<PathBuf>> {
+    let mut prefix = PathBuf::new();
+    for component in std::path::absolute(path)?.components() {
+        match component {
+            std::path::Component::ParentDir => {
+                if config_root::is_link(&prefix) {
+                    return Ok(Some(prefix));
+                }
+                prefix.pop();
+            }
+            std::path::Component::CurDir => {}
+            component => prefix.push(component),
+        }
+    }
+    Ok(None)
+}
+
+/// Refuses to write task script `script`, found in a task directory of config root `root`,
+/// through a link that leaves the root: the script itself, or a directory between the root and
+/// the script. See [`script_check_before_remove`] for the rule. Returns the path to write: the
+/// script with the links this check approved resolved, so the write goes where it passed.
+pub fn script_check_before_write(script: &Path, root: &Path) -> Result<PathBuf> {
+    script_link_check(script, root, true)
+}
+
+/// Refuses to remove task script `script`, found in a task directory of config root `root`,
+/// through a directory link that leaves the root. Removing a script deletes its own link, not
+/// what the link leads to, so only the directories are checked. Returns the path to remove: the
+/// script in its directory resolved, so the removal goes to the directory this check approved.
+///
+/// The rule is [`symlink_check_before_write`]'s: a project's links come with its working tree, so
+/// a linked `mise-tasks` would let its author choose which file `mise tasks rm` deletes or
+/// `mise tasks add --file` writes. A link that stays in the root is followed. One that leaves it
+/// is followed only for global or system config's own tasks, which the user links into place
+/// themselves, or for a project outside safe mode that was trusted before this command started,
+/// and never to create a file. A script outside the root, which an include named, is the
+/// config's choice and is left alone.
+pub fn script_check_before_remove(script: &Path, root: &Path) -> Result<PathBuf> {
+    script_link_check(script, root, false)
+}
+
+/// [`script_check_before_write`] when `follow_own_link` is set, else
+/// [`script_check_before_remove`]. Returns the path the change goes to.
+fn script_link_check(script: &Path, root: &Path, follow_own_link: bool) -> Result<PathBuf> {
+    let script = script.absolutize()?;
+    let mut root = root.absolutize()?.into_owned();
+    // A conf.d folder, and `.config/mise` with a `mise.toml` of its own, are config roots of
+    // their own, but they sit in a project's directory, and a link there is the project's. When
+    // the root or a directory above it, up to the project, is a link, the project is the
+    // boundary, as it is for the root's trust and lockfile and for config writes.
+    if let Some(project) = config_root::linked_project(&root.join("mise.toml")) {
+        root = project;
+    }
+    let (Some(dir), Some(name)) = (script.parent(), script.file_name()) else {
+        return Ok(script.into_owned());
+    };
+    let target = if follow_own_link {
+        file::atomic_write_target(&script)?
+    } else {
+        dir.canonicalize()?.join(name)
+    };
+    // As for config writes: when the state directory is inside the project, a link that stays in
+    // the project can still lead to a trust record.
+    if in_state_dir(&target) {
+        let verb = if follow_own_link { "write" } else { "remove" };
+        return Err(eyre!(
+            "refusing to {verb} task {} at {}: it is in mise's state directory. Replace the linked directory with a regular one",
+            style::display_path_escaped(&script),
+            style::display_path_escaped(&target)
+        ));
+    }
+    let Ok(below_root) = script.strip_prefix(&root) else {
+        return Ok(target);
+    };
+    if [&*dirs::CONFIG, &*dirs::SYSTEM_CONFIG]
+        .into_iter()
+        .any(|config_dir| config_dir.absolutize().is_ok_and(|d| script.starts_with(d)))
+    {
+        return Ok(target);
+    }
+    let own_link = follow_own_link && script.is_symlink();
+    let dir_link = below_root
+        .parent()
+        .into_iter()
+        .flat_map(Path::ancestors)
+        .filter(|relative| !relative.as_os_str().is_empty())
+        .any(|relative| config_root::is_link(&root.join(relative)));
+    if !own_link && !dir_link {
+        return Ok(target);
+    }
+    let (verb, through) = match (follow_own_link, own_link) {
+        (false, _) => ("remove", "a linked directory"),
+        (true, true) => ("write", "its symlink"),
+        (true, false) => ("write", "a linked directory"),
+    };
+    let refuse = |why: &str| -> Result<PathBuf> {
+        Err(eyre!(
+            "refusing to {verb} task {} through {through} to {}: {why}",
+            style::display_path_escaped(&script),
+            style::display_path_escaped(&target)
+        ))
+    };
+    // A link that stays in the root can still lead into global or system config, as a home
+    // directory project's task linked to `.config/mise/config.toml` does. That config loads
+    // without trust, and the project's author chose the link, so it is never followed there, as
+    // a config write through such a link is not.
+    if [&*dirs::CONFIG, &*dirs::SYSTEM_CONFIG]
+        .into_iter()
+        .any(|config_dir| {
+            config_dir
+                .canonicalize()
+                .is_ok_and(|dir| target.starts_with(dir))
+        })
+        || config::is_global_config_write(&target)
+    {
+        return refuse(
+            "the link leads into global config, which loads without trust. Edit global config directly",
+        );
+    }
+    if root
+        .canonicalize()
+        .is_ok_and(|root| target.starts_with(root))
+    {
+        return Ok(target);
+    }
+    if target.symlink_metadata().is_err() {
+        return refuse(
+            "the link leaves the project and its target does not exist. Replace the link with a regular directory",
+        );
+    }
+    if Settings::safe_mode() {
+        return refuse(
+            "a link out of the project is only followed for global config, or for a trusted project outside safe mode",
+        );
+    }
+    if is_trusted(&root) && !trusted_by_this_command(&root) {
+        return Ok(target);
+    }
+    // Paranoid mode approves a config by its content, which `mise trust` records for each file,
+    // not for the directory. It does not load a task reached through a link inside a project
+    // either (see `ensure_trust_can_approve`), so only `trusted_config_paths` approves the link.
+    if Settings::get().paranoid.config() {
+        return refuse(&format!(
+            "the link leaves the project, and paranoid mode cannot approve it: it approves a file by its content, and a link inside a project is that project's to change. Replace the link with a regular directory, or add {} to `trusted_config_paths`",
+            style::display_path_escaped(&root)
+        ));
+    }
+    refuse(&format!(
+        "the link leaves the project, and mise follows such a link only for a project that was trusted before this command. Check where the link leads, run `mise trust` in {} and run the command again, or replace the link",
+        style::display_path_escaped(&root)
+    ))
 }
 
 /// Whether a config file, as it is on disk, loads only once trusted.
@@ -2411,6 +2794,132 @@ mod tests {
     }
 
     #[test]
+    fn a_root_trusted_through_a_monorepo_root_this_command_trusted_is_trusted_by_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let mono = dir.path().canonicalize().unwrap().join("mono");
+        let child = mono.join("packages/app");
+        std::fs::create_dir_all(&child).unwrap();
+        granted_by_this_command(&mono);
+        assert!(trusted_by_this_command(&mono));
+        // Without the marker the monorepo root does not trust the child, so neither does this
+        // command.
+        assert!(!trusted_by_this_command(&child));
+        let record = dirs::TRUSTED_CONFIGS.join(record_name(&mono));
+        let marker = with_appended_extension(&record, "monorepo");
+        file::create_dir_all(marker.parent().unwrap()).unwrap();
+        std::fs::write(&marker, "").unwrap();
+        assert!(trusted_by_this_command(&child));
+        std::fs::remove_file(&marker).unwrap();
+    }
+
+    /// Tests trust every path unless trust is bound to content, so paranoid mode is what leaves
+    /// the config untrusted before the write. Its trust root is then the file itself.
+    #[test]
+    fn trust_recorded_after_a_write_is_this_commands() {
+        use confique::Layer;
+        let _held = crate::test::SettingsGuard::lock();
+        let mut settings = crate::config::settings::SettingsPartial::empty();
+        settings.paranoid = Some(mise_settings::Paranoid::all());
+        Settings::reset(Some(settings));
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().canonicalize().unwrap().join("mise.toml");
+        std::fs::write(&path, "").unwrap();
+        assert!(!is_trusted(&path));
+        let root = config_trust_root(&path);
+        assert_eq!(root, path);
+        let trusted_before = trusted_before_write(&path);
+        assert!(!trusted_before);
+        std::fs::write(&path, "[env]\n").unwrap();
+        trust_after_write(&path, trusted_before).unwrap();
+        assert!(is_trusted(&root));
+        assert!(trusted_by_this_command(&root));
+        untrust(&root).unwrap();
+
+        // A file trusted before the write keeps trust from before the command once the write
+        // has changed it and renewed its record, so a second write may follow its links too.
+        let renewed = dir.path().canonicalize().unwrap().join("renewed.toml");
+        std::fs::write(&renewed, "").unwrap();
+        trust(&renewed).unwrap();
+        let trusted_before = trusted_before_write(&renewed);
+        assert!(trusted_before);
+        std::fs::write(&renewed, "[env]\n").unwrap();
+        assert!(!is_trusted(&renewed));
+        trust_after_write(&renewed, trusted_before).unwrap();
+        assert!(is_trusted(&renewed));
+        assert!(!trusted_by_this_command(&renewed));
+        untrust(&renewed).unwrap();
+        Settings::reset(None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_write_goes_to_the_destination_its_check_approved() {
+        use std::os::unix::fs::symlink;
+        let dir = tempfile::tempdir().unwrap();
+        let project = dir.path().canonicalize().unwrap().join("proj");
+        std::fs::create_dir_all(project.join("config")).unwrap();
+        std::fs::write(project.join("config/real.toml"), "").unwrap();
+        symlink("config/real.toml", project.join("mise.toml")).unwrap();
+        // A link that stays in the project: the write goes to the file it leads to, so a link
+        // swapped in afterwards is not what it writes through.
+        assert_eq!(
+            checked_write_destination(&project.join("mise.toml")).unwrap(),
+            project.join("config/real.toml")
+        );
+        // A regular file: its own path, in its directory resolved.
+        std::fs::write(project.join("mise.local.toml"), "").unwrap();
+        symlink(&project, dir.path().join("alias")).unwrap();
+        assert_eq!(
+            checked_write_destination(&dir.path().join("alias/mise.local.toml")).unwrap(),
+            project.join("mise.local.toml")
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_write_does_not_go_up_out_of_a_link() {
+        // `linked/..` is the directory above where the link leads, which is where the system
+        // opens the file, so checking `mise.toml` in the project instead would approve another file.
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let project = root.join("proj");
+        std::fs::create_dir_all(project.join("sub")).unwrap();
+        std::fs::create_dir_all(root.join("outside/deep/dir")).unwrap();
+        std::fs::write(project.join("mise.toml"), "").unwrap();
+        std::fs::write(root.join("outside/deep/mise.toml"), "").unwrap();
+        std::os::unix::fs::symlink(root.join("outside/deep/dir"), project.join("linked")).unwrap();
+
+        let err = checked_write_destination(&project.join("linked/../mise.toml")).unwrap_err();
+        assert!(err.to_string().contains("goes up from"), "{err}");
+        let err = checked_write_destination(&project.join("linked/x/../../mise.toml")).unwrap_err();
+        assert!(err.to_string().contains("goes up from"), "{err}");
+        // A `..` out of a regular directory names the file it appears to.
+        assert_eq!(
+            checked_write_destination(&project.join("sub/../mise.toml")).unwrap(),
+            project.join("mise.toml")
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_linked_dot_mise_is_checked_for_a_file_mise_does_not_look_for_there() {
+        // `.mise/mise.local.toml` is not a name mise reads in `.mise`, so by its name the file is
+        // its own root, and the link `.mise` would be that root rather than a link in the project.
+        // Tests trust every project, so the link leads to a file that does not exist yet, which is
+        // refused whatever the trust.
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let project = root.join("proj");
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::create_dir_all(root.join("outside")).unwrap();
+        std::fs::write(project.join("mise.toml"), "").unwrap();
+        std::os::unix::fs::symlink(root.join("outside"), project.join(".mise")).unwrap();
+
+        let err = checked_write_destination(&project.join(".mise/mise.local.toml")).unwrap_err();
+        assert!(err.to_string().contains("refusing to write"), "{err}");
+    }
+
+    #[test]
     fn test_unavailable_backend_only_matters_for_matching_registry_path() {
         assert!(registry_tool_matches_idiomatic_path(
             "node",
@@ -3149,5 +3658,42 @@ mod hashed_path_filename_tests {
 
         file::remove_file(&marker).unwrap();
         untrust(&mono).unwrap();
+    }
+
+    /// A task script is written where the check followed its links to, so a link that changes
+    /// after the check cannot send the write elsewhere.
+    #[cfg(unix)]
+    #[test]
+    fn a_task_script_write_goes_to_the_destination_the_check_approved() {
+        let tmp = tempfile::tempdir().unwrap();
+        let project = tmp.path().canonicalize().unwrap().join("project");
+        std::fs::create_dir_all(project.join("real")).unwrap();
+        std::os::unix::fs::symlink("real", project.join("mise-tasks")).unwrap();
+        let destination =
+            script_check_before_write(&project.join("mise-tasks/new"), &project).unwrap();
+        assert_eq!(destination, project.join("real/new"));
+    }
+
+    /// `.config/mise` holding a `mise.toml` is a config root of its own, but a link at it is the
+    /// project's, so it does not take the root, and a task written there, out of the project.
+    #[cfg(unix)]
+    #[test]
+    fn a_task_root_that_is_itself_a_link_out_of_the_project_is_not_followed() {
+        let tmp = tempfile::tempdir().unwrap();
+        let base = tmp.path().canonicalize().unwrap();
+        let project = base.join("project");
+        let outside = base.join("outside/mise");
+        std::fs::create_dir_all(outside.join("tasks")).unwrap();
+        std::fs::write(outside.join("mise.toml"), "").unwrap();
+        std::fs::create_dir_all(project.join(".config")).unwrap();
+        std::os::unix::fs::symlink(&outside, project.join(".config/mise")).unwrap();
+        let root = project.join(".config/mise");
+        assert_eq!(config_root::config_root(&root.join("mise.toml")), root);
+        let err = script_check_before_write(&root.join("tasks/new"), &root).unwrap_err();
+        assert!(
+            format!("{err:#}").contains("through a linked directory"),
+            "{err:#}"
+        );
+        assert!(script_check_before_remove(&root.join("tasks/new"), &root).is_err());
     }
 }
