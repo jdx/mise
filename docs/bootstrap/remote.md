@@ -404,6 +404,8 @@ For each host, mise:
    directory, or sends the repository bundle for `--adopt`.
 4. Provides mise, staged or installed as described above.
 5. Runs `mise bootstrap` from the staged project or the adopted configuration.
+   From the staged project, config search stops at the staging directory, so
+   a `mise.toml` that another user left in the target's `/tmp` is not loaded.
 6. Removes the staging directory, even after a failed bootstrap, unless you
    pass `--keep-staging`.
 

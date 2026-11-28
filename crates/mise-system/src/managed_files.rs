@@ -2965,6 +2965,83 @@ fn untrusted_parent_symlink_from(error: eyre::Report) -> Result<Option<PathBuf>>
     }
 }
 
+/// Why root must not change `path`, if mise runs as root and the path crosses
+/// a symlink another user could have planted. `[dotfiles]` entries and
+/// `[bootstrap.repos]` checkouts are changed by ordinary path lookups rather
+/// than relative to a strictly opened parent, so they ask this before each
+/// change; any other user follows the symlink, since the change can only
+/// reach what that user could change anyway.
+pub(crate) fn untrusted_parent_as_root(path: &Path) -> Result<Option<String>> {
+    untrusted_parent_for(path, checks_parents_as_root())
+}
+
+/// [`untrusted_parent_as_root`] as an error, for the moment of the change.
+pub(crate) fn refuse_untrusted_parent_as_root(path: &Path) -> Result<()> {
+    if let Some(reason) = untrusted_parent_as_root(path)? {
+        bail!("refusing to change {}: {reason}", path.display());
+    }
+    Ok(())
+}
+
+/// Whether changes made by path are held to the strict walk: only as root.
+pub(crate) fn checks_parents_as_root() -> bool {
+    #[cfg(unix)]
+    {
+        runs_as_root()
+    }
+    #[cfg(not(unix))]
+    {
+        false
+    }
+}
+
+/// The decision behind [`untrusted_parent_as_root`], with whether mise runs
+/// as root passed in.
+#[cfg(unix)]
+pub(crate) fn untrusted_parent_for(path: &Path, as_root: bool) -> Result<Option<String>> {
+    if !as_root {
+        return Ok(None);
+    }
+    Ok(untrusted_lookup_symlink(path)?.map(|symlink| untrusted_parent_reason(&symlink)))
+}
+
+#[cfg(not(unix))]
+pub(crate) fn untrusted_parent_for(_path: &Path, _as_root: bool) -> Result<Option<String>> {
+    Ok(None)
+}
+
+/// [`untrusted_parent_symlink`] for a path that is then looked up as written,
+/// not normalized first. A `..` leaves whatever directory the components
+/// before it resolve to, so those are walked in full and the walk continues
+/// from there. A component that is not a directory ends the walk without a
+/// symlink, like a missing one: the lookup fails there too.
+#[cfg(unix)]
+fn untrusted_lookup_symlink(path: &Path) -> Result<Option<PathBuf>> {
+    let refused = |error: eyre::Report| {
+        if has_errno(&error, nix::errno::Errno::ENOTDIR) {
+            Ok(None)
+        } else {
+            untrusted_parent_symlink_from(error)
+        }
+    };
+    let mut walked = PathBuf::new();
+    for component in path.components() {
+        if component != std::path::Component::ParentDir {
+            walked.push(component);
+            continue;
+        }
+        if let Err(error) = open_directory_tree(&walked) {
+            return refused(error);
+        }
+        walked = fs::canonicalize(&walked)?;
+        walked.pop();
+    }
+    match open_parent_strictly(&walked) {
+        Ok(_) => Ok(None),
+        Err(error) => refused(error),
+    }
+}
+
 #[cfg(unix)]
 fn ensure_regular_file(file: &std::os::fd::OwnedFd, path: &Path) -> Result<()> {
     use nix::sys::stat::{SFlag, fstat};
@@ -3644,6 +3721,57 @@ mod tests {
                 0o640
             );
         }
+    }
+
+    /// `[dotfiles]` and `[bootstrap.repos]` change a path by looking it up as
+    /// written, so the walk that vets it for root resolves `..` the way that
+    /// lookup does, and only root is held to the result.
+    #[cfg(unix)]
+    #[test]
+    fn lookup_walk_refuses_untrusted_symlinks_as_root() {
+        // Root-owned parents are trusted, so the refusal cannot be staged as
+        // root in a temporary directory.
+        if nix::unistd::geteuid().is_root() {
+            return;
+        }
+        let temp = ResolvedTempDir::new();
+        let outside = ResolvedTempDir::new();
+        fs::create_dir(outside.path().join("inner")).unwrap();
+        fs::create_dir(temp.path().join("real")).unwrap();
+        fs::write(temp.path().join("file"), "content").unwrap();
+        let linked = temp.path().join("linked");
+        std::os::unix::fs::symlink(outside.path().join("inner"), &linked).unwrap();
+        let as_root = |path: &str| untrusted_parent_for(&temp.path().join(path), true).unwrap();
+        let refused = Some(untrusted_parent_reason(&linked));
+
+        assert_eq!(as_root("linked/config"), refused);
+        assert_eq!(as_root("linked/nested/config"), refused);
+        // Normalized first, this would be `config` beside the link, while the
+        // lookup lands in the parent of the directory the link points to.
+        assert_eq!(as_root("linked/../config"), refused);
+        assert_eq!(as_root("real/../linked/config"), refused);
+        assert_eq!(as_root("real/config"), None);
+        assert_eq!(as_root("real/../config"), None);
+        // The final component is left to the entry that names it; a
+        // checkout asks about `<path>/.git` to cover it.
+        assert_eq!(as_root("linked"), None);
+        assert_eq!(as_root("linked/.git"), refused);
+        // A lookup through these fails without the walk's help.
+        assert_eq!(as_root("missing/nested/config"), None);
+        assert_eq!(as_root("missing/../config"), None);
+        assert_eq!(as_root("file/config"), None);
+        assert_eq!(as_root("file/../config"), None);
+
+        // Any other user follows the link.
+        assert_eq!(
+            untrusted_parent_for(&linked.join("config"), false).unwrap(),
+            None
+        );
+        assert_eq!(
+            untrusted_parent_as_root(&linked.join("config")).unwrap(),
+            None
+        );
+        refuse_untrusted_parent_as_root(&linked.join("config")).unwrap();
     }
 
     /// Root resolves a file's parents without following a symlink someone

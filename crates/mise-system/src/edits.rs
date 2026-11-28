@@ -1128,6 +1128,11 @@ enum EditCheck {
 /// require rendering) is still needed — callers must not render before this
 /// has been consulted, so blocked entries never execute template code
 fn precheck(req: &EditRequest) -> Result<Option<EditCheck>> {
+    // as root, a link another user made in a parent directory would send the
+    // edit wherever that user likes; the file behind it is not even read
+    if let Some(reason) = crate::managed_files::untrusted_parent_as_root(&req.path)? {
+        return Ok(Some(EditCheck::Blocked(reason)));
+    }
     // edits write through symlinks into whatever they point at (often a
     // dotfile source) — surface that instead of silently doing it
     if req.path.is_symlink() {
@@ -1590,6 +1595,10 @@ pub fn apply(
     let mut waiting: Vec<(PathBuf, u32)> = vec![];
     let applied = (|| -> Result<()> {
         for (i, (req, desired)) in todo.iter().enumerate() {
+            // the prompt, templates and earlier entries ran since planning
+            // vetted the path; root looks again before it reads the file, and
+            // before the journal opens, so a refusal leaves nothing to recover
+            crate::managed_files::refuse_untrusted_parent_as_root(&req.path)?;
             // a fill-only template asks for the secrets of the keys it adds, and
             // only those, once the file as earlier entries left it is known.
             // This comes before the journal, so a secret that cannot be read
@@ -1813,9 +1822,15 @@ pub fn plan_unapply<'a>(
         if matches!(req.op, EditOp::Merge { .. }) {
             continue;
         }
-        if req.path.is_symlink() {
+        // as root, a parent link another user made is never followed
+        let blocked = match crate::managed_files::untrusted_parent_as_root(&req.path) {
+            Ok(None) if req.path.is_symlink() => Some(SYMLINK_REASON.to_string()),
+            Ok(reason) => reason,
+            Err(err) => Some(err.to_string()),
+        };
+        if let Some(reason) = blocked {
             problems.push(format!(
-                "  \"{}\" ({}): {SYMLINK_REASON}",
+                "  \"{}\" ({}): {reason}",
                 req.path_raw,
                 req.describe_op()
             ));
@@ -1942,6 +1957,7 @@ pub fn execute_unapply(todo: &[UnapplyPlan<'_>], opts: &UnapplyOpts) -> Result<(
         }
     }
     for plan in todo {
+        crate::managed_files::refuse_untrusted_parent_as_root(&plan.req.path)?;
         let pending =
             journal::begin_changes("dotfiles", &plan.req.path_raw, [plan.req.path.clone()])?;
         unapply_one(plan.req)?;

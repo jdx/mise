@@ -4,7 +4,7 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt::Display;
 use std::fs;
 use std::fs::File;
-use std::io::{BufReader, Read, Write};
+use std::io::{BufReader, Read, Seek, SeekFrom, Write};
 #[cfg(unix)]
 use std::os::unix::fs::symlink;
 #[cfg(unix)]
@@ -758,6 +758,24 @@ pub fn persist_atomic(mut temporary: tempfile::NamedTempFile, path: &Path) -> Re
     }
 
     unreachable!("atomic persist retry loop should always return");
+}
+
+/// Runs `op`, retrying for about a second while Windows refuses the path as
+/// locked (`ERROR_ACCESS_DENIED` / `ERROR_SHARING_VIOLATION`), as it does
+/// while antivirus scans a file or another writer is replacing it. Elsewhere
+/// `op` runs once.
+pub fn retry_transient_lock<T>(mut op: impl FnMut() -> std::io::Result<T>) -> std::io::Result<T> {
+    const RETRIES: u32 = 20;
+
+    for attempt in 0..RETRIES {
+        match op() {
+            Err(err) if should_retry_atomic_persist(&err) => {
+                std::thread::sleep(Duration::from_millis(5 * u64::from(attempt + 1)));
+            }
+            result => return result,
+        }
+    }
+    op()
 }
 
 #[cfg(windows)]
@@ -3195,6 +3213,206 @@ pub fn un_pkg(archive: &Path, dest: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Roughly what sevenz-rust2 allocates for each byte of a 7z header: it holds
+/// the whole header in memory and sizes its tables of entries by the header's
+/// length.
+const SEVENZ_HEADER_MEMORY_RATIO: u64 = 100;
+
+/// Fails when reading the header of the 7z file `archive` could take more
+/// memory than [`extract_limit`] lets the archive unpack to. A 7z header may be
+/// stored packed, and sevenz-rust2 unpacks it into memory, up to the size the
+/// archive declares for it, before it yields the first entry, so those bytes
+/// never pass through a [`LimitedReader`]. A header that is not packed needs no
+/// check: it is part of the download.
+fn ensure_7z_header_within_limit(archive: &Path) -> Result<()> {
+    const SIGNATURE_HEADER_LEN: u64 = 32;
+    const ENCODED_HEADER: u8 = 0x17;
+
+    let limit = extract_limit(archive)?;
+    if limit == u64::MAX {
+        return Ok(());
+    }
+    let mut file = File::open(archive)?;
+    let len = file.metadata()?.len();
+    if len < SIGNATURE_HEADER_LEN {
+        return Ok(()); // not a 7z archive, which sevenz-rust2 reports
+    }
+    // Signature, version and a CRC, then the start header: the offset (from
+    // here), length and CRC of the header.
+    let mut start = [0; SIGNATURE_HEADER_LEN as usize];
+    file.read_exact(&mut start)?;
+    if start[8..].iter().all(|b| *b == 0) {
+        // sevenz-rust2 would search the end of the file for something that
+        // looks like a header and unpack that.
+        bail!("7z archive has no start header");
+    }
+    let offset = u64::from_le_bytes(start[12..20].try_into().unwrap());
+    let size = u64::from_le_bytes(start[20..28].try_into().unwrap());
+    let pos = SIGNATURE_HEADER_LEN.saturating_add(offset);
+    if size == 0 || pos.saturating_add(size) > len {
+        return Ok(()); // no header inside the file, which sevenz-rust2 reports
+    }
+    let mut id = [0];
+    file.seek(SeekFrom::Start(pos))?;
+    file.read_exact(&mut id)?;
+    if id[0] != ENCODED_HEADER {
+        return Ok(());
+    }
+    // All that a packed header leaves in the file is where its packed bytes
+    // are and how to unpack them.
+    let mut streams_info = Vec::new();
+    file.take(size - 1).read_to_end(&mut streams_info)?;
+    let Some(unpacked) = sevenz_packed_header_unpack_size(&streams_info) else {
+        bail!("7z archive has a malformed packed header");
+    };
+    let max = limit / SEVENZ_HEADER_MEMORY_RATIO;
+    if unpacked > max {
+        bail!(
+            "7z header unpacks to {unpacked} bytes, over the {max} that the extract_max_ratio setting allows"
+        );
+    }
+    Ok(())
+}
+
+/// The most bytes that `streams_info`, which is what a packed 7z header leaves
+/// in place of itself, says a coder of its first folder produces. That folder
+/// is the one sevenz-rust2 unpacks to get the header. `None` if the streams
+/// info is malformed; this reads what sevenz-rust2 reads, in the same order,
+/// and rejects nothing that it accepts.
+fn sevenz_packed_header_unpack_size(streams_info: &[u8]) -> Option<u64> {
+    const END: u8 = 0x00;
+    const PACK_INFO: u8 = 0x06;
+    const UNPACK_INFO: u8 = 0x07;
+    const SIZE: u8 = 0x09;
+    const CRC: u8 = 0x0a;
+    const FOLDER: u8 = 0x0b;
+    const CODERS_UNPACK_SIZE: u8 = 0x0c;
+    // sevenz-rust2, like 7-Zip, accepts this many coders and this many input
+    // streams in a folder.
+    const MAX_FOLDER_STREAMS: u64 = 64;
+
+    struct Reader<'a>(&'a [u8]);
+    impl Reader<'_> {
+        fn skip(&mut self, n: u64) -> Option<()> {
+            self.0 = self.0.get(usize::try_from(n).ok()?..)?;
+            Some(())
+        }
+        fn byte(&mut self) -> Option<u8> {
+            let (byte, rest) = self.0.split_first()?;
+            self.0 = rest;
+            Some(*byte)
+        }
+        /// A 7z number: as many bytes follow the first, least significant
+        /// first, as it has leading one bits, and its other bits are the most
+        /// significant ones.
+        fn number(&mut self) -> Option<u64> {
+            let first = u64::from(self.byte()?);
+            let mut value = 0;
+            for i in 0..8 {
+                let mask = 0x80 >> i;
+                if first & mask == 0 {
+                    return Some(value | ((first & (mask - 1)) << (8 * i)));
+                }
+                value |= u64::from(self.byte()?) << (8 * i);
+            }
+            Some(value)
+        }
+    }
+
+    let mut r = Reader(streams_info);
+    let mut id = r.byte()?;
+    if id == PACK_INFO {
+        r.number()?; // where the packed streams start
+        let streams = r.number()?;
+        id = r.byte()?;
+        if id == SIZE {
+            for _ in 0..streams {
+                r.number()?;
+            }
+            id = r.byte()?;
+        }
+        if id == CRC {
+            // Every stream has a CRC, or a bit for each stream says whether it has.
+            let mut crcs = streams;
+            if r.byte()? == 0 {
+                crcs = 0;
+                let mut bits = 0;
+                for i in 0..streams {
+                    if i % 8 == 0 {
+                        bits = r.byte()?;
+                    }
+                    crcs += u64::from((bits >> (7 - i % 8)) & 1);
+                }
+            }
+            r.skip(crcs.checked_mul(4)?)?;
+            id = r.byte()?;
+        }
+        if id != END {
+            return None;
+        }
+        id = r.byte()?;
+    }
+    if id != UNPACK_INFO || r.byte()? != FOLDER {
+        return None;
+    }
+    let folders = r.number()?;
+    if r.byte()? != 0 {
+        return None; // folders stored outside the header
+    }
+    let mut first_folder_coders = None;
+    for _ in 0..folders {
+        let coders = r.number()?;
+        if coders == 0 || coders > MAX_FOLDER_STREAMS {
+            return None;
+        }
+        let mut in_streams = 0u64;
+        for _ in 0..coders {
+            let flags = r.byte()?;
+            r.skip((flags & 0x0f).into())?; // the method's id
+            if flags & 0x10 == 0 {
+                in_streams += 1;
+            } else {
+                in_streams = in_streams.checked_add(r.number()?)?;
+                if r.number()? != 1 {
+                    return None; // a coder has one output stream
+                }
+            }
+            if in_streams > MAX_FOLDER_STREAMS {
+                return None;
+            }
+            if flags & 0x20 != 0 {
+                let properties = r.number()?;
+                r.skip(properties)?;
+            }
+            if flags & 0x80 != 0 {
+                return None; // alternative methods
+            }
+        }
+        // All coders but the last feed another one, through a bind pair of two
+        // stream indexes. The input streams that are left are packed streams,
+        // and are listed when there are several.
+        let bind_pairs = coders - 1;
+        for _ in 0..bind_pairs * 2 {
+            r.number()?;
+        }
+        let packed_streams = in_streams.checked_sub(bind_pairs).filter(|n| *n > 0)?;
+        if packed_streams > 1 {
+            for _ in 0..packed_streams {
+                r.number()?;
+            }
+        }
+        first_folder_coders.get_or_insert(coders);
+    }
+    if r.byte()? != CODERS_UNPACK_SIZE {
+        return None;
+    }
+    let mut unpack_size = 0;
+    for _ in 0..first_folder_coders? {
+        unpack_size = unpack_size.max(r.number()?);
+    }
+    Some(unpack_size)
+}
+
 pub fn un7z(archive: &Path, dest: &Path, opts: &ExtractOptions<'_>) -> Result<()> {
     if let Some(pr) = &opts.pr {
         pr.set_message(format!(
@@ -3219,6 +3437,7 @@ pub fn un7z(archive: &Path, dest: &Path, opts: &ExtractOptions<'_>) -> Result<()
         dest
     };
     run_blocking(|| {
+        ensure_7z_header_within_limit(archive)?;
         let limit = extract_limit(archive)?;
         let mut remaining = limit;
         sevenz_rust2::decompress_file_with_extract_fn(archive, dest, |entry, reader, _| {
@@ -3304,35 +3523,88 @@ pub fn is_safe_relative_path(path: &str) -> bool {
 /// ship an `/opt/<name>` tree link into it with absolute paths. The rewritten
 /// link is checked like any other, and an absolute link to a path that is not in
 /// the tree is left as it is and refused.
+///
+/// A link that needs more than 40 links to resolve is refused, like the kernel
+/// refuses to open it. The work for the whole tree is bounded by
+/// [`LINK_CHECK_STEPS`]; a tree that needs more is refused.
 pub fn ensure_symlinks_stay_within(root: &Path) -> Result<()> {
+    ensure_symlinks_stay_within_steps(root, LINK_CHECK_STEPS)
+}
+
+/// The work one [`ensure_symlinks_stay_within`] call may do, counted in path
+/// components walked, queued or looked up and directory entries visited. An
+/// ordinary link costs a few dozen, so a tree with hundreds of thousands of
+/// links fits; a crafted one whose links make every check walk thousands of
+/// components does not.
+const LINK_CHECK_STEPS: u64 = 20_000_000;
+
+fn ensure_symlinks_stay_within_steps(root: &Path, mut steps: u64) -> Result<()> {
     if fs::symlink_metadata(root)?.file_type().is_symlink() {
         bail!("{} is a symlink", display_path(root));
     }
+    let over_budget = || link_check_over_budget(root);
     #[cfg(unix)]
-    rebase_absolute_symlinks_into_tree(root)?;
+    rebase_absolute_symlinks_into_tree(root, &mut steps)?;
     let real_root = root.canonicalize()?;
     let mut dirs = vec![root.to_path_buf()];
     while let Some(dir) = dirs.pop() {
         for entry in fs::read_dir(&dir)? {
             let path = entry?.path();
+            if !spend_link_check_steps(&mut steps, 1) {
+                return Err(over_budget());
+            }
             let kind = fs::symlink_metadata(&path)?.file_type();
             if kind.is_dir() {
                 dirs.push(path);
             } else if kind.is_symlink() {
                 let target = fs::read_link(&path)?;
-                let base = path.parent().unwrap_or(root).canonicalize()?;
-                if !link_target_stays_within(&real_root, root, &base, &target) {
-                    bail!(
+                let parent = path.parent().unwrap_or(root);
+                if !spend_link_check_steps(&mut steps, parent.components().count()) {
+                    return Err(over_budget());
+                }
+                let base = parent.canonicalize()?;
+                match link_target_stays_within(&real_root, root, &base, &target, &mut steps) {
+                    LinkCheck::Inside => {}
+                    LinkCheck::Outside => bail!(
                         "symlink {} points outside of {}: {}",
                         display_path(&path),
                         display_path(root),
                         target.display()
-                    );
+                    ),
+                    LinkCheck::TooManyLinks => bail!(
+                        "symlink {} in {} resolves through more than 40 links: {}",
+                        display_path(&path),
+                        display_path(root),
+                        target.display()
+                    ),
+                    LinkCheck::OverBudget => return Err(over_budget()),
                 }
             }
         }
     }
     Ok(())
+}
+
+fn link_check_over_budget(root: &Path) -> eyre::Report {
+    eyre::eyre!(
+        "the symlinks in {} take too long to check (more than {LINK_CHECK_STEPS} steps), so the archive is refused",
+        display_path(root)
+    )
+}
+
+/// Takes `n` steps from the budget of [`ensure_symlinks_stay_within`], and
+/// reports whether there were enough.
+fn spend_link_check_steps(steps: &mut u64, n: usize) -> bool {
+    match steps.checked_sub(n as u64) {
+        Some(left) => {
+            *steps = left;
+            true
+        }
+        None => {
+            *steps = 0;
+            false
+        }
+    }
 }
 
 /// Rewrites absolute symlinks whose target exists inside `root` (as `root` plus
@@ -3341,17 +3613,22 @@ pub fn ensure_symlinks_stay_within(root: &Path) -> Result<()> {
 /// that are not in the tree, contain `..`, or would still leave `root` once
 /// rewritten are left untouched for [`ensure_symlinks_stay_within`] to refuse.
 #[cfg(unix)]
-fn rebase_absolute_symlinks_into_tree(root: &Path) -> Result<()> {
+fn rebase_absolute_symlinks_into_tree(root: &Path, steps: &mut u64) -> Result<()> {
     let real_root = root.canonicalize()?;
+    let over_budget = || link_check_over_budget(root);
     // A link can depend on another absolute link that is rewritten later in the
     // walk, so repeat until a pass rewrites nothing. Each rewrite turns an
-    // absolute link relative, so this ends.
+    // absolute link relative, so this ends, and every pass is charged to the
+    // budget.
     loop {
         let mut rewrote = false;
         let mut dirs = vec![root.to_path_buf()];
         while let Some(dir) = dirs.pop() {
             for entry in fs::read_dir(&dir)? {
                 let path = entry?.path();
+                if !spend_link_check_steps(steps, 1) {
+                    return Err(over_budget());
+                }
                 let kind = fs::symlink_metadata(&path)?.file_type();
                 if kind.is_dir() {
                     dirs.push(path);
@@ -3374,10 +3651,17 @@ fn rebase_absolute_symlinks_into_tree(root: &Path) -> Result<()> {
                 }
                 let parent = path.parent().unwrap_or(root);
                 let replacement = relative_path(parent, &candidate);
+                if !spend_link_check_steps(steps, parent.components().count()) {
+                    return Err(over_budget());
+                }
                 let base = parent.canonicalize()?;
-                if link_target_stays_within(&real_root, root, &base, &replacement) {
-                    make_symlink(&replacement, &path)?;
-                    rewrote = true;
+                match link_target_stays_within(&real_root, root, &base, &replacement, steps) {
+                    LinkCheck::Inside => {
+                        make_symlink(&replacement, &path)?;
+                        rewrote = true;
+                    }
+                    LinkCheck::Outside | LinkCheck::TooManyLinks => {}
+                    LinkCheck::OverBudget => return Err(over_budget()),
                 }
             }
         }
@@ -3458,13 +3742,35 @@ fn relative_path(from: &Path, to: &Path) -> PathBuf {
     }
 }
 
+/// The outcome of [`link_target_stays_within`].
+enum LinkCheck {
+    Inside,
+    Outside,
+    /// Resolving the target follows more than 40 different links.
+    TooManyLinks,
+    /// The step budget of [`ensure_symlinks_stay_within`] ran out.
+    OverBudget,
+}
+
 /// Resolves `target` as seen from the directory `base` (already real), following
 /// every link on the way, and reports whether each step stays under `root` (the
 /// real path of the tree, which is `given_root` as the caller spelled it).
-/// Components that do not exist are taken as written. A chain of links that loops
-/// without leaving `root` is harmless, so the walk stops after `MAX_LINKS` links
-/// and accepts it.
-fn link_target_stays_within(root: &Path, given_root: &Path, base: &Path, target: &Path) -> bool {
+/// Components that do not exist are taken as written.
+///
+/// A link met again with the same rest of the path still to walk is a loop: the
+/// walk would repeat forever, and the kernel refuses such a path. Its name is
+/// then taken as written and the rest of the path is still checked, because
+/// resolvers that look up one component at a time end up there. `target` is
+/// the target of a link, which counts as the first link followed: more than 40
+/// different links in all is [`LinkCheck::TooManyLinks`], as the kernel refuses
+/// to open a path that follows more than 40. The work is charged to `steps`.
+fn link_target_stays_within(
+    root: &Path,
+    given_root: &Path,
+    base: &Path,
+    target: &Path,
+    steps: &mut u64,
+) -> LinkCheck {
     use std::collections::VecDeque;
     use std::path::Component;
     const MAX_LINKS: usize = 40;
@@ -3475,8 +3781,15 @@ fn link_target_stays_within(root: &Path, given_root: &Path, base: &Path, target:
     };
     let mut current = base.to_path_buf();
     let mut pending = parts(target);
-    let mut followed = 0;
+    if !spend_link_check_steps(steps, pending.len()) {
+        return LinkCheck::OverBudget;
+    }
+    // Each link followed, with what was left to walk after it.
+    let mut followed: Vec<(PathBuf, VecDeque<PathBuf>)> = vec![];
     while let Some(part) = pending.pop_front() {
+        if !spend_link_check_steps(steps, 1) {
+            return LinkCheck::OverBudget;
+        }
         let Some(component) = part.components().next() else {
             continue;
         };
@@ -3490,9 +3803,12 @@ fn link_target_stays_within(root: &Path, given_root: &Path, base: &Path, target:
                     .into_iter()
                     .find_map(|root| absolute.strip_prefix(root).ok())
                 else {
-                    return false;
+                    return LinkCheck::Outside;
                 };
                 pending = parts(rest);
+                if !spend_link_check_steps(steps, pending.len()) {
+                    return LinkCheck::OverBudget;
+                }
                 current = root.to_path_buf();
             }
             Component::CurDir => {}
@@ -3501,14 +3817,32 @@ fn link_target_stays_within(root: &Path, given_root: &Path, base: &Path, target:
             }
             Component::Normal(name) => {
                 let candidate = current.join(name);
+                // The lookup walks every component of the path.
+                if !spend_link_check_steps(steps, candidate.components().count()) {
+                    return LinkCheck::OverBudget;
+                }
                 match fs::read_link(&candidate) {
                     Ok(link) => {
-                        followed += 1;
-                        if followed > MAX_LINKS {
-                            return true;
+                        // Comparing against the links followed so far.
+                        if !spend_link_check_steps(steps, (followed.len() + 1) * pending.len()) {
+                            return LinkCheck::OverBudget;
                         }
-                        for part in link.components().rev() {
-                            pending.push_front(PathBuf::from(part.as_os_str()));
+                        if followed
+                            .iter()
+                            .any(|(seen, rest)| *seen == candidate && *rest == pending)
+                        {
+                            current = candidate;
+                        } else if followed.len() + 1 == MAX_LINKS {
+                            return LinkCheck::TooManyLinks;
+                        } else {
+                            let link_parts = link.components().count();
+                            if !spend_link_check_steps(steps, pending.len() + link_parts) {
+                                return LinkCheck::OverBudget;
+                            }
+                            followed.push((candidate, pending.clone()));
+                            for part in link.components().rev() {
+                                pending.push_front(PathBuf::from(part.as_os_str()));
+                            }
                         }
                     }
                     Err(_) => current = candidate,
@@ -3516,10 +3850,10 @@ fn link_target_stays_within(root: &Path, given_root: &Path, base: &Path, target:
             }
         }
         if !current.starts_with(root) {
-            return false;
+            return LinkCheck::Outside;
         }
     }
-    true
+    LinkCheck::Inside
 }
 
 fn sanitize_7z_entry_path(path: &str) -> Result<PathBuf> {
@@ -3783,6 +4117,7 @@ pub fn inspect_zip_contents(archive: &Path) -> Result<Vec<(String, bool)>> {
 /// Adapted from inspect_tar_contents for 7z archives, and like it stops at the
 /// second distinct top-level entry.
 pub fn inspect_7z_contents(archive: &Path) -> Result<Vec<(String, bool)>> {
+    ensure_7z_header_within_limit(archive)?;
     let sevenz = sevenz_rust2::Archive::open(archive)?;
     let mut top_level_components = std::collections::HashMap::new();
 
