@@ -53,7 +53,7 @@ use mise_config::task::TaskDecls;
 
 use super::diagnostic::toml_parse_error;
 use super::min_version::MinVersionSpec;
-use super::{tool_key_requires_trust, version_requires_trust};
+use super::{is_path_version, tool_key_requires_trust, version_requires_trust};
 
 const LEGACY_ENV_KEYS_DEPRECATED_WARN_AT: &str = "2026.4.17";
 const LEGACY_ENV_KEYS_DEPRECATED_REMOVE_AT: &str = "2027.4.0";
@@ -2536,6 +2536,18 @@ impl ConfigFile for MiseToml {
             .collect()
     }
 
+    fn safe_mode_project_tool_backends(&self) -> Vec<String> {
+        // Read as written, like `tool_backends`: a template could render to a `path:`
+        // version, and such a tool still counts as the project's, which withholds credentials.
+        self.tools
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(_, tvp)| tvp.0.iter().any(|tool| !is_path_version(&tool.request)))
+            .map(|(ba, _)| ba.short.to_string())
+            .collect()
+    }
+
     fn has_templated_tool_versions(&self) -> bool {
         self.tools
             .lock()
@@ -4861,6 +4873,31 @@ checksum_url = ["c"]"#,
             Some(&EnvValue::String("{{version}}".to_string()))
         );
         file::remove_file(&p).unwrap();
+    }
+
+    #[test]
+    fn a_tool_only_safe_mode_ignores_is_not_asked_for_in_safe_mode() {
+        // In safe mode a project's `path:` versions are ignored, so a tool with only those is
+        // not the project's, and a global tool of that name keeps its credentials.
+        let cf = MiseToml::from_str(
+            r#"
+            [tools]
+            "http:only-path" = "path:/opt/only-path"
+            "http:mixed" = ["path:/opt/mixed", "1.0.0"]
+            "http:plain" = "1.0.0"
+            "http:empty" = []
+            "#,
+            std::path::Path::new("mise.toml"),
+        )
+        .unwrap();
+        assert_eq!(
+            cf.safe_mode_project_tool_backends(),
+            ["http:mixed", "http:plain"]
+        );
+        assert_eq!(
+            cf.tool_backends(),
+            ["http:only-path", "http:mixed", "http:plain"]
+        );
     }
 
     #[tokio::test]

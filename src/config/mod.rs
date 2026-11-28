@@ -4974,7 +4974,12 @@ fn load_aliases(config_files: &ConfigMap) -> Result<AliasMap> {
         config_files
             .values()
             .filter(|cf| is_global_config(cf.get_path()) == global)
-            .flat_map(|cf| cf.tool_backends())
+            .flat_map(|cf| match global {
+                true => cf.tool_backends(),
+                // A project request that safe mode ignores is not the project's choice of
+                // the tool, so it does not make global config's tool a project one.
+                false => cf.safe_mode_project_tool_backends(),
+            })
             .collect()
     };
     let global_tools = declared_tools(true);
@@ -7840,11 +7845,14 @@ async fn load_tasks_includes(
         let is_toml = |p: &Path| p.extension().map(|e| e == "toml").unwrap_or(false);
         let (toml_files, exec_files): (Vec<_>, Vec<_>) = all_files
             .into_iter()
+            // Where a file resolves is checked first: on Windows, `is_executable` opens a file
+            // with no known extension to look for a shebang, and one outside the project is not
+            // to be read.
+            .filter(|p| !skip_task_file_outside(p, bounds))
             .filter(|p| match is_toml(p) {
                 true => !is_mise_config_file_in_task_include(root, p),
                 false => file::is_executable(p),
             })
-            .filter(|p| !skip_task_file_outside(p, bounds))
             .partition(|p| is_toml(p));
         let mut tasks = vec![];
         for path in toml_files {
@@ -9910,6 +9918,8 @@ fn included_task_definitions(
                 match collect_task_files_within(&include, &all_excludes, bounds.as_deref()) {
                     Ok(files) => files
                         .into_iter()
+                        // Before `is_executable`, which can read the file on Windows.
+                        .filter(|p| !skip_task_file_outside(p, bounds.as_deref()))
                         .filter(|p| match is_toml(p) {
                             true => !is_mise_config_file_in_task_include(&include, p),
                             false => file::is_executable(p),
@@ -9929,9 +9939,6 @@ fn included_task_definitions(
                 continue;
             };
             for path in files {
-                if skip_task_file_outside(&path, bounds.as_deref()) {
-                    continue;
-                }
                 let include_key = (!is_toml(&path)).then(|| include.clone());
                 if !read.insert((path.clone(), include_key)) {
                     continue;

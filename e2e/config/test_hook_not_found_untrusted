@@ -74,3 +74,33 @@ assert "mise trust ."
 mise hook-not-found -s bash -- rtx-tiny </dev/null
 assert_directory_exists "$MISE_DATA_DIR/installs/tiny/3.0.0"
 ok "[trust] a trusted .tool-versions still is"
+
+# With registry auto-install on, a bin that no configured tool provides is
+# installed and written into global config. A tool an untrusted project asks
+# for is the project's choice of it, so it is neither installed nor written.
+mkdir -p "$HOME/registry-untrusted"
+cd "$HOME/registry-untrusted"
+: >"$MISE_CONFIG_DIR/config.toml"
+export MISE_NOT_FOUND_AUTO_INSTALL_REGISTRY=1
+echo "tiny 3.0.0" >.tool-versions
+status=0
+mise hook-not-found -s bash -- rtx-tiny </dev/null || status=$?
+assert "echo $status" "127"
+assert_not_contains "cat $MISE_CONFIG_DIR/config.toml" "tiny"
+ok "[trust] a tool an untrusted .tool-versions lists is not added to global config"
+
+# A config skipped unread could ask for any tool, so none is added.
+rm .tool-versions
+cat <<'EOF2' >mise.toml
+[env]
+NEEDS_TRUST = "{{ env.HOME }}"
+
+[tools]
+tiny = "3.0.0"
+EOF2
+status=0
+mise hook-not-found -s bash -- rtx-tiny </dev/null || status=$?
+assert "echo $status" "127"
+assert_not_contains "cat $MISE_CONFIG_DIR/config.toml" "tiny"
+assert_contains "mise trust --show" ": untrusted"
+ok "[trust] nor one with an untrusted mise.toml"

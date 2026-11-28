@@ -202,6 +202,12 @@ pub trait ConfigFile: Debug + Send + Sync {
             })
             .unwrap_or_default()
     }
+    /// [`Self::tool_backends`] without a tool whose every version is a `path:` one, which
+    /// safe mode ignores in project config. These are the tools a project config asks for in
+    /// safe mode.
+    fn safe_mode_project_tool_backends(&self) -> Vec<String> {
+        self.tool_backends()
+    }
     /// Whether any tool's version or options is a template, on any platform.
     fn has_templated_tool_versions(&self) -> bool {
         !self.templated_tool_backends().is_empty()
