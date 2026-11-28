@@ -2252,22 +2252,42 @@ impl Lockfile {
     /// selected. An entry is its version and options, the key the lockfile
     /// keeps entries apart by, so a variant of a version that is still locked
     /// with other options comes back too.
+    ///
+    /// The requests a previous entry is bound to come back with it, except
+    /// those this lockfile binds again, maybe to another version. They also
+    /// come back to an entry this lockfile still has: a request only a skipped
+    /// task makes can share a version with one this run locked.
     pub fn restore_missing_versions(&mut self, previous: &Lockfile, short: &str) {
         let Some(entries) = previous.tools_for(short) else {
             return;
         };
         let key = crate::toolset::install_state::state_short(short).into_owned();
-        let present: BTreeSet<(String, BTreeMap<String, String>)> = self
-            .tools
-            .get(&key)
-            .map(|have| {
-                have.iter()
-                    .map(|entry| (entry.version.clone(), entry.options.clone()))
-                    .collect()
+        let have = self.tools.get(&key).map(Vec::as_slice).unwrap_or_default();
+        let present: BTreeSet<(String, BTreeMap<String, String>)> = have
+            .iter()
+            .map(|entry| (entry.version.clone(), entry.options.clone()))
+            .collect();
+        let rebound: BTreeSet<(String, BTreeMap<String, String>)> = have
+            .iter()
+            .flat_map(|entry| {
+                entry
+                    .specifiers
+                    .iter()
+                    .map(|specifier| (specifier.clone(), entry.options.clone()))
             })
-            .unwrap_or_default();
+            .collect();
         for entry in entries {
+            let mut entry = entry.clone();
+            entry
+                .specifiers
+                .retain(|specifier| !rebound.contains(&(specifier.clone(), entry.options.clone())));
             if present.contains(&(entry.version.clone(), entry.options.clone())) {
+                if let Some(kept) = self.tools.get_mut(&key).and_then(|have| {
+                    have.iter_mut()
+                        .find(|kept| kept.version == entry.version && kept.options == entry.options)
+                }) {
+                    kept.specifiers.extend(entry.specifiers);
+                }
                 continue;
             }
             // Generation dropped the shared package records this entry's
@@ -2279,10 +2299,7 @@ impl Lockfile {
                     }
                 }
             }
-            self.tools
-                .entry(key.clone())
-                .or_default()
-                .push(entry.clone());
+            self.tools.entry(key.clone()).or_default().push(entry);
         }
     }
 

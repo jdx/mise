@@ -6,6 +6,14 @@ mod ls;
 mod set;
 mod unset;
 
+/// Writes `contents` to config file `path` for `mise settings set` and `unset`, refusing a link
+/// that leads where the user did not choose: see
+/// [`crate::config::config_file::symlink_check_before_write`].
+fn write_settings_file(path: &std::path::Path, contents: &str) -> Result<()> {
+    let destination = crate::config::config_file::checked_write_destination(path)?;
+    crate::file::write(destination, contents)
+}
+
 fn canonical_setting(key: &str) -> &str {
     match key {
         "pipx" => "pypi",

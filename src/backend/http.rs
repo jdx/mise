@@ -160,6 +160,12 @@ struct HttpOptions<'a> {
     values: BackendOptions<'a>,
 }
 
+/// The options a download is checked against: a pinned `checksum`, or a `checksum_url` to read
+/// the publisher's checksum from. `checksum_expr` only picks a checksum out of the file at
+/// `checksum_url`, so it is no checksum on its own. Each one is read at the top level and per
+/// platform (`HttpOptions::checksum`, `HttpOptions::checksum_url_for_target`).
+pub(crate) const CHECKSUM_SOURCES: [&str; 2] = ["checksum", "checksum_url"];
+
 impl<'a> HttpOptions<'a> {
     fn new(raw: &'a ToolVersionOptions) -> Self {
         Self {

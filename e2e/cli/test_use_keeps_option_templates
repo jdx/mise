@@ -167,3 +167,15 @@ assert_contains "MISE_SAFE=1 mise use --path other/mise.toml dummy@2.0.0 2>&1" "
 assert_not_contains "cat other/mise.toml" "version |"
 assert_not_contains "cat other/mise.toml" "example.com/linux"
 assert_contains "cat other/mise.toml" 'platforms_macos_arm64_url = "https://example.com/mac"'
+
+# a checksum_expr picks a checksum out of the file at checksum_url, so with
+# that file left out it checks nothing, and the url goes too
+cat >mise.toml <<'TOML'
+[tools]
+dummy = { version = "1.0.0", url = "https://example.com/top", checksum_url = "https://example.com/{{ version | upper }}.json", checksum_expr = "fromJSON(body)[filename]" }
+TOML
+rm -rf other
+mkdir other
+assert_contains "MISE_SAFE=1 mise use --path other/mise.toml dummy@2.0.0 2>&1" "without it the download would not be checked"
+assert_not_contains "cat other/mise.toml" "version |"
+assert_not_contains "cat other/mise.toml" "example.com/top"

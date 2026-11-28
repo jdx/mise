@@ -406,23 +406,28 @@ const PLATFORM_TABLES: [&str; 2] = ["platforms", "platform"];
 /// checksum (a flat key in `dropped`, or a table path in `unverified`), or when
 /// `top_checksum_dropped`, as the url would have been checked against the top-level one. The
 /// other paths in `unverified` lose their url as they are.
+///
+/// The http backend looks up a platform's url and its checksum each under every spelling of the
+/// platform (`macos-x64`, `darwin-amd64`, ...), so the spellings are one platform here too: a
+/// `darwin-arm64` url is checked against a `macos-arm64` checksum.
 fn drop_unverified_platform_urls(
     opts: &mut IndexMap<String, toml::Value>,
     dropped: &[String],
     unverified: Vec<Vec<String>>,
     top_checksum_dropped: bool,
 ) -> Vec<String> {
+    use crate::backend::static_helpers::preferred_platform_spelling as spelling;
     let mut removed = vec![];
     let mut lost: Vec<String> = dropped
         .iter()
         .filter_map(|k| flat_platform_option(k))
         .filter(|(_, field)| *field != "url")
-        .map(|(platform, _)| platform)
+        .map(|(platform, _)| spelling(&platform))
         .collect();
     for at in unverified {
         match at.as_slice() {
             [table, platform] if PLATFORM_TABLES.contains(&table.as_str()) => {
-                lost.push(platform.clone());
+                lost.push(spelling(platform));
             }
             _ => {
                 if remove_url_at(opts, &at) {
@@ -440,12 +445,12 @@ fn drop_unverified_platform_urls(
         let Some(entry) = entry.as_table() else {
             continue;
         };
-        let (url, checksum) = platforms.entry(platform.clone()).or_default();
+        let (url, checksum) = platforms.entry(spelling(platform)).or_default();
         *url |= entry.contains_key("url");
         *checksum |= entry.keys().any(|k| is_checksum_option(k));
     }
     for (platform, field) in opts.keys().filter_map(|k| flat_platform_option(k)) {
-        let (url, checksum) = platforms.entry(platform).or_default();
+        let (url, checksum) = platforms.entry(spelling(&platform)).or_default();
         if field == "url" {
             *url = true;
         } else {
@@ -459,16 +464,25 @@ fn drop_unverified_platform_urls(
         })
         .map(|(platform, _)| platform)
         .collect();
-    for platform in &unchecked {
-        for table in PLATFORM_TABLES {
+    for table in PLATFORM_TABLES {
+        let written: Vec<String> = opts
+            .get(table)
+            .and_then(toml::Value::as_table)
+            .into_iter()
+            .flat_map(|entries| entries.keys())
+            .filter(|platform| unchecked.contains(&spelling(platform)))
+            .cloned()
+            .collect();
+        for platform in written {
             if remove_url_at(opts, &[table.to_string(), platform.clone()]) {
                 removed.push(format!("{table}.{platform}.url"));
             }
         }
     }
     opts.retain(|k, _| {
-        let unchecked_url = flat_platform_option(k)
-            .is_some_and(|(platform, field)| field == "url" && unchecked.contains(&platform));
+        let unchecked_url = flat_platform_option(k).is_some_and(|(platform, field)| {
+            field == "url" && unchecked.contains(&spelling(&platform))
+        });
         if unchecked_url {
             removed.push(k.clone());
         }
@@ -534,8 +548,10 @@ fn drops_unverified_url<'a>(
     dropped.iter().any(|k| is_checksum_option(k)) && !kept.any(|k| is_checksum_option(k))
 }
 
+/// Whether option `key` is one the http backend checks a download against. `checksum_expr` is
+/// not: without a `checksum_url` it has no file to read.
 fn is_checksum_option(key: &str) -> bool {
-    key.starts_with("checksum")
+    crate::backend::http::CHECKSUM_SOURCES.contains(&key)
 }
 
 fn warn_unverified_url(tool: &str, at: &str) {
@@ -2381,10 +2397,13 @@ impl ConfigFile for MiseToml {
         let contents = self.dump()?;
         super::symlink_check_before_write(&self.path)?;
         trust_check_before_write(&self.path)?;
-        if let Some(parent) = self.path.parent() {
+        // The trust prompt can wait on the user while the checkout changes, so where the file
+        // leads is checked again, and the write goes to the destination that passed.
+        let destination = super::checked_write_destination(&self.path)?;
+        if let Some(parent) = destination.parent() {
             create_dir_all(parent)?;
         }
-        file::write_atomic(&self.path, contents)?;
+        file::write_atomic(&destination, contents)?;
         super::note_saved(&self.path);
         trust_after_write(&self.path)?;
         Ok(())
@@ -3534,6 +3553,34 @@ mod tests {
     }
 
     #[test]
+    fn a_checksum_expr_is_no_checksum_without_its_checksum_url() {
+        let keys = |keys: &[&str]| keys.iter().map(|k| k.to_string()).collect::<Vec<_>>();
+        // The expression reads the file at `checksum_url`: with that dropped, the url is unchecked.
+        let kept = keys(&["url", "checksum_expr"]);
+        assert!(super::drops_unverified_url(
+            &keys(&["checksum_url"]),
+            kept.iter()
+        ));
+        // Dropping only the expression leaves the checksum file to check the download against.
+        let kept = keys(&["url", "checksum_url"]);
+        assert!(!super::drops_unverified_url(
+            &keys(&["checksum_expr"]),
+            kept.iter()
+        ));
+
+        // A platform whose only checksum option left is an expression loses its url.
+        let mut o: indexmap::IndexMap<String, toml::Value> = toml::from_str::<toml::Table>(
+            r#"platforms = { linux-x64 = { url = "l", checksum_expr = "e" }, macos-arm64 = { url = "m", checksum_url = "c" } }"#,
+        )
+        .unwrap()
+        .into_iter()
+        .collect();
+        let removed = super::drop_unverified_platform_urls(&mut o, &[], vec![], true);
+        assert_eq!(removed, ["platforms.linux-x64.url"]);
+        assert!(o["platforms"]["macos-arm64"].get("url").is_some());
+    }
+
+    #[test]
     fn a_platform_url_left_without_a_checksum_is_dropped_in_every_spelling() {
         let opts = |toml: &str| -> indexmap::IndexMap<String, toml::Value> {
             toml::from_str::<toml::Table>(toml)
@@ -3594,6 +3641,42 @@ mod tests {
         let removed = super::drop_unverified_platform_urls(&mut o, &[], unverified, false);
         assert_eq!(removed, ["platforms.macos-arm64.url"]);
         assert!(o["platforms"]["linux-x64"].get("url").is_some());
+    }
+
+    #[test]
+    fn a_platform_is_one_platform_under_each_of_its_spellings() {
+        let opts = |toml: &str| -> indexmap::IndexMap<String, toml::Value> {
+            toml::from_str::<toml::Table>(toml)
+                .unwrap()
+                .into_iter()
+                .collect()
+        };
+        // The http backend checks a `darwin-arm64` url against the `macos-arm64` checksum, so
+        // when that checksum is dropped the url goes too, in each spelling it is written in.
+        let mut o = opts(indoc! {r#"
+            platforms_darwin_aarch64_url = "f"
+            platforms = { darwin-arm64 = { url = "m" }, linux-amd64 = { url = "l" } }
+        "#});
+        let unverified = vec![vec!["platforms".to_string(), "macos-arm64".to_string()]];
+        let dropped = ["platforms_linux_x64_checksum".to_string()];
+        let removed = super::drop_unverified_platform_urls(&mut o, &dropped, unverified, false);
+        assert_eq!(
+            removed,
+            [
+                "platforms.darwin-arm64.url",
+                "platforms.linux-amd64.url",
+                "platforms_darwin_aarch64_url"
+            ]
+        );
+
+        // A checksum kept under another spelling still checks the url.
+        let mut o = opts(indoc! {r#"
+            platforms_macos_x86_64_checksum = "sha256:1"
+            platforms = { darwin-x64 = { url = "m" } }
+        "#});
+        let removed = super::drop_unverified_platform_urls(&mut o, &[], vec![], true);
+        assert!(removed.is_empty(), "{removed:?}");
+        assert!(o["platforms"]["darwin-x64"].get("url").is_some());
     }
 
     #[test]

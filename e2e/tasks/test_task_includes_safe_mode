@@ -197,6 +197,22 @@ assert_contains "MISE_SAFE=1 mise -C packages/foo tasks ls" "common-task"
 assert_not_contains "MISE_SAFE=1 mise -C packages/foo tasks ls --json 2>&1" "t0k3n"
 rm -r shared packages mise.toml
 
+echo "=== a monorepo rooted at the home directory does not bound its projects' includes ==="
+cat <<'EOF' >"$HOME/mise.toml"
+monorepo_root = true
+
+[monorepo]
+config_roots = ["home-mono/*"]
+EOF
+mkdir -p "$HOME/home-mono/foo"
+cat <<'EOF' >"$HOME/home-mono/foo/mise.toml"
+[task_config]
+includes = ["../../private/hosts.toml"]
+EOF
+assert_contains "MISE_SAFE=1 mise -C $HOME/home-mono/foo tasks ls 2>&1" "resolves outside the project"
+assert_not_contains "MISE_SAFE=1 mise -C $HOME/home-mono/foo tasks ls --json 2>&1" "t0k3n"
+rm -r "$HOME/mise.toml" "$HOME/home-mono"
+
 echo "=== global config keeps its includes ==="
 mkdir -p "$MISE_TMP_DIR/tasks"
 cat <<'EOF' >"$MISE_TMP_DIR/tasks/global.toml"
