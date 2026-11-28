@@ -451,12 +451,15 @@ pub(crate) fn sync_locked(
                     )?;
                     break;
                 }
+                // origin answered: the commit is not there
                 PushOutcome::Rejected(reason) if attempts < PUSH_RETRIES => {
+                    repo.delete_ref(PUSHING_REF)?;
                     debug!("history sync: publication rejected, fetching again: {reason}");
                     remote.fetch(&origin.branch)?;
                     upstream_commit = repo.ref_oid(UPSTREAM_REF)?;
                 }
                 PushOutcome::Rejected(reason) => {
+                    repo.delete_ref(PUSHING_REF)?;
                     bail!("publication kept being rejected after {attempts} attempts: {reason}")
                 }
             }
