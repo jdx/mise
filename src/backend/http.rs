@@ -1562,7 +1562,8 @@ impl Backend for HttpBackend {
         let raw_opts = tv.request.options();
         let opts = HttpOptions::new(&raw_opts);
         match opts.url() {
-            Some(_) => Ok(()),
+            // An install that safe mode refuses is not one `--dry-run` promises.
+            Some(url) => local_artifact_url(&tv.request, &template_string(&url, tv)).map(|_| ()),
             None => Err(self.missing_url_error(&opts)),
         }
     }
@@ -2000,6 +2001,21 @@ fn without_verbatim_prefix(path: &Path) -> PathBuf {
 /// path is looked at: the checksum in `mise.lock` would tell what a file outside
 /// the project holds, and the error below whether it exists.
 pub(crate) fn local_artifact_path(tr: &ToolRequest, url: &str) -> Result<Option<PathBuf>> {
+    let Some(parsed) = local_artifact_url(tr, url)? else {
+        return Ok(None);
+    };
+    let path = parsed
+        .to_file_path()
+        .map_err(|_| eyre::eyre!("invalid file URL: {url}"))?;
+    if !path.is_file() {
+        eyre::bail!("local artifact not found: {}", path.display());
+    }
+    Ok(Some(path))
+}
+
+/// The `file://` URL of a local artifact that a request `tr` installs, refused
+/// in safe mode as [`local_artifact_path`] says, without looking at the file.
+fn local_artifact_url(tr: &ToolRequest, url: &str) -> Result<Option<url::Url>> {
     let Ok(parsed) = url::Url::parse(url) else {
         return Ok(None);
     };
@@ -2011,13 +2027,7 @@ pub(crate) fn local_artifact_path(tr: &ToolRequest, url: &str) -> Result<Option<
             "reading a local file:// artifact for a tool that global config does not request",
         )?;
     }
-    let path = parsed
-        .to_file_path()
-        .map_err(|_| eyre::eyre!("invalid file URL: {url}"))?;
-    if !path.is_file() {
-        eyre::bail!("local artifact not found: {}", path.display());
-    }
-    Ok(Some(path))
+    Ok(Some(parsed))
 }
 
 fn rename_cache_token(rename: &toml::Value) -> String {
@@ -2076,6 +2086,15 @@ mod tests {
         assert!(
             err.to_string().contains("local artifact not found"),
             "{err}"
+        );
+        // The policy check `--dry-run` makes does not look at the file.
+        assert_eq!(
+            local_artifact_url(&http, missing.as_str()).unwrap(),
+            Some(missing.clone())
+        );
+        assert_eq!(
+            local_artifact_url(&request("github:o/r"), missing.as_str()).unwrap(),
+            None
         );
     }
 
