@@ -1179,7 +1179,7 @@ fn trusted_monorepo_ancestor(canonical: &Path) -> bool {
 
 remove_by!("2027.11.0", "legacy-trust-record-names");
 
-/// Whether `dir` has a monorepo marker beside a record under a name that mise 2026.11.13 and
+/// Whether `dir` has a monorepo marker beside a record under a name that mise 2026.11.14 and
 /// earlier used. Loading the root's config writes the marker under the current name, but settings
 /// are read before that, so the first run after an upgrade would otherwise leave out the
 /// `[settings]` of a subproject trusted through the root.
@@ -1681,7 +1681,7 @@ struct RecordLookup {
     /// Whether the record stores the path it is looked up for as its target. A record name is
     /// derived from the path, so a file of that name proves nothing until its target is compared.
     owned: bool,
-    /// Whether the record has a name that mise 2026.11.13 and earlier used.
+    /// Whether the record has a name that mise 2026.11.14 and earlier used.
     legacy: bool,
 }
 
@@ -1733,7 +1733,7 @@ impl TrustRecord {
     /// Whether the record approves its file as an env file only. [`trust`] writes that marker
     /// only together with a hash, so a record without one is not looked at further.
     ///
-    /// mise 2026.11.13 and earlier wrote no marker, and recorded an env file approval exactly as
+    /// mise 2026.11.14 and earlier wrote no marker, and recorded an env file approval exactly as
     /// it recorded paranoid trust in a config file: a record with a hash. Such a record under an
     /// old name does not say which one the user approved, so it counts only as the narrower one,
     /// an env file approval. A config trusted that way is asked about again once, and trusting
@@ -1772,7 +1772,7 @@ fn records_for(dir: &Path, path: &Path) -> Vec<PathBuf> {
 
 remove_by!("2027.11.0", "legacy-trust-record-names");
 
-/// Records under the names that mise 2026.11.13 and earlier used, which hash the path with
+/// Records under the names that mise 2026.11.14 and earlier used, which hash the path with
 /// `Hash`. That hash skips separators, so different paths can share a name, and a record found
 /// under one counts only when it points at `identity`.
 fn legacy_records(dir: &Path, identity: &Path) -> Vec<PathBuf> {
@@ -2835,7 +2835,7 @@ mod hashed_path_filename_tests {
         untrust(&b).unwrap();
     }
 
-    /// mise 2026.11.13 and earlier wrote an env file approval as a record with a hash and no
+    /// mise 2026.11.14 and earlier wrote an env file approval as a record with a hash and no
     /// marker, just as it wrote paranoid trust in a config. Such a record approves an env file,
     /// never config, until the user trusts the path again.
     #[test]
@@ -2935,7 +2935,7 @@ mod hashed_path_filename_tests {
         std::fs::write(sub.join("mise.toml"), "[settings]\njobs = 3\n").unwrap();
         let config = sub.join("mise.toml");
 
-        // What mise 2026.11.13 left behind: the root's record and marker under the old name,
+        // What mise 2026.11.14 left behind: the root's record and marker under the old name,
         // and nothing under the current one. Settings are read before the root's config loads
         // and rewrites the marker, so the old marker has to count on its own.
         let identity = record_identity(&mono);
