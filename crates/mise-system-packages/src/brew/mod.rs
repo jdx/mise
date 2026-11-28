@@ -85,10 +85,14 @@ pub fn package_root(name: &str) -> Result<PathBuf> {
         .wrap_err_with(|| format!("failed to locate installed brew:{name}"))
 }
 
-/// Require one normal path component so a formula name stays within its expected rack.
+/// Require one normal path component so a formula name or version stays
+/// within its expected rack. Separators are refused outright: `Path` would
+/// drop a trailing `/` or an inner `.` and accept the rest.
 fn is_normal_formula_component(name: &str) -> bool {
     let mut components = Path::new(name).components();
-    matches!(components.next(), Some(Component::Normal(_))) && components.next().is_none()
+    !name.contains(['/', '\\', '\0'])
+        && matches!(components.next(), Some(Component::Normal(_)))
+        && components.next().is_none()
 }
 
 /// The formulae of a resolved closure that have no keg yet. A malformed

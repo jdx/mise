@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+
+# As root, mise refuses a Homebrew prefix below a directory another user owns:
+# that user could swap the path for a symlink and redirect root's writes. The
+# same prefix below directories root owns is used as before. Needs root, which
+# the docker e2e runs provide (MISE_E2E_DOCKER=1).
+if [[ "$(uname)" != "Linux" ]] || [[ "$(id -u)" != 0 ]]; then
+  exit 0
+fi
+
+FORMULAE_DIR="$TMPDIR/formulae"
+mkdir -p "$FORMULAE_DIR/api/cask" "$FORMULAE_DIR/api/formula"
+printf '{"token":"example-good","version":"1.0","url":"https://example.invalid/cask.zip","sha256":"no_check","artifacts":[{"font":["Example.ttf"]}]}\n' >"$FORMULAE_DIR/api/cask/example-good.json"
+printf '{"name":"example","versions":{"stable":"1.0"},"bottle":{"stable":{"files":{"x86_64_linux":{"cellar":":any","url":"https://example.invalid/b.tar.gz","sha256":"00"},"arm64_linux":{"cellar":":any","url":"https://example.invalid/b.tar.gz","sha256":"00"}}}}}\n' >"$FORMULAE_DIR/api/formula/example.json"
+start_http_server --dir "$FORMULAE_DIR"
+MISE_URL_REPLACEMENTS="$(printf '{"https://formulae.brew.sh":"http://127.0.0.1:%s"}' "$HTTP_PORT")"
+export MISE_URL_REPLACEMENTS
+
+cat >mise.toml <<'TOML'
+[bootstrap.packages]
+"brew-cask:example-good" = "latest"
+TOML
+
+mkdir -p "$PWD/foreign"
+chown 65534 "$PWD/foreign"
+export MISE_SYSTEM_BREW_PREFIX="$PWD/foreign/brew-prefix"
+assert_fail_contains "mise bootstrap packages apply --dry-run --yes" "$PWD/foreign is owned by"
+assert_fail_contains "mise bootstrap packages apply --dry-run --yes" "could redirect root's writes"
+
+mkdir -p "$PWD/owned"
+export MISE_SYSTEM_BREW_PREFIX="$PWD/owned/brew-prefix"
+assert_contains "mise bootstrap packages apply --dry-run --yes 2>&1" "install cask example-good/1.0"
+
+# a root-owned Cellar link is judged by where it leads as well
+mkdir -p "$PWD/linked/brew-prefix" "$PWD/disk/cellar"
+chown 65534 "$PWD/disk"
+ln -s "$PWD/disk/cellar" "$PWD/linked/brew-prefix/Cellar"
+export MISE_SYSTEM_BREW_PREFIX="$PWD/linked/brew-prefix"
+assert_fail_contains "mise bootstrap packages apply --dry-run --yes" "$PWD/disk is owned by"
+
+# nothing in a refused prefix is changed first, not even leftover lock files
+cat >mise.toml <<'TOML'
+[bootstrap.packages]
+"brew:example" = "latest"
+TOML
+export MISE_SYSTEM_BREW_PREFIX="$PWD/foreign/brew-prefix"
+mkdir -p "$MISE_SYSTEM_BREW_PREFIX/Cellar/old"
+touch "$MISE_SYSTEM_BREW_PREFIX/Cellar/old/.mise-staging.lock"
+assert_fail_contains "mise bootstrap packages apply --yes" "$PWD/foreign is owned by"
+assert_succeed "test -f '$MISE_SYSTEM_BREW_PREFIX/Cellar/old/.mise-staging.lock'"
+assert_fail "test -e '$MISE_SYSTEM_BREW_PREFIX/var/homebrew/locks'"

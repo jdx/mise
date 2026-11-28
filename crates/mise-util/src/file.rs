@@ -2475,10 +2475,10 @@ const EXTRACT_MIN_LIMIT: u64 = if cfg!(test) {
 };
 
 /// The most bytes unpacking `input` may produce: `extract_max_ratio` times its
-/// size, and at least [`EXTRACT_MIN_LIMIT`]. Release archives rarely unpack to
+/// size, and at least `EXTRACT_MIN_LIMIT`. Release archives rarely unpack to
 /// more than 10 times their size, while 1 GiB of zeroes is under 1 KiB of
 /// bzip2, so without a bound a small download could fill the disk.
-fn extract_limit(input: &Path) -> Result<u64> {
+pub fn extract_limit(input: &Path) -> Result<u64> {
     Ok(extract_limit_for_size(input.metadata()?.len()))
 }
 
@@ -2520,7 +2520,7 @@ impl ExtractBudget {
     }
 }
 
-fn extract_limit_error(limit: u64) -> std::io::Error {
+pub fn extract_limit_error(limit: u64) -> std::io::Error {
     std::io::Error::other(format!(
         "unpacked size exceeds {limit} bytes, the limit set by the extract_max_ratio setting"
     ))
