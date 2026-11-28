@@ -223,21 +223,21 @@ impl Backend for GoBackend {
                 // `Ok(None)`: it would take the version as checked and let it
                 // past the cutoff without a word. Keep the first real failure so
                 // this can report one.
-                let (mut failure, refused) =
-                    match proxy_release_date(&proxies, candidates, &version).await {
-                        ProxyReleaseDate::Found(time) => return Ok(time),
-                        ProxyReleaseDate::Unanswered { failure, refused } => (failure, refused),
-                    };
+                let mut failure = match proxy_release_date(&proxies, candidates, &version).await {
+                    ProxyReleaseDate::Found(time) => return Ok(time),
+                    // The date stays unknown, as it was when listing read the
+                    // same answer, and the caller says the cutoff went
+                    // unchecked. `go list` is not sent to read the answer
+                    // again with no limit on its size, nor to date the version
+                    // from a parent module, which is another release.
+                    ProxyReleaseDate::Refused(err) => return Err(err),
+                    ProxyReleaseDate::Unanswered(failure) => failure,
+                };
                 // A private module under the default `proxy,direct` GOPROXY is
                 // not on the proxy, and reporting no date for it would hand the
                 // cutoff an undated version to treat as eligible — the exact gap
                 // this exists to close.
                 for mod_path in candidates {
-                    // `go list` asks the same proxies, and would read the
-                    // answer refused for its size again with no limit on it.
-                    if refused.contains(&mod_path.as_str()) {
-                        continue;
-                    }
                     match self
                         .fetch_go_module_version_metadata(config, mod_path, &version)
                         .await
@@ -1223,38 +1223,40 @@ fn parse_proxy_version_list(body: &str) -> Option<Vec<String>> {
 }
 
 /// What the module proxies said about the release date of `version`.
-enum ProxyReleaseDate<'a> {
+enum ProxyReleaseDate {
     /// A candidate's `.info` answered; its date may still be missing.
     Found(Option<String>),
-    /// No candidate answered. `failure` is the first one that failed rather
-    /// than not being served, and `refused` the paths whose answer was too
-    /// large to read.
-    Unanswered {
-        failure: Option<eyre::Report>,
-        refused: Vec<&'a str>,
-    },
+    /// A candidate's `.info` answered with more than mise reads. That
+    /// candidate is the module, so the date is not looked for anywhere else.
+    Refused(eyre::Report),
+    /// No candidate answered; this is the first one that failed rather than
+    /// not being served, if any did.
+    Unanswered(Option<eyre::Report>),
 }
 
 /// Ask the module proxies for the release date of `version` (with its `v`)
-/// under each of `candidates` in turn. A path whose answer is refused for its
-/// size is one failure among the others: a later candidate, the module root
-/// say, can still give the date.
-async fn proxy_release_date<'a>(
+/// under each of `candidates` in turn, deepest first as listing walks them.
+///
+/// The first path a proxy answers for is the module that has this version:
+/// listing stops at the same one, since a module whose list has the version
+/// serves its `.info`. A shallower candidate is another module, and the same
+/// version there is another release, whose date says nothing about this one.
+/// So an answer too large to read ends the walk as a found one does.
+async fn proxy_release_date(
     proxies: &[GoProxy],
-    candidates: &'a [String],
+    candidates: &[String],
     version: &str,
-) -> ProxyReleaseDate<'a> {
+) -> ProxyReleaseDate {
     let mut failure: Option<eyre::Report> = None;
-    let mut refused = Vec::new();
     if proxies.is_empty() {
-        return ProxyReleaseDate::Unanswered { failure, refused };
+        return ProxyReleaseDate::Unanswered(failure);
     }
     for mod_path in candidates {
         let endpoint = format!("{}/@v/{version}.info", encode_module_path(mod_path));
         match query_proxy_version_metadata(proxies, &endpoint).await {
             ProxyVersionInfoResult::Found(info) => return ProxyReleaseDate::Found(info.time),
-            // The module proxy does not serve this path; another candidate or
-            // `go list` still might.
+            // The module proxy does not serve this path, so it is not the
+            // module; another candidate or `go list` still might be.
             ProxyVersionInfoResult::NotFound => {}
             ProxyVersionInfoResult::Error => {
                 failure.get_or_insert_with(|| {
@@ -1262,17 +1264,14 @@ async fn proxy_release_date<'a>(
                 });
             }
             ProxyVersionInfoResult::TooLarge => {
-                failure.get_or_insert_with(|| {
-                    eyre!(
-                        "module proxy answered with more than {} KiB for {mod_path}@{version}",
-                        GO_PROXY_VERSION_INFO_MAX_BYTES / 1024
-                    )
-                });
-                refused.push(mod_path.as_str());
+                return ProxyReleaseDate::Refused(eyre!(
+                    "module proxy answered with more than {} KiB for {mod_path}@{version}",
+                    GO_PROXY_VERSION_INFO_MAX_BYTES / 1024
+                ));
             }
         }
     }
-    ProxyReleaseDate::Unanswered { failure, refused }
+    ProxyReleaseDate::Unanswered(failure)
 }
 
 async fn query_proxy_list(proxies: &[GoProxy], encoded_path: &str) -> ProxyListResult {
@@ -2081,53 +2080,62 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn proxy_release_date_goes_past_an_oversized_answer() {
+    async fn proxy_release_date_stays_with_the_module_that_answers() {
         let oversized = format!(
             r#"{{"Version":"v1.0.0","Time":"2026-04-08T12:56:30Z{}"}}"#,
             " ".repeat(GO_PROXY_VERSION_INFO_MAX_BYTES)
         );
         let mut server = mockito::Server::new_async().await;
-        let package = server
+        // A nested module, `example.com/tool/cmd/tool`, has v1.0.0, and so
+        // does the module above it, as a release of its own.
+        let nested = server
             .mock("GET", "/example.com/tool/cmd/tool/@v/v1.0.0.info")
             .with_status(200)
             .with_body(oversized)
-            .expect(2)
+            .create_async()
+            .await;
+        let parent = server
+            .mock("GET", "/example.com/tool/@v/v1.0.0.info")
+            .with_status(200)
+            .with_body(r#"{"Version":"v1.0.0","Time":"2020-01-01T00:00:00Z"}"#)
+            .expect(0)
+            .create_async()
+            .await;
+        // Only the parent has v2.0.0.
+        let not_a_module = server
+            .mock("GET", "/example.com/tool/cmd/tool/@v/v2.0.0.info")
+            .with_status(404)
             .create_async()
             .await;
         let root = server
-            .mock("GET", "/example.com/tool/@v/v1.0.0.info")
+            .mock("GET", "/example.com/tool/@v/v2.0.0.info")
             .with_status(200)
-            .with_body(r#"{"Version":"v1.0.0","Time":"2026-05-01T00:00:00Z"}"#)
+            .with_body(r#"{"Version":"v2.0.0","Time":"2026-05-01T00:00:00Z"}"#)
             .create_async()
             .await;
         let proxies = parse_goproxy_value(&server.url());
         let candidates = ["example.com/tool/cmd/tool", "example.com/tool"].map(String::from);
 
-        // The package path's answer is refused, and the module root still
-        // gives the date the cutoff is checked against.
+        // The nested module's answer is refused, and the parent's date for
+        // its own v1.0.0 is not taken in its place.
+        match proxy_release_date(&proxies, &candidates, "v1.0.0").await {
+            ProxyReleaseDate::Refused(err) => {
+                let message = format!("{err:#}");
+                assert!(message.contains("more than 64 KiB"), "{message}");
+                assert!(message.contains("example.com/tool/cmd/tool@v1.0.0"));
+            }
+            _ => panic!("the nested module's refusal should end the lookup"),
+        }
+        // A path the proxy does not serve is not the module, so the walk
+        // still goes on past it.
         assert!(matches!(
-            proxy_release_date(&proxies, &candidates, "v1.0.0").await,
+            proxy_release_date(&proxies, &candidates, "v2.0.0").await,
             ProxyReleaseDate::Found(Some(time)) if time == "2026-05-01T00:00:00Z"
         ));
+        nested.assert_async().await;
+        parent.assert_async().await;
+        not_a_module.assert_async().await;
         root.assert_async().await;
-
-        // Where no other path answers, the refusal is the failure reported,
-        // and the refused path is named so that `go list` skips it.
-        let missing = server
-            .mock("GET", "/example.com/other/@v/v1.0.0.info")
-            .with_status(404)
-            .create_async()
-            .await;
-        let candidates = ["example.com/tool/cmd/tool", "example.com/other"].map(String::from);
-        match proxy_release_date(&proxies, &candidates, "v1.0.0").await {
-            ProxyReleaseDate::Unanswered { failure, refused } => {
-                assert!(format!("{:#}", failure.unwrap()).contains("more than 64 KiB"));
-                assert_eq!(refused, ["example.com/tool/cmd/tool"]);
-            }
-            ProxyReleaseDate::Found(_) => panic!("no candidate should answer"),
-        }
-        missing.assert_async().await;
-        package.assert_async().await;
     }
 
     #[tokio::test]
