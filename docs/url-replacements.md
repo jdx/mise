@@ -148,12 +148,17 @@ the new host, if there are any. A rule that keeps the host and port keeps the
 credentials, including one that only switches between HTTP and HTTPS on their
 default ports.
 
-mise refuses to send credentials over plain HTTP after an HTTPS-to-HTTP rewrite
-that keeps the host, whether they came from the original request, are written
-into the rule, or come from a netrc entry for that host. It also refuses
-credentials written into a rule that downgrades to another host. A downgrade
-without credentials is allowed, and so is one to another host whose credentials
-come from a netrc entry for that host. These rules also cover Conda channels.
+An HTTPS-to-HTTP rewrite is refused only when the request would still carry
+credentials over plain HTTP:
+
+- the original request's credentials, when the rule keeps the host and port;
+- a `user:password` written into the rule itself, whatever host it names;
+- a netrc login for the original host, when the rule keeps the host and port.
+
+Any other downgrade goes ahead. A rule to another port of the original host
+drops the original credentials and adds no netrc login, so it is sent without
+credentials. A rule to another host is sent with that host's netrc login, if it
+has one. These rules also cover Conda channels.
 For GitHub attestation requests, mise drops the GitHub token when the rule
 changes the host, and refuses an HTTPS-to-HTTP rewrite that keeps the host. For
 Sigstore TUF metadata, mise ignores such a rewrite and keeps the default HTTPS
