@@ -5565,7 +5565,7 @@ mise dot sync \-\-fetch\-only
 .SH "MISE DOTFILES TRACK"
 Track a file or directory in place
 
-Adds a `[dotfiles]` entry with `mode = "track"` to your global config: the file stays where it is, nothing is copied or linked, and mise saves a checkpoint of it right away. While the watcher service runs, later edits are saved automatically; without it, `mise dot save` saves them. Use `\-\-dry\-run` to see what a large directory would add before tracking it.
+Adds a `[dotfiles]` entry with `mode = "track"` to your global config (or to the `write_targets.dotfiles` file when that setting is set): the file stays where it is, nothing is copied or linked, and mise saves a checkpoint of it right away. While the watcher service runs, later edits are saved automatically; without it, `mise dot save` saves them. Use `\-\-dry\-run` to see what a large directory would add before tracking it.
 
 `\-\-os` and `\-\-profile` declare a variant: machines that match the platform or config environment keep their own version of the file, so a Mac and a Linux machine can have different contents at the same path. `\-\-machine` gives every machine its own version instead, for files such as a monitor layout that should never be applied on another machine.
 

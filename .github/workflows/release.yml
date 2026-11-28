@@ -160,6 +160,37 @@ jobs:
             dist/mise-*.tar.gz
             dist/mise-*.tar.zst
           if-no-files-found: error
+  # FreeBSD is best-effort: GitHub has no FreeBSD runners, so nothing here
+  # runs the binary, and a failed build must not hold up the release.
+  # scripts/release.sh ships the archive only when this job produced one.
+  build-tarball-freebsd:
+    needs: [gate]
+    if: needs.gate.outputs.build == 'true'
+    name: build-tarball-freebsd-x64
+    runs-on: ${{ github.event_name == 'pull_request' && (github.event.pull_request.head.repo.full_name != github.repository || (github.event.pull_request.user.login != 'jdx' && github.event.pull_request.user.login != 'mise-en-dev')) && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64-xlarge' }}
+    timeout-minutes: 150
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Install cross
+        uses: taiki-e/install-action@51cd0b8c0499559d9a4d75c0f5c67bec3a894ec8 # v2.75.28
+        with:
+          tool: cross
+      - name: Setup Rust toolchain
+        run: rustup update stable --no-self-update && rustup default stable
+      - name: build-tarball x86_64-unknown-freebsd
+        timeout-minutes: 120
+        run: scripts/build-tarball.sh x86_64-unknown-freebsd
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: tarball-x86_64-unknown-freebsd
+          path: |
+            dist/mise-*.tar.xz
+            dist/mise-*.tar.gz
+            dist/mise-*.tar.zst
+          if-no-files-found: error
   build-tarball-macos:
     needs: [gate]
     if: needs.gate.outputs.build == 'true'
@@ -469,6 +500,7 @@ jobs:
       - deb
       - e2e-linux
       - build-tarball-linux
+      - build-tarball-freebsd
       - build-tarball-macos
       - build-windows
       - sign-windows
@@ -748,6 +780,7 @@ jobs:
           resources: |
             man@linux=archive:mise/man/man1/mise.1
             man@darwin=archive:mise/man/man1/mise.1
+            man@freebsd=archive:mise/man/man1/mise.1
             cli-spec/usage=asset:mise.usage.kdl
             completion/bash=asset:mise.bash
             completion/zsh=asset:mise.zsh
@@ -920,6 +953,7 @@ jobs:
           resources: |
             man@linux=archive:mise/man/man1/mise.1
             man@darwin=archive:mise/man/man1/mise.1
+            man@freebsd=archive:mise/man/man1/mise.1
             cli-spec/usage=asset:mise.usage.kdl
             completion/bash=asset:mise.bash
             completion/zsh=asset:mise.zsh
