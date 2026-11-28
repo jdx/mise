@@ -255,7 +255,6 @@ tokio = { version = "1", features = ["full"] }
 toml = { version = "1", features = ["parse", "preserve_order"] }
 toml_edit = { version = "0.25", features = ["parse"] }
 toml_writer = "1"
-ubi = { version = "0.13", default-features = false }
 url = "2"
 urlencoding = "2"
 usage-lib = { version = "7.0", features = ["docs"] }
@@ -354,7 +353,6 @@ native-tls = [
   "mise-cache-core/native-tls",
   "mise-util/native-tls",
   "mise-tls/native-tls",
-  "ubi/native-tls",
   "vfox/native-tls",
   "xx/native-tls",
 ]
@@ -365,7 +363,6 @@ rustls = [
   "rattler_repodata_gateway/rustls",
   "mise-cache-core/rustls",
   "mise-util/rustls",
-  "ubi/rustls-tls",
   "vfox/rustls",
   "xx/rustls",
   "mise-tls/rustls",
@@ -377,7 +374,6 @@ rustls-native-roots = [
   "rattler_repodata_gateway/rustls",
   "mise-cache-core/rustls-native-roots",
   "mise-util/rustls-native-roots",
-  "ubi/rustls-tls",
   "vfox/rustls-native-roots",
   "xx/rustls-native-roots",
   "mise-tls/rustls",

@@ -569,7 +569,7 @@ impl Ls {
 /// so `mise ls navi` shows `cargo:.../navi` next to the registry one rather than hiding
 /// it — `mise ls` with no filter already lists both (discussion #4491).
 ///
-/// Spelling a backend out keeps matching only itself: `mise ls ubi:jqlang/jq` passes the
+/// Spelling a backend out keeps matching only itself: `mise ls github:jqlang/jq` passes the
 /// whole string as the bin name, which cannot match a trailing segment.
 fn matches_requested_tool(requested: &[BackendArg], ba: &BackendArg) -> bool {
     requested
@@ -949,15 +949,15 @@ mod tests {
         assert!(matches_requested_tool(&requested, &ba("navi")));
         assert!(matches_requested_tool(
             &requested,
-            &ba("ubi:denisidoro/navi")
+            &ba("github:denisidoro/navi")
         ));
     }
 
     /// Naming a backend is a narrowing request, so it must not pull in the others.
     #[test]
     fn explicit_backend_matches_only_itself() {
-        let requested = vec![ba("ubi:jqlang/jq")];
-        assert!(matches_requested_tool(&requested, &ba("ubi:jqlang/jq")));
+        let requested = vec![ba("github:jqlang/jq")];
+        assert!(matches_requested_tool(&requested, &ba("github:jqlang/jq")));
         assert!(!matches_requested_tool(&requested, &ba("jq")));
     }
 

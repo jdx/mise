@@ -318,20 +318,6 @@ impl VerifiableError for eyre::Report {
     }
 }
 
-/// Helper to try both prefixed and non-prefixed tags for a resolver function
-pub(crate) async fn try_with_v_prefix<F, Fut, T, E>(
-    version: &str,
-    version_prefix: Option<&str>,
-    resolver: F,
-) -> Result<T>
-where
-    F: Fn(String) -> Fut,
-    Fut: Future<Output = std::result::Result<T, E>>,
-    E: VerifiableError,
-{
-    try_with_v_prefix_and_repo(version, version_prefix, None, resolver).await
-}
-
 /// Builds the ordered list of tags to try for a requested version.
 ///
 /// Every version mise lists has already had its tag decoration removed by
@@ -434,31 +420,8 @@ fn resolved_tag_key(
     )
 }
 
-/// Helper to try various tag formats for a resolver function
-/// Tries version_prefix (if set), v prefix, and optionally repo@version formats
-pub(crate) async fn try_with_v_prefix_and_repo<F, Fut, T, E>(
-    version: &str,
-    version_prefix: Option<&str>,
-    repo: Option<&str>,
-    resolver: F,
-) -> Result<T>
-where
-    F: Fn(String) -> Fut,
-    Fut: Future<Output = std::result::Result<T, E>>,
-    E: VerifiableError,
-{
-    try_release_tags(version, version_prefix, repo, None, None, resolver).await
-}
-
-/// [`try_with_v_prefix_and_repo`], trying `known_tag` -- the tag a version
-/// list recorded for `version` -- before guessing at spellings. With the
-/// `api_url` that `repo` lives on, a tag that already resolved for this
-/// release earlier in the process goes first.
-///
-/// Those two are hints, not answers: one that fails for any reason -- say its
-/// release lacks the asset this resolver wants -- moves on to the generated
-/// spellings, which keep the old rule of stopping at anything but a 404. If
-/// nothing resolves, the hint's own error is the one reported.
+/// [`try_allowed_release_tags`] over every tag.
+#[cfg(test)]
 pub(crate) async fn try_release_tags<F, Fut, T, E>(
     version: &str,
     version_prefix: Option<&str>,
@@ -484,8 +447,19 @@ where
     .await
 }
 
-/// [`try_release_tags`] over only the tags `allowed` accepts, hints included,
-/// for a tool whose options leave some of a version's spellings unlisted.
+/// Resolves `version` by trying its tag spellings with `resolver`: the
+/// version prefix (if set), a `v` prefix, and `repo@version` forms, over only
+/// the tags `allowed` accepts (hints included), for a tool whose options leave
+/// some of a version's spellings unlisted.
+///
+/// `known_tag` -- the tag a version list recorded for `version` -- goes before
+/// the guessed spellings. With the `api_url` that `repo` lives on, a tag that
+/// already resolved for this release earlier in the process goes first.
+///
+/// Those two are hints, not answers: one that fails for any reason -- say its
+/// release lacks the asset this resolver wants -- moves on to the generated
+/// spellings, which keep the old rule of stopping at anything but a 404. If
+/// nothing resolves, the hint's own error is the one reported.
 pub(crate) async fn try_allowed_release_tags<F, Fut, T, E>(
     version: &str,
     version_prefix: Option<&str>,
@@ -4075,14 +4049,16 @@ bin = "tool.exe"
     }
 
     #[tokio::test]
-    async fn test_try_with_v_prefix_finds_a_tag_that_repeats_the_version_prefix() {
+    async fn test_try_release_tags_finds_a_tag_that_repeats_the_version_prefix() {
         // End to end through the resolver: only the real tag resolves, and the
         // version under test is exactly what `mise ls-remote` prints for it.
         let tried = std::sync::Mutex::new(vec![]);
-        let resolved = try_with_v_prefix_and_repo(
+        let resolved = try_release_tags(
             "a-1.2.3",
             Some("a-"),
             Some("test/repo"),
+            None,
+            None,
             |candidate: String| {
                 tried.lock().unwrap().push(candidate.clone());
                 async move {

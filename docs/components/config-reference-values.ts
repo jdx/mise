@@ -52,9 +52,6 @@ export const values: Record<string, string> = {
     '"https://github.com/owner/tool/.github/workflows/release.yml@refs/tags/v{{ version }}"',
   "tools.<github:…>.slsa_signer_issuer":
     '"https://token.actions.githubusercontent.com"',
-  "tools.<ubi:…>.exe": '"goreleaser"',
-  "tools.<ubi:…>.tag_regex": '"^v\\\\d+\\\\.\\\\d+\\\\.\\\\d+$"',
-  "tools.<ubi:…>.extract_all": "true",
   "tools.<http:…>.checksum_url":
     '"https://example.com/tool-{{ version }}-checksums.txt"',
   "tools.<http:…>.checksum_expr": '"split(body, \\" \\")[0]"',

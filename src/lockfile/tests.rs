@@ -896,7 +896,7 @@ fn untrusted_lockfile_may_confirm_a_backend_but_not_choose_one() {
     ));
     assert!(locked_backend_needs_trust(
         "gron",
-        "ubi:http://example.com/gron.tar.gz",
+        "http:http://example.com/gron.tar.gz",
         "0.7.1"
     ));
     assert!(locked_backend_needs_trust(
@@ -2211,7 +2211,7 @@ fn test_options_field_parsing_and_serialization() {
     let toml_with_options = r#"
 [[tools.ripgrep]]
 version = "14.0.0"
-backend = "ubi:BurntSushi/ripgrep"
+backend = "github:BurntSushi/ripgrep"
 options = { exe = "rg", matching = "musl" }
 
 [tools.ripgrep.platforms.linux-x64]
@@ -2245,7 +2245,7 @@ fn test_options_field_not_serialized_when_empty() {
     let mut lockfile = Lockfile::default();
     let tool = LockfileTool {
         version: "14.0.0".to_string(),
-        backend: Some("ubi:BurntSushi/ripgrep".to_string()),
+        backend: Some("github:BurntSushi/ripgrep".to_string()),
         specifiers: BTreeSet::new(),
         options: BTreeMap::new(), // Empty options
         platforms: BTreeMap::new(),
@@ -2277,7 +2277,7 @@ fn test_options_field_serialized_when_present() {
 
     let tool = LockfileTool {
         version: "14.0.0".to_string(),
-        backend: Some("ubi:BurntSushi/ripgrep".to_string()),
+        backend: Some("github:BurntSushi/ripgrep".to_string()),
         specifiers: BTreeSet::new(),
         options,
         platforms: BTreeMap::new(),
@@ -2308,12 +2308,12 @@ fn test_options_matching_in_get_locked_version() {
     let toml_with_options = r#"
 [[tools.ripgrep]]
 version = "14.0.0"
-backend = "ubi:BurntSushi/ripgrep"
+backend = "github:BurntSushi/ripgrep"
 options = { exe = "rg", matching = "musl" }
 
 [[tools.ripgrep]]
 version = "14.0.0"
-backend = "ubi:BurntSushi/ripgrep"
+backend = "github:BurntSushi/ripgrep"
 options = { exe = "rg" }
 "#;
 

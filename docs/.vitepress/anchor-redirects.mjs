@@ -740,39 +740,43 @@ export const anchorRedirects = {
   "/dev-tools/backends/spm.html#spm-artifactbundle-only":
     "/dev-tools/backends/spm.html#spm.artifactbundle_only",
   "/dev-tools/backends/ubi.html#api-url":
-    "/dev-tools/backends/ubi.html#tool-options",
+    "/dev-tools/backends/ubi.html#option-mapping",
   "/dev-tools/backends/ubi.html#bin-path":
-    "/dev-tools/backends/ubi.html#tool-options",
+    "/dev-tools/backends/ubi.html#option-mapping",
   "/dev-tools/backends/ubi.html#exe":
-    "/dev-tools/backends/ubi.html#tool-options",
+    "/dev-tools/backends/ubi.html#option-mapping",
   "/dev-tools/backends/ubi.html#extract-all":
-    "/dev-tools/backends/ubi.html#tool-options",
+    "/dev-tools/backends/ubi.html#option-mapping",
   "/dev-tools/backends/ubi.html#matching":
-    "/dev-tools/backends/ubi.html#tool-options",
+    "/dev-tools/backends/ubi.html#option-mapping",
   "/dev-tools/backends/ubi.html#matching-regex":
-    "/dev-tools/backends/ubi.html#tool-options",
+    "/dev-tools/backends/ubi.html#option-mapping",
   "/dev-tools/backends/ubi.html#provider":
-    "/dev-tools/backends/ubi.html#tool-options",
+    "/dev-tools/backends/ubi.html#option-mapping",
   "/dev-tools/backends/ubi.html#rename-exe":
-    "/dev-tools/backends/ubi.html#tool-options",
+    "/dev-tools/backends/ubi.html#option-mapping",
   "/dev-tools/backends/ubi.html#self-hosted-github-gitlab":
-    "/dev-tools/backends/ubi.html#tool-options",
+    "/dev-tools/backends/ubi.html#option-mapping",
   "/dev-tools/backends/ubi.html#supported-ubi-syntax":
-    "/dev-tools/backends/ubi.html#tool-options",
+    "/dev-tools/backends/ubi.html#option-mapping",
   "/dev-tools/backends/ubi.html#tag-regex":
-    "/dev-tools/backends/ubi.html#tool-options",
+    "/dev-tools/backends/ubi.html#option-mapping",
+  "/dev-tools/backends/ubi.html#tool-options":
+    "/dev-tools/backends/ubi.html#option-mapping",
+  "/dev-tools/backends/ubi.html#troubleshooting":
+    "/dev-tools/backends/ubi.html#usage",
   "/dev-tools/backends/ubi.html#troubleshooting-ubi":
-    "/dev-tools/backends/ubi.html#troubleshooting",
+    "/dev-tools/backends/ubi.html#usage",
   "/dev-tools/backends/ubi.html#ubi-backend":
     "/dev-tools/backends/ubi.html#migrating-off-the-ubi-backend",
   "/dev-tools/backends/ubi.html#ubi-can-t-find-the-binary-in-the-tarball":
-    "/dev-tools/backends/ubi.html#troubleshooting",
+    "/dev-tools/backends/ubi.html#usage",
   "/dev-tools/backends/ubi.html#ubi-picks-the-wrong-tarball":
-    "/dev-tools/backends/ubi.html#troubleshooting",
+    "/dev-tools/backends/ubi.html#usage",
   "/dev-tools/backends/ubi.html#ubi-resolver-can-t-find-os-arch":
-    "/dev-tools/backends/ubi.html#troubleshooting",
+    "/dev-tools/backends/ubi.html#usage",
   "/dev-tools/backends/ubi.html#ubi-uses-weird-versions":
-    "/dev-tools/backends/ubi.html#troubleshooting",
+    "/dev-tools/backends/ubi.html#usage",
   "/dev-tools/backends/vfox.html#example-plugin-usage": "/plugins.html",
   "/dev-tools/backends/vfox.html#install-from-zip-file": "/plugins.html",
   "/dev-tools/backends/vfox.html#why-vfox":

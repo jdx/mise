@@ -73,13 +73,6 @@ const BACKENDS: &[Backend] = &[
         platforms: Some("tool_forge_platforms"),
     },
     Backend {
-        def: "tool_ubi",
-        pattern: "^ubi:",
-        description: "a tool installed with the ubi backend",
-        options: &["tool_ubi_options"],
-        platforms: Some("tool_ubi_platforms"),
-    },
-    Backend {
         def: "tool_http",
         pattern: "^http:",
         description: "a tool installed with the http backend",
@@ -214,12 +207,6 @@ const PLATFORM_TABLES: &[PlatformTable] = &[
             "url",
             "{\"description\": \"direct download url for this platform, tera templated; skips release asset selection\", \"type\": \"string\"}",
         )],
-    },
-    PlatformTable {
-        def: "tool_ubi_platforms",
-        from: "tool_ubi_options",
-        keys: &["bin_path"],
-        local: &[],
     },
     PlatformTable {
         def: "tool_http_platforms",

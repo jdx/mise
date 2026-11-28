@@ -136,9 +136,9 @@ assert "cat ~/.config/mise/config.toml" '[tools]
 dummy = "1"'
 rm -f ~/.config/mise/config.toml
 
-mise use -g "ubi:cli/cli[exe=gh]"
+mise use -g "github:cli/cli[filter_bins=gh]"
 assert "cat ~/.config/mise/config.toml" '[tools]
-"ubi:cli/cli" = { version = "latest", exe = "gh" }'
+"github:cli/cli" = { version = "latest", filter_bins = "gh" }'
 rm -f ~/.config/mise/config.toml
 
 mise use -g gh@2

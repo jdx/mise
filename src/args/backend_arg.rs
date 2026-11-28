@@ -476,8 +476,14 @@ impl BackendArg {
         //     }
         // })?;
         // Ok(backend.clone())
-        if let Some(backend) = backend::get(self) {
+        // Before the lookup: the short-name cache would answer an alias whose name
+        // is a core, registry or installed tool with that tool's backend.
+        if let Some(msg) = self.removed_backend_error_before_lookup() {
+            bail!("{msg}");
+        } else if let Some(backend) = backend::get(self) {
             Ok(backend)
+        } else if let Some(msg) = self.removed_backend_error() {
+            bail!("{msg}");
         } else if self.tool_name.trim().is_empty() {
             bail!(
                 "'{self}' does not name a tool: write the tool after the backend, as in 'asdf:<tool>'"
@@ -550,6 +556,73 @@ impl BackendArg {
         }
     }
 
+    /// The error for a tool whose name or resolved identifier (through an alias)
+    /// names a backend mise has removed.
+    pub(crate) fn removed_backend_error(&self) -> Option<String> {
+        self.removed_backend_error_before_lookup().or_else(|| {
+            let msg = backend::removed_backend_error(&self.full())?;
+            Some(format!("{}: {msg}", self.short))
+        })
+    }
+
+    /// [`Self::removed_backend_error`] for what can answer before the backend
+    /// cache does: the name, an explicit backend, an env override, a config
+    /// alias and a lockfile pin. The cache would answer a core, registry or
+    /// installed tool's name with that tool's backend.
+    fn removed_backend_error_before_lookup(&self) -> Option<String> {
+        self.removed_backend_error_before_lockfile()
+            .or_else(|| self.removed_lockfile_pin_error())
+    }
+
+    /// The removal error when mise.lock pins this tool to a removed backend.
+    /// The lookup is memoized, and `full()` runs only for such a pin, which
+    /// confirms nothing above the lockfile (an alias or a plugin URL, say)
+    /// overrides it.
+    fn removed_lockfile_pin_error(&self) -> Option<String> {
+        // As in `full()`, an env override or an explicit backend wins over the lock.
+        if !config::is_loaded()
+            || (self.resolution.explicit && self.full.is_some())
+            || self.env_backend_override().is_some()
+        {
+            return None;
+        }
+        let short = unalias_backend(&self.short);
+        let locked = lockfile::get_locked_backend_for_version(
+            &Config::get_(),
+            &short,
+            self.registry_version.as_deref(),
+        )?;
+        backend::removed_backend_error(&locked)?;
+        let msg = backend::removed_backend_error(&self.full())?;
+        Some(format!(
+            "{}: {msg}. mise.lock pins {short} to this backend: delete its \
+             entries there to install it from the registry's backend",
+            self.short
+        ))
+    }
+
+    /// The name, an explicit backend, an env override and a config alias.
+    fn removed_backend_error_before_lockfile(&self) -> Option<String> {
+        if let Some(msg) = backend::removed_backend_error(&self.short) {
+            return Some(msg);
+        }
+        let aliased = || {
+            config::is_loaded()
+                .then(|| {
+                    Config::get_()
+                        .all_aliases
+                        .get(unalias_backend(&self.short).as_ref())
+                        .and_then(|a| a.backend.clone())
+                })
+                .flatten()
+        };
+        let full = self
+            .env_backend_override()
+            .or_else(|| self.full.clone().filter(|_| self.resolution.explicit))
+            .or_else(aliased)?;
+        backend::removed_backend_error(&full).map(|msg| format!("{}: {msg}", self.short))
+    }
+
     /// The backend identifier, without options, that an explicit selection
     /// under a plain short (`node` → `bogus:owner/repo`) names. A short that
     /// spells the backend itself is reported by the plugin checks instead.
@@ -565,6 +638,11 @@ impl BackendArg {
     }
 
     pub fn backend_type(&self) -> BackendType {
+        // A removed backend's `owner/repo` would otherwise resolve as a git
+        // plugin URL below; leave it unknown so `backend()` names the replacement.
+        if backend::removed_backend_error(&self.short).is_some() {
+            return BackendType::Unknown;
+        }
         // Check if this is a valid backend:tool format first
         if let Some((backend_prefix, _tool_name)) = self.short.split_once(':')
             && let Ok(backend_type) = backend_prefix.parse::<BackendType>()
@@ -582,6 +660,9 @@ impl BackendArg {
         // `tool_name()`. For non-explicit tools, `full()` may intentionally
         // prefer the current registry backend over stale install metadata.
         let full = self.full();
+        if backend::removed_backend_error(&full).is_some() {
+            return BackendType::Unknown;
+        }
         if let Some((backend, _)) = full.split_once(':')
             && let Ok(backend_type) = backend.parse()
         {
@@ -1149,7 +1230,7 @@ impl BackendArg {
         strip_opts(tool_name)
     }
 
-    /// maps something like cargo:cargo-binstall to cargo-binstall and ubi:cargo-binstall, etc
+    /// maps something like cargo:cargo-binstall to cargo-binstall and aqua:cargo-bins/cargo-binstall, etc
     pub fn all_fulls(&self) -> HashSet<String> {
         let full = self.full();
         let mut all = HashSet::new();

@@ -102,7 +102,6 @@ run a plugin's code:
 | [spinel](/dev-tools/backends/spinel.html) (experimental)                                                                          | Ruby programs compiled to native executables  | `spinel:tobi/try`                  | `experimental = true`, Spinel, Git, a C compiler |
 | [vfox](/dev-tools/backends/vfox.html)                                                                                             | Tools installed by a Lua plugin               | `vfox:version-fox/vfox-cmake`      | Trust in the plugin's code                       |
 | [asdf](/dev-tools/backends/asdf.html) (legacy)                                                                                    | Tools installed by a shell-script plugin      | `asdf:MetricMike/asdf-awscli`      | Bash and Unix tools; not available on Windows    |
-| [ubi](/dev-tools/backends/ubi.html) (deprecated)                                                                                  | GitHub and GitLab release assets              | `ubi:BurntSushi/ripgrep`           | Migrate to `github:`                             |
 | core                                                                                                                              | Tools built into mise                         | `core:node`                        | See [core tools](/core-tools.html)               |
 
 Language package backends (cargo, go, npm, pypi, gem, dotnet) install
@@ -115,8 +114,8 @@ Verification differs by backend and by tool. A backend can check a signature or
 provenance only when the publisher provides one, so read
 [security](/security.html) before you rely on a particular check.
 
-`ubi:` is deprecated: mise warns when it uses it, and mise 2027.1.0 removes it.
-Use the `github:` backend (or `gitlab:` or `http:` for other hosts); see the
+mise no longer has the `ubi:` backend. Use the `github:` backend (or `gitlab:`
+or `http:` for other hosts); see the
 [ubi migration guide](/dev-tools/backends/ubi.html).
 
 [Backend plugins](/backend-plugin-development.html) add a backend of your own
