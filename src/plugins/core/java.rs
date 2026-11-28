@@ -519,7 +519,8 @@ impl Backend for JavaPlugin {
         query: &str,
         selection_opts: &ToolVersionOptions,
     ) -> eyre::Result<Option<HashSet<String>>> {
-        let Some(query) = SdkmanQuery::parse(query) else {
+        let query = without_musl_feature(query);
+        let Some(query) = SdkmanQuery::parse(&query) else {
             return Ok(None);
         };
         let release_type = JavaOptions::new(selection_opts).release_type().to_string();
@@ -539,7 +540,7 @@ impl Backend for JavaPlugin {
 
     fn list_installed_versions_matching(&self, query: &str) -> Vec<String> {
         let versions = self.list_installed_versions();
-        if let Some(query) = SdkmanQuery::parse(query) {
+        if let Some(query) = SdkmanQuery::parse(&without_musl_feature(query)) {
             // The listing includes identity-layout and shared installations, so
             // read each build's `release` file from where it actually is, as
             // `ToolVersion::install_path` does.
@@ -733,12 +734,7 @@ impl Backend for JavaPlugin {
         query: &str,
         filter_prereleases: bool,
     ) -> Vec<String> {
-        // remove -musl feature in favour of alpine-linux OS
-        let query = if Platform::current().libc() == Some("musl") && query.contains("-musl") {
-            query.replace("-musl", "")
-        } else {
-            query.to_string()
-        };
+        let query = without_musl_feature(query);
         let is_vendor_prefix = query != "latest" && query.ends_with('-');
         let query_escaped = regex::escape(&query);
         let query = match query.as_str() {
@@ -1080,6 +1076,16 @@ fn split_vendor_prefix(version: &str) -> Option<(&str, &str)> {
 
 /// The `JAVA_VERSION` of the JDK in `install_path`, as the catalog writes it: `8.0.514` for
 /// Java 8's `1.8.0_514`.
+/// On musl, catalog keys and installs drop the `musl` feature in favour of the platform, so a
+/// request that names it, such as `zulu-musl-21.0.13`, is matched without it.
+fn without_musl_feature(query: &str) -> String {
+    if Platform::current().libc() == Some("musl") && query.contains("-musl") {
+        query.replace("-musl", "")
+    } else {
+        query.to_string()
+    }
+}
+
 fn release_java_version(install_path: &Path) -> Option<String> {
     let release = fs::read_to_string(install_path.join("release")).ok()?;
     let version = release
