@@ -227,44 +227,17 @@ impl Backend for GoBackend {
                 //
                 // `go list` is asked only about what the proxies cleanly do not
                 // serve, and only when Go has a route past them that mise's
-                // client does not take (see `go_has_native_route`). Otherwise it
-                // would ask the same proxies again, and read their answer with
-                // no limit on its size.
-                match proxy_release_date(&proxies, candidates, &version).await {
-                    ProxyReleaseDate::Found(time) => return Ok(time),
-                    ProxyReleaseDate::Unknown(err) => return Err(err),
-                    ProxyReleaseDate::NotServed if !native_route => {
-                        return Err(eyre!(
-                            "no GOPROXY entry serves {}@{version}, and none goes to its source",
-                            self.tool_name()
-                        ));
-                    }
-                    // Go goes on to `direct` past a 404 or 410.
-                    ProxyReleaseDate::NotServed => {}
-                }
-                let mut failure = None;
-                // A private module under the default `proxy,direct` GOPROXY is
-                // not on the proxy, and reporting no date for it would hand the
-                // cutoff an undated version to treat as eligible — the exact gap
-                // this exists to close.
-                for mod_path in candidates {
-                    match self
-                        .fetch_go_module_version_metadata(config, mod_path, &version)
-                        .await
-                    {
-                        Ok(metadata) => return Ok(metadata.time),
-                        Err(err) => {
-                            failure.get_or_insert(err);
-                        }
-                    }
-                }
-                // Only versions the listing already produced reach this, so the
-                // module does resolve; nothing answering for it means something
-                // was broken rather than undated.
-                match failure {
-                    Some(err) => Err(err),
-                    None => Ok(None),
-                }
+                // client does not take (see `go_has_native_route`).
+                let proxy_date = proxy_release_date(&proxies, candidates, &version).await;
+                release_date_past_proxies(
+                    &self.tool_name(),
+                    &version,
+                    candidates,
+                    proxy_date,
+                    native_route,
+                    |mod_path| self.fetch_go_module_version_metadata(config, mod_path, &version),
+                )
+                .await
             },
             Settings::get().fetch_remote_versions_timeout(),
         )
@@ -715,10 +688,14 @@ impl GoBackend {
     /// a project `go.work` or `go.mod` out of the query altogether: as the main
     /// module, its `exclude` lines would hide versions from a listing that is
     /// cached for every directory.
+    ///
+    /// `GOPROXY` is narrowed to `direct` or `off` by [`restrict_go_list_routes`],
+    /// so `go list` never reads a module proxy's answer with no size limit.
     async fn go_list_env(&self, config: &Arc<Config>) -> eyre::Result<BTreeMap<String, String>> {
         let mut env = self.dependency_env(config).await?;
         env.insert("GOTOOLCHAIN".to_string(), "local".to_string());
         env.insert("GOWORK".to_string(), "off".to_string());
+        restrict_go_list_routes(&mut env);
         Ok(env)
     }
 
@@ -1184,6 +1161,98 @@ struct GoProxy {
     fall_through: FallThrough,
 }
 
+/// What one GOPROXY entry answered for one endpoint.
+enum ProxyReply {
+    Body(String),
+    /// A 404 or 410, or a file the cache does not have: Go goes on to the
+    /// next entry past `,` as well as `|`.
+    NotFound,
+    /// More than the endpoint's byte limit.
+    TooLarge,
+    /// Any other failure, including an endpoint mise refuses to read.
+    Failed,
+}
+
+/// Fetch `endpoint` (a path in the module proxy protocol, such as
+/// `example.com/!tool/@v/list`) from one GOPROXY entry, reading at most
+/// `max_bytes` of the answer.
+async fn proxy_get(proxy: &GoProxy, endpoint: &str, max_bytes: usize) -> ProxyReply {
+    if is_file_goproxy(&proxy.url) {
+        return file_proxy_get(&proxy.url, endpoint, max_bytes).await;
+    }
+    let url = format!("{}/{endpoint}", proxy.url);
+    match HTTP_FETCH
+        .get_text_request(&url)
+        .max_bytes(max_bytes)
+        .send()
+        .await
+    {
+        Ok(body) => ProxyReply::Body(body),
+        Err(e) => {
+            let is_not_found_or_gone = e
+                .downcast_ref::<reqwest::Error>()
+                .and_then(|e| e.status())
+                .is_some_and(|s| {
+                    s == reqwest::StatusCode::NOT_FOUND || s == reqwest::StatusCode::GONE
+                });
+            if is_not_found_or_gone {
+                ProxyReply::NotFound
+            } else if crate::http::BodyTooLarge::is_cause_of(&e) {
+                ProxyReply::TooLarge
+            } else {
+                ProxyReply::Failed
+            }
+        }
+    }
+}
+
+/// Read `endpoint` from a `file://` GOPROXY entry: a module cache on disk,
+/// laid out as the proxy protocol's paths, which Go reads in its place in the
+/// chain. Read here rather than left to `go list`, so the chain is asked in
+/// Go's order and every answer has the same byte limit as over HTTP.
+async fn file_proxy_get(root: &str, endpoint: &str, max_bytes: usize) -> ProxyReply {
+    use tokio::io::AsyncReadExt;
+
+    // The module path and version come from config and from proxy answers,
+    // so nothing in them may lead out of the cache root: no parent element,
+    // no absolute path, no Windows separator or drive, no NUL.
+    if endpoint.contains("..") || endpoint.starts_with('/') || endpoint.contains(['\\', ':', '\0'])
+    {
+        debug!("refusing to read Go module cache path {endpoint:?}");
+        return ProxyReply::Failed;
+    }
+    let Some(root) = url::Url::parse(root)
+        .ok()
+        .and_then(|url| url.to_file_path().ok())
+    else {
+        debug!("GOPROXY file:// entry is not a local path");
+        return ProxyReply::Failed;
+    };
+    let file = match tokio::fs::File::open(root.join(endpoint)).await {
+        Ok(file) => file,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return ProxyReply::NotFound,
+        Err(_) => return ProxyReply::Failed,
+    };
+    // The size on disk can change while the file is read, so the limit is
+    // enforced on what is read rather than taken from the file's metadata.
+    let mut body = Vec::new();
+    if file
+        .take(max_bytes as u64 + 1)
+        .read_to_end(&mut body)
+        .await
+        .is_err()
+    {
+        return ProxyReply::Failed;
+    }
+    if body.len() > max_bytes {
+        return ProxyReply::TooLarge;
+    }
+    match String::from_utf8(body) {
+        Ok(body) => ProxyReply::Body(body),
+        Err(_) => ProxyReply::Failed,
+    }
+}
+
 /// Read a proxy's `@v/list` response, one version per line. Returns `None`
 /// when it lists more than [`GO_MODULE_VERSIONS_LIMIT`] versions.
 fn parse_proxy_version_list(body: &str) -> Option<Vec<String>> {
@@ -1287,8 +1356,10 @@ async fn proxy_module<'a>(proxies: &[GoProxy], candidates: &'a [String]) -> Prox
 
 /// What the module proxies said about the release date of a version.
 enum ProxyReleaseDate {
-    /// A candidate's `.info` answered; its date may still be missing.
-    Found(Option<String>),
+    /// A candidate's `.info` answered, after every proxy answered 404 or 410
+    /// for the `missed` candidates deeper than it. Its date may still be
+    /// missing.
+    Found { missed: usize, time: Option<String> },
     /// The date could not be read: a proxy refused or failed to answer for a
     /// candidate, so whether that candidate holds the version is unknown.
     /// `go list` is not asked: it would ask the same proxies again and read
@@ -1335,7 +1406,7 @@ async fn proxy_release_date(
             })
             .collect(),
     );
-    for (path, info) in candidates.iter().zip(infos.0.iter_mut()) {
+    for (missed, (path, info)) in candidates.iter().zip(infos.0.iter_mut()).enumerate() {
         let result = match info.await {
             Ok(result) => result,
             Err(e) => {
@@ -1345,7 +1416,12 @@ async fn proxy_release_date(
             }
         };
         match result {
-            ProxyVersionInfoResult::Found(info) => return ProxyReleaseDate::Found(info.time),
+            ProxyVersionInfoResult::Found(info) => {
+                return ProxyReleaseDate::Found {
+                    missed,
+                    time: info.time,
+                };
+            }
             ProxyVersionInfoResult::NotFound => {}
             ProxyVersionInfoResult::Error => {
                 return ProxyReleaseDate::Unknown(eyre!(
@@ -1363,16 +1439,76 @@ async fn proxy_release_date(
     ProxyReleaseDate::NotServed
 }
 
+/// Date `tool@version` from what the proxies answered, asking `go_list` first
+/// about each candidate deeper than the one they dated.
+///
+/// Go tries the whole GOPROXY chain for one module path, `direct` included,
+/// before it takes a shorter one. A nested module the proxies do not serve
+/// but its repository has is therefore what `go install` takes, and the
+/// parent's date the proxies gave is another release's. With a route past the
+/// proxies, each candidate they cleanly missed is asked through `go_list`,
+/// all at once, and the deepest that answers dates the version. A candidate
+/// `go_list` cannot date counts as a miss, as most deeper candidates are not
+/// modules at all. A proxy error has already ended the lookup by now:
+/// `ProxyReleaseDate::Unknown` is returned as it is.
+async fn release_date_past_proxies<'a, F, Fut>(
+    tool: &str,
+    version: &str,
+    candidates: &'a [String],
+    proxy_date: ProxyReleaseDate,
+    native_route: bool,
+    go_list: F,
+) -> Result<Option<String>>
+where
+    F: Fn(&'a String) -> Fut,
+    Fut: Future<Output = Result<GoModuleVersionMetadata>>,
+{
+    let (missed, proxy_time) = match proxy_date {
+        ProxyReleaseDate::Found { missed, time } => (missed, Some(time)),
+        ProxyReleaseDate::Unknown(err) => return Err(err),
+        ProxyReleaseDate::NotServed => (candidates.len(), None),
+    };
+    let mut failure = None;
+    if native_route {
+        let answers =
+            futures_util::future::join_all(candidates[..missed].iter().map(go_list)).await;
+        for answer in answers {
+            match answer {
+                Ok(metadata) => return Ok(metadata.time),
+                Err(err) => {
+                    failure.get_or_insert(err);
+                }
+            }
+        }
+    }
+    match proxy_time {
+        Some(time) => Ok(time),
+        None if !native_route => Err(eyre!(
+            "no GOPROXY entry serves {tool}@{version}, and none goes to its source"
+        )),
+        // Only versions the listing already produced reach this, so the
+        // module does resolve; nothing answering for it means something was
+        // broken rather than undated. A private module under the default
+        // `proxy,direct` GOPROXY is not on the proxy, and reporting no date
+        // for it would hand the cutoff an undated version to treat as
+        // eligible.
+        None => match failure {
+            Some(err) => Err(err),
+            None => Ok(None),
+        },
+    }
+}
+
 async fn query_proxy_list(proxies: &[GoProxy], encoded_path: &str) -> ProxyListResult {
     let mut too_many = false;
     // An error that `|` moved past still decides the answer when no later proxy
     // lists the module: Go reports it rather than a 404 from a later proxy, so
     // this is not a clean miss to hand to `go list`.
     let mut errored = false;
+    let endpoint = format!("{encoded_path}/@v/list");
     for proxy in proxies {
-        let url = format!("{}/{}/@v/list", proxy.url, encoded_path);
-        match HTTP_FETCH.get_text(&url).await {
-            Ok(body) => {
+        match proxy_get(proxy, &endpoint, crate::http::MAX_BODY_BYTES).await {
+            ProxyReply::Body(body) => {
                 if let Some(versions) = parse_proxy_version_list(&body) {
                     return ProxyListResult::Versions(versions);
                 }
@@ -1388,17 +1524,8 @@ async fn query_proxy_list(proxies: &[GoProxy], encoded_path: &str) -> ProxyListR
                 }
                 return ProxyListResult::TooMany;
             }
-            Err(e) => {
-                let is_not_found_or_gone = e
-                    .downcast_ref::<reqwest::Error>()
-                    .and_then(|e| e.status())
-                    .is_some_and(|s| {
-                        s == reqwest::StatusCode::NOT_FOUND || s == reqwest::StatusCode::GONE
-                    });
-
-                if is_not_found_or_gone {
-                    continue;
-                }
+            ProxyReply::NotFound => continue,
+            ProxyReply::TooLarge | ProxyReply::Failed => {
                 errored = true;
                 if proxy.fall_through == FallThrough::OnAnyError {
                     continue;
@@ -1431,31 +1558,19 @@ async fn query_proxy_version_metadata(
     // As in `query_proxy_list`, an error `|` moved past is not a clean miss.
     let mut errored = false;
     for proxy in proxies {
-        let url = format!("{}/{}", proxy.url, endpoint);
-        match HTTP_FETCH
-            .get_text_request(&url)
-            .max_bytes(GO_PROXY_VERSION_INFO_MAX_BYTES)
-            .send()
-            .await
-        {
-            Ok(body) => match serde_json::from_str::<GoModuleVersionMetadata>(&body) {
-                Ok(info) => return ProxyVersionInfoResult::Found(info),
-                // Like an error, an answer that does not parse keeps an
-                // earlier proxy's oversized one, which `go list` would read.
-                Err(_) if too_large => return ProxyVersionInfoResult::TooLarge,
-                Err(_) => return ProxyVersionInfoResult::Error,
-            },
-            Err(e) => {
-                let is_not_found_or_gone = e
-                    .downcast_ref::<reqwest::Error>()
-                    .and_then(|e| e.status())
-                    .is_some_and(|s| {
-                        s == reqwest::StatusCode::NOT_FOUND || s == reqwest::StatusCode::GONE
-                    });
-                if is_not_found_or_gone {
-                    continue;
+        match proxy_get(proxy, endpoint, GO_PROXY_VERSION_INFO_MAX_BYTES).await {
+            ProxyReply::Body(body) => {
+                match serde_json::from_str::<GoModuleVersionMetadata>(&body) {
+                    Ok(info) => return ProxyVersionInfoResult::Found(info),
+                    // Like an error, an answer that does not parse keeps an
+                    // earlier proxy's oversized one, which `go list` would read.
+                    Err(_) if too_large => return ProxyVersionInfoResult::TooLarge,
+                    Err(_) => return ProxyVersionInfoResult::Error,
                 }
-                if crate::http::BodyTooLarge::is_cause_of(&e) {
+            }
+            ProxyReply::NotFound => continue,
+            reply => {
+                if matches!(reply, ProxyReply::TooLarge) {
                     too_large = true;
                 } else {
                     errored = true;
@@ -1497,35 +1612,53 @@ fn go_native_resolution_enabled(env: &BTreeMap<String, String>) -> bool {
 }
 
 /// Return whether Go can reach a module some way mise's proxy client does not:
-/// straight from its source, through a `direct` GOPROXY entry, from a
-/// `file://` GOPROXY entry, or through the private-module routing that
-/// [`go_native_resolution_enabled`] leaves to Go.
+/// straight from its source, through a `direct` GOPROXY entry, or through the
+/// private-module routing that [`go_native_resolution_enabled`] leaves to Go.
 ///
 /// Only then does handing a lookup the proxies did not answer to `go list`
-/// reach anything new. Without such a route, `go list` asks the same proxies
-/// again and reads their answers with no limit on size.
+/// reach anything new. mise reads every other entry itself, with a limit on
+/// each answer's size, and `go list` is given none of them (see
+/// [`restrict_go_list_routes`]).
 fn go_has_native_route(env: &BTreeMap<String, String>) -> bool {
     go_native_resolution_enabled(env)
-        || goproxy_has_route_for_go(env.get("GOPROXY").map(String::as_str))
+        || goproxy_reaches_direct(env.get("GOPROXY").map(String::as_str))
 }
 
-/// Whether the effective GOPROXY has a `direct` or `file://` entry before any
-/// `off`: entries mise's proxy client leaves to Go.
-fn goproxy_has_route_for_go(goproxy: Option<&str>) -> bool {
+/// Whether the effective GOPROXY has a `direct` entry before any `off`.
+fn goproxy_reaches_direct(goproxy: Option<&str>) -> bool {
     let goproxy = goproxy.filter(|s| !s.is_empty()).unwrap_or(DEFAULT_GOPROXY);
     for entry in goproxy.split([',', '|']).map(str::trim) {
         match entry {
             "direct" => return true,
             "off" => return false,
-            url if is_file_goproxy(url) => return true,
             _ => {}
         }
     }
     false
 }
 
-/// A `file://` GOPROXY entry: a module cache on disk, which Go reads and
-/// mise's HTTP client cannot.
+/// Leave `go list` only the route mise cannot take itself.
+///
+/// mise asks every HTTP proxy and `file://` cache in GOPROXY with a limit on
+/// each answer, and `go list` runs only for what they cleanly did not serve,
+/// so it gets `GOPROXY=direct` when the chain reaches `direct` and `off`
+/// otherwise. It never reads a proxy's answer itself, which it would do with
+/// no limit on its size. Private-module routing is left alone: mise asks no
+/// proxy then, and Go applies GOPRIVATE and GONOPROXY to the whole chain.
+fn restrict_go_list_routes(env: &mut BTreeMap<String, String>) {
+    if go_native_resolution_enabled(env) {
+        return;
+    }
+    let route = if goproxy_reaches_direct(env.get("GOPROXY").map(String::as_str)) {
+        "direct"
+    } else {
+        "off"
+    };
+    env.insert("GOPROXY".to_string(), route.to_string());
+}
+
+/// A `file://` GOPROXY entry: a module cache on disk, which mise reads
+/// itself (see [`file_proxy_get`]).
 fn is_file_goproxy(entry: &str) -> bool {
     entry
         .get(..7)
@@ -1577,10 +1710,6 @@ fn parse_goproxy_value(goproxy: &str) -> Vec<GoProxy> {
         match entry {
             "" | "direct" => continue,
             "off" => break,
-            // Go reads a module cache on disk here before anything after it,
-            // so mise asks no further: past this entry the lookup is Go's (see
-            // `go_has_native_route`), with no HTTP request mise could bound.
-            url if is_file_goproxy(url) => break,
             url => {
                 proxies.push(GoProxy {
                     url: url.trim_end_matches('/').to_string(),
@@ -2268,7 +2397,7 @@ mod tests {
         let proxies = parse_goproxy_value(&server.url());
         assert!(matches!(
             proxy_release_date(&proxies, &candidates, "v1.0.0").await,
-            ProxyReleaseDate::Found(Some(time)) if time == "2026-07-01T00:00:00Z"
+            ProxyReleaseDate::Found { missed: 0, time: Some(time) } if time == "2026-07-01T00:00:00Z"
         ));
         list.assert_async().await;
 
@@ -2283,7 +2412,7 @@ mod tests {
         let proxies = parse_goproxy_value(&server.url());
         assert!(matches!(
             proxy_release_date(&proxies, &candidates, "v2.0.0").await,
-            ProxyReleaseDate::Found(Some(time)) if time == "2026-05-01T00:00:00Z"
+            ProxyReleaseDate::Found { missed: 1, time: Some(time) } if time == "2026-05-01T00:00:00Z"
         ));
         list.assert_async().await;
 
@@ -2446,15 +2575,16 @@ mod tests {
             "https://a.example,off,direct"
         )])));
         assert!(!go_has_native_route(&env(&[("GOPROXY", "off")])));
-        // A module cache on disk is read by Go, not by mise.
-        assert!(go_has_native_route(&env(&[("GOPROXY", "file:///cache")])));
-        assert!(go_has_native_route(&env(&[(
+        // mise reads a module cache on disk itself, so it is no route past
+        // what mise asks.
+        assert!(!go_has_native_route(&env(&[("GOPROXY", "file:///cache")])));
+        assert!(!go_has_native_route(&env(&[(
             "GOPROXY",
             "https://a.example,FILE:///cache"
         )])));
-        assert!(!go_has_native_route(&env(&[(
+        assert!(go_has_native_route(&env(&[(
             "GOPROXY",
-            "https://a.example,off,file:///cache"
+            "file:///cache|https://a.example,direct"
         )])));
         // Private-module routing sends modules to their source.
         assert!(go_has_native_route(&env(&[
@@ -2756,14 +2886,308 @@ mod tests {
         assert_eq!(proxies[0].url, "https://corp-proxy.example.com");
     }
 
-    /// mise's HTTP client cannot read a `file://` proxy, and Go reads it
-    /// before anything after it, so mise asks no entry from there on.
+    /// A `file://` GOPROXY entry for a fresh module cache, with `files`
+    /// (paths in the proxy protocol, and their contents) written into it.
+    fn module_cache(files: &[(&str, &str)]) -> (tempfile::TempDir, String) {
+        let dir = tempfile::tempdir().unwrap();
+        for (path, body) in files {
+            let path = dir.path().join(path);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, body).unwrap();
+        }
+        let url = url::Url::from_directory_path(dir.path())
+            .unwrap()
+            .to_string();
+        (dir, url)
+    }
+
+    #[tokio::test]
+    async fn a_module_cache_is_read_in_its_place_in_goproxy() {
+        let (_cache, cache_url) = module_cache(&[
+            ("example.com/!tool/@v/list", "v1.0.0\n"),
+            (
+                "example.com/!tool/@v/v1.0.0.info",
+                r#"{"Version":"v1.0.0","Time":"2026-03-01T00:00:00Z"}"#,
+            ),
+        ]);
+        // The proxy after the cache is down. Go answers from the cache first,
+        // and so does mise, without asking the proxy at all.
+        let mut server = mockito::Server::new_async().await;
+        let down = server
+            .mock(
+                "GET",
+                mockito::Matcher::Regex(r"^/example\.com/!tool/".to_string()),
+            )
+            .with_status(503)
+            .expect(0)
+            .create_async()
+            .await;
+        // A module the cache does not have is a clean miss there, and the
+        // proxy is asked next.
+        let other = server
+            .mock("GET", "/example.com/other/@v/list")
+            .with_status(200)
+            .with_body("v2.0.0\n")
+            .create_async()
+            .await;
+        let proxies = parse_goproxy_value(&format!("{cache_url},{}", server.url()));
+        assert!(matches!(
+            query_proxy_list(&proxies, &encode_module_path("example.com/Tool")).await,
+            ProxyListResult::Versions(versions) if versions == ["v1.0.0"]
+        ));
+        let candidates = [String::from("example.com/Tool")];
+        assert!(matches!(
+            proxy_release_date(&proxies, &candidates, "v1.0.0").await,
+            ProxyReleaseDate::Found { missed: 0, time: Some(time) }
+                if time == "2026-03-01T00:00:00Z"
+        ));
+        assert!(matches!(
+            query_proxy_list(&proxies, "example.com/other").await,
+            ProxyListResult::Versions(versions) if versions == ["v2.0.0"]
+        ));
+        down.assert_async().await;
+        other.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn a_module_cache_answer_has_the_same_limit_as_a_proxy_answer() {
+        let json = r#"{"Version":"v1.0.0","Time":"2026-03-01T00:00:00Z"}"#;
+        let at_limit = format!(
+            "{json}{}",
+            " ".repeat(GO_PROXY_VERSION_INFO_MAX_BYTES - json.len())
+        );
+        assert_eq!(at_limit.len(), GO_PROXY_VERSION_INFO_MAX_BYTES);
+        let past_limit = format!("{at_limit} ");
+        let (_cache, cache_url) = module_cache(&[
+            ("example.com/tool/@v/v1.0.0.info", &at_limit),
+            ("example.com/tool/@v/v1.0.1.info", &past_limit),
+        ]);
+        let proxies = parse_goproxy_value(&cache_url);
+        assert!(matches!(
+            query_proxy_version_metadata(&proxies, "example.com/tool/@v/v1.0.0.info").await,
+            ProxyVersionInfoResult::Found(_)
+        ));
+        assert!(matches!(
+            query_proxy_version_metadata(&proxies, "example.com/tool/@v/v1.0.1.info").await,
+            ProxyVersionInfoResult::TooLarge
+        ));
+    }
+
+    #[tokio::test]
+    async fn a_module_cache_is_not_read_outside_its_root() {
+        let root = tempfile::tempdir().unwrap();
+        let secret = root.path().join("secret/@v");
+        std::fs::create_dir_all(&secret).unwrap();
+        std::fs::write(secret.join("list"), "v9.9.9\n").unwrap();
+        std::fs::create_dir_all(root.path().join("cache")).unwrap();
+        let cache_url = url::Url::from_directory_path(root.path().join("cache"))
+            .unwrap()
+            .to_string();
+        let proxy = &parse_goproxy_value(&cache_url)[0];
+        let secret_path = format!("{}/secret/@v/list", root.path().display());
+        for endpoint in [
+            "../secret/@v/list",
+            "example.com/../../secret/@v/list",
+            secret_path.as_str(),
+            "..\\secret\\@v\\list",
+            "C:/secret/@v/list",
+            "example.com/tool\0/@v/list",
+        ] {
+            assert!(
+                matches!(proxy_get(proxy, endpoint, 1024).await, ProxyReply::Failed),
+                "{endpoint:?} should be refused"
+            );
+        }
+        // The same goes for a version that leads out of the module.
+        assert!(matches!(
+            query_proxy_version_metadata(
+                std::slice::from_ref(proxy),
+                "example.com/tool/@v/../../../secret/@v/list"
+            )
+            .await,
+            ProxyVersionInfoResult::Error
+        ));
+        // A file the cache does not have is a clean miss.
+        assert!(matches!(
+            proxy_get(proxy, "example.com/tool/@v/list", 1024).await,
+            ProxyReply::NotFound
+        ));
+    }
+
     #[test]
-    fn parse_goproxy_file_stops_parsing() {
-        let proxies = parse_goproxy_value("https://a.example,file:///cache,https://b.example");
-        assert_eq!(proxies.len(), 1);
-        assert_eq!(proxies[0].url, "https://a.example");
-        assert!(parse_goproxy_value("file:///cache").is_empty());
+    fn go_list_is_given_no_proxy_to_read() {
+        let restricted = |pairs: &[(&str, &str)]| {
+            let mut env: BTreeMap<String, String> = pairs
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect();
+            restrict_go_list_routes(&mut env);
+            env.get("GOPROXY").cloned()
+        };
+        // The default GOPROXY ends in `direct`.
+        assert_eq!(restricted(&[]).as_deref(), Some("direct"));
+        assert_eq!(
+            restricted(&[("GOPROXY", "https://a.example,file:///cache|direct")]).as_deref(),
+            Some("direct")
+        );
+        // Without `direct` before any `off`, `go list` has nowhere to go.
+        assert_eq!(
+            restricted(&[("GOPROXY", "https://a.example|file:///cache")]).as_deref(),
+            Some("off")
+        );
+        assert_eq!(
+            restricted(&[("GOPROXY", "https://a.example,off,direct")]).as_deref(),
+            Some("off")
+        );
+        // Private-module routing is Go's, with the whole chain.
+        assert_eq!(
+            restricted(&[
+                ("GOPROXY", "https://a.example"),
+                ("GOPRIVATE", "example.com/*")
+            ])
+            .as_deref(),
+            Some("https://a.example")
+        );
+    }
+
+    /// A `go list` stand-in for lookups that must not reach `go list`.
+    fn never_asked(_: &String) -> std::future::Ready<Result<GoModuleVersionMetadata>> {
+        panic!("go list should not be asked")
+    }
+
+    fn dated(version: &str, time: &str) -> Result<GoModuleVersionMetadata> {
+        Ok(GoModuleVersionMetadata {
+            version: version.to_string(),
+            time: Some(time.to_string()),
+        })
+    }
+
+    #[tokio::test]
+    async fn a_nested_module_off_the_proxy_is_dated_before_its_parent() {
+        let candidates = ["example.com/tool/cmd/tool", "example.com/tool"].map(String::from);
+        let parent_on_proxy = || ProxyReleaseDate::Found {
+            missed: 1,
+            time: Some("2020-01-01T00:00:00Z".to_string()),
+        };
+
+        // The proxy dates only the parent, but `direct` has the nested
+        // module, which is the one `go install` takes.
+        let date = release_date_past_proxies(
+            "example.com/tool/cmd/tool",
+            "v1.0.0",
+            &candidates,
+            parent_on_proxy(),
+            true,
+            |path: &String| {
+                let found = path == "example.com/tool/cmd/tool";
+                async move {
+                    assert!(found, "only the candidate the proxy missed is asked");
+                    dated("v1.0.0", "2026-07-01T00:00:00Z")
+                }
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(date.as_deref(), Some("2026-07-01T00:00:00Z"));
+
+        // When `direct` has no such module either, the parent's date stands.
+        let date = release_date_past_proxies(
+            "example.com/tool/cmd/tool",
+            "v1.0.0",
+            &candidates,
+            parent_on_proxy(),
+            true,
+            |_: &String| async { Err(eyre!("unknown revision cmd/tool/v1.0.0")) },
+        )
+        .await
+        .unwrap();
+        assert_eq!(date.as_deref(), Some("2020-01-01T00:00:00Z"));
+
+        // Without a route past the proxies, `go list` is not asked.
+        let date = release_date_past_proxies(
+            "example.com/tool/cmd/tool",
+            "v1.0.0",
+            &candidates,
+            parent_on_proxy(),
+            false,
+            never_asked,
+        )
+        .await
+        .unwrap();
+        assert_eq!(date.as_deref(), Some("2020-01-01T00:00:00Z"));
+
+        // A proxy error ends the lookup, `direct` or not.
+        let err = release_date_past_proxies(
+            "example.com/tool/cmd/tool",
+            "v1.0.0",
+            &candidates,
+            ProxyReleaseDate::Unknown(eyre!("module proxy could not be reached")),
+            true,
+            never_asked,
+        )
+        .await
+        .unwrap_err();
+        assert!(format!("{err:#}").contains("could not be reached"));
+    }
+
+    #[tokio::test]
+    async fn the_candidates_past_the_proxies_are_asked_at_once() {
+        let candidates =
+            ["example.com/a/b/c", "example.com/a/b", "example.com/a"].map(String::from);
+        // Each answer waits for every candidate to be asked, so asking them
+        // one after another would never finish.
+        let barrier = Arc::new(tokio::sync::Barrier::new(candidates.len()));
+        let lookup = release_date_past_proxies(
+            "example.com/a/b/c",
+            "v1.0.0",
+            &candidates,
+            ProxyReleaseDate::NotServed,
+            true,
+            |path: &String| {
+                let barrier = barrier.clone();
+                let path = path.clone();
+                async move {
+                    barrier.wait().await;
+                    match path.as_str() {
+                        "example.com/a/b/c" => Err(eyre!("not a module")),
+                        "example.com/a/b" => dated("v1.0.0", "2026-08-01T00:00:00Z"),
+                        _ => dated("v1.0.0", "2020-01-01T00:00:00Z"),
+                    }
+                }
+            },
+        );
+        let date = tokio::time::timeout(std::time::Duration::from_secs(10), lookup)
+            .await
+            .expect("the candidates should be asked at once")
+            .unwrap();
+        // The deepest candidate that answers dates the version.
+        assert_eq!(date.as_deref(), Some("2026-08-01T00:00:00Z"));
+
+        // With no proxy serving it and no route past them, the date is
+        // unknown rather than missing.
+        let err = release_date_past_proxies(
+            "example.com/a/b/c",
+            "v1.0.0",
+            &candidates,
+            ProxyReleaseDate::NotServed,
+            false,
+            never_asked,
+        )
+        .await
+        .unwrap_err();
+        assert!(format!("{err:#}").contains("none goes to its source"));
+    }
+
+    /// A `file://` entry keeps its place in the chain, as Go asks it.
+    #[test]
+    fn parse_goproxy_keeps_file_entries_in_order() {
+        let proxies = parse_goproxy_value("https://a.example,file:///cache/|https://b.example");
+        let urls: Vec<_> = proxies.iter().map(|p| p.url.as_str()).collect();
+        assert_eq!(
+            urls,
+            ["https://a.example", "file:///cache", "https://b.example"]
+        );
+        assert_eq!(proxies[1].fall_through, FallThrough::OnAnyError);
     }
 
     /// Empty GOPROXY uses Go's default public proxy configuration.
