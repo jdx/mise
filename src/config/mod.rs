@@ -3173,7 +3173,7 @@ pub fn config_paths_in_dir_with_filenames(dir: &Path, filenames: &[String]) -> V
         .collect()
 }
 
-fn all_dirs() -> Result<Vec<PathBuf>> {
+pub(crate) fn all_dirs() -> Result<Vec<PathBuf>> {
     file::all_dirs(env::current_dir()?, &env::MISE_CEILING_PATHS)
 }
 

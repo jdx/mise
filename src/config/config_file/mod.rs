@@ -178,8 +178,10 @@ impl EffectiveToolRequests {
 /// `config_files` are the loaded config files from the highest priority down. Only those that
 /// load together with `edited` are counted: for a global file, the other global files; for a
 /// file that is not loaded here, such as one `--path` names, the global files and the loaded
-/// files read from a directory that holds it, conf.d folder fragments with their project. `edited` takes the place of the loaded file at its path; a
-/// file not loaded yet is created next to the closest configs, so it is counted first. A file
+/// files read from a directory that holds it, conf.d folder fragments with their project; for a
+/// new file that discovery from the current directory would read, every loaded file.
+/// `edited` takes the place of the loaded file at its path; a file not loaded yet is counted
+/// below the closer files and above those in its own directory and its parents. A file
 /// other than `edited` that cannot list its tools is left out, since the edit does not change it.
 pub fn ensure_edit_keeps_tool_request_count(
     config_files: &IndexMap<PathBuf, Arc<dyn ConfigFile>>,
@@ -195,28 +197,38 @@ pub fn ensure_edit_keeps_tool_request_count(
         _ => cf.config_root(),
     };
     let root = discovered_from(path, edited.as_ref());
+    // A file not loaded yet that discovery from here would read loads with every loaded file,
+    // as one above the current directory does. Any other loads only with the files read from
+    // a directory that holds it.
+    let discovered_here =
+        !global && !loaded && crate::config::all_dirs().is_ok_and(|dirs| dirs.contains(&root));
     let loads_with_edited = |p: &Path, cf: &Arc<dyn ConfigFile>| {
         if crate::config::is_global_config(p) {
             true
         } else if global {
             false
         } else {
-            // a file above the current directory loads with everything found from here
-            loaded
-                || crate::dirs::CWD
-                    .as_ref()
-                    .is_some_and(|cwd| cwd.starts_with(&root))
-                || root.starts_with(discovered_from(p, cf.as_ref()))
+            loaded || discovered_here || root.starts_with(discovered_from(p, cf.as_ref()))
         }
     };
-    let mut files: Vec<&Arc<dyn ConfigFile>> = config_files
+    let mut files: Vec<(&Path, &Arc<dyn ConfigFile>)> = config_files
         .iter()
         .filter(|(p, cf)| *p == path || loads_with_edited(p, cf))
-        .map(|(p, cf)| if p == path { edited } else { cf })
+        .map(|(p, cf)| (p.as_path(), if p == path { edited } else { cf }))
         .collect();
     if !loaded {
-        files.insert(0, edited);
+        // Files from the highest priority down: a closer file wins over the new one, which
+        // wins over the files in its own directory and above it.
+        let at = files
+            .iter()
+            .position(|(p, cf)| {
+                crate::config::is_global_config(p)
+                    || root.starts_with(discovered_from(p, cf.as_ref()))
+            })
+            .unwrap_or(files.len());
+        files.insert(at, (path, edited));
     }
+    let files = files.into_iter().map(|(_, cf)| cf);
     let mut effective = EffectiveToolRequests::default();
     for cf in files {
         let mut trs = match cf.to_tool_request_set() {
@@ -2117,6 +2129,29 @@ mod tests {
             .unwrap(),
         );
         assert!(ensure_edit_keeps_tool_request_count(&files, &above).is_err());
+
+        // a closer file's list replaces the new parent's, so it counts at the closer file's
+        // priority: 999 python and 1 node below, 2 node above, is 1,000 in all
+        let python = format!("\"3\",{}", "\"3\",".repeat(MAX_TOOL_REQUESTS - 2));
+        let child: Arc<dyn ConfigFile> = Arc::new(
+            MiseToml::from_str(
+                &format!("[tools]\npython = [{python}]\nnode = \"1\"\n"),
+                &cwd.join("mise.edit-count-test.toml"),
+            )
+            .unwrap(),
+        );
+        let files: IndexMap<PathBuf, Arc<dyn ConfigFile>> =
+            [(child.get_path().to_path_buf(), child.clone())]
+                .into_iter()
+                .collect();
+        let parent: Arc<dyn ConfigFile> = Arc::new(
+            MiseToml::from_str(
+                "[tools]\nnode = [\"1\", \"2\"]\n",
+                &cwd.parent().unwrap().join("mise.toml"),
+            )
+            .unwrap(),
+        );
+        ensure_edit_keeps_tool_request_count(&files, &parent).unwrap();
     }
 
     /// A conf.d folder fragment has its own config root but loads with the project that holds
