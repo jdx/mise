@@ -290,9 +290,11 @@ printf '[task_config]\nincludes = ["tasks"]\n' >../outside/folder/mise.toml
 cd ../task-folder || exit 1
 echo "[tools]" >mise.toml
 ln -s ../../../outside/folder .mise/conf.d/folder
-# safe mode loads the folder untrusted, and never follows a link out of the project
-assert_contains "MISE_SAFE=1 mise tasks ls" "fout"
-assert_fail_contains "MISE_SAFE=1 MISE_YES=1 mise tasks rm fout 2>&1" "through a linked directory"
+# safe mode never follows a link out of the project: the folder's task directory
+# is not read, so its tasks are neither listed nor removed
+assert_not_contains "MISE_SAFE=1 mise tasks ls 2>/dev/null" "fout"
+assert_contains "MISE_SAFE=1 mise tasks ls 2>&1" "resolves outside the project and safe mode"
+assert_fail_contains "MISE_SAFE=1 MISE_YES=1 mise tasks rm fout 2>&1" "no task named fout"
 assert "test -e ../outside/folder/tasks/fout"
 
 echo "=== nor is .config/mise linked out of the project, though its mise.toml makes it a root ==="
