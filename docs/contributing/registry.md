@@ -90,7 +90,7 @@ apply to registry entries only; you can use any backend in your own config.
 | 2, routinely accepted | `aqua`, `github`, `gitlab`                    | The project publishes no packslips                                                  |
 | 3, high bar           | `conda`                                       | No tier 1 or 2 backend can reasonably install the tool                              |
 | 4, very high bar      | `npm`, `pypi`, `gem`, `cargo`, `go`, `dotnet` | No tier 1 or 2 backend can install it, it is widely used, and jdx agreed beforehand |
-| Not accepted          | `asdf`, `vfox`, `ubi`                         | Never, for new entries                                                              |
+| Not accepted          | `asdf`, `vfox`                                | Never, for new entries                                                              |
 
 [`packslip`](/dev-tools/backends/packslip.html) verifies the signer and the
 artifact digests without a plugin or a separate package manager.
@@ -119,8 +119,6 @@ submit an entry that uses a tier 4 backend. Older entries write `pipx:`, which
 mise reads as `pypi:`.
 
 New `asdf` and `vfox` entries are rejected for supply-chain security reasons.
-The [`ubi`](/dev-tools/backends/ubi.html) backend is deprecated: mise warns
-when it uses it, and mise 2027.1.0 removes it.
 
 [`http`](/dev-tools/backends/http.html) is not in a tier. It is accepted for a
 widely used tool that publishes stable download URLs but no packslips and no

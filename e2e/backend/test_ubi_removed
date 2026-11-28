@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+
+# The ubi backend was removed. A tool that still names it fails with the
+# backend to use instead, rather than as an unknown plugin.
+assert_fail "mise install ubi:cli/cli@2.0.0" "ubi:cli/cli: the ubi backend was removed from mise. Use github:cli/cli (gitlab:cli/cli for a GitLab project) instead."
+assert_fail "mise use ubi:cli/cli@2.0.0" "the ubi backend was removed from mise"
+
+cat <<EOF2 >mise.toml
+[tools]
+"ubi:cli/cli" = { version = "2.0.0", exe = "gh" }
+EOF2
+assert_fail "mise install" "Use github:cli/cli (gitlab:cli/cli for a GitLab project) instead."
+# Commands that skip tools they cannot install still say why.
+assert_contains "mise ls 2>&1" "the ubi backend was removed from mise"

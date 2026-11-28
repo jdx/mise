@@ -21,7 +21,7 @@ Before adding a **new** tool or shorthand to `registry/`, follow the `registry-s
 - Warn the user about the bar, look up real popularity numbers, and stop if the tool is personal, internal, a fork, or niche.
 - Put a `## Popularity` section with those numbers in the PR description.
 - Confirm `mise ls-remote <backend>` lists installable versions.
-- Prefer `packslip:`, then `aqua:`, `github:`, or `gitlab:`. `conda:` has a high bar; `npm:`, `pipx:`, `gem:`, `cargo:`, `go:`, and `dotnet:` are almost never accepted. New `asdf:`, `vfox:`, and `ubi:` entries are not accepted.
+- Prefer `packslip:`, then `aqua:`, `github:`, or `gitlab:`. `conda:` has a high bar; `npm:`, `pipx:`, `gem:`, `cargo:`, `go:`, and `dotnet:` are almost never accepted. New `asdf:` and `vfox:` entries are not accepted.
 - Users can install any tool without a registry entry (`mise use github:owner/repo`, `mise use cargo:name`, …); the registry only adds a shorthand.
 
 None of this applies to editing an existing registry entry; do not ask the user about popularity for maintenance or fixes.
@@ -106,7 +106,6 @@ The `mise` package has two targets. The library (`src/lib.rs`) is everything exc
 - `http.rs`, `s3.rs` — HTTP and S3 backends
 - `cargo.rs`, `npm.rs` (plus embedded aube), `pipx.rs`, `gem.rs`, `go.rs`, `dotnet.rs`, `conda.rs`, `spm.rs`
 - `asdf.rs`, `vfox.rs` — plugin compatibility layers
-- `ubi.rs` — deprecated; do not add new registry entries
 
 **Core Tools (Built-in):**
 - `src/plugins/core/` — Node, Python, Go, Ruby, Java, Bun, Deno, Elixir, Erlang, Dotnet, Swift, Zig, Rust

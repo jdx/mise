@@ -482,6 +482,8 @@ impl BackendArg {
             bail!(
                 "'{self}' does not name a tool: write the tool after the backend, as in 'asdf:<tool>'"
             );
+        } else if let Some(msg) = backend::removed_backend_error(&self.short) {
+            bail!("{msg}");
         } else if let Some((plugin_name, tool_name)) = self.short.split_once(':') {
             // Check if the plugin exists first
             if let Some(plugin_type) = install_state::get_plugin_type(plugin_name) {
@@ -546,6 +548,11 @@ impl BackendArg {
     }
 
     pub fn backend_type(&self) -> BackendType {
+        // A removed backend's `owner/repo` would otherwise resolve as a git
+        // plugin URL below; leave it unknown so `backend()` names the replacement.
+        if backend::removed_backend_error(&self.short).is_some() {
+            return BackendType::Unknown;
+        }
         // Check if this is a valid backend:tool format first
         if let Some((backend_prefix, _tool_name)) = self.short.split_once(':')
             && let Ok(backend_type) = backend_prefix.parse::<BackendType>()
@@ -1123,7 +1130,7 @@ impl BackendArg {
         strip_opts(tool_name)
     }
 
-    /// maps something like cargo:cargo-binstall to cargo-binstall and ubi:cargo-binstall, etc
+    /// maps something like cargo:cargo-binstall to cargo-binstall and aqua:cargo-bins/cargo-binstall, etc
     pub fn all_fulls(&self) -> HashSet<String> {
         let full = self.full();
         let mut all = HashSet::new();

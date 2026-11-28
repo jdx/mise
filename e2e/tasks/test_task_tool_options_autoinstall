@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+
+# Tool options are kept when `mise run` auto-installs a task's tools.
+# https://github.com/jdx/mise/discussions/6582
+#
+# bazelbuild/buildtools ships buildifier, buildozer and unused_deps as separate
+# assets, and autodetection alone picks buildozer, so buildifier is only on PATH
+# when the install used the `matching` and `rename_exe` options.
+cat <<EOF2 >mise.toml
+[tools]
+"github:bazelbuild/buildtools" = { version = "7.1.2", matching = "buildifier", rename_exe = "buildifier" }
+
+[tasks.test]
+run = "buildifier --version"
+EOF2
+
+assert_contains "mise run test" "buildifier version: 7.1.2"

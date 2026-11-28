@@ -97,7 +97,6 @@ const backendExamples: Record<string, string> = {
   go: "go:golang.org/x/tools/gopls",
   http: "http:my-tool",
   s3: "s3:my-tool",
-  ubi: "ubi:goreleaser/goreleaser",
   spm: "spm:nicklockwood/SwiftFormat",
   packslip: "packslip:github.com/jdx/hk",
   spinel: "spinel:tobi/try",

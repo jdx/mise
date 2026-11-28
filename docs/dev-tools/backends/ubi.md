@@ -1,20 +1,26 @@
 ---
-description: "Move tools off the deprecated ubi backend to github, gitlab or http before mise 2027.1.0."
+description: "The ubi backend was removed from mise. Move ubi: tools to the github, gitlab or http backend."
 ---
 
-# Migrating off the ubi backend <Badge type="danger" text="deprecated" />
+# Migrating off the ubi backend <Badge type="danger" text="removed" />
 
 The `ubi` backend installed single executables from GitHub and GitLab releases
-with the [ubi](https://github.com/houseabsolute/ubi) library. It is deprecated:
-move each `ubi:` tool to the [github](/dev-tools/backends/github.html),
+with the [ubi](https://github.com/houseabsolute/ubi) library. It was deprecated
+in mise 2026.4.0, and mise releases after 2026.11.14 no longer include it.
+Move each `ubi:` tool to the [github](/dev-tools/backends/github.html),
 [gitlab](/dev-tools/backends/gitlab.html) or
 [http](/dev-tools/backends/http.html) backend.
 
-::: warning Deprecated
-mise prints a deprecation warning, once per run, when it lists versions for or
-installs a `ubi:` tool. The ubi backend will be removed in mise 2027.1.0;
-migrate before you upgrade to that release.
-:::
+mise does not translate `ubi:` entries for you, because the options don't carry
+over one for one and the new backend installs the tool in a different
+directory. A config, lockfile or command that still names a `ubi:` tool fails
+to install it, with an error that names the replacement:
+
+```text
+ubi:cli/cli: the ubi backend was removed from mise. Use github:cli/cli (gitlab:cli/cli for a GitLab project) instead. See https://mise.jdx.dev/dev-tools/backends/ubi.html for how ubi options map to it
+```
+
+Other commands skip the tool and print the same message as a warning.
 
 ## Migrate a tool {#usage}
 
@@ -38,8 +44,8 @@ works.
    ```
 
 4. If you use a lockfile, run `mise lock` to write entries for the new tool.
-   Then remove the old installation with
-   `mise uninstall --all ubi:owner/repo`.
+   The old installation stays in mise's data directory; delete its
+   `installs/ubi-owner-repo` directory when you no longer need it.
 
 A tool that named its executable with `exe` usually needs no option on the new
 backend, because the github backend extracts the archive and finds the
@@ -96,65 +102,3 @@ tool, and only the first entry is installed. To install several binaries from
 one release, give each its own
 [tool alias](/dev-tools/backends/github.html#multiple-assets-from-the-same-release)
 that points at `github:owner/repo`.
-
-## Reference for existing configurations {#tool-options}
-
-Until you migrate, these options still apply to `ubi:` tools:
-
-- `exe`: the executable to extract from the archive. Defaults to the
-  repository name.
-- `rename_exe`: the name to give the extracted executable.
-- `matching`: text to look for in asset names when several assets match your
-  OS and architecture, such as `gnu`, `musl` or `msvc`. ubi ignores it when only
-  one asset matches.
-- `matching_regex`: a regular expression that asset names must match before
-  OS and architecture matching. ubi reports an error when nothing matches.
-- `provider`: `github` (the default) or `gitlab`.
-- `api_url`: the provider's API URL, for a self-hosted instance. Set `provider`
-  too, and a token in `MISE_GITHUB_ENTERPRISE_TOKEN` or
-  `MISE_GITLAB_ENTERPRISE_TOKEN`.
-- `extract_all`: `true` extracts every file in the archive instead of one
-  executable. It ignores `exe` and `rename_exe`.
-- `bin_path`: the directory in the install that holds the executables, used with
-  `extract_all`.
-- `tag_regex`: a regular expression that release tags must match to be listed
-  as versions.
-
-A tool is written as `ubi:owner/repo`, `ubi:owner/repo@1.25.1`, or a direct
-download URL such as
-`ubi:https://github.com/goreleaser/goreleaser/releases/download/v1.16.2/goreleaser_Darwin_arm64.tar.gz`,
-which has only the version `latest`.
-
-ubi sends a GitHub or GitLab token with every request it makes, the download
-included, and reads one from `GITHUB_TOKEN`, `GITLAB_TOKEN`, `CI_JOB_TOKEN`,
-`CODEBERG_TOKEN` or `FORGEJO_TOKEN` when mise gives it none. mise gives it a
-token only when every request goes to the provider's API (or, for GitHub, to
-`github.com`). A download URL on another host, or a GitLab release whose asset
-links point at another host, installs only while none of those variables is
-set; otherwise mise refuses it. Install such a tool with the github, gitlab or
-http backend instead. For a GitLab project, mise reads the release just before
-ubi does, with the token ubi will send, to see where its asset links point.
-
-mise puts `bin_path` on `PATH` when it is set. Otherwise it uses the install
-directory when `extract_all` is set, then the install's `bin/` directory if it
-exists, and the install directory last.
-
-`tag_regex` is matched against the whole tag, including a leading `v`.
-`cargo-bins/cargo-binstall` publishes releases for several crates, and this
-keeps only the `v1.2.3`-style tags:
-
-```sh
-mise use 'ubi:cargo-bins/cargo-binstall[tag_regex=^v\d+\.]'
-mise ls-remote 'ubi:cargo-bins/cargo-binstall[tag_regex=^v\d+\.]'
-```
-
-## Troubleshooting
-
-If ubi picks the wrong asset, cannot find the executable or lists unrelated
-versions, migrate the tool. The github backend's
-[`matching`](/dev-tools/backends/github.html#matching),
-[`asset_pattern`](/dev-tools/backends/github.html#asset-pattern),
-[`version_prefix`](/dev-tools/backends/github.html#version-prefix) and
-[`rename_exe`](/dev-tools/backends/github.html#rename-exe) cover these cases.
-
-Implementation: [`src/backend/ubi.rs`](https://github.com/jdx/mise/blob/main/src/backend/ubi.rs).

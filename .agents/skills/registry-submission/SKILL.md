@@ -55,6 +55,5 @@ For registry entries the backend tiers are:
 - **Not accepted at all:**
   - **New `asdf:` plugins** — supply-chain security. Use packslip/aqua/github/gitlab instead.
   - **New `vfox:` plugins** — same reason. Use packslip/aqua/github/gitlab instead.
-  - **`ubi:`** is deprecated and will not be accepted under any circumstances.
 
 Users can still install via any backend themselves with explicit syntax (`mise use vfox:...`, `mise use cargo:...`, etc.) — they just don't get a registry shorthand for it.

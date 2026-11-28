@@ -20,9 +20,7 @@ A program that mise installs and puts on `PATH` for a project, such as `node`,
 
 Where mise gets a tool and how it installs it, such as `aqua`, `github`,
 `npm`, or `pypi` (also accepted as `pipx`). Core tools use installers built
-into mise. The `ubi` backend is deprecated; use `github`, or `gitlab` or
-`http` for other hosts, as the [ubi migration guide](/dev-tools/backends/ubi.html)
-describes. See [Backends](/dev-tools/backends/).
+into mise. See [Backends](/dev-tools/backends/).
 
 ### Backend identifier {#backend-identifier}
 

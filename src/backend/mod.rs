@@ -85,7 +85,6 @@ pub(crate) mod s3;
 pub(crate) mod spinel;
 pub(crate) mod spm;
 pub mod static_helpers;
-pub(crate) mod ubi;
 pub(crate) mod version_list;
 pub(crate) mod vfox;
 
@@ -924,6 +923,25 @@ fn backend_list_denial(
     }
 }
 
+/// The error for a tool `short` (such as `ubi:owner/repo[exe=rg]`) that names a
+/// backend mise has removed, with the backend that replaces it.
+pub fn removed_backend_error(short: &str) -> Option<String> {
+    let (backend, tool) = short.split_once(':')?;
+    if backend != "ubi" {
+        return None;
+    }
+    let tool = crate::args::split_bracketed_opts(tool).map_or(tool, |(name, _)| name);
+    let replacement = if tool.contains("://") {
+        format!("http:{tool}")
+    } else {
+        format!("github:{tool} (gitlab:{tool} for a GitLab project)")
+    };
+    Some(format!(
+        "{short}: the ubi backend was removed from mise. Use {replacement} instead. \
+         See https://mise.jdx.dev/dev-tools/backends/ubi.html for how ubi options map to it"
+    ))
+}
+
 pub fn arg_to_backend(ba: BackendArg) -> Option<ABackend> {
     // `asdf:` selects a backend and names no tool in it. The plugin types assert a name.
     if ba.tool_name.trim().is_empty() {
@@ -948,7 +966,6 @@ pub fn arg_to_backend(ba: BackendArg) -> Option<ABackend> {
         BackendType::Spm => Some(Arc::new(spm::SPMBackend::from_arg(ba))),
         BackendType::Http => Some(Arc::new(http::HttpBackend::from_arg(ba))),
         BackendType::S3 => Some(Arc::new(s3::S3Backend::from_arg(ba))),
-        BackendType::Ubi => Some(Arc::new(ubi::UbiBackend::from_arg(ba))),
         BackendType::Vfox => Some(Arc::new(vfox::VfoxBackend::from_arg(ba, None))),
         BackendType::VfoxBackend(plugin_name) => {
             // The name is joined onto the plugins directory, where its Lua is loaded from.
@@ -974,7 +991,6 @@ pub(crate) fn install_time_option_keys_for_type(backend_type: &BackendType) -> V
         BackendType::Github | BackendType::Gitlab | BackendType::Forgejo => {
             github::install_time_option_keys()
         }
-        BackendType::Ubi => ubi::install_time_option_keys(),
         BackendType::Cargo => cargo::install_time_option_keys(),
         BackendType::Go => go::install_time_option_keys(),
         BackendType::Npm => npm::install_time_option_keys(),
@@ -1501,6 +1517,25 @@ mod tests {
 
     fn names(list: &[&str]) -> Vec<String> {
         list.iter().map(|name| name.to_string()).collect()
+    }
+
+    #[test]
+    fn removed_ubi_backend_names_its_replacement() {
+        let msg = removed_backend_error("ubi:BurntSushi/ripgrep[exe=rg]").unwrap();
+        assert!(msg.contains("Use github:BurntSushi/ripgrep ("), "{msg}");
+        assert!(
+            msg.contains("gitlab:BurntSushi/ripgrep for a GitLab"),
+            "{msg}"
+        );
+        assert!(msg.contains("/dev-tools/backends/ubi.html"), "{msg}");
+        let msg = removed_backend_error("ubi:https://example.com/tool.tar.gz").unwrap();
+        assert!(
+            msg.contains("Use http:https://example.com/tool.tar.gz instead"),
+            "{msg}"
+        );
+        assert!(!msg.contains("gitlab:"), "{msg}");
+        assert_eq!(removed_backend_error("github:BurntSushi/ripgrep"), None);
+        assert_eq!(removed_backend_error("ripgrep"), None);
     }
 
     #[test]
@@ -7695,7 +7730,7 @@ mod latest_version_tests {
         }
 
         /// Declare tool options that shape this backend's version listing, the way the real
-        /// github/spm/ubi/http/s3 backends do.
+        /// github/spm/http/s3 backends do.
         fn with_listing_keys(mut self, listing_keys: &'static [&'static str]) -> Self {
             self.listing_keys = listing_keys;
             self
@@ -10390,7 +10425,6 @@ mod option_spec_tests {
             (BackendType::S3, &["tool_s3_options"]),
             (BackendType::Spinel, &["tool_spinel_options"]),
             (BackendType::Spm, &["tool_spm_options"]),
-            (BackendType::Ubi, &["tool_ubi_options"]),
         ] {
             let documented: Vec<String> = defs
                 .iter()

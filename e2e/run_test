@@ -114,7 +114,7 @@ within_isolated_env() {
   # first token variable that *exists* and only then rejects empty values, so an
   # empty MISE_GITHUB_TOKEN means "no token" and hides a real GITHUB_TOKEN (see
   # get_token in src/env.rs). An empty GITHUB_TOKEN is worse than useless on its
-  # own too: the ubi crate reads it directly, sends an empty bearer, and turns
+  # own too: a client that reads it directly sends an empty bearer and turns
   # a request that would have worked unauthenticated into a 401.
   local token_vars=()
   [[ -n ${MISE_GITHUB_TOKEN:-} ]] && token_vars+=(MISE_GITHUB_TOKEN="$MISE_GITHUB_TOKEN")

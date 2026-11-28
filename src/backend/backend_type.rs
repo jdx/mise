@@ -33,7 +33,6 @@ pub enum BackendType {
     Spm,
     Http,
     S3,
-    Ubi,
     Vfox,
     VfoxBackend(String),
     Unknown,
@@ -80,7 +79,6 @@ impl BackendType {
             "spm" => BackendType::Spm,
             "http" => BackendType::Http,
             "s3" => BackendType::S3,
-            "ubi" => BackendType::Ubi,
             "vfox" => BackendType::Vfox,
             _ => BackendType::Unknown,
         }
