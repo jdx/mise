@@ -909,7 +909,7 @@ impl TaskScriptParser {
                 continue;
             }
             let shell = rendered_script_shell(script, task, self.run_shell.as_deref())?;
-            let quoting = ArgQuoting::of(&shell.words);
+            let quoting = ArgQuoting::of(&shell);
             // The values the template functions quoted for `shell`, checked once the script is
             // rendered and the shell that runs it is known.
             let quoted = Arc::new(Mutex::new(Vec::new()));
@@ -976,11 +976,11 @@ impl TaskScriptParser {
             let quoted = std::mem::take(&mut *quoted.lock().unwrap());
             if !quoted.is_empty() {
                 let runs = rendered_script_shell(&rendered, task, self.run_shell.as_deref())?;
-                let runs_quoting = ArgQuoting::of(&runs.words);
+                let runs_quoting = ArgQuoting::of(&runs);
                 if quoted.iter().any(|v| !quoting.reads_alike(runs_quoting, v)) {
                     if let Some(unknown) = [&shell, &runs]
                         .into_iter()
-                        .find(|shell| ArgQuoting::of(&shell.words) == ArgQuoting::Unknown)
+                        .find(|shell| ArgQuoting::of(shell) == ArgQuoting::Unknown)
                     {
                         let (what, example) = if unknown.from_shebang {
                             ("shebang", "#!/usr/bin/env -S bash -e")
@@ -1213,11 +1213,21 @@ struct ScriptShell {
 impl ScriptShell {
     /// The program, for an error message: the one `env` starts when mise can tell.
     fn name(&self) -> String {
-        match resolve_env(&self.words).and_then(|shell| shell.into_iter().next()) {
+        match self.command().and_then(|shell| shell.into_iter().next()) {
             Some(program) => program,
             None if self.words.is_empty() => "no shell".into(),
             None => self.words.join(" "),
         }
+    }
+
+    /// The command this shell runs: see [`resolve_env`].
+    fn command(&self) -> Option<Vec<String>> {
+        let words = if self.from_shebang {
+            EnvWords::Shebang
+        } else {
+            EnvWords::Separate
+        };
+        resolve_env(&self.words, words)
     }
 }
 
@@ -1268,8 +1278,8 @@ impl ArgQuoting {
 
     /// The quoting for the program `shell` runs, which for an `env` wrapper is the one `env`
     /// starts.
-    fn of(shell: &[String]) -> Self {
-        let Some(shell) = resolve_env(shell) else {
+    fn of(shell: &ScriptShell) -> Self {
+        let Some(shell) = shell.command() else {
             return Self::Unknown;
         };
         // No shell runs the script then: the executor refuses a blank `--shell`, and the kernel
@@ -1318,12 +1328,25 @@ fn shell_from_shebang(script: &str) -> Option<Vec<String>> {
 
 /// The command `shell` runs: `shell` itself, or for an `env` wrapper, wherever `env` is
 /// installed, the command `env` starts. `None` when mise cannot tell which program that is.
-pub(super) fn resolve_env(shell: &[String]) -> Option<Vec<String>> {
+pub(super) fn resolve_env(shell: &[String], words: EnvWords) -> Option<Vec<String>> {
     let mut shell = shell.to_vec();
     while shell.first().is_some_and(|program| is_env(program)) {
-        shell = env_command(&shell[1..])?;
+        shell = env_command(&shell[1..], words)?;
     }
     Some(shell)
+}
+
+/// How `env` gets the words after it, which decides which of them it may read as more than
+/// they say.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum EnvWords {
+    /// Each word is an argument of its own, as mise starts a task `shell` or `mise run --shell`:
+    /// only the string of an `-S` is split, so only it is read for [`ENV_SPLIT_STRING_SYNTAX`].
+    /// `env COLOR='#fff' bash -c` sets `COLOR` to `#fff` and starts bash.
+    Separate,
+    /// The words of a shebang, which any of may be read that way (see
+    /// [`ENV_SPLIT_STRING_SYNTAX`]).
+    Shebang,
 }
 
 /// Whether no shell mise knows quotes `value`, so that a shell mise cannot name reads it as it
@@ -1346,36 +1369,41 @@ pub(super) fn is_env(program: &str) -> bool {
 /// `-S` splits, so any of the words may be read that way.
 const ENV_SPLIT_STRING_SYNTAX: [char; 5] = ['\'', '"', '\\', '$', '#'];
 
-/// The next of `env`'s words, or `None` when there is none or `env` may read it as more than it
-/// is.
-fn next_env_word(words: &mut VecDeque<String>) -> Option<String> {
+/// The next of `env`'s words, or `None` when there is none or, in a shebang, `env` may read it as
+/// more than it is.
+fn next_env_word(words: &mut VecDeque<String>, how: EnvWords) -> Option<String> {
     words
         .pop_front()
-        .filter(|word| !word.contains(ENV_SPLIT_STRING_SYNTAX))
+        .filter(|word| how == EnvWords::Separate || !word.contains(ENV_SPLIT_STRING_SYNTAX))
 }
 
 /// The command `env` runs for `args`, read as GNU `env` reads them: options up to `--` or the
 /// first word that is none, where `-S STRING` puts the words of `STRING` in its place; then
 /// `NAME=value` settings; then the command. `None` when mise cannot tell which program that is:
-/// there is none, `env` has an option mise does not know, or a word may mean more than it says.
-fn env_command(args: &[String]) -> Option<Vec<String>> {
+/// there is none, `env` has an option mise does not know, or a word `env` splits (any word, in a
+/// shebang) may mean more than it says.
+fn env_command(args: &[String], how: EnvWords) -> Option<Vec<String>> {
     let mut words: VecDeque<String> = args.iter().cloned().collect();
     let mut options = true;
     loop {
-        let word = next_env_word(&mut words)?;
+        let word = next_env_word(&mut words, how)?;
         if options && word == "--" {
             options = false;
             continue;
         }
         if options && word.starts_with('-') && word != "-" {
             let split = match word.as_str() {
-                "-S" | "--split-string" => Some(next_env_word(&mut words)?),
+                "-S" | "--split-string" => Some(next_env_word(&mut words, how)?),
                 _ => word
                     .strip_prefix("--split-string=")
                     .or_else(|| word.strip_prefix("-S"))
                     .map(str::to_string),
             };
             if let Some(split) = split {
+                // `env` reads this string's quotes, escapes, `${NAME}` and comments
+                if split.contains(ENV_SPLIT_STRING_SYNTAX) {
+                    return None;
+                }
                 for word in split.split_whitespace().rev() {
                     words.push_front(word.to_string());
                 }
@@ -1383,7 +1411,7 @@ fn env_command(args: &[String]) -> Option<Vec<String>> {
             }
             match word.as_str() {
                 "-u" | "--unset" | "-C" | "--chdir" => {
-                    next_env_word(&mut words)?;
+                    next_env_word(&mut words, how)?;
                 }
                 "-i" | "--ignore-environment" | "-0" | "--null" | "-v" | "--debug" => {}
                 _ if word.starts_with("--unset=") || word.starts_with("--chdir=") => {}
@@ -1691,14 +1719,63 @@ mod tests {
             ("#!/usr/bin/env -S #bash tclsh", None),
         ] {
             let shell = shell_from_shebang(shebang).unwrap();
-            assert_eq!(resolve_env(&shell), expected, "{shebang}");
+            assert_eq!(
+                resolve_env(&shell, EnvWords::Shebang),
+                expected,
+                "{shebang}"
+            );
         }
         assert_eq!(shell_from_shebang("echo hi"), None);
         assert_eq!(shell_from_shebang("#! "), None);
-        assert_eq!(
-            ArgQuoting::of(&["/usr/bin/env".to_string()]),
-            ArgQuoting::Unknown
-        );
+        let bare_env = ScriptShell {
+            words: vec!["/usr/bin/env".to_string()],
+            from_shebang: true,
+        };
+        assert_eq!(ArgQuoting::of(&bare_env), ArgQuoting::Unknown);
+    }
+
+    /// When mise starts `env` with each word as its own argument, `env` reads quotes, escapes,
+    /// `${NAME}` and comments only in an `-S` string, so a setting can hold them.
+    #[test]
+    fn test_resolve_env_reads_split_syntax_only_where_env_splits() {
+        let words = |words: &[&str]| words.iter().map(|w| w.to_string()).collect_vec();
+        let bash = Some(words(&["bash", "-c"]));
+        for (shell, separate, shebang) in [
+            (
+                words(&["env", "COLOR=#fff", "bash", "-c"]),
+                bash.clone(),
+                None,
+            ),
+            (
+                words(&["env", "A=$HOME", "B=a\\b", "bash", "-c"]),
+                bash.clone(),
+                None,
+            ),
+            (
+                words(&["env", "-u", "#x", "bash", "-c"]),
+                bash.clone(),
+                None,
+            ),
+            (
+                words(&["env", "-S", "COLOR=x bash", "-c"]),
+                bash.clone(),
+                bash.clone(),
+            ),
+            (words(&["env", "-S", "COLOR=#fff bash", "-c"]), None, None),
+            (words(&["env", "-SCOLOR=$X", "bash", "-c"]), None, None),
+            (
+                words(&["env", "--split-string=#", "bash", "-c"]),
+                None,
+                None,
+            ),
+        ] {
+            assert_eq!(
+                resolve_env(&shell, EnvWords::Separate),
+                separate,
+                "{shell:?}"
+            );
+            assert_eq!(resolve_env(&shell, EnvWords::Shebang), shebang, "{shell:?}");
+        }
     }
 
     /// Every way to spell `env` before a shell either quotes `arg()` values for that shell or
@@ -1723,6 +1800,8 @@ mod tests {
             ("-S 'FOO=1 bash'", false, !cfg!(windows)),
             ("-S \"FOO=1 bash\"", false, true),
             ("-Sbash", true, true),
+            // mise hands `env` the setting as one literal word; a shebang may be split by `-S`.
+            ("COLOR='#fff' bash", false, true),
             ("-i -- bash", true, true),
             ("-u X -C /tmp FOO=1 bash", true, true),
             ("bash", true, true),

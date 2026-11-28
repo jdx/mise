@@ -364,7 +364,10 @@ fn inline_args_style_on(program: &str, shell_args: &[String], windows: bool) -> 
     let shell = once(program.to_string())
         .chain(shell_args.iter().cloned())
         .collect_vec();
-    let Some(command) = super::task_script_parser::resolve_env(&shell) else {
+    let Some(command) = super::task_script_parser::resolve_env(
+        &shell,
+        super::task_script_parser::EnvWords::Separate,
+    ) else {
         return InlineArgsStyle::Unknown;
     };
     let Some((program, shell_args)) = command.split_first() else {
@@ -4203,6 +4206,27 @@ mod tests {
         assert_eq!(
             inline_args_style("/usr/bin/env", &env_fish),
             InlineArgsStyle::FishCommandText
+        );
+        // mise hands `env` each word as an argument, so only an `-S` string is read for quotes,
+        // `$` and `#`: a setting that contains them is a literal value.
+        let env_bash = [
+            "COLOR=#fff".to_string(),
+            "bash".to_string(),
+            "-c".to_string(),
+        ];
+        assert_eq!(
+            inline_args_style("/usr/bin/env", &env_bash),
+            InlineArgsStyle::PosixCommandText
+        );
+        let args = ["a file".to_string()];
+        assert_eq!(
+            append_inline_args("ls", &args, inline_args_style("env", &env_bash)).unwrap(),
+            "ls 'a file'"
+        );
+        let env_split = ["-S".to_string(), "#fff bash".to_string(), "-c".to_string()];
+        assert_eq!(
+            inline_args_style("/usr/bin/env", &env_split),
+            InlineArgsStyle::Unknown
         );
     }
 
