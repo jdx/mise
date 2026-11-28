@@ -3169,7 +3169,7 @@ impl UnifiedGitBackend {
         }
         let repo = self.repo();
         let web_url = self.web_url_base(api_url, &repo);
-        let mut tags = tag_candidates(&tv.version, opts.version_prefix(), Some(&repo));
+        let mut tags = tag_candidates(&tv.version, opts.version_prefix().as_deref(), Some(&repo));
         let found = asset
             .release_tag
             .clone()
