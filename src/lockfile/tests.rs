@@ -6437,8 +6437,16 @@ fn untrusted_lockfile_keeps_a_registry_only_aube_graph() {
     let skipped_optional_url = skipped_optional.replace("^2.3.0", "https://attacker.example/x.tgz");
     let skipped_optional_link = skipped_optional.replace("0.0.0", "link:../x");
     assert_ne!(skipped_optional, with_package(""));
+    // An importer other than the install prefix is a workspace directory.
+    let parent_importer = with_package("").replace("importers:\n  .:\n", "importers:\n  ..:\n");
+    let extra_importer =
+        with_package("").replace("importers:\n  .:\n", "importers:\n  ../outside: {}\n  .:\n");
+    assert_ne!(parent_importer, with_package(""));
+    assert_ne!(extra_importer, with_package(""));
     let plain = with_package("");
     for (graph, kept) in [
+        (parent_importer.as_str(), false),
+        (extra_importer.as_str(), false),
         (skipped_optional.as_str(), true),
         (skipped_optional_url.as_str(), false),
         (skipped_optional_link.as_str(), false),

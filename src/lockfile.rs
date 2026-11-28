@@ -6499,6 +6499,8 @@ impl Lockfile {
 /// - only the sections a registry graph needs are present, each of the type
 ///   aube writes (`settings`, `importers`, `packages`, `snapshots` and `time`
 ///   are tables), and `settings` holds only aube's boolean settings;
+/// - the only importer is the install prefix itself, `.`: aube installs
+///   another importer key as a workspace directory relative to it;
 /// - every package key is `name@version` and its resolution is one non-empty
 ///   `integrity`;
 /// - an importer, package or snapshot entry carries only the fields aube
@@ -6688,8 +6690,12 @@ fn aube_graph_names_only_registry(lock: &AubeLock) -> bool {
             split_key(key).is_some_and(|(name, version)| has_package(&name, &version))
                 && package_ok(package)
         })
-        && importers.values().all(|importer| {
-            only_fields(importer, &IMPORTER)
+        // A tool installs into one prefix, the `.` importer. aube reads any
+        // other importer key as a workspace directory relative to that
+        // prefix, such as `..`.
+        && importers.iter().all(|(key, importer)| {
+            key == "."
+                && only_fields(importer, &IMPORTER)
                 && IMPORTER.iter().all(|section| {
                     importer
                         .get(section)
