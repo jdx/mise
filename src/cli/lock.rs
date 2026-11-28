@@ -232,6 +232,33 @@ async fn keep_locked_when_release_age_holds(
     resolved
 }
 
+/// Adds the entries that `requests` already have in the lockfile, unchanged.
+/// A request with no entry is left out: the tool selecting it is not being
+/// locked, so this run does not add one for it.
+async fn keep_locked_python_entries(
+    config: &Arc<Config>,
+    context: &LockCollectionContext<'_>,
+    requests: Vec<ToolRequest>,
+    tools: &mut Vec<LockTool>,
+) -> Result<()> {
+    for request in requests {
+        let mut opts = request.resolve_options(context.resolve_options)?;
+        opts.locked = true;
+        opts.use_locked_version = true;
+        opts.latest_versions = false;
+        opts.latest_versions_for_all_requests = false;
+        opts.warn_not_in_lockfile = false;
+        match request.resolve(config, &opts).await {
+            Ok(tv) if tv.resolved_from_lockfile() => {
+                push_unique_lock_tool(tools, (tv.ba().clone(), tv));
+            }
+            Ok(_) => debug!("{request} has no lockfile entry to keep"),
+            Err(err) => debug!("keeping no lockfile entry for {request}: {err:#}"),
+        }
+    }
+    Ok(())
+}
+
 fn push_unique_lock_tool(tools: &mut Vec<LockTool>, mut tool: LockTool) {
     // Installed-version resolution can yield an install directory name such
     // as `3.9.6~aube~<digest>`; lock the npm/PyPI version it stands for.
@@ -561,6 +588,17 @@ fn verify_generation_snapshots<'a>(
     Ok(())
 }
 
+/// The task files a lock run snapshots. A remote task's `file` is still its
+/// `git::` or `http(s)://` source here, since only running the task fetches
+/// it; reading that as a path fails on Windows (os error 123), and there is
+/// no local file to watch anyway.
+fn local_task_files(tasks: &BTreeMap<String, Task>) -> impl Iterator<Item = &PathBuf> {
+    tasks
+        .values()
+        .filter(|task| !crate::task::task_fetcher::TaskFetcher::is_unfetched_remote_task(task))
+        .filter_map(|task| task.file.as_ref())
+}
+
 fn read_optional_file(path: &Path) -> Result<Option<Vec<u8>>> {
     match fs::read(path) {
         Ok(content) => Ok(Some(content)),
@@ -837,6 +875,9 @@ impl Lock {
             // ordinary `latest` requests ignore an installed concrete version.
             resolve_rolling_channels: true,
             keep_moved_alias_pins: self.upgrade,
+            // A missing entry is what `mise lock` adds, so the toolset resolve
+            // must not warn about it. `resolve_for_lock` retries such requests.
+            warn_not_in_lockfile: false,
             ..Default::default()
         };
         let monorepo_union = if !self.global && config.monorepo_lockfile_root().is_some() {
@@ -972,7 +1013,7 @@ impl Lock {
         let config_snapshots = setup
             .effective_config_files
             .keys()
-            .chain(setup.tasks.values().filter_map(|task| task.file.as_ref()))
+            .chain(local_task_files(setup.tasks))
             .map(|path| Ok((path.clone(), read_optional_file(path)?)))
             .collect::<Result<BTreeMap<_, _>>>()?;
         let scoped_config_paths = match setup.installed {
@@ -3090,6 +3131,7 @@ impl Lock {
         // Third pass: tool stubs that read their entries from this lockfile.
         // They are not part of any config, so nothing above sees them.
         let python_named = self.tool.iter().any(|t| t.ba.short == "python");
+        // The Pythons that stubs not named by a filtered `mise lock` select.
         let mut stub_python_requests = Vec::new();
         for (path, stub) in live_tool_stubs(target_lockfile_path, config_paths)? {
             // The error of a file that does not parse quotes its content, and the
@@ -3132,12 +3174,10 @@ impl Lock {
                     .iter()
                     .any(|tool| tool.ba.as_ref() == request.ba().as_ref())
             {
-                if python_named {
-                    match crate::backend::pipx::selected_python_dependency(&request) {
-                        Ok(dependency) => stub_python_requests.extend(dependency),
-                        Err(err) => {
-                            debug!("skipping selected python of {}: {err:#}", request.ba())
-                        }
+                match crate::backend::pipx::selected_python_dependency(&request) {
+                    Ok(dependency) => stub_python_requests.extend(dependency),
+                    Err(err) => {
+                        debug!("skipping selected python of {}: {err:#}", request.ba())
                     }
                 }
                 continue;
@@ -3193,15 +3233,32 @@ impl Lock {
                     })
                     .map(|t| t.tvr.clone())
             };
-            // `mise lock python` also locks the Pythons that pipx tools and
-            // stubs select, so pruning python keeps them.
             let mut python_requests = selected_python_requests(
                 all_tools
                     .iter()
-                    .filter(|(ba, _)| python_named || specified_request(ba).is_some()),
+                    .filter(|(ba, _)| specified_request(ba).is_some()),
             )?;
-            python_requests.extend(stub_python_requests);
-            python_requests.extend(task_python_requests);
+            // The Pythons that the tools, stubs and task tools this run does not
+            // name select.
+            let mut other_python_requests = selected_python_requests(
+                all_tools
+                    .iter()
+                    .filter(|(ba, _)| specified_request(ba).is_none()),
+            )?;
+            other_python_requests.extend(stub_python_requests);
+            other_python_requests.extend(task_python_requests);
+            // The python entries are rebuilt from the returned set, so once it
+            // holds any python, the Pythons that other tools select must be in
+            // it too. `mise lock python` locks them; otherwise they keep the
+            // entry they have, as the tools that select them are not locked.
+            let kept_python_requests = if python_named {
+                python_requests.append(&mut other_python_requests);
+                Vec::new()
+            } else if python_requests.is_empty() {
+                Vec::new()
+            } else {
+                other_python_requests
+            };
             // Generate rebuilds every tool in the returned set from scratch, so a
             // pipx tool's Python would replace the project's own Python entries.
             let project_python: Vec<LockTool> =
@@ -3315,6 +3372,8 @@ impl Lock {
                 &mut unique_tools,
             )
             .await?;
+            keep_locked_python_entries(config, context, kept_python_requests, &mut unique_tools)
+                .await?;
             Ok(unique_tools)
         }
     }
@@ -3328,13 +3387,15 @@ impl Lock {
         tools: &mut Vec<LockTool>,
     ) -> Result<()> {
         for request in requests {
-            let opts = request.resolve_options(context.resolve_options)?;
-            let tv = request.resolve(config, &opts).await.wrap_err_with(|| {
-                format!(
-                    "failed to resolve selected Python dependency {request} for lockfile {}",
-                    display_path(target_lockfile_path)
-                )
-            })?;
+            let mut opts = request.resolve_options(context.resolve_options)?;
+            let tv = resolve_for_lock(config, &request, &mut opts)
+                .await
+                .wrap_err_with(|| {
+                    format!(
+                        "failed to resolve selected Python dependency {request} for lockfile {}",
+                        display_path(target_lockfile_path)
+                    )
+                })?;
             push_unique_lock_tool(tools, (tv.ba().clone(), tv));
         }
         Ok(())
@@ -3350,7 +3411,6 @@ impl Lock {
         all_tools: &mut Vec<LockTool>,
     ) -> Result<Vec<ToolRequest>> {
         let mut unnamed_python_requests = Vec::new();
-        let python_named = self.tool.iter().any(|t| t.ba.short == "python");
         for task in tasks.values() {
             let Some(config_path) =
                 self.task_config_path(task, config, config_paths, context.config_files)
@@ -3371,8 +3431,9 @@ impl Lock {
                 let named = self.tool.is_empty()
                     || self.tool.iter().any(|requested| requested.ba == tool.ba);
                 if !named {
-                    // `mise lock python` keeps the Pythons that task tools select.
-                    if python_named && let Some(request) = &tool.tvr {
+                    // A filtered `mise lock` keeps the Pythons that the task
+                    // tools it does not name select.
+                    if let Some(request) = &tool.tvr {
                         // Read the task's own lockfile, as the named branch does.
                         let request = ToolRequest::new_with_options(
                             tool.ba.clone(),
@@ -3625,6 +3686,28 @@ mod tests {
         assert!(!is_downgrade("a1b2c3d", "e4f5a6b"));
         assert!(!is_downgrade("2024.01.15", "2024.02.01"));
         assert!(!is_downgrade("nightly", "0.166.0"));
+    }
+
+    #[test]
+    fn local_task_files_skips_unfetched_remote_sources() {
+        let task = |file: &str| {
+            let mut task = Task::default();
+            task.file = Some(PathBuf::from(file));
+            task
+        };
+        let tasks = BTreeMap::from([
+            (
+                "git".to_string(),
+                task("git::https://github.com/jdx/mise.git//xtasks/a?ref=v1"),
+            ),
+            ("http".to_string(), task("https://example.com/task.sh")),
+            ("local".to_string(), task("tasks/build")),
+            ("inline".to_string(), Task::default()),
+        ]);
+        assert_eq!(
+            local_task_files(&tasks).collect::<Vec<_>>(),
+            vec![&PathBuf::from("tasks/build")]
+        );
     }
 
     #[test]
