@@ -577,14 +577,17 @@ mod tests {
 
         let _settings = crate::test::SettingsGuard::lock();
         let _lock = ENV_MUTEX.lock().await;
-        let prev_age_key = crate::env::var("MISE_SOPS_AGE_KEY").ok();
-        let prev_age_key_file = crate::env::var("MISE_SOPS_AGE_KEY_FILE").ok();
-        let prev_sops_age_key_file = crate::env::var("SOPS_AGE_KEY_FILE").ok();
-        let prev_rops = crate::env::var("MISE_SOPS_ROPS").ok();
-        crate::env::remove_var("MISE_SOPS_AGE_KEY");
-        crate::env::remove_var("MISE_SOPS_AGE_KEY_FILE");
-        crate::env::remove_var("SOPS_AGE_KEY_FILE");
-        crate::env::remove_var("MISE_SOPS_ROPS");
+        // Restores the variables even when an assertion fails. Declared after the settings
+        // guard, so it drops first and the settings reset reads them restored.
+        let mut environment = crate::test::EnvVarGuard::new();
+        for var in [
+            "MISE_SOPS_AGE_KEY",
+            "MISE_SOPS_AGE_KEY_FILE",
+            "SOPS_AGE_KEY_FILE",
+            "MISE_SOPS_ROPS",
+        ] {
+            environment.remove(var);
+        }
         Settings::reset(None);
         let config = Config::reset().await.unwrap();
         let tmp = tempfile::tempdir().unwrap();
@@ -609,20 +612,15 @@ mod tests {
         // Set in the process environment, which for MISE_SOPS_AGE_KEY_FILE is the
         // sops.age_key_file setting.
         for var in ["MISE_SOPS_AGE_KEY_FILE", "SOPS_AGE_KEY_FILE"] {
-            crate::env::set_var(var, &key_file);
+            environment.set(var, &key_file);
             Settings::reset(None);
             let exec_env = TeraEnvMap::new();
             let env = EnvResults::toml(&config, &exec_env, &p, not_a_template, &mut false)
                 .await
                 .unwrap();
             assert_eq!(env.get("SECRET").unwrap(), "mysecret", "{var}");
-            crate::env::remove_var(var);
+            environment.remove(var);
         }
-
-        restore_env_var("MISE_SOPS_AGE_KEY", prev_age_key);
-        restore_env_var("MISE_SOPS_AGE_KEY_FILE", prev_age_key_file);
-        restore_env_var("SOPS_AGE_KEY_FILE", prev_sops_age_key_file);
-        restore_env_var("MISE_SOPS_ROPS", prev_rops);
     }
 
     #[tokio::test]
