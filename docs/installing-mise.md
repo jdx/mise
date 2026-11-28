@@ -455,6 +455,12 @@ you can also check the signature of `SHASUMS256.txt` as shown under
 holds `mise.exe` and `mise-shim.exe`, and add it to your `Path`. Keep the two
 files together: mise copies `mise-shim.exe` to create its shims.
 
+Putting `mise.exe` on `Path` is not the last step: unlike the
+[PowerShell script](#windows-script), a manual install does not remind you to
+activate mise. Set up [PowerShell activation](/shell-setup.html#powershell), or
+put the shims directory on `Path` for cmd.exe as described in
+[Windows shells](/shell-setup.html#windows).
+
 ## Language package managers {#language-package-managers}
 
 ### Cargo {#cargo}
@@ -542,6 +548,9 @@ mkdir -p ~/.local/bin
 install -m 755 ./mise ~/.local/bin/mise
 ~/.local/bin/mise --version
 ```
+
+Then [activate mise in your shell](/shell-setup.html) so tools from your
+config are on `PATH`.
 
 ## Verify the executable {#verify-the-executable}
 

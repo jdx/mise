@@ -918,6 +918,144 @@ fn test_extract_archive_refuses_a_bomb() {
     );
 }
 
+/// A 7z archive of one stored file `tool`, whose header is packed with bzip2
+/// and has `padding` zero bytes after its end marker, which readers ignore.
+fn sevenz_with_padded_packed_header(padding: usize) -> Vec<u8> {
+    const COPY: &[u8] = &[0x00];
+    const BZIP2: &[u8] = &[0x04, 0x02, 0x02];
+    fn number(n: usize) -> Vec<u8> {
+        let mut number = vec![0xff];
+        number.extend((n as u64).to_le_bytes());
+        number
+    }
+    fn crc(bytes: &[u8]) -> [u8; 4] {
+        let mut crc = flate2::Crc::new();
+        crc.update(bytes);
+        crc.sum().to_le_bytes()
+    }
+    // One packed stream of `sizes.0` bytes at `pack_pos`, and one folder whose
+    // one coder unpacks it to `sizes.1` bytes.
+    fn streams_info(pack_pos: usize, coder: &[u8], sizes: (usize, usize)) -> Vec<u8> {
+        let mut info = vec![0x06];
+        info.extend(number(pack_pos));
+        info.extend([1, 0x09]);
+        info.extend(number(sizes.0));
+        info.extend([0x00, 0x07, 0x0b, 1, 0x00, 1, coder.len() as u8]);
+        info.extend(coder);
+        info.push(0x0c);
+        info.extend(number(sizes.1));
+        info.push(0x00);
+        info
+    }
+
+    let tool = b"#!/bin/sh\necho tool\n";
+    let name = "tool\0".encode_utf16().flat_map(u16::to_le_bytes);
+    let mut header = vec![0x01, 0x04];
+    header.extend(streams_info(0, COPY, (tool.len(), tool.len())));
+    header.extend([0x08, 0x00, 0x00]); // empty sub-streams info, end of streams info
+    header.extend([0x05, 1, 0x11, 11, 0x00]); // one file, and its name
+    header.extend(name);
+    header.extend([0x00, 0x00]); // end of files info, end of header
+    let unpack_size = header.len() + padding;
+    header.resize(unpack_size, 0);
+    let mut packed_header = bzip2::write::BzEncoder::new(Vec::new(), bzip2::Compression::best());
+    packed_header.write_all(&header).unwrap();
+    let packed_header = packed_header.finish().unwrap();
+
+    let packed_sizes = (packed_header.len(), unpack_size);
+    let mut encoded_header = vec![0x17];
+    encoded_header.extend(streams_info(tool.len(), BZIP2, packed_sizes));
+    encoded_header.push(0x00);
+    let mut start_header = Vec::new();
+    start_header.extend(((tool.len() + packed_header.len()) as u64).to_le_bytes());
+    start_header.extend((encoded_header.len() as u64).to_le_bytes());
+    start_header.extend(crc(&encoded_header));
+
+    let mut archive = b"7z\xbc\xaf\x27\x1c\x00\x04".to_vec();
+    archive.extend(crc(&start_header));
+    archive.extend(start_header);
+    archive.extend(tool);
+    archive.extend(packed_header);
+    archive.extend(encoded_header);
+    archive
+}
+
+/// sevenz-rust2 unpacks a packed header into memory before it yields an entry,
+/// so the limit has to hold for the size the archive declares for it.
+#[test]
+fn test_7z_refuses_a_packed_header_bomb() {
+    use confique::Layer;
+
+    let _lock = crate::testing::lock_ignoring_poison(&crate::testing::SETTINGS_LOCK);
+    let dir = tempfile::tempdir().unwrap();
+    let extract = |archive: &Path, dest: &str| {
+        extract_archive(
+            archive,
+            &dir.path().join(dest),
+            ExtractionFormat::SevenZip,
+            &ExtractOptions::default(),
+        )
+    };
+
+    let plain_path = dir.path().join("plain.7z");
+    std::fs::write(&plain_path, sevenz_with_padded_packed_header(0)).unwrap();
+    assert_eq!(
+        inspect_7z_contents(&plain_path).unwrap(),
+        vec![("tool".to_string(), false)]
+    );
+    extract(&plain_path, "plain").unwrap();
+    assert!(dir.path().join("plain/tool").exists());
+
+    // An archive of many files, whose header sevenz-rust2 packs as 7-Zip does.
+    let src_dir = dir.path().join("src");
+    std::fs::create_dir(&src_dir).unwrap();
+    for i in 0..32 {
+        std::fs::write(src_dir.join(format!("tool-{i}")), "hello world").unwrap();
+    }
+    let written_path = dir.path().join("written.7z");
+    sevenz_rust2::compress_to_path(&src_dir, &written_path).unwrap();
+    let written = std::fs::read(&written_path).unwrap();
+    let header_at = 32 + u64::from_le_bytes(written[12..20].try_into().unwrap()) as usize;
+    assert_eq!(written[header_at], 0x17);
+    assert_eq!(inspect_7z_contents(&written_path).unwrap().len(), 2);
+    extract(&written_path, "written").unwrap();
+    assert!(dir.path().join("written/tool-31").exists());
+
+    let bomb_path = dir.path().join("bomb.7z");
+    let bomb = sevenz_with_padded_packed_header(EXTRACT_MIN_LIMIT as usize);
+    assert!(bomb.len() < 1024);
+    std::fs::write(&bomb_path, &bomb).unwrap();
+    for result in [
+        inspect_7z_contents(&bomb_path).map(drop),
+        extract(&bomb_path, "bomb"),
+    ] {
+        let err = result.unwrap_err();
+        assert!(format!("{err:#}").contains("extract_max_ratio"), "{err:#}");
+    }
+
+    // Without a start header sevenz-rust2 looks for a header itself.
+    let headless_path = dir.path().join("headless.7z");
+    let mut headless = bomb;
+    headless[8..32].fill(0);
+    std::fs::write(&headless_path, headless).unwrap();
+    for result in [
+        inspect_7z_contents(&headless_path).map(drop),
+        extract(&headless_path, "headless"),
+    ] {
+        let err = result.unwrap_err();
+        assert!(format!("{err:#}").contains("no start header"), "{err:#}");
+    }
+
+    // Unlimited, the padded header is read and ignored.
+    let mut settings = mise_settings::SettingsPartial::empty();
+    settings.extract_max_ratio = Some(0);
+    crate::testing::reset_settings(Some(settings));
+    let result = extract(&bomb_path, "unlimited");
+    crate::testing::reset_settings(None);
+    result.unwrap();
+    assert!(dir.path().join("unlimited/tool").exists());
+}
+
 #[test]
 fn test_extract_budget_is_one_limit_for_all_its_archives() {
     use confique::Layer;
