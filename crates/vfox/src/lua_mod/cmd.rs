@@ -42,7 +42,50 @@ pub(crate) fn mod_cmd(lua: &Lua) -> LuaResult<()> {
     };
     os.set("execute", lua.create_function(os_execute)?)?;
     os.set("getenv", lua.create_function(os_getenv)?)?;
+    super::popen::mod_popen(lua)?;
     Ok(())
+}
+
+/// The directory hook children start in when the hook has been detached from
+/// the user's working directory (`Plugin::detach_cmds_from_cwd`), or `None` when
+/// they start in mise's own working directory.
+pub(super) fn detached_cwd(lua: &Lua) -> LuaResult<Option<String>> {
+    lua.named_registry_value::<Option<String>>("mise_cmd_cwd")
+}
+
+/// Variables that point git at a repository whatever its working directory is.
+const GIT_CONTEXT_ENV: &[&str] = &[
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_INDEX_FILE",
+    "GIT_COMMON_DIR",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_NAMESPACE",
+];
+
+fn remove_git_context_env(cmd: &mut Command) {
+    for key in GIT_CONTEXT_ENV {
+        cmd.env_remove(key);
+    }
+}
+
+/// Start `cmd` in the detached directory, without the variables that would
+/// select a repository again, when the hook has one. Runs after the mise env is
+/// applied and before the hook's own `cwd` and `env` options, which still win.
+fn apply_detached_cwd(lua: &Lua, cmd: &mut Command) -> LuaResult<()> {
+    if let Some(cwd) = detached_cwd(lua)? {
+        start_in(cmd, &cwd);
+    }
+    Ok(())
+}
+
+/// Start `cmd` in `cwd`, with a `PWD` naming it rather than the directory mise
+/// was started in, and without the variables that select a repository.
+pub(super) fn start_in(cmd: &mut Command, cwd: &str) {
+    cmd.current_dir(cwd);
+    cmd.env("PWD", cwd);
+    remove_git_context_env(cmd);
 }
 
 /// Parse the shared `(command)` / `(command, options)` signature.
@@ -258,6 +301,11 @@ fn status_with_timeout(
     wait_with_timeout(&mut child, deadline)?.ok_or_else(|| timed_out_error(command, timeout))
 }
 
+/// Whether `key` names `PWD`, which Windows spells in any case.
+fn is_pwd(key: &std::ffi::OsStr) -> bool {
+    key == "PWD" || (cfg!(windows) && key.eq_ignore_ascii_case("PWD"))
+}
+
 /// Apply the `cwd` and `env` options. Explicit env vars override the mise env.
 fn apply_options(cmd: &mut Command, options: Option<&Table>) -> LuaResult<()> {
     let Some(options) = options else {
@@ -265,6 +313,19 @@ fn apply_options(cmd: &mut Command, options: Option<&Table>) -> LuaResult<()> {
     };
     if let Ok(cwd) = options.get::<String>("cwd") {
         cmd.current_dir(Path::new(&cwd));
+        // A `PWD` set for the detached directory or by the hook environment
+        // would name the wrong directory now: point it at `cwd`, or drop it
+        // when `cwd` is relative and the child must work it out.
+        if cmd
+            .get_envs()
+            .any(|(key, value)| value.is_some() && is_pwd(key))
+        {
+            if Path::new(&cwd).is_absolute() {
+                cmd.env("PWD", &cwd);
+            } else {
+                cmd.env_remove("PWD");
+            }
+        }
     }
     if let Ok(env) = options.get::<Table>("env") {
         for pair in env.pairs::<String, String>() {
@@ -285,6 +346,7 @@ fn exec(lua: &Lua, args: mlua::MultiValue) -> LuaResult<String> {
     // This ensures mise-managed tools are on PATH when called from env module hooks.
     let has_mise_env = apply_mise_env(lua, &mut cmd)?;
     debug!("[cmd.exec] command={command:?} shell={shell:?} has_mise_env={has_mise_env}");
+    apply_detached_cwd(lua, &mut cmd)?;
 
     apply_options(&mut cmd, options.as_ref())?;
 
@@ -322,6 +384,7 @@ fn stream(lua: &Lua, args: mlua::MultiValue) -> LuaResult<i64> {
     let mut cmd = command_from_shell(&shell, &command)?;
     let has_mise_env = apply_mise_env(lua, &mut cmd)?;
     debug!("[cmd.stream] command={command:?} shell={shell:?} has_mise_env={has_mise_env}");
+    apply_detached_cwd(lua, &mut cmd)?;
     apply_options(&mut cmd, options.as_ref())?;
 
     // Interactive by definition, so all three descriptors go to the terminal.
@@ -372,7 +435,7 @@ fn run_under_terminal_lock(
 /// clearing the inherited environment first so the child sees exactly the env
 /// mise built. Returns true if it was applied; when `mise_env` is absent the
 /// command's inherited environment is left untouched (stock behavior).
-fn apply_mise_env(lua: &Lua, cmd: &mut Command) -> LuaResult<bool> {
+pub(super) fn apply_mise_env(lua: &Lua, cmd: &mut Command) -> LuaResult<bool> {
     if let Ok(mise_env) = lua.named_registry_value::<Table>("mise_env") {
         cmd.env_clear();
         for pair in mise_env.pairs::<String, String>() {
@@ -422,6 +485,7 @@ fn os_execute(lua: &Lua, command: Option<String>) -> LuaResult<i64> {
     let mut cmd = command_from_shell(&shell, &command)?;
     let has_mise_env = apply_mise_env(lua, &mut cmd)?;
     debug!("[os.execute] command={command:?} shell={shell:?} has_mise_env={has_mise_env}");
+    apply_detached_cwd(lua, &mut cmd)?;
     cmd.stdin(stdin_for(lua));
     // Shared, not exclusive: concurrent `os.execute` calls may overlap each other
     // as they always have, but none of them may overlap a `cmd.stream` child that
@@ -461,7 +525,7 @@ fn lookup_env_table(env: &Table, key: &str) -> LuaResult<Option<String>> {
     Ok(None)
 }
 
-fn cmd_shell(lua: &Lua) -> LuaResult<Vec<String>> {
+pub(super) fn cmd_shell(lua: &Lua) -> LuaResult<Vec<String>> {
     if let Ok(shell) = lua.named_registry_value::<Table>("mise_cmd_shell") {
         return shell.sequence_values::<String>().collect();
     }
@@ -476,7 +540,7 @@ fn default_cmd_shell() -> Vec<String> {
     }
 }
 
-fn command_from_shell(shell: &[String], command: &str) -> LuaResult<Command> {
+pub(super) fn command_from_shell(shell: &[String], command: &str) -> LuaResult<Command> {
     let (program, args) = shell.split_first().ok_or_else(|| {
         mlua::Error::RuntimeError("cmd.exec shell command cannot be empty".to_string())
     })?;
@@ -517,6 +581,13 @@ fn command_from_shell(shell: &[String], command: &str) -> LuaResult<Command> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pwd_is_matched_in_any_case_only_on_windows() {
+        assert!(is_pwd("PWD".as_ref()));
+        assert_eq!(is_pwd("Pwd".as_ref()), cfg!(windows));
+        assert!(!is_pwd("OLDPWD".as_ref()));
+    }
 
     #[test]
     fn test_cmd() {

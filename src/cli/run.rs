@@ -183,11 +183,17 @@ pub(crate) struct Run {
 
     /// Run the tasks at another git revision, in a temporary worktree
     ///
-    /// Checks REV out into a detached `git worktree` under mise's temporary
-    /// directory, with its submodules, and runs the tasks there with that
-    /// revision's own config and tasks. The worktree is removed afterwards,
-    /// also when a task fails or is interrupted. Ignored files such as build
-    /// caches are not there; use `--at-setup` to prepare them.
+    /// Checks REV out into a detached `git worktree` under mise's state
+    /// directory and runs the tasks there with that revision's own config and
+    /// tasks. The worktree is removed afterwards, also when a task fails or is
+    /// interrupted. Ignored files such as build caches are not there; use
+    /// `--at-setup` to prepare them.
+    ///
+    /// REV's submodules are initialized only when the directory mise runs
+    /// from, or one above it in the repository, is trusted in the main
+    /// checkout, or a config REV has there is, such as a `conf.d` folder,
+    /// since their URLs are REV's to choose. In paranoid mode they are not
+    /// initialized, not even for config trusted by `trusted_config_paths`.
     ///
     /// The config at REV is trusted only if the repository's main checkout
     /// is; it is never trusted on its own, by a prompt, or by `--yes`.
@@ -2127,6 +2133,7 @@ impl Run {
                     allow_write: self.allow_write.clone(),
                     allow_list_dirs: vec![],
                     allow_net: self.allow_net.clone(),
+                    allow_connect_port: vec![],
                     allow_unix: self.allow_unix.clone(),
                     allow_env: self.allow_env.clone(),
                     pass_through_env: vec![],

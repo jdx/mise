@@ -1343,6 +1343,63 @@ end
         Ok(())
     }
 
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[tokio::test]
+    async fn a_tap_formula_with_a_git_source_can_use_a_bottle() -> Result<()> {
+        let Some(ruby) = test_ruby().await? else {
+            return Ok(());
+        };
+        const BOTTLE: &str = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
+        for (url, strategy) in [
+            ("https://github.com/acme/widget", "using: :git,"),
+            ("https://github.com/acme/widget.git", ""),
+            ("git://example.com/acme/widget", ""),
+        ] {
+            let mut formula = formula_metadata(
+                &ruby,
+                "widget",
+                &format!(
+                    r#"
+class Widget < Formula
+  url "{url}",
+      {strategy}
+      tag: "v2.3.1",
+      revision: "0123456789abcdef0123456789abcdef01234567"
+  bottle do
+    root_url "https://github.com/acme/widget/releases/download/v2.3.1",
+      using: GitHubPrivateRepositoryReleaseDownloadStrategy
+    sha256 cellar: :any, all: "{BOTTLE}"
+  end
+end
+"#
+                ),
+            )
+            .await?;
+            assert_eq!(formula.pkg_version()?, "2.3.1");
+            let source = formula.stable_url().unwrap();
+            assert_eq!(source.using.as_deref(), Some(":git"));
+            assert!(source.checksum.is_none());
+
+            let (tag, bottle) =
+                super::super::source::select_bottle(&formula).expect("usable bottle");
+            assert_eq!(tag, "all");
+            assert_eq!(bottle.sha256, BOTTLE);
+            assert_eq!(
+                bottle.url,
+                "https://github.com/acme/widget/releases/download/v2.3.1/widget-2.3.1.all.bottle.tar.gz"
+            );
+
+            formula.bottle.clear();
+            assert!(!super::super::source::has_bottle(&formula));
+            let err = super::super::source::check_buildable(&formula).unwrap_err();
+            assert!(
+                err.to_string()
+                    .contains("uses the \":git\" download strategy")
+            );
+        }
+        Ok(())
+    }
+
     /// None of these formulae declare a `version`, so they pin the URL
     /// heuristics themselves. Every expectation below is what Homebrew's own
     /// `Version.detect` returns for the same URL.

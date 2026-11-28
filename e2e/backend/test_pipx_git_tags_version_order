@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# A git source with no GitHub releases lists its versions from tags. Git lists
+# tags in text order, so `latest` must come from version order instead.
+
+repo="$PWD/repo"
+git init -q "$repo"
+git -C "$repo" -c user.name=t -c user.email=t@example.invalid -c commit.gpgSign=false commit --allow-empty -qm init
+for tag in 2026.9.5 2026.10.1 2026.11.9 2026.11.13; do
+  git -C "$repo" tag "$tag"
+done
+
+tool="pypi:git+file://$repo"
+assert "mise ls-remote '$tool'" "2026.9.5
+2026.10.1
+2026.11.9
+2026.11.13"
+assert "mise latest '$tool'" "2026.11.13"

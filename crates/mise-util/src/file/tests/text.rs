@@ -202,6 +202,24 @@ fn config_files_over_the_limit_are_refused() {
 
 /// A missing file is `None`, and every other file reads as
 /// `read_config_to_string` reads it, limit included.
+/// Input over the limit is refused for its size even where the cutoff splits a
+/// character, and input within it must still be UTF-8.
+#[test]
+fn config_input_over_the_limit_is_refused_for_its_size() {
+    let path = Path::new("/dev/stdin");
+    let split = std::io::repeat(b'a')
+        .take(CONFIG_FILE_LIMIT)
+        .chain("\u{e9}".as_bytes());
+    let err = read_config_from(path, split).unwrap_err();
+    assert!(format!("{err:#}").contains("larger than 16 MiB"), "{err:#}");
+    assert_eq!(
+        read_config_from(path, "\u{e9}".as_bytes()).unwrap(),
+        "\u{e9}"
+    );
+    let err = read_config_from(path, &b"\xff"[..]).unwrap_err();
+    assert!(format!("{err:#}").contains("valid UTF-8"), "{err:#}");
+}
+
 #[test]
 fn read_config_to_string_if_exists_treats_missing_as_none() {
     let tmp = tempfile::tempdir().unwrap();

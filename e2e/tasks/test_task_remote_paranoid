@@ -1,0 +1,95 @@
+#!/usr/bin/env bash
+
+# Paranoid mode binds the trust of a project config to its content. That covers
+# a remote task file or task include only when the config pins it, so a source
+# that can change without the config is refused before it is fetched, the way
+# an unpinned config include is.
+
+export MISE_TRUSTED_CONFIG_PATHS=""
+require_cmd git
+require_cmd python3
+
+marker="$PWD/remote-marker"
+mkdir -p srv
+cat <<EOF >srv/build.sh
+#!/usr/bin/env bash
+#MISE description="{{ exec(command='echo ran > $marker; echo build from http') }}"
+echo build
+EOF
+start_http_server --dir "$PWD/srv"
+http_file="http://localhost:${HTTP_PORT}/build.sh"
+
+PORT_FILE="$TMPDIR/mise_git_http_port"
+READY_FILE="$TMPDIR/mise_git_http_ready"
+INFO_FILE="$TMPDIR/mise_git_http_info"
+rm -f "$PORT_FILE" "$READY_FILE" "$INFO_FILE"
+MISE_GIT_HTTP_PORT_FILE="$PORT_FILE" \
+  MISE_GIT_HTTP_READY_FILE="$READY_FILE" \
+  MISE_GIT_HTTP_INFO_FILE="$INFO_FILE" \
+  python3 "${TEST_ROOT}/helpers/scripts/git_http_backend_server.py" 0 &
+SERVER_PID=$!
+cleanup() {
+  kill "$SERVER_PID" 2>/dev/null || true
+  rm -f "$PORT_FILE" "$READY_FILE" "$INFO_FILE"
+}
+trap cleanup EXIT
+wait_for_file "$READY_FILE" "git http server" 30 "$SERVER_PID"
+git_repo="git::http://localhost:$(cat "$PORT_FILE")/repo.git"
+sha="$(git ls-remote "${git_repo#git::}" HEAD | cut -f1)"
+
+# a URL names no content, so a trusted config cannot vouch for what it serves
+cat <<EOF >mise.toml
+[tasks.build]
+file = "$http_file"
+EOF
+export MISE_PARANOID=config
+mise trust mise.toml
+assert_fail "mise tasks ls" "a remote task source must be"
+assert_fail "mise run build" "a remote task source must be"
+assert_fail "test -f $marker"
+
+# a branch or tag can move, a commit cannot
+cat <<EOF >mise.toml
+[tasks.lint]
+file = "$git_repo//xtasks/lint/remote-task?ref=v2025.1.17"
+EOF
+mise trust mise.toml
+assert_fail "mise tasks ls" "a remote task source must be"
+cat <<EOF >mise.toml
+[tasks.lint]
+file = "$git_repo//xtasks/lint/remote-task?ref=$sha"
+EOF
+mise trust mise.toml
+assert_contains "mise run lint" "remote task executed"
+
+# a remote task include follows the same rule
+cat <<EOF >mise.toml
+[task_config]
+includes = ["$git_repo//xtasks/lint?ref=main"]
+EOF
+mise trust mise.toml
+assert_fail "mise tasks ls" "a remote task source must be"
+cat <<EOF >mise.toml
+[task_config]
+includes = ["$git_repo//xtasks/lint?ref=$sha"]
+EOF
+mise trust mise.toml
+assert_contains "mise run remote-task" "remote task executed"
+
+# global config is trusted by path, so it can name a source that moves
+rm mise.toml
+cat <<EOF >"$MISE_CONFIG_DIR/config.toml"
+[tasks.build]
+file = "$http_file"
+EOF
+assert_contains "mise tasks ls" "build from http"
+rm "$marker" "$MISE_CONFIG_DIR/config.toml"
+
+# outside paranoid mode a trusted config vouches for its remote sources
+unset MISE_PARANOID
+cat <<EOF >mise.toml
+[tasks.build]
+file = "$http_file"
+EOF
+mise trust mise.toml
+assert_contains "mise tasks ls" "build from http"

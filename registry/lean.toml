@@ -1,0 +1,31 @@
+aliases = ["lean4"]
+description = "Lean 4 programming language and theorem prover"
+test = { cmd = "lean --version && lake --version", expected = "Lake version" }
+url = "https://lean-lang.org/"
+version_order = "semver"
+
+bins = ["lean", "lake"]
+[[backends]]
+full = "github:leanprover/lean4"
+platforms = [
+  "linux-x64",
+  "linux-arm64",
+  "macos-x64",
+  "macos-arm64",
+  "windows-x64",
+]
+
+[backends.options.platforms.linux-x64]
+asset_pattern = "lean-*-linux.tar.zst"
+
+[backends.options.platforms.linux-arm64]
+asset_pattern = "lean-*-linux_aarch64.tar.zst"
+
+[backends.options.platforms.macos-x64]
+asset_pattern = "lean-*-darwin.tar.zst"
+
+[backends.options.platforms.macos-arm64]
+asset_pattern = "lean-*-darwin_aarch64.tar.zst"
+
+[backends.options.platforms.windows-x64]
+asset_pattern = "lean-*-windows.tar.zst"

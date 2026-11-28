@@ -1,0 +1,125 @@
+#!/usr/bin/env bash
+
+# When the registry declares a checksum file, `mise install` refuses an artifact that the file does
+# not vouch for. In generate mode `mise lock` fills a missing checksum by hashing the download, and an
+# install that finds a checksum in mise.lock does not read the checksum file again, so `mise lock`
+# has to refuse the platform as well instead of pinning whatever the download host served.
+
+export MISE_LOCKFILE=1
+export MISE_AQUA_BAKED_REGISTRY=0
+export MISE_USE_VERSIONS_HOST=0
+
+detect_platform
+
+mkdir -p server/sums/1.0.0
+printf '#!/bin/sh\necho honest-tool\n' >server/tool-1.0.0
+printf '#!/bin/sh\necho nosums-tool\n' >server/nosums-1.0.0
+honest=$(sha256sum server/tool-1.0.0 | cut -d' ' -f1)
+printf '%s  tool-1.0.0\n' "$honest" >server/sums/1.0.0/SHA256SUMS
+printf '#!/bin/sh\necho attested-tool\n' >server/attested-1.0.0
+# The API knows the release and nothing else, so every attestation lookup is answered with 404
+mkdir -p server/api/repos/example/attested
+cat <<'JSON' >server/api/repos/example/attested/releases
+[{"tag_name": "1.0.0", "draft": false, "prerelease": false, "created_at": "2026-01-01T00:00:00Z", "assets": []}]
+JSON
+start_http_server --dir server
+# The attestation API is served over plain HTTP, where mise refuses to send a token
+unset GITHUB_TOKEN GH_TOKEN MISE_GITHUB_TOKEN GITHUB_API_TOKEN
+export MISE_URL_REPLACEMENTS="{\"https://api.github.com\":\"http://127.0.0.1:$HTTP_PORT/api\"}"
+
+REGISTRY_DIR="$PWD/aqua-registry-local"
+mkdir -p "$REGISTRY_DIR"
+cat <<EOF >"$REGISTRY_DIR/registry.yaml"
+packages:
+  - type: http
+    name: example/tool
+    url: http://127.0.0.1:$HTTP_PORT/tool-{{.Version}}
+    format: raw
+    checksum:
+      type: http
+      url: http://127.0.0.1:$HTTP_PORT/sums/{{.Version}}/SHA256SUMS
+      algorithm: sha256
+  - type: http
+    name: example/nosums
+    url: http://127.0.0.1:$HTTP_PORT/nosums-{{.Version}}
+    format: raw
+    checksum:
+      enabled: false
+      type: http
+      url: http://127.0.0.1:$HTTP_PORT/sums/{{.Version}}/SHA256SUMS
+      algorithm: sha256
+  - type: http
+    name: example/attested
+    repo_owner: example
+    repo_name: attested
+    url: http://127.0.0.1:$HTTP_PORT/attested-{{.Version}}
+    format: raw
+    github_artifact_attestations:
+      signer_workflow: example/attested/\.github/workflows/release\.yml
+    checksum:
+      type: http
+      url: http://127.0.0.1:$HTTP_PORT/sums/{{.Version}}/ATTESTED_SUMS
+      algorithm: sha256
+EOF
+export MISE_AQUA_REGISTRY_URL="file://$REGISTRY_DIR"
+
+cat <<'EOF' >mise.toml
+[tools]
+"aqua:example/tool" = "1.0.0"
+EOF
+
+# The download host also answers the v-spelling, which mise tries first; the checksum host does not
+# publish /v1.0.0/SHA256SUMS, so the declared checksum file cannot be read
+printf '#!/bin/sh\necho replaced-tool\n' >server/tool-v1.0.0
+assert_fail_contains "MISE_LOCKFILE_MODE=generate mise lock --platform $MISE_PLATFORM" "could not read the checksum file the aqua registry declares for aqua:example/tool on $MISE_PLATFORM"
+if [[ -f mise.lock ]]; then
+  assert_not_contains "cat mise.lock" "sha256:"
+fi
+# Merge mode keeps the entry without a checksum, and the install checks the file itself
+mise cache clear
+assert_contains "MISE_LOCKFILE_MODE=merge mise lock --platform $MISE_PLATFORM 2>&1" "failed to get checksum from checksum file"
+assert_not_contains "cat mise.lock" "sha256:"
+assert_fail "mise install"
+rm -f mise.lock server/tool-v1.0.0
+
+# The checksum file is published but has no row for the artifact
+mise cache clear
+printf '%s  tool-0.9.0\n' "$honest" >server/sums/1.0.0/SHA256SUMS
+assert_fail_contains "MISE_LOCKFILE_MODE=generate mise lock --platform $MISE_PLATFORM" "no checksum entry found for tool-1.0.0 in checksum file"
+if [[ -f mise.lock ]]; then
+  assert_not_contains "cat mise.lock" "sha256:"
+fi
+rm -f mise.lock
+
+# The honest release locks the published checksum and installs
+mise cache clear
+printf '%s  tool-1.0.0\n' "$honest" >server/sums/1.0.0/SHA256SUMS
+assert "MISE_LOCKFILE_MODE=generate mise lock --platform $MISE_PLATFORM"
+assert_contains "cat mise.lock" "checksum = \"sha256:$honest\""
+assert "mise install --locked"
+assert "mise x -- tool" "honest-tool"
+rm -f mise.lock
+
+# A declared attestation that does not exist vouches for nothing: generate mode refuses the
+# platform, and merge mode keeps the entry without the hash of the download
+cat <<'EOF' >mise.toml
+[tools]
+"aqua:example/attested" = "1.0.0"
+EOF
+mise cache clear
+assert_fail_contains "MISE_LOCKFILE_MODE=generate mise lock --platform $MISE_PLATFORM" "could not read the checksum file the aqua registry declares for aqua:example/attested on $MISE_PLATFORM"
+rm -f mise.lock
+mise cache clear
+assert_contains "MISE_LOCKFILE_MODE=merge mise lock --platform $MISE_PLATFORM 2>&1" "failed to get checksum from checksum file"
+assert_contains "cat mise.lock" "attested-1.0.0"
+assert_not_contains "cat mise.lock" "sha256:"
+assert_fail "mise install"
+rm -f mise.lock
+
+# A recipe that disables its checksum still locks, with the digest of the download
+cat <<'EOF' >mise.toml
+[tools]
+"aqua:example/nosums" = "1.0.0"
+EOF
+assert "MISE_LOCKFILE_MODE=generate mise lock --platform $MISE_PLATFORM"
+assert_contains "cat mise.lock" "checksum = \"sha256:$(sha256sum server/nosums-1.0.0 | cut -d' ' -f1)\""

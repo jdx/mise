@@ -591,7 +591,7 @@ async fn test_download_total_timeout_bounds_trickling_response() {
             None,
             DownloadLimits {
                 time: Duration::from_millis(500),
-                ..DownloadLimits::new(None, &HeaderMap::new())
+                ..DownloadLimits::new(DownloadOptions::default(), &HeaderMap::new())
             },
         ),
     )

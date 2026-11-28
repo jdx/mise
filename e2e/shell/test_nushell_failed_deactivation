@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+
+# The saved activation module asks mise for the deactivation operations when it is loaded in an
+# activated shell. When that mise fails or no longer exists, the module still loads, with nothing
+# undone, and the config that loads it carries on.
+if ! command -v nu >/dev/null 2>&1; then
+  exit 0
+fi
+
+mkdir -p mod
+mise activate nu >mod/real.nu
+assert_contains "cat mod/real.nu" "deactivate }"
+
+cat >stub-fails <<'SH'
+#!/bin/sh
+echo "set,X,1"
+exit 1
+SH
+cat >stub-works <<'SH'
+#!/bin/sh
+echo "set,X,1"
+SH
+chmod u+x stub-fails stub-works
+
+# The module with its deactivation call pointed at `$1`.
+module_calling() {
+  sed "s|\^\"[^\"]*\" deactivate|^\"$1\" deactivate|" mod/real.nu >mod/mise.nu
+}
+
+cat >config.nu <<'NU'
+use mod/mise.nu
+print $"loaded X=($env.X? | default unset)"
+NU
+
+module_calling "$PWD/stub-works"
+assert "__MISE_DIFF=1 nu -n config.nu" "loaded X=1"
+
+module_calling "$PWD/stub-fails"
+assert "__MISE_DIFF=1 nu -n config.nu" "loaded X=unset"
+
+module_calling "$PWD/no-such-mise"
+assert "__MISE_DIFF=1 nu -n config.nu" "loaded X=unset"

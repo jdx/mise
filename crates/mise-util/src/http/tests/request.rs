@@ -624,6 +624,11 @@ async fn test_buffer_body_refuses_a_declared_length_over_the_limit() {
     );
     let err = buffer_body_with_limit(resp, 8).await.unwrap_err();
     assert!(err.to_string().contains("is larger than 8 B"), "{err}");
+    assert!(BodyTooLarge::is_cause_of(&err));
+    assert!(BodyTooLarge::is_cause_of(&err.wrap_err("while asking")));
+    assert!(!BodyTooLarge::is_cause_of(&eyre::eyre!(
+        "is larger than 8 B"
+    )));
 }
 
 #[tokio::test]

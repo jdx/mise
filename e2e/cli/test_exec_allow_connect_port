@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+
+assert_fail "mise exec --allow-connect-port=0 -- true"
+assert_fail "mise exec --allow-connect-port=65536 -- true"
+
+if [[ "$(uname)" != "Linux" ]]; then
+  assert_fail "mise exec --allow-connect-port=12345 -- touch ran" "only supported on Linux"
+  assert "[[ ! -e ran ]] && echo blocked" "blocked"
+  exit 0
+fi
+
+if ! mise exec --allow-connect-port=12345 -- touch ran >out.log 2>&1; then
+  assert_contains "cat out.log" "requires Landlock ABI 4"
+  assert "[[ ! -e ran ]] && echo blocked" "blocked"
+  exit 0
+fi
+
+assert_fail "mise exec --allow-connect-port=12345 --deny-net -- true" "conflicts with other network restrictions"
+assert_fail "mise exec --allow-connect-port=12345 --deny-all -- true" "conflicts with other network restrictions"
+assert_fail "MISE_SANDBOX_DENY_NET=1 mise exec --allow-connect-port=12345 -- true" "conflicts with other network restrictions"
+
+cat >client.py <<'PY'
+import errno
+import socket
+import sys
+
+allowed, also_allowed, blocked = map(int, sys.argv[1:])
+for port in (allowed, also_allowed):
+    with socket.create_connection(("127.0.0.1", port), timeout=3):
+        pass
+
+def expect_denied(action, expected_errno):
+    try:
+        result = action()
+    except OSError as error:
+        assert error.errno == expected_errno, error
+    else:
+        result.close()
+        raise AssertionError("operation succeeded under the TCP port restriction")
+
+expect_denied(
+    lambda: socket.create_connection(("127.0.0.1", blocked), timeout=3),
+    errno.EACCES,
+)
+expect_denied(lambda: socket.socket(socket.AF_INET, socket.SOCK_DGRAM), errno.EPERM)
+expect_denied(lambda: socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_TCP), errno.EPERM)
+with socket.socket() as sock:
+    try:
+        sock.bind(("127.0.0.1", 0))
+    except OSError as error:
+        assert error.errno == errno.EACCES, error
+    else:
+        raise AssertionError("explicit TCP bind succeeded under the TCP port restriction")
+print("port policy enforced")
+PY
+
+# Keep all listeners alive across both sandbox runs. The denied connection
+# must fail with EACCES even though a server is listening on that port.
+cat >check.py <<'PY'
+from contextlib import ExitStack
+import socket
+import subprocess
+import sys
+
+with ExitStack() as stack:
+    ports = []
+    for _ in range(3):
+        listener = stack.enter_context(socket.create_server(("127.0.0.1", 0)))
+        ports.append(str(listener.getsockname()[1]))
+    for extra in ([], ["--allow-write=.", "--deny-env"]):
+        subprocess.run(
+            ["mise", "exec", f"--allow-connect-port={ports[0]}",
+             f"--allow-connect-port={ports[1]}", *extra, "--",
+             sys.executable, "client.py", *ports],
+            check=True,
+        )
+PY
+assert "python3 check.py" "port policy enforced
+port policy enforced"

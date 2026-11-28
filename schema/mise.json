@@ -6067,6 +6067,10 @@
         "npm_args": {
           "type": "string",
           "description": "extra arguments for npm installs (shell-split)"
+        },
+        "node": {
+          "type": "string",
+          "description": "mise-managed Node version this tool's executables always run on (embedded aube only)"
         }
       }
     },
@@ -9584,6 +9588,12 @@
                     "minLength": 1,
                     "pattern": ".*\\S.*"
                   },
+                  "cask": {
+                    "type": "string",
+                    "description": "macos-app only: official Homebrew cask whose current version, download, checksum and app to install, e.g. figma; the cask must install only app bundles. Cannot be combined with url, sha256, artifact, or a version pin",
+                    "minLength": 1,
+                    "pattern": "^[a-z0-9_+@-][a-z0-9._+@-]*$"
+                  },
                   "channel": {
                     "type": "string",
                     "description": "snap only: channel to install from and track, e.g. latest/stable or 22/edge",
@@ -9609,6 +9619,28 @@
                 },
                 "dependentRequired": {
                   "url": ["sha256", "artifact", "version"]
+                },
+                "dependentSchemas": {
+                  "cask": {
+                    "properties": {
+                      "version": {
+                        "const": "latest"
+                      }
+                    },
+                    "not": {
+                      "anyOf": [
+                        {
+                          "required": ["url"]
+                        },
+                        {
+                          "required": ["sha256"]
+                        },
+                        {
+                          "required": ["artifact"]
+                        }
+                      ]
+                    }
+                  }
                 }
               }
             ]

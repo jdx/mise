@@ -122,10 +122,7 @@ async fn preflight_system_deps_inner(
         .map(|(_, s)| s.dep.clone())
         .collect();
     let refs: Vec<&SystemDep> = missing_deps.iter().collect();
-    let (mut by_mgr, unremediable) = deps::build_requests(&refs).await;
-    // Attach any `[bootstrap.brew.taps]` git URLs so a tapped formula hint can
-    // be installed the same way `mise bootstrap packages use` handles it.
-    crate::system::attach_brew_tap_urls(config, &mut by_mgr);
+    let (by_mgr, unremediable) = deps::build_requests(&refs).await;
 
     // Deps no available package manager can install are surfaced in every mode
     // (warn and prompt/auto) — otherwise they'd only appear in the generic
@@ -150,7 +147,7 @@ async fn preflight_system_deps_inner(
     }
 
     let yes = matches!(mode, SystemDepsMode::Auto) || opts.yes;
-    let mut mgrs = crate::system::packages_from_requests(by_mgr)?;
+    let mut mgrs = crate::system::packages_from_requests(by_mgr, config)?;
     // Sources are applied before the driver asks about packages, so only a
     // run that will not ask may add them; otherwise declining the prompt
     // would still have written to /etc/apt or /etc/yum.repos.d. A prompted

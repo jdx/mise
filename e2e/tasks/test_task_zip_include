@@ -43,6 +43,8 @@ TOML
 assert "mise run build" "zip build v1"
 assert "mise run greet" "hello from the zip"
 assert_contains "mise tasks ls" "build from the zip"
+# a URL names no fixed content, so paranoid mode does not load it
+MISE_PARANOID=config assert_fail "mise tasks ls" "a remote task source must be"
 
 # a zip config include merges the mise.toml at the archive root
 cat >mise.toml <<TOML

@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+
+# An env file can name a variable with any string. A name the shell cannot hold as a variable
+# is left out of the script for bash and zsh, so a subscript in it is never evaluated, on
+# entering the directory or on leaving it, and the rest of the environment still applies.
+mkdir project
+cat >project/env.json <<'JSON'
+{
+  "x[$(touch marker1)]": "1",
+  "DIRSTACK[$(touch marker2)]": "2",
+  "a.b": "3",
+  "GOOD": "kept"
+}
+JSON
+cat >project/mise.toml <<'TOML'
+[env]
+_.file = "env.json"
+TOML
+mise trust project/mise.toml
+
+cat >visit.sh <<'SH'
+cd project || exit 1
+eval "$(mise hook-env -s "$1")"
+printf '%s\n' "${GOOD:-}"
+cd .. || exit 1
+eval "$(mise hook-env -s "$1")"
+printf 'left:%s\n' "${GOOD:-}"
+SH
+
+for sh in bash zsh; do
+  if command -v "$sh" >/dev/null 2>&1; then
+    assert "$sh visit.sh $sh" "kept
+left:"
+    assert_fail "ls marker1"
+    assert_fail "ls project/marker1"
+    assert_fail "ls marker2"
+    assert_fail "ls project/marker2"
+  fi
+done
+
+# fish evaluates no subscript in these names, but refuses each one with an error at every
+# prompt; they are left out for fish too, so it prints nothing but the environment.
+if command -v fish >/dev/null 2>&1; then
+  cat >visit.fish <<'FISH'
+cd project; or exit 1
+mise hook-env -s fish | source
+printf '%s\n' "$GOOD"
+cd ..; or exit 1
+mise hook-env -s fish | source
+printf 'left:%s\n' "$GOOD"
+FISH
+  assert "fish --no-config visit.fish 2>&1" "kept
+left:"
+  assert_fail "ls marker2"
+  assert_fail "ls project/marker2"
+fi

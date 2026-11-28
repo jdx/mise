@@ -189,6 +189,16 @@ class GitDownloadStrategy < VCSDownloadStrategy; end
 # is recorded.
 def download_strategy_name(using) = using.is_a?(Class) ? using.name : nil
 
+# Git URL forms recognized by Homebrew's DownloadStrategyDetector.
+GIT_SOURCE_URL = %r{
+  \A(?:
+    https?://.+\.git\z |
+    https?://(?:git\.sr\.ht|tangled\.sh)/[^/]+/[^/]+\z |
+    git:// |
+    ssh://git
+  )
+}x
+
 # What a formula's `bottle do ... end` block declares: where the bottles are
 # hosted, the rebuild number, and one checksum per platform tag. Anything else
 # in the block (`cellar` aside) carries no metadata mise needs.
@@ -240,7 +250,7 @@ end
 
 class Formula
   class << self
-    attr_reader :source_url, :source_using, :source_sha256, :explicit_version, :revision_value,
+    attr_reader :source_url, :source_using, :source_tag, :source_sha256, :explicit_version, :revision_value,
                 :runtime_dependencies, :build_dependencies, :keg_only_value,
                 :keg_only_reason_value
 
@@ -256,11 +266,17 @@ class Formula
       subclass.instance_variable_set(:@keg_only_reason_value, nil)
     end
 
-    def url(value = nil, using: nil, **)
+    def url(value = nil, using: nil, tag: nil, **)
       return if value.nil?
 
       @source_url = value
-      @source_using = download_strategy_name(using)
+      if using == :git || using == GitDownloadStrategy || (using.nil? && GIT_SOURCE_URL.match?(value.to_s))
+        @source_using = ":git"
+        @source_tag = tag
+      else
+        @source_using = download_strategy_name(using)
+        @source_tag = nil
+      end
     end
     def mirror(*) = nil
     def sha256(value = nil, **) = (@source_sha256 = value if value.is_a?(String))
@@ -438,8 +454,10 @@ eval(STDIN.read.force_encoding("UTF-8"), TOPLEVEL_BINDING, ENV.fetch("MISE_BREW_
 klass = Formula.instance_variable_get(:@subclass)
 raise "no Formula subclass found" unless klass
 raise "formula has no stable URL" if klass.source_url.to_s.empty?
-raise "formula has no stable sha256" if klass.source_sha256.to_s.empty?
-version = (klass.explicit_version || inferred_version(klass.source_url)).to_s
+# A Git source has no archive checksum. Rust checks whether it can pour a
+# bottle on this host and rejects Git sources on the build path.
+raise "formula has no stable sha256" if klass.source_using != ":git" && klass.source_sha256.to_s.empty?
+version = (klass.explicit_version || inferred_version(klass.source_tag || klass.source_url)).to_s
 raise "could not infer formula version; add an explicit version declaration" if version.to_s.empty?
 
 # Homebrew's bottle URL rules (Library/Homebrew/bottle.rb): a ghcr.io root is

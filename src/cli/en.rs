@@ -53,6 +53,7 @@ impl En {
             allow_read: vec![],
             allow_write: vec![],
             allow_net: vec![],
+            allow_connect_port: vec![],
             allow_unix: vec![],
             allow_env: vec![],
             secrets: vec![],

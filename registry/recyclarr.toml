@@ -1,0 +1,8 @@
+backends = [
+  { full = "github:recyclarr/recyclarr", attestations_since = "9.0.0" },
+]
+bins = ["recyclarr", "recyclarr-server"]
+description = "Sync TRaSH Guides recommendations to Sonarr and Radarr"
+test = { cmd = "recyclarr --version", expected = "{{version}}" }
+url = "https://recyclarr.dev"
+version_order = "semver"

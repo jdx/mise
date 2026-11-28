@@ -1492,24 +1492,31 @@ pub(crate) fn classify_coverage(coverage: &super::store::Coverage, display: &str
             return PathState::Omitted(nested.reason.clone());
         }
     }
-    for omitted in &coverage.omitted {
-        if under(&omitted.path) {
-            return PathState::Omitted(omitted.reason.clone());
-        }
-    }
-    for incomplete in &coverage.incomplete {
-        if under(&incomplete.path) {
-            return PathState::Omitted(format!("scan incomplete: {}", incomplete.reason));
-        }
-    }
     // the most-specific entry owns the path, exactly as
     // `TrackedSet::entry_for` decides during capture. Picking the first
     // declared ancestor instead would judge a nested entry's files by the
     // outer entry's root, and a replay would then call a file uncovered
     // that the checkpoint actually holds.
-    let Some(owner) =
-        super::tracked::owning_display(&coverage.entries, display, |entry| entry.path.as_str())
-    else {
+    let owner =
+        super::tracked::owning_display(&coverage.entries, display, |entry| entry.path.as_str());
+    // an omission speaks only for the entry whose walk recorded it: a
+    // parent skipping a cache that holds a separately tracked entry says
+    // nothing about that entry, whose own walk saw every file
+    let applies = |omission: &str| {
+        under(omission)
+            && owner.is_none_or(|owner| super::tracked::display_under(omission, &owner.path))
+    };
+    for omitted in &coverage.omitted {
+        if applies(&omitted.path) {
+            return PathState::Omitted(omitted.reason.clone());
+        }
+    }
+    for incomplete in &coverage.incomplete {
+        if applies(&incomplete.path) {
+            return PathState::Omitted(format!("scan incomplete: {}", incomplete.reason));
+        }
+    }
+    let Some(owner) = owner else {
         return PathState::Uncovered;
     };
     let local = file::replace_path(Path::new(display));
@@ -1720,7 +1727,9 @@ pub fn unsaved_paths(
         }
         if change.status == 'D'
             && let Some(path) = roots.locate(&change.path).path()
-            && carried.iter().any(|omitted| path.starts_with(omitted))
+            && tracked.entry_for(path).is_some_and(|entry| {
+                super::checkpoint::omission_covers(&carried, path, &entry.path)
+            })
             && tracked.would_retain(path)?
         {
             continue;

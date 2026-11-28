@@ -312,6 +312,14 @@ struct Fetched {
     url: String,
 }
 
+/// Optional limits for a stored download.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct DownloadOptions {
+    pub max_bytes: Option<u64>,
+    /// Cap the configured retry budget when the caller has an alternative URL.
+    pub max_retries: Option<i64>,
+}
+
 /// How long a download may take and how much it may write.
 #[derive(Clone)]
 struct DownloadLimits {
@@ -323,14 +331,18 @@ struct DownloadLimits {
     /// Whether netrc may still be sent, shared by every attempt and restart of
     /// the download so a login the server rejected is not sent again.
     netrc: RetryStateHandle,
+    retries: i64,
 }
 
 impl DownloadLimits {
-    fn new(bytes: Option<u64>, headers: &HeaderMap) -> Self {
+    fn new(options: DownloadOptions, headers: &HeaderMap) -> Self {
+        let settings = Settings::get();
+        let retries = settings.http_retries;
         Self {
-            time: crate::network::http_download_timeout(&Settings::get()),
-            bytes,
+            time: crate::network::http_download_timeout(&settings),
+            bytes: options.max_bytes,
             netrc: new_retry_state(headers, false),
+            retries: retries.min(options.max_retries.unwrap_or(retries)),
         }
     }
 }
@@ -1784,8 +1796,18 @@ impl Client {
     ) -> Result<()> {
         let url = url.into_url()?;
         let headers = host_auth_headers(&url)?;
-        self.download_file_with_pin_limited(url.clone(), path, &headers, None, pr, Some(max_bytes))
-            .await?;
+        self.download_file_with_pin_limited(
+            url.clone(),
+            path,
+            &headers,
+            None,
+            pr,
+            DownloadOptions {
+                max_bytes: Some(max_bytes),
+                ..Default::default()
+            },
+        )
+        .await?;
         ensure_download_within(path, &url, max_bytes)
     }
 
@@ -1849,7 +1871,7 @@ impl Client {
         pin: Option<&str>,
         pr: Option<&dyn SingleReport>,
     ) -> Result<DownloadFileMetadata> {
-        self.download_file_with_pin_limited(url, path, headers, pin, pr, None)
+        self.download_file_with_pin_limited(url, path, headers, pin, pr, DownloadOptions::default())
             .await
     }
 
@@ -1860,12 +1882,12 @@ impl Client {
         headers: &HeaderMap,
         pin: Option<&str>,
         pr: Option<&dyn SingleReport>,
-        max_bytes: Option<u64>,
+        options: DownloadOptions,
     ) -> Result<DownloadFileMetadata> {
         let url = url.into_url()?;
         if Settings::get().generate_lockfiles() {
             let key = format!(
-                "{:p}:{}:{max_bytes:?}",
+                "{:p}:{}:{options:?}",
                 self,
                 download_request_hash(&url, headers)
             );
@@ -1892,7 +1914,7 @@ impl Client {
                             headers,
                             pin,
                             pr,
-                            DownloadLimits::new(max_bytes, headers),
+                            DownloadLimits::new(options, headers),
                         )
                         .await?;
                     Ok::<_, eyre::Report>((directory, metadata))
@@ -1925,7 +1947,7 @@ impl Client {
             headers,
             pin,
             pr,
-            DownloadLimits::new(max_bytes, headers),
+            DownloadLimits::new(options, headers),
         )
         .await
     }
@@ -2005,26 +2027,32 @@ impl Client {
         pin: Option<&str>,
         pr: Option<&dyn SingleReport>,
     ) -> Result<DownloadFileMetadata> {
-        self.download_file_linked_limited(url, dest, headers, pin, pr, None)
-            .await
+        self.download_file_linked_with_options(
+            url,
+            dest,
+            headers,
+            pin,
+            pr,
+            DownloadOptions::default(),
+        )
+        .await
     }
 
-    /// [`Client::download_file_linked`] that fails once more than `max_bytes`
-    /// have arrived, for a file mise then reads whole into memory.
-    pub async fn download_file_linked_limited<U: IntoUrl>(
+    /// [`Client::download_file_linked`] with download size and retry limits.
+    pub async fn download_file_linked_with_options<U: IntoUrl>(
         &self,
         url: U,
         dest: &Path,
         headers: &HeaderMap,
         pin: Option<&str>,
         pr: Option<&dyn SingleReport>,
-        max_bytes: Option<u64>,
+        options: DownloadOptions,
     ) -> Result<DownloadFileMetadata> {
         let url = url.into_url()?;
         let metadata = self
-            .download_file_linked_inner(url.clone(), dest, headers, pin, pr, max_bytes)
+            .download_file_linked_inner(url.clone(), dest, headers, pin, pr, options)
             .await?;
-        if let Some(max_bytes) = max_bytes {
+        if let Some(max_bytes) = options.max_bytes {
             ensure_download_within(dest, &url, max_bytes)?;
         }
         Ok(metadata)
@@ -2037,7 +2065,7 @@ impl Client {
         headers: &HeaderMap,
         pin: Option<&str>,
         pr: Option<&dyn SingleReport>,
-        max_bytes: Option<u64>,
+        options: DownloadOptions,
     ) -> Result<DownloadFileMetadata> {
         let name = dest
             .file_name()
@@ -2050,7 +2078,7 @@ impl Client {
             .flatten();
         let Some(staging) = staging else {
             return self
-                .download_file_with_pin_limited(url, dest, headers, pin, pr, max_bytes)
+                .download_file_with_pin_limited(url, dest, headers, pin, pr, options)
                 .await;
         };
         let cache = CacheMode { pin, enabled: true };
@@ -2061,7 +2089,7 @@ impl Client {
                 headers,
                 cache,
                 pr,
-                DownloadLimits::new(max_bytes, headers),
+                DownloadLimits::new(options, headers),
             )
             .await?;
         let blob = match fetched.stored {
@@ -2173,7 +2201,7 @@ impl Client {
         // Retry the whole transfer, resuming a validated partial response when
         // possible. send_once_with_https_fallback_allow_416 (not
         // send_with_https_fallback) is used inside to avoid retry-on-retry.
-        let download = retry_async("GET", &url, || {
+        let download = retry_async_with_retries("GET", &url, limits.retries, || {
             let attempt = attempt.clone();
             let progress = progress.clone();
             let request_url = url.clone();
@@ -3104,6 +3132,12 @@ impl TextRequest<'_> {
         self
     }
 
+    /// Cap the configured retry budget, including when it is already zero.
+    pub fn max_retries(mut self, max_retries: i64) -> Self {
+        self.retries = self.retries.min(max_retries);
+        self
+    }
+
     /// Accept an HTML body instead of rejecting it, for callers that parse
     /// arbitrary content such as directory listings.
     pub fn allow_html(mut self) -> Self {
@@ -3242,6 +3276,35 @@ pub async fn buffer_body(resp: Response) -> Result<Response> {
     buffer_body_with_limit(resp, MAX_BODY_BYTES).await
 }
 
+/// The error [`buffer_body_with_limit`] fails with when a body passes its
+/// limit, so a caller can tell a server that sent too much from one that
+/// could not be reached. It can sit anywhere in the error's chain.
+#[derive(Debug)]
+pub struct BodyTooLarge {
+    url: String,
+    limit: usize,
+}
+
+impl BodyTooLarge {
+    /// Whether `err` is, or was caused by, a body over its limit.
+    pub fn is_cause_of(err: &eyre::Report) -> bool {
+        err.chain().any(|cause| cause.is::<Self>())
+    }
+}
+
+impl std::fmt::Display for BodyTooLarge {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "response body from {} is larger than {}",
+            self.url,
+            bytesize::ByteSize::b(self.limit as u64).display().iec()
+        )
+    }
+}
+
+impl std::error::Error for BodyTooLarge {}
+
 /// Reads the decoded body chunk by chunk, failing once it passes `limit`, and
 /// returns the response with the body buffered, ready for `json()`, `text()`
 /// or `bytes()`. Those collect whatever the server sends, so call this first.
@@ -3249,11 +3312,10 @@ pub async fn buffer_body(resp: Response) -> Result<Response> {
 /// transport error, so neither is retried.
 pub async fn buffer_body_with_limit(mut resp: Response, limit: usize) -> Result<Response> {
     let too_large = |url: &Url| {
-        eyre!(
-            "response body from {} is larger than {}",
-            log_url(url),
-            bytesize::ByteSize::b(limit as u64).display().iec()
-        )
+        eyre::Report::new(BodyTooLarge {
+            url: log_url(url).into_owned(),
+            limit,
+        })
     };
     if resp
         .content_length()

@@ -1319,11 +1319,18 @@ impl PIPXBackend {
         }
     }
 
-    /// Lists tags from a Git remote while preserving Git's source ordering.
+    /// Lists tags from a Git remote in Git's version order. `ls-remote` alone
+    /// lists them in text order, so `2026.11.9` would come after `2026.11.13`
+    /// and be taken as `latest`.
     async fn versions_from_git_tags(remote: &str) -> Result<Vec<VersionInfo>> {
         timeout::run_with_timeout_async(
             async || {
-                let output = crate::git::ls_remote(&["--tags", "--refs"], remote, &[]).await?;
+                let output = crate::git::ls_remote(
+                    &["--tags", "--refs", "--sort=version:refname"],
+                    remote,
+                    &[],
+                )
+                .await?;
                 Ok(Self::versions_from_git_ls_remote(&output))
             },
             Settings::get().fetch_remote_versions_timeout(),
