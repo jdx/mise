@@ -1088,7 +1088,14 @@ fn release_java_version(install_path: &Path) -> Option<String> {
         .trim_matches('"');
     Some(match version.strip_prefix("1.") {
         Some(legacy) => legacy.replacen('_', ".", 1),
-        None => version.to_string(),
+        // A first GA release writes only its major, `25`, which the catalog lists as `25.0.0`.
+        None => {
+            let mut parts = version.split('.').collect::<Vec<_>>();
+            if parts.len() < 3 {
+                parts.resize(3, "0");
+            }
+            parts.join(".")
+        }
     })
 }
 
@@ -1632,6 +1639,7 @@ mod tests {
         let installed = [
             ("zulu-javafx-8.98.0.111", Some("1.8.0_512")),
             ("zulu-21.54.109.0", Some("21.0.13.0.3")),
+            ("zulu-25.28.85.0", Some("25")),
             ("liberica-nik-openjdk25-25.0.5.1+1", None),
             ("jetbrains-21.0.11-b1163.125", None),
             ("semeru-openj9-22.0.1+8_openj9-0.45.0", None),
@@ -1657,6 +1665,7 @@ mod tests {
         assert_eq!(find("zulu-javafx-8.0.512"), ["zulu-javafx-8.98.0.111"]);
         assert!(find("zulu-8.0.512").is_empty());
         assert_eq!(find("zulu-21.0.13.0.3"), ["zulu-21.54.109.0"]);
+        assert_eq!(find("zulu-25.0.0"), ["zulu-25.28.85.0"]);
         assert_eq!(
             find("liberica-nik-25.0.5.1+1"),
             ["liberica-nik-openjdk25-25.0.5.1+1"]
