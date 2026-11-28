@@ -5277,6 +5277,10 @@ pub fn apply_layers(
     // each round is planned alone, so the claims of entries in different
     // rounds are checked against each other here
     validate_composed_file_footprints(requests)?;
+    if !opts.dry_run {
+        // before any round writes, so each shared target is told apart as it is now
+        track_walking_targets(config, requests);
+    }
     let mut worked = false;
     // what earlier rounds create, for a dry run that has not written it
     let mut pending: Vec<(PathBuf, bool)> = vec![];
@@ -5814,7 +5818,7 @@ fn execute_layer(
     let has_reconciliation = !plan.reconciliation.stale_links.is_empty();
     if plan.todo.is_empty() && !has_reconciliation {
         if !opts.dry_run {
-            track_walking_targets(plan.requests);
+            track_walking_targets(config, plan.requests);
             prune_after_apply([], &plan);
             for req in plan.record_symlink_each {
                 let pending = journal::begin_changes(
@@ -5902,7 +5906,7 @@ fn execute_layer(
     }
     // a walking entry's target is shared with the user's files, so what a later removal may take
     // with it is only what mise created there; what is there now is told apart before writing
-    track_walking_targets(plan.requests);
+    track_walking_targets(config, plan.requests);
     for link in &plan.reconciliation.stale_links {
         if link_points_to(&link.source, &link.target) {
             let item = link.target.display_user().to_string();
@@ -7528,16 +7532,27 @@ fn deployed_under(req: &FileRequest) -> Vec<PathBuf> {
 }
 
 /// Start tracking the targets of the walking entries of `requests` that are not tracked yet,
-/// including those of entries that need no change. Entries can share a target, so what each of
-/// them deployed there counts for all of them.
-fn track_walking_targets<'a>(requests: impl IntoIterator<Item = &'a FileRequest>) {
-    let mut deployed: BTreeMap<PathBuf, Vec<PathBuf>> = BTreeMap::new();
-    for req in requests {
-        if walks_source_dir(req) {
-            deployed
-                .entry(lexical_normalize(&req.target))
-                .or_default()
-                .extend(deployed_under(req));
+/// including those of entries that need no change. Entries can share a target, so what every
+/// active entry on it deployed there counts, whichever round or selection applies it.
+fn track_walking_targets<'a>(config: &Config, requests: impl IntoIterator<Item = &'a FileRequest>) {
+    let record = crate::created_dirs::CreatedDirs::load();
+    let requests = requests
+        .into_iter()
+        .filter(|req| walks_source_dir(req) && !record.tracks(&req.target))
+        .collect::<Vec<_>>();
+    if requests.is_empty() {
+        return;
+    }
+    let mut deployed: BTreeMap<PathBuf, Vec<PathBuf>> = requests
+        .iter()
+        .map(|req| (lexical_normalize(&req.target), vec![]))
+        .collect();
+    let active = files_from_config(config).unwrap_or_default();
+    for req in requests.into_iter().chain(&active) {
+        if walks_source_dir(req)
+            && let Some(paths) = deployed.get_mut(&lexical_normalize(&req.target))
+        {
+            paths.extend(deployed_under(req));
         }
     }
     for (target, paths) in deployed {

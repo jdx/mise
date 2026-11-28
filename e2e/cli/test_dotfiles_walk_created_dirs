@@ -77,3 +77,21 @@ assert_succeed "mise dot apply --yes"
 assert_contains "cat $MISE_STATE_DIR/dotfiles/created_dirs.toml" "$HOME/t"
 assert_succeed "mise dot unapply ~/t --yes"
 assert_succeed "test -d $HOME/t/app"
+
+# a directory mise made, which the user deleted and made again, is theirs
+rm -rf "$HOME/t"
+mkdir -p "$HOME/t"
+cat <<EOF >mise.toml
+[dotfiles]
+"~/t" = { source = "$DOTS/pkg", mode = "symlink-each" }
+EOF
+assert_succeed "mise dot apply --yes"
+echo "mine" >"$HOME/t/new/mine"
+assert_succeed "mise dot unapply ~/t --yes"
+assert_succeed "test -f $HOME/t/new/mine"
+rm -r "$HOME/t/new"
+mkdir "$HOME/t/new"
+assert_succeed "mise dot apply --yes"
+assert_succeed "mise dot unapply ~/t --yes"
+assert_fail "test -e $HOME/t/new/sub"
+assert_succeed "test -d $HOME/t/new"
