@@ -266,9 +266,20 @@ that is a git repository of its own, such as a tracked `~/code/.config`.
 the [state directory](/directories.html). See [`mise trust`](/cli/trust.html)
 for every flag.
 
-Trust records use resolved paths. If a symlinked config, such as one installed
-with GNU Stow, still reports untrusted after `mise trust`, trust the real file
-path.
+A [conf.d folder](/configuration.html#conf-d-folders) and `.config/mise` are
+config roots of their own inside a project. `mise trust --untrust` and
+`mise trust --ignore` with a directory or no path act on the project and on
+every such root in it, and an ignored project's nested roots stay ignored,
+including ones added later. Name a file to act on that file's root alone, so
+`mise untrust mise.toml` leaves a nested root you trusted on its own trusted.
+
+A config that mise reaches through a symlink inside a project, such as a linked
+`mise.toml`, a linked `conf.d` folder or a linked `.mise` or `.config`
+directory, belongs to that project: it is trusted when the project is, and trust
+in the file or directory the link leads to does not count. `mise trust` in the project trusts
+it. Paranoid mode approves a file by its content and refuses such a config with
+an error; replace the link with a copy, or add the project to
+`trusted_config_paths`. Links in global config are yours and are not affected.
 
 ### Trust by path
 
@@ -299,8 +310,10 @@ config file below its directory, so review the subprojects' config as part of
 the repository. They stay trusted only while the root is: after
 `mise trust --ignore` on the root, or once a `trusted_config_paths` entry that
 covered it is gone, they need trust of their own again. See
-[Monorepo tasks](/tasks/monorepo.html). In paranoid mode, trusting the root
-trusts only that file.
+[Monorepo tasks](/tasks/monorepo.html). A subproject you ignore with
+`mise trust --ignore` stays ignored under a trusted root: mise does not load
+its config or list its tasks, and a command that trusts the root does not
+remove the ignore. In paranoid mode, trusting the root trusts only that file.
 
 A command [typed in a terminal](#typed-in-a-terminal) in an untrusted monorepo
 root, or in a subproject below it, trusts the root the same way, so the trust
@@ -399,6 +412,13 @@ These are skipped without an error, so resolution commands keep working:
   too. The options of a tool from global or system config, including a global
   `[tool_alias]`, keep `env` when a backend renders them later.
 - `_.source` in every config, including global config.
+- Env files that mise finds by searching: the files a relative
+  [`env_file`](/configuration/settings.html#env_file) name matches in the
+  working directory or a parent, and the files a global `_.file` entry with
+  `find_up = true` or a glob finds. This includes files outside a repository,
+  such as `~/.env`, and files you trusted. An absolute `env_file` entry or a
+  global `_.file` entry that names one file still loads. With paranoid mode's
+  `env_files` category on, only the absolute `env_file` entry needs approval.
 - Project `[shell_alias]`.
 - The commands in a project task's usage spec that shell completion would run.
 - Project `[wrappers]` and the `rust` tool's `mr_boxington` option.

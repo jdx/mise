@@ -778,7 +778,11 @@ impl TaskExecutor {
         // untrusted tasks checks the task it actually resolved.
         if crate::config::runs_only_trusted_tasks() && !crate::config::task_is_trusted(config, task)
         {
-            return Err(crate::errors::Error::UntrustedConfig(task.config_source.clone()).into());
+            return Err(crate::errors::Error::UntrustedConfig(
+                task.config_source.clone(),
+                crate::errors::Untrusted::NotTrusted,
+            )
+            .into());
         }
         let prefix = task.estyled_prefix();
         let total_start = std::time::Instant::now();
@@ -1669,7 +1673,11 @@ impl TaskExecutor {
                 .all()
                 .find(|t| !crate::config::task_is_trusted(config, t))
         {
-            return Err(crate::errors::Error::UntrustedConfig(task.config_source.clone()).into());
+            return Err(crate::errors::Error::UntrustedConfig(
+                task.config_source.clone(),
+                crate::errors::Untrusted::NotTrusted,
+            )
+            .into());
         }
         // Listed now, like the run's own graph, so a task the run then never starts is
         // reported as not run instead of missing.

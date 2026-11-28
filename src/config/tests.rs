@@ -97,6 +97,67 @@ fn test_task_config_rust_cache_is_a_default() {
     );
 }
 
+#[cfg(unix)]
+#[test]
+fn test_path_is_spelled_in_dir_does_not_follow_links_into_it() -> Result<()> {
+    let tmp = TempDir::new()?;
+    assert_path_spellings(tmp.path())?;
+    // A link above everything, as macOS has in `/var` -> `/private/var` for every temp
+    // directory: paths written below it still name the same files.
+    let real_root = tmp.path().join("real-root");
+    fs::create_dir_all(&real_root)?;
+    std::os::unix::fs::symlink(&real_root, tmp.path().join("linked-root"))?;
+    assert_path_spellings(&tmp.path().join("linked-root"))
+}
+
+#[cfg(unix)]
+fn assert_path_spellings(root: &Path) -> Result<()> {
+    use std::os::unix::fs::symlink;
+    let real_home = root.join("real-home");
+    let dotfiles = root.join("dotfiles");
+    fs::create_dir_all(real_home.join(".config"))?;
+    fs::create_dir_all(dotfiles.join("mise/tasks/setup"))?;
+    File::create(dotfiles.join("mise/tasks/build"))?;
+    symlink(dotfiles.join("mise"), real_home.join(".config/mise"))?;
+    let home = root.join("home");
+    symlink(&real_home, &home)?;
+    let tasks = home.join(".config/mise/tasks");
+
+    // the global directory under each of its spellings
+    for spelling in [
+        tasks.clone(),
+        real_home.join(".config/mise/tasks"),
+        dotfiles.join("mise/tasks"),
+    ] {
+        assert!(
+            path_is_spelled_in_dir(&spelling.join("build"), &tasks),
+            "{}",
+            spelling.display()
+        );
+    }
+
+    let project = root.join("project");
+    fs::create_dir_all(project.join("mise-tasks"))?;
+    fs::create_dir_all(project.join(".mise"))?;
+    symlink(tasks.join("build"), project.join("mise-tasks/bootstrap"))?;
+    symlink(tasks.join("setup"), project.join(".mise/tasks"))?;
+    symlink(&tasks, project.join("mise-tasks/all"))?;
+    symlink(home.join(".config/mise"), project.join("config"))?;
+    for linked in [
+        project.join("mise-tasks/bootstrap"),
+        project.join(".mise/tasks/bootstrap"),
+        project.join("mise-tasks/all/build"),
+        project.join("config/tasks/build"),
+    ] {
+        assert!(
+            !path_is_spelled_in_dir(&linked, &tasks),
+            "{}",
+            linked.display()
+        );
+    }
+    Ok(())
+}
+
 #[test]
 fn test_collect_task_files_skips_dangling_symlinks() -> Result<()> {
     let tmp = TempDir::new()?;
@@ -1694,6 +1755,109 @@ fn test_glob_treats_directory_as_literal() -> Result<()> {
         glob(&tmp.path().join("**"), ".mise/conf.d/*.toml")?,
         vec![tmp.path().join("**/.mise/conf.d/tools.toml")]
     );
+    Ok(())
+}
+
+/// `MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES=none` turns discovery off and names no file, so an
+/// env file named `none` is not config that `mise trust` would trust the directory for.
+#[test]
+fn test_user_config_filenames_skip_the_disable_value() {
+    let vars = |set: &'static [(&'static str, &'static str)]| {
+        move |name: &str| {
+            set.iter()
+                .find(|(var, _)| *var == name)
+                .map(|(_, value)| value.to_string())
+        }
+    };
+    assert!(
+        user_config_filenames_from(vars(&[("MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES", "none")]))
+            .is_empty()
+    );
+    assert_eq!(
+        user_config_filenames_from(vars(&[
+            ("MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES", "none"),
+            ("MISE_OVERRIDE_CONFIG_FILENAMES", "project.toml:none"),
+            ("MISE_DEFAULT_CONFIG_FILENAME", ""),
+        ])),
+        ["project.toml", "none"],
+        "`none` disables only `.tool-versions` discovery, as the whole value"
+    );
+    assert_eq!(
+        user_config_filenames_from(vars(&[
+            (
+                "MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES",
+                "a.versions::b.versions"
+            ),
+            ("MISE_DEFAULT_TOOL_VERSIONS_FILENAME", "c.versions"),
+            ("MISE_DEFAULT_CONFIG_FILENAME", "d.toml"),
+        ])),
+        ["a.versions", "b.versions", "c.versions", "d.toml"]
+    );
+}
+
+/// A config file for an environment `MISE_ENV` does not select is config too: trusting its
+/// root covers it, so `mise trust mise.staging.toml` with only `env_files` on trusts the
+/// project rather than approving the file as an env file.
+#[test]
+fn test_has_own_config_filename_counts_every_environment() -> Result<()> {
+    let tmp = TempDir::new()?;
+    let dir = tmp.path().join("proj");
+    let files = [
+        "mise.staging.toml",
+        ".mise.prod.local.toml",
+        ".config/mise/config.dev.toml",
+        "mise/conf.d/web/mise.qa.toml",
+        ".mise/conf.d/base.staging.toml",
+        "mise.toml",
+        "project.toml",
+        "none",
+        ".env",
+        "env.staging.toml",
+    ];
+    for file in files {
+        let path = dir.join(file);
+        fs::create_dir_all(path.parent().unwrap())?;
+        fs::write(&path, "")?;
+    }
+    let user_names = vec!["project.toml".to_string()];
+    let is_config = |file: &str| has_own_config_filename_from(&dir.join(file), &dir, &user_names);
+    for file in &files[..7] {
+        assert!(is_config(file), "{file} is config");
+    }
+    for file in &files[7..] {
+        assert!(!is_config(file), "{file} is not config");
+    }
+    // A name the operator set counts outside the directory searched from, mise's own do not.
+    let child = |file: &str| has_own_config_filename_from(&dir.join(file), tmp.path(), &user_names);
+    assert!(child("project.toml"));
+    assert!(!child("mise.staging.toml"));
+    Ok(())
+}
+
+/// The answer for a named file does not depend on the directory mise runs in: the search starts
+/// beside the file, so a file below the working directory is matched against its own project.
+#[test]
+fn test_has_own_config_filename_ignores_the_working_directory() -> Result<()> {
+    let tmp = TempDir::new()?;
+    let app = tmp.path().canonicalize()?.join("app");
+    let files = [
+        ".mise/config.staging.toml",
+        ".config/mise/config.dev.toml",
+        "mise/conf.d/web/mise.qa.toml",
+        "mise.toml",
+    ];
+    for file in files {
+        let path = app.join(file);
+        fs::create_dir_all(path.parent().unwrap())?;
+        fs::write(&path, "")?;
+    }
+    fs::write(app.join("env.staging.toml"), "")?;
+    // The test runs in the crate's directory, which is neither `app` nor above it.
+    assert!(!app.starts_with(env::current_dir()?));
+    for file in files {
+        assert!(has_own_config_filename(&app.join(file)), "{file} is config");
+    }
+    assert!(!has_own_config_filename(&app.join("env.staging.toml")));
     Ok(())
 }
 

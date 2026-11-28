@@ -6286,3 +6286,31 @@ backend = "conda:jq"
             .is_some()
     );
 }
+
+/// The global lockfile is matched where it sits: a project directory linked to the global
+/// config directory resolves to it, but is not it.
+#[cfg(unix)]
+#[test]
+fn the_global_lockfile_is_matched_as_written() {
+    let temp = tempfile::tempdir().unwrap();
+    let global = temp.path().join("global");
+    let project = temp.path().join("project");
+    std::fs::create_dir_all(&global).unwrap();
+    std::fs::create_dir_all(&project).unwrap();
+    std::os::unix::fs::symlink(&global, project.join(".config")).unwrap();
+
+    let lockfile = global.join("mise.lock");
+    assert!(same_path_as_written(&lockfile, &lockfile));
+    assert!(same_path_as_written(
+        &lockfile,
+        &temp.path().join("project/../global/mise.lock")
+    ));
+    assert!(same_file_path(
+        &lockfile,
+        &project.join(".config/mise.lock")
+    ));
+    assert!(!same_path_as_written(
+        &lockfile,
+        &project.join(".config/mise.lock")
+    ));
+}

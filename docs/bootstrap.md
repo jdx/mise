@@ -389,6 +389,8 @@ A project file with only `[tasks]` loads without trust, and its tasks can
 replace yours by name. mise therefore runs the `bootstrap` task only when it and
 every task it reaches (its `depends`, and tasks its `run` entries name) come
 from the global config or a trusted project. Other project tasks do not matter.
+A task file is judged by where mise found it: a project file that is a symlink
+into `~/.config/mise/tasks` is a task of that project, not a global one.
 Otherwise the run stops at this step with an error that names the untrusted
 file. Trust the project, run `mise bootstrap` from another directory, or pass
 `--skip task`.

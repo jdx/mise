@@ -17,10 +17,12 @@ use crate::file::display_path;
 use crate::path::PathExt;
 use crate::platform::Platform;
 use crate::toolset::{ToolRequest, ToolSource, ToolVersion, ToolVersionOptions, Toolset};
+use crate::ui::style::display_path_escaped;
 use eyre::{Report, Result, bail, eyre};
 use indexmap::IndexSet;
 use itertools::Itertools;
 use mise_util::yaml;
+use path_absolutize::Absolutize;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::{ErrorKind, Write};
@@ -2535,6 +2537,21 @@ impl Lockfile {
 
     pub fn prepare_write(&self, path: &Path) -> Result<Option<PreparedWrite>> {
         self.ensure_no_credential_queries()?;
+        // Checked before the lockfile's own link is followed: below a directory link that leaves
+        // the project, a lockfile that is itself a link to a file beside it stays in its own
+        // directory and would pass the check on that link.
+        if let Some(project) =
+            crate::config::config_file::config_root::linked_lockfile_project(path)
+            && leads_out_of(path, &project)
+            && !project_vouches_for_linked_lockfile(path, &project)
+        {
+            bail!(
+                "refusing to write lockfile {}: it is reached through a symlink inside {}, which leads out of that project, and a link out is only followed for global config, or for trusted config outside safe mode. Run `mise trust` in {} if the link is yours",
+                display_path_escaped(path),
+                display_path_escaped(&project),
+                display_path_escaped(&project)
+            );
+        }
         // Resolve the lockfile target before choosing sidecar locations and pointers.
         let mut source_symlink = None;
         let target = if path.is_symlink() {
@@ -2551,8 +2568,8 @@ impl Lockfile {
                     if !may_write_through_symlink(&link, &link_target) {
                         bail!(
                             "refusing to write lockfile {} through its symlink to {}: a link out of the lockfile's directory is only followed for global config, or for trusted config outside safe mode",
-                            display_path(path),
-                            display_path(&link_target)
+                            display_path_escaped(path),
+                            display_path_escaped(&link_target)
                         );
                     }
                     source_symlink = Some(link);
@@ -3680,7 +3697,19 @@ fn is_global_lockfile(lockfile: &Path) -> bool {
         .iter()
         .chain(&crate::config::override_config_files())
         .chain(&crate::config::system_config_files())
-        .any(|config| same_file_path(&lockfile_path_for_config(config, None).0, lockfile))
+        .any(|config| same_path_as_written(&lockfile_path_for_config(config, None).0, lockfile))
+}
+
+/// Whether `a` and `b` are the same path once made absolute, without following links.
+/// [`same_file_path`] resolves the directories, so a project directory linked to the global
+/// config directory would match the global lockfile.
+fn same_path_as_written(a: &Path, b: &Path) -> bool {
+    let as_written = |path: &Path| {
+        path.absolutize()
+            .map(|p| p.to_path_buf())
+            .unwrap_or_else(|_| path.to_path_buf())
+    };
+    as_written(a) == as_written(b)
 }
 
 /// Whether the user vouches for the lockfile at `lockfile`: it is the global
@@ -3756,11 +3785,48 @@ fn may_write_through_symlink(link: &Path, target: &Path) -> bool {
     {
         return true;
     }
-    if is_global_lockfile(link) {
-        return true;
-    }
-    !Settings::safe_mode()
-        && Config::maybe_get().is_some_and(|config| lockfile_is_trusted(&config, link))
+    owner_vouches_for_lockfile(link)
+}
+
+/// Whether the directory of `path` resolves to somewhere outside `project`, or cannot be
+/// resolved.
+fn leads_out_of(path: &Path, project: &Path) -> bool {
+    let dir = path.parent().and_then(|dir| fs::canonicalize(dir).ok());
+    let project = fs::canonicalize(project).ok();
+    !matches!((dir, project), (Some(dir), Some(project)) if dir.starts_with(&project))
+}
+
+/// Whether `project`, which holds a link that the lockfile at `path` is reached through, vouches
+/// for writing it wherever the link leads: the global or system lockfile, or a lockfile of
+/// `project` when that project is trusted, outside safe mode.
+///
+/// Only the project that holds the link decides. Another trusted config whose lockfile resolves
+/// to the same place does not vouch for this one.
+fn project_vouches_for_linked_lockfile(path: &Path, project: &Path) -> bool {
+    is_global_lockfile(path)
+        || (!Settings::safe_mode() && crate::config::config_file::is_trusted(project))
+}
+
+/// Whether the config that owns the lockfile at `path` vouches for writing it wherever its
+/// path leads: the global or system lockfile, or a trusted project's outside safe mode.
+fn owner_vouches_for_lockfile(path: &Path) -> bool {
+    is_global_lockfile(path)
+        || Config::maybe_get().is_some_and(|config| {
+            global_config_keeps_lockfile(&config, path)
+                || (!Settings::safe_mode() && lockfile_is_trusted(&config, path))
+        })
+}
+
+/// Whether a loaded global or system config keeps its lockfile at `path`, beside the file as
+/// mise loaded it. A global config dir linked into a dotfiles checkout can load from the
+/// checkout's own path, where [`is_global_lockfile`] does not match it. A project file linked to
+/// global config is not that config, and a monorepo's shared lockfile is not beside it.
+fn global_config_keeps_lockfile(config: &Config, path: &Path) -> bool {
+    config.config_files.keys().any(|config_path| {
+        crate::config::is_global_config(config_path)
+            && !crate::config::is_project_link_to_global_config(config_path)
+            && same_path_as_written(&lockfile_path_for_config(config_path, None).0, path)
+    })
 }
 
 /// Checks if a config path is a "local" config (should go to mise.local.lock)

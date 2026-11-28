@@ -1,8 +1,8 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::args::BackendArg;
-use crate::file::display_path;
 use crate::toolset::{ToolRequest, ToolSource, ToolVersion};
+use crate::ui::style::display_path_escaped;
 use eyre::Report;
 use thiserror::Error;
 
@@ -36,15 +36,12 @@ pub enum Error {
     PluginNotInstalled(String),
     #[error("{0}@{1} not installed")]
     VersionNotInstalled(Box<BackendArg>, String),
-    #[error(
-        "Config files in {} are not trusted.\nTrust them with `mise trust`. See https://mise.jdx.dev/cli/trust.html for more information.",
-        display_path(.0)
-    )]
-    UntrustedConfig(PathBuf),
+    #[error("{}", .1.message(.0))]
+    UntrustedConfig(PathBuf, Untrusted),
     #[error(
         "The environment file or script {} is not trusted, and paranoid mode ties trust to a file's contents.\nReview it, then trust it with `mise trust` or `mise trust {}`. See https://mise.jdx.dev/paranoid.html#environment-files for more information.",
-        display_path(.0),
-        display_path(.0)
+        display_path_escaped(.0),
+        display_path_escaped(.0)
     )]
     UntrustedEnvFile(PathBuf),
     /// A parent stopped waiting for its nested tasks because another task failed.
@@ -55,6 +52,74 @@ pub enum Error {
         successful_installations: Vec<ToolVersion>,
         failed_installations: Vec<(ToolRequest, Report)>,
     },
+}
+
+/// Why a config file is refused, carried by [`Error::UntrustedConfig`] so the places that skip an
+/// untrusted config can say what to do about it.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum Untrusted {
+    /// Nobody has trusted it, and `mise trust` would.
+    #[default]
+    NotTrusted,
+    /// Paranoid mode reaches it through a symlink inside this project. Trust cannot help: paranoid
+    /// mode approves a file by its content, and a link inside a project is that project's to
+    /// change.
+    LinkedInProject(PathBuf),
+}
+
+impl Untrusted {
+    /// The error for the config at `path`.
+    pub fn message(&self, path: &Path) -> String {
+        match self {
+            Untrusted::NotTrusted => format!(
+                "Config files in {} are not trusted.\nTrust them with `mise trust`. See https://mise.jdx.dev/cli/trust.html for more information.",
+                display_path_escaped(path)
+            ),
+            Untrusted::LinkedInProject(project) => format!(
+                "{} is reached through a symlink inside {}, and paranoid mode cannot approve it: \
+                 it approves a file by its content, and a link inside a project is that project's \
+                 to change.\n{}",
+                display_path_escaped(path),
+                display_path_escaped(project),
+                self.remedy(path)
+            ),
+        }
+    }
+
+    /// What the user can do to load the config at `path`.
+    pub fn remedy(&self, path: &Path) -> String {
+        match self {
+            Untrusted::NotTrusted => "run `mise trust` to enable it".to_string(),
+            Untrusted::LinkedInProject(project) => {
+                let link = outermost_link(path, project);
+                let copy = if !link.is_dir() {
+                    "the file"
+                } else {
+                    "the directory it leads to"
+                };
+                format!(
+                    "Replace the link {} with a copy of {copy} and run `mise trust`, or add {} to `trusted_config_paths`.",
+                    display_path_escaped(&link),
+                    display_path_escaped(project)
+                )
+            }
+        }
+    }
+}
+
+/// The outermost symlink between `project` and `path`, `path` included, or `path` when there is
+/// none. That is the link to replace: replacing a file below a linked `.config` would leave the
+/// directory linked. Both paths are made absolute without following links, so a relative path
+/// from `mise trust .` still finds a linked directory.
+fn outermost_link(path: &Path, project: &Path) -> PathBuf {
+    let path = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
+    let project = std::path::absolute(project).unwrap_or_else(|_| project.to_path_buf());
+    path.ancestors()
+        .take_while(|p| *p != project && p.starts_with(&project))
+        .filter(|p| crate::config::config_file::config_root::is_link(p))
+        .last()
+        .unwrap_or(&path)
+        .to_path_buf()
 }
 
 /// When the version list could not be fetched, the version being installed
@@ -227,5 +292,27 @@ mod tests {
 
         assert!(Error::is_not_in_lockfile(&err));
         assert!(!Error::is_required_channel_resolution_err(&err));
+    }
+
+    #[test]
+    fn linked_remedy_names_the_outermost_link() {
+        let tmp = tempfile::tempdir().unwrap();
+        let shared = tmp.path().join("shared");
+        let project = tmp.path().join("project");
+        std::fs::create_dir_all(shared.join("mise")).unwrap();
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::write(shared.join("mise/config.toml"), "").unwrap();
+        std::os::unix::fs::symlink(&shared, project.join(".config")).unwrap();
+        std::os::unix::fs::symlink(shared.join("mise/config.toml"), project.join("mise.toml"))
+            .unwrap();
+        let why = Untrusted::LinkedInProject(project.clone());
+
+        let in_dir = project.join(".config/mise/config.toml");
+        assert_eq!(outermost_link(&in_dir, &project), project.join(".config"));
+        assert!(why.remedy(&in_dir).contains("the directory it leads to"));
+
+        let file = project.join("mise.toml");
+        assert_eq!(outermost_link(&file, &project), file);
+        assert!(why.remedy(&file).contains("a copy of the file"));
     }
 }

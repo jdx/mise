@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+
+# A relative trusted_config_paths entry would resolve against the directory mise runs in,
+# which may be a repository that should not choose what mise trusts.
+
+export MISE_YES=0
+unset CI GITHUB_ACTIONS GITHUB_ACTION MISE_TRUSTED_CONFIG_PATHS 2>/dev/null || true
+
+mkdir -p clone/src
+cat >clone/mise.toml <<'EOF'
+[env]
+FROM_CLONE = "loaded"
+EOF
+ln -s .. clone/src/work
+
+cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
+[settings]
+trusted_config_paths = ["src/work", "."]
+EOF
+cd clone || exit 1
+assert_fail_contains "mise env 2>&1" "not trusted"
+assert_contains "mise env 2>&1 || true" "ignoring trusted_config_paths entry src/work"
+cd .. || exit 1
+
+# `mise settings add` stores the directory it was typed in.
+mkdir -p mine
+cat >mine/mise.toml <<'EOF'
+[env]
+FROM_MINE = "loaded"
+EOF
+: >"$MISE_CONFIG_DIR/config.toml"
+cd mine || exit 1
+mise settings add trusted_config_paths .
+assert_contains "cat '$MISE_CONFIG_DIR/config.toml'" "$PWD"
+assert_contains "mise env" "FROM_MINE=loaded"
+cd ../clone || exit 1
+assert_fail_contains "mise env 2>&1" "not trusted"

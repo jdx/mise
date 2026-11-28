@@ -5,7 +5,7 @@ use std::sync::{LazyLock as Lazy, Mutex};
 use path_absolutize::Absolutize;
 use xx::regex;
 
-use crate::config::{discovered_global_config, is_conf_d_folder_file};
+use crate::config::{discovered_global_config, is_conf_d_folder_file, is_global_config};
 use crate::env;
 
 static CONFIG_ROOT_CACHE: Lazy<Mutex<HashMap<PathBuf, PathBuf>>> =
@@ -52,6 +52,146 @@ pub(crate) fn config_source(path: &Path) -> String {
         .to_string()
 }
 
+/// The project a config was found in: its config root, or for a conf.d folder fragment the
+/// directory that holds the `conf.d`.
+///
+/// A fragment's project comes from the directories the fragment is in. The `mise.toml` beside
+/// its `conf.d` can be a link to global config, whose root is not the project.
+fn enclosing_project(path: &Path) -> PathBuf {
+    project_of_root(path, config_root(path))
+}
+
+/// [`enclosing_project`] for the config at `path` whose config root is `root`.
+fn project_of_root(path: &Path, root: PathBuf) -> PathBuf {
+    if is_conf_d_folder_file(path)
+        && let Some(conf_d) = root.parent()
+    {
+        return root_by_name(&conf_d.join("mise.toml"));
+    }
+    root
+}
+
+/// The project that holds a config root of its own: a conf.d folder, or `.config/mise` for
+/// `.config/mise/mise.toml`. `None` for any other config and for global config.
+///
+/// Such a root is part of the project, so an ignore or untrust of the project covers it.
+pub fn nested_root_project(path: &Path) -> Option<PathBuf> {
+    if is_global_config(path) {
+        return None;
+    }
+    let path = path.absolutize().ok()?.to_path_buf();
+    let root = config_root(&path);
+    let project = outer_project(&path);
+    (project != root && root.starts_with(&project)).then_some(project)
+}
+
+/// The project directory a config belongs to: [`enclosing_project`], with `.config/mise` taken
+/// back to the directory that holds `.config`.
+fn outer_project(path: &Path) -> PathBuf {
+    outside_config_dir(enclosing_project(path))
+}
+
+/// `project`, with `.config/mise` taken back to the directory that holds `.config`.
+fn outside_config_dir(project: PathBuf) -> PathBuf {
+    if project.ends_with(".config/mise")
+        && let Some(outer) = project.parent().and_then(Path::parent)
+    {
+        return outer.to_path_buf();
+    }
+    project
+}
+
+/// The project whose directory holds `path` when `path` is global config only through a link,
+/// such as a project's `mise.toml` linked to the global config: the project its components name,
+/// as they would for any other file there. `None` for global config at its own path, for a real
+/// file the global config dir links to (a dotfiles checkout, which is global config because the
+/// user made it so), and for a file that is not global config.
+///
+/// [`config_root`] gives such a link the global root, the home directory, since global config is
+/// trusted for what it resolves to. The project that holds the link is still the one a command
+/// given that directory means.
+pub fn linked_global_project(path: &Path) -> Option<PathBuf> {
+    let path = path.absolutize().ok()?.to_path_buf();
+    crate::config::is_project_link_to_global_config(&path).then(|| project_by_name(&path))
+}
+
+/// The project directory the absolute `path` names: [`outer_project`] from its components alone,
+/// whatever file is there now.
+///
+/// A trust record holds its path as it was resolved when the record was written. The project
+/// that owns the record is decided from that path: a link that has since replaced the file, to
+/// global config or another checkout, does not move the record out of its project.
+pub fn project_by_name(path: &Path) -> PathBuf {
+    let root = if is_conf_d_folder_file(path) {
+        path.parent()
+            .map_or_else(|| path.to_path_buf(), Path::to_path_buf)
+    } else {
+        root_by_name(path)
+    };
+    outside_config_dir(project_of_root(path, root))
+}
+
+/// The project a config was found in, when a symlink lies between that project's directory and
+/// the config, the config itself included.
+///
+/// Such a link is content of the project, so it decides nothing about trust: a config reached
+/// through it is trusted only when the project is, whatever the link leads to. Global and system
+/// config are exempt, since the user placed them and any link in them.
+pub fn linked_project(path: &Path) -> Option<PathBuf> {
+    if is_global_config(path) {
+        return None;
+    }
+    let path = path.absolutize().ok()?.to_path_buf();
+    let project = outer_project(&path);
+    path.ancestors()
+        .take_while(|p| *p != project && p.starts_with(&project))
+        .any(is_link)
+        .then_some(project)
+}
+
+/// Whether `path` is a link: a symlink, or on Windows a directory junction too. A junction needs
+/// no administrator rights to make, `canonicalize` follows it like a symlink, and only some Rust
+/// releases' `Path::is_symlink` reports it.
+pub(crate) fn is_link(path: &Path) -> bool {
+    path.is_symlink() || is_junction(path)
+}
+
+/// Whether `path` is a directory junction (`mklink /J`). `read_link` reads the two name-surrogate
+/// reparse points, symlinks and junctions, and fails on the others, such as a cloud file's.
+#[cfg(windows)]
+fn is_junction(path: &Path) -> bool {
+    use std::os::windows::fs::MetadataExt;
+    const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
+    path.symlink_metadata()
+        .is_ok_and(|m| m.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0)
+        && std::fs::read_link(path).is_ok()
+}
+
+#[cfg(not(windows))]
+fn is_junction(_path: &Path) -> bool {
+    false
+}
+
+/// [`linked_project`] for a lockfile, which sits beside the config that owns it: a link that the
+/// config would be reached through also leads to its lockfile.
+///
+/// Every config that may own the lockfile is asked, and the outermost project wins. The project
+/// is the boundary the lockfile's directory must resolve inside, so a candidate whose own root
+/// is a linked directory must not narrow it to that directory.
+///
+/// A conf.d fragment is a candidate of its own: in a `.mise` directory with no `mise.toml`, the
+/// root of a `mise.toml` there would be `.mise` itself, and a `config.toml` there may be global
+/// config, so neither would see a `.mise` that links out of the project.
+pub(crate) fn linked_lockfile_project(lockfile: &Path) -> Option<PathBuf> {
+    let conf_d_fragment = lockfile.with_file_name("conf.d").join("fragment.toml");
+    ["mise.toml", "config.toml"]
+        .into_iter()
+        .map(|name| lockfile.with_file_name(name))
+        .chain([conf_d_fragment])
+        .filter_map(|candidate| linked_project(&candidate))
+        .min_by_key(|project| project.components().count())
+}
+
 pub fn config_root(path: &Path) -> PathBuf {
     let path = path
         .absolutize()
@@ -77,6 +217,15 @@ pub fn config_root(path: &Path) -> PathBuf {
         CONFIG_ROOT_CACHE.lock().unwrap().insert(path, root.clone());
         return root;
     }
+    let out = root_by_name(&path);
+    CONFIG_ROOT_CACHE.lock().unwrap().insert(path, out.clone());
+    out
+}
+
+/// The root of the config at the absolute `path` from its name and the directories it is in,
+/// whatever file is there: [`config_root`] without its global config lookup.
+fn root_by_name(path: &Path) -> PathBuf {
+    let path = path.to_path_buf();
     let parts = path
         .components()
         .map(|c| c.as_os_str().to_string_lossy().to_string())
@@ -155,7 +304,7 @@ pub fn config_root(path: &Path) -> PathBuf {
             }
         })
     };
-    let out = if parent == "mise-tasks" || parent == ".mise-tasks" {
+    if parent == "mise-tasks" || parent == ".mise-tasks" {
         grandparent_path()
     } else if (parent == "tasks" || parent == "conf.d") && is_mise_dir(grandparent) {
         if great_grandparent == ".config" {
@@ -175,9 +324,7 @@ pub fn config_root(path: &Path) -> PathBuf {
         root
     } else {
         parent_path()
-    };
-    CONFIG_ROOT_CACHE.lock().unwrap().insert(path, out.clone());
-    out
+    }
 }
 
 #[cfg(test)]
@@ -217,6 +364,174 @@ mod tests {
             std::fs::canonicalize(&link).unwrap(),
             std::fs::canonicalize(&real).unwrap()
         );
+    }
+
+    /// A conf.d folder and `.config/mise` are roots of their own, held by the project around them.
+    #[test]
+    fn a_nested_config_root_belongs_to_the_project_around_it() {
+        let temp = tempfile::tempdir().unwrap();
+        let p = temp.path().join("proj");
+        for nested in [
+            ".mise/conf.d/x/mise.local.toml",
+            "mise/conf.d/x/mise.toml",
+            ".config/mise/mise.local.toml",
+            ".config/mise/mise.toml",
+            ".config/mise/conf.d/x/mise.toml",
+        ] {
+            assert_eq!(
+                nested_root_project(&p.join(nested)),
+                Some(p.clone()),
+                "{nested}"
+            );
+        }
+        for own in [
+            "mise.toml",
+            ".mise/config.toml",
+            ".config/mise.toml",
+            "mise.local.toml",
+        ] {
+            assert_eq!(nested_root_project(&p.join(own)), None, "{own}");
+        }
+    }
+
+    /// Any link between a project and its config makes the config the project's, whatever the
+    /// link leads to.
+    #[test]
+    fn a_link_inside_a_project_ties_the_config_to_the_project() {
+        use std::os::unix::fs::symlink;
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let other = root.join("other");
+        std::fs::create_dir_all(other.join("x")).unwrap();
+        std::fs::write(other.join("mise.toml"), "").unwrap();
+        std::fs::write(other.join("x/mise.toml"), "").unwrap();
+
+        let plain = root.join("plain");
+        std::fs::create_dir_all(plain.join(".mise/conf.d/x")).unwrap();
+        std::fs::write(plain.join("mise.toml"), "").unwrap();
+        std::fs::write(plain.join(".mise/conf.d/x/mise.toml"), "").unwrap();
+        assert_eq!(linked_project(&plain.join("mise.toml")), None);
+        assert_eq!(
+            linked_project(&plain.join(".mise/conf.d/x/mise.toml")),
+            None
+        );
+
+        // a conf.d folder that is a link out of the project
+        let folder = root.join("folder");
+        std::fs::create_dir_all(folder.join(".mise/conf.d")).unwrap();
+        symlink(other.join("x"), folder.join(".mise/conf.d/x")).unwrap();
+        assert_eq!(
+            linked_project(&folder.join(".mise/conf.d/x/mise.toml")),
+            Some(folder.clone())
+        );
+
+        // conf.d itself is the link
+        let conf_d = root.join("conf-d");
+        std::fs::create_dir_all(conf_d.join(".mise")).unwrap();
+        symlink(&other, conf_d.join(".mise/conf.d")).unwrap();
+        assert_eq!(
+            linked_project(&conf_d.join(".mise/conf.d/x/mise.toml")),
+            Some(conf_d.clone())
+        );
+
+        // the config file is the link
+        let file = root.join("file");
+        std::fs::create_dir_all(&file).unwrap();
+        symlink(other.join("mise.toml"), file.join("mise.toml")).unwrap();
+        assert_eq!(linked_project(&file.join("mise.toml")), Some(file.clone()));
+
+        // a project named `mise`, whose config root is its parent: a link to a sibling stays
+        // inside that parent and still counts
+        let w = root.join("w");
+        std::fs::create_dir_all(w.join("mise")).unwrap();
+        symlink(other.join("mise.toml"), w.join("mise/config.toml")).unwrap();
+        assert_eq!(linked_project(&w.join("mise/config.toml")), Some(w.clone()));
+
+        // `.config/mise/mise.toml` has `.config/mise` as its root, but a link at `.config` or
+        // `.config/mise` still lies inside the project that holds `.config`
+        for link in [".config", ".config/mise"] {
+            let project = root.join(format!("dot-{}", link.replace('/', "-")));
+            let link = project.join(link);
+            std::fs::create_dir_all(link.parent().unwrap()).unwrap();
+            symlink(&other, &link).unwrap();
+            assert_eq!(
+                linked_project(&project.join(".config/mise/mise.toml")),
+                Some(project.clone()),
+                "{}",
+                link.display()
+            );
+        }
+        let plain_config = root.join("plain-config");
+        std::fs::create_dir_all(plain_config.join(".config/mise")).unwrap();
+        assert_eq!(
+            linked_project(&plain_config.join(".config/mise/mise.toml")),
+            None
+        );
+    }
+
+    #[test]
+    fn a_lockfile_reached_through_a_link_in_a_project_belongs_to_it() {
+        use std::os::unix::fs::symlink;
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let other = root.join("other");
+        std::fs::create_dir_all(other.join("mise")).unwrap();
+
+        let plain = root.join("plain");
+        std::fs::create_dir_all(plain.join(".config/mise")).unwrap();
+        assert_eq!(linked_lockfile_project(&plain.join("mise.lock")), None);
+        assert_eq!(
+            linked_lockfile_project(&plain.join(".config/mise/mise.lock")),
+            None
+        );
+
+        // `.config` is the link
+        let dot_config = root.join("dot-config");
+        std::fs::create_dir_all(&dot_config).unwrap();
+        symlink(&other, dot_config.join(".config")).unwrap();
+        assert_eq!(
+            linked_lockfile_project(&dot_config.join(".config/mise.lock")),
+            Some(dot_config.clone())
+        );
+        assert_eq!(
+            linked_lockfile_project(&dot_config.join(".config/mise/mise.lock")),
+            Some(dot_config.clone())
+        );
+
+        // `.mise` is the link
+        let dot_mise = root.join("dot-mise");
+        std::fs::create_dir_all(&dot_mise).unwrap();
+        symlink(other.join("mise"), dot_mise.join(".mise")).unwrap();
+        assert_eq!(
+            linked_lockfile_project(&dot_mise.join(".mise/mise.lock")),
+            Some(dot_mise.clone())
+        );
+
+        // `.mise` is the link, and the config inside what it leads to is a link too: the
+        // boundary stays the project that holds `.mise`, not `.mise` itself
+        let nested = root.join("nested");
+        let shared = root.join("shared");
+        std::fs::create_dir_all(&nested).unwrap();
+        std::fs::create_dir_all(&shared).unwrap();
+        std::fs::write(other.join("real.toml"), "").unwrap();
+        symlink(other.join("real.toml"), shared.join("mise.toml")).unwrap();
+        symlink(other.join("real.toml"), shared.join("config.toml")).unwrap();
+        symlink(&shared, nested.join(".mise")).unwrap();
+        assert_eq!(
+            linked_lockfile_project(&nested.join(".mise/mise.lock")),
+            Some(nested.clone())
+        );
+    }
+
+    #[test]
+    fn a_symlink_is_a_link_and_a_directory_is_not() {
+        let temp = tempfile::tempdir().unwrap();
+        let dir = temp.path().join("dir");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::os::unix::fs::symlink(&dir, temp.path().join("link")).unwrap();
+        assert!(is_link(&temp.path().join("link")));
+        assert!(!is_link(&dir));
+        assert!(!is_link(&temp.path().join("missing")));
     }
 
     /// A file task grouped in a subdirectory shares its project's root.
@@ -346,6 +661,30 @@ mod tests {
         assert_eq!(config_root(&link), *env::MISE_GLOBAL_CONFIG_ROOT);
     }
 
+    /// A fragment belongs to the project that holds its `conf.d`, also when the `mise.toml`
+    /// beside that `conf.d` is a link to global config.
+    #[test]
+    fn a_fragment_belongs_to_its_project_beside_a_link_to_global_config() {
+        let temp = tempfile::tempdir().unwrap();
+        let project = temp.path().join("proj");
+        let conf_d = project.join(".mise").join("conf.d");
+        std::fs::create_dir_all(conf_d.join("x")).unwrap();
+        std::os::unix::fs::symlink(
+            crate::config::global_config_path(),
+            conf_d.join("mise.toml"),
+        )
+        .unwrap();
+        let fragment = conf_d.join("x").join("mise.toml");
+        std::fs::write(&fragment, "").unwrap();
+        assert!(is_global_config(&conf_d.join("mise.toml")));
+
+        assert_eq!(nested_root_project(&fragment), Some(project.clone()));
+        std::fs::remove_file(&fragment).unwrap();
+        std::fs::remove_dir(conf_d.join("x")).unwrap();
+        std::os::unix::fs::symlink(temp.path(), conf_d.join("x")).unwrap();
+        assert_eq!(linked_project(&fragment), Some(project));
+    }
+
     #[test]
     fn test_config_root_mise_dir() {
         for p in &[
@@ -382,6 +721,74 @@ mod tests {
         ] {
             println!("{p}");
             assert_eq!(config_root(Path::new(p)), PathBuf::from("/foo/mise"));
+        }
+    }
+}
+
+#[cfg(all(test, windows))]
+mod windows_tests {
+    use super::*;
+
+    /// `canonicalize` follows a junction, so a junction in a project counts as a link the way a
+    /// symlink does, whether or not `Path::is_symlink` reports it, which varies between Rust
+    /// releases.
+    #[test]
+    fn a_junction_is_a_link_and_a_directory_is_not() {
+        let temp = tempfile::tempdir().unwrap();
+        let dir = temp.path().join("dir");
+        let junction = temp.path().join("junction");
+        std::fs::create_dir_all(&dir).unwrap();
+        let status = std::process::Command::new("cmd")
+            .arg("/C")
+            .arg("mklink")
+            .arg("/J")
+            .arg(&junction)
+            .arg(&dir)
+            .status()
+            .unwrap();
+        assert!(status.success(), "mklink /J failed");
+        assert!(is_link(&junction));
+        assert!(!is_link(&dir));
+
+        let project = temp.path().join("project");
+        std::fs::create_dir_all(&project).unwrap();
+        let status = std::process::Command::new("cmd")
+            .arg("/C")
+            .arg("mklink")
+            .arg("/J")
+            .arg(project.join(".config"))
+            .arg(&dir)
+            .status()
+            .unwrap();
+        assert!(status.success(), "mklink /J failed");
+        assert_eq!(
+            linked_project(&project.join(".config/mise.toml")),
+            Some(project.absolutize().unwrap().to_path_buf())
+        );
+    }
+}
+
+/// Trust records hold paths in the form `canonicalize` gives them, which on Windows starts with
+/// `\\?\`. `mise untrust` compares a record of a nested root with the roots worked out from it,
+/// so those keep that form. Not unix-only, so `windows-unit` checks the prefix.
+#[cfg(test)]
+mod canonical_form_tests {
+    use super::*;
+
+    #[test]
+    fn the_roots_of_a_canonical_path_keep_its_form() {
+        let temp = tempfile::tempdir().unwrap();
+        let project = temp.path().canonicalize().unwrap().join("proj");
+        let nested_roots = [
+            project.join(".config").join("mise"),
+            project.join(".mise").join("conf.d").join("x"),
+        ];
+        for root in nested_roots {
+            std::fs::create_dir_all(&root).unwrap();
+            let probe = root.join("mise.toml");
+            assert_eq!(config_root(&probe), root);
+            assert_eq!(nested_root_project(&probe).as_ref(), Some(&project));
+            assert_eq!(linked_project(&probe), None);
         }
     }
 }

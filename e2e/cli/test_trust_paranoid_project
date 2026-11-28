@@ -1,0 +1,248 @@
+#!/usr/bin/env bash
+
+# With paranoid `config` on, trust is per file. Revoking or ignoring a directory, or running with
+# no path, still covers every config of the project: its nested roots and its configs for other
+# environments. Naming a file acts on that file only.
+export MISE_TRUSTED_CONFIG_PATHS=""
+export MISE_PARANOID=config
+export MISE_YES=0
+unset CI GITHUB_ACTIONS GITHUB_ACTION 2>/dev/null || true
+
+make_project() {
+  mkdir -p "$1/.config/mise" "$1/.mise/conf.d"
+  printf '[env]\nTOP = "top"\n' >"$1/mise.toml"
+  printf '[env]\nSTAGED = "staged"\n' >"$1/mise.staging.toml"
+  printf '[env]\nNESTED = "nested"\n' >"$1/.config/mise/config.toml"
+  printf '[env]\nFRAGMENT = "fragment"\n' >"$1/.mise/conf.d/x.toml"
+  mise trust "$1/mise.toml"
+  mise trust "$1/.config/mise/config.toml"
+  mise trust "$1/.mise/conf.d/x.toml"
+  MISE_ENV=staging mise trust "$1/mise.staging.toml"
+  assert_contains "MISE_ENV=staging mise -C $1 env" "STAGED=staged"
+  assert_contains "mise -C $1 env" "NESTED=nested"
+  assert_contains "mise -C $1 env" "FRAGMENT=fragment"
+}
+
+# After the project is revoked, trusting its mise.toml again approves that file only.
+assert_all_revoked() {
+  mise trust "$1/mise.toml"
+  assert_fail_contains "mise -C $1 env 2>&1" "not trusted"
+  rm "$1/.config/mise/config.toml"
+  assert_fail_contains "mise -C $1 env 2>&1" "not trusted"
+  rm "$1/.mise/conf.d/x.toml"
+  assert_contains "mise -C $1 env" "TOP=top"
+  assert_fail_contains "MISE_ENV=staging mise -C $1 env 2>&1" "not trusted"
+}
+
+# revoking by directory
+make_project revoked
+assert_contains "mise untrust revoked 2>&1" "untrusted ~/workdir/revoked/mise.staging.toml"
+assert_all_revoked revoked
+
+# revoking with no path, from inside the project
+make_project here
+assert_contains "cd here && mise untrust 2>&1" "untrusted ~/workdir/here/.config/mise/config.toml"
+assert_all_revoked here
+
+# ignoring by directory
+make_project ignored
+assert_contains "mise trust --ignore ignored 2>&1" "ignored ~/workdir/ignored/.mise/conf.d/x.toml"
+assert_not_contains "MISE_ENV=staging mise -C ignored env 2>&1" "=top"
+assert_not_contains "MISE_ENV=staging mise -C ignored env 2>&1" "=staged"
+assert_not_contains "MISE_ENV=staging mise -C ignored env 2>&1" "=nested"
+assert_not_contains "MISE_ENV=staging mise -C ignored env 2>&1" "=fragment"
+
+# Naming a file ignores only that file.
+make_project named
+assert "mise trust --ignore named/.config/mise/config.toml 2>&1" "mise ignored ~/workdir/named/.config/mise/config.toml"
+assert_not_contains "mise -C named env" "NESTED"
+assert_contains "mise -C named env" "TOP=top"
+assert_contains "mise -C named env" "FRAGMENT=fragment"
+assert_contains "MISE_ENV=staging mise -C named env" "STAGED=staged"
+
+# A directory's idiomatic version files are its configs too.
+export MISE_IDIOMATIC_VERSION_FILE_ENABLE_TOOLS=dummy
+mkdir idiomatic
+printf '[env]\nTOP = "top"\n' >idiomatic/mise.toml
+echo "1.0.0" >idiomatic/.dummy-version
+mise trust idiomatic/mise.toml
+mise trust idiomatic/.dummy-version
+assert "mise -C idiomatic current dummy" "1.0.0"
+assert_contains "mise trust --ignore idiomatic 2>&1" "ignored ~/workdir/idiomatic/.dummy-version"
+assert_not_contains "mise -C idiomatic current dummy 2>&1" "1.0.0"
+mise trust idiomatic/mise.toml
+mise trust idiomatic/.dummy-version
+assert_contains "mise untrust idiomatic 2>&1" "untrusted ~/workdir/idiomatic/.dummy-version"
+mise trust idiomatic/mise.toml
+assert_fail_contains "mise -C idiomatic current dummy 2>&1" ".dummy-version are not trusted"
+
+# A directory whose only config is an idiomatic version file acts on that file alone, not on a
+# mise.toml it does not have.
+mkdir idonly
+echo "1.0.0" >idonly/.dummy-version
+mise trust idonly/.dummy-version
+assert "mise -C idonly current dummy" "1.0.0"
+assert "mise trust --ignore idonly 2>&1" "mise ignored ~/workdir/idonly/.dummy-version"
+assert_not_contains "mise -C idonly current dummy 2>&1" "1.0.0"
+mise trust idonly/.dummy-version
+assert "mise untrust idonly 2>&1" "mise untrusted ~/workdir/idonly/.dummy-version"
+assert_fail_contains "mise -C idonly current dummy 2>&1" ".dummy-version are not trusted"
+unset MISE_IDIOMATIC_VERSION_FILE_ENABLE_TOOLS
+
+# A config reached through a link stays out of the sweep: its record is the target's, which
+# belongs to another checkout.
+mkdir other linked onlylink
+printf '[env]\nOTHER = "other"\n' >other/mise.toml
+mise trust other/mise.toml
+printf '[env]\nOWN = "own"\n' >linked/mise.toml
+ln -s ../other/mise.toml linked/mise.local.toml
+ln -s ../other/mise.toml onlylink/mise.toml
+mise trust linked/mise.toml
+assert "mise untrust linked 2>&1" "mise untrusted ~/workdir/linked/mise.toml"
+assert_contains "mise -C other env" "OTHER=other"
+assert "mise trust --ignore linked 2>&1" "mise ignored ~/workdir/linked/mise.toml"
+assert_contains "mise -C other env" "OTHER=other"
+assert_contains "mise untrust onlylink 2>&1" "No trusted config files found"
+assert_contains "mise trust --ignore onlylink 2>&1" "has no config of its own to ignore"
+assert_contains "mise -C other env" "OTHER=other"
+
+# A trusted config replaced by a link since loses its own record, and the link's target keeps
+# its trust.
+mkdir swapped
+printf '[env]\nTOP = "top"\n' >swapped/mise.toml
+printf '[env]\nSTAGED = "staged"\n' >swapped/mise.staging.toml
+mise trust swapped/mise.toml
+MISE_ENV=staging mise trust swapped/mise.staging.toml
+rm swapped/mise.staging.toml
+ln -s ../other/mise.toml swapped/mise.staging.toml
+assert_contains "mise untrust swapped 2>&1" "untrusted ~/workdir/swapped/mise.staging.toml"
+assert_contains "mise -C other env" "OTHER=other"
+rm swapped/mise.staging.toml
+printf '[env]\nSTAGED = "staged"\n' >swapped/mise.staging.toml
+mise trust swapped/mise.toml
+assert_fail_contains "MISE_ENV=staging mise -C swapped env 2>&1" "not trusted"
+
+# A project's link to global config is left out, and the sweep stays in the project that holds
+# it: the home directory's configs keep their trust.
+printf '[env]\nGLOBAL = "global"\n' >"$MISE_CONFIG_DIR/config.toml"
+mkdir globallink
+ln -s "$MISE_CONFIG_DIR/config.toml" globallink/mise.toml
+assert_contains "mise untrust globallink 2>&1" "No trusted config files found"
+assert_contains "mise trust --ignore globallink 2>&1" "has no config of its own to ignore"
+printf '[env]\nHOME_VAR = "home"\n' >"$HOME/mise.toml"
+mise trust "$HOME/mise.toml"
+assert_contains "mise -C ~ env" "HOME_VAR=home"
+assert_not_contains "mise untrust globallink 2>&1" "~/mise.toml"
+assert_contains "mise -C ~ env" "HOME_VAR=home"
+
+# With the link picked for the directory (a local config comes last), the project's own configs
+# are still found, as they are with no path.
+mkdir -p globalsib/.config/mise
+printf '[env]\nTOP = "top"\n' >globalsib/mise.toml
+printf '[env]\nNESTED = "nested"\n' >globalsib/.config/mise/config.toml
+ln -s "$MISE_CONFIG_DIR/config.toml" globalsib/mise.local.toml
+trust_globalsib() {
+  mise trust globalsib/mise.toml
+  mise trust globalsib/.config/mise/config.toml
+  assert_contains "mise -C globalsib env" "NESTED=nested"
+}
+trust_globalsib
+assert_contains "mise untrust globalsib 2>&1" "untrusted ~/workdir/globalsib/.config/mise/config.toml"
+assert_fail_contains "mise -C globalsib env 2>&1" "not trusted"
+mise trust globalsib/mise.toml
+assert_fail_contains "mise -C globalsib env 2>&1" "not trusted"
+trust_globalsib
+assert_contains "cd globalsib && mise untrust 2>&1" "untrusted ~/workdir/globalsib/.config/mise/config.toml"
+trust_globalsib
+assert_contains "mise trust --ignore globalsib 2>&1" "ignored ~/workdir/globalsib/mise.toml"
+assert_not_contains "mise -C globalsib env 2>&1" "=top"
+assert_not_contains "mise -C globalsib env 2>&1" "=nested"
+assert_contains "mise -C ~ env" "HOME_VAR=home"
+
+# A trusted config replaced by a link to global config since still loses its record with the
+# project's, so it asks again when the file comes back.
+mkdir relinked
+printf '[env]\nTOP = "top"\n' >relinked/mise.toml
+printf '[env]\nSTAGED = "staged"\n' >relinked/mise.staging.toml
+mise trust relinked/mise.toml
+MISE_ENV=staging mise trust relinked/mise.staging.toml
+assert_contains "MISE_ENV=staging mise -C relinked env" "STAGED=staged"
+rm relinked/mise.staging.toml
+ln -s "$MISE_CONFIG_DIR/config.toml" relinked/mise.staging.toml
+assert_contains "mise untrust relinked 2>&1" "untrusted ~/workdir/relinked/mise.staging.toml"
+rm relinked/mise.staging.toml
+printf '[env]\nSTAGED = "staged"\n' >relinked/mise.staging.toml
+mise trust relinked/mise.toml
+assert_fail_contains "MISE_ENV=staging mise -C relinked env 2>&1" "not trusted"
+assert_contains "mise -C ~ env" "GLOBAL=global"
+
+# Naming the global config dir stays inside it, whichever global file is picked there: the home
+# directory's own configs keep their trust and are not ignored.
+printf '[env]\nGLOBAL_MISE = "global"\n' >"$MISE_CONFIG_DIR/mise.toml"
+assert_contains "mise -C ~ env" "HOME_VAR=home"
+assert_not_contains "mise untrust $MISE_CONFIG_DIR 2>&1" "untrusted ~/mise.toml"
+assert_contains "mise -C ~ env" "HOME_VAR=home"
+assert_fail_contains "mise trust --ignore $MISE_CONFIG_DIR 2>&1" "is global config, which cannot be ignored"
+assert_contains "mise -C ~ env" "HOME_VAR=home"
+rm "$MISE_CONFIG_DIR/mise.toml"
+
+# A dotfiles checkout that the global config dir links to holds the global config itself, not a
+# project's link to it: the checkout is not swept as a project, and it cannot be ignored.
+mkdir -p dotfiles/.config/mise
+printf '[env]\nDOTFILES = "dotfiles"\n' >dotfiles/.config/mise/config.toml
+rm -rf "$MISE_CONFIG_DIR"
+ln -s "$PWD/dotfiles/.config/mise" "$MISE_CONFIG_DIR"
+assert_contains "mise -C ~ env" "DOTFILES=dotfiles"
+assert_fail_contains "mise trust --ignore dotfiles 2>&1" "is global config, which cannot be ignored"
+assert_not_contains "mise untrust dotfiles 2>&1" "No trusted config files found"
+assert_contains "mise -C ~ env" "DOTFILES=dotfiles"
+assert_contains "mise -C dotfiles env" "DOTFILES=dotfiles"
+
+# The checkout's own configs still belong to it: naming the checkout revokes or ignores them
+# whichever file is picked for it, and the global config is left alone.
+printf '[env]\nSTAGED = "staged"\n' >dotfiles/mise.staging.toml
+MISE_ENV=staging mise trust dotfiles/mise.staging.toml
+assert_contains "MISE_ENV=staging mise -C dotfiles env" "STAGED=staged"
+assert_contains "mise untrust dotfiles 2>&1" "untrusted ~/workdir/dotfiles/mise.staging.toml"
+assert_fail_contains "MISE_ENV=staging mise -C dotfiles env 2>&1" "not trusted"
+MISE_ENV=staging mise trust dotfiles/mise.staging.toml
+assert_contains "mise trust --ignore dotfiles 2>&1" "ignored ~/workdir/dotfiles/mise.staging.toml"
+assert_not_contains "MISE_ENV=staging mise -C dotfiles env 2>&1" "=staged"
+assert_contains "MISE_ENV=staging mise -C dotfiles env" "DOTFILES=dotfiles"
+assert_contains "mise -C ~ env" "DOTFILES=dotfiles"
+
+# A global config file for an environment that is not selected is still global config, not the
+# checkout's: ignoring or untrusting the checkout leaves it alone. An environment name can hold a
+# dot, as in `config.prod.eu.toml`.
+printf '[env]\nGLOBAL_STAGING = "gstaged"\n' >dotfiles/.config/mise/config.staging.toml
+printf '[env]\nGLOBAL_PROD_EU = "prodeu"\n' >dotfiles/.config/mise/config.prod.eu.toml
+printf '[env]\nGLOBAL_PROD_EU_LOCAL = "prodeulocal"\n' >dotfiles/.config/mise/config.prod.eu.local.toml
+assert_contains "MISE_ENV=staging mise -C ~ env" "GLOBAL_STAGING=gstaged"
+assert_contains "MISE_ENV=prod.eu mise -C ~ env" "GLOBAL_PROD_EU=prodeu"
+assert_contains "MISE_ENV=prod.eu mise -C ~ env" "GLOBAL_PROD_EU_LOCAL=prodeulocal"
+assert_not_contains "mise trust --ignore dotfiles 2>&1" "config.staging.toml"
+assert_not_contains "mise trust --ignore dotfiles 2>&1" "config.prod.eu"
+assert_contains "MISE_ENV=staging mise -C ~ env" "GLOBAL_STAGING=gstaged"
+assert_contains "MISE_ENV=prod.eu mise -C ~ env" "GLOBAL_PROD_EU=prodeu"
+assert_contains "MISE_ENV=prod.eu mise -C ~ env" "GLOBAL_PROD_EU_LOCAL=prodeulocal"
+assert_not_contains "mise untrust dotfiles 2>&1" "config.staging.toml"
+assert_not_contains "mise untrust dotfiles 2>&1" "config.prod.eu"
+assert_contains "MISE_ENV=staging mise -C ~ env" "GLOBAL_STAGING=gstaged"
+assert_contains "MISE_ENV=prod.eu mise -C ~ env" "GLOBAL_PROD_EU=prodeu"
+
+# A checkout that is itself the global config dir still has project config of its own, such as
+# `.mise/config.toml`, which global discovery does not load: naming the checkout revokes or
+# ignores it, and leaves the global config alone.
+mkdir -p selfdot/.mise
+printf '[env]\nSELF_GLOBAL = "selfglobal"\n' >selfdot/config.toml
+printf '[env]\nSELF_PROJECT = "selfproject"\n' >selfdot/.mise/config.toml
+rm "$MISE_CONFIG_DIR"
+ln -s "$PWD/selfdot" "$MISE_CONFIG_DIR"
+mise trust selfdot/.mise/config.toml
+assert_contains "mise -C selfdot env" "SELF_PROJECT=selfproject"
+assert_contains "mise untrust selfdot 2>&1" "untrusted ~/workdir/selfdot/.mise/config.toml"
+assert_fail_contains "mise -C selfdot env 2>&1" "not trusted"
+mise trust selfdot/.mise/config.toml
+assert_contains "mise trust --ignore selfdot 2>&1" "ignored ~/workdir/selfdot/.mise/config.toml"
+assert_not_contains "mise -C selfdot env 2>&1" "SELF_PROJECT=selfproject"
+assert_contains "mise -C ~ env" "SELF_GLOBAL=selfglobal"

@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+
+# A checkout can ship its config directory as a symlink to another project. Writing the
+# lockfile beside the config it finds there must not rewrite that other project's lockfile
+# unless the user trusts the checkout.
+
+export MISE_LOCKFILE=1
+export MISE_OFFLINE=1
+export MISE_TRUSTED_CONFIG_PATHS=""
+export MISE_YES=0
+unset CI GITHUB_ACTIONS GITHUB_ACTION 2>/dev/null || true
+
+mkdir -p api clone
+cat >api/mise.toml <<'EOF'
+[tools]
+node = "20.0.0"
+EOF
+ln -s ../api clone/.config
+
+lock="mise -C clone lock --platform linux-x64"
+assert_fail_contains "$lock 2>&1" "reached through a symlink inside"
+assert_fail_contains "MISE_SAFE=1 $lock 2>&1" "refusing to write lockfile"
+assert_succeed "test ! -e api/mise.lock"
+
+# The lockfile behind that link may itself be a link to a file beside it.
+mkdir -p web clone-web
+cp api/mise.toml web/mise.toml
+echo "# keep" >web/real.lock
+ln -s real.lock web/mise.lock
+ln -s ../web clone-web/.config
+assert_fail_contains "mise -C clone-web lock --platform linux-x64 2>&1" "reached through a symlink inside"
+assert "cat web/real.lock" "# keep"
+
+# A link that stays inside the checkout needs no trust.
+mkdir -p inside/config
+cp api/mise.toml inside/config/mise.toml
+ln -s config inside/.config
+assert_succeed "mise -C inside lock --platform linux-x64"
+assert_contains "cat inside/config/mise.lock" "@generated"
+
+# Once the user trusts the checkout, its link is theirs.
+mise trust clone
+assert_succeed "$lock"
+assert_contains "cat api/mise.lock" "@generated"
+
+# A trusted parent whose own link leads to the same directory does not vouch for a child
+# checkout that links there too: only the project that holds the link decides.
+mkdir -p shared outer/sub
+cp api/mise.toml shared/mise.toml
+cp api/mise.toml shared/config.toml
+ln -s ../shared outer/.config
+ln -s ../../shared outer/sub/.mise
+mise trust outer
+assert_fail_contains "mise -C outer/sub lock --platform linux-x64 2>&1" "reached through a symlink inside"
+assert_succeed "test ! -e shared/mise.lock"

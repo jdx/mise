@@ -113,7 +113,9 @@ approval:
 
 If [safe mode](/security.html#safe-mode) is also on, it takes precedence: project
 config loads without a trust prompt because it cannot run code, and nothing is
-marked trusted.
+marked trusted. Env files that mise finds by searching do not load in safe mode
+even when approved, and one that you name by absolute path still needs approval
+with `env_files` on.
 
 ### Remote includes
 
@@ -145,7 +147,12 @@ mise trust
 
 `mise trust` with no path trusts the nearest untrusted config and every env file
 and script that config reads, and again after an edit. `mise trust .env` trusts
-only that file.
+only that file. With `env_files` on and `config` off, naming a file trusts its
+project when the file has one of mise's own config names, such as `mise.toml`,
+`.tool-versions` or `.mise/conf.d/*.toml`, or a name that the
+`MISE_OVERRIDE_CONFIG_FILENAMES` or `MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES`
+environment variable sets. A name that only a `.miserc.toml` adds does not
+count, because a project's `.miserc.toml` loads before anything is trusted.
 
 This applies to every `_.file` format, to `_.source` scripts, and to the files the
 [`env_file`](/configuration/settings.html#env_file) setting finds. It includes a
@@ -153,8 +160,19 @@ file that a global `find_up = true` entry or a glob finds in a repository. It
 does not apply to a global `_.file` or `_.source` entry that names one file
 without a glob, which you chose.
 
-Approval is bound to the file's content whether or not `config` is on. To load
-a file without approving each change, put it under
+Approval is bound to the file's content whether or not `config` is on. It
+approves the file as an env file only: if the same path is later loaded as a
+config, through a symlink, a directory that replaced the file or a filename
+setting, it needs trust as a config like any other.
+
+mise 2026.11.14 and earlier recorded an env file approval and a config trusted
+with `config` on in the same way, so after an upgrade mise cannot tell them
+apart and counts such a record as an env file approval only. A config you
+trusted with `config` on is asked about once more; answering the prompt or
+running `mise trust` records it as config again. Configs trusted with `config`
+off are not affected.
+
+To load a file without approving each change, put it under
 [`trusted_config_paths`](/configuration/settings.html#trusted_config_paths).
 Like the other settings that stay trusted by path, it is global-only, so a
 project cannot opt its own files out.

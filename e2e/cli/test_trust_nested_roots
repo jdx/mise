@@ -1,0 +1,116 @@
+#!/usr/bin/env bash
+
+# A conf.d folder and .config/mise are config roots of their own inside a project. A file the
+# project ships there must not take `mise untrust` or `mise trust --ignore` of the project for
+# itself and leave the project trusted.
+export MISE_TRUSTED_CONFIG_PATHS=""
+export MISE_YES=0
+unset CI GITHUB_ACTIONS GITHUB_ACTION 2>/dev/null || true
+
+make_clone() {
+  mkdir -p "$1/$2"
+  cat <<'EOF' >"$1/mise.toml"
+[env]
+FROM_CLONE = "{{ exec(command='echo loaded') }}"
+
+[tasks.hello]
+run = "echo hello"
+EOF
+  echo "# empty" >"$1/$2/mise.local.toml"
+}
+
+n=0
+for nested in .mise/conf.d/x .config/mise; do
+  n=$((n + 1))
+
+  # refusing by directory, then running a command that trusts its project
+  make_clone "ignored$n" "$nested"
+  assert_contains "mise trust --ignore ignored$n 2>&1" "ignored ~/workdir/ignored$n"
+  assert_not_contains "mise -C ignored$n exec -- env 2>&1" "FROM_CLONE"
+  assert_not_contains "mise -C ignored$n trust --show 2>&1" ": trusted"
+
+  # a nested root that arrives after the ignore is ignored with its project
+  mkdir -p "ignored$n/.mise/conf.d/late"
+  cat <<'EOF' >"ignored$n/.mise/conf.d/late/mise.toml"
+[env]
+LATE = "{{ exec(command='echo late') }}"
+EOF
+  assert_not_contains "mise -C ignored$n exec -- env 2>&1" "LATE"
+
+  # revoking with no path, from inside the project
+  make_clone "revoked$n" "$nested"
+  assert_contains "mise -C revoked$n run hello" "hello"
+  assert_contains "cd revoked$n && mise untrust 2>&1" "untrusted ~/workdir/revoked$n"
+  assert_not_contains "mise -C revoked$n trust --show 2>&1" ": trusted"
+  assert_fail_contains "mise -C revoked$n env 2>&1" "not trusted"
+done
+
+# Naming a file in a nested root refuses only that root.
+make_clone named .mise/conf.d/x
+assert_contains "mise -C named run hello" "hello"
+assert_contains "mise untrust named/.mise/conf.d/x/mise.local.toml 2>&1" "untrusted ~/workdir/named/.mise/conf.d/x"
+assert_contains "mise -C named trust --show 2>&1" "~/workdir/named: trusted"
+
+# Naming the project's own mise.toml refuses only the project's root, not a nested root the
+# user trusted on its own.
+make_clone top .config/mise
+mise trust top/mise.toml
+mise trust top/.config/mise/mise.local.toml
+assert "mise untrust top/mise.toml 2>&1" "mise untrusted ~/workdir/top"
+assert_contains "mise -C top trust --show 2>&1" "~/workdir/top/.config/mise: trusted"
+
+# A nested root whose only config is for another environment is refused with its project.
+mkdir -p staged/.mise/conf.d/x
+cat <<'EOF' >staged/.mise/conf.d/x/mise.staging.toml
+[env]
+STAGED = "{{ exec(command='echo staged') }}"
+EOF
+echo "# empty" >staged/mise.toml
+mise trust staged
+MISE_ENV=staging mise trust staged/.mise/conf.d/x/mise.staging.toml
+assert_contains "MISE_ENV=staging mise -C staged env" "STAGED=staged"
+assert_contains "mise untrust staged 2>&1" "untrusted ~/workdir/staged/.mise/conf.d/x"
+assert_fail_contains "MISE_ENV=staging mise -C staged env 2>&1" "not trusted"
+
+# `mise trust --all` trusts each root once and stops.
+make_clone all .mise/conf.d/x
+assert_contains "cd all && timeout 20 mise trust --all 2>&1" "trusted ~/workdir/all"
+assert_contains "mise -C all env" "FROM_CLONE=loaded"
+
+# A nested root that the checkout lacks, such as one only another branch has, loses its
+# approval with the project's, so it asks again when that branch brings it back.
+make_clone branchy .config/mise
+mise trust branchy/mise.toml
+mise trust branchy/.config/mise/mise.local.toml
+mv branchy/.config other-branch-config
+assert_contains "mise untrust branchy 2>&1" "untrusted ~/workdir/branchy/.config/mise"
+mv other-branch-config branchy/.config
+assert_not_contains "mise -C branchy trust --show 2>&1" ": trusted"
+
+# Ignoring a project and trusting it again brings back a nested root the user approved on its
+# own, and keeps the ignore the user gave a nested root by naming its file. With a directory,
+# `mise trust` picks a file in .mise/conf.d/x, so it records only that root and the project, and
+# .config/mise is the root these cases look at.
+make_clone again .config/mise
+mkdir -p again/.mise/conf.d/x
+echo "# empty" >again/.mise/conf.d/x/mise.local.toml
+mise trust again/mise.toml
+mise trust again/.config/mise/mise.local.toml
+assert "mise trust --ignore again 2>&1" "mise ignored ~/workdir/again
+mise ignored ~/workdir/again/.mise/conf.d/x"
+assert_not_contains "mise -C again trust --show 2>&1" ": trusted"
+assert "mise trust again 2>&1" "mise trusted ~/workdir/again/.mise/conf.d/x"
+assert_contains "mise -C again trust --show 2>&1" "~/workdir/again: trusted"
+assert_contains "mise -C again trust --show 2>&1" "~/workdir/again/.config/mise: trusted"
+assert_contains "mise -C again env" "FROM_CLONE=loaded"
+
+make_clone kept .config/mise
+mkdir -p kept/.mise/conf.d/x
+echo "# empty" >kept/.mise/conf.d/x/mise.local.toml
+mise trust kept/mise.toml
+mise trust kept/.config/mise/mise.local.toml
+mise trust --ignore kept/.config/mise/mise.local.toml
+mise trust --ignore kept
+mise trust kept
+assert_contains "mise -C kept trust --show 2>&1" "~/workdir/kept: trusted"
+assert_contains "mise -C kept trust --show 2>&1" "~/workdir/kept/.config/mise: untrusted"

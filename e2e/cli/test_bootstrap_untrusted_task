@@ -198,3 +198,23 @@ assert_succeed "cd unrelated && MISE_YES=0 mise bootstrap --skip tools"
 assert "test -f $HOME/global_real_ran"
 assert "test -f $HOME/global_pick_ran"
 assert "test -f $HOME/global_task_ran"
+
+# a project link into the global tasks directory is still the project's task:
+# the global script would run in the untrusted project's directory
+mkdir -p "$MISE_CONFIG_DIR/tasks/setup"
+cat <<'EOF' >"$MISE_CONFIG_DIR/tasks/build"
+#!/usr/bin/env bash
+touch "$HOME/global_file_task_ran"
+EOF
+chmod +x "$MISE_CONFIG_DIR/tasks/build"
+cp "$MISE_CONFIG_DIR/tasks/build" "$MISE_CONFIG_DIR/tasks/setup/bootstrap"
+cp "$MISE_CONFIG_DIR/tasks/build" "$MISE_CONFIG_DIR/tasks/_default"
+rm -f "$HOME"/*_ran
+mkdir -p linked-file/mise-tasks linked-dir linked-global/mise-tasks
+ln -s "$MISE_CONFIG_DIR/tasks/build" linked-file/mise-tasks/bootstrap
+ln -s "$MISE_CONFIG_DIR/tasks/setup" linked-dir/mise-tasks
+ln -s "$MISE_CONFIG_DIR/tasks" linked-global/mise-tasks/bootstrap
+for project in linked-file linked-dir linked-global; do
+  assert_fail "cd $project && MISE_YES=0 mise bootstrap --skip tools" "not trusted"
+  assert_fail "test -f $HOME/global_file_task_ran"
+done

@@ -1,0 +1,99 @@
+#!/usr/bin/env bash
+
+# With only `env_files` on, `mise trust .env` approves that file. A project `.miserc.toml` loads
+# without trust, so listing the dotenv file as a config filename there must not turn the
+# approval into trust of the project.
+
+export MISE_TRUSTED_CONFIG_PATHS=""
+export MISE_PARANOID=env_files
+export MISE_ENV_FILE=.env
+export MISE_YES=0
+unset CI GITHUB_ACTIONS GITHUB_ACTION 2>/dev/null || true
+
+mkdir proj
+cd proj || exit 1
+echo 'GREETING="hello"' >.env
+cat <<'EOS' >mise.toml
+[env]
+PROJECT_TEST = "{{ exec(command='echo loaded') }}"
+EOS
+
+for names in \
+  'override_config_filenames = ["mise.toml", ".env"]' \
+  'override_tool_versions_filenames = [".env"]' \
+  'override_tool_versions_filenames = ["./.env"]'; do
+  echo "$names" >.miserc.toml
+  assert_contains "mise trust .env 2>&1" "trusted ~/workdir/proj/.env"
+  assert_contains "mise trust $PWD/.env 2>&1" "trusted ~/workdir/proj/.env"
+  assert_not_contains "mise hook-env -s bash 2>&1 || true" "PROJECT_TEST"
+  assert_not_contains "mise trust --show 2>&1" "proj: trusted"
+  assert "mise untrust .env"
+done
+
+# A config under a name the user's environment sets is still config.
+rm .miserc.toml
+mkdir ~/other
+cat <<'EOS' >~/other/project.toml
+[env]
+OTHER_TEST = "{{ exec(command='echo loaded') }}"
+EOS
+assert_contains "cd ~/other && MISE_OVERRIDE_CONFIG_FILENAMES=project.toml mise trust project.toml 2>&1" "trusted ~/other"
+assert_contains "cd ~/other && MISE_OVERRIDE_CONFIG_FILENAMES=project.toml mise env" "OTHER_TEST=loaded"
+# Also when the file is named from outside its directory, and for the default filename.
+assert "mise untrust ~/other"
+output="$(cd ~ && MISE_DEFAULT_CONFIG_FILENAME=project.toml mise trust other/project.toml 2>&1)"
+assert_contains_text "$output" "trusted ~/other"
+assert_not_contains_text "$output" "trusted ~/other/project.toml"
+assert_contains "cd ~/other && MISE_DEFAULT_CONFIG_FILENAME=project.toml mise env" "OTHER_TEST=loaded"
+
+# A directory is still the project under whatever names are in effect.
+echo 'override_config_filenames = ["mise.toml", ".env"]' >.miserc.toml
+assert_contains "mise trust . 2>&1" "trusted ~/workdir/proj"
+assert_contains "mise hook-env -s bash 2>&1" "PROJECT_TEST=loaded"
+
+# Untrusting or ignoring the directory acts on the project too, whichever file the names pick.
+assert_contains "mise untrust . 2>&1" "untrusted ~/workdir/proj"
+assert_not_contains "mise hook-env -s bash 2>&1 || true" "PROJECT_TEST=loaded"
+assert_contains "mise trust . 2>&1" "trusted ~/workdir/proj"
+assert_contains "mise trust --ignore . 2>&1" "ignored ~/workdir/proj"
+assert_not_contains "mise hook-env -s bash 2>&1 || true" "PROJECT_TEST=loaded"
+
+# `mise trust --all` trusts the project of a config it finds under a name only `.miserc.toml`
+# declares, not that file as an env file.
+mkdir -p ~/workdir/top/app
+cd ~/workdir/top || exit 1
+echo 'override_config_filenames = ["project.toml"]' >.miserc.toml
+cat <<'EOS' >app/project.toml
+[env]
+APP_TEST = "{{ exec(command='echo loaded') }}"
+EOS
+output="$(mise trust --all 2>&1)"
+assert_contains_text "$output" "trusted ~/workdir/top/app"
+assert_not_contains_text "$output" "trusted ~/workdir/top/app/project.toml"
+assert_contains "cd app && mise env" "APP_TEST=loaded"
+
+# A config for an environment that is not selected is config too: trusting it trusts the
+# project, and it loads once the environment is selected. The name holds no `mise`, so only
+# mise's environment config names make it config.
+mkdir -p ~/stage/.mise
+cat <<'TOML' >~/stage/.mise/config.staging.toml
+[env]
+STAGE_TEST = "{{ exec(command='echo loaded') }}"
+TOML
+output="$(cd ~/stage && mise trust .mise/config.staging.toml 2>&1)"
+assert_contains_text "$output" "trusted ~/stage"
+assert_not_contains_text "$output" "trusted ~/stage/.mise/config.staging.toml"
+assert_contains "cd ~/stage && MISE_ENV=staging mise env" "STAGE_TEST=loaded"
+
+# `MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES=none` turns `.tool-versions` off and names no file, so
+# approving an env file named `none` does not trust its directory.
+mkdir ~/off
+echo 'GREETING="hello"' >~/off/none
+cat <<'TOML' >~/off/mise.toml
+[env]
+OFF_TEST = "{{ exec(command='echo loaded') }}"
+TOML
+export MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES=none
+assert_contains "cd ~/off && MISE_ENV_FILE=none mise trust none 2>&1" "trusted ~/off/none"
+assert_not_contains "cd ~/off && MISE_ENV_FILE=none mise hook-env -s bash 2>&1 || true" "OFF_TEST"
+assert_not_contains "cd ~/off && mise trust --show 2>&1" "off: trusted"

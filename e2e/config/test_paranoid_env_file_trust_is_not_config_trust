@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+
+# With only the `env_files` category on, approving a dotenv file approves its content as an env
+# file, while config is trusted the normal way, by path. The approval must not count as trust
+# when the same path is loaded as a mise config.
+
+export MISE_TRUSTED_CONFIG_PATHS=""
+export MISE_PARANOID=env_files
+export MISE_ENV_FILE=.env
+export MISE_YES=0
+unset CI GITHUB_ACTIONS GITHUB_ACTION 2>/dev/null || true
+
+evil_config() {
+  cat <<'EOS'
+[env]
+EDITED_TEST = "{{ exec(command='touch ~/ran; echo yes') }}"
+EOS
+}
+
+# Names .env as a config file. A project .miserc.toml may not pick a name that does not end in
+# `.toml`, so the user's own miserc does it; each case below starts without it.
+name_env_as_config() {
+  echo 'override_config_filenames = [".env"]' >~/.config/mise/miserc.toml
+}
+
+approve_env_file() {
+  rm -f ~/.config/mise/miserc.toml
+  mkdir -p "$1"
+  cd "$1" || exit 1
+  echo 'APPROVED_TEST=yes' >.env
+  assert "mise trust .env"
+  assert_contains "mise env" "APPROVED_TEST=yes"
+}
+
+# The approved file is edited and named as a config filename.
+approve_env_file ~/miserc
+evil_config >.env
+name_env_as_config
+assert_fail_contains "mise env 2>&1" "not trusted"
+assert_not_contains "mise hook-env -s bash 2>&1" "EDITED_TEST"
+
+# The approved file is unchanged and still not trusted as config.
+approve_env_file ~/unedited
+name_env_as_config
+assert_not_contains "mise trust --show 2>&1" ": trusted"
+assert_fail_contains "mise env 2>&1" "not trusted"
+
+# The approved file is edited and a config is a symlink to it.
+approve_env_file ~/symlink
+evil_config >.env
+ln -s .env mise.toml
+assert_fail_contains "mise env 2>&1" "not trusted"
+assert_not_contains "mise hook-env -s bash 2>&1" "EDITED_TEST"
+
+# The approved path becomes a directory that holds a config.
+approve_env_file ~/directory
+rm .env
+mkdir .env
+evil_config >.env/mise.toml
+assert_fail_contains "cd .env && mise env 2>&1" "not trusted"
+assert_not_contains "cd .env && mise hook-env -s bash 2>&1" "EDITED_TEST"
+# Trusting that directory is trust by path, as for any other config root.
+assert "cd .env && mise trust"
+assert_contains "cd .env && mise env" "EDITED_TEST=yes"
+rm ~/ran
+
+# Paranoid mode switched off after the approval does not turn it into trust by path.
+approve_env_file ~/switched-off
+evil_config >.env
+name_env_as_config
+assert_not_contains "MISE_PARANOID=false MISE_ENV_FILE= mise hook-env -s bash 2>&1" "EDITED_TEST"
+
+# A linked git worktree shares trust by path with the main checkout, not an approval of the
+# content of the file there.
+approve_env_file ~/worktree
+git init -q .
+git add .env
+git commit -qm init
+git worktree add -q ~/worktree-linked -b linked
+cd ~/worktree-linked || exit 1
+evil_config >.env
+name_env_as_config
+assert_fail_contains "mise env 2>&1" "not trusted"
+assert_not_contains "mise hook-env -s bash 2>&1" "EDITED_TEST"
+
+assert_fail "test -e ~/ran"
