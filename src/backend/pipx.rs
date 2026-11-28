@@ -332,6 +332,30 @@ impl<'a> PipxOptions<'a> {
         Ok(Some(tool))
     }
 
+    /// A uv configuration file repeating the indexes, when one of them sets
+    /// `exclude-newer`.
+    ///
+    /// The lock runs uv with `--no-config`, which keeps the project's
+    /// `[[tool.uv.index]]` URLs but drops their `exclude-newer`, so the cutoff
+    /// would still reject an index that publishes no upload times. uv reads a
+    /// file passed with `--config-file` despite `--no-config`. The file repeats
+    /// every index, in order, so their priority stays the one the project gives.
+    fn uv_config_file(&self) -> Result<Option<toml::Table>> {
+        let indexes = self.indexes()?;
+        if !indexes
+            .iter()
+            .any(|index| index.contains_key("exclude-newer"))
+        {
+            return Ok(None);
+        }
+        let mut config = toml::Table::new();
+        config.insert(
+            "index".into(),
+            toml::Value::Array(indexes.into_iter().map(toml::Value::Table).collect()),
+        );
+        Ok(Some(config))
+    }
+
     fn has_uv_only_options(&self) -> Result<bool> {
         Ok(!self.with()?.is_empty()
             || !self.expose()?.is_empty()
@@ -3393,6 +3417,32 @@ cccccccccccccccccccccccccccccccccccccccc\trefs/heads/main\n";
             let err = indexes(rejected).unwrap_err().to_string();
             assert!(err.contains("minimum_release_age"), "{err}");
         }
+    }
+
+    #[test]
+    fn uv_config_file_repeats_indexes_only_for_exclude_newer() {
+        let config = |indexes: &str| {
+            let mut opts = ToolVersionOptions::default();
+            opts.opts
+                .insert("indexes".to_string(), toml::Value::String(indexes.into()));
+            PipxOptions::new(&opts).uv_config_file().unwrap()
+        };
+        assert_eq!(
+            config(r#"[{"name":"p","url":"https://p.example/simple/"}]"#),
+            None
+        );
+        let config = config(
+            r#"[{"name":"a","url":"https://a.example/simple/"},{"name":"p","url":"https://p.example/simple/","exclude-newer":false}]"#,
+        )
+        .unwrap();
+        let names = config["index"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|index| index["name"].as_str().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(names, ["a", "p"]);
+        assert_eq!(config["index"][1].get("exclude-newer"), Some(&false.into()));
     }
 
     #[test]
