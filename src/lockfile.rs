@@ -17,7 +17,7 @@ use crate::file::display_path;
 use crate::path::PathExt;
 use crate::platform::Platform;
 use crate::toolset::{ToolRequest, ToolSource, ToolVersion, ToolVersionOptions, Toolset};
-use eyre::{Report, Result, bail, eyre};
+use eyre::{Report, Result, WrapErr, bail, eyre};
 use indexmap::IndexSet;
 use itertools::Itertools;
 use mise_util::yaml;
@@ -544,6 +544,7 @@ impl From<&PlatformInfo> for CachedPlatform {
             download_headers: _,
             download_url: _,
             download_url_api: _,
+            locked_download: _,
             conda_deps,
             provenance,
             provenance_verified,
@@ -603,6 +604,7 @@ impl From<CachedPlatform> for PlatformInfo {
             download_headers: None,
             download_url: None,
             download_url_api: None,
+            locked_download: None,
             conda_deps,
             provenance: provenance.map(Into::into),
             provenance_verified,
@@ -627,6 +629,7 @@ impl From<&ArtifactInfo> for CachedArtifact {
             download_headers: _,
             download_url: _,
             download_url_api: _,
+            locked_download: _,
             provenance,
             provenance_verified,
         } = artifact;
@@ -662,6 +665,7 @@ impl From<CachedArtifact> for ArtifactInfo {
             download_headers: None,
             download_url: None,
             download_url_api: None,
+            locked_download: None,
             provenance: provenance.map(Into::into),
             provenance_verified,
         }
@@ -1445,6 +1449,9 @@ pub struct ArtifactInfo {
     pub download_url: Option<LoginUrl>,
     #[serde(skip)]
     pub download_url_api: Option<LoginUrl>,
+    /// As [`PlatformInfo::locked_download`], for this artifact.
+    #[serde(skip)]
+    pub locked_download: Option<LockedDownload>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub provenance: Option<ProvenanceType>,
     /// Opaque legacy metadata, preserved only to avoid churn with older clients.
@@ -1507,6 +1514,7 @@ impl ArtifactInfo {
             download_headers: None,
             download_url: None,
             download_url_api: None,
+            locked_download: None,
             provenance,
             provenance_verified,
         }
@@ -1576,6 +1584,96 @@ impl std::fmt::Debug for LoginUrl {
     }
 }
 
+/// The download a locked install makes of an artifact whose install sent a
+/// login the release gave ([`PlatformInfo::locked_download`]): `url`, with
+/// only the logins of the `api_url` and `url` options, sent with `headers`
+/// (the forge token). Its `Debug` output leaves the login and headers out.
+#[derive(Clone, PartialEq, Eq)]
+pub struct LockedDownload {
+    /// The release asset's name, for the error.
+    pub(crate) name: String,
+    pub(crate) url: LoginUrl,
+    pub(crate) headers: reqwest::header::HeaderMap,
+}
+
+impl std::fmt::Debug for LockedDownload {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LockedDownload")
+            .field("name", &self.name)
+            .field("url", &self.url)
+            .finish_non_exhaustive()
+    }
+}
+
+/// Before the entry `info` of `short@version` is written: make the download a
+/// locked install of it makes, for each artifact whose install sent a login
+/// the release gave ([`PlatformInfo::locked_download`]). The bytes must match
+/// the checksum the install pinned; an artifact with no strong pin is pinned
+/// by the sha256 of what the download served. When the download fails, the
+/// entry is not written: a locked install could not fetch the URL it records.
+/// The tool is installed by then, so the error says so.
+pub(crate) async fn check_locked_downloads(
+    short: &str,
+    version: &str,
+    info: &mut PlatformInfo,
+) -> Result<()> {
+    let artifacts = std::iter::once((
+        &mut info.locked_download,
+        &mut info.checksum,
+        &mut info.checksum_source,
+    ))
+    .chain(info.additional_artifacts.iter_mut().map(|artifact| {
+        (
+            &mut artifact.locked_download,
+            &mut artifact.checksum,
+            &mut artifact.checksum_source,
+        )
+    }));
+    for (download, checksum, checksum_source) in artifacts {
+        let Some(download) = download.take() else {
+            continue;
+        };
+        locked_download_checksum(&download, checksum, checksum_source)
+            .await
+            .wrap_err_with(|| {
+                crate::backend::github::lost_login_error(&download.name, download.url.as_str())
+            })
+            .wrap_err_with(|| {
+                format!("{short}@{version} is installed, but mise.lock was not updated for it")
+            })?;
+    }
+    Ok(())
+}
+
+/// Download `download` and check it against `checksum`, which becomes its
+/// sha256 when it is missing, md5 or sha1.
+async fn locked_download_checksum(
+    download: &LockedDownload,
+    checksum: &mut Option<String>,
+    checksum_source: &mut Option<ChecksumSource>,
+) -> Result<()> {
+    eyre::ensure!(!Settings::get().offline(), "offline mode is enabled");
+    let dir = tempfile::tempdir()?;
+    let path = dir.path().join("artifact");
+    crate::http::HTTP
+        .download_file_with_headers(download.url.as_str(), &path, &download.headers, None)
+        .await?;
+    if let Some((algorithm, hash)) = checksum.as_deref().and_then(|c| c.split_once(':')) {
+        crate::hash::ensure_checksum(&path, hash, None, algorithm)?;
+    }
+    if checksum
+        .as_deref()
+        .is_none_or(crate::backend::static_helpers::is_weak_checksum)
+    {
+        *checksum = Some(format!(
+            "sha256:{}",
+            crate::hash::file_hash_sha256(&path, None)?
+        ));
+        *checksum_source = None;
+    }
+    Ok(())
+}
+
 #[derive(Debug, Default, Clone, Serialize, PartialEq, Eq)]
 pub struct PlatformInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1607,6 +1705,13 @@ pub struct PlatformInfo {
     /// download the artifact for its checksum; never written.
     #[serde(skip)]
     pub download_url_api: Option<LoginUrl>,
+    /// Set by an install that downloaded the artifact through a login the
+    /// release gave, which `mise.lock` does not record and no config puts
+    /// back: the download a locked install of the entry makes instead. The
+    /// lockfile update makes it before it writes the entry
+    /// ([`check_locked_downloads`]). Never written.
+    #[serde(skip)]
+    pub locked_download: Option<LockedDownload>,
     /// References to conda packages in the shared conda-packages section (by basename)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub conda_deps: Option<Vec<String>>,
@@ -1677,7 +1782,7 @@ impl PlatformInfo {
 
     /// Whether both describe the same persisted data. Ignores `size`, which is
     /// read from existing lockfiles but never written, `download_headers`,
-    /// `download_url` and `download_url_api`.
+    /// `download_url`, `download_url_api` and `locked_download`.
     pub fn same_persisted_data(&self, other: &PlatformInfo) -> bool {
         fn persisted(info: &PlatformInfo) -> PlatformInfo {
             let mut info = info.clone();
@@ -1685,11 +1790,13 @@ impl PlatformInfo {
             info.download_headers = None;
             info.download_url = None;
             info.download_url_api = None;
+            info.locked_download = None;
             for artifact in &mut info.additional_artifacts {
                 artifact.size = None;
                 artifact.download_headers = None;
                 artifact.download_url = None;
                 artifact.download_url_api = None;
+                artifact.locked_download = None;
             }
             info
         }
@@ -1712,6 +1819,7 @@ impl PlatformInfo {
             download_headers: None,
             download_url: None,
             download_url_api: None,
+            locked_download: None,
             provenance: None,
             provenance_verified: None,
             github_attestations: None,
@@ -1836,6 +1944,7 @@ impl PlatformInfo {
             download_headers: None,
             download_url: None,
             download_url_api: None,
+            locked_download: None,
             install: self.install.clone().or_else(|| {
                 if self.url.is_some() {
                     None
@@ -2065,6 +2174,7 @@ impl TryFrom<toml::Value> for PlatformInfo {
                     download_headers: None,
                     download_url: None,
                     download_url_api: None,
+                    locked_download: None,
                     install,
                     checksum,
                     checksum_source,
@@ -3142,6 +3252,7 @@ impl Lockfile {
                     download_headers: None,
                     download_url: None,
                     download_url_api: None,
+                    locked_download: None,
                     install: platform_info.install.or_else(|| {
                         if platform_info.url.is_some() {
                             None
@@ -4459,79 +4570,7 @@ pub(crate) async fn tool_config_locked_lockfiles(
     }
 }
 
-/// Whether a tool from `source` belongs to a project config, not a global one.
-fn is_project_source(source: &ToolSource) -> bool {
-    source
-        .path()
-        .is_some_and(|path| !crate::config::is_global_config(path))
-}
-
-/// Whether the update after an install writes `lockfile_path`, which
-/// `configs` write. When lockfiles are enabled implicitly, only files the user
-/// has already created are maintained. An explicit `lockfile = true`
-/// (`creation_enabled`) opts into creating a project lockfile too, for a
-/// project config and when a project tool goes in it
-/// (`has_tool_contribution`); global lockfiles remain explicit via the
-/// `mise lock --global` command.
-fn update_writes_lockfile(
-    lockfile_path: &Path,
-    creation_enabled: bool,
-    configs: &[PathBuf],
-    has_tool_contribution: impl FnOnce() -> bool,
-) -> bool {
-    lockfile_path.exists()
-        || (creation_enabled
-            && configs
-                .iter()
-                .any(|path| !crate::config::is_global_config(path))
-            && has_tool_contribution())
-}
-
-/// Whether installing `tv`, out of the toolset `ts`, writes or updates an
-/// entry for it in a lockfile, as [`update_lockfiles`] decides after the
-/// install: an install with `locked` writes none, and otherwise the entry goes
-/// in the lockfile of the tool's config, if that lockfile is written. A tool
-/// from the command line has no lockfile of its own; it updates the entry of a
-/// config that requests the same version of it.
-///
-/// An install that records nothing can download what the release gives as it
-/// is; one that records an entry must download it as a later locked install of
-/// the entry will.
-pub(crate) fn install_writes_lock_entry(
-    config: &Config,
-    ts: &Toolset,
-    tv: &ToolVersion,
-    locked: bool,
-) -> bool {
-    if locked || !Settings::get().lockfile_enabled() {
-        return false;
-    }
-    let configs = config_paths_by_lockfile(config);
-    let writes = |source: &ToolSource| {
-        lockfile_path_for_tool_source(config, source).is_some_and(|(path, _)| {
-            update_writes_lockfile(
-                &path,
-                config.lockfile_creation_enabled(),
-                configs.get(&path).map_or(&[], Vec::as_slice),
-                || is_project_source(source),
-            )
-        })
-    };
-    let source = tv.request.source();
-    if lockfile_path_for_tool_source(config, source).is_some() {
-        return writes(source);
-    }
-    ts.versions
-        .iter()
-        .filter(|(ba, _)| ba.short == tv.ba().short)
-        .flat_map(|(_, tvl)| &tvl.versions)
-        .any(|configured| {
-            configured.request.version() == tv.request.version()
-                && writes(configured.request.source())
-        })
-}
-
-pub(crate) fn update_lockfiles(
+pub(crate) async fn update_lockfiles(
     config: &Config,
     ts: &Toolset,
     new_versions: &[ToolVersion],
@@ -4555,8 +4594,10 @@ pub(crate) fn update_lockfiles(
 
     debug!("updating {} lockfiles", lockfile_configs.len());
 
-    // Process each lockfile, deferring provenance errors until all lockfiles are saved.
+    // Process each lockfile, deferring provenance errors and the tools whose
+    // locked download failed until all lockfiles are saved.
     let mut provenance_errors: Vec<String> = Vec::new();
+    let mut login_errors: Vec<String> = Vec::new();
     let mut has_deferred_provenance = false;
 
     for (lockfile_path, configs) in lockfile_configs {
@@ -4567,27 +4608,34 @@ pub(crate) fn update_lockfiles(
             );
             continue;
         }
-        let has_tool_contribution = || {
+        // When lockfiles are enabled implicitly, only maintain files the user has
+        // already created. An explicit `lockfile = true` opts into project
+        // lockfile creation too; global lockfiles remain explicit via the
+        // `mise lock --global` command.
+        if !lockfile_path.exists() {
             let source_maps_to_lockfile = |source: &ToolSource| {
                 lockfile_path_for_tool_source(config, source)
                     .is_some_and(|(path, _)| path == lockfile_path)
             };
             let updates_project_lockfiles = new_versions.is_empty()
-                || new_versions
-                    .iter()
-                    .any(|tv| is_project_source(tv.request.source()));
-            updates_project_lockfiles
+                || new_versions.iter().any(|tv| {
+                    tv.request
+                        .source()
+                        .path()
+                        .is_some_and(|path| !crate::config::is_global_config(path))
+                });
+            let has_tool_contribution = updates_project_lockfiles
                 && tools_by_source
                     .iter()
-                    .any(|(source, tools)| !tools.is_empty() && source_maps_to_lockfile(source))
-        };
-        if !update_writes_lockfile(
-            &lockfile_path,
-            config.lockfile_creation_enabled(),
-            &configs,
-            has_tool_contribution,
-        ) {
-            continue;
+                    .any(|(source, tools)| !tools.is_empty() && source_maps_to_lockfile(source));
+            let create_project_lockfile = config.lockfile_creation_enabled()
+                && configs
+                    .iter()
+                    .any(|path| !crate::config::is_global_config(path))
+                && has_tool_contribution;
+            if !create_project_lockfile {
+                continue;
+            }
         }
         let is_monorepo_root_lockfile = config.monorepo_lockfile_root().is_some_and(|root| {
             lockfile_path.parent() == Some(crate::config::monorepo_lockfile_dir(&root).as_path())
@@ -4695,6 +4743,26 @@ pub(crate) fn update_lockfiles(
                     );
                 }
             }
+        }
+
+        // An artifact the install downloaded through a login the release gave
+        // is recorded only once a locked install's download of it succeeds.
+        // A tool that fails it keeps its entry as it was.
+        let mut unrecorded = Vec::new();
+        for (short, versions) in &mut tool_versions_by_short {
+            for tv in versions.iter_mut() {
+                let (ba, version) = (tv.ba().clone(), tv.version.clone());
+                for info in tv.lock_platforms.values_mut() {
+                    let check = check_locked_downloads(short, &version, info);
+                    if let Err(err) = crate::toolset::with_safe_mode_tool_scope(&ba, check).await {
+                        login_errors.push(format!("{err:#}"));
+                        unrecorded.push(short.clone());
+                    }
+                }
+            }
+        }
+        for short in &unrecorded {
+            tool_versions_by_short.remove(short);
         }
 
         // Tool stubs are not in the toolset but lock into this file too.
@@ -4877,6 +4945,7 @@ pub(crate) fn update_lockfiles(
     }
 
     // Return all provenance errors after all lockfiles have been saved
+    provenance_errors.extend(login_errors);
     if !provenance_errors.is_empty() {
         return Err(eyre!("{}", provenance_errors.join("\n")));
     }

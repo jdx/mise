@@ -787,12 +787,22 @@ pub async fn generate(
             })
             .and_then(|actual| {
                 let backend = actual.backend().ok()?;
-                (platform.to_key() == backend.get_platform_key())
-                    .then(|| actual.lock_platforms.get(&platform.to_key()).cloned())
+                let key = platform.to_key();
+                let info = (key == backend.get_platform_key())
+                    .then(|| actual.lock_platforms.get(&key).cloned())
                     .flatten()
-            })
-            .filter(|info| {
-                info.url.is_some() || info.install.is_some() || info.conda_deps.is_some()
+                    .filter(|info| {
+                        info.url.is_some() || info.install.is_some() || info.conda_deps.is_some()
+                    })?;
+                // The dependency packages the install downloaded, with the
+                // checksums it pinned, go in with the entry that names them.
+                let conda = actual
+                    .conda_packages
+                    .iter()
+                    .filter(|((platform, _), _)| *platform == key)
+                    .map(|((_, basename), package)| (basename.clone(), package.clone()))
+                    .collect::<BTreeMap<_, _>>();
+                Some((info, conda))
             });
         let previous_info = previous.tools_for(&ba.short).and_then(|entries| {
             entries
@@ -839,7 +849,7 @@ pub async fn generate(
         tasks.spawn(async move {
             let _permit = semaphore.acquire().await?;
             let tool = ba.clone();
-            let mut resolution = if let Some(info) = actual {
+            let mut resolution = if let Some((info, conda)) = actual {
                 (
                     crate::toolset::install_state::state_short(&ba.short).into_owned(),
                     tv.version.clone(),
@@ -847,7 +857,7 @@ pub async fn generate(
                     platform,
                     Ok(info),
                     options,
-                    BTreeMap::new(),
+                    conda,
                     LockResolutionStatus::Optional,
                 )
             } else {
@@ -858,6 +868,10 @@ pub async fn generate(
                 // safe mode scope, as its install does: a project tool's
                 // release chooses those hosts, and no netrc login goes to them.
                 let checksums = async {
+                    // First: an artifact the install downloaded through a login
+                    // the release gave is written only if a locked install can
+                    // download it.
+                    crate::lockfile::check_locked_downloads(&tool.short, &tv.version, info).await?;
                     let mut verified = Vec::new();
                     if let Some(old) = &previous_info {
                         verified = upgrade_weak_pins_recorded_with_a_login(old, info).await?;
@@ -1864,6 +1878,174 @@ mod tests {
         assert_eq!(info.install.as_deref(), Some("source"));
         assert!(info.url.is_none());
         assert!(info.provenance_verified.is_none());
+    }
+
+    /// The installed tool, marked by an install that downloaded its artifact
+    /// through a login the release gave: what `generate` writes for it. A
+    /// download is shared by request within a process, so each call names
+    /// its own `file`.
+    async fn generate_marked_install(
+        server: &mockito::Server,
+        file: &str,
+        checksum: Option<String>,
+    ) -> Result<PlatformInfo> {
+        crate::backend::load_tools().await.unwrap();
+        let (ba, mut actual) = tool();
+        let platform = Platform::current();
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert("private-token", "t0ken".parse().unwrap());
+        let url = format!("{}/{file}", server.url());
+        actual.lock_platforms.insert(
+            platform.to_key(),
+            PlatformInfo {
+                url: Some(url.clone()),
+                checksum,
+                locked_download: Some(crate::lockfile::LockedDownload {
+                    name: file.into(),
+                    url: crate::lockfile::LoginUrl::new(&url),
+                    headers,
+                }),
+                ..Default::default()
+            },
+        );
+        let generated = generate(
+            &previous(),
+            &[(ba, actual.clone())],
+            std::slice::from_ref(&platform),
+            false,
+            PlatformSelection::Default,
+            1,
+            &[actual],
+        )
+        .await?;
+        Ok(generated.tools["fixture"][0].platforms[&platform.to_key()].clone())
+    }
+
+    /// An installed artifact downloaded through a login the release gave is
+    /// written once a locked install's download of it, with only the forge
+    /// token, serves the bytes the install pinned. A missing pin becomes the
+    /// sha256 of what that download served.
+    #[tokio::test]
+    async fn installed_release_login_artifact_is_written_once_a_locked_install_can_fetch_it() {
+        let mut server = mockito::Server::new_async().await;
+        let mut mocks = Vec::new();
+        for file in ["pinned.tar.gz", "unpinned.tar.gz"] {
+            let mock = server
+                .mock("GET", format!("/{file}").as_str())
+                .match_header("private-token", "t0ken")
+                .with_body("artifact")
+                .create_async()
+                .await;
+            mocks.push(mock);
+        }
+        let pinned = format!("sha256:{ARTIFACT_SHA256}");
+        let info = generate_marked_install(&server, "pinned.tar.gz", Some(pinned.clone()))
+            .await
+            .unwrap();
+        assert_eq!(info.checksum.as_deref(), Some(pinned.as_str()));
+        assert!(info.locked_download.is_none());
+        let info = generate_marked_install(&server, "unpinned.tar.gz", None)
+            .await
+            .unwrap();
+        assert_eq!(info.checksum.as_deref(), Some(pinned.as_str()));
+        for mock in mocks {
+            mock.assert_async().await;
+        }
+    }
+
+    /// When a locked install could not fetch the installed artifact, the
+    /// lockfile update fails with `mise lock`'s advice and says the tool is
+    /// installed; so it does when the server serves other bytes than the
+    /// install pinned.
+    #[tokio::test]
+    async fn installed_release_login_artifact_a_locked_install_cannot_fetch_is_not_written() {
+        let mut server = mockito::Server::new_async().await;
+        let refused = server
+            .mock("GET", "/refused.tar.gz")
+            .with_status(401)
+            .create_async()
+            .await;
+        let pinned = format!("sha256:{ARTIFACT_SHA256}");
+        let error = generate_marked_install(&server, "refused.tar.gz", Some(pinned.clone()))
+            .await
+            .unwrap_err();
+        refused.assert_async().await;
+        let message = format!("{error:#}");
+        assert!(
+            message.contains("fixture@1.0 is installed, but mise.lock was not updated for it"),
+            "{message}"
+        );
+        assert!(
+            message.contains("Put the login in one of those options"),
+            "{message}"
+        );
+
+        let other = server
+            .mock("GET", "/other.tar.gz")
+            .with_body("other bytes")
+            .create_async()
+            .await;
+        let error = generate_marked_install(&server, "other.tar.gz", Some(pinned))
+            .await
+            .unwrap_err();
+        other.assert_async().await;
+        assert!(
+            format!("{error:#}").contains("mise.lock was not updated for it"),
+            "{error:#}"
+        );
+    }
+
+    /// The dependency packages an install recorded, with their checksums, are
+    /// written with the installed entry that names them.
+    #[tokio::test]
+    async fn installed_conda_dependencies_are_written_with_the_installed_entry() {
+        use crate::backend::conda::CondaPackageInfo;
+        crate::backend::load_tools().await.unwrap();
+        let (ba, mut actual) = tool();
+        let platform = Platform::current();
+        actual.lock_platforms.insert(
+            platform.to_key(),
+            PlatformInfo {
+                url: Some("https://conda.example/linux-64/fixture-1.0-h0_0.conda".into()),
+                checksum: Some("sha256:main".into()),
+                conda_deps: Some(vec!["zlib-1.3-h0_0".into()]),
+                ..Default::default()
+            },
+        );
+        let zlib = CondaPackageInfo {
+            url: "https://conda.example/linux-64/zlib-1.3-h0_0.conda".into(),
+            checksum: Some("sha256:zlib".into()),
+        };
+        actual
+            .conda_packages
+            .insert((platform.to_key(), "zlib-1.3-h0_0".into()), zlib.clone());
+        actual.conda_packages.insert(
+            ("other-platform".into(), "zlib-1.3-h0_0".into()),
+            CondaPackageInfo {
+                url: "https://conda.example/other/zlib-1.3-h0_0.conda".into(),
+                checksum: None,
+            },
+        );
+        let generated = generate(
+            &previous(),
+            &[(ba, actual.clone())],
+            std::slice::from_ref(&platform),
+            false,
+            PlatformSelection::Default,
+            1,
+            &[actual],
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            generated.get_conda_package(&platform.to_key(), "zlib-1.3-h0_0"),
+            Some(&zlib)
+        );
+        assert!(
+            generated
+                .get_conda_package("other-platform", "zlib-1.3-h0_0")
+                .is_none()
+        );
     }
 
     #[tokio::test]

@@ -5896,6 +5896,7 @@ async fn rebuild_shims_and_runtime_symlinks_for_changes(
             lockfile_update_mode,
             &tool_config_locked,
         )
+        .await
         .wrap_err("failed to update lockfiles")?
     });
     if !new_versions.is_empty() || has_deferred_provenance {
