@@ -144,11 +144,15 @@ impl EnvDirectiveContext<'_> {
 }
 
 /// Whether [`EnvResults::parse_template`] can rewrite `input`: it holds a template or a `$VAR`.
+/// A `$` that starts no variable, as in `cost$.env` or `$$`, is written text.
 ///
 /// The path such a `_.file` or `_.source` entry names is not fixed by the config that declares
 /// it. `{{cwd}}/.env` and `$PWD/.env` name a different file in every directory.
 fn is_templated(input: &str) -> bool {
-    contains_template_syntax(input) || input.contains('$')
+    contains_template_syntax(input)
+        || template_pieces(input)
+            .iter()
+            .any(|(piece, _)| *piece != Piece::Written)
 }
 
 /// Marks, through rendering, where the pattern an entry writes begins. No path holds a NUL.
@@ -1695,7 +1699,14 @@ mod tests {
         ] {
             assert!(is_templated(input), "{input}");
         }
-        for input in [".env", "~/.env", "/etc/mise/env.sh", "../shared/.env.json"] {
+        for input in [
+            ".env",
+            "~/.env",
+            "/etc/mise/env.sh",
+            "../shared/.env.json",
+            "/opt/mise/cost$.env",
+            "/opt/mise/a$$b.env",
+        ] {
             assert!(!is_templated(input), "{input}");
         }
     }
