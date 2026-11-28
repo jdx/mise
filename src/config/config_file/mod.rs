@@ -172,11 +172,12 @@ impl EffectiveToolRequests {
 
 /// [`ensure_edit_keeps_tool_request_count`] for an edit about to be saved, with what
 /// `edited` includes merged in, as reload counts it. An include that cannot load is left
-/// out: reload fails on it whatever the count.
+/// out: reload fails on it whatever the count. Returns `edited` with its includes merged,
+/// as a later check in the same run counts it once it is saved.
 pub async fn ensure_saved_edit_keeps_tool_request_count(
     config_files: &IndexMap<PathBuf, Arc<dyn ConfigFile>>,
     edited: &Arc<dyn ConfigFile>,
-) -> Result<()> {
+) -> Result<Arc<dyn ConfigFile>> {
     let merged = match crate::config::remote_include::apply(edited.clone()).await {
         Ok(merged) => merged,
         Err(err) => {
@@ -187,7 +188,8 @@ pub async fn ensure_saved_edit_keeps_tool_request_count(
             edited.clone()
         }
     };
-    ensure_edit_keeps_tool_request_count(config_files, &merged)
+    ensure_edit_keeps_tool_request_count(config_files, &merged)?;
+    Ok(merged)
 }
 
 /// Refuse an edit to `edited` that would take what the config files request together over

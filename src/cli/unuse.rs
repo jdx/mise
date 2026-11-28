@@ -90,9 +90,11 @@ impl Unuse {
             let removed_here = self.remove_from(cf.as_ref())?;
             if !removed_here.is_empty() {
                 // A removal can uncover the requests of a file it shadowed.
-                config_file::ensure_saved_edit_keeps_tool_request_count(&config_files, &cf).await?;
+                let counted =
+                    config_file::ensure_saved_edit_keeps_tool_request_count(&config_files, &cf)
+                        .await?;
                 cf.save()?;
-                config_files.insert(cf.get_path().to_path_buf(), cf.clone());
+                config_files.insert(cf.get_path().to_path_buf(), counted);
                 let removals = removed_here.iter().join(", ");
                 info!("removed: {removals} from {}", display_path(cf.get_path()));
             }
