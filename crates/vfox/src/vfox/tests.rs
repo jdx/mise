@@ -546,6 +546,81 @@ async fn test_download_plugin_headers_not_sent_to_rewritten_mirror() {
 }
 
 #[tokio::test]
+async fn test_download_keeps_mirror_login_on_same_origin_redirects_only() {
+    use reqwest::header::{AUTHORIZATION, HeaderValue};
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, Request, ResponseTemplate};
+
+    let storage = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/signed"))
+        .respond_with(|req: &Request| {
+            assert!(!req.headers.contains_key("authorization"));
+            ResponseTemplate::new(200).set_body_bytes(b"artifact")
+        })
+        .expect(1)
+        .mount(&storage)
+        .await;
+
+    let mirror = MockServer::start().await;
+    let mirror_base = Url::parse(&mirror.uri()).unwrap();
+    // "user:pass", the login written in the mirror URL.
+    let explicit = "Basic dXNlcjpwYXNz";
+    Mock::given(method("GET"))
+        .and(path("/tool.tar.gz"))
+        .respond_with(move |req: &Request| {
+            assert_eq!(req.headers.get("authorization").unwrap(), explicit);
+            ResponseTemplate::new(302)
+                .insert_header("Location", mirror_base.join("/moved").unwrap().as_str())
+        })
+        .expect(1)
+        .mount(&mirror)
+        .await;
+    let storage_url = format!("{}/signed", storage.uri());
+    Mock::given(method("GET"))
+        .and(path("/moved"))
+        .respond_with(move |req: &Request| {
+            let values: Vec<_> = req.headers.get_all("authorization").iter().collect();
+            assert_eq!(values, [explicit]);
+            ResponseTemplate::new(302).insert_header("Location", storage_url.as_str())
+        })
+        .expect(1)
+        .mount(&mirror)
+        .await;
+
+    let temp = TempDir::new().unwrap();
+    let plugin_dir = temp.path().join("dummy");
+    std::fs::create_dir_all(&plugin_dir).unwrap();
+    let plugin = Plugin::from_dir(&plugin_dir).unwrap();
+    let mut vfox = Vfox::test();
+    let mut mirror_url = Url::parse(&format!("{}/tool.tar.gz", mirror.uri())).unwrap();
+    mirror_url.set_username("user").unwrap();
+    mirror_url.set_password(Some("pass")).unwrap();
+    let mirror_origin = mirror_url.origin();
+    vfox.set_url_rewriter(move |url| *url = mirror_url.clone());
+    // Like netrc, the resolver has another login for the mirror's host and
+    // steps aside for a URL that carries a password.
+    vfox.set_http_headers_resolver(move |url, _| {
+        let mut headers = HeaderMap::new();
+        if url.origin() == mirror_origin && url.password().is_none() {
+            headers.insert(
+                AUTHORIZATION,
+                HeaderValue::from_static("Basic bmV0cmM6eA=="),
+            );
+        }
+        headers
+    });
+    let mut headers = HeaderMap::new();
+    headers.insert(AUTHORIZATION, HeaderValue::from_static("Bearer plugin"));
+    let url = Url::parse("https://upstream.invalid/tool.tar.gz").unwrap();
+    let downloaded = vfox
+        .download(&url, &plugin, "1.0.0", temp.path(), Some(&headers))
+        .await
+        .unwrap();
+    assert_eq!(std::fs::read(downloaded).unwrap(), b"artifact");
+}
+
+#[tokio::test]
 async fn test_download_redirect_loop_is_an_error() {
     use reqwest::header::HeaderValue;
     use wiremock::matchers::method;
