@@ -117,7 +117,10 @@ impl EnvDirectiveContext<'_> {
         }
         let marks = SubstitutionMarks::new();
         let rendered = self.parse_template(origin, &marks.wrap_substitutions(input))?;
-        Ok(match marks.split_glob(&rendered) {
+        let glob = marks
+            .split_glob(&rendered)
+            .wrap_err_with(|| format!("in {origin} = {input:?}"))?;
+        Ok(match glob {
             Some((dir, pattern)) => EnvPath {
                 path: format!("{dir}{pattern}").into(),
                 dir: Some((dir.into(), pattern)),
@@ -386,7 +389,7 @@ impl SubstitutionMarks {
     /// is left over.
     #[cfg(test)]
     fn to_glob(&self, rendered: &str) -> Option<String> {
-        Some(glob_of(&self.segments(rendered)?))
+        Some(glob_of(&self.segments(rendered)?).unwrap())
     }
 
     /// The directory a rendered, marked path is globbed in, as a literal path, and the glob
@@ -395,11 +398,14 @@ impl SubstitutionMarks {
     /// entry writes it or a substitution renders it: `{{ cwd ~ '/' }}.env.*` renders an
     /// absolute directory, which must be where the glob is taken, not a part of the glob.
     /// `None` when the written text holds no `*`, or the markers do not pair up or a NUL is
-    /// left over.
-    fn split_glob(&self, rendered: &str) -> Option<(String, String)> {
-        let segments = self.segments(rendered)?;
+    /// left over. An error when a substitution inside a written `[...]` renders text that the
+    /// class would read as syntax.
+    fn split_glob(&self, rendered: &str) -> eyre::Result<Option<(String, String)>> {
+        let Some(segments) = self.segments(rendered) else {
+            return Ok(None);
+        };
         if !segments.iter().any(|(data, t)| !data && t.contains('*')) {
-            return None;
+            return Ok(None);
         }
         let is_sep = |c: char| c == '/' || (cfg!(windows) && c == '\\');
         // The ends, in `segments`, of the last separator the entry writes and of the last one a
@@ -444,7 +450,7 @@ impl SubstitutionMarks {
             .collect();
         let mut rest = segments[i + 1..].to_vec();
         rest.insert(0, (segments[i].0, &segments[i].1[at..]));
-        Some((dir, glob_of(&rest)))
+        Ok(Some((dir, glob_of(&rest)?)))
     }
 
     /// `rendered` without the markers or a NUL.
@@ -460,12 +466,47 @@ impl SubstitutionMarks {
 ///
 /// A substitution that renders nothing between two written `*`s leaves one `*`: the entry
 /// writes no `**` there, so the walk must not descend, as `env/*${SUFFIX:-}*/.env` would.
-fn glob_of(segments: &[(bool, &str)]) -> String {
+///
+/// The escapes of [`escape_glob`] are classes, which do not nest, so text substituted inside a
+/// `[...]` the entry writes goes in as it is, and an error is returned when it holds a character
+/// that the class would read as syntax rather than match (a `-` would make a range, a leading
+/// `!` would negate it). A substitution just after a `\` the entry writes outside Windows has
+/// its first character escaped by that `\`.
+fn glob_of(segments: &[(bool, &str)]) -> eyre::Result<String> {
+    let escapes = !cfg!(windows);
     let mut glob = String::new();
     let mut after_data = false;
+    let mut escaping = false;
+    let mut class = None;
     for (data, text) in segments {
         if *data {
-            glob.push_str(&escape_glob(text));
+            if let Some(at) = class {
+                let syntax = text
+                    .chars()
+                    .find(|c| "-[]\\/{},*?".contains(*c))
+                    .or_else(|| {
+                        let first = text.chars().next();
+                        first.filter(|c| at == ClassAt::Start && matches!(c, '!' | '^'))
+                    });
+                if let Some(c) = syntax {
+                    eyre::bail!(
+                        "a substitution inside a `[...]` class renders {c:?}, which the class \
+                         would read as glob syntax rather than match"
+                    );
+                }
+                glob.push_str(text);
+                if !text.is_empty() {
+                    class = Some(ClassAt::Body);
+                    escaping = false;
+                }
+            } else if let Some(first) = text.chars().next().filter(|_| escaping) {
+                // the entry's `\` escapes the first character the substitution renders
+                glob.push(first);
+                glob.push_str(&escape_glob(&text[first.len_utf8()..]));
+                escaping = false;
+            } else {
+                glob.push_str(&escape_glob(text));
+            }
             after_data = true;
             continue;
         }
@@ -476,9 +517,36 @@ fn glob_of(segments: &[(bool, &str)]) -> String {
             text = text.trim_start_matches('*');
         }
         glob.push_str(text);
+        for c in text.chars() {
+            if escaping {
+                escaping = false;
+                if class.is_some() {
+                    class = Some(ClassAt::Body);
+                }
+                continue;
+            }
+            match (class, c) {
+                (_, '\\') if escapes => escaping = true,
+                (None, '[') => class = Some(ClassAt::Start),
+                (None, _) => {}
+                (Some(ClassAt::Start), '!' | '^') => class = Some(ClassAt::Negated),
+                (Some(ClassAt::Body), ']') => class = None,
+                (Some(_), _) => class = Some(ClassAt::Body),
+            }
+        }
         after_data = after_data && text.is_empty();
     }
-    glob
+    Ok(glob)
+}
+
+/// Where a glob stands inside a `[...]` class the entry writes: just after the `[`, where `!`
+/// or `^` negates it and `]` is a member; just after that negation, where `]` is still a
+/// member; or past the first member, where `]` closes it.
+#[derive(Clone, Copy, PartialEq)]
+enum ClassAt {
+    Start,
+    Negated,
+    Body,
 }
 
 /// Whether `glob` ends with a `*` wildcard, not one escaped with a `\` outside Windows.
@@ -1825,6 +1893,48 @@ mod tests {
         assert_eq!(marks.to_glob(&format!("{}*", marks.open)), None);
     }
 
+    /// Text substituted inside a `[...]` class the entry writes joins the class as members, and
+    /// text the class would read as syntax is refused rather than widening the match.
+    #[test]
+    fn test_substitutions_inside_a_class() {
+        let marks = SubstitutionMarks::new();
+        let glob = |pattern: &str, value: &str| {
+            let rendered = marks.wrap_substitutions(pattern).replace("{{ x }}", value);
+            glob_of(&marks.segments(&rendered).unwrap())
+        };
+        for (pattern, value, expected) in [
+            ("[a{{ x }}z]*.env", "bc", "[abcz]*.env"),
+            ("[{{ x }}]*.env", "a!", "[a!]*.env"),
+            ("[!{{ x }}]*.env", "!a", "[!!a]*.env"),
+            ("[]{{ x }}]*.env", "a", "[]a]*.env"),
+            ("[!]{{ x }}]*.env", "a", "[!]a]*.env"),
+            ("[ab]{{ x }}*.env", "-", "[ab]-*.env"),
+            ("[ab]]{{ x }}*.env", "-]", "[ab]]-[]]*.env"),
+        ] {
+            assert_eq!(glob(pattern, value).unwrap(), expected, "{pattern} {value}");
+        }
+        for (pattern, value) in [
+            ("[a{{ x }}z]*.env", "-"),
+            ("[a{{ x }}z]*.env", "b]"),
+            ("[{{ x }}]*.env", "!a"),
+            ("[{{ x }}]*.env", "^a"),
+            ("[a{{ x }}]*.env", "*"),
+            ("[]{{ x }}]*.env", "{a,b}"),
+        ] {
+            let err = glob(pattern, value).unwrap_err().to_string();
+            assert!(
+                err.contains("inside a `[...]` class"),
+                "{pattern} {value}: {err}"
+            );
+        }
+        // a `\` the entry writes escapes the first character a substitution renders
+        if cfg!(unix) {
+            assert_eq!(glob("\\{{ x }}*.env", "*a*").unwrap(), "\\*a[*]*.env");
+            assert_eq!(glob("[\\]{{ x }}]*.env", "a").unwrap(), "[\\]a]*.env");
+            assert_eq!(glob("[\\]]{{ x }}*.env", "-").unwrap(), "[\\]]-*.env");
+        }
+    }
+
     /// A directory a substitution names ahead of the first written wildcard is where the glob
     /// is taken, even when the separator after it is rendered too, and it stays literal there.
     #[test]
@@ -1832,7 +1942,7 @@ mod tests {
         let marks = SubstitutionMarks::new();
         let split = |pattern: &str, value: &str| {
             let rendered = marks.wrap_substitutions(pattern).replace("{{ x }}", value);
-            marks.split_glob(&rendered)
+            marks.split_glob(&rendered).unwrap()
         };
         let owned = |a: &str, b: &str| Some((a.to_string(), b.to_string()));
         assert_eq!(
@@ -1878,7 +1988,7 @@ mod tests {
                 &ctx,
             )
             .unwrap();
-            marks.split_glob(&rendered)
+            marks.split_glob(&rendered).unwrap()
         };
         let owned = |a: &str, b: &str| Some((a.to_string(), b.to_string()));
         let input = "{% if x %}a/*.env{% else %}b/{{ name }}/*.env{% endif %}";

@@ -114,3 +114,18 @@ EOF
 assert_fail "SAFE_CHANNEL=stable MISE_SAFE=1 mise install palias"
 assert_succeed "SAFE_CHANNEL=stable mise install palias"
 rm mise.toml
+
+# a `{{` the environment puts in a URL with a legacy `{version}`, which
+# `{{version}}` is also read as, reaches the backend as the text it was
+mkdir -p 'odd{{dir'
+printf '#!/bin/sh\necho legacy-tool\n' >'odd{{dir/legacy-1.0.0'
+for url in "{version}" "{{version}}"; do
+  cat <<EOF >mise.toml
+[tools]
+"http:legacy" = { version = "1.0.0", url = "file://$PWD/{{env.ODD_DIR}}/legacy-$url" }
+EOF
+  assert_succeed "ODD_DIR='odd{{dir' mise install http:legacy@1.0.0"
+  assert_succeed "ODD_DIR='odd{{dir' mise where http:legacy@1.0.0"
+  assert_succeed "ODD_DIR='odd{{dir' mise uninstall http:legacy@1.0.0"
+done
+rm mise.toml

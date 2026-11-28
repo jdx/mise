@@ -1806,14 +1806,25 @@ impl Deferred {
     }
 
     /// Put the deferred code back in `rendered`, the escaped output of the config-load render. A
-    /// `{` just before a placeholder is escaped too: substituted text that ends in `{` would
-    /// otherwise join the `{{` of the code put back after it into `{{{`.
+    /// `{` on either side of the seam between code put back and the text next to it is escaped
+    /// too: substituted text that ends in `{` would otherwise join the `{{` of the code after it
+    /// into `{{{`, and code that ends in `{`, such as a raw block of a single `{`, would join a
+    /// substituted `{ x }}` after it into a live `{{ x }}`.
     ///
     /// This is one pass over `rendered` that looks up each placeholder where it finds it, so an
     /// option with many blocks costs no more than its length.
     fn restore(&self, rendered: String) -> String {
         if self.exprs.is_empty() {
             return rendered;
+        }
+        /// Append `text` to `out`, escaping a `{` that `out` ends with when `text` would complete
+        /// it into an opener.
+        fn push_after(out: &mut String, text: &str) {
+            if out.ends_with('{') && text.starts_with(['{', '%', '#']) {
+                out.pop();
+                out.push_str("{{ \"{\" }}");
+            }
+            out.push_str(text);
         }
         let mut out = String::with_capacity(rendered.len());
         let mut rest = rendered.as_str();
@@ -1828,11 +1839,11 @@ impl Deferred {
                 .filter(|i| i.to_string() == number && after[digits..].starts_with("__"))
                 .and_then(|i| self.exprs.get(i));
             let Some(expr) = expr else {
-                out.push_str(&rest[..at + self.mark.len()]);
+                push_after(&mut out, &rest[..at + self.mark.len()]);
                 rest = after;
                 continue;
             };
-            out.push_str(&rest[..at]);
+            push_after(&mut out, &rest[..at]);
             if out.ends_with('{') {
                 out.pop();
                 out.push_str("{{ \"{\" }}");
@@ -1840,7 +1851,7 @@ impl Deferred {
             out.push_str(expr);
             rest = &after[digits + 2..];
         }
-        out.push_str(rest);
+        push_after(&mut out, rest);
         out
     }
 }
@@ -4636,6 +4647,46 @@ mod tests {
             .map(|i| format!("{i}:{{{{ version }}}};"))
             .collect();
         assert_eq!(option, expected);
+    }
+
+    /// A raw block whose body ends in `{` cannot join substituted text after it into code: the
+    /// backend's render prints both as the text they were.
+    #[test]
+    fn test_raw_block_ending_in_brace_keeps_substituted_text_data() {
+        use crate::tera::{TeraEngine, render_str};
+        for data in ["{ version }}", "% if true %}x{% endif %}", "# c #}"] {
+            let mut ctx = tera::Context::new();
+            ctx.insert("env", &HashMap::from([("D", data)]));
+            let mut backend_ctx = tera::Context::new();
+            backend_ctx.insert("version", "1.0.0");
+            for input in [
+                "{% raw %}{{% endraw %}{{ env.D }}",
+                "{% raw %}a{% endraw %}{% raw %}{{% endraw %}{{ env.D }}",
+            ] {
+                for (mut tera, mut backend) in [
+                    (
+                        TeraEngine::V1(Box::default()),
+                        TeraEngine::V1(Box::default()),
+                    ),
+                    (
+                        TeraEngine::V2(Box::default()),
+                        TeraEngine::V2(Box::default()),
+                    ),
+                ] {
+                    let option = render_option_for_backend(shield_raw_blocks(input), |s| {
+                        Ok(render_str(&mut tera, s, &ctx)?)
+                    })
+                    .unwrap();
+                    let rendered = render_str(&mut backend, &option, &backend_ctx).unwrap();
+                    let prefix = if input.contains("a{% endraw %}") {
+                        "a"
+                    } else {
+                        ""
+                    };
+                    assert_eq!(rendered, format!("{prefix}{{{data}"), "{input:?} {data:?}");
+                }
+            }
+        }
     }
 
     #[tokio::test]

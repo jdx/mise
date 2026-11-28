@@ -3814,17 +3814,18 @@ fn template_string_for_target(template: &str, tv: &ToolVersion, target: &Platfor
     };
 
     // Check for legacy {placeholder} syntax (any of the supported placeholders)
-    let has_legacy_placeholder = [
-        "{version}",
-        "{os}",
-        "{arch}",
-        "{darwin_os}",
-        "{amd64_arch}",
-        "{x86_64_arch}",
-        "{gnu_arch}",
-    ]
-    .iter()
-    .any(|p| template.contains(p) && !template.contains(&format!("{{{p}}}")));
+    const LEGACY_NAMES: [&str; 7] = [
+        "version",
+        "os",
+        "arch",
+        "darwin_os",
+        "amd64_arch",
+        "x86_64_arch",
+        "gnu_arch",
+    ];
+    let has_legacy_placeholder = LEGACY_NAMES.iter().any(|name| {
+        template.contains(&format!("{{{name}}}")) && !template.contains(&format!("{{{{{name}}}}}"))
+    });
 
     if has_legacy_placeholder {
         deprecated_at!(
@@ -3833,20 +3834,34 @@ fn template_string_for_target(template: &str, tv: &ToolVersion, target: &Platfor
             "legacy-version-template",
             "Use Tera syntax (e.g., {{{{ version }}}}) instead of legacy {{version}} in templates"
         );
-        // Legacy support: replace {placeholder} patterns
-        return template
+    }
+    // Legacy support: replace {placeholder} patterns
+    let legacy_replace = || {
+        template
             .replace("{version}", version)
             .replace("{os}", os)
             .replace("{arch}", arch)
             .replace("{darwin_os}", darwin_os)
             .replace("{amd64_arch}", amd64_arch)
             .replace("{x86_64_arch}", x86_64_arch)
-            .replace("{gnu_arch}", gnu_arch);
-    }
+            .replace("{gnu_arch}", gnu_arch)
+    };
 
     if !crate::tera::contains_template_syntax(template) {
-        return template.to_string();
+        return if has_legacy_placeholder {
+            legacy_replace()
+        } else {
+            template.to_string()
+        };
     }
+    // A template with Tera syntax as well, such as text that the config-load render escaped,
+    // takes its legacy placeholders through the same render, which also turns that text back
+    // into the data it was.
+    let source = if has_legacy_placeholder {
+        crate::backend::static_helpers::legacy_placeholders_as_tera(template, &LEGACY_NAMES)
+    } else {
+        template.to_string()
+    };
 
     // Use Tera rendering for templates
     let mut ctx = crate::tera::BASE_CONTEXT.clone();
@@ -3873,11 +3888,15 @@ fn template_string_for_target(template: &str, tv: &ToolVersion, target: &Platfor
     tera.register_function("os", make_remapping_fn(os.to_string()));
     tera.register_function("arch", make_remapping_fn(arch.to_string()));
 
-    match crate::tera::render_str_v2(&mut tera, template, &ctx) {
+    match crate::tera::render_str_v2(&mut tera, &source, &ctx) {
         Ok(rendered) => rendered,
         Err(e) => {
             warn!("Failed to render template '{}': {}", template, e);
-            template.to_string()
+            if has_legacy_placeholder {
+                legacy_replace()
+            } else {
+                template.to_string()
+            }
         }
     }
 }
@@ -4697,6 +4716,35 @@ mod tests {
             "github:test/repo".to_string(),
             Some("github:test/repo".to_string()),
         ))
+    }
+
+    /// Legacy `{placeholder}`s in a pattern whose text the config-load render escaped are
+    /// substituted, and the escaped text renders back to the data it was.
+    #[test]
+    fn test_legacy_placeholders_render_escaped_data_back() {
+        let tv = ToolVersion::new(
+            crate::toolset::ToolRequest::new(
+                std::sync::Arc::new(BackendArg::from("github:example/tool")),
+                "2.3.0",
+                crate::toolset::ToolSource::Argument,
+            )
+            .unwrap(),
+            "2.3.0".into(),
+        );
+        let target = PlatformTarget::new(crate::platform::Platform::parse("macos-x64").unwrap());
+        let data = crate::tera::escape_template_syntax("a{{b{%c");
+        assert_eq!(
+            template_string_for_target(
+                &format!("{data}/tool-{{version}}-{{darwin_os}}-{{x86_64_arch}}.tgz"),
+                &tv,
+                &target
+            ),
+            "a{{b{%c/tool-2.3.0-darwin-x86_64.tgz"
+        );
+        assert_eq!(
+            template_string_for_target("tool-{version}-{os}-{amd64_arch}", &tv, &target),
+            "tool-2.3.0-macos-amd64"
+        );
     }
 
     fn create_test_gitlab_backend() -> UnifiedGitBackend {

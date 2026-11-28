@@ -844,21 +844,54 @@ pub(crate) fn template_string_strict(template: &str, version: Option<&str>) -> R
     Ok(crate::tera::render_str(&mut tera, template, &ctx)?)
 }
 
+/// Rewrite each legacy `{name}` placeholder of `template` as `{{ name }}`, except a name that
+/// `template` also writes as `{{name}}`, for a template that has Tera syntax as well. One Tera
+/// render then substitutes the placeholders and turns the text that the config-load render
+/// escaped back into the data it was, which a plain replace would leave escaped. A `{` just
+/// before a placeholder is escaped, so that it cannot join the new `{{` into `{{{`.
+pub(crate) fn legacy_placeholders_as_tera(template: &str, names: &[&str]) -> String {
+    let mut out = template.to_string();
+    for name in names {
+        let legacy = format!("{{{name}}}");
+        if !out.contains(&legacy) || template.contains(&format!("{{{legacy}}}")) {
+            continue;
+        }
+        let mut next = String::with_capacity(out.len());
+        let mut pieces = out.split(legacy.as_str()).peekable();
+        while let Some(piece) = pieces.next() {
+            next.push_str(piece);
+            if pieces.peek().is_some() {
+                if next.ends_with('{') {
+                    next.pop();
+                    next.push_str("{{ \"{\" }}");
+                }
+                next.push_str(&format!("{{{{ {name} }}}}"));
+            }
+        }
+        out = next;
+    }
+    out
+}
+
 fn render_template(template: &str, version: &str, mut tera: crate::tera::TeraEngine) -> String {
     // Check for legacy {version} syntax and emit deprecation warning
-    if template.contains("{version}") && !template.contains("{{version}}") {
+    let legacy = template.contains("{version}") && !template.contains("{{version}}");
+    if legacy {
         deprecated_at!(
             "2026.3.0",
             "2027.3.0",
             "legacy-version-template",
             "Use {{{{ version }}}} instead of {{version}} in URL templates"
         );
-        // Legacy support: replace {version} placeholder
-        return template.replace("{version}", version);
     }
+    let legacy_replace = || template.replace("{version}", version);
 
     if !crate::tera::contains_template_syntax(template) {
-        return template.to_string();
+        return if legacy {
+            legacy_replace()
+        } else {
+            template.to_string()
+        };
     }
 
     // Use Tera rendering for templates
@@ -866,11 +899,20 @@ fn render_template(template: &str, version: &str, mut tera: crate::tera::TeraEng
     let mut ctx = crate::tera::BASE_CONTEXT.clone();
     ctx.insert("version", version);
 
-    match crate::tera::render_str(&mut tera, template, &ctx) {
+    let source = if legacy {
+        legacy_placeholders_as_tera(template, &["version"])
+    } else {
+        template.to_string()
+    };
+    match crate::tera::render_str(&mut tera, &source, &ctx) {
         Ok(rendered) => rendered,
         Err(e) => {
             warn!("Failed to render template '{}': {}", template, e);
-            template.to_string()
+            if legacy {
+                legacy_replace()
+            } else {
+                template.to_string()
+            }
         }
     }
 }
@@ -2242,6 +2284,28 @@ mod tests {
     use super::*;
     use crate::toolset::ToolVersionOptions;
     use indexmap::IndexMap;
+
+    /// A legacy `{version}` in a URL whose text the config-load render escaped still gets the
+    /// version, and the escaped text renders back to the data it was.
+    #[test]
+    fn test_legacy_version_placeholder_renders_escaped_data_back() {
+        let render =
+            |template: &str| render_template(template, "1.0.0", crate::tera::get_tera(None));
+        let data = crate::tera::escape_template_syntax("a{{b{%c{#d");
+        assert_eq!(
+            render(&format!("file:///srv/{data}/t-{{version}}")),
+            "file:///srv/a{{b{%c{#d/t-1.0.0"
+        );
+        // a `{` of the data just before the placeholder stays a `{`
+        let data = crate::tera::escape_template_syntax("a{{b{");
+        assert_eq!(
+            render(&format!("{data}{{version}}/{{{{ version }}}}")),
+            "a{{b{1.0.0/1.0.0"
+        );
+        assert_eq!(render("x{{version}}"), "x1.0.0");
+        assert_eq!(render("t-{version}.tgz"), "t-1.0.0.tgz");
+        assert_eq!(render("{{ nope( }}-{version}"), "{{ nope( }}-1.0.0");
+    }
 
     #[test]
     fn test_platform_options_only_count_for_the_current_platform() {

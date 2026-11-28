@@ -77,3 +77,16 @@ assert_contains "PROFILE=dev mise env -s bash" "VAR1=1"
 assert_not_contains "PROFILE=dev mise env -s bash" "DEV_PROFILE"
 assert_contains "PROFILE=prod mise env -s bash" "DEV_PROFILE=1"
 assert_not_contains "PROFILE=prod mise env -s bash" "VAR1"
+
+# text substituted inside a `[...]` class joins it as members, and a `-` that would make a range
+# is refused rather than widening the match
+mkdir -p classes
+echo "CLASS_B=1" >classes/b.env
+echo "CLASS_DASH=1" >classes/-.env
+cat <<'EOS' >.mise.toml
+[env]
+_.file = "classes/[a{{ env.CHARS }}z]*.env"
+EOS
+assert_contains "CHARS=b mise env -s bash" "CLASS_B=1"
+assert_not_contains "CHARS=b mise env -s bash" "CLASS_DASH"
+assert_fail "CHARS=- mise env -s bash" "inside a \`[...]\` class renders '-'"
