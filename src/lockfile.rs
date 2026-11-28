@@ -3150,6 +3150,16 @@ impl Lockfile {
             if !platform_info.is_empty() {
                 platforms.insert(platform_key.to_string(), platform_info);
             }
+            // The package's repository pin follows it into an entry for a version or
+            // options not locked before, as `merge_tool_entries` does, so pruning the
+            // old entries does not drop it.
+            let provenance = match pinned_package_provenance(tools, version, backend) {
+                Ok(pin) => pin,
+                Err(err) => {
+                    warn!("{err:#}");
+                    None
+                }
+            };
             tools.push(LockfileTool {
                 version: version.to_string(),
                 backend: backend.map(|s| s.to_string()),
@@ -3158,7 +3168,7 @@ impl Lockfile {
                 platforms,
                 aube: None,
                 uv: None,
-                provenance: None,
+                provenance,
                 unsupported_platforms: BTreeSet::new(),
             });
         }
@@ -6671,11 +6681,13 @@ fn aube_graph_names_only_registry(lock: &AubeLock) -> bool {
                 .all(|field| optional(package, field, &strings))
             && optional(package, "deprecated", &Value::is_str)
             && optional(package, "hasBin", &Value::is_bool)
+            // A peer range is a range, as an importer's specifier is: a `link:`,
+            // `npm:` alias or tarball there would not resolve from the registry.
             && optional(package, "peerDependencies", &|peers| {
-                string_values(peers)
-                    && peers
-                        .as_table()
-                        .is_some_and(|t| t.keys().all(|k| name_ok(k)))
+                peers.as_table().is_some_and(|t| {
+                    t.iter()
+                        .all(|(k, v)| name_ok(k) && v.as_str().is_some_and(specifier_ok))
+                })
             })
             && optional(package, "peerDependenciesMeta", &|meta| {
                 meta.as_table().is_some_and(|meta| {

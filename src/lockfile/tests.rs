@@ -2591,6 +2591,41 @@ fn merge_keeps_a_provenance_pin_when_the_version_changes() {
     );
 }
 
+/// `mise lock` in merge mode writes a bumped version with `set_platform_info`, then
+/// prunes the old one, so the new entry has to carry the package's pin itself.
+#[test]
+fn set_platform_info_gives_a_new_version_the_package_pin() {
+    let mut existing = basic_tool("3.1.0", "npm:@sigstore/bundle");
+    existing.provenance = Some(PackageProvenance {
+        repository: "github.com/sigstore/sigstore-js".to_string(),
+    });
+    let mut lockfile = Lockfile::default();
+    lockfile
+        .tools
+        .insert("npm:@sigstore/bundle".to_string(), vec![existing]);
+    lockfile.set_platform_info(
+        "npm:@sigstore/bundle",
+        "3.2.0",
+        Some("npm:@sigstore/bundle"),
+        &BTreeMap::new(),
+        "linux-x64",
+        PlatformInfo::default(),
+    );
+    lockfile.retain_tool_versions(
+        "npm:@sigstore/bundle",
+        &BTreeSet::from(["3.2.0".to_string()]),
+    );
+    let entries = lockfile.tools_for("npm:@sigstore/bundle").unwrap();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(
+        entries[0]
+            .provenance
+            .as_ref()
+            .map(|p| p.repository.as_str()),
+        Some("github.com/sigstore/sigstore-js")
+    );
+}
+
 #[test]
 fn merge_leaves_a_locked_version_without_a_provenance_pin_as_it_is() {
     // 0.9.0 predates the package's provenance and is locked beside 1.0.0.
@@ -6374,6 +6409,17 @@ fn untrusted_lockfile_keeps_a_registry_only_aube_graph() {
     let metadata = with_package(
         "    engines: {node: '>=18'}\n    cpu: [x64, arm64]\n    os: [linux]\n    deprecated: use something else\n    hasBin: true\n    peerDependencies:\n      '@scope/x': ^1\n    peerDependenciesMeta:\n      '@scope/x': {optional: true}\n    bundledDependencies: [string_decoder, '@scope/x']\n",
     );
+    let peer_range = |range: &str| {
+        with_package(&format!(
+            "    peerDependencies:\n      '@scope/x': '{range}'\n"
+        ))
+    };
+    let (peer_or, peer_npm_alias, peer_link_range, peer_tarball) = (
+        peer_range("^18 || >=19.0.0-rc.1"),
+        peer_range("npm:evil@1"),
+        peer_range("link:../x"),
+        peer_range("https://attacker.example/x.tgz"),
+    );
     let bundled_true = with_package("    bundledDependencies: true\n");
     let bundled_absolute = with_package("    bundledDependencies: [/proc/self/cwd/tools]\n");
     let bundled_parent = with_package("    bundledDependencies: ['..']\n");
@@ -6454,6 +6500,10 @@ fn untrusted_lockfile_keeps_a_registry_only_aube_graph() {
         (list_snapshots.as_str(), false),
         (plain.as_str(), true),
         (metadata.as_str(), true),
+        (peer_or.as_str(), true),
+        (peer_npm_alias.as_str(), false),
+        (peer_link_range.as_str(), false),
+        (peer_tarball.as_str(), false),
         (snapshot_metadata.as_str(), true),
         (bundled_true.as_str(), true),
         (bundled_absolute.as_str(), false),
