@@ -908,8 +908,12 @@ impl TaskScriptParser {
                 out.push(script.trim().to_string());
                 continue;
             }
-            let shell = rendered_script_shell(script, task, self.run_shell.as_deref())?;
-            let quoting = ArgQuoting::of(&shell);
+            // A template can render a shebang where the source has none, and then the shell the
+            // source would run under, such as a `--shell` that cannot be parsed, is never used.
+            // So it is quoted for as an unknown program, which leaves out only a value some shell
+            // would quote, and its error is raised only if such a value had to go in.
+            let shell = rendered_script_shell(script, task, self.run_shell.as_deref());
+            let quoting = shell.as_ref().map_or(ArgQuoting::Unknown, ArgQuoting::of);
             // The values the template functions quoted for `shell`, checked once the script is
             // rendered and the shell that runs it is known.
             let quoted = Arc::new(Mutex::new(Vec::new()));
@@ -978,6 +982,7 @@ impl TaskScriptParser {
                 let runs = rendered_script_shell(&rendered, task, self.run_shell.as_deref())?;
                 let runs_quoting = ArgQuoting::of(&runs);
                 if quoted.iter().any(|v| !quoting.reads_alike(runs_quoting, v)) {
+                    let shell = shell?;
                     if let Some(unknown) = [&shell, &runs]
                         .into_iter()
                         .find(|shell| ArgQuoting::of(shell) == ArgQuoting::Unknown)
@@ -1599,7 +1604,17 @@ mod tests {
         let spaced = ["a b".to_string(), "c".to_string()];
         let words = ["a".to_string(), "c".to_string()];
         // (task shell, `mise run --shell`, script, args, refused)
-        let cases: [(_, _, String, &[String], _); 12] = [
+        let cases: [(_, _, String, &[String], _); 14] = [
+            // A `--shell` that cannot be parsed is not read for a script that renders a shebang,
+            // where a value that no shell quotes goes in as it is.
+            (None, Some("'"), rendered_bash.clone(), &word, false),
+            (
+                None,
+                Some("'"),
+                "{{ '#!/usr/bin/env bash' }}\necho hi".into(),
+                &[],
+                false,
+            ),
             (None, Some("fish -c"), rendered_bash.clone(), &value, true),
             (
                 Some("fish -c"),
@@ -1673,6 +1688,30 @@ mod tests {
                 }
             }
         }
+        // A value some shell quotes needs the shell the source picks, so that `--shell` is read
+        // then, and its error is the one mise reports.
+        let task = Task {
+            name: "t".into(),
+            ..Default::default()
+        };
+        let scripts = vec![rendered_bash];
+        let parser = TaskScriptParser::new(None).with_run_shell(Some("'".into()));
+        let (_, spec) = parser
+            .parse_run_scripts(&config, &task, &scripts, &Default::default())
+            .await
+            .unwrap();
+        let err = parser
+            .parse_run_scripts_with_args(
+                &config,
+                &task,
+                &scripts,
+                &Default::default(),
+                &value,
+                &spec,
+            )
+            .await
+            .unwrap_err();
+        assert!(!format!("{err:#}").contains("Write the shebang"), "{err:#}");
     }
 
     #[test]

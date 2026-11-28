@@ -198,6 +198,24 @@ git branch config-to-global "$(git commit-tree "$(git write-tree)" -p with-dep-f
 unset GIT_INDEX_FILE
 assert_fail "mise run --at config-to-global hi" "are not initialized"
 assert_fail "git config --get submodule.dep.url"
+# Paranoid mode initializes no submodules, not even for config in the worktree
+# that `trusted_config_paths` trusts by its path, which REV chose.
+assert_contains "MISE_PARANOID=1 MISE_TRUSTED_CONFIG_PATHS='$MISE_STATE_DIR' mise run --at with-dep hi 2>&1" "are not initialized in paranoid mode"
+assert_contains "MISE_PARANOID=1 MISE_TRUSTED_CONFIG_PATHS='$MISE_STATE_DIR' mise run --at with-dep hi" "version-two"
+assert_fail "git config --get submodule.dep.url"
+# A conf.d folder is trusted on its own, without the directory it is in, and
+# that trust lets the submodules be initialized for its tasks.
+mkdir -p mise/conf.d/build
+printf '[tasks.built]\nrun = "echo built"\n' >mise/conf.d/build/mise.toml
+export GIT_INDEX_FILE="$PWD/../conf-d.index"
+git read-tree with-dep-file-task
+git update-index --force-remove mise-tasks/hi
+git update-index --add mise/conf.d/build/mise.toml
+git branch conf-d "$(git commit-tree "$(git write-tree)" -p with-dep-file-task -m eight)"
+unset GIT_INDEX_FILE
+mise trust mise/conf.d/build
+assert_contains "mise run --at conf-d --at-setup 'cat dep/version.txt' built" "sub-v2"
+assert_contains "mise run --at conf-d built" "built"
 assert "git worktree list --porcelain | grep -c '^worktree '" "1"
 assert_empty "ls -A $MISE_STATE_DIR/run-at"
 mise trust

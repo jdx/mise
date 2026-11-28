@@ -130,10 +130,12 @@ include = [
 
 The same rule covers the remote task sources of project config: a task `file`
 that is a URL and a remote entry of
-[`task_config.includes`](/tasks/task-configuration.html#task_config.includes). A `git::` source needs a
-commit sha and an `oci::` source a digest; an `https://` file or a `zip::`
-include names no fixed content and fails to load. Global and system config are
-trusted by their path, so their remote task sources need no pin.
+[`task_config.includes`](/tasks/task-configuration.html#task_config.includes).
+A task `file` can only be pinned as a `git::` URL with a commit sha, so an
+`https://` file fails to load. A remote include can be a `git::` URL with a
+commit sha or an `oci::` reference with a digest; a `zip::` include names no
+fixed content and fails to load. Global and system config are trusted by their
+path, so their remote task sources need no pin.
 
 ## Environment files {#environment-files}
 

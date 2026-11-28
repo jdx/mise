@@ -51,7 +51,7 @@ To create a script task, run `mise tasks add --file hello -- echo hello`, then `
 
   Checks REV out into a detached `git worktree` under mise's state directory and runs the tasks there with that revision's own config and tasks. The worktree is removed afterwards, also when a task fails or is interrupted. Ignored files such as build caches are not there; use `--at-setup` to prepare them.
 
-  REV's submodules are initialized only when the directory mise runs from, or one above it in the repository, is trusted in the main checkout, since their URLs are REV's to choose. In paranoid mode they are not initialized.
+  REV's submodules are initialized only when the directory mise runs from, or one above it in the repository, is trusted in the main checkout, or a config REV has there is, such as a `conf.d` folder, since their URLs are REV's to choose. In paranoid mode they are not initialized, not even for config trusted by `trusted_config_paths`.
 
   The config at REV is trusted only if the repository's main checkout is; it is never trusted on its own, by a prompt, or by `--yes`.
 - **`--at-setup <CMD>`** — Run this shell command in the `--at` worktree before the tasks
