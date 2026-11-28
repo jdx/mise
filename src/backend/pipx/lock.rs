@@ -464,6 +464,14 @@ impl PIPXBackend {
         uv: &Path,
         project: &Path,
     ) -> Result<CmdLineRunner<'static>> {
+        // Installing refuses `install_env` in safe mode (`ensure_safe_install_options`), and
+        // `mise lock` starts uv without installing anything, so this is where uv gets it.
+        if !tv.install_env().is_empty() {
+            Settings::ensure_not_safe(&format!(
+                "using tool-level install_env for {}",
+                self.ba.short
+            ))?;
+        }
         let registry = self.get_registry_url(config).await?;
         let index = uv_index_url(&registry)?;
         let mut cmd = CmdLineRunner::new(uv)
@@ -795,6 +803,12 @@ impl PIPXBackend {
             .args(self.uv_exempt_undated_release(config, tv).await);
         cmd = lock_python.apply(cmd);
         let raw = tv.request.options();
+        if let Some(uv_config) = PipxOptions::new(&raw).uv_config_file()? {
+            // Not named uv.toml: uv must read it only because it is passed here.
+            let path = temp.path().join("mise-uv-config.toml");
+            crate::file::write(&path, toml::to_string(&uv_config)?)?;
+            cmd = cmd.arg("--config-file").arg(path);
+        }
         if let Some(value) = PipxOptions::new(&raw).dependency_prereleases()? {
             cmd = cmd.args(["--prerelease", value]);
         }

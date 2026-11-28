@@ -49,6 +49,7 @@ impl Plugin {
         ctx: BackendListVersionsContext,
     ) -> Result<BackendListVersionsResponse> {
         debug!("[vfox:{}] backend_list_versions", self.name);
+        self.ensure_backend_hook("backend_list_versions")?;
         self.eval_async(chunk! {
             require "hooks/backend_list_versions"
             return PLUGIN:BackendListVersions($ctx)

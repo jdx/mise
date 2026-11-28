@@ -212,7 +212,9 @@ Neither mode accepts "none" for a release the mise registry says must have
 attestations: a `github:` backend, or an `aqua:` backend whose recipe declares
 them, at or after the backend's
 [`attestations_since`](/contributing/registry.html#required-attestations)
-version. There a missing attestation fails the install and `mise lock`.
+version. There a missing attestation fails the install and `mise lock`. A
+release named by numbers alone (`v0.72`) is compared by those numbers; a channel
+or ref such as `nightly` is not compared and stays unaffected.
 
 In either mode, when mise-versions fails to answer (a timeout, a lost
 connection, or a `429` or `5xx` response), mise asks GitHub's attestation API

@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+
+# A config filename the user lists in their global .miserc.toml can name a file
+# of the global config directory, which the walk up from a project below the
+# home directory finds. The environments a project .miserc.toml selects do not
+# change that file, so it still loads.
+unset MISE_YES MISE_ENV MISE_AUTO_ENV
+custom="${MISE_CONFIG_DIR#"$HOME"/}/custom.toml"
+printf 'override_config_filenames = ["%s", "mise.toml"]\n' "$custom" >"$MISE_CONFIG_DIR/miserc.toml"
+printf '[env]\nFROM_CUSTOM = "1"\n' >"$MISE_CONFIG_DIR/custom.toml"
+printf '[settings]\nyes = true\n' >"$MISE_CONFIG_DIR/config.ci.toml"
+export MISE_TRUSTED_CONFIG_PATHS="$MISE_CONFIG_DIR"
+
+mkdir project
+cd project || exit 1
+assert_contains "mise env" "FROM_CUSTOM=1"
+echo 'env = ["ci"]' >.miserc.toml
+assert_contains "mise env" "FROM_CUSTOM=1"
+assert_contains "mise config ls" "custom.toml"
+
+# The global environment files stay out all the same.
+assert "mise settings get yes" "false"
