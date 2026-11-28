@@ -649,7 +649,7 @@ pub(super) fn package_state(req: &PackageRequest, cask: &Cask) -> Result<Package
     // Older receipts can record the wrapper link even when the executable it
     // invokes was never copied from the staging directory.
     if installed.as_deref() == Some(cask.version.as_str())
-        && missing_command_wrapper_executable(cask, &artifacts)?
+        && command_wrapper_needs_repair(cask, &artifacts)?
     {
         return Ok(PackageState::Missing);
     }

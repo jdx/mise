@@ -128,7 +128,7 @@ fn installed_skip_reason(
         return Ok(Some("skipped: cask version is latest"));
     }
     if previous.is_some_and(|receipt| receipt.version == cask.version)
-        && missing_command_wrapper_executable(cask, artifacts)?
+        && command_wrapper_needs_repair(cask, artifacts)?
     {
         return Ok(None);
     }
@@ -4596,8 +4596,15 @@ fn staged_command_wrapper_executable(
     generated_caskroom_artifact(root, cask, &executable)
 }
 
-fn missing_command_wrapper_executable(cask: &Cask, artifacts: &CaskArtifacts) -> Result<bool> {
-    if artifacts.command_wrappers.is_empty() {
+fn command_wrapper_needs_repair(cask: &Cask, artifacts: &CaskArtifacts) -> Result<bool> {
+    // Repair reruns the whole install. Only do this automatically for
+    // wrapper-only casks, where there is no app or installer to rerun.
+    if artifacts.command_wrappers.is_empty()
+        || cask
+            .artifacts
+            .iter()
+            .any(|artifact| artifact.get("command_wrapper").is_none())
+    {
         return Ok(false);
     }
     let appdir = cask_appdir_for(cask, &artifacts.apps)?;

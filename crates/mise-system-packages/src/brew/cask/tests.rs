@@ -1204,6 +1204,66 @@ fn rejects_command_wrapper_invalid_environment_name() {
 
 #[test]
 #[cfg(unix)]
+fn missing_wrapper_executable_does_not_reinstall_self_updating_app() -> Result<()> {
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
+    let tmp = tempfile::tempdir()?;
+    let _guard = BrewPrefixGuard::set(tmp.path());
+    let mut cask = test_cask("self-updating", "1.0.0");
+    cask.auto_updates = true;
+    cask.artifacts = vec![
+        serde_json::json!({
+            "app": ["Example.app"],
+            "target": "$HOMEBREW_PREFIX/Applications/Example.app"
+        }),
+        serde_json::json!({
+            "command_wrapper": ["example", {"executable": "{{staged_path}}/bin/example"}]
+        }),
+    ];
+    let artifacts = cask_artifacts(&cask)?;
+    let caskroom = caskroom_version_dir(cask.manager, &cask.token, &cask.version);
+    let appdir = cask_appdir_for(&cask, &artifacts.apps)?;
+    file::create_dir_all(appdir.join("Example.app"))?;
+    let wrapper = &artifacts.command_wrappers[0];
+    stage_command_wrapper(&caskroom, &appdir, &cask, wrapper)?;
+    link_command_wrapper(&caskroom, wrapper)?;
+    write_receipt_with_flight_targets(
+        &caskroom,
+        &cask,
+        &artifacts,
+        &[],
+        &BTreeMap::new(),
+        &[],
+        &[],
+    )?;
+
+    let request = PackageRequest {
+        name: cask.token.clone(),
+        version: None,
+        tap_url: None,
+        desired: crate::PackageDesiredState::Present,
+    };
+    assert_eq!(
+        package_state(&request, &cask)?,
+        PackageState::InstalledAutoUpdates {
+            version: cask.version.clone(),
+        }
+    );
+    let receipt = read_receipt(&caskroom)?.unwrap();
+    assert_eq!(
+        installed_skip_reason(
+            &cask,
+            &artifacts,
+            Some(&receipt),
+            Some(&cask.version),
+            InstallMode::Install
+        )?,
+        Some("already installed")
+    );
+    Ok(())
+}
+
+#[test]
+#[cfg(unix)]
 fn stages_command_wrapper_with_args_env_and_expanded_paths() -> Result<()> {
     let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
