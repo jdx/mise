@@ -210,7 +210,7 @@ pub(crate) fn eval_checksum_expr(
     body: &str,
     vars: &[(&str, &str)],
 ) -> Option<String> {
-    use expr::{Context, Environment, Value};
+    use expr::{Context, Value};
 
     // `fromJSON(body)` builds the whole document.
     if let Err(err) = mise_util::http::ensure_json_values_bounded(body.as_bytes()) {
@@ -223,7 +223,7 @@ pub(crate) fn eval_checksum_expr(
         ctx.insert((*key).to_string(), Value::String((*value).to_string()));
     }
 
-    let env = Environment::new();
+    let env = crate::backend::expr_env::environment();
     match env.eval(expr_str, &ctx) {
         Ok(Value::String(s)) => normalize_checksum(&s),
         Ok(other) => {
@@ -2587,6 +2587,21 @@ Path      : C:\\a\\deno\\deno\\target\\release\\deno-x86_64-pc-windows-msvc.zip
             eval_checksum_expr(expr, &body, &vars),
             Some(format!("sha256:{SHA256_LOWER}"))
         );
+    }
+
+    #[test]
+    fn test_eval_checksum_expr_bounds_json_nested_in_the_body() {
+        // The checksum comes first, so only the bound on fromJSON stops it.
+        let manifest = |zeros: usize| format!(r#"["{SHA256_LOWER}",{}0]"#, "0,".repeat(zeros));
+        let body = |nested: String| serde_json::json!({ "payload": nested }).to_string();
+        let expr = r#""sha256:" + fromJSON(fromJSON(body).payload)[0]"#;
+        let vars: [(&str, &str); 0] = [];
+        assert_eq!(
+            eval_checksum_expr(expr, &body(manifest(10)), &vars),
+            Some(format!("sha256:{SHA256_LOWER}"))
+        );
+        let oversized = body(manifest(mise_util::http::MAX_JSON_VALUES));
+        assert_eq!(eval_checksum_expr(expr, &oversized, &vars), None);
     }
 
     #[test]

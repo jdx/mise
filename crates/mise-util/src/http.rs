@@ -3489,7 +3489,7 @@ pub fn ensure_json_values_bounded(text: &[u8]) -> Result<()> {
 /// An upper bound on the values in `json`, without parsing it: every value but
 /// the outermost follows a `[` or a `,`, or is a member whose name follows a
 /// `{` or a `,`, so there are no more values than those three outside strings.
-fn json_value_count(json: &[u8]) -> usize {
+pub fn json_value_count(json: &[u8]) -> usize {
     let (mut values, mut in_string, mut escaped) = (1, false, false);
     for &byte in json {
         if in_string {
