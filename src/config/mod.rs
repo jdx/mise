@@ -4423,18 +4423,28 @@ fn resolve_global_write_path(opts: &ConfigPathOptions) -> Result<PathBuf> {
             }
             return Ok(path.clone());
         }
-        let path = configured_global_write_path(section)?.unwrap_or_else(global_config_path);
-        let key = section.setting_name().trim_start_matches("settings.");
-        if let Some(ignored) = settings::ignored_write_target(key) {
-            warn!(
-                "{key} in {} is ignored because it only applies from global config; writing to {}",
-                display_path(&ignored),
-                display_path(&path)
-            );
-        }
-        return Ok(path);
+        return global_section_write_path(section, global_config_path);
     }
     Ok(global_config_path())
+}
+
+/// The global file where a new `section` entry goes: the section's `write_targets`
+/// file when it is set, otherwise `default`. Warns when a non-global config set the
+/// target, since that file is ignored.
+pub fn global_section_write_path(
+    section: GlobalWriteSection,
+    default: impl FnOnce() -> PathBuf,
+) -> Result<PathBuf> {
+    let path = configured_global_write_path(section)?.unwrap_or_else(default);
+    let key = section.setting_name().trim_start_matches("settings.");
+    if let Some(ignored) = settings::ignored_write_target(key) {
+        warn!(
+            "{key} in {} is ignored because it only applies from global config; writing to {}",
+            display_path(&ignored),
+            display_path(&path)
+        );
+    }
+    Ok(path)
 }
 
 /// Whether `err` is the untrusted-config error for a config the user has just

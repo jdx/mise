@@ -380,6 +380,31 @@ async fn fetch_formula_with_fallback(
         }
         Err(err) => Err(err),
     }
+    .and_then(|resolved| {
+        validate_formula_identity(&resolved.0)?;
+        Ok(resolved)
+    })
+}
+
+/// Fetched metadata names the formula's rack and keg (`Cellar/<name>/<version>`),
+/// so its name and version each have to be one plain path component.
+fn validate_formula_identity(formula: &Formula) -> Result<()> {
+    let fields = [
+        ("name", Some(&formula.name)),
+        ("version", formula.versions.stable.as_ref()),
+    ];
+    for (field, value) in fields {
+        if let Some(value) = value
+            && !super::is_normal_formula_component(value)
+        {
+            bail!(
+                "brew: refusing formula metadata whose {field} {value:?} is not a single path \
+                 component; mise installs a formula into Cellar/<name>/<version>, so fix the \
+                 formula's metadata in its tap or API source"
+            );
+        }
+    }
+    Ok(())
 }
 
 fn tap_raw_base(key: &FormulaKey) -> Option<String> {
@@ -398,6 +423,39 @@ mod tests {
             formula: serde_json::from_value(json).unwrap(),
             tap_raw_base: None,
             on_request: false,
+        }
+    }
+
+    #[test]
+    fn formula_identity_must_be_one_path_component_each() {
+        let formula = |name: &str, stable: Option<&str>| -> Formula {
+            serde_json::from_value(serde_json::json!({
+                "name": name, "versions": {"stable": stable},
+            }))
+            .unwrap()
+        };
+        for (name, stable) in [
+            ("hello", Some("1.0")),
+            ("openssl@3", Some("3.6.0")),
+            ("libfoo", None),
+        ] {
+            validate_formula_identity(&formula(name, stable)).unwrap();
+        }
+        for (name, stable) in [
+            ("/home/alice/", Some("Documents")),
+            ("helper/1.0/home", Some(".ssh")),
+            ("../outside", Some("1.0")),
+            ("hello/", Some("1.0")),
+            ("a\\b", Some("1.0")),
+            ("a\0b", Some("1.0")),
+            ("", Some("1.0")),
+            ("hello", Some("..")),
+            ("hello", Some(".")),
+            ("hello", Some("1.0/../..")),
+            ("hello", Some("/tmp")),
+        ] {
+            let err = validate_formula_identity(&formula(name, stable)).unwrap_err();
+            assert!(err.to_string().contains("single path component"), "{err}");
         }
     }
 

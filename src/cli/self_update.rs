@@ -279,6 +279,8 @@ fn reexec(_args: &[String], original_cwd: Option<&std::path::Path>) -> Result<()
     use std::os::unix::process::CommandExt;
 
     let mut command = build_reexec_command(std::env::args_os().skip(1), original_cwd);
+    // `exec()` runs no destructors, so the guard in `main` would never delete them.
+    crate::http::release_invocation_downloads();
     let err = command.exec();
     warn!("mise was updated but could not re-execute the command: {err}");
     Ok(())
@@ -1351,6 +1353,12 @@ mod release_asset_tests {
                 "macos-arm64.tar.gz",
             ),
             ("macos", "x64", "x86_64-apple-darwin", "macos-x64.tar.gz"),
+            (
+                "freebsd",
+                "x64",
+                "x86_64-unknown-freebsd",
+                "freebsd-x64.tar.gz",
+            ),
             (
                 "windows",
                 "arm64",

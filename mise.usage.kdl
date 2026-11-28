@@ -1413,7 +1413,7 @@ The watcher does this on its own in `sync` and `fetch-only` mode (the `history.s
             long_help #"""
 Track a file or directory in place
 
-Adds a `[dotfiles]` entry with `mode = "track"` to your global config: the file stays where it is, nothing is copied or linked, and mise saves a checkpoint of it right away. While the watcher service runs, later edits are saved automatically; without it, `mise dot save` saves them. Use `--dry-run` to see what a large directory would add before tracking it.
+Adds a `[dotfiles]` entry with `mode = "track"` to your global config (or to the `write_targets.dotfiles` file when that setting is set): the file stays where it is, nothing is copied or linked, and mise saves a checkpoint of it right away. While the watcher service runs, later edits are saved automatically; without it, `mise dot save` saves them. Use `--dry-run` to see what a large directory would add before tracking it.
 
 `--os` and `--profile` declare a variant: machines that match the platform or config environment keep their own version of the file, so a Mac and a Linux machine can have different contents at the same path. `--machine` gives every machine its own version instead, for files such as a monitor layout that should never be applied on another machine.
 
@@ -3630,7 +3630,7 @@ The watcher does this on its own in `sync` and `fetch-only` mode (the `history.s
         long_help #"""
 Track a file or directory in place
 
-Adds a `[dotfiles]` entry with `mode = "track"` to your global config: the file stays where it is, nothing is copied or linked, and mise saves a checkpoint of it right away. While the watcher service runs, later edits are saved automatically; without it, `mise dot save` saves them. Use `--dry-run` to see what a large directory would add before tracking it.
+Adds a `[dotfiles]` entry with `mode = "track"` to your global config (or to the `write_targets.dotfiles` file when that setting is set): the file stays where it is, nothing is copied or linked, and mise saves a checkpoint of it right away. While the watcher service runs, later edits are saved automatically; without it, `mise dot save` saves them. Use `--dry-run` to see what a large directory would add before tracking it.
 
 `--os` and `--profile` declare a variant: machines that match the platform or config environment keep their own version of the file, so a Mac and a Linux machine can have different contents at the same path. `--machine` gives every machine its own version instead, for files such as a monitor layout that should never be applied on another machine.
 
@@ -8063,7 +8063,9 @@ setting), which have trust of their own. Give a file's path to trust only
 that file.
 
 Trusting a config file in a repository's main checkout also trusts the same
-path in its git worktrees. Paranoid mode (https://mise.jdx.dev/paranoid.html)
+path in its git worktrees. `--worktrees` trusts it in every checkout of the
+repository instead, from any of them, which is how worktrees of a bare
+repository share trust. Paranoid mode (https://mise.jdx.dev/paranoid.html)
 turns off automatic and worktree trust and requires trust, tied to the
 file's contents, for every config outside the global and system config.
 See https://mise.jdx.dev/security.html#configuration-trust
@@ -8085,10 +8087,19 @@ Does not trust or untrust any files.
 """#
     }
     flag --untrust help="Remove explicit trust for this config"
+    flag --worktrees help="Trust this config in every checkout of its git repository" {
+        long_help #"""
+Trust this config in every checkout of its git repository
+
+Covers the same path in the main checkout and in every linked worktree, including worktrees created later and worktrees of a bare repository. A config at another path in a worktree still needs its own trust. With `--untrust`, removes this grant. Not available in paranoid mode, which ties trust to each file's contents.
+"""#
+        conflicts "--all" "--ignore" "--show"
+    }
     flag "-h --help" help="Print help" action=help builtin=#true
     arg "[CONFIG_FILE]" help="The config file whose trust status to change" required=#false
     example "mise trust" help="Trust the nearest untrusted config in this directory or a parent, and in paranoid mode the env files it reads"
     example "mise trust ~/src/app/mise.toml" help="Trust a specific file"
+    example "mise trust --worktrees" help="Trust the nearest config here in every worktree of this git repository"
     example "mise trust --show" help="List configs here and above with their trust status"
     complete config_file type=path
 }
