@@ -137,10 +137,17 @@ fn is_junction(_path: &Path) -> bool {
 /// Every config that may own the lockfile is asked, and the outermost project wins. The project
 /// is the boundary the lockfile's directory must resolve inside, so a candidate whose own root
 /// is a linked directory must not narrow it to that directory.
+///
+/// A conf.d fragment is a candidate of its own: in a `.mise` directory with no `mise.toml`, the
+/// root of a `mise.toml` there would be `.mise` itself, and a `config.toml` there may be global
+/// config, so neither would see a `.mise` that links out of the project.
 pub(crate) fn linked_lockfile_project(lockfile: &Path) -> Option<PathBuf> {
+    let conf_d_fragment = lockfile.with_file_name("conf.d").join("fragment.toml");
     ["mise.toml", "config.toml"]
         .into_iter()
-        .filter_map(|name| linked_project(&lockfile.with_file_name(name)))
+        .map(|name| lockfile.with_file_name(name))
+        .chain([conf_d_fragment])
+        .filter_map(|candidate| linked_project(&candidate))
         .min_by_key(|project| project.components().count())
 }
 
