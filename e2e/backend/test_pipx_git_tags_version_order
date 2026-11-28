@@ -6,7 +6,7 @@ repo="$PWD/repo"
 git init -q "$repo"
 git -C "$repo" -c user.name=t -c user.email=t@example.invalid -c commit.gpgSign=false commit --allow-empty -qm init
 for tag in 2026.9.5 2026.10.1 2026.11.9 2026.11.13; do
-	git -C "$repo" tag "$tag"
+  git -C "$repo" tag "$tag"
 done
 
 tool="pypi:git+file://$repo"
