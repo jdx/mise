@@ -635,7 +635,8 @@ mod tests {
 #[cfg(test)]
 mod test_harness {
     //! The tests below mise have no config system to load settings from and no fixture tree, so
-    //! they read the `settings.toml` defaults and use `test/` as the home directory.
+    //! they read the `settings.toml` defaults and use a directory under `test/` as the home
+    //! directory.
 
     mise_util::run_before_main!(init);
 
@@ -652,6 +653,7 @@ mod test_harness {
                 trusted_ancestors(h) && create_private_dir(h).is_ok() && trusted_ancestors(h)
             })
             .unwrap_or(crate_home);
+        let home = mise_util::testing::slot_home(&home);
         create_private_dir(&home).unwrap();
         mise_util::env::set_var("HOME", &home);
         mise_util::testing::enable(home);

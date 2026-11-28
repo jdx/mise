@@ -226,11 +226,17 @@ cargo test --all-features module_name -- --nocapture
 mise --cd crates/vfox run test   # the vfox crate
 ```
 
-Unit tests run one at a time in a shared process: `.cargo/config.toml` sets
-`RUST_TEST_THREADS=1`. `mise::testing::init` in `src/testing.rs` sets up the
-shared fixture directories under `test/` and the process environment. The
-library's tests call it from `src/test.rs`, and the binary's tests from the
-`test` module in `src/main.rs`. When a test changes settings or environment
+With `cargo test`, unit tests run one at a time in a shared process:
+`.cargo/config.toml` sets `RUST_TEST_THREADS=1`. `mise::testing::init` in
+`src/testing.rs` copies the fixtures under `test/` into the home directory the
+tests use, `test/home/0`, and sets up the process environment. The library's
+tests call it from `src/test.rs`, and the binary's tests from the `test` module
+in `src/main.rs`.
+
+`cargo nextest run --all-features` is faster: it runs every test in its own
+process, one per CPU at a time. Each of those processes uses its own home
+directory, `test/home/<slot>`, so tests that run at the same time do not share
+files. When a test changes settings or environment
 variables, use the existing guards, such as `SettingsGuard` and `EnvVarGuard`,
 so the change cannot leak into a later test.
 
