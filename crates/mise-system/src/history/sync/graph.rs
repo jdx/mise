@@ -85,11 +85,23 @@ impl Heads {
                         Some(incoming) => format!("merge origin dotfiles: {incoming}"),
                         None => "merge origin dotfiles".to_string(),
                     };
-                    // both sides captured with one matcher: the merge was
-                    // too, so a pull that then writes nothing can reuse it
-                    let matcher = repo.read_meta(local)?.tree.coverage.matcher;
-                    if let Some(matcher) = matcher
-                        && repo.read_meta(remote)?.tree.coverage.matcher == Some(matcher)
+                    // both sides captured with one matcher and nothing left
+                    // out: the merge was too, so a pull that then writes
+                    // nothing can reuse it. A side that skipped or could not
+                    // read a path keeps the merge without a matcher, because
+                    // the merge does not carry those records and rollback
+                    // would otherwise treat the skipped files as untracked.
+                    let local_coverage = repo.read_meta(local)?.tree.coverage;
+                    let remote_coverage = repo.read_meta(remote)?.tree.coverage;
+                    let complete = |coverage: &crate::history::store::Coverage| {
+                        coverage.omitted.is_empty()
+                            && coverage.incomplete.is_empty()
+                            && coverage.nested.is_empty()
+                    };
+                    if let Some(matcher) = local_coverage.matcher
+                        && remote_coverage.matcher == Some(matcher)
+                        && complete(&local_coverage)
+                        && complete(&remote_coverage)
                     {
                         message.push('\n');
                         message.push_str(&HistoryRepo::matcher_trailer(matcher));
