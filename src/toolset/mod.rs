@@ -1813,34 +1813,49 @@ fn keep_bound_node(tv: &ToolVersion, source: &Path, needed: &mut NeededVersions)
     if tv.ba().backend_type() != crate::backend::backend_type::BackendType::Npm {
         return Ok(());
     }
-    let install_path = tv.install_path();
-    // Launchers name the bound Node directly, so prune must not guess when the record of
-    // which one cannot be read: deleting that Node would break the tool.
-    let Some(bound) =
-        crate::backend::npm::BoundNode::read(&install_path).wrap_err("cannot safely prune")?
-    else {
-        return Ok(());
-    };
     let node_ba = BackendArg::from("node");
+    let system_installs = Settings::get().system_installs_dir().to_path_buf();
     let identity_installs = crate::install_layout::resolver::installs_of(&node_ba);
-    let roots = [node_ba.installs_path().to_path_buf()];
-    let key = match receipt_python_install(&bound.node, &bound.version, &identity_installs, &roots)
-    {
-        Some(ReceiptPython::Identity(dir)) => {
-            let Some(dir_name) = crate::install_layout::resolver::dir_name_of(&dir) else {
-                bail!(
-                    "cannot safely prune: {} is bound to an unkeyable Node installation {}",
-                    tv.ba().short,
-                    dir.display()
-                );
-            };
-            (String::new(), dir_name)
+    let roots = [
+        node_ba.installs_path().to_path_buf(),
+        system_installs.join(node_ba.tool_dir_name()),
+    ];
+    // Prune keeps this version's user and system copies under one key, and each copy's
+    // launchers name the Node it was bound to, so keep the Node of every copy.
+    let install_path = tv.install_path();
+    let mut copies = vec![install_path.clone()];
+    if let Some(dir_name) = install_path.file_name() {
+        let system_copy = system_installs.join(tv.ba().tool_dir_name()).join(dir_name);
+        if system_copy != install_path {
+            copies.push(system_copy);
         }
-        Some(ReceiptPython::Legacy(name)) => (node_ba.short.to_string(), name),
-        // A Node that is gone, or outside this user's installs, has nothing left to keep.
-        None => return Ok(()),
-    };
-    needed.entry(key).or_default().insert(source.to_path_buf());
+    }
+    for copy in copies {
+        // Launchers name the bound Node directly, so prune must not guess when the record
+        // of which one cannot be read: deleting that Node would break the tool.
+        let Some(bound) =
+            crate::backend::npm::BoundNode::read(&copy).wrap_err("cannot safely prune")?
+        else {
+            continue;
+        };
+        let key =
+            match receipt_python_install(&bound.node, &bound.version, &identity_installs, &roots) {
+                Some(ReceiptPython::Identity(dir)) => {
+                    let Some(dir_name) = crate::install_layout::resolver::dir_name_of(&dir) else {
+                        bail!(
+                            "cannot safely prune: {} is bound to an unkeyable Node installation {}",
+                            tv.ba().short,
+                            dir.display()
+                        );
+                    };
+                    (String::new(), dir_name)
+                }
+                Some(ReceiptPython::Legacy(name)) => (node_ba.short.to_string(), name),
+                // A Node that is gone, or outside mise's installs, has nothing left to keep.
+                None => continue,
+            };
+        needed.entry(key).or_default().insert(source.to_path_buf());
+    }
     Ok(())
 }
 

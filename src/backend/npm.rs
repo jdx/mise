@@ -435,9 +435,12 @@ pub(crate) fn ensure_node_option_unlocked(
     if selected_node_dependency(request)?.is_none() || !Settings::get().lockfile_enabled() {
         return Ok(());
     }
-    let locked = invocation_locked
-        || config.invocation_locked_for(request.source(), Settings::get().locked)
-        || request.tool_config_locked(config, true);
+    // `--locked` and the `locked` setting both go through `invocation_locked_for`, which
+    // exempts tools the global override file declares.
+    let locked = config.invocation_locked_for(
+        request.source(),
+        invocation_locked || Settings::get().locked,
+    ) || request.tool_config_locked(config, true);
     if locked {
         eyre::bail!(
             "{} sets the node option, which locked mode does not support yet: mise.lock does not record the selected Node\n\
