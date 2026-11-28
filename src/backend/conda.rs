@@ -322,6 +322,50 @@ impl CondaBackend {
         Ok(pinned && dest.exists() && Self::verify_checksum(dest, checksum)?)
     }
 
+    /// Whether the archive an older mise cached by file name alone, directly in
+    /// the conda data dir (`dest`'s grandparent), was copied to `dest`, its
+    /// cache path now. Only with a sha256 to check it by, since a file name
+    /// does not say which channel the archive came from: the copy is checked,
+    /// not the original, so an older mise replacing it meanwhile cannot slip
+    /// other bytes in. Any failure leaves `dest` to be downloaded.
+    fn adopt_flat_cached_archive(dest: &Path, checksum: Option<&str>) -> bool {
+        crate::remove_by!("2027.12.0", "conda-flat-cache");
+        if !checksum.is_some_and(|c| c.starts_with("sha256:")) {
+            return false;
+        }
+        let (Some(dir), Some(name)) = (dest.parent(), dest.file_name()) else {
+            return false;
+        };
+        let Some(flat) = dir.parent().map(|data_dir| data_dir.join(name)) else {
+            return false;
+        };
+        if !flat.is_file() {
+            return false;
+        }
+        let temp = Self::temp_download_path(dest);
+        let adopted = file::create_dir_all(dir)
+            .and_then(|()| file::copy(&flat, &temp))
+            .and_then(|()| Self::verify_checksum(&temp, checksum))
+            .and_then(|matches| {
+                if matches {
+                    file::rename(&temp, dest)?;
+                }
+                Ok(matches)
+            });
+        match adopted {
+            Ok(true) => true,
+            Ok(false) => {
+                let _ = file::remove_all(&temp);
+                false
+            }
+            Err(err) => {
+                debug!("not reusing {}: {err:#}", flat.display());
+                let _ = file::remove_all(&temp);
+                false
+            }
+        }
+    }
+
     /// Whether `dest` exists and holds the same bytes as `downloaded`.
     fn same_archive(downloaded: &std::path::Path, dest: &std::path::Path) -> Result<bool> {
         Ok(dest.exists()
@@ -332,7 +376,9 @@ impl CondaBackend {
     /// Uses atomic writes: downloads to a temp file, verifies, then renames.
     /// If dest already exists and the sha256 checksum matches, skips download.
     async fn download_to(url: &str, dest: &std::path::Path, checksum: Option<&str>) -> Result<()> {
-        if Self::cached_archive_matches(dest, checksum)? {
+        if Self::cached_archive_matches(dest, checksum)?
+            || Self::adopt_flat_cached_archive(dest, checksum)
+        {
             return Ok(());
         }
 
@@ -2061,6 +2107,50 @@ mod tests {
                 .and_then(|n| n.to_str()),
             Some("pkg-1.0-0.tar.bz2")
         );
+    }
+
+    /// An archive an older mise cached by file name is reused at its per-URL
+    /// path only when the lockfile's sha256 matches it.
+    #[test]
+    fn flat_cached_archive_is_adopted_only_when_its_sha256_matches() {
+        let dir = tempfile::tempdir().unwrap();
+        let flat = dir.path().join("pkg-1.0-0.conda");
+        let dest = dir.path().join("0123456789abcdef").join("pkg-1.0-0.conda");
+        std::fs::write(&flat, b"archive").unwrap();
+        let sha = format!(
+            "sha256:{}",
+            crate::hash::file_hash_sha256(&flat, None).unwrap()
+        );
+        let other = format!("sha256:{}", "0".repeat(64));
+
+        // No checksum, or not a sha256: the old path is never used.
+        assert!(!CondaBackend::adopt_flat_cached_archive(&dest, None));
+        assert!(!CondaBackend::adopt_flat_cached_archive(
+            &dest,
+            Some("md5:abc")
+        ));
+        assert!(!dest.exists());
+        // Another archive under the same name.
+        assert!(!CondaBackend::adopt_flat_cached_archive(
+            &dest,
+            Some(&other)
+        ));
+        assert!(!dest.exists());
+        // The pinned one, copied to the per-URL path, with no temp file left.
+        assert!(CondaBackend::adopt_flat_cached_archive(&dest, Some(&sha)));
+        assert_eq!(std::fs::read(&dest).unwrap(), b"archive");
+        assert!(CondaBackend::cached_archive_matches(&dest, Some(&sha)).unwrap());
+        let left: Vec<_> = std::fs::read_dir(dest.parent().unwrap())
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        assert_eq!(left, vec![std::ffi::OsString::from("pkg-1.0-0.conda")]);
+        // With no old archive there is nothing to adopt.
+        let missing = dir.path().join("fedcba9876543210").join("gone-1.0-0.conda");
+        assert!(!CondaBackend::adopt_flat_cached_archive(
+            &missing,
+            Some(&sha)
+        ));
     }
 
     /// An unpinned download that loses the rename race accepts the winner's file
