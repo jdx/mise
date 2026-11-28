@@ -2,6 +2,7 @@ use crate::args::BackendArg;
 use crate::backend::backend_type::BackendType;
 use crate::backend::options::BackendOptions;
 use crate::backend::platform_target::PlatformTarget;
+use crate::backend::static_helpers::{lock_url, with_login_of};
 use crate::backend::{MISE_BINS_DIR, VersionInfo, runtime_path_for_install_path};
 use crate::config::Config;
 use crate::config::Settings;
@@ -32,7 +33,16 @@ use std::fmt::Debug;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{Duration, SystemTime};
 use versions::Versioning;
+
+/// The prefix of the directory each install keeps its own archives in, in the
+/// conda data dir.
+const PRIVATE_ARCHIVE_DIR_PREFIX: &str = ".install-";
+
+/// How long after its last write an install's directory is left behind, well
+/// past the time any install takes to download and extract its archives.
+const PRIVATE_ARCHIVE_DIR_MAX_AGE: Duration = Duration::from_secs(24 * 60 * 60);
 
 /// Conda package info stored in the shared conda-packages section of lockfiles
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -251,6 +261,28 @@ impl CondaBackend {
         dirs::DATA.join("conda-packages")
     }
 
+    /// Where the archive downloaded from `url` is cached. Channels can publish
+    /// different archives under the same file name, so each source URL has its
+    /// own directory, and one channel's archive does not evict another's. An
+    /// install extracts its own copy, never this path (see
+    /// [`Self::download_to`]). The login and a default port are no part of the
+    /// key, so the same package keeps one cache entry.
+    fn archive_cache_path(url: &str) -> PathBuf {
+        let source = lock_url(url);
+        let source = url::Url::parse(&source)
+            .map(|u| u.to_string())
+            .unwrap_or(source);
+        let filename = source
+            .split(['?', '#'])
+            .next()
+            .and_then(|path| path.rsplit('/').next())
+            .filter(|name| !name.is_empty())
+            .unwrap_or("package")
+            .to_string();
+        let key = hash::hash_sha256_to_str(&source);
+        Self::conda_data_dir().join(&key[..16]).join(filename)
+    }
+
     /// Get the filename portion of a package URL
     fn url_filename(url: &url::Url) -> String {
         url.path_segments()
@@ -292,21 +324,173 @@ impl CondaBackend {
         Ok(actual_hex == expected_hex)
     }
 
-    /// Download a file to dest with optional checksum verification.
-    /// Uses atomic writes: downloads to a temp file, verifies, then renames.
-    /// If dest already exists and checksum matches, skips download.
-    async fn download_to(url: &str, dest: &std::path::Path, checksum: Option<&str>) -> Result<()> {
-        if dest.exists() && Self::verify_checksum(dest, checksum)? {
-            return Ok(());
+    /// A directory for this install's own copies of its archives, which no
+    /// other install writes, removed when dropped.
+    fn private_archive_dir() -> Result<tempfile::TempDir> {
+        Self::private_archive_dir_in(&Self::conda_data_dir())
+    }
+
+    /// [`Self::private_archive_dir`] in `data_dir`, so a copy of a cached
+    /// archive is a hard link. A `data_dir` this install cannot write, such as
+    /// a read-only cache, still serves its archives: they are copied to a
+    /// directory in the system temp dir instead.
+    fn private_archive_dir_in(data_dir: &Path) -> Result<tempfile::TempDir> {
+        let in_data_dir = file::create_dir_all(data_dir).and_then(|()| {
+            if let Some(before) = SystemTime::now().checked_sub(PRIVATE_ARCHIVE_DIR_MAX_AGE) {
+                Self::remove_stale_private_dirs(data_dir, before);
+            }
+            Ok(tempfile::Builder::new()
+                .prefix(PRIVATE_ARCHIVE_DIR_PREFIX)
+                .tempdir_in(data_dir)?)
+        });
+        match in_data_dir {
+            Ok(dir) => Ok(dir),
+            Err(err) => {
+                debug!(
+                    "copying conda archives to the temp dir, as {} is not writable: {err:#}",
+                    data_dir.display()
+                );
+                Ok(tempfile::Builder::new().prefix("mise-conda-").tempdir()?)
+            }
+        }
+    }
+
+    /// Remove the directories of installs last written to before `before`. An
+    /// install that was killed leaves its directory, and so does one that
+    /// failed while a download was copying an archive into it: the copy runs
+    /// on a blocking thread cancelling the install does not stop, and it
+    /// creates the directory again after the install removed it.
+    fn remove_stale_private_dirs(data_dir: &Path, before: SystemTime) {
+        let Ok(entries) = std::fs::read_dir(data_dir) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            if !entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with(PRIVATE_ARCHIVE_DIR_PREFIX)
+            {
+                continue;
+            }
+            let stale = entry
+                .metadata()
+                .and_then(|m| m.modified())
+                .is_ok_and(|modified| modified < before);
+            if stale && let Err(err) = file::remove_all(entry.path()) {
+                debug!("failed to remove {}: {err:#}", entry.path().display());
+            }
+        }
+    }
+
+    /// Where this install keeps its copy of the archive cached at `dest`, in
+    /// `private_dir`. The copy keeps the archive's file name, which says how to
+    /// extract it.
+    fn private_archive_path(dest: &Path, private_dir: &Path) -> PathBuf {
+        let name = dest.file_name().unwrap_or(std::ffi::OsStr::new("package"));
+        private_dir
+            .join(Self::next_temp_id().to_string())
+            .join(name)
+    }
+
+    /// Whether a copy of `from` was put at `private` and matches the sha256
+    /// `checksum` pins it by. A cached file with no sha256 to check it by may
+    /// be an older copy of the package, so it is not used. The copy is
+    /// checked, not `from`, so another install replacing `from` meanwhile
+    /// cannot slip other bytes in. The copy is a hard link when `may_link`,
+    /// which is safe only for a file every writer replaces rather than
+    /// rewrites. Any failure leaves the archive to be downloaded.
+    fn take_verified_copy(
+        from: &Path,
+        private: &Path,
+        checksum: Option<&str>,
+        may_link: bool,
+    ) -> bool {
+        if !checksum.is_some_and(|c| c.starts_with("sha256:")) || !from.is_file() {
+            return false;
+        }
+        let taken = private
+            .parent()
+            .map_or(Ok(()), file::create_dir_all)
+            .and_then(|()| {
+                if may_link {
+                    file::hard_link_or_copy(from, private)
+                } else {
+                    file::copy(from, private)
+                }
+            })
+            .and_then(|()| Self::verify_checksum(private, checksum));
+        match taken {
+            Ok(true) => true,
+            Ok(false) => {
+                let _ = file::remove_all(private);
+                false
+            }
+            Err(err) => {
+                debug!("not reusing {}: {err:#}", from.display());
+                let _ = file::remove_all(private);
+                false
+            }
+        }
+    }
+
+    /// The archive an older mise cached by file name alone, directly in the
+    /// conda data dir (`dest`'s grandparent), for the archive cached at `dest`
+    /// now. A file name does not say which channel the archive came from, so
+    /// it is only used through [`Self::take_verified_copy`].
+    fn flat_cached_archive_path(dest: &Path) -> Option<PathBuf> {
+        crate::remove_by!("2027.12.0", "conda-flat-cache");
+        let name = dest.file_name()?;
+        Some(dest.parent()?.parent()?.join(name))
+    }
+
+    /// Cache this install's archive at `dest` for later installs. Another
+    /// install may replace it at any time, so nothing extracts from `dest`; a
+    /// failure only leaves the next install to download the archive again.
+    fn cache_archive(private: &Path, dest: &Path) {
+        let temp = Self::temp_download_path(dest);
+        let cached = dest
+            .parent()
+            .map_or(Ok(()), file::create_dir_all)
+            .and_then(|()| file::hard_link_or_copy(private, &temp))
+            .and_then(|()| file::rename(&temp, dest));
+        if let Err(err) = cached {
+            debug!("not caching {}: {err:#}", dest.display());
+            let _ = file::remove_all(&temp);
+        }
+    }
+
+    /// The archive downloaded from `url`, checked against `checksum`, at a path
+    /// in `private_dir` that this install alone writes, so the bytes it
+    /// extracts and hashes are the bytes checked. An archive cached at `dest`
+    /// that a sha256 pins is reused with no download, and a new download is
+    /// cached there.
+    async fn download_to(
+        url: &str,
+        dest: &Path,
+        checksum: Option<&str>,
+        private_dir: &Path,
+    ) -> Result<PathBuf> {
+        let private = Self::private_archive_path(dest, private_dir);
+        // Every cache write here replaces the file, so a hard link keeps the
+        // checked bytes.
+        if Self::take_verified_copy(dest, &private, checksum, true) {
+            return Ok(private);
+        }
+        // An older mise may write its flat archive in place, so it is copied.
+        if let Some(flat) = Self::flat_cached_archive_path(dest)
+            && Self::take_verified_copy(&flat, &private, checksum, false)
+        {
+            Self::cache_archive(&private, dest);
+            return Ok(private);
         }
 
-        file::create_dir_all(Self::conda_data_dir())?;
-        let temp = Self::temp_download_path(dest);
-        HTTP.download_file_pinned(url, &temp, checksum, None)
+        if let Some(parent) = private.parent() {
+            file::create_dir_all(parent)?;
+        }
+        HTTP.download_file_pinned(url, &private, checksum, None)
             .await?;
-
-        if !Self::verify_checksum(&temp, checksum)? {
-            let _ = file::remove_all(&temp);
+        if !Self::verify_checksum(&private, checksum)? {
+            let _ = file::remove_all(&private);
             let display_checksum = checksum.unwrap_or("unknown");
             return Err(eyre::eyre!(
                 "checksum mismatch for {}: expected {}",
@@ -314,46 +498,26 @@ impl CondaBackend {
                 display_checksum,
             ));
         }
-
-        if let Err(err) = file::rename(&temp, dest) {
-            let _ = file::remove_all(&temp);
-
-            // Another concurrent installer may have won the race and written `dest`.
-            // If `dest` now exists and verifies, treat this as success.
-            if dest.exists() && Self::verify_checksum(dest, checksum)? {
-                return Ok(());
-            }
-
-            return Err(err).wrap_err_with(|| {
-                format!(
-                    "failed to finalize conda archive download for {}",
-                    dest.display()
-                )
-            });
-        }
-        Ok(())
+        Self::cache_archive(&private, dest);
+        Ok(private)
     }
 
-    /// Download a single package archive to the shared conda data dir.
-    async fn download_record(record: RepoDataRecord) -> Result<PathBuf> {
+    /// Download a single package archive for this install, as [`Self::download_to`].
+    async fn download_record((record, private_dir): (RepoDataRecord, PathBuf)) -> Result<PathBuf> {
         let url_str = record.url.to_string();
-        let filename = Self::url_filename(&record.url);
-        let dest = Self::conda_data_dir().join(&filename);
+        let dest = Self::archive_cache_path(&url_str);
         let checksum = Self::format_sha256(&record);
 
-        Self::download_to(&url_str, &dest, checksum.as_deref()).await?;
-        Ok(dest)
+        Self::download_to(&url_str, &dest, checksum.as_deref(), &private_dir).await
     }
 
     /// Download a package by URL with optional checksum (for locked installs).
     async fn download_url_with_checksum(
-        (url_str, checksum): (String, Option<String>),
+        (url_str, checksum, private_dir): (String, Option<String>, PathBuf),
     ) -> Result<PathBuf> {
-        let filename = url_str.rsplit('/').next().unwrap_or("package").to_string();
-        let dest = Self::conda_data_dir().join(&filename);
+        let dest = Self::archive_cache_path(&url_str);
 
-        Self::download_to(&url_str, &dest, checksum.as_deref()).await?;
-        Ok(dest)
+        Self::download_to(&url_str, &dest, checksum.as_deref(), &private_dir).await
     }
 
     /// Extract a downloaded conda package archive into dest using rattler.
@@ -473,7 +637,12 @@ impl CondaBackend {
         // Download all in parallel
         ctx.pr
             .set_message(format!("downloading {} packages", all_records.len()));
-        let downloaded = parallel::parallel(all_records.clone(), Self::download_record).await?;
+        let private_dir = Self::private_archive_dir()?;
+        let downloads = all_records
+            .iter()
+            .map(|record| (record.clone(), private_dir.path().to_path_buf()))
+            .collect();
+        let downloaded = parallel::parallel(downloads, Self::download_record).await?;
 
         // Create conda prefix and install driver
         let install_path = tv.install_path();
@@ -505,22 +674,32 @@ impl CondaBackend {
             .map(Self::record_basename)
             .collect();
 
+        // The lockfile names packages without the login of the channel.
+        let main_checksum = Self::checksum_for_lock(
+            main_record.url.as_str(),
+            Self::format_sha256(&main_record),
+            &downloaded[n_deps],
+        )?;
         let platform_info = tv
             .lock_platforms
             .entry(platform_key.to_string())
             .or_default();
-        platform_info.url = Some(main_record.url.to_string());
-        platform_info.checksum = Self::format_sha256(&main_record);
+        platform_info.url = Some(lock_url(main_record.url.as_str()));
+        platform_info.checksum = main_checksum;
         platform_info.conda_deps = Some(dep_basenames.clone());
 
         // Store dep package info in tv.conda_packages for lockfile update
-        for record in &all_records[..n_deps] {
+        for (record, archive) in all_records[..n_deps].iter().zip(&downloaded) {
             let basename = Self::record_basename(record);
             tv.conda_packages.insert(
                 (platform_key.to_string(), basename),
                 CondaPackageInfo {
-                    url: record.url.to_string(),
-                    checksum: Self::format_sha256(record),
+                    url: lock_url(record.url.as_str()),
+                    checksum: Self::checksum_for_lock(
+                        record.url.as_str(),
+                        Self::format_sha256(record),
+                        archive,
+                    )?,
                 },
             );
         }
@@ -570,9 +749,26 @@ impl CondaBackend {
             }
         }
         downloads.push((main_url, main_checksum));
+        // The channel's login, which the lockfile leaves out, for packages on its server.
+        let raw_opts = tv.request.options();
+        let channel = url::Url::parse(&CondaOptions::new(&raw_opts).channel_name()).ok();
+        if let Some(channel) = &channel {
+            for (url, _) in &mut downloads {
+                if let Ok(parsed) = url::Url::parse(url) {
+                    *url = with_login_of(parsed, channel).to_string();
+                }
+            }
+        }
 
+        // The URL each archive came from, dependencies first and the main package last.
+        let download_urls = downloads.iter().map(|(url, _)| url.clone()).collect_vec();
         ctx.pr
             .set_message(format!("downloading {} packages", downloads.len()));
+        let private_dir = Self::private_archive_dir()?;
+        let downloads = downloads
+            .into_iter()
+            .map(|(url, checksum)| (url, checksum, private_dir.path().to_path_buf()))
+            .collect();
         let downloaded = parallel::parallel(downloads, Self::download_url_with_checksum).await?;
 
         let install_path = tv.install_path();
@@ -595,16 +791,67 @@ impl CondaBackend {
         self.create_bin_launcher_dir(tv, &main_paths)?;
 
         // Repopulate tv.conda_packages from lockfile so downstream lockfile update preserves entries
-        for basename in &dep_basenames {
+        for ((basename, url), archive) in dep_basenames.iter().zip(&download_urls).zip(&downloaded)
+        {
             if let Some(pkg_info) = lockfile.get_conda_package(platform_key, basename) {
                 tv.conda_packages.insert(
                     (platform_key.to_string(), basename.clone()),
-                    pkg_info.clone(),
+                    Self::locked_dependency(pkg_info, url, archive)?,
                 );
             }
         }
+        if let Some(info) = tv.lock_platforms.get_mut(platform_key) {
+            if let (Some(url), Some(archive)) = (download_urls.last(), downloaded.last()) {
+                info.checksum = Self::checksum_for_lock(url, info.checksum.take(), archive)?;
+            }
+            Self::forget_locked_login(info);
+        }
 
         Ok(())
+    }
+
+    /// Leave the channel login out of the main package URL an older lockfile
+    /// recorded, as [`Self::locked_dependency`] does for the dependencies', so
+    /// the lockfile update does not write it back. The package is the same, so
+    /// its checksum stays.
+    fn forget_locked_login(info: &mut PlatformInfo) {
+        info.url = info.url.as_deref().map(lock_url);
+    }
+
+    /// A dependency entry from mise.lock as a locked install hands it to the
+    /// lockfile update, after downloading `archive` from `url`: without the
+    /// channel login an older lockfile may hold, which the install took back
+    /// from the configured channel, and with a checksum, as for the main
+    /// package ([`Self::checksum_for_lock`]). The writer drops the login too;
+    /// this keeps it out of `tv.conda_packages` as well.
+    fn locked_dependency(
+        pkg_info: &CondaPackageInfo,
+        url: &str,
+        archive: &Path,
+    ) -> Result<CondaPackageInfo> {
+        Ok(CondaPackageInfo {
+            url: lock_url(&pkg_info.url),
+            checksum: Self::checksum_for_lock(url, pkg_info.checksum.clone(), archive)?,
+        })
+    }
+
+    /// The checksum to record for `archive`, downloaded from `url`, when the
+    /// lockfile names it without the login `url` holds. With none, `mise lock`
+    /// would hash the archive again through the recorded URL, which the channel
+    /// refuses without the login, so the downloaded archive is hashed now. A
+    /// checksum the channel or lockfile gave stays as it is.
+    fn checksum_for_lock(
+        url: &str,
+        checksum: Option<String>,
+        archive: &Path,
+    ) -> Result<Option<String>> {
+        if checksum.is_some() || lock_url(url) == url {
+            return Ok(checksum);
+        }
+        Ok(Some(format!(
+            "sha256:{}",
+            hash::file_hash_sha256(archive, None)?
+        )))
     }
 
     fn make_bins_executable(install_path: &std::path::Path) -> Result<()> {
@@ -1032,7 +1279,7 @@ impl CondaBackend {
             result.insert(
                 basename,
                 CondaPackageInfo {
-                    url: record.url.to_string(),
+                    url: lock_url(record.url.as_str()),
                     checksum: Self::format_sha256(record),
                 },
             );
@@ -1209,9 +1456,19 @@ impl Backend for CondaBackend {
                 target.to_key()
             )
         })?;
+        // A channel that leaves out the sha256 has the archive hashed through
+        // the URL that still holds the channel login.
+        let mut checksum = Self::format_sha256(&main);
+        let url = crate::backend::static_helpers::resolve_lock_url(
+            main.url.as_str(),
+            None,
+            &mut checksum,
+        )
+        .await?;
         Ok(PlatformInfo {
-            url: Some(main.url.to_string()),
-            checksum: Self::format_sha256(&main),
+            download_url: crate::lockfile::LoginUrl::of(main.url.as_str()),
+            url: Some(url),
+            checksum,
             size: None,
             url_api: None,
             conda_deps: Some(dep_basenames),
@@ -1304,7 +1561,7 @@ fn exact_match_spec(tool_name: &str, version: &str) -> Result<MatchSpec> {
 
 #[cfg(test)]
 mod tests {
-    use super::{CondaBackend, CondaOptions, MISE_BINS_DIR, rewrite_request_url};
+    use super::{CondaBackend, CondaOptions, CondaPackageInfo, MISE_BINS_DIR, rewrite_request_url};
     #[cfg(unix)]
     use crate::file;
     use crate::toolset::ToolVersionOptions;
@@ -1315,11 +1572,100 @@ mod tests {
     use std::collections::BTreeMap;
     #[cfg(unix)]
     use std::collections::BTreeSet;
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
     #[cfg(unix)]
     use std::process::Command;
     use std::str::FromStr;
     use url::Url;
+
+    /// An older lockfile may hold the channel login in the main package URL;
+    /// a locked install leaves it out and keeps the checksum.
+    #[test]
+    fn locked_install_leaves_the_channel_login_out_of_the_main_package() {
+        let mut info = crate::lockfile::PlatformInfo {
+            url: Some("https://ci:token@conda.example/main/linux-64/tool-1.0-0.conda".to_string()),
+            checksum: Some("sha256:abcd".to_string()),
+            ..Default::default()
+        };
+        CondaBackend::forget_locked_login(&mut info);
+        assert_eq!(
+            info.url.as_deref(),
+            Some("https://conda.example/main/linux-64/tool-1.0-0.conda")
+        );
+        assert_eq!(info.checksum.as_deref(), Some("sha256:abcd"));
+    }
+
+    /// The same for a dependency entry the locked install copies from
+    /// mise.lock. One an older lockfile recorded with the login and no
+    /// checksum gets the checksum of the archive downloaded through the login,
+    /// as the main package does, since `mise lock` could not fetch it again
+    /// through the recorded URL.
+    #[test]
+    fn locked_install_leaves_the_channel_login_out_of_the_dependencies() {
+        let dir = tempfile::tempdir().unwrap();
+        let archive = dir.path().join("libfoo-1.0-0.conda");
+        std::fs::write(&archive, b"archive").unwrap();
+        let url = "https://ci:token@conda.example/main/linux-64/libfoo-1.0-0.conda";
+        let plain = "https://conda.example/main/linux-64/libfoo-1.0-0.conda";
+        let dependency = CondaPackageInfo {
+            url: url.to_string(),
+            checksum: Some("sha256:abcd".to_string()),
+        };
+        assert_eq!(
+            CondaBackend::locked_dependency(&dependency, url, &archive).unwrap(),
+            CondaPackageInfo {
+                url: plain.to_string(),
+                checksum: Some("sha256:abcd".to_string()),
+            }
+        );
+
+        let unhashed = CondaPackageInfo {
+            checksum: None,
+            ..dependency
+        };
+        let sha256 = format!(
+            "sha256:{}",
+            crate::hash::file_hash_sha256(&archive, None).unwrap()
+        );
+        assert_eq!(
+            CondaBackend::locked_dependency(&unhashed, url, &archive).unwrap(),
+            CondaPackageInfo {
+                url: plain.to_string(),
+                checksum: Some(sha256),
+            }
+        );
+    }
+
+    /// An archive fetched through the channel login with no checksum is hashed
+    /// before the lockfile drops the login, since `mise lock` could not fetch
+    /// it again through the recorded URL.
+    #[test]
+    fn archive_without_a_checksum_is_hashed_before_its_login_is_dropped() {
+        let dir = tempfile::tempdir().unwrap();
+        let archive = dir.path().join("tool-1.0-0.conda");
+        std::fs::write(&archive, b"archive").unwrap();
+        let sha256 = format!(
+            "sha256:{}",
+            crate::hash::file_hash_sha256(&archive, None).unwrap()
+        );
+        let login = "https://ci:token@conda.example/main/linux-64/tool-1.0-0.conda";
+        let plain = "https://conda.example/main/linux-64/tool-1.0-0.conda";
+
+        assert_eq!(
+            CondaBackend::checksum_for_lock(login, None, &archive).unwrap(),
+            Some(sha256)
+        );
+        assert_eq!(
+            CondaBackend::checksum_for_lock(login, Some("sha256:abcd".to_string()), &archive)
+                .unwrap()
+                .as_deref(),
+            Some("sha256:abcd")
+        );
+        assert_eq!(
+            CondaBackend::checksum_for_lock(plain, None, &archive).unwrap(),
+            None
+        );
+    }
 
     /// The version can come from a plain tool list that loads without trust,
     /// so the match spec grammar must not apply to it.
@@ -1858,5 +2204,214 @@ mod tests {
 
         let deduped = CondaBackend::dedup_records_by_identifier(records.iter());
         assert_eq!(deduped.len(), 2);
+    }
+
+    /// A cached archive is reused only when a sha256 pins it, through a copy
+    /// that is checked itself.
+    #[test]
+    fn cached_archive_is_reused_only_when_a_sha256_pins_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let dest = dir.path().join("pkg-1.0-0.conda");
+        std::fs::write(&dest, b"archive").unwrap();
+        let sha = sha256_of(&dest);
+        let other = format!("sha256:{}", "0".repeat(64));
+        let private = dir.path().join("private").join("1").join("pkg-1.0-0.conda");
+        let take = |checksum: Option<&str>| {
+            CondaBackend::take_verified_copy(&dest, &private, checksum, true)
+        };
+        assert!(!take(None));
+        assert!(!take(Some("md5:abc")));
+        assert!(!take(Some(&other)));
+        assert!(!private.exists());
+        assert!(take(Some(&sha)));
+        assert_eq!(std::fs::read(&private).unwrap(), b"archive");
+    }
+
+    /// Another install replacing a cached archive after this one checked it
+    /// does not change the bytes this one extracts.
+    #[test]
+    fn a_replaced_cache_entry_leaves_the_checked_copy_alone() {
+        let dir = tempfile::tempdir().unwrap();
+        let dest = dir.path().join("0123456789abcdef").join("pkg-1.0-0.conda");
+        std::fs::create_dir_all(dest.parent().unwrap()).unwrap();
+        std::fs::write(&dest, b"archive").unwrap();
+        let sha = sha256_of(&dest);
+        let private = dir.path().join("mine").join("pkg-1.0-0.conda");
+        assert!(CondaBackend::take_verified_copy(
+            &dest,
+            &private,
+            Some(&sha),
+            true
+        ));
+
+        let theirs = dir.path().join("theirs").join("pkg-1.0-0.conda");
+        std::fs::create_dir_all(theirs.parent().unwrap()).unwrap();
+        std::fs::write(&theirs, b"other bytes").unwrap();
+        CondaBackend::cache_archive(&theirs, &dest);
+
+        assert_eq!(std::fs::read(&dest).unwrap(), b"other bytes");
+        assert_eq!(std::fs::read(&private).unwrap(), b"archive");
+        assert_eq!(sha256_of(&private), sha);
+    }
+
+    /// A conda data dir the install cannot write still serves the archives
+    /// cached in it: they are copied to a directory in the system temp dir.
+    #[test]
+    fn an_unwritable_data_dir_keeps_install_copies_in_the_temp_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let cached = dir.path().join("cache").join("pkg-1.0-0.conda");
+        std::fs::create_dir_all(cached.parent().unwrap()).unwrap();
+        std::fs::write(&cached, b"archive").unwrap();
+        let sha = sha256_of(&cached);
+        // A file where the directory should be: no directory can be made in it.
+        let unwritable = dir.path().join("conda-packages");
+        std::fs::write(&unwritable, b"").unwrap();
+
+        let private_dir = CondaBackend::private_archive_dir_in(&unwritable).unwrap();
+        assert!(!private_dir.path().starts_with(&unwritable));
+        let private = CondaBackend::private_archive_path(&cached, private_dir.path());
+        assert!(CondaBackend::take_verified_copy(
+            &cached,
+            &private,
+            Some(&sha),
+            true
+        ));
+        assert_eq!(std::fs::read(&private).unwrap(), b"archive");
+    }
+
+    /// The directory an install left behind is removed by a later install
+    /// once it is stale, and nothing else in the conda data dir is.
+    #[test]
+    fn stale_install_dirs_are_removed() {
+        use std::time::{Duration, SystemTime};
+        let dir = tempfile::tempdir().unwrap();
+        let data_dir = dir.path();
+        let left = data_dir.join(".install-left").join("7");
+        std::fs::create_dir_all(&left).unwrap();
+        std::fs::write(left.join("pkg-1.0-0.conda"), b"archive").unwrap();
+        let cached = data_dir.join("0123456789abcdef").join("pkg-1.0-0.conda");
+        std::fs::create_dir_all(cached.parent().unwrap()).unwrap();
+        std::fs::write(&cached, b"archive").unwrap();
+        let flat = data_dir.join("pkg-1.0-0.conda");
+        std::fs::write(&flat, b"archive").unwrap();
+
+        let hour = Duration::from_secs(60 * 60);
+        CondaBackend::remove_stale_private_dirs(data_dir, SystemTime::now() - hour);
+        assert!(left.exists());
+        CondaBackend::remove_stale_private_dirs(data_dir, SystemTime::now() + hour);
+        assert!(!data_dir.join(".install-left").exists());
+        assert!(cached.exists());
+        assert!(flat.exists());
+
+        let private_dir = CondaBackend::private_archive_dir_in(data_dir).unwrap();
+        assert_eq!(private_dir.path().parent(), Some(data_dir));
+    }
+
+    /// Same-named archives from two channels are cached apart, so one does not
+    /// evict the other. A login or a default port does not change where a
+    /// package is cached.
+    #[test]
+    fn archives_are_cached_per_source_url() {
+        let path = CondaBackend::archive_cache_path;
+        let main = path("https://conda.example/main/linux-64/pkg-1.0-0.conda");
+        let other = path("https://conda.example/other/linux-64/pkg-1.0-0.conda");
+        assert_ne!(main, other);
+        assert_eq!(main.file_name(), other.file_name());
+        assert_eq!(
+            main.file_name().and_then(|n| n.to_str()),
+            Some("pkg-1.0-0.conda")
+        );
+        assert!(main.starts_with(CondaBackend::conda_data_dir()));
+        assert_eq!(
+            main,
+            path("https://ci:token@conda.example/main/linux-64/pkg-1.0-0.conda")
+        );
+        assert_eq!(
+            main,
+            path("https://conda.example:443/main/linux-64/pkg-1.0-0.conda")
+        );
+        assert_eq!(
+            path("https://conda.example/main/noarch/pkg-1.0-0.tar.bz2")
+                .file_name()
+                .and_then(|n| n.to_str()),
+            Some("pkg-1.0-0.tar.bz2")
+        );
+    }
+
+    /// An archive an older mise cached by file name is used only when the
+    /// lockfile's sha256 matches it. It is then cached at its per-URL path, and
+    /// this install extracts its own copy. Without a match, or with no
+    /// checksum, the archive is downloaded.
+    #[tokio::test]
+    async fn flat_cached_archive_is_adopted_only_when_its_sha256_matches() {
+        // Each case downloads from its own channel, since one process shares
+        // the download of a URL.
+        let mut server = mockito::Server::new_async().await;
+        let mut mocks = Vec::new();
+        for (channel, requests) in [("matched", 0), ("mismatched", 1), ("unpinned", 1)] {
+            mocks.push(
+                server
+                    .mock("GET", format!("/{channel}/pkg-1.0-0.conda").as_str())
+                    .with_body("fresh")
+                    .expect(requests)
+                    .create_async()
+                    .await,
+            );
+        }
+        let server_url = server.url();
+        let dir = tempfile::tempdir().unwrap();
+        let private_dir = dir.path().join(".install-test");
+        let flat = dir.path().join("pkg-1.0-0.conda");
+        std::fs::write(&flat, b"archive").unwrap();
+        let sha = sha256_of(&flat);
+        let dest = |key: &str| dir.path().join(key).join("pkg-1.0-0.conda");
+        let download = |channel: &str, dest: PathBuf, checksum: Option<String>| {
+            let url = format!("{server_url}/{channel}/pkg-1.0-0.conda");
+            let private_dir = private_dir.clone();
+            async move {
+                CondaBackend::download_to(&url, &dest, checksum.as_deref(), &private_dir).await
+            }
+        };
+
+        // The pinned archive, with no request.
+        let matched = dest("0000000000000001");
+        let archive = download("matched", matched.clone(), Some(sha.clone()))
+            .await
+            .unwrap();
+        assert!(archive.starts_with(&private_dir));
+        assert_eq!(std::fs::read(&archive).unwrap(), b"archive");
+        assert_eq!(std::fs::read(&matched).unwrap(), b"archive");
+        let left: Vec<_> = std::fs::read_dir(matched.parent().unwrap())
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        assert_eq!(left, vec![std::ffi::OsString::from("pkg-1.0-0.conda")]);
+
+        // Another archive under the same name is downloaded, and this one does
+        // not match the pin either.
+        let mismatched = dest("0000000000000002");
+        let other = format!("sha256:{}", "0".repeat(64));
+        assert!(
+            download("mismatched", mismatched.clone(), Some(other))
+                .await
+                .is_err()
+        );
+        assert!(!mismatched.exists());
+
+        // No checksum: the old file is never used.
+        let unpinned = download("unpinned", dest("0000000000000003"), None)
+            .await
+            .unwrap();
+        assert_eq!(std::fs::read(&unpinned).unwrap(), b"fresh");
+        for mock in &mocks {
+            mock.assert_async().await;
+        }
+    }
+
+    fn sha256_of(path: &Path) -> String {
+        format!(
+            "sha256:{}",
+            crate::hash::file_hash_sha256(path, None).unwrap()
+        )
     }
 }

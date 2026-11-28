@@ -498,6 +498,31 @@ fn resumed_last_modified_download_response() -> &'static str {
         "world"
     )
 }
+fn truncated_last_modified_unquoted_etag_download_response() -> &'static str {
+    concat!(
+        "HTTP/1.1 200 OK\r\n",
+        "Content-Length: 10\r\n",
+        "ETag: artifact-v1\r\n",
+        "Last-Modified: Wed, 21 Oct 2015 07:28:00 GMT\r\n",
+        "Date: Wed, 21 Oct 2015 07:29:00 GMT\r\n",
+        "Connection: close\r\n",
+        "\r\n",
+        "hello"
+    )
+}
+fn resumed_last_modified_unquoted_etag_download_response() -> &'static str {
+    concat!(
+        "HTTP/1.1 206 Partial Content\r\n",
+        "Content-Length: 5\r\n",
+        "Content-Range: bytes 5-9/10\r\n",
+        "ETag: artifact-v1\r\n",
+        "Last-Modified: Wed, 21 Oct 2015 07:28:00 GMT\r\n",
+        "Date: Wed, 21 Oct 2015 07:30:00 GMT\r\n",
+        "Connection: close\r\n",
+        "\r\n",
+        "world"
+    )
+}
 fn invalid_resumed_download_response() -> &'static str {
     concat!(
         "HTTP/1.1 206 Partial Content\r\n",
@@ -518,6 +543,40 @@ fn changed_validator_download_response() -> &'static str {
         "Connection: close\r\n",
         "\r\n",
         "world"
+    )
+}
+fn empty_validator_download_response() -> &'static str {
+    concat!(
+        "HTTP/1.1 206 Partial Content\r\n",
+        "Content-Length: 5\r\n",
+        "Content-Range: bytes 5-9/10\r\n",
+        "ETag: \r\n",
+        "Connection: close\r\n",
+        "\r\n",
+        "WORLD"
+    )
+}
+fn unquoted_validator_download_response() -> &'static str {
+    concat!(
+        "HTTP/1.1 206 Partial Content\r\n",
+        "Content-Length: 5\r\n",
+        "Content-Range: bytes 5-9/10\r\n",
+        "ETag: artifact-v2\r\n",
+        "Connection: close\r\n",
+        "\r\n",
+        "WORLD"
+    )
+}
+fn future_last_modified_download_response() -> &'static str {
+    concat!(
+        "HTTP/1.1 206 Partial Content\r\n",
+        "Content-Length: 5\r\n",
+        "Content-Range: bytes 5-9/10\r\n",
+        "Last-Modified: Fri, 01 Jan 2100 00:00:00 GMT\r\n",
+        "Date: Fri, 01 Jan 2100 00:05:00 GMT\r\n",
+        "Connection: close\r\n",
+        "\r\n",
+        "WORLD"
     )
 }
 fn full_download_response() -> &'static str {
@@ -828,7 +887,10 @@ fn test_concurrent_pinned_keeps_record_every_url() {
     });
     // Read the entry itself first, so a lost URL is told apart from a lost blob.
     let recorded = pinned_urls(cache.path(), &pin);
-    let missing: Vec<_> = urls.iter().filter(|url| !recorded.contains(url)).collect();
+    let missing: Vec<_> = urls
+        .iter()
+        .filter(|url| !recorded.contains(&url_hash(url)))
+        .collect();
     assert!(missing.is_empty(), "the pin entry lost {missing:?}");
     for url in &urls {
         assert!(cas::lookup_pin(&pin, url).is_some(), "{url} was lost");
@@ -837,17 +899,106 @@ fn test_concurrent_pinned_keeps_record_every_url() {
     *cas::TEST_ROOT.lock().unwrap() = None;
 }
 
-/// The URLs the pin index records for `pin`, read from its entry on disk.
+/// The pin index keeps no part of a URL's login or token on disk, and still
+/// hands the download back for that URL.
+#[test]
+fn test_pinned_keep_stores_no_url_secrets() {
+    let _settings = set_test_http_retries(0);
+    let cache = tempfile::tempdir().unwrap();
+    *cas::TEST_ROOT.lock().unwrap() = Some(cache.path().to_path_buf());
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("artifact");
+    std::fs::write(&path, b"hello").unwrap();
+    let pin = format!(
+        "sha256:{}",
+        crate::hash::file_hash_prog::<sha2::Sha256>(&path, None).unwrap()
+    );
+    let url = "https://ci:hunter2-password@example.com/artifact?token=tok-secret";
+    cas::store(
+        &path,
+        cas::Keep {
+            request_hash: "secret-url",
+            url,
+            pin: Some(&pin),
+            validator: None,
+            effective_filename: Some("artifact".into()),
+        },
+    )
+    .unwrap();
+    for entry in walkdir::WalkDir::new(cache.path().join("pins")) {
+        let entry = entry.unwrap();
+        if entry.file_type().is_file() {
+            let text = std::fs::read_to_string(entry.path()).unwrap();
+            assert!(!text.contains("hunter2"), "{text}");
+            assert!(!text.contains("tok-secret"), "{text}");
+        }
+    }
+    assert!(cas::lookup_pin(&pin, url).is_some());
+    assert!(cas::lookup_pin(&pin, "https://example.com/artifact").is_none());
+
+    *cas::TEST_ROOT.lock().unwrap() = None;
+}
+
+/// Each URL a pinned file was downloaded from keeps the file name it gave:
+/// a later download of the same bytes under another name renames nothing
+/// for the first URL.
+#[test]
+fn test_pinned_urls_keep_their_own_file_names() {
+    let _settings = set_test_http_retries(0);
+    let cache = tempfile::tempdir().unwrap();
+    *cas::TEST_ROOT.lock().unwrap() = Some(cache.path().to_path_buf());
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("demo.gz");
+    std::fs::write(&path, b"hello").unwrap();
+    let pin = format!(
+        "sha256:{}",
+        crate::hash::file_hash_prog::<sha2::Sha256>(&path, None).unwrap()
+    );
+    let keep = |url: &'static str, name: &str| {
+        cas::store(
+            &path,
+            cas::Keep {
+                request_hash: url,
+                url,
+                pin: Some(&pin),
+                validator: None,
+                effective_filename: Some(name.into()),
+            },
+        )
+        .unwrap();
+    };
+    let vendor = "https://vendor.example.com/demo.gz";
+    let mirror = "https://mirror.example.com/demo.gz";
+    keep(vendor, "demo.gz");
+    keep(mirror, "git.gz");
+    let name = |url| cas::lookup_pin(&pin, url).unwrap().effective_filename;
+    assert_eq!(name(vendor).as_deref(), Some("demo.gz"));
+    assert_eq!(name(mirror).as_deref(), Some("git.gz"));
+    // A URL downloaded again replaces its own name, not another's.
+    keep(mirror, "demo.gz");
+    assert_eq!(name(mirror).as_deref(), Some("demo.gz"));
+    assert_eq!(name(vendor).as_deref(), Some("demo.gz"));
+
+    *cas::TEST_ROOT.lock().unwrap() = None;
+}
+
+/// The URLs the pin index records for `pin`, read from its entry on disk, as
+/// the hashes it keeps of them ([`url_hash`]).
 fn pinned_urls(cache: &std::path::Path, pin: &str) -> Vec<String> {
     let (algo, hex) = pin.split_once(':').unwrap();
     let entry = cache.join("pins").join(algo).join(format!("{hex}.json"));
     let entry: serde_json::Value = serde_json::from_slice(&std::fs::read(entry).unwrap()).unwrap();
-    entry["urls"]
+    entry["pinned_urls"]
         .as_array()
         .unwrap()
         .iter()
-        .map(|url| url.as_str().unwrap().to_string())
+        .map(|url| url["url_hash"].as_str().unwrap().to_string())
         .collect()
+}
+
+/// How the pin index names `url`.
+fn url_hash(url: &str) -> String {
+    crate::hash::hash_blake3_to_str(url)
 }
 
 /// A pin entry that exists but can't be read is left as it is, not written
@@ -891,7 +1042,7 @@ fn test_an_unreadable_pin_entry_keeps_its_urls() {
     store("first", first, &pin);
     let (_, hex) = pin.split_once(':').unwrap();
     let entry = cache.path().join("pins/sha256").join(format!("{hex}.json"));
-    // Entries hold full URLs, which can carry private tokens.
+    // Entries stay owner-only, as the cache's other files are.
     assert_eq!(
         std::fs::metadata(&entry).unwrap().permissions().mode() & 0o777,
         0o600
@@ -909,7 +1060,7 @@ fn test_an_unreadable_pin_entry_keeps_its_urls() {
     );
 
     std::fs::set_permissions(&entry, std::fs::Permissions::from_mode(0o644)).unwrap();
-    assert_eq!(pinned_urls(cache.path(), &pin), [first]);
+    assert_eq!(pinned_urls(cache.path(), &pin), [url_hash(first)]);
     assert!(cas::lookup_pin(&pin, first).is_some(), "{first} was lost");
 
     *cas::TEST_ROOT.lock().unwrap() = None;

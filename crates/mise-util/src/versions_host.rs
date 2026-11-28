@@ -683,9 +683,9 @@ where
         }
         Err(err) => return Err(err),
     };
-    serde_json::from_slice(&body)
+    http::parse_json(&body)
         .map(Some)
-        .map_err(|err| eyre::eyre!("invalid response from {url}: {err}"))
+        .map_err(|err| eyre::eyre!("invalid response from {url}: {err:#}"))
 }
 
 /// The HTTP status of a request that failed without a response mise could

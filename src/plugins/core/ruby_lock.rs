@@ -9,6 +9,7 @@ use std::collections::BTreeMap;
 use eyre::{Result, eyre};
 
 use crate::backend::platform_target::PlatformTarget;
+use crate::backend::static_helpers::resolve_lock_url;
 use crate::config::{CompilePurpose, Settings, SettingsExt};
 use crate::github;
 use crate::http::HTTP_FETCH;
@@ -180,12 +181,40 @@ impl RubyPlugin {
         let settings = Settings::get();
         let source = &settings.ruby.precompiled_url;
         if source.contains("://") {
-            url == self.render_precompiled_url(source, version, platform)
+            // mise.lock records the URL without the login the template can carry.
+            crate::backend::static_helpers::is_lock_url(
+                Some(url),
+                &self.render_precompiled_url(source, version, platform),
+            )
         } else {
             // Release assets are matched by this name (`find_precompiled_asset_in_repo`).
             // The install names the download after the URL's last segment, so
             // that is the part compared, query and fragment included.
             url.rsplit('/').next() == Some(format!("ruby-{version}.{platform}.tar.gz").as_str())
+        }
+    }
+
+    /// A locked precompiled `url` as it is downloaded. mise.lock records it without
+    /// the login a `ruby.precompiled_url` template carries, so the template's login
+    /// goes back on when the URL is on the template's server.
+    #[cfg(not(windows))]
+    pub(super) fn precompiled_download_url(
+        &self,
+        url: String,
+        version: &str,
+        platform: &str,
+    ) -> String {
+        let settings = Settings::get();
+        let source = &settings.ruby.precompiled_url;
+        if !source.contains("://") {
+            return url;
+        }
+        let template = self.render_precompiled_url(source, version, platform);
+        match (url::Url::parse(&url), url::Url::parse(&template)) {
+            (Ok(locked), Ok(base)) if !base.username().is_empty() || base.password().is_some() => {
+                crate::backend::static_helpers::with_login_of(locked, &base).to_string()
+            }
+            _ => url,
         }
     }
 
@@ -519,8 +548,12 @@ impl RubyPlugin {
                     provenance = None;
                 }
             }
+            // A `ruby.precompiled_url` template can carry a login.
+            let download_url = crate::lockfile::LoginUrl::of(&url);
+            let url = resolve_lock_url(&url, None, &mut checksum).await?;
             return Ok(PlatformInfo {
                 url: Some(url),
+                download_url,
                 checksum,
                 provenance,
                 ..Default::default()

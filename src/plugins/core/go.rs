@@ -5,7 +5,7 @@ use crate::Result;
 use crate::args::BackendArg;
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::fetch_checksum_from_file;
-use crate::backend::static_helpers::lock_checksum;
+use crate::backend::static_helpers::{lock_checksum, lock_url, resolve_lock_url};
 use crate::backend::{Backend, VersionInfo, normalize_idiomatic_contents};
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings, SettingsExt};
@@ -138,14 +138,19 @@ impl GoPlugin {
         )
         .await?;
 
+        let platform_key = self.get_platform_key();
+        // The lockfile names the archive without the login of `go.download_mirror`.
         if !settings.go.skip_checksum {
-            let platform_key = self.get_platform_key();
             let platform_info = tv.lock_platforms.entry(platform_key).or_default();
-            platform_info.url = Some(tarball_url.to_string());
+            platform_info.url = Some(lock_url(&tarball_url));
             if platform_info.checksum.is_none() {
                 let checksum = checksum_handle.await.unwrap()?;
                 platform_info.checksum = Some(format!("sha256:{checksum}"));
             }
+        } else if let Some(platform_info) = tv.lock_platforms.get_mut(&platform_key) {
+            // Without a checksum the entry from mise.lock is written back as it
+            // came, and one an older mise wrote can hold that login.
+            platform_info.url = platform_info.url.as_deref().map(lock_url);
         }
         Ok(tarball_path)
     }
@@ -410,15 +415,18 @@ impl Backend for GoPlugin {
             .ok_or_else(|| eyre::eyre!("Failed to get go tarball URL"))?;
 
         // Go provides .sha256 files alongside each tarball
-        let checksum = if !settings.go.skip_checksum {
+        let mut checksum = if !settings.go.skip_checksum {
             let checksum_url = format!("{}.sha256", url);
             fetch_checksum_from_file(&checksum_url, "sha256").await
         } else {
             None
         };
+        let download_url = crate::lockfile::LoginUrl::of(&url);
+        let url = resolve_lock_url(&url, None, &mut checksum).await?;
 
         Ok(PlatformInfo {
             url: Some(url),
+            download_url,
             checksum,
             size: None,
             url_api: None,
@@ -599,10 +607,89 @@ fn parse_gomod(body: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::settings::SettingsPartial;
     use crate::platform::Platform;
     use crate::toolset::ToolSource;
+    use confique::Layer;
     use indoc::indoc;
     use pretty_assertions::assert_eq;
+
+    #[test]
+    fn test_lock_info_url_has_no_mirror_credentials() {
+        let _guard = crate::test::SettingsGuard::lock();
+        let mut settings = SettingsPartial::empty();
+        // merge mode does not download the archive for its checksum
+        settings.lockfile_mode = Some("merge".to_string());
+        settings.go.download_mirror = Some("https://ci:token@corp.example/go".to_string());
+        settings.go.skip_checksum = Some(true);
+        Settings::reset(Some(settings));
+
+        let backend = GoPlugin::new();
+        let request = ToolRequest::new(backend.ba().clone(), "1.26.8", ToolSource::Unknown)
+            .expect("valid go request");
+        let tv = ToolVersion::new(request, "1.26.8".to_string());
+        let target = PlatformTarget::new(Platform::parse("linux-x64").unwrap());
+        let info = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(backend.resolve_lock_info(&tv, &target))
+            .unwrap();
+
+        assert_eq!(
+            info.url.as_deref(),
+            Some("https://corp.example/go/go1.26.8.linux-amd64.tar.gz")
+        );
+    }
+
+    #[test]
+    fn test_skip_checksum_download_drops_an_old_lock_url_login() {
+        let _guard = crate::test::SettingsGuard::lock();
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let mut server = runtime.block_on(mockito::Server::new_async());
+        let backend = GoPlugin::new();
+        let request = ToolRequest::new(backend.ba().clone(), "1.26.8", ToolSource::Unknown)
+            .expect("valid go request");
+        let mut tv = ToolVersion::new(request, "1.26.8".to_string());
+        let mirror = format!(
+            "http://ci:token@{}/go-skip-checksum-{}",
+            server.host_with_port(),
+            std::process::id()
+        );
+        let mut settings = SettingsPartial::empty();
+        settings.go.download_mirror = Some(mirror);
+        settings.go.skip_checksum = Some(true);
+        Settings::reset(Some(settings));
+
+        let tarball_url = runtime
+            .block_on(backend.get_tarball_url(&tv, &PlatformTarget::from_current()))
+            .unwrap()
+            .unwrap();
+        let path = url::Url::parse(&tarball_url).unwrap().path().to_string();
+        let archive = server.mock("GET", path.as_str()).with_body("go").create();
+        // An older mise recorded the mirror's login in mise.lock.
+        tv.lock_platforms.insert(
+            backend.get_platform_key(),
+            PlatformInfo {
+                url: Some(tarball_url.clone()),
+                ..Default::default()
+            },
+        );
+
+        runtime
+            .block_on(backend.download(&mut tv, &crate::ui::progress_report::QuietReport::new()))
+            .unwrap();
+
+        archive.assert();
+        assert_eq!(
+            tv.lock_platforms[&backend.get_platform_key()].url,
+            Some(lock_url(&tarball_url))
+        );
+        assert!(!lock_url(&tarball_url).contains("token"));
+    }
 
     #[tokio::test]
     async fn test_loongarch64_tarball_uses_go_arch_name() {

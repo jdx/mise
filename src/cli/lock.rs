@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use mise_util::redactions::{redact_json, redact_output, redact_url_userinfo_in_arg};
+use mise_util::redactions::{redact_json, redact_output, redact_url_credentials_in_arg};
 
 use crate::config::config_file::trust_check;
 use crate::config::{Config, ConfigMap, SettingsExt};
@@ -1230,7 +1230,7 @@ impl Lock {
                         || arg.ba.full() == ba.full()
                 })
             })
-            .map(|arg| redact_url_userinfo_in_arg(&arg.ba.to_string()).into_owned())
+            .map(|arg| redact_url_credentials_in_arg(&arg.ba.to_string()).into_owned())
             .collect();
         if missing.is_empty() {
             return Ok(());
@@ -1435,7 +1435,10 @@ impl Lock {
                 &lockfile,
                 &withheld,
             )
-            .await?;
+            .await
+            .map_err(|error| {
+                lockfile::generate::CondaPackageConflict::in_lockfile(error, lockfile_path)
+            })?;
         outcome.resolution_errors.extend(resolution_errors);
         let stale_versions = self.stale_versions_if_pruned(&lockfile, &resolvable);
         outcome
@@ -1621,7 +1624,10 @@ impl Lock {
                 &previous,
                 &withheld,
             )
-            .await?;
+            .await
+            .map_err(|error| {
+                lockfile::generate::CondaPackageConflict::in_lockfile(error, lockfile_path)
+            })?;
         let resolution_succeeded = resolution_errors.is_empty();
         outcome.resolution_errors.extend(resolution_errors);
 

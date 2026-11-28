@@ -1799,6 +1799,40 @@ fn empty_resolution_preserves_existing_conda_dependencies() {
 }
 
 #[test]
+fn conda_package_urls_are_written_without_a_login() {
+    let platform_key = "linux-x64";
+    let dependency = "libfoo-1.0-h123_0";
+    let mut lockfile = Lockfile::default();
+    lockfile.tools.insert(
+        "ffmpeg".to_string(),
+        vec![tool_with_conda_dep(
+            "7.1.1",
+            "conda:ffmpeg",
+            platform_key,
+            dependency,
+        )],
+    );
+    // As an earlier lockfile could hold it.
+    lockfile.set_conda_package(
+        platform_key,
+        dependency,
+        CondaPackageInfo {
+            url: format!("https://ci:token@conda.example/channel/{dependency}.conda"),
+            checksum: Some(format!("sha256:{dependency}")),
+        },
+    );
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("mise.lock");
+    lockfile.write(&path).unwrap();
+    let written = std::fs::read_to_string(&path).unwrap();
+    assert!(!written.contains("ci:token"), "{written}");
+    assert!(
+        written.contains(&format!("https://conda.example/channel/{dependency}.conda")),
+        "{written}"
+    );
+}
+
+#[test]
 fn empty_resolution_creates_new_tool_entry_without_platform_metadata() {
     let mut lockfile = Lockfile::default();
     let result = (
@@ -5871,6 +5905,15 @@ fn test_credential_query_params_are_found_by_name() {
         ),
         ("https://h.example/t?password", "password"),
         ("https://h.example/t?api%5Fkey=x", "api_key"),
+        ("https://h.example/t?accessToken=x", "accessToken"),
+        ("https://h.example/t?X-API-KEY=x", "X-API-KEY"),
+        // a raw space or quote is part of a value that is one URL
+        (
+            "https://dl.example.com/my tool.tgz?access_token=x",
+            "access_token",
+        ),
+        ("https://dl.example.com/bob's.tgz?v=1&sig=x", "sig"),
+        ("https://dl.example.com/get?file=my tool&token=x", "token"),
     ] {
         assert_eq!(
             credential_query_param(text).as_deref(),
@@ -6030,6 +6073,10 @@ fn test_lockfile_write_refuses_credential_queries() {
         size: None,
         url: "https://dl.example.com/sig.tgz?sig=s3cret".to_string(),
         url_api: None,
+        download_headers: None,
+        download_url: None,
+        download_url_api: None,
+        locked_download: None,
         provenance: None,
         provenance_verified: None,
         checksum_source: None,
@@ -6198,7 +6245,7 @@ fn same_persisted_data_ignores_download_headers() {
     let mut headers = reqwest::header::HeaderMap::new();
     headers.insert("authorization", "Bearer secret".parse().unwrap());
     let resolved = PlatformInfo {
-        download_headers: Some(headers),
+        download_headers: Some(crate::lockfile::DownloadHeaders::Client(headers)),
         ..stored.clone()
     };
     assert!(stored.same_persisted_data(&resolved));
@@ -6285,4 +6332,195 @@ backend = "conda:jq"
             .get_conda_package("macos-arm64", "ncurses-6.4-h7ea286d_0")
             .is_some()
     );
+}
+
+/// A tool version marked by an install that downloaded its artifact from
+/// `url` through a login the release gave.
+fn tv_with_locked_download(backend: &str, version: &str, url: &str) -> ToolVersion {
+    let mut tv = basic_tv(backend, version);
+    tv.lock_platforms.insert(
+        Platform::current().to_key(),
+        PlatformInfo {
+            url: Some(url.to_string()),
+            locked_download: Some(LockedDownload {
+                name: "t.tar.gz".to_string(),
+                url: LoginUrl::new(url),
+                url_api: LoginUrl::new(""),
+                api_url: LoginUrl::new("https://api.github.com"),
+                forge: crate::backend::backend_type::BackendType::Github,
+            }),
+            ..Default::default()
+        },
+    );
+    tv
+}
+
+/// After an install in merge mode, a version a locked install could not
+/// fetch is not recorded and its error is kept, while a sibling version of
+/// the same tool that passed is recorded. A tool with no version left keeps
+/// its entries as they were.
+#[tokio::test]
+async fn failed_locked_download_skips_only_that_version() {
+    static NEXT: AtomicUsize = AtomicUsize::new(0);
+    let prefix = format!(
+        "/locked-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    );
+    let mut server = mockito::Server::new_async().await;
+    let served = server
+        .mock("GET", format!("{prefix}/served.tar.gz").as_str())
+        .with_body("artifact")
+        .expect(1)
+        .create_async()
+        .await;
+    let refused = server
+        .mock("GET", mockito::Matcher::Regex(format!("^{prefix}/refused")))
+        .with_status(401)
+        .expect(2)
+        .create_async()
+        .await;
+    let url = |file: &str| format!("{}{prefix}/{file}", server.url());
+    let mut tools = HashMap::from([
+        (
+            "repo".to_string(),
+            vec![
+                tv_with_locked_download("github:owner/repo", "1.0.0", &url("served.tar.gz")),
+                tv_with_locked_download("github:owner/repo", "2.0.0", &url("refused.tar.gz")),
+            ],
+        ),
+        (
+            "other".to_string(),
+            vec![tv_with_locked_download(
+                "github:owner/other",
+                "3.0.0",
+                &url("refused-other.tar.gz"),
+            )],
+        ),
+    ]);
+    let mut errors = Vec::new();
+
+    let unrecorded = check_installed_locked_downloads(&mut tools, &mut errors).await;
+
+    served.assert_async().await;
+    refused.assert_async().await;
+    assert_eq!(
+        tools["repo"]
+            .iter()
+            .map(|tv| tv.version.as_str())
+            .collect_vec(),
+        vec!["1.0.0"]
+    );
+    assert!(
+        tools["repo"][0].lock_platforms[&Platform::current().to_key()]
+            .checksum
+            .is_some()
+    );
+    assert!(!tools.contains_key("other"));
+    assert_eq!(
+        unrecorded,
+        HashMap::from([
+            (
+                "repo".to_string(),
+                BTreeSet::from([unrecorded_request("2.0.0")])
+            ),
+            (
+                "other".to_string(),
+                BTreeSet::from([unrecorded_request("3.0.0")])
+            ),
+        ])
+    );
+    assert_eq!(errors.len(), 2);
+    assert!(
+        errors
+            .iter()
+            .any(|error| error
+                .contains("repo@2.0.0 is installed, but mise.lock was not updated for it")),
+        "{errors:?}"
+    );
+}
+
+/// The entry a request had before its new version was left unrecorded stays
+/// in the lockfile, bound to that request only; entries of the requests
+/// recorded now are replaced as usual.
+#[test]
+fn unrecorded_request_keeps_its_previous_entry() {
+    let tool = |version: &str, specifiers: &[&str]| {
+        let mut tool = basic_tool(version, "github:owner/repo");
+        tool.specifiers = specifiers.iter().map(|s| s.to_string()).collect();
+        tool
+    };
+    let existing = vec![tool("0.9.0", &["1"]), tool("1.9.0", &["2", "latest"])];
+    let mut merged = vec![tool("1.0.0", &["1"]), tool("2.1.0", &["latest"])];
+
+    preserve_unrecorded_entries(
+        &mut merged,
+        Some(&existing),
+        &BTreeSet::from([unrecorded_request("2")]),
+    );
+
+    assert_eq!(
+        merged
+            .iter()
+            .map(|tool| tool.version.as_str())
+            .collect_vec(),
+        vec!["1.0.0", "2.1.0", "1.9.0"]
+    );
+    assert_eq!(merged[2].specifiers, BTreeSet::from(["2".to_string()]));
+}
+
+fn unrecorded_request(specifier: &str) -> UnrecordedRequest {
+    UnrecordedRequest {
+        specifier: specifier.to_string(),
+        options: BTreeMap::new(),
+    }
+}
+
+/// In a lockfile whose entries have no specifiers (revision 0), the request
+/// whose new version was not recorded keeps the entries a locked install of
+/// it finds: versions it prefixes (any for `latest`) with its options or
+/// none. Entries only other requests find are replaced as usual.
+#[test]
+fn unrecorded_request_keeps_its_legacy_entry() {
+    let tool = |version: &str, options: &[(&str, &str)]| {
+        let mut tool = basic_tool(version, "github:owner/repo");
+        tool.options = options
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect();
+        tool
+    };
+    let existing = vec![
+        tool("1.0.0", &[]),
+        tool("2.0.0", &[]),
+        tool("2.0.5", &[("asset", "other")]),
+        tool("20.0.0", &[]),
+    ];
+    let versions =
+        |merged: &[LockfileTool]| merged.iter().map(|tool| tool.version.clone()).collect_vec();
+
+    let mut merged = vec![tool("1.1.0", &[])];
+    preserve_unrecorded_entries(
+        &mut merged,
+        Some(&existing),
+        &BTreeSet::from([unrecorded_request("prefix:2")]),
+    );
+    assert_eq!(versions(&merged), vec!["1.1.0", "2.0.0"]);
+    assert!(merged[1].specifiers.is_empty());
+
+    let mut merged = vec![tool("1.1.0", &[])];
+    preserve_unrecorded_entries(
+        &mut merged,
+        Some(&existing),
+        &BTreeSet::from([unrecorded_request("2")]),
+    );
+    assert_eq!(versions(&merged), vec!["1.1.0", "2.0.0", "20.0.0"]);
+
+    let mut merged = Vec::new();
+    preserve_unrecorded_entries(
+        &mut merged,
+        Some(&existing),
+        &BTreeSet::from([unrecorded_request("latest")]),
+    );
+    assert_eq!(versions(&merged), vec!["1.0.0", "2.0.0", "20.0.0"]);
 }

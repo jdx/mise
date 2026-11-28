@@ -146,12 +146,15 @@ make an untrusted server trustworthy.
 
 ## Credentials
 
-When a rule sends a request to a different server, meaning another host or
-another port of the same host, mise drops the credentials meant for the
-original server: the `Authorization` header, cookies, API key headers, and any
-`user:password` in the URL. It then adds [netrc](#netrc) credentials for the
-host the request goes to, if there are any. A rule that keeps both the host and
-the port keeps the credentials.
+When a rule sends a request to another server (a different host, or the same
+host on another port), mise drops the credentials meant for the original URL:
+the `Authorization`, `Proxy-Authorization` and `Cookie` headers, headers whose
+name marks them as an API key, token, secret or credential, and the
+`user:password` the original URL carried. For a different host it then adds
+[netrc](#netrc) credentials for the new host, if there are any; for another
+port of the same host it adds none. A rule that keeps the host and port keeps
+the credentials, including one that only switches between HTTP and HTTPS on
+their default ports.
 
 A rule whose replacement contains `user:password@` is used only when the
 rewritten URL has that login as its own and is on the scheme, host, and port
@@ -160,14 +163,29 @@ path or query of a URL on another host, mise skips the rule for that URL and
 tries the next one, so the login is not pasted into a request to a different
 server.
 
-mise refuses to send credentials over plain HTTP after an HTTPS-to-HTTP rewrite,
-whether they came from the original request or are written into the rule. A
-downgrade without credentials is allowed, and so is one whose credentials come
-from a netrc entry for the host the request goes to: netrc is keyed by host, so
-its login goes to a plain HTTP URL of that host without a rewrite as well.
-These rules also cover GitHub attestation requests and Conda channels. For
-Sigstore TUF metadata, mise ignores such a rewrite and keeps the default HTTPS
-URL.
+An HTTPS-to-HTTP rewrite is refused only when the request would still carry
+one of those credentials over plain HTTP:
+
+- the original request's credentials, when the rule keeps the host and port;
+- a `user:password` written into the rule itself, whatever host it names;
+- a netrc login for the original host, when the rule keeps the host and port.
+
+Any other downgrade goes ahead. A rule to another port of the original host is
+sent without those credentials, and one to another host with that host's netrc
+login, if it has one: netrc is keyed by host, so its login goes to a plain HTTP
+URL of that host without a rewrite as well. These rules also cover Conda
+channels. For GitHub attestation requests, mise drops the GitHub token when the
+rule changes the host, and refuses an HTTPS-to-HTTP rewrite that keeps the
+host. For Sigstore TUF metadata, mise ignores such a rewrite and keeps the
+default HTTPS URL.
+
+::: warning
+mise does not remove credentials from the query string on its own. A token in
+the query, such as the signature of a signed URL, reaches the replacement
+server unless the rule itself changes or drops it, and goes over plain HTTP
+after a downgrade. Don't point a signed URL, or any URL with a secret in its
+query, at an `http://` replacement.
+:::
 
 Avoid writing credentials into replacement URLs, where they can appear in logs.
 Only route requests to servers you trust with both the artifacts and the
@@ -189,8 +207,11 @@ machine mirror.example.com
 On Unix, restrict the file's permissions with `chmod 600 ~/.netrc`.
 
 netrc credentials are a fallback: an existing `Authorization` header wins. When
-a rule changes the host, netrc credentials for the new host replace that header.
-A rule that changes only the path or query keeps the existing `Authorization`.
+a rule changes the host, that header is dropped and netrc credentials for the
+new host take its place. A rule that moves to another port of the same host
+drops the header and adds no netrc credentials, since a netrc entry names a
+host, not the server on each of its ports. A rule that changes only the path or
+query keeps the existing `Authorization`.
 See [GitHub, GitLab, and Forgejo tokens](/dev-tools/github-tokens.html) for
 where upstream tokens come from.
 

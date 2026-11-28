@@ -212,6 +212,11 @@ pub(crate) fn eval_checksum_expr(
 ) -> Option<String> {
     use expr::{Context, Environment, Value};
 
+    // `fromJSON(body)` builds the whole document.
+    if let Err(err) = mise_util::http::ensure_json_values_bounded(body.as_bytes()) {
+        debug!("checksum expression not evaluated: {err}");
+        return None;
+    }
     let mut ctx = Context::default();
     ctx.insert("body".to_string(), Value::String(body.to_string()));
     for (key, value) in vars {
@@ -1148,10 +1153,109 @@ pub(crate) fn lock_checksum(
     url: &str,
 ) -> Option<String> {
     let info = tv.lock_platforms.get(platform_key)?;
-    if info.url.as_deref().is_some_and(|locked| locked != url) {
+    if info.url.is_some() && !is_lock_url(info.url.as_deref(), url) {
         return None;
     }
     info.pin_checksum().cloned()
+}
+
+/// `url` as a lockfile records it: without the login that fetches it. The
+/// lockfile is committed, and the login in a mirror setting (`node.mirror_url`,
+/// `go.download_mirror`, `ruby.precompiled_url`) is the user's own.
+pub(crate) fn lock_url(url: &str) -> String {
+    mise_util::redactions::strip_url_credentials_in_value(url).into_owned()
+}
+
+/// Whether the lockfile URL `locked` names the artifact downloaded from `url`.
+/// A login is no part of that, on either side: `url` carries the one in the
+/// user's config, and an existing lockfile entry may carry one too. Neither is
+/// spelling: `https://host:443/a` names the same artifact as `https://host/a`,
+/// which is how a URL with a login put back on is written out.
+pub(crate) fn is_lock_url(locked: Option<&str>, url: &str) -> bool {
+    locked.is_some_and(|locked| {
+        let (locked, url) = (lock_url(locked), lock_url(url));
+        locked == url
+            || matches!(
+                (url::Url::parse(&locked), url::Url::parse(&url)),
+                (Ok(locked), Ok(url)) if locked == url
+            )
+    })
+}
+
+/// A URL from mise.lock as it is downloaded. The lockfile records it without
+/// a login, so an artifact on the server of `base`, the mirror or channel the
+/// user configured (same scheme, host and port), is fetched with the login
+/// configured there. A URL with a login of its own, or on another server,
+/// is returned as it is.
+pub(crate) fn with_login_of(mut url: url::Url, base: &url::Url) -> url::Url {
+    if url.username().is_empty() && url.password().is_none() && url.origin() == base.origin() {
+        let _ = url.set_username(base.username());
+        let _ = url.set_password(base.password());
+    }
+    url
+}
+
+/// [`lock_url`] for a `mise lock` entry of the artifact at `url`. With no
+/// checksum yet, or only an md5 or sha1 one, and lockfile generation on, the
+/// artifact is hashed through `url` itself, checked against the weak checksum
+/// and pinned by its sha256: the recorded URL, without its login, would only
+/// answer with an authentication error when `mise lock` hashed it.
+///
+/// `headers` are sent with that download, as the install sends them; they
+/// are not recorded.
+pub(crate) async fn resolve_lock_url(
+    url: &str,
+    headers: Option<&crate::lockfile::DownloadHeaders>,
+    checksum: &mut Option<String>,
+) -> Result<String> {
+    let lock_url = lock_url(url);
+    if checksum.as_deref().is_none_or(is_weak_checksum)
+        && lock_url != url
+        && crate::config::Settings::get().generate_lockfiles()
+    {
+        crate::lockfile::generate::download_for_strong_checksum(url, headers, checksum).await?;
+    }
+    Ok(lock_url)
+}
+
+/// The locked entry `info`, whose archive `archive` was just downloaded from
+/// `download_url` and verified, as the lockfile update writes it: without the
+/// login an older mise.lock recorded in its URLs, as a fresh install records
+/// them. When the download sent a login, from mise.lock or from the user's
+/// config, and `info` has no sha256, blake3 or sha512 pin, the archive is
+/// pinned by its sha256 now: `mise lock` could not fetch it through the
+/// recorded URL, which has no login. A strong pin is left as it is.
+pub(crate) fn forget_locked_login(
+    info: &mut crate::lockfile::PlatformInfo,
+    download_url: &str,
+    archive: &Path,
+) -> Result<()> {
+    pin_download_with_login(
+        &mut info.checksum,
+        &mut info.checksum_source,
+        download_url,
+        archive,
+    )?;
+    info.url = info.url.as_deref().map(lock_url);
+    info.url_api = info.url_api.as_deref().map(lock_url);
+    Ok(())
+}
+
+/// The pin [`forget_locked_login`] gives an entry, for any lockfile entry's
+/// `checksum` and `checksum_source`: when `download_url` holds a login and
+/// `checksum` is missing or md5 or sha1, it becomes the sha256 of `archive`,
+/// downloaded from there and verified.
+pub(crate) fn pin_download_with_login(
+    checksum: &mut Option<String>,
+    checksum_source: &mut Option<crate::lockfile::ChecksumSource>,
+    download_url: &str,
+    archive: &Path,
+) -> Result<()> {
+    if lock_url(download_url) != download_url && checksum.as_deref().is_none_or(is_weak_checksum) {
+        *checksum = Some(format!("sha256:{}", hash::file_hash_sha256(archive, None)?));
+        *checksum_source = None;
+    }
+    Ok(())
 }
 
 /// The checksum a tool pinned for this platform, in its options or in the

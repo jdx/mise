@@ -18,7 +18,6 @@ use serde::de::DeserializeOwned;
 
 use crate::file;
 use crate::file::{display_path, modified_duration};
-use crate::hash::hash_to_str;
 use crate::platform::Platform;
 use crate::rand::random_string;
 use mise_settings::Settings;
@@ -126,8 +125,18 @@ impl CacheManagerBuilder {
         self
     }
 
+    /// 128 bits of a BLAKE3 digest of the keys, each prefixed with its length
+    /// so the list is hashed rather than its concatenation. A key can come
+    /// from project config (a tool's options), so finding a second key list
+    /// that names the same file, and so serves another tool's cached data,
+    /// must be out of reach.
     fn cache_key(&self) -> String {
-        hash_to_str(&self.cache_keys).chars().take(5).collect()
+        let mut hasher = blake3::Hasher::new();
+        for key in &self.cache_keys {
+            hasher.update(&(key.len() as u64).to_le_bytes());
+            hasher.update(key.as_bytes());
+        }
+        hasher.finalize().to_hex()[..32].to_string()
     }
 
     pub fn build<T>(self) -> CacheManager<T>
@@ -766,6 +775,27 @@ mod tests {
 
     use super::*;
     use pretty_assertions::assert_eq;
+
+    #[test]
+    fn distinct_cache_keys_name_distinct_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = |keys: &[&str]| {
+            keys.iter()
+                .fold(
+                    CacheManagerBuilder::new(dir.path().join("value.msgpack.z")),
+                    |builder, key| builder.with_cache_key(key.to_string()),
+                )
+                .build::<String>()
+                .cache_file_path
+        };
+        let mut seen = std::collections::HashSet::new();
+        for i in 0..5000 {
+            let key = format!("tool-{i}");
+            assert!(seen.insert(path(&[&key])), "{key} shares a cache file");
+        }
+        // The list is hashed, not its concatenation.
+        assert_ne!(path(&["ab", "c"]), path(&["a", "bc"]));
+    }
 
     #[tokio::test]
     async fn concurrent_callers_share_one_fetch() {

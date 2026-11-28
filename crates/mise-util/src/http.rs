@@ -288,7 +288,7 @@ impl DownloadValidator {
 
     fn is_valid(&self) -> bool {
         match self {
-            Self::Etag(value) => !value.is_empty() && !value.starts_with("W/"),
+            Self::Etag(value) => is_strong_entity_tag(value),
             Self::LastModified {
                 value,
                 response_date,
@@ -1051,19 +1051,63 @@ fn response_validator(headers: &HeaderMap) -> Option<DownloadValidator> {
     headers
         .get(ETAG)
         .and_then(|value| value.to_str().ok())
-        .filter(|value| !value.is_empty() && !value.starts_with("W/"))
+        .filter(|value| is_strong_entity_tag(value))
         .map(|value| DownloadValidator::Etag(value.to_string()))
-        .or_else(|| {
-            let value = headers
-                .get(LAST_MODIFIED)
-                .and_then(|value| value.to_str().ok())
-                .filter(|value| !value.is_empty())?;
-            let response_date = headers.get(DATE)?.to_str().ok()?;
-            is_strong_last_modified(value, response_date).then(|| DownloadValidator::LastModified {
-                value: value.to_string(),
-                response_date: response_date.to_string(),
-            })
-        })
+        .or_else(|| last_modified_validator(headers))
+}
+
+fn last_modified_header(headers: &HeaderMap) -> Option<&str> {
+    headers
+        .get(LAST_MODIFIED)
+        .and_then(|value| value.to_str().ok())
+        .filter(|value| !value.is_empty())
+}
+
+fn last_modified_validator(headers: &HeaderMap) -> Option<DownloadValidator> {
+    let value = last_modified_header(headers)?;
+    let response_date = headers.get(DATE)?.to_str().ok()?;
+    is_strong_last_modified(value, response_date).then(|| DownloadValidator::LastModified {
+        value: value.to_string(),
+        response_date: response_date.to_string(),
+    })
+}
+
+/// Whether `headers` hold a Last-Modified date that is no validator (one still
+/// ahead of this clock, or with no `Date` to judge it by) and is not the date
+/// `saved` was recorded with. It may name another file, so a partial download
+/// is not resumed on it unless another validator confirms the saved one.
+fn has_rejected_last_modified(headers: &HeaderMap, saved: &DownloadValidator) -> bool {
+    last_modified_header(headers).is_some_and(|value| {
+        last_modified_validator(headers).is_none()
+            && !matches!(saved, DownloadValidator::LastModified { value: saved, .. } if saved == value)
+    })
+}
+
+/// Whether `value` is exactly one entity-tag (RFC 9110 section 8.8.3), weak
+/// or strong: an optional `W/`, then a quoted string with no quote or space
+/// inside. Only that may be sent back in `If-None-Match`, where `*` and a list
+/// of tags match files the tag never came with.
+pub fn is_entity_tag(value: &str) -> bool {
+    value
+        .strip_prefix("W/")
+        .unwrap_or(value)
+        .strip_prefix('"')
+        .and_then(|tag| tag.strip_suffix('"'))
+        .is_some_and(|tag| tag.bytes().all(|b| b.is_ascii_graphic() && b != b'"'))
+}
+
+fn is_strong_entity_tag(value: &str) -> bool {
+    !value.starts_with("W/") && is_entity_tag(value)
+}
+
+/// Whether `headers` hold an ETag that is not weak but is no entity-tag either.
+/// It cannot be compared with the tag a partial download was saved with, yet
+/// it may still name another file, so the bytes are not appended to the old ones.
+fn has_unusable_entity_tag(headers: &HeaderMap) -> bool {
+    headers
+        .get(ETAG)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| !value.starts_with("W/") && !is_entity_tag(value))
 }
 
 fn is_strong_last_modified(value: &str, response_date: &str) -> bool {
@@ -1073,7 +1117,10 @@ fn is_strong_last_modified(value: &str, response_date: &str) -> bool {
     let Ok(response_date) = chrono::DateTime::parse_from_rfc2822(response_date) else {
         return false;
     };
-    response_date.signed_duration_since(last_modified) >= chrono::Duration::seconds(60)
+    // A date still ahead of this clock, sent in `If-Modified-Since`, gets a 304
+    // for every file the server publishes until then.
+    last_modified <= chrono::Utc::now()
+        && response_date.signed_duration_since(last_modified) >= chrono::Duration::seconds(60)
 }
 
 fn parse_content_range(value: &str) -> Option<ParsedContentRange> {
@@ -1760,14 +1807,12 @@ impl Client {
             },
             |resp| async move {
                 let headers = resp.headers().clone();
-                Ok((
-                    buffer_body(resp)
-                        .await?
-                        .json()
-                        .await
-                        .map_err(redact_error_url)?,
-                    headers,
-                ))
+                let resp = buffer_body(resp).await?;
+                let url = resp.url().clone();
+                let body = resp.bytes().await.map_err(redact_error_url)?;
+                let json = parse_json(&body)
+                    .wrap_err_with(|| format!("failed to parse JSON from {}", log_url(&url)))?;
+                Ok((json, headers))
             },
         )
         .await
@@ -1789,7 +1834,7 @@ impl Client {
         T: serde::de::DeserializeOwned,
     {
         let text = self.get_text_cached(url).await?;
-        Ok(serde_json::from_str(&text)?)
+        parse_json(text.as_bytes())
     }
 
     pub async fn json_with_headers<T, U: IntoUrl>(&self, url: U, headers: &HeaderMap) -> Result<T>
@@ -2478,6 +2523,14 @@ impl Client {
                         || validator
                             .as_ref()
                             .is_some_and(|value| !value.matches(&state.validator))
+                        // A Last-Modified date that matched the saved one
+                        // confirms the file; an unquoted ETag beside it does
+                        // not undo that.
+                        || (has_unusable_entity_tag(resp.headers())
+                            && !matches!(validator, Some(DownloadValidator::LastModified { .. })))
+                        // A date that is no validator confirms nothing either.
+                        || (validator.is_none()
+                            && has_rejected_last_modified(resp.headers(), &state.validator))
                     {
                         partial.clear()?;
                         if restarted_without_resume {
@@ -2883,12 +2936,15 @@ impl Client {
             let before = final_headers.get(AUTHORIZATION).cloned();
             // In safe mode a project tool gets netrc credentials only on a host that
             // an operator's replacement rule sent the request to.
-            let netrc = if url.host() == original_url.host() {
-                netrc_headers(&url)
-            } else {
-                replacement_netrc_headers(&url)
+            let netrc = || {
+                if url.host() == original_url.host() {
+                    netrc_headers(&url)
+                } else {
+                    replacement_netrc_headers(&url)
+                }
             };
-            final_headers = apply_netrc_credentials(final_headers, &original_url, &url, netrc);
+            final_headers =
+                replacement_netrc_credentials(final_headers, &original_url, &url, netrc)?;
             netrc_fallback_used = final_headers.get(AUTHORIZATION) != before.as_ref();
         }
 
@@ -3401,6 +3457,59 @@ pub async fn buffer_body_with_limit(mut resp: Response, limit: usize) -> Result<
     Ok(buffered.into())
 }
 
+/// Most values (scalars, arrays and objects) a JSON document from the network
+/// may hold. [`MAX_BODY_BYTES`] bounds the text but not what it is parsed into:
+/// as a `serde_json::Value`, `[0],` is four bytes of text and about 360 bytes
+/// of memory, so a body within that limit could take over 10 GiB. A document
+/// at this many values takes about 1.5 GiB at worst. A body has to average
+/// under 32 bytes of text a value to hold them within the byte limit, so a
+/// document of real data, such as a GitHub release page, reaches that limit
+/// first. Lower in tests, which have to send more than this to reach it.
+pub const MAX_JSON_VALUES: usize = if cfg!(test) { 10_000 } else { 4_000_000 };
+
+/// Parses JSON that a server sent, failing before anything is built from it if
+/// it holds more than [`MAX_JSON_VALUES`] values. Use it instead of `json()` or
+/// `serde_json::from_slice` on a body that only [`buffer_body`] has bounded.
+pub fn parse_json<T: serde::de::DeserializeOwned>(json: &[u8]) -> Result<T> {
+    ensure_json_values_bounded(json)?;
+    Ok(serde_json::from_slice(json)?)
+}
+
+/// Fails when `text`, read as JSON, could hold more than [`MAX_JSON_VALUES`]
+/// values. For a body that an expression may parse with `fromJSON`, checked
+/// before the expression runs.
+pub fn ensure_json_values_bounded(text: &[u8]) -> Result<()> {
+    ensure!(
+        json_value_count(text) <= MAX_JSON_VALUES,
+        "JSON document holds more than {MAX_JSON_VALUES} values"
+    );
+    Ok(())
+}
+
+/// An upper bound on the values in `json`, without parsing it: every value but
+/// the outermost follows a `[` or a `,`, or is a member whose name follows a
+/// `{` or a `,`, so there are no more values than those three outside strings.
+fn json_value_count(json: &[u8]) -> usize {
+    let (mut values, mut in_string, mut escaped) = (1, false, false);
+    for &byte in json {
+        if in_string {
+            match byte {
+                _ if escaped => escaped = false,
+                b'\\' => escaped = true,
+                b'"' => in_string = false,
+                _ => {}
+            }
+        } else {
+            match byte {
+                b'"' => in_string = true,
+                b',' | b'[' | b'{' => values += 1,
+                _ => {}
+            }
+        }
+    }
+    values
+}
+
 /// Maximum body bytes buffered when building a GitHub error report, so an
 /// oversized or slow-trickling error response can't exhaust memory. The overall
 /// request timeout bounds the time; this bounds the memory.
@@ -3863,6 +3972,39 @@ pub fn clear_cross_host_credentials(headers: &mut HeaderMap, original_url: &Url,
     for name in credential_headers {
         headers.remove(name);
     }
+}
+
+/// Add the netrc credentials `netrc` looks up to a request rewritten from
+/// `original_url` to `url` ([`apply_netrc_credentials`]).
+///
+/// netrc names a host, not a port or a scheme, so on the original host its
+/// login is the one written for the server the request was meant for. A
+/// rewrite to another port of that host reaches another server
+/// ([`same_server`]) and takes no netrc login, and a rewrite of that host from
+/// HTTPS to HTTP refuses to send one in the clear, as it does for any other
+/// credential ([`ensure_secure_replacement_credentials`]). A rewrite to
+/// another host takes that host's netrc login, even over HTTP: the user wrote
+/// it for the replacement (#7164).
+fn replacement_netrc_credentials(
+    final_headers: HeaderMap,
+    original_url: &Url,
+    url: &Url,
+    netrc: impl FnOnce() -> HeaderMap,
+) -> Result<HeaderMap> {
+    if url.host() != original_url.host() {
+        return Ok(apply_netrc_credentials(
+            final_headers,
+            original_url,
+            url,
+            netrc(),
+        ));
+    }
+    if !same_server(original_url, url) {
+        return Ok(final_headers);
+    }
+    let final_headers = apply_netrc_credentials(final_headers, original_url, url, netrc());
+    ensure_secure_replacement_credentials(original_url, url, &final_headers)?;
+    Ok(final_headers)
 }
 
 /// Merge `netrc` credentials into `final_headers`, honoring the fallback

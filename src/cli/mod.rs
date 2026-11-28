@@ -1606,10 +1606,12 @@ fn validate_cd_path(cd: &Option<PathBuf>) -> Result<()> {
 }
 
 /// `args` joined for the debug log. Each argument is redacted on its own:
-/// once joined, a space inside a URL's userinfo looks like an argument break.
+/// once joined, a space inside a URL's userinfo looks like an argument break,
+/// and registered secrets are matched in the argument as written, so one that
+/// is a whole URL is hidden whole.
 fn display_args(args: &[String]) -> String {
     args.iter()
-        .map(|arg| mise_util::redactions::redact_url_userinfo_in_arg(arg))
+        .map(|arg| mise_util::redactions::redact_output_in_arg(arg))
         .collect::<Vec<_>>()
         .join(" ")
 }
@@ -1642,6 +1644,19 @@ mod tests {
             display_args(&args),
             "mise x http:demo[url=https://[redacted]@host/x.tar.gz]@1 https://host:8080 me@example.com"
         );
+    }
+
+    /// A secret that is a whole URL is matched in the argument as written,
+    /// before its query token is marked.
+    #[test]
+    fn display_args_hides_an_argument_that_is_a_registered_url() {
+        let url = "https://debug-args-host-5c1f.example/private?token=T&path=HIDDEN";
+        {
+            let mut redactor = mise_util::redactions::GLOBAL_REDACTOR.lock().unwrap();
+            *redactor = redactor.with_additional([url.to_string()]);
+        }
+        let args = ["mise", "x", url].map(str::to_string);
+        assert_eq!(display_args(&args), "mise x [redacted]");
     }
 
     #[test]

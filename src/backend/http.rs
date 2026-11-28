@@ -8,8 +8,8 @@ use crate::backend::static_helpers::{
     apply_rename_exe, bin_name_for_download, clean_binary_name, ensure_plain_bin_name,
     ensure_safe_relative_bin_path, eval_checksum_expr, fetch_checksum_from_file_with_headers,
     fetch_checksum_from_shasums_with_headers, get_filename_from_url, lookup_value_with_fallback,
-    pinned_checksum, rename_binary_name, render_bin_path, shasums_has_entries, template_string,
-    template_string_for_target, template_string_strict, verify_artifact,
+    pinned_checksum, rename_binary_name, render_bin_path, resolve_lock_url, shasums_has_entries,
+    template_string, template_string_for_target, template_string_strict, verify_artifact,
 };
 use crate::backend::version_list;
 use crate::backend::{MISE_BINS_DIR, runtime_path_for_install_path};
@@ -28,7 +28,7 @@ use crate::ui::progress_report::SingleReport;
 use crate::{dirs, env, file, hash};
 use async_trait::async_trait;
 use eyre::{Result, WrapErr, bail};
-use mise_util::redactions::strip_url_credentials_in_value;
+use mise_util::redactions::{strip_credentials_in_value, strip_url_credentials_in_value};
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
@@ -961,8 +961,11 @@ impl HttpBackend {
         file_path: &Path,
         opts: &HttpOptions<'_>,
     ) -> Result<()> {
+        // The URL is rendered, so a credential templated in from the
+        // environment is in it by now, and this file is part of the install
+        // tree (and of an image `mise oci build` makes).
         let metadata = CacheMetadata {
-            url: strip_url_credentials_in_value(url).into_owned(),
+            url: strip_credentials_in_value(url).into_owned(),
             checksum: opts.checksum(),
             size: file_path.metadata()?.len(),
             extracted_at: SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs(),
@@ -971,6 +974,37 @@ impl HttpBackend {
 
         let json = serde_json::to_string_pretty(&metadata)?;
         file::write(Self::metadata_path(cache_dir, cache_key), json)?;
+        Ok(())
+    }
+
+    /// [`Self::strip_metadata_credentials`] on an extraction that is about to
+    /// be reused. The reuse goes ahead when the rewrite fails: the metadata
+    /// may not be JSON, or the cache may belong to another user and be
+    /// read-only. The message names no URL, since the URL is what holds the
+    /// credential.
+    fn strip_reused_metadata_credentials(cache_dir: &Path, cache_key: &str) {
+        if let Err(err) = Self::strip_metadata_credentials(cache_dir, cache_key) {
+            debug!("left the metadata of cached extraction {cache_key} as it was: {err}");
+        }
+    }
+
+    /// Rewrite the metadata of a reused extraction whose URL still holds a
+    /// credential, as [`Self::write_metadata`] would have stored it. An
+    /// extraction is reused without its metadata being written again, and
+    /// one made by an earlier mise recorded the URL as it was. Nothing is
+    /// written when the URL holds no credential.
+    fn strip_metadata_credentials(cache_dir: &Path, cache_key: &str) -> Result<()> {
+        let path = Self::metadata_path(cache_dir, cache_key);
+        let mut metadata: serde_json::Value = serde_json::from_str(&file::read_to_string(&path)?)?;
+        let Some(url) = metadata.get("url").and_then(|url| url.as_str()) else {
+            return Ok(());
+        };
+        let stripped = strip_credentials_in_value(url);
+        if stripped == url {
+            return Ok(());
+        }
+        metadata["url"] = stripped.into_owned().into();
+        file::write(&path, serde_json::to_string_pretty(&metadata)?)?;
         Ok(())
     }
 
@@ -1266,7 +1300,10 @@ impl HttpBackend {
         let headers = match opts.headers_for_target(Some(tv.version.as_str()), target) {
             Ok(headers) => headers,
             Err(e) => {
-                debug!("failed to build headers for {checksum_url}: {e}");
+                debug!(
+                    "{}",
+                    checksum_source_failure("build headers for", &checksum_url, &e)
+                );
                 return None;
             }
         };
@@ -1281,7 +1318,10 @@ impl HttpBackend {
             {
                 Ok(body) => body,
                 Err(e) => {
-                    debug!("failed to fetch checksum manifest {checksum_url}: {e}");
+                    debug!(
+                        "{}",
+                        checksum_source_failure("fetch checksum manifest", &checksum_url, &e)
+                    );
                     return None;
                 }
             };
@@ -1536,14 +1576,18 @@ impl Backend for HttpBackend {
 
         // The lockfile is committed, so it names the artifact without the
         // credentials that fetch it. Installs take the URL from config.
-        let lock_url = strip_url_credentials_in_value(&url).into_owned();
-        if checksum.is_none() && lock_url != url && Settings::get().generate_lockfiles() {
-            // `generate` would otherwise hash what the recorded URL serves,
-            // which without the credentials is an authentication error.
-            crate::lockfile::generate::download_for_verification(&url, &mut checksum).await?;
-        }
+        // `generate` would otherwise hash what the recorded URL serves, which
+        // without the credentials is an authentication error, so a missing or
+        // md5/sha1 checksum is settled here from the URL with its login and
+        // the configured `headers`, which are sent but not recorded either.
+        let headers = opts.headers_for_target(Some(tv.version.as_str()), target)?;
+        let headers =
+            (!headers.is_empty()).then_some(crate::lockfile::DownloadHeaders::Client(headers));
+        let lock_url = resolve_lock_url(&url, headers.as_ref(), &mut checksum).await?;
 
         Ok(PlatformInfo {
+            download_url: crate::lockfile::LoginUrl::of(&url),
+            download_headers: headers,
             url: Some(lock_url),
             checksum,
             ..Default::default()
@@ -1712,6 +1756,7 @@ impl Backend for HttpBackend {
                 ctx.pr.set_message("extracting from cache".into());
                 ctx.pr.set_length(1);
                 ctx.pr.set_position(1);
+                Self::strip_reused_metadata_credentials(&cache_dir, &cache_plan.key);
                 self.extraction_type_from_cache(&file_path, &cache_plan.file_info, &opts)?
             } else {
                 ctx.pr.set_message("extracting to cache".into());
@@ -2009,8 +2054,33 @@ fn rename_cache_token(rename: &toml::Value) -> String {
     hash::hash_blake3_to_str(&rename.to_string())
 }
 
+/// The debug message for a checksum source mise could not read. The URL is
+/// redacted as one value: a template can leave a raw space or quote in its
+/// path, where the logger, which reads URLs in free text, would end it before
+/// a token in the query.
+fn checksum_source_failure(what: &str, url: &str, error: &dyn std::fmt::Display) -> String {
+    let url = mise_util::redactions::redact_url_credentials_in_arg(url);
+    format!("failed to {what} {url}: {error}")
+}
+
 #[cfg(test)]
 mod tests {
+    use super::checksum_source_failure;
+
+    #[test]
+    fn checksum_source_failure_hides_a_token_after_a_raw_space() {
+        for url in [
+            "https://host.example/my sums.txt?token=hunter2",
+            "https://host.example/sums\"x.txt?token=hunter2",
+            "https://host.example/sums.txt?token=hunter2",
+        ] {
+            let message = checksum_source_failure("fetch checksum manifest", url, &"404");
+            let logged = mise_util::redactions::redact_url_credentials(&message);
+            assert!(!logged.contains("hunter2"), "{logged}");
+            assert!(logged.contains("token=[redacted]"), "{logged}");
+        }
+    }
+
     #[test]
     fn verbatim_prefixes_are_removed_for_comparison() {
         use super::without_verbatim_prefix as strip;
@@ -2572,6 +2642,88 @@ mod tests {
             assert!(name.len() + 2 < 255, "{name} is {} bytes", name.len());
             assert!(name.starts_with(prefix));
         }
+    }
+
+    #[test]
+    fn metadata_records_the_url_without_its_credentials() {
+        let backend = HttpBackend {
+            ba: Arc::new(BackendArg::new_raw(
+                "http-mytool".to_string(),
+                Some("http:mytool".to_string()),
+                "mytool".to_string(),
+                None,
+                BackendResolution::new(true),
+            )),
+        };
+        let cache_dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(cache_dir.path().join("key")).unwrap();
+        let artifact = cache_dir.path().join("tool.tar.gz");
+        std::fs::write(&artifact, b"archive-contents").unwrap();
+        let opts = ToolVersionOptions::default();
+        let opts = HttpOptions::new(&opts);
+
+        let recorded = |url: &str| {
+            backend
+                .write_metadata(cache_dir.path(), "key", url, &artifact, &opts)
+                .unwrap();
+            let json =
+                file::read_to_string(HttpBackend::metadata_path(cache_dir.path(), "key")).unwrap();
+            serde_json::from_str::<CacheMetadata>(&json).unwrap().url
+        };
+        assert_eq!(
+            recorded("https://ci:s3cret@dl.example.com/tool.tar.gz?token=s3cret"),
+            "https://dl.example.com/tool.tar.gz"
+        );
+        // Only the parameters named like a credential go.
+        assert_eq!(
+            recorded("https://dl.example.com/tool.tar.gz?ref=main&X-Amz-Signature=s3cret"),
+            "https://dl.example.com/tool.tar.gz?ref=main"
+        );
+        assert_eq!(
+            recorded("https://dl.example.com/tool.tar.gz?ref=main"),
+            "https://dl.example.com/tool.tar.gz?ref=main"
+        );
+    }
+
+    #[test]
+    fn reused_metadata_loses_the_credentials_in_its_url() {
+        let cache_dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(cache_dir.path().join("key")).unwrap();
+        let path = HttpBackend::metadata_path(cache_dir.path(), "key");
+        let reused = |url: &str| {
+            let json = serde_json::json!({
+                "url": url,
+                "checksum": null,
+                "size": 16,
+                "extracted_at": 1,
+                "platform": "linux-x64",
+            });
+            std::fs::write(&path, json.to_string()).unwrap();
+            HttpBackend::strip_metadata_credentials(cache_dir.path(), "key").unwrap();
+            let metadata: CacheMetadata =
+                serde_json::from_str(&file::read_to_string(&path).unwrap()).unwrap();
+            assert_eq!(metadata.size, 16);
+            metadata.url
+        };
+        assert_eq!(
+            reused("https://ci:s3cret@dl.example.com/tool.tar.gz?token=s3cret"),
+            "https://dl.example.com/tool.tar.gz"
+        );
+        assert_eq!(
+            reused("https://dl.example.com/tool.tar.gz?ref=main"),
+            "https://dl.example.com/tool.tar.gz?ref=main"
+        );
+    }
+
+    #[test]
+    fn reuse_goes_ahead_when_metadata_is_not_json() {
+        let cache_dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(cache_dir.path().join("key")).unwrap();
+        let path = HttpBackend::metadata_path(cache_dir.path(), "key");
+        std::fs::write(&path, "not json").unwrap();
+        assert!(HttpBackend::strip_metadata_credentials(cache_dir.path(), "key").is_err());
+        HttpBackend::strip_reused_metadata_credentials(cache_dir.path(), "key");
+        assert_eq!(file::read_to_string(&path).unwrap(), "not json");
     }
 
     #[test]

@@ -17,7 +17,7 @@ use crate::file::display_path;
 use crate::path::PathExt;
 use crate::platform::Platform;
 use crate::toolset::{ToolRequest, ToolSource, ToolVersion, ToolVersionOptions, Toolset};
-use eyre::{Report, Result, bail, eyre};
+use eyre::{Report, Result, WrapErr, bail, eyre};
 use indexmap::IndexSet;
 use itertools::Itertools;
 use mise_util::yaml;
@@ -542,6 +542,9 @@ impl From<&PlatformInfo> for CachedPlatform {
             url_api,
             // Set by a plugin that resolves a URL, never by a lockfile.
             download_headers: _,
+            download_url: _,
+            download_url_api: _,
+            locked_download: _,
             conda_deps,
             provenance,
             provenance_verified,
@@ -599,6 +602,9 @@ impl From<CachedPlatform> for PlatformInfo {
             url,
             url_api,
             download_headers: None,
+            download_url: None,
+            download_url_api: None,
+            locked_download: None,
             conda_deps,
             provenance: provenance.map(Into::into),
             provenance_verified,
@@ -620,6 +626,10 @@ impl From<&ArtifactInfo> for CachedArtifact {
             size,
             url,
             url_api,
+            download_headers: _,
+            download_url: _,
+            download_url_api: _,
+            locked_download: _,
             provenance,
             provenance_verified,
         } = artifact;
@@ -652,6 +662,10 @@ impl From<CachedArtifact> for ArtifactInfo {
             size,
             url,
             url_api,
+            download_headers: None,
+            download_url: None,
+            download_url_api: None,
+            locked_download: None,
             provenance: provenance.map(Into::into),
             provenance_verified,
         }
@@ -1425,6 +1439,19 @@ pub struct ArtifactInfo {
     pub url: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub url_api: Option<String>,
+    /// Request headers `url` needs, as [`PlatformInfo::download_headers`]: used
+    /// only to download the artifact for its checksum; never written.
+    #[serde(skip)]
+    pub download_headers: Option<DownloadHeaders>,
+    /// `url` and `url_api` with the logins they are recorded without, as
+    /// [`PlatformInfo::download_url`] and [`PlatformInfo::download_url_api`].
+    #[serde(skip)]
+    pub download_url: Option<LoginUrl>,
+    #[serde(skip)]
+    pub download_url_api: Option<LoginUrl>,
+    /// As [`PlatformInfo::locked_download`], for this artifact.
+    #[serde(skip)]
+    pub locked_download: Option<LockedDownload>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub provenance: Option<ProvenanceType>,
     /// Opaque legacy metadata, preserved only to avoid churn with older clients.
@@ -1484,6 +1511,10 @@ impl ArtifactInfo {
             size: self.size.or(other.size),
             url: self.url.clone(),
             url_api: self.url_api.clone().or_else(|| other.url_api.clone()),
+            download_headers: None,
+            download_url: None,
+            download_url_api: None,
+            locked_download: None,
             provenance,
             provenance_verified,
         }
@@ -1508,6 +1539,143 @@ fn merge_additional_artifacts(
     merged
 }
 
+/// A URL `mise lock` downloads an artifact from in place of the one
+/// `mise.lock` records: one that holds a login `mise.lock` leaves out, or the
+/// URL the install downloads the artifact from. Its `Debug` output leaves the
+/// login out.
+#[derive(Clone, PartialEq, Eq)]
+pub struct LoginUrl(String);
+
+impl LoginUrl {
+    /// `url`, when it holds a login.
+    pub(crate) fn of(url: &str) -> Option<Self> {
+        (crate::backend::static_helpers::lock_url(url) != url).then(|| Self(url.to_string()))
+    }
+
+    /// `url`, with or without a login.
+    pub(crate) fn new(url: &str) -> Self {
+        Self(url.to_string())
+    }
+
+    pub(crate) fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+/// Request headers an artifact is downloaded with, and the downloader that
+/// sends them, the one its install uses, so `mise lock` fetches the artifact
+/// as the install does.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum DownloadHeaders {
+    /// Sent by mise's HTTP client, as an http or forge backend install sends
+    /// them: `headers_forward` rules apply, and credentials (headers and a
+    /// login) are dropped when a URL replacement or redirect changes the host.
+    Client(reqwest::header::HeaderMap),
+    /// A vfox plugin's `PreInstall` headers, sent by the vfox downloader only
+    /// to the origin of the plugin's URL, as a vfox install sends them.
+    Plugin(reqwest::header::HeaderMap),
+}
+
+impl std::fmt::Debug for LoginUrl {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("LoginUrl")
+            .field(&crate::backend::static_helpers::lock_url(&self.0))
+            .finish()
+    }
+}
+
+/// What a locked install downloads for an artifact whose install sent a login
+/// the release gave ([`PlatformInfo::locked_download`]): the release asset's
+/// `url` and `url_api` with only the logins of the `api_url` and `url`
+/// options, and the `forge` and `api_url` that select the token sent with
+/// them. Nothing is requested until the lockfile update writes the entry
+/// ([`crate::backend::github::locked_download_request`]).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LockedDownload {
+    /// The release asset's name, for the error.
+    pub(crate) name: String,
+    pub(crate) url: LoginUrl,
+    /// Empty when the asset has no API URL.
+    pub(crate) url_api: LoginUrl,
+    pub(crate) api_url: LoginUrl,
+    pub(crate) forge: crate::backend::backend_type::BackendType,
+}
+
+/// Before the entry `info` of `short@version` is written: make the download a
+/// locked install of it makes, for each artifact whose install sent a login
+/// the release gave ([`PlatformInfo::locked_download`]). The bytes must match
+/// the checksum the install pinned; an artifact with no strong pin is pinned
+/// by the sha256 of what the download served. When the download fails, the
+/// entry is not written: a locked install could not fetch the URL it records.
+/// The tool is installed by then, so the error says so.
+pub(crate) async fn check_locked_downloads(
+    short: &str,
+    version: &str,
+    info: &mut PlatformInfo,
+) -> Result<()> {
+    let artifacts = std::iter::once((
+        &mut info.locked_download,
+        &mut info.checksum,
+        &mut info.checksum_source,
+    ))
+    .chain(info.additional_artifacts.iter_mut().map(|artifact| {
+        (
+            &mut artifact.locked_download,
+            &mut artifact.checksum,
+            &mut artifact.checksum_source,
+        )
+    }));
+    for (download, checksum, checksum_source) in artifacts {
+        let Some(download) = download.take() else {
+            continue;
+        };
+        locked_download_checksum(&download, checksum, checksum_source)
+            .await
+            .wrap_err_with(|| {
+                format!("{short}@{version} is installed, but mise.lock was not updated for it")
+            })?;
+    }
+    Ok(())
+}
+
+/// Download `download` and check it against `checksum`, which becomes its
+/// sha256 when it is missing, md5 or sha1.
+async fn locked_download_checksum(
+    download: &LockedDownload,
+    checksum: &mut Option<String>,
+    checksum_source: &mut Option<ChecksumSource>,
+) -> Result<()> {
+    // Before the request: finding a forge token can refresh it over the
+    // network.
+    eyre::ensure!(!Settings::get().offline(), "offline mode is enabled");
+    let (url, headers) = crate::backend::github::locked_download_request(download).await?;
+    let dir = tempfile::tempdir()?;
+    let path = dir.path().join("artifact");
+    let fetched = async {
+        crate::http::HTTP
+            .download_file_with_headers(&url, &path, &headers, None)
+            .await?;
+        if let Some((algorithm, hash)) = checksum.as_deref().and_then(|c| c.split_once(':')) {
+            crate::hash::ensure_checksum(&path, hash, None, algorithm)?;
+        }
+        eyre::Ok(())
+    };
+    fetched
+        .await
+        .wrap_err_with(|| crate::backend::github::lost_login_error(&download.name, &url))?;
+    if checksum
+        .as_deref()
+        .is_none_or(crate::backend::static_helpers::is_weak_checksum)
+    {
+        *checksum = Some(format!(
+            "sha256:{}",
+            crate::hash::file_hash_sha256(&path, None)?
+        ));
+        *checksum_source = None;
+    }
+    Ok(())
+}
+
 #[derive(Debug, Default, Clone, Serialize, PartialEq, Eq)]
 pub struct PlatformInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1524,10 +1692,28 @@ pub struct PlatformInfo {
     pub url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub url_api: Option<String>,
-    /// Request headers `url` needs, from the plugin that resolved it. Used
+    /// Request headers `url` needs, from the backend that resolved it. Used
     /// only to download the artifact for its checksum; never written.
     #[serde(skip)]
-    pub download_headers: Option<reqwest::header::HeaderMap>,
+    pub download_headers: Option<DownloadHeaders>,
+    /// `url` with the login it is recorded without, from the config that
+    /// resolved it, or the URL the install downloads the artifact from instead
+    /// (a forge on a custom API downloads from `url_api`). Used only to
+    /// download the artifact for its checksum; never written.
+    #[serde(skip)]
+    pub download_url: Option<LoginUrl>,
+    /// `url_api` with the login it is recorded without, as `download_url` is
+    /// for `url`: a login only the configured API URL holds. Used only to
+    /// download the artifact for its checksum; never written.
+    #[serde(skip)]
+    pub download_url_api: Option<LoginUrl>,
+    /// Set by an install that downloaded the artifact through a login the
+    /// release gave, which `mise.lock` does not record and no config puts
+    /// back: the download a locked install of the entry makes instead. The
+    /// lockfile update makes it before it writes the entry
+    /// ([`check_locked_downloads`]). Never written.
+    #[serde(skip)]
+    pub locked_download: Option<LockedDownload>,
     /// References to conda packages in the shared conda-packages section (by basename)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub conda_deps: Option<Vec<String>>,
@@ -1597,14 +1783,22 @@ impl PlatformInfo {
     }
 
     /// Whether both describe the same persisted data. Ignores `size`, which is
-    /// read from existing lockfiles but never written, and `download_headers`.
+    /// read from existing lockfiles but never written, `download_headers`,
+    /// `download_url`, `download_url_api` and `locked_download`.
     pub fn same_persisted_data(&self, other: &PlatformInfo) -> bool {
         fn persisted(info: &PlatformInfo) -> PlatformInfo {
             let mut info = info.clone();
             info.size = None;
             info.download_headers = None;
+            info.download_url = None;
+            info.download_url_api = None;
+            info.locked_download = None;
             for artifact in &mut info.additional_artifacts {
                 artifact.size = None;
+                artifact.download_headers = None;
+                artifact.download_url = None;
+                artifact.download_url_api = None;
+                artifact.locked_download = None;
             }
             info
         }
@@ -1625,6 +1819,9 @@ impl PlatformInfo {
             url: None,
             url_api: None,
             download_headers: None,
+            download_url: None,
+            download_url_api: None,
+            locked_download: None,
             provenance: None,
             provenance_verified: None,
             github_attestations: None,
@@ -1747,6 +1944,9 @@ impl PlatformInfo {
         };
         PlatformInfo {
             download_headers: None,
+            download_url: None,
+            download_url_api: None,
+            locked_download: None,
             install: self.install.clone().or_else(|| {
                 if self.url.is_some() {
                     None
@@ -1974,6 +2174,9 @@ impl TryFrom<toml::Value> for PlatformInfo {
                 };
                 Ok(PlatformInfo {
                     download_headers: None,
+                    download_url: None,
+                    download_url_api: None,
+                    locked_download: None,
                     install,
                     checksum,
                     checksum_source,
@@ -2635,7 +2838,13 @@ impl Lockfile {
                 let mut platform_table = toml::Table::new();
                 for (basename, info) in packages {
                     let mut pkg_table = toml::Table::new();
-                    pkg_table.insert("url".to_string(), info.url.clone().into());
+                    // A locked conda install takes the login back from the
+                    // configured channel, so none is recorded, including in
+                    // an entry kept from an earlier lockfile.
+                    pkg_table.insert(
+                        "url".to_string(),
+                        crate::backend::static_helpers::lock_url(&info.url).into(),
+                    );
                     if let Some(checksum) = &info.checksum {
                         pkg_table.insert("checksum".to_string(), checksum.clone().into());
                     }
@@ -3043,6 +3252,9 @@ impl Lockfile {
                 };
                 PlatformInfo {
                     download_headers: None,
+                    download_url: None,
+                    download_url_api: None,
+                    locked_download: None,
                     install: platform_info.install.or_else(|| {
                         if platform_info.url.is_some() {
                             None
@@ -4360,7 +4572,7 @@ pub(crate) async fn tool_config_locked_lockfiles(
     }
 }
 
-pub(crate) fn update_lockfiles(
+pub(crate) async fn update_lockfiles(
     config: &Config,
     ts: &Toolset,
     new_versions: &[ToolVersion],
@@ -4384,8 +4596,10 @@ pub(crate) fn update_lockfiles(
 
     debug!("updating {} lockfiles", lockfile_configs.len());
 
-    // Process each lockfile, deferring provenance errors until all lockfiles are saved.
+    // Process each lockfile, deferring provenance errors and the tools whose
+    // locked download failed until all lockfiles are saved.
     let mut provenance_errors: Vec<String> = Vec::new();
+    let mut login_errors: Vec<String> = Vec::new();
     let mut has_deferred_provenance = false;
 
     for (lockfile_path, configs) in lockfile_configs {
@@ -4532,6 +4746,9 @@ pub(crate) fn update_lockfiles(
                 }
             }
         }
+
+        let unrecorded =
+            check_installed_locked_downloads(&mut tool_versions_by_short, &mut login_errors).await;
 
         // Tool stubs are not in the toolset but lock into this file too.
         let stub_requests = existing_lockfile
@@ -4685,6 +4902,13 @@ pub(crate) fn update_lockfiles(
             // gone before auto-lock runs, letting a genuine regression slip through. The
             // stale baseline self-heals on the next update once the new version is locked.
             reinsert_deferred_baselines(&mut merged_tools, &deferred_baselines, &short);
+            if let Some(specifiers) = unrecorded.get(&short) {
+                preserve_unrecorded_entries(
+                    &mut merged_tools,
+                    existing_lockfile.tools_for(&short),
+                    specifiers,
+                );
+            }
             existing_lockfile.tools.insert(
                 crate::toolset::install_state::state_short(&short).into_owned(),
                 merged_tools,
@@ -4713,6 +4937,7 @@ pub(crate) fn update_lockfiles(
     }
 
     // Return all provenance errors after all lockfiles have been saved
+    provenance_errors.extend(login_errors);
     if !provenance_errors.is_empty() {
         return Err(eyre!("{}", provenance_errors.join("\n")));
     }
@@ -4905,6 +5130,128 @@ struct ProvenanceRegressionCheck {
     /// downloads and verifies the artifact — compare against it, since the merge
     /// otherwise drops superseded versions before auto-lock runs.
     deferred_baselines: HashMap<String, Vec<LockfileTool>>,
+}
+
+/// Make, for each version in `tool_versions_by_short`, the download a locked
+/// install of an artifact its install fetched through a login the release gave
+/// makes ([`check_locked_downloads`]). A version whose download fails is not
+/// recorded: it is taken out, with its error in `errors`, and its request is
+/// returned under its short, for [`preserve_unrecorded_entries`] to keep the
+/// entry the lockfile has for it. Other versions of the tool are recorded as
+/// usual; a tool with none left keeps its entries as they were.
+async fn check_installed_locked_downloads(
+    tool_versions_by_short: &mut HashMap<String, Vec<ToolVersion>>,
+    errors: &mut Vec<String>,
+) -> HashMap<String, BTreeSet<UnrecordedRequest>> {
+    let mut unrecorded: HashMap<String, BTreeSet<UnrecordedRequest>> = HashMap::new();
+    for (short, versions) in tool_versions_by_short.iter_mut() {
+        let mut recorded = Vec::with_capacity(versions.len());
+        for mut tv in std::mem::take(versions) {
+            let (ba, version) = (tv.ba().clone(), tv.version.clone());
+            let mut failed = false;
+            for info in tv.lock_platforms.values_mut() {
+                let check = check_locked_downloads(short, &version, info);
+                if let Err(err) = crate::toolset::with_safe_mode_tool_scope(&ba, check).await {
+                    errors.push(format!("{err:#}"));
+                    failed = true;
+                }
+            }
+            if failed {
+                // The options its entry would have been written with, which a
+                // legacy entry (no specifiers) is found by.
+                let options = lockfile_tool_from_tool_version(&tv)
+                    .map(|tool| tool.options)
+                    .unwrap_or_default();
+                unrecorded
+                    .entry(short.clone())
+                    .or_default()
+                    .insert(UnrecordedRequest {
+                        specifier: tv.request.version(),
+                        options,
+                    });
+            } else {
+                recorded.push(tv);
+            }
+        }
+        *versions = recorded;
+    }
+    tool_versions_by_short.retain(|_, versions| !versions.is_empty());
+    unrecorded
+}
+
+/// A request whose new version was not recorded
+/// ([`check_installed_locked_downloads`]), with the lockfile options its entry
+/// would have had.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct UnrecordedRequest {
+    specifier: String,
+    options: BTreeMap<String, String>,
+}
+
+impl UnrecordedRequest {
+    /// Whether a legacy entry, one with no specifiers (every entry of a
+    /// revision-0 lockfile), is one a locked install of this request can find:
+    /// its version starts with the request's (at a separator for `prefix:`),
+    /// any for `latest`, and it has the request's options or none.
+    fn finds_legacy(&self, tool: &LockfileTool) -> bool {
+        let version_matches = match self.specifier.strip_prefix("prefix:") {
+            Some(prefix) => {
+                lockfile_version_matches(prefix, &tool.version)
+                    && lockfile_version_matches_prefix_boundary(prefix, &tool.version)
+            }
+            None => lockfile_version_matches(&self.specifier, &tool.version),
+        };
+        tool.specifiers.is_empty()
+            && version_matches
+            && (tool.options == self.options || tool.options.is_empty())
+    }
+}
+
+/// Keep the entries of `existing_tools` that `unrecorded` requests found,
+/// which the merge dropped as superseded: those bound to one of them, and,
+/// for a request no entry is bound to, the legacy entries (no specifiers) a
+/// locked install of it can find, as the lockfile had them. A shared entry
+/// keeps only the unrecorded requests; the others moved to the versions
+/// recorded now.
+fn preserve_unrecorded_entries(
+    merged_tools: &mut Vec<LockfileTool>,
+    existing_tools: Option<&Vec<LockfileTool>>,
+    unrecorded: &BTreeSet<UnrecordedRequest>,
+) {
+    let existing_tools = existing_tools.map(Vec::as_slice).unwrap_or_default();
+    let specifiers: BTreeSet<&str> = unrecorded
+        .iter()
+        .map(|request| request.specifier.as_str())
+        .collect();
+    let bound = |tool: &LockfileTool| {
+        tool.specifiers
+            .iter()
+            .any(|specifier| specifiers.contains(specifier.as_str()))
+    };
+    let unbound_requests = unrecorded
+        .iter()
+        .filter(|request| {
+            !existing_tools
+                .iter()
+                .any(|tool| tool.specifiers.contains(&request.specifier))
+        })
+        .collect_vec();
+    for existing_tool in existing_tools {
+        let legacy = unbound_requests
+            .iter()
+            .any(|request| request.finds_legacy(existing_tool));
+        if !(bound(existing_tool) || legacy)
+            || merged_tools.iter().any(|tool| {
+                tool.version == existing_tool.version && tool.options == existing_tool.options
+            })
+        {
+            continue;
+        }
+        let mut tool = existing_tool.clone();
+        tool.specifiers
+            .retain(|specifier| specifiers.contains(specifier.as_str()));
+        merged_tools.push(tool);
+    }
 }
 
 fn reinsert_deferred_baselines(

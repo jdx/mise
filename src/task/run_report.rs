@@ -99,7 +99,7 @@ struct RunJson<'a> {
 /// time the report is written: a task's own `redact = true` env values are registered only
 /// when the task starts, after it was scheduled.
 fn redact_arg(arg: &str) -> String {
-    mise_util::redactions::redact_global(&mise_util::redactions::redact_url_userinfo_in_arg(arg))
+    mise_util::redactions::redact_output_in_arg(arg)
 }
 
 fn timestamp(time: SystemTime) -> String {
@@ -420,6 +420,25 @@ mod tests {
         let args = json["tasks"][0]["args"].to_string();
         assert!(!args.contains("run-report-late-secret-4f1c"), "{args}");
         assert!(!args.contains("pw@"), "{args}");
+    }
+
+    /// A secret that is a whole URL is matched in the argument as written,
+    /// before its query token is marked, so its host and path stay hidden.
+    #[test]
+    fn an_argument_that_is_a_registered_url_is_hidden_whole() {
+        let url = "https://run-report-host-7d2e.example/private?token=T&path=HIDDEN";
+        let report = RunReport::new();
+        report.schedule(&Task {
+            args: vec![url.to_string()],
+            ..task("a")
+        });
+        {
+            let mut redactor = mise_util::redactions::GLOBAL_REDACTOR.lock().unwrap();
+            *redactor = redactor.with_additional([url.to_string()]);
+        }
+
+        let json = report_json(&report, false);
+        assert_eq!(json["tasks"][0]["args"][0], "[redacted]");
     }
 
     #[test]

@@ -9,7 +9,7 @@ use xx::regex;
 
 use crate::args::BackendArg;
 use crate::backend::platform_target::PlatformTarget;
-use crate::backend::static_helpers::lock_checksum;
+use crate::backend::static_helpers::{forget_locked_login, is_lock_url, lock_checksum};
 use crate::backend::{Backend, VersionInfo, normalize_idiomatic_contents, strict_metadata};
 use crate::cmd::CmdLineRunner;
 use crate::config::{CompilePurpose, Config, Settings, SettingsExt};
@@ -648,6 +648,27 @@ impl RubyPlugin {
         Ok(dates)
     }
 
+    /// The verified entry in `tv`'s lockfile of the archive at `url`, as
+    /// [`forget_locked_login`] leaves it: written back to mise.lock without the
+    /// login an older mise.lock recorded, as a fresh install writes it. An entry
+    /// for another artifact, such as the source tarball, is left alone.
+    fn forget_locked_archive_login(
+        tv: &mut ToolVersion,
+        platform_key: &str,
+        url: &str,
+        download_url: &str,
+        archive: &Path,
+    ) -> Result<()> {
+        match tv
+            .lock_platforms
+            .get_mut(platform_key)
+            .filter(|info| is_lock_url(info.url.as_deref(), url))
+        {
+            Some(info) => forget_locked_login(info, download_url, archive),
+            None => Ok(()),
+        }
+    }
+
     /// Try to install from precompiled binary
     /// Returns Ok(None) if no precompiled version is available for this version/platform
     async fn install_precompiled(
@@ -685,7 +706,7 @@ impl RubyPlugin {
                         locked_build_revision.as_deref(),
                     )
                     .await?
-                    .filter(|(resolved, _)| *resolved == url)
+                    .filter(|(resolved, _)| is_lock_url(Some(resolved), &url))
                     .and_then(|(_, checksum)| checksum)
                 };
                 (url, checksum)
@@ -722,9 +743,12 @@ impl RubyPlugin {
         };
         let tarball_path = tv.download_path().join(&filename);
 
+        // Checksums are chosen and checked against `url`, the URL mise.lock names.
+        // Only the request carries the login of `ruby.precompiled_url`.
+        let download_url = self.precompiled_download_url(url.clone(), &tv.version, &platform);
         ctx.pr.set_message(format!("download {}", filename));
         HTTP.download_file_stored(
-            &url,
+            &download_url,
             &tarball_path,
             lock_checksum(tv, &self.get_platform_key(), &url).as_deref(),
             Some(ctx.pr.as_ref()),
@@ -741,10 +765,11 @@ impl RubyPlugin {
         // without a URL, as safe mode keeps from a project lockfile, still pins by
         // checksum, but its provenance is verified again.
         let platform_key = PlatformTarget::from_current().to_key();
-        let locked_info = tv
-            .lock_platforms
-            .get(&platform_key)
-            .filter(|info| info.url.as_deref().is_none_or(|locked| locked == url));
+        let locked_info = tv.lock_platforms.get(&platform_key).filter(|info| {
+            info.url
+                .as_deref()
+                .is_none_or(|locked| is_lock_url(Some(locked), &url))
+        });
         let reuse_provenance = locked_info
             .is_some_and(|info| info.url.is_some() && info.has_checksum_and_provenance())
             && !Settings::get().force_provenance_verify();
@@ -801,6 +826,8 @@ impl RubyPlugin {
                 ));
             }
         }
+
+        Self::forget_locked_archive_login(tv, &platform_key, &url, &download_url, &tarball_path)?;
 
         ctx.pr.set_message(format!("extract {}", filename));
         let install_path = tv.install_path();
@@ -1224,6 +1251,111 @@ mod tests {
         );
     }
 
+    /// A locked URL spelled with the default port still names the archive the
+    /// download, with the login of `ruby.precompiled_url` put back on, fetches,
+    /// so its locked checksum still pins that download.
+    #[cfg(not(windows))]
+    #[test]
+    fn test_ruby_locked_url_with_default_port_keeps_its_checksum() {
+        use crate::backend::static_helpers::{is_lock_url, lock_checksum};
+        use crate::lockfile::PlatformInfo;
+
+        let locked = "https://mirror.example:443/3.3.0/ruby-3.3.0.x86_64_linux.tar.gz";
+        let download = with_ruby_settings(
+            |settings| {
+                settings.ruby.precompiled_url = Some(
+                    "https://user:secret@mirror.example/{version}/ruby-{version}.{platform}.tar.gz"
+                        .to_string(),
+                );
+            },
+            |plugin| {
+                assert!(plugin.is_precompiled_archive_url(locked, "3.3.0", "x86_64_linux"));
+                plugin.precompiled_download_url(locked.to_string(), "3.3.0", "x86_64_linux")
+            },
+        );
+        assert_eq!(
+            download,
+            "https://user:secret@mirror.example/3.3.0/ruby-3.3.0.x86_64_linux.tar.gz"
+        );
+        assert!(is_lock_url(Some(locked), &download));
+
+        let backend = RubyPlugin::new();
+        let mut tv = ToolVersion::new(
+            ToolRequest::new(backend.ba().clone(), "3.3.0", ToolSource::Unknown).unwrap(),
+            "3.3.0".to_string(),
+        );
+        tv.lock_platforms.insert(
+            "linux-x64".to_string(),
+            PlatformInfo {
+                url: Some(locked.to_string()),
+                checksum: Some(format!("sha256:{}", "a".repeat(64))),
+                ..Default::default()
+            },
+        );
+        assert_eq!(
+            lock_checksum(&tv, "linux-x64", locked),
+            lock_checksum(&tv, "linux-x64", &download)
+        );
+        assert!(lock_checksum(&tv, "linux-x64", locked).is_some());
+        assert!(lock_checksum(&tv, "linux-x64", "https://mirror.example:8443/x.tar.gz").is_none());
+    }
+
+    /// A precompiled Ruby installed from an older mise.lock whose URL holds the
+    /// mirror login goes back to mise.lock without it. A strong pin is kept as
+    /// it is; an md5 one, already checked, is replaced by the sha256 of the
+    /// archive, which `mise lock` could not fetch without the login.
+    #[test]
+    fn test_ruby_locked_install_forgets_the_lockfile_login() {
+        use crate::lockfile::PlatformInfo;
+
+        let login = "https://ci:token@mirror.example/3.3.0/ruby-3.3.0.x86_64_linux.tar.gz";
+        let plain = "https://mirror.example/3.3.0/ruby-3.3.0.x86_64_linux.tar.gz";
+        let dir = tempfile::tempdir().unwrap();
+        let archive = dir.path().join("ruby.tar.gz");
+        std::fs::write(&archive, "artifact").unwrap();
+        let backend = RubyPlugin::new();
+        let entry = |url: &str, checksum: String| {
+            let mut tv = ToolVersion::new(
+                ToolRequest::new(backend.ba().clone(), "3.3.0", ToolSource::Unknown).unwrap(),
+                "3.3.0".to_string(),
+            );
+            tv.lock_platforms.insert(
+                "linux-x64".to_string(),
+                PlatformInfo {
+                    url: Some(url.to_string()),
+                    checksum: Some(checksum),
+                    ..Default::default()
+                },
+            );
+            tv
+        };
+        let strong = format!("sha256:{}", "a".repeat(64));
+
+        let mut tv = entry(login, strong.clone());
+        RubyPlugin::forget_locked_archive_login(&mut tv, "linux-x64", login, login, &archive)
+            .unwrap();
+        let info = &tv.lock_platforms["linux-x64"];
+        assert_eq!(info.url.as_deref(), Some(plain));
+        assert_eq!(info.checksum.as_deref(), Some(strong.as_str()));
+
+        let mut tv = entry(login, "md5:8e5b948a454515dbabfc7eb718daa52f".to_string());
+        RubyPlugin::forget_locked_archive_login(&mut tv, "linux-x64", login, login, &archive)
+            .unwrap();
+        let info = &tv.lock_platforms["linux-x64"];
+        assert_eq!(info.url.as_deref(), Some(plain));
+        assert_eq!(
+            info.checksum.as_deref(),
+            Some("sha256:c7c5c1d70c5dec4416ab6158afd0b223ef40c29b1dc1f97ed9428b94d4cadb1c")
+        );
+
+        // the entry pins another artifact: left as it is
+        let source = "https://ci:token@mirror.example/ruby-3.3.0.tar.gz";
+        let mut tv = entry(source, strong.clone());
+        RubyPlugin::forget_locked_archive_login(&mut tv, "linux-x64", login, login, &archive)
+            .unwrap();
+        assert_eq!(tv.lock_platforms["linux-x64"].url.as_deref(), Some(source));
+    }
+
     #[test]
     fn test_ruby_render_precompiled_url_keeps_override_arch_and_os() {
         let template = "https://example.com/{version}/ruby-{arch}-{os}-{platform}.tar.gz";
@@ -1509,6 +1641,32 @@ mod tests {
         );
     }
 
+    /// mise.lock records a `ruby.precompiled_url` archive without the template's login.
+    /// That entry is still the precompiled archive, and it is downloaded with the login.
+    #[test]
+    fn test_ruby_locked_precompiled_url_gets_the_template_login() {
+        with_ruby_settings(
+            |settings| {
+                settings.ruby.precompiled_url = Some(
+                    "https://ci:token@example.com/ruby-{version}-{platform}.tar.gz".to_string(),
+                );
+            },
+            |backend| {
+                let locked = "https://example.com/ruby-3.4.1-x86_64_linux.tar.gz";
+                assert!(backend.is_precompiled_archive_url(locked, "3.4.1", "x86_64_linux"));
+                assert_eq!(
+                    backend.precompiled_download_url(locked.to_string(), "3.4.1", "x86_64_linux"),
+                    "https://ci:token@example.com/ruby-3.4.1-x86_64_linux.tar.gz"
+                );
+                let other = "https://other.example/ruby-3.4.1-x86_64_linux.tar.gz";
+                assert_eq!(
+                    backend.precompiled_download_url(other.to_string(), "3.4.1", "x86_64_linux"),
+                    other
+                );
+            },
+        );
+    }
+
     #[test]
     fn test_ruby_lock_info_url_uses_precompiled_overrides() {
         let _guard = crate::test::SettingsGuard::lock();
@@ -1540,6 +1698,36 @@ mod tests {
             opts.get("precompiled_os").map(String::as_str),
             Some("linux")
         );
+        assert_eq!(
+            info.url.as_deref(),
+            Some("https://example.com/ruby-3.3.0-arm64_linux.tar.gz")
+        );
+    }
+
+    #[test]
+    fn test_ruby_lock_info_url_has_no_credentials() {
+        let _guard = crate::test::SettingsGuard::lock();
+        let mut settings = SettingsPartial::empty();
+        // merge mode does not download the archive for its checksum
+        settings.lockfile_mode = Some("merge".to_string());
+        settings.ruby.compile = Some(false);
+        settings.ruby.precompiled_url =
+            Some("https://ci:token@example.com/ruby-{version}-{platform}.tar.gz".to_string());
+        settings.ruby.precompiled_arch = Some("arm64".to_string());
+        settings.ruby.precompiled_os = Some("linux".to_string());
+        Settings::reset(Some(settings));
+
+        let backend = RubyPlugin::new();
+        let request = ToolRequest::new(backend.ba().clone(), "3.3.0", ToolSource::Unknown).unwrap();
+        let target = PlatformTarget::new(Platform::parse("macos-arm64").unwrap());
+        let tv = ToolVersion::new(request, "3.3.0".to_string());
+        let info = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(backend.resolve_lock_info(&tv, &target))
+            .unwrap();
+
         assert_eq!(
             info.url.as_deref(),
             Some("https://example.com/ruby-3.3.0-arm64_linux.tar.gz")

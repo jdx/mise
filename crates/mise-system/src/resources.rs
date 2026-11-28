@@ -523,7 +523,7 @@ fn repo_plan(status: &super::repos::RepoStatus) -> ResourcePlan {
 
     let request = &status.request;
     // the plan is printed, so keep URL credentials out of it
-    let url = mise_util::redactions::redact_url_userinfo_in_arg(&request.url);
+    let url = mise_util::redactions::redact_url_credentials_in_arg(&request.url);
     let desired = match &request.git_ref {
         Some(git_ref) => format!("{url} at {git_ref}"),
         None => url.into_owned(),

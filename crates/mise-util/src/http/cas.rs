@@ -65,14 +65,28 @@ struct UrlEntry {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct PinEntry {
     blake3: String,
-    effective_filename: Option<String>,
     /// The URLs this blob was downloaded from under the pin. A pin is reused
     /// only for one of them: a checksum from a lockfile or from release
     /// metadata must not hand back a file another URL served, such as another
-    /// tool's archive or an older release. Entries written before this was
-    /// recorded have none and are fetched once more.
+    /// tool's archive or an older release. Entries written in an earlier form
+    /// have none and are fetched once more.
     #[serde(default)]
-    urls: Vec<String>,
+    pinned_urls: Vec<PinnedUrl>,
+}
+
+/// One URL a pinned blob was downloaded from, and the file name that URL gave
+/// it. The name is the server's choice, so each URL keeps its own: one URL's
+/// redirect never names the file for another.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct PinnedUrl {
+    /// A hash of the URL, so the entry tells the same URL again and keeps
+    /// nothing of the login or token it may carry.
+    url_hash: String,
+    effective_filename: Option<String>,
+}
+
+fn url_hash(url: &str) -> String {
+    crate::hash::hash_blake3_to_str(url)
 }
 
 /// Tests that don't ask for a directory never touch the user's cache.
@@ -200,13 +214,18 @@ pub(super) fn lookup_pin(pin: &str, url: &str) -> Option<Hit> {
     let (algo, hex) = parse_pin(pin)?;
     let entry = pin_path(&root, algo, &hex);
     let pinned: PinEntry = serde_json::from_slice(&std::fs::read(&entry).ok()?).ok()?;
-    if !is_hex(&pinned.blake3) || !pinned.urls.iter().any(|kept| kept == url) {
+    if !is_hex(&pinned.blake3) {
         return None;
     }
+    let hash = url_hash(url);
+    let kept = pinned
+        .pinned_urls
+        .into_iter()
+        .find(|kept| kept.url_hash == hash)?;
     let blob = blob_file(&blob_dir(&root, &pinned.blake3))?;
     Some(Hit {
         blob,
-        effective_filename: pinned.effective_filename,
+        effective_filename: kept.effective_filename,
         entry,
         verify: Verify::Pin {
             algo: algo.to_string(),
@@ -298,8 +317,8 @@ fn placing(err: std::io::Error, dest: &Path) -> eyre::Report {
 /// Write `contents` to `path` so a reader never sees a partial file. The
 /// rename into place is retried while Windows briefly refuses to replace the
 /// entry, which it does while another process has it open. The file stays
-/// owner-only on Unix, as `tempfile` creates it: entries hold full download
-/// URLs, which can carry private query tokens.
+/// owner-only on Unix, as `tempfile` creates it. Entries keep URLs only as
+/// hashes ([`PinnedUrl`]), but say which downloads this user made.
 fn write_atomic(path: &Path, contents: &[u8]) -> Result<()> {
     use std::io::Write;
 
@@ -436,7 +455,8 @@ fn pin_lock_wait() -> std::time::Duration {
     PIN_LOCK_WAIT
 }
 
-/// Add `keep.url` to the URLs the pin `algo:hex` was kept from. Locked across
+/// Record `keep.url`, with the file name it gave, among the URLs the pin
+/// `algo:hex` was kept from, replacing that URL's earlier record. Locked across
 /// the read and the write, or two downloads of the same file from different
 /// URLs would each write their own list and one URL would be lost.
 fn record_pin(root: &Path, algo: &str, hex: &str, blake3: String, keep: &Keep<'_>) -> Result<()> {
@@ -454,14 +474,16 @@ fn record_pin(root: &Path, algo: &str, hex: &str, blake3: String, keep: &Keep<'_
         std::thread::sleep(std::time::Duration::from_millis(10));
     };
     let path = pin_path(root, algo, hex);
-    let mut urls = recorded_urls(&path, &blake3)?;
-    if !urls.iter().any(|kept| kept == keep.url) {
-        urls.push(keep.url.to_string());
-    }
+    let mut pinned_urls = recorded_urls(&path, &blake3)?;
+    let hash = url_hash(keep.url);
+    pinned_urls.retain(|kept| kept.url_hash != hash);
+    pinned_urls.push(PinnedUrl {
+        url_hash: hash,
+        effective_filename: keep.effective_filename.clone(),
+    });
     let entry = PinEntry {
         blake3,
-        effective_filename: keep.effective_filename.clone(),
-        urls,
+        pinned_urls,
     };
     write_atomic(&path, &serde_json::to_vec(&entry)?)
 }
@@ -472,7 +494,7 @@ fn record_pin(root: &Path, algo: &str, hex: &str, blake3: String, keep: &Keep<'_
 /// Windows refuses to open a file for a moment while it is being replaced or
 /// scanned. An entry that doesn't parse, or names another blob, is of no use
 /// to [`lookup_pin`] and is started over.
-fn recorded_urls(path: &Path, blake3: &str) -> Result<Vec<String>> {
+fn recorded_urls(path: &Path, blake3: &str) -> Result<Vec<PinnedUrl>> {
     let bytes = match file::retry_transient_lock(|| std::fs::read(path)) {
         Ok(bytes) => bytes,
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
@@ -486,7 +508,7 @@ fn recorded_urls(path: &Path, blake3: &str) -> Result<Vec<String>> {
     Ok(serde_json::from_slice::<PinEntry>(&bytes)
         .ok()
         .filter(|existing| existing.blake3 == blake3)
-        .map(|existing| existing.urls)
+        .map(|existing| existing.pinned_urls)
         .unwrap_or_default())
 }
 

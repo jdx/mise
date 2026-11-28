@@ -4,7 +4,10 @@ use crate::backend::{SecurityFeature, VersionInfo};
 
 use crate::args::BackendArg;
 use crate::backend::platform_target::PlatformTarget;
-use crate::backend::static_helpers::{ensure_safe_relative_bin_path, get_filename_from_url};
+use crate::backend::static_helpers::{
+    ensure_safe_relative_bin_path, forget_locked_login, get_filename_from_url, lock_url,
+    resolve_lock_url, with_login_of,
+};
 use crate::config::{Settings, SettingsExt};
 use crate::dirs;
 use crate::file::{ExtractOptions, ExtractionFormat};
@@ -600,6 +603,8 @@ impl Backend for AquaBackend {
             } else {
                 tv.version.clone()
             };
+            // mise.lock names the archive without the login of the package's `url`.
+            let url = locked_download_url(&pkg, &v, url);
             (url, existing_url_api.clone(), v, filename, None)
         } else if ctx.locked
             && !tv
@@ -690,8 +695,8 @@ impl Backend for AquaBackend {
 
         if validated_url.is_none() {
             let platform_info = tv.lock_platforms.entry(platform_key).or_default();
-            platform_info.url = Some(url.clone());
-            platform_info.url_api = url_api.clone();
+            platform_info.url = Some(lock_url(&url));
+            platform_info.url_api = url_api.as_deref().map(lock_url);
             if let Some(digest) = api_digest.clone()
                 && !lockfile_has_checksum
             {
@@ -710,6 +715,12 @@ impl Backend for AquaBackend {
         };
         self.verify(ctx, &mut tv, &pkg, version, &filename, locked_checksum)
             .await?;
+        if validated_url.is_some() {
+            let archive = tv.download_path().join(&filename);
+            if let Some(info) = tv.lock_platforms.get_mut(&self.get_platform_key()) {
+                forget_locked_login(info, &url, &archive)?;
+            }
+        }
 
         // Advance to extraction operation if applicable
         if needs_extraction(format, &pkg.package_type()) {
@@ -1171,10 +1182,19 @@ impl Backend for AquaBackend {
                 self.ba()
             );
         }
+        // The URLs are recorded without the login of the package's `url`, which
+        // an install puts back ([`locked_download_url`]). An artifact with no
+        // checksum yet is hashed from the URL with the login.
+        let download_url = url.as_deref().and_then(crate::lockfile::LoginUrl::of);
+        let url = match url {
+            Some(url) => Some(resolve_lock_url(&url, None, &mut checksum).await?),
+            None => None,
+        };
         Ok(PlatformInfo {
+            download_url,
             checksum_source: mirror_digest.then_some(ChecksumSource::VersionsHost),
             url,
-            url_api,
+            url_api: url_api.as_deref().map(lock_url),
             checksum,
             provenance,
             github_attestations: None,
@@ -4544,6 +4564,25 @@ fn cosign_opt_value<'a>(opts: &'a [String], flag: &str) -> Option<&'a str> {
         .map(|pair| pair[1].as_str())
 }
 
+/// `url`, the archive mise.lock names for `pkg` at `v`, with the login of the
+/// package's own `url` put back when that is a URL on the same server (scheme,
+/// host and port). mise.lock records it without the login ([`lock_url`]), and
+/// an `http` package from a registry that needs one is downloaded from it.
+fn locked_download_url(pkg: &AquaPackage, v: &str, url: String) -> String {
+    if pkg.package_type() != AquaPackageType::Http {
+        return url;
+    }
+    let Ok(template) = pkg.url(v, os(), arch()) else {
+        return url;
+    };
+    match (Url::parse(&url), Url::parse(&template)) {
+        (Ok(locked), Ok(base)) if !base.username().is_empty() || base.password().is_some() => {
+            with_login_of(locked, &base).to_string()
+        }
+        _ => url,
+    }
+}
+
 async fn select_github_download_url(
     private: bool,
     browser_url: &str,
@@ -5829,6 +5868,93 @@ mod lock_candidate_tests {
         let (v, candidates) = build_lock_candidates("1.7.1", None, Some("jq-"));
         assert_eq!(v, "jq-1.7.1");
         assert_eq!(candidates, vec!["jq-v1.7.1", "jq-1.7.1"]);
+    }
+
+    #[test]
+    fn test_locked_http_url_gets_the_package_login() {
+        let package = |kind: AquaPackageType, url: &str| {
+            let mut pkg = AquaPackage::default();
+            pkg.r#type = Some(kind);
+            pkg.url = url.to_string();
+            pkg
+        };
+        let template = "https://ci:token@dl.example/{{.Version}}/tool.tar.gz";
+        let pkg = package(AquaPackageType::Http, template);
+        let locked = |url: &str| locked_download_url(&pkg, "v1.0.0", url.to_string());
+
+        // mise.lock records the URL without the login; the install puts it back.
+        assert_eq!(
+            locked("https://dl.example/v1.0.0/tool.tar.gz"),
+            "https://ci:token@dl.example/v1.0.0/tool.tar.gz"
+        );
+        // Only on the server of the package's URL.
+        for other in [
+            "https://mirror.example/v1.0.0/tool.tar.gz",
+            "http://dl.example/v1.0.0/tool.tar.gz",
+            "https://dl.example:8443/v1.0.0/tool.tar.gz",
+        ] {
+            assert_eq!(locked(other), other);
+        }
+        // A login the lockfile still holds is the one used.
+        assert_eq!(
+            locked("https://old:login@dl.example/v1.0.0/tool.tar.gz"),
+            "https://old:login@dl.example/v1.0.0/tool.tar.gz"
+        );
+
+        // A package whose URL has no login, or that is not an `http` one, is
+        // downloaded from the URL as mise.lock names it.
+        let url = "https://dl.example/v1.0.0/tool.tar.gz";
+        for pkg in [
+            package(
+                AquaPackageType::Http,
+                "https://dl.example/{{.Version}}/tool.tar.gz",
+            ),
+            package(AquaPackageType::GithubRelease, template),
+        ] {
+            assert_eq!(locked_download_url(&pkg, "v1.0.0", url.to_string()), url);
+        }
+    }
+
+    /// A locked install leaves the login an older mise.lock recorded out of the
+    /// entry, and pins an archive fetched with a login by sha256 when the entry
+    /// has no strong checksum, since `mise lock` could not fetch it again.
+    #[test]
+    fn test_locked_install_forgets_the_lockfile_login() {
+        let dir = tempfile::tempdir().unwrap();
+        let archive = dir.path().join("tool.tar.gz");
+        std::fs::write(&archive, b"artifact").unwrap();
+        let sha256 = format!(
+            "sha256:{}",
+            crate::hash::file_hash_sha256(&archive, None).unwrap()
+        );
+        let login = "https://ci:token@dl.example/v1.0.0/tool.tar.gz";
+        let plain = "https://dl.example/v1.0.0/tool.tar.gz";
+        let entry = |url: &str, checksum: Option<&str>| PlatformInfo {
+            url: Some(url.to_string()),
+            checksum: checksum.map(str::to_owned),
+            ..Default::default()
+        };
+
+        for checksum in [None, Some("md5:8e5b948a454515dbabfc7eb718daa52f")] {
+            let mut info = entry(login, checksum);
+            forget_locked_login(&mut info, login, &archive).unwrap();
+            assert_eq!(info.url.as_deref(), Some(plain));
+            assert_eq!(info.checksum.as_deref(), Some(sha256.as_str()));
+        }
+        // A strong pin stays.
+        let blake3 = format!("blake3:{}", "a".repeat(64));
+        let mut info = entry(login, Some(&blake3));
+        forget_locked_login(&mut info, login, &archive).unwrap();
+        assert_eq!(info.url.as_deref(), Some(plain));
+        assert_eq!(info.checksum.as_deref(), Some(blake3.as_str()));
+        // The login of the package's `url`, put back for the download, counts.
+        let mut info = entry(plain, None);
+        forget_locked_login(&mut info, login, &archive).unwrap();
+        assert_eq!(info.checksum.as_deref(), Some(sha256.as_str()));
+        // A download without a login changes nothing.
+        let mut info = entry(plain, None);
+        forget_locked_login(&mut info, plain, &archive).unwrap();
+        assert_eq!(info, entry(plain, None));
     }
 
     #[tokio::test]

@@ -343,6 +343,56 @@ fn test_response_validator_requires_strong_etag_or_last_modified() {
 }
 
 #[test]
+fn test_response_validator_takes_only_a_single_entity_tag() {
+    // Sent back in `If-None-Match`, `*` matches whatever the server holds and
+    // a list matches any of its members: neither names the stored file.
+    for etag in [
+        "*",
+        "\"v1\", \"v2\"",
+        "\"v1\",\"v2\"",
+        "\"v1\" \"v2\"",
+        "unquoted",
+        "\"",
+        "\"open",
+        "W/\"weak\"",
+    ] {
+        let mut headers = HeaderMap::new();
+        headers.insert(ETAG, HeaderValue::from_str(etag).unwrap());
+        assert_eq!(response_validator(&headers), None, "{etag}");
+        // An entry kept before the check existed is not used either.
+        assert!(
+            !DownloadValidator::Etag(etag.to_string()).is_valid(),
+            "{etag}"
+        );
+    }
+    assert!(DownloadValidator::Etag("\"\"".to_string()).is_valid());
+
+    assert!(is_entity_tag("W/\"weak\""));
+    assert!(is_entity_tag("\"strong\""));
+    assert!(!is_entity_tag("*"));
+    assert!(!is_entity_tag("W/*"));
+    assert!(!is_entity_tag("W/\"v1\", \"v2\""));
+    assert!(!is_entity_tag(""));
+}
+
+#[test]
+fn test_response_validator_ignores_a_last_modified_in_the_future() {
+    // Sent back in `If-Modified-Since`, it covers every later change of the file.
+    let value = "Thu, 01 Jan 2099 00:00:00 GMT";
+    let response_date = "Fri, 02 Jan 2099 00:00:00 GMT";
+    let mut headers = HeaderMap::new();
+    headers.insert(LAST_MODIFIED, HeaderValue::from_static(value));
+    headers.insert(DATE, HeaderValue::from_static(response_date));
+    assert_eq!(response_validator(&headers), None);
+    // An entry kept before the check existed is not used either.
+    let kept = DownloadValidator::LastModified {
+        value: value.to_string(),
+        response_date: response_date.to_string(),
+    };
+    assert!(!kept.is_valid());
+}
+
+#[test]
 fn test_cleanup_download_dir_preserves_only_partial_pairs() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("artifact.tar.gz"), b"complete").unwrap();

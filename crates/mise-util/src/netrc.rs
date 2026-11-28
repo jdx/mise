@@ -41,7 +41,7 @@ static NETRC: LazyLock<Option<Netrc>> = LazyLock::new(|| {
                 Some(netrc)
             }
             Err(e) => {
-                warn!("Failed to parse netrc file {}: {}", path.display(), e);
+                warn!("{}", parse_error_warning(&path, &e));
                 None
             }
         },
@@ -51,6 +51,18 @@ static NETRC: LazyLock<Option<Netrc>> = LazyLock::new(|| {
         }
     }
 });
+
+/// The warning for a netrc file that does not parse. It names the file and
+/// the line, and nothing the file holds: the parser's message quotes the token
+/// it stopped at, which can be part of a password (`password "two words"` is
+/// split at the space, so `words"` is the unexpected token).
+fn parse_error_warning(path: &Path, err: &netrc_jdx::Error) -> String {
+    format!(
+        "Failed to parse netrc file {} (line {}); fix that line, or set netrc = false",
+        path.display(),
+        err.line
+    )
+}
 
 /// Get the path to the netrc file
 ///
@@ -113,6 +125,18 @@ mod tests {
         )
         .unwrap();
         assert_eq!(netrc.credentials("example.com"), Some(("user", "pa#ss")));
+    }
+
+    #[test]
+    fn parse_error_warning_does_not_quote_the_file() {
+        let content = "# ci\nmachine example.com login user password \"correct horse\"\n";
+        let err = Netrc::parse(content).unwrap_err();
+        let warning = parse_error_warning(Path::new("/home/ci/.netrc"), &err);
+        assert!(!warning.contains("horse"), "{warning}");
+        assert!(
+            warning.starts_with("Failed to parse netrc file /home/ci/.netrc (line 2)"),
+            "{warning}"
+        );
     }
 
     #[test]

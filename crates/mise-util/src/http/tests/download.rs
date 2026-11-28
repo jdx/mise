@@ -94,6 +94,31 @@ async fn test_download_retry_resumes_with_last_modified_validator() {
 }
 
 #[tokio::test(flavor = "current_thread")]
+async fn test_download_resumes_with_last_modified_beside_an_unquoted_etag() {
+    let _guard = set_test_http_retries(1);
+    let (port, count, requests) = spawn_recording_server(vec![
+        truncated_last_modified_unquoted_etag_download_response(),
+        resumed_last_modified_unquoted_etag_download_response(),
+    ])
+    .await;
+    let url = format!("http://127.0.0.1:{port}/artifact");
+    let dir = tempfile::tempdir().unwrap();
+    let destination = dir.path().join("artifact");
+    let client = Client::new(Duration::from_secs(2), ClientKind::Http).unwrap();
+
+    client
+        .download_file(&url, &destination, None)
+        .await
+        .unwrap();
+
+    assert_eq!(std::fs::read(&destination).unwrap(), b"helloworld");
+    assert_eq!(count.load(Ordering::SeqCst), 2);
+    let resumed = requests.lock().unwrap()[1].to_ascii_lowercase();
+    assert!(resumed.contains("range: bytes=5-"));
+    assert!(resumed.contains("if-range: wed, 21 oct 2015 07:28:00 gmt"));
+}
+
+#[tokio::test(flavor = "current_thread")]
 async fn test_download_resumes_across_calls_without_storing_secrets() {
     let _guard = set_test_http_retries(0);
     let (port, count, requests) = spawn_recording_server(vec![
@@ -413,6 +438,50 @@ async fn test_download_restarts_when_validator_changes() {
     let (port, count, requests) = spawn_recording_server(vec![
         truncated_download_response(),
         changed_validator_download_response(),
+        full_download_response(),
+    ])
+    .await;
+    let url = format!("http://127.0.0.1:{port}/artifact");
+    let dir = tempfile::tempdir().unwrap();
+    let destination = dir.path().join("artifact");
+    let client = Client::new(Duration::from_secs(2), ClientKind::Http).unwrap();
+
+    let _err = client
+        .download_file(&url, &destination, None)
+        .await
+        .unwrap_err();
+    client
+        .download_file(&url, &destination, None)
+        .await
+        .unwrap();
+
+    assert_eq!(std::fs::read(&destination).unwrap(), b"helloworld");
+    assert_eq!(count.load(Ordering::SeqCst), 3);
+    let requests = requests.lock().unwrap();
+    assert!(requests[1].to_ascii_lowercase().contains("range: bytes=5-"));
+    assert!(!requests[2].to_ascii_lowercase().contains("range:"));
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn test_download_restarts_when_partial_content_has_an_unquoted_etag() {
+    restarts_when_partial_content_is(unquoted_validator_download_response()).await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn test_download_restarts_when_partial_content_has_an_empty_etag() {
+    restarts_when_partial_content_is(empty_validator_download_response()).await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn test_download_restarts_when_partial_content_has_a_future_last_modified() {
+    restarts_when_partial_content_is(future_last_modified_download_response()).await;
+}
+
+async fn restarts_when_partial_content_is(resumed: &'static str) {
+    let _guard = set_test_http_retries(0);
+    let (port, count, requests) = spawn_recording_server(vec![
+        truncated_download_response(),
+        resumed,
         full_download_response(),
     ])
     .await;

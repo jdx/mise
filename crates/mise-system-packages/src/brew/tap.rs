@@ -583,11 +583,13 @@ async fn immutable_text(url: String) -> Result<String> {
 /// Parsed before it is stored, and a stored copy that does not parse is fetched
 /// again, so a malformed 200 cannot pin this sha to an error for good.
 async fn immutable_json<T: serde::de::DeserializeOwned>(url: String) -> Result<T> {
-    if let Some(value) = cached_immutable(&url).and_then(|text| serde_json::from_str(&text).ok()) {
+    if let Some(value) =
+        cached_immutable(&url).and_then(|text| mise_util::http::parse_json(text.as_bytes()).ok())
+    {
         return Ok(value);
     }
     let text = HTTP_FETCH.get_text_cached(url.as_str()).await?;
-    let value = serde_json::from_str(&text)?;
+    let value = mise_util::http::parse_json(text.as_bytes())?;
     store_immutable(&url, &text);
     Ok(value)
 }
