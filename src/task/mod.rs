@@ -1227,23 +1227,31 @@ impl Task {
             .collect()
     }
 
+    /// Whether `path`, one of this task's config sources, is the user's own rather than a
+    /// project's: global or system config, a file in a global task directory, or the file
+    /// this task was loaded from when global or system config's task includes reached it.
+    /// Only loading sets `global` (a task definition that declares it is ignored), so it
+    /// says which config named the file wherever that file is.
+    fn config_source_is_global(&self, path: &Path) -> bool {
+        config::is_global_config(path)
+            || config::is_global_task_include_path(path)
+            || (self.global && path == self.config_source)
+    }
+
     /// Whether the user vouches for every file this task is defined in, so commands its
     /// definition names may run before `mise run`, as shell completion runs a usage spec's
     /// `complete run=` and `mount`. A `[tasks]`-only config and a template-free task file load
     /// without trust because they are inert until run; this is what tells the two apart.
     ///
-    /// Global and system config and the global task directories are the user's own. A
-    /// project's files count once the project is trusted: the file itself, its config root, or
-    /// one of the root's own config files, which is what lets the root's task includes load
-    /// without a check of their own. Safe mode keeps project config inert, trusted or not.
-    /// The `global` field is not consulted because a task definition can set it.
+    /// The user's own files count (see [`Self::config_source_is_global`]). A project's files
+    /// count once the project is trusted: the file itself, its config root, or one of the
+    /// root's own config files, which is what lets the root's task includes load without a
+    /// check of their own. Safe mode keeps project config inert, trusted or not.
     pub fn is_trusted(&self, config: &Config) -> bool {
         use crate::config::config_file::{is_path_trusted, is_trusted};
         let safe_mode = config::Settings::safe_mode();
         let trusted = |path: &Path| {
-            config::is_global_config(path)
-                || config::is_global_task_include_path(path)
-                || (!safe_mode && is_path_trusted(path))
+            self.config_source_is_global(path) || (!safe_mode && is_path_trusted(path))
         };
         let root_trusted = || {
             !safe_mode
@@ -1261,10 +1269,32 @@ impl Task {
     }
 
     pub fn tool_args(&self) -> Result<Vec<ToolArg>> {
-        self.tools
+        let tools = self
+            .tools
             .iter()
             .map(|(tool, value)| value.to_tool_arg(tool))
-            .collect()
+            .collect::<Result<Vec<_>>>()?;
+        // These are requests the task's config makes, though they are built as arguments, so
+        // in safe mode they are recorded as that config's `[tools]` are
+        // (`ToolRequest::record_safe_mode_credential_hosts`), whichever command resolves them:
+        // a project task's tools get neither netrc credentials on the hosts they name nor
+        // `env` in their templates. A task is global only if all of its config is.
+        if crate::config::Settings::safe_mode() {
+            let project = !self
+                .config_sources()
+                .into_iter()
+                .all(|path| self.config_source_is_global(path));
+            for tool in &tools {
+                crate::config::record_safe_mode_tool(&tool.ba, project);
+                if let Some(request) = &tool.tvr {
+                    crate::toolset::record_safe_mode_credential_hosts(
+                        &request.options().opts,
+                        project,
+                    );
+                }
+            }
+        }
+        Ok(tools)
     }
 
     pub fn new(path: &Path, prefix: &Path, config_root: &Path) -> Result<Task> {

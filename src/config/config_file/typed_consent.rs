@@ -88,6 +88,15 @@ fn run_by_shell() -> bool {
     env::__USAGE.is_some() || *COMMAND_ORIGIN.lock().unwrap() != Some(CommandOrigin::Typed)
 }
 
+/// Whether the shell ran mise for its own integration rather than for a command the user entered:
+/// completion, including the `mise tasks --usage` it starts with `__USAGE` set, or a command the
+/// parsed command line shows is [`CommandOrigin::ShellIntegration`]. Unlike [`run_by_shell`], a
+/// command line not parsed yet, such as a shim's, does not count.
+pub(super) fn run_for_shell_integration() -> bool {
+    env::__USAGE.is_some()
+        || *COMMAND_ORIGIN.lock().unwrap() == Some(CommandOrigin::ShellIntegration)
+}
+
 fn read_signals(path: &Path, config_root: &Path) -> Signals {
     Signals {
         stdin_tty: std::io::stdin().is_terminal(),

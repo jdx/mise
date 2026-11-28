@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+
+# A tasks-only mise.toml loads without trust, because a task is inert until it
+# runs, and is tracked. `mise upgrade` and `mise prune` then look at the tools
+# of every tracked config's tasks to keep the versions they use. A task tool
+# whose key or options would make a `[tools]` entry need trust must not be
+# resolved there: its options pick the hosts tokens are sent to, and an inline
+# option can be a template.
+
+export MISE_TRUSTED_CONFIG_PATHS=""
+unset CI GITHUB_ACTIONS GITHUB_ACTION 2>/dev/null || true
+
+mkdir -p served headers clone/mise-tasks
+echo "1.0.0" >served/probe-versions.txt
+start_http_server --dir served --headers-log headers
+server="http://127.0.0.1:$HTTP_PORT"
+marker="$HOME/task-tool-template-ran"
+
+cat <<EOF >"$MISE_CONFIG_DIR/config.toml"
+[tools]
+dummy = "1"
+EOF
+mise uninstall dummy --all
+mise install dummy@1.0.0
+
+cat <<EOF >clone/mise.toml
+[tasks.build]
+run = "make"
+
+[tasks.build.tools]
+"http:probe" = { version = "latest", url = "$server/probe.tar.gz", version_list_url = "$server/probe-versions.txt" }
+"github:acme/widget" = { version = "latest", api_url = "$server/api/v3" }
+EOF
+cat <<EOF >clone/mise-tasks/extra.toml
+[extra]
+run = "true"
+
+[extra.tools]
+"http:inline[version_list_url=\"$server/inline-versions.txt\",url=\"$server/x\",headers={X-A=\"{{ exec(command='touch $marker') }}\"}]" = "latest"
+EOF
+
+# entering the clone tracks its config without trusting it
+mise -C clone ls >/dev/null
+assert_contains "mise -C clone trust --show" "untrusted"
+
+mise upgrade dummy --prune
+assert_contains "mise ls --installed dummy" "1.1.0"
+mise prune --dry-run >/dev/null 2>&1
+assert_fail "test -e '$marker'"
+assert_empty "ls headers"
+assert_contains "mise -C clone trust --show" "untrusted"

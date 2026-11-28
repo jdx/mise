@@ -76,8 +76,8 @@ ok "[trust] an ignored directory is not trusted"
 # command does not hide it.
 for cmd in 'mise hook-not-found -s bash -- nosuchbin' 'mise -q hook-not-found -s bash -- nosuchbin'; do
   output="$(on_pty "$cmd")" || true
-  # The prompt shows the handler reached the trust decision and did not take it.
-  assert_contains_text "$output" "Trust them?"
+  # The handler leaves untrusted config out without asking.
+  assert_not_contains_text "$output" "Trust them?"
   assert_not_contains_text "$output" "$notice"
   assert_untrusted
   forget_trust

@@ -1,0 +1,156 @@
+#!/usr/bin/env bash
+
+# Loading a task does not resolve the `vars` of a task nobody trusted:
+# `vars._.source` runs a script. A config holding only [tasks] and a
+# template-free task file both load without trust, because tasks are inert until
+# they run, and naming an input group in `sources` does not change that. TAB
+# completion of `mise run ` loads every task, so it must not run the script.
+
+export MISE_EXPERIMENTAL=1 MISE_TRUSTED_CONFIG_PATHS="" MISE_YES=0
+unset CI GITHUB_ACTIONS GITHUB_ACTION 2>/dev/null || true
+
+ran="$PWD/ran"
+mkdir -p "$ran" mise-tasks
+
+cat <<EOF >setup.sh
+touch "$ran/sourced"
+export dir=lib
+EOF
+
+cat <<'EOF' >mise.toml
+[tasks.build]
+run = "true"
+sources = ["@group:src"]
+vars._.source = "./setup.sh"
+EOF
+
+# nothing declares the group, so there is nothing to render
+mise __complete_word__ --shell fish --line 'mise run ' >/dev/null 2>&1 || true
+mise __complete_word__ --shell bash --line 'mise ' >/dev/null 2>&1 || true
+assert_empty "ls $ran"
+assert_fail_contains "mise tasks ls 2>&1" "undefined input group"
+assert_empty "ls $ran"
+assert_contains "mise trust --show" "untrusted"
+
+echo "=== a task file ==="
+rm mise.toml
+cat <<'EOF' >mise-tasks/script
+#!/usr/bin/env bash
+#MISE sources=["@group:src"]
+#MISE vars={_={source="./setup.sh"}}
+EOF
+chmod +x mise-tasks/script
+mise __complete_word__ --shell fish --line 'mise run ' >/dev/null 2>&1 || true
+assert_fail_contains "mise tasks ls 2>&1" "undefined input group"
+assert_empty "ls $ran"
+rm mise-tasks/script
+
+echo "=== a declared templated entry still sees the task's vars ==="
+# declaring one needs trust
+cat <<'EOF' >mise.toml
+[task_config.input_groups]
+src = ["{{ vars.dir }}/**"]
+
+[tasks.build]
+run = "true"
+sources = ["@group:src"]
+vars._.source = "./setup.sh"
+EOF
+mise trust >/dev/null
+assert_contains "mise tasks info build --json" "$PWD/lib/**"
+assert "ls $ran" "sourced"
+rm "$ran/sourced"
+
+echo "=== a trusted parent's cascaded templated entry does not run an untrusted task's vars ==="
+rm mise.toml
+cat <<'EOF' >mise.toml
+[task_config]
+cascade = true
+
+[task_config.input_groups]
+src = ["{{ vars.dir }}/**"]
+EOF
+mise trust >/dev/null
+mkdir child
+cat <<EOF >child/setup.sh
+touch "$ran/sourced"
+export dir=lib
+EOF
+cat <<'EOF' >child/mise.toml
+[tasks.build]
+run = "true"
+sources = ["@group:src"]
+vars._.source = "./setup.sh"
+EOF
+cd child || exit 1
+assert_contains "mise trust --show" "child: untrusted"
+assert_contains "mise tasks ls" "build"
+mise __complete_word__ --shell fish --line 'mise run ' >/dev/null 2>&1 || true
+assert_empty "ls $ran"
+assert "mise trust"
+assert_contains "mise tasks info build --json" "$(dirname "$PWD")/lib/**"
+assert "ls $ran" "sourced"
+
+echo "=== a cascaded group reference that needs an untrusted task's vars is left out ==="
+cd .. || exit 1
+cat <<'EOF' >mise.toml
+[task_config]
+cascade = true
+global_inputs = ["@group:{{ vars.group }}"]
+
+[task_config.input_groups]
+src = ["lib/**"]
+EOF
+mise trust >/dev/null
+mkdir child2
+cat <<'EOF' >child2/mise.toml
+[tasks.build]
+run = "true"
+vars = { group = "src" }
+EOF
+cd child2 || exit 1
+assert_contains "mise trust --show" "child2: untrusted"
+assert_contains "mise tasks ls" "build"
+assert_not_contains "mise tasks info build --json" "lib/**"
+assert "mise trust"
+assert_contains "mise tasks info build --json" "$(dirname "$PWD")/lib/**"
+
+echo "=== a project task that declares global = true is still the project's ==="
+cd .. || exit 1
+rm "$ran/sourced"
+cat <<'EOF' >mise.toml
+[task_config]
+cascade = true
+
+[task_config.input_groups]
+src = ["{{ vars.dir }}/**"]
+EOF
+mise trust >/dev/null
+mkdir -p child3/mise-tasks
+cat <<EOF >child3/setup.sh
+touch "$ran/sourced"
+export dir=lib
+EOF
+# `global` is not a task field a config can set: the schema leaves it out, and
+# mise ignores it, deciding from where the file lives.
+# schema: invalid
+cat <<'EOF' >child3/mise.toml
+[tasks.build]
+run = "true"
+global = true
+sources = ["@group:src"]
+vars._.source = "./setup.sh"
+EOF
+cat <<'EOF' >child3/mise-tasks/script
+#!/usr/bin/env bash
+#MISE global=true
+#MISE sources=["@group:src"]
+#MISE vars={_={source="./setup.sh"}}
+EOF
+chmod +x child3/mise-tasks/script
+cd child3 || exit 1
+assert_contains "mise trust --show" "child3: untrusted"
+assert_contains "mise tasks ls" "build"
+assert_contains "mise tasks ls" "script"
+mise __complete_word__ --shell fish --line 'mise run ' >/dev/null 2>&1 || true
+assert_empty "ls $ran"

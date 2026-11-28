@@ -252,9 +252,16 @@ async fn resolve(
     Ok(cell
         .get_or_init(|| async {
             let backend = tv.backend().ok();
+            let tool = ba.clone();
             let mut resolution = resolve_tool_lock_info(ba, tv, platform, backend).await;
+            // The artifact is downloaded for the tool, so in its credential scope: a project
+            // tool's release can point the download at any host.
             if let Ok(info) = &mut resolution.4
-                && let Err(error) = complete_artifact_checksums(info).await
+                && let Err(error) = crate::toolset::with_safe_mode_tool_scope(
+                    &tool,
+                    complete_artifact_checksums(info),
+                )
+                .await
             {
                 resolution.4 = Err(error.to_string());
             }
@@ -434,6 +441,37 @@ impl PlatformSelection {
     }
 }
 
+/// The platform records [`generate`] leaves out of `tools` on purpose, with the same
+/// backend variants it skips: those a request's `os` option excludes. Each names the entry
+/// the request would have locked there, with its backend and options.
+pub fn os_excluded_platforms(
+    tools: &[Tool],
+    platforms: &[Platform],
+) -> Result<super::ExcludedPlatforms> {
+    let mut excluded = super::ExcludedPlatforms::new();
+    for (ba, tv) in tools {
+        let backend = tv.backend()?;
+        let short = crate::toolset::install_state::state_short(&ba.short).into_owned();
+        for platform in platforms {
+            if tv.request.is_os_supported_on(platform) {
+                continue;
+            }
+            for platform in backend.platform_variants_for(tv, platform) {
+                let options = backend
+                    .lockfile_options(&tv.request, &PlatformTarget::new(platform.clone()))?;
+                excluded.insert(super::ExcludedPlatform {
+                    tool: short.clone(),
+                    version: tv.version.clone(),
+                    backend: ba.stored_full(),
+                    options,
+                    platform: platform.to_key(),
+                });
+            }
+        }
+    }
+    Ok(excluded)
+}
+
 pub async fn generate(
     previous: &Lockfile,
     tools: &[Tool],
@@ -583,6 +621,7 @@ pub async fn generate(
             continue;
         }
         let semaphore = semaphore.clone();
+        let tool = ba.clone();
         tasks.spawn(async move {
             let _permit = semaphore.acquire().await?;
             let mut resolution = if let Some(info) = actual {
@@ -600,9 +639,15 @@ pub async fn generate(
                 resolve(ba, tv.clone(), platform).await?
             };
             if let Ok(info) = &mut resolution.4 {
-                complete_artifact_checksums(info).await?;
+                crate::toolset::with_safe_mode_tool_scope(&tool, async {
+                    complete_artifact_checksums(info).await?;
+                    if let Some(old) = &previous_info {
+                        check_replaced_weak_pins(old, info).await?;
+                    }
+                    Ok::<_, eyre::Report>(())
+                })
+                .await?;
                 if let Some(old) = previous_info {
-                    check_replaced_weak_pins(&old, info).await?;
                     preserve_legacy_metadata(&old, info);
                 }
             }
@@ -2037,6 +2082,172 @@ mod tests {
         let platforms = &generated.tools_for("fixture").unwrap()[0].platforms;
         assert!(platforms.contains_key("linux-x64"));
         assert!(!platforms.contains_key("macos-arm64"));
+    }
+
+    fn fixture_with_os(os: &str) -> Vec<Tool> {
+        let ba = BackendArg::new("fixture".into(), Some("http:fixture".into()));
+        let mut options = ToolVersionOptions::default();
+        options.core.os = Some(vec![os.into()]);
+        let request =
+            ToolRequest::new_with_options(Arc::new(ba.clone()), "1", options, ToolSource::Argument)
+                .unwrap();
+        vec![(ba, ToolVersion::new(request, "1.0".into()))]
+    }
+
+    /// Safe mode skipped a task file, so `mise lock` restores what generation dropped. A
+    /// platform the `os` option now excludes was dropped on purpose and stays dropped.
+    #[tokio::test]
+    async fn restoring_for_a_skipped_task_file_keeps_os_excluded_platforms_out() {
+        crate::backend::load_tools().await.unwrap();
+        let platforms = [
+            Platform::parse("linux-x64").unwrap(),
+            Platform::parse("macos-arm64").unwrap(),
+        ];
+        let tools = fixture_with_os("linux");
+        let generated = generate(
+            &previous(),
+            &tools,
+            &platforms,
+            false,
+            PlatformSelection::Default,
+            2,
+            &[],
+        )
+        .await
+        .unwrap();
+        let excluded = os_excluded_platforms(&tools, &platforms).unwrap();
+        assert_eq!(
+            excluded
+                .iter()
+                .map(|record| (record.backend.as_str(), record.platform.as_str()))
+                .collect::<Vec<_>>(),
+            [("http:fixture", "macos-arm64")]
+        );
+        let mut restored = generated.clone();
+        restored.restore_missing_versions(&previous(), "fixture", &excluded);
+        let entries = restored.tools_for("fixture").unwrap();
+        assert_eq!(entries.len(), 1);
+        assert!(entries[0].platforms.contains_key("linux-x64"));
+        assert!(!entries[0].platforms.contains_key("macos-arm64"));
+        // A platform nothing excludes is still restored.
+        let mut restored = generated;
+        restored.restore_missing_versions(&previous(), "fixture", &ExcludedPlatforms::new());
+        assert!(
+            restored.tools_for("fixture").unwrap()[0]
+                .platforms
+                .contains_key("macos-arm64")
+        );
+
+        // The exclusion is the visible request's entry. A skipped task's pin of the same
+        // version with other options, or from another backend, keeps its row.
+        let mut with_variants = previous();
+        for (backend, options) in [
+            (
+                "http:fixture",
+                BTreeMap::from([("bin".to_string(), "other".to_string())]),
+            ),
+            (
+                "http:elsewhere",
+                BTreeMap::from([("bin".to_string(), "x".to_string())]),
+            ),
+        ] {
+            with_variants.set_platform_info(
+                "fixture",
+                "1.0",
+                Some(backend),
+                &options,
+                "macos-arm64",
+                PlatformInfo {
+                    checksum: Some("sha256:variant".into()),
+                    ..Default::default()
+                },
+            );
+        }
+        let mut restored = generate(
+            &with_variants,
+            &tools,
+            &platforms,
+            false,
+            PlatformSelection::Default,
+            2,
+            &[],
+        )
+        .await
+        .unwrap();
+        restored.restore_missing_versions(&with_variants, "fixture", &excluded);
+        let entries = restored.tools_for("fixture").unwrap();
+        assert_eq!(entries.len(), 3, "{entries:?}");
+        for entry in entries {
+            assert_eq!(
+                entry.platforms.contains_key("macos-arm64"),
+                !entry.options.is_empty(),
+                "{entry:?}"
+            );
+        }
+
+        // Excluded from every target, the tool has no entry, and gets none back.
+        let tools = fixture_with_os("windows");
+        let mut generated = generate(
+            &previous(),
+            &tools,
+            &platforms,
+            false,
+            PlatformSelection::Default,
+            2,
+            &[],
+        )
+        .await
+        .unwrap();
+        assert!(generated.tools_for("fixture").is_none());
+        let excluded = os_excluded_platforms(&tools, &platforms).unwrap();
+        generated.restore_missing_versions(&previous(), "fixture", &excluded);
+        assert!(generated.tools_for("fixture").is_none());
+
+        // A legacy entry records no backend, so it is matched on tool, version and options:
+        // its excluded rows stay out too, but a legacy pin of the version with other options,
+        // which a skipped task may make, keeps them.
+        let mut legacy = Lockfile::default();
+        let other = BTreeMap::from([("bin".to_string(), "other".to_string())]);
+        for options in [BTreeMap::new(), other.clone()] {
+            for platform in ["linux-x64", "macos-arm64"] {
+                legacy.set_platform_info(
+                    "fixture",
+                    "1.0",
+                    None,
+                    &options,
+                    platform,
+                    PlatformInfo {
+                        checksum: Some("sha256:legacy".into()),
+                        ..Default::default()
+                    },
+                );
+            }
+        }
+        assert!(
+            legacy
+                .tools_for("fixture")
+                .unwrap()
+                .iter()
+                .all(|entry| entry.backend.is_none())
+        );
+        let mut restored = generated.clone();
+        restored.restore_missing_versions(&legacy, "fixture", &excluded);
+        let entries = restored.tools_for("fixture").unwrap();
+        assert_eq!(entries.len(), 1, "{entries:?}");
+        assert_eq!(entries[0].options, other);
+        assert_eq!(entries[0].platforms.len(), 2, "{entries:?}");
+
+        // While a task file is skipped, a legacy entry with no options may be a skipped
+        // task's, so the exclusion keeps out none of its rows.
+        let mut excluded = excluded;
+        excluded.set_task_file_skipped(true);
+        generated.restore_missing_versions(&legacy, "fixture", &excluded);
+        let entries = generated.tools_for("fixture").unwrap();
+        assert_eq!(entries.len(), 2, "{entries:?}");
+        assert!(
+            entries.iter().all(|entry| entry.platforms.len() == 2),
+            "{entries:?}"
+        );
     }
 
     /// A tool configured with URL credentials is selected under its

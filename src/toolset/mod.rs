@@ -1497,6 +1497,17 @@ pub async fn prunable_tools_with_sources(
                 .any(|key| needed.contains_key(key))
     });
 
+    // Safe mode left out a task file, so the tools its tasks name are missing from
+    // `needed`, and any candidate may be one of them.
+    if let Some(skipped) = crate::config::safe_mode_skipped_task_source()
+        && !to_delete.is_empty()
+    {
+        warn!(
+            "not pruning: safe mode (MISE_SAFE=1) skipped {skipped}, so the tools its tasks need are unknown"
+        );
+        to_delete.clear();
+    }
+
     // A process started before its version stopped being needed may still be
     // running from it. Removing the version would delete files from under it.
     if let Some(progress) = progress {

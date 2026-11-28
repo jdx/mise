@@ -2246,37 +2246,139 @@ impl Lockfile {
         })
     }
 
-    /// Put back the entries `previous` holds for `short` at versions this
-    /// lockfile no longer has. For a tool whose new pin was withheld, this
-    /// keeps what the lockfile recorded, which generation dropped because the
-    /// tool was still selected.
-    pub fn restore_missing_versions(&mut self, previous: &Lockfile, short: &str) {
+    /// Put back the entries `previous` holds for `short` that this lockfile no
+    /// longer has. For a tool whose new pin was withheld, this keeps what the
+    /// lockfile recorded, which generation dropped because the tool was still
+    /// selected. An entry is its version and options, the key the lockfile
+    /// keeps entries apart by, so a variant of a version that is still locked
+    /// with other options comes back too.
+    ///
+    /// The requests a previous entry is bound to come back with it, except
+    /// those this lockfile binds again, maybe to another version. They also
+    /// come back to an entry this lockfile still has: a request only a skipped
+    /// task makes can share a version with one this run locked.
+    ///
+    /// The platforms in `excluded` were left out on purpose (see
+    /// [`ExcludedPlatforms`]), so their records do not come back, and neither does an
+    /// entry that had nothing else.
+    pub fn restore_missing_versions(
+        &mut self,
+        previous: &Lockfile,
+        short: &str,
+        excluded: &ExcludedPlatforms,
+    ) {
         let Some(entries) = previous.tools_for(short) else {
             return;
         };
         let key = crate::toolset::install_state::state_short(short).into_owned();
-        let present: BTreeSet<String> = self
-            .tools
-            .get(&key)
-            .map(|have| have.iter().map(|entry| entry.version.clone()).collect())
-            .unwrap_or_default();
+        let have = self.tools.get(&key).map(Vec::as_slice).unwrap_or_default();
+        let present: BTreeSet<(String, BTreeMap<String, String>)> = have
+            .iter()
+            .map(|entry| (entry.version.clone(), entry.options.clone()))
+            .collect();
+        let rebound: BTreeSet<(String, BTreeMap<String, String>)> = have
+            .iter()
+            .flat_map(|entry| {
+                entry
+                    .specifiers
+                    .iter()
+                    .map(|specifier| (specifier.clone(), entry.options.clone()))
+            })
+            .collect();
         for entry in entries {
-            if present.contains(&entry.version) {
+            let excludes = |platform: &str| excluded.excludes(&key, entry, platform);
+            let mut entry = entry.clone();
+            let is_excluded = |platform: &String| excludes(platform);
+            let recorded = entry.platforms.len() + entry.unsupported_platforms.len();
+            let platforms = std::mem::take(&mut entry.platforms)
+                .into_iter()
+                .filter(|(platform, _)| !is_excluded(platform))
+                .collect();
+            let unsupported = std::mem::take(&mut entry.unsupported_platforms)
+                .into_iter()
+                .filter(|platform| !is_excluded(platform))
+                .collect();
+            entry.platforms = platforms;
+            entry.unsupported_platforms = unsupported;
+            let left_out = recorded != entry.platforms.len() + entry.unsupported_platforms.len();
+            let was_bound = !entry.specifiers.is_empty();
+            entry
+                .specifiers
+                .retain(|specifier| !rebound.contains(&(specifier.clone(), entry.options.clone())));
+            let is_present = present.contains(&(entry.version.clone(), entry.options.clone()));
+            // Every request this entry was bound to now resolves to another version, so no
+            // request needs it. Back with no specifiers it would read as a legacy entry, which
+            // lookups match by version prefix, so a version the run moved away from could be
+            // picked again.
+            if was_bound && entry.specifiers.is_empty() && !is_present {
                 continue;
             }
-            // Generation dropped the shared package records this entry's
-            // conda_deps name along with it, so bring them back too.
-            for (platform, info) in &entry.platforms {
-                for dep in info.conda_deps.iter().flatten() {
-                    if let Some(package) = previous.get_conda_package(platform, dep) {
-                        self.set_conda_package(platform, dep, package.clone());
+            if is_present {
+                let mut restored = BTreeMap::new();
+                if let Some(kept) = self.tools.get_mut(&key).and_then(|have| {
+                    have.iter_mut()
+                        .find(|kept| kept.version == entry.version && kept.options == entry.options)
+                }) {
+                    kept.specifiers.extend(entry.specifiers);
+                    // This run may have locked the entry for fewer platforms than the requests
+                    // it did not see use. The platforms it no longer records come back, with
+                    // their downloads or as found unsupported, and the ones it locked, or found
+                    // unsupported, stay as it left them. Only from the same backend, though: what
+                    // another backend downloaded, or found no build of, says nothing about this
+                    // one, and `mise lock --check` would take its marker as this backend's.
+                    if kept.backend != entry.backend {
+                        continue;
+                    }
+                    for (platform, info) in entry.platforms {
+                        if !kept.platforms.contains_key(&platform)
+                            && !kept.unsupported_platforms.contains(&platform)
+                        {
+                            kept.platforms.insert(platform.clone(), info.clone());
+                            restored.insert(platform, info);
+                        }
+                    }
+                    for platform in entry.unsupported_platforms {
+                        if !kept.platforms.contains_key(&platform) {
+                            kept.unsupported_platforms.insert(platform);
+                        }
                     }
                 }
+                self.restore_conda_packages(previous, &restored);
+                continue;
             }
-            self.tools
-                .entry(key.clone())
-                .or_default()
-                .push(entry.clone());
+            // Generation wrote nothing for this version because its `os` option excludes every
+            // platform it had, as it would with the skipped task file read.
+            if left_out && entry.platforms.is_empty() && entry.unsupported_platforms.is_empty() {
+                continue;
+            }
+            self.restore_conda_packages(previous, &entry.platforms);
+            self.tools.entry(key.clone()).or_default().push(entry);
+        }
+    }
+
+    /// Generation dropped the shared package records that the conda_deps of `platforms`, an
+    /// entry's restored platforms, name along with them, so bring them back from `previous`.
+    /// Only the missing ones: a record this run wrote for the same package file was resolved
+    /// now, so it stays, and a different old one is reported rather than written over it.
+    fn restore_conda_packages(
+        &mut self,
+        previous: &Lockfile,
+        platforms: &BTreeMap<String, PlatformInfo>,
+    ) {
+        for (platform, info) in platforms {
+            for dep in info.conda_deps.iter().flatten() {
+                let Some(package) = previous.get_conda_package(platform, dep) else {
+                    continue;
+                };
+                match self.get_conda_package(platform, dep) {
+                    None => self.set_conda_package(platform, dep, package.clone()),
+                    Some(fresh) if fresh == package => {}
+                    Some(fresh) => warn!(
+                        "conda package {dep} for {platform} was locked from {} now and from {} before; keeping the new record",
+                        fresh.url, package.url
+                    ),
+                }
+            }
         }
     }
 
@@ -5715,6 +5817,76 @@ impl UnsupportedPlatforms {
                 })
             })
             .collect()
+    }
+}
+
+/// A platform record of one lockfile entry that `mise lock` left out on purpose, because the
+/// `os` option of the request that entry is for excludes it. The entry is the tool's key, its
+/// version, backend and options, so a request for the same version from another backend, or
+/// with other options, is not affected.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct ExcludedPlatform {
+    pub tool: String,
+    pub version: String,
+    pub backend: String,
+    pub options: BTreeMap<String, String>,
+    pub platform: String,
+}
+
+/// The [`ExcludedPlatform`]s of a run. Generation drops their records, so restoring what a
+/// skipped task file may still use must not bring them back. Only a record an exclusion
+/// matches without doubt stays out: a stale row costs a rewrite on the next `mise lock` that
+/// skips nothing, while a lost pin breaks a locked install.
+///
+/// | previous entry | matches an exclusion of the same tool, version and platform |
+/// |---|---|
+/// | names a backend | with the same backend and options |
+/// | names no backend (legacy), has options | with the same options |
+/// | legacy, with no options | with no options, unless a task file was skipped |
+///
+/// A legacy entry with no options may have been written before options were recorded, so its
+/// options say nothing about which request it is for. While a task file is skipped, the
+/// requests its tasks make are not seen, and such an entry may be one of theirs.
+#[derive(Debug, Clone, Default)]
+pub struct ExcludedPlatforms {
+    records: BTreeSet<ExcludedPlatform>,
+    task_file_skipped: bool,
+}
+
+impl ExcludedPlatforms {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn insert(&mut self, record: ExcludedPlatform) {
+        self.records.insert(record);
+    }
+
+    /// Records that safe mode skipped a task file, so the requests its tasks make were not
+    /// seen.
+    pub fn set_task_file_skipped(&mut self, skipped: bool) {
+        self.task_file_skipped = skipped;
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &ExcludedPlatform> {
+        self.records.iter()
+    }
+
+    /// Whether `platform` of `entry`, a previous entry of `tool`, is excluded.
+    fn excludes(&self, tool: &str, entry: &LockfileTool, platform: &str) -> bool {
+        if entry.backend.is_none() && entry.options.is_empty() && self.task_file_skipped {
+            return false;
+        }
+        self.records.iter().any(|e| {
+            e.tool == tool
+                && e.version == entry.version
+                && e.platform == platform
+                && e.options == entry.options
+                && entry
+                    .backend
+                    .as_ref()
+                    .is_none_or(|backend| *backend == e.backend)
+        })
     }
 }
 

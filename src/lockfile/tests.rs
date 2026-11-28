@@ -6259,6 +6259,265 @@ fn untrusted_lockfile_keeps_a_registry_only_aube_graph() {
 }
 
 #[test]
+fn restore_missing_versions_brings_back_a_variant_with_other_options() {
+    // Two tasks lock `http:widget` 1.0.0 with different options. Generation kept the one the
+    // visible task requests; the one only a skipped task requests must come back as well.
+    let plain = basic_tool("1.0.0", "http:widget");
+    let mut variant = basic_tool("1.0.0", "http:widget");
+    variant.options.insert(
+        "url".to_string(),
+        "https://example.com/other.tar.gz".to_string(),
+    );
+    let mut previous = Lockfile::default();
+    previous.tools.insert(
+        "http:widget".to_string(),
+        vec![plain.clone(), variant.clone()],
+    );
+    let mut current = Lockfile::default();
+    current
+        .tools
+        .insert("http:widget".to_string(), vec![plain.clone()]);
+
+    current.restore_missing_versions(&previous, "http:widget", &ExcludedPlatforms::new());
+    current.restore_missing_versions(&previous, "http:widget", &ExcludedPlatforms::new());
+
+    let entries = &current.tools["http:widget"];
+    assert_eq!(entries.len(), 2, "{entries:?}");
+    assert!(entries.iter().any(|e| e.options == plain.options));
+    assert!(entries.iter().any(|e| e.options == variant.options));
+}
+
+#[test]
+fn restore_missing_versions_keeps_the_requests_this_run_did_not_bind() {
+    // A visible request `1` and a skipped task's request `1.0.0` both locked 1.0.0. Generation
+    // rebuilt 1.0.0 for `1` alone; `1.0.0` must stay bound to it, or a later locked run of the
+    // skipped task finds no entry for its request.
+    let mut shared = basic_tool("1.0.0", "aqua:widget");
+    shared.specifiers = BTreeSet::from(["1".to_string(), "1.0.0".to_string()]);
+    let mut previous = Lockfile::default();
+    previous
+        .tools
+        .insert("widget".to_string(), vec![shared.clone()]);
+
+    let mut rebuilt = basic_tool("1.0.0", "aqua:widget");
+    rebuilt.specifiers = BTreeSet::from(["1".to_string()]);
+    let mut current = Lockfile::default();
+    current.tools.insert("widget".to_string(), vec![rebuilt]);
+    current.restore_missing_versions(&previous, "widget", &ExcludedPlatforms::new());
+    let entries = &current.tools["widget"];
+    assert_eq!(entries.len(), 1, "{entries:?}");
+    assert_eq!(entries[0].specifiers, shared.specifiers);
+
+    // When this run moved `1` to 1.1.0, the restored 1.0.0 keeps only the request it did not
+    // bind, so `1` is not bound to two versions.
+    let mut moved = basic_tool("1.1.0", "aqua:widget");
+    moved.specifiers = BTreeSet::from(["1".to_string()]);
+    let mut current = Lockfile::default();
+    current.tools.insert("widget".to_string(), vec![moved]);
+    current.restore_missing_versions(&previous, "widget", &ExcludedPlatforms::new());
+    current.restore_missing_versions(&previous, "widget", &ExcludedPlatforms::new());
+    let entries = &current.tools["widget"];
+    assert_eq!(entries.len(), 2, "{entries:?}");
+    let restored = entries.iter().find(|e| e.version == "1.0.0").unwrap();
+    assert_eq!(restored.specifiers, BTreeSet::from(["1.0.0".to_string()]));
+}
+
+#[test]
+fn restore_missing_versions_drops_an_entry_whose_requests_all_moved() {
+    // 1.0.0 was bound to `1` alone, and this run moved `1` to 1.1.0. Back with no specifiers,
+    // 1.0.0 would read as a legacy entry, which a request is matched to by version prefix.
+    let mut old = basic_tool("1.0.0", "aqua:widget");
+    old.specifiers = BTreeSet::from(["1".to_string()]);
+    // An entry that was legacy before is still kept.
+    let legacy = basic_tool("0.9.0", "aqua:widget");
+    let mut previous = Lockfile::default();
+    previous
+        .tools
+        .insert("widget".to_string(), vec![old, legacy.clone()]);
+    let mut moved = basic_tool("1.1.0", "aqua:widget");
+    moved.specifiers = BTreeSet::from(["1".to_string()]);
+    let mut current = Lockfile::default();
+    current
+        .tools
+        .insert("widget".to_string(), vec![moved.clone()]);
+
+    current.restore_missing_versions(&previous, "widget", &ExcludedPlatforms::new());
+
+    let versions = current.tools["widget"]
+        .iter()
+        .map(|e| e.version.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(versions, ["1.1.0", "0.9.0"]);
+}
+
+#[test]
+fn restore_missing_versions_keeps_the_conda_records_this_run_wrote() {
+    // A skipped task's tool and a visible one share a conda package file name, which this run
+    // locked from another channel. The restored entry brings back the records that are missing,
+    // and the one this run wrote stays.
+    let platform = "linux-x64";
+    let mut previous = Lockfile::default();
+    let mut restored_tool = tool_with_conda_dep("1.0.0", "conda:old", platform, "libzlib-1.3");
+    restored_tool
+        .platforms
+        .get_mut(platform)
+        .unwrap()
+        .conda_deps
+        .as_mut()
+        .unwrap()
+        .push("ncurses-6.4".to_string());
+    previous
+        .tools
+        .insert("conda:old".to_string(), vec![restored_tool]);
+    add_test_conda_package(&mut previous, platform, "libzlib-1.3");
+    add_test_conda_package(&mut previous, platform, "ncurses-6.4");
+
+    let mut current = Lockfile::default();
+    current.tools.insert(
+        "conda:new".to_string(),
+        vec![tool_with_conda_dep(
+            "2.0.0",
+            "conda:new",
+            platform,
+            "libzlib-1.3",
+        )],
+    );
+    let fresh = CondaPackageInfo {
+        url: "https://other.example.com/libzlib-1.3.conda".to_string(),
+        checksum: Some("sha256:fresh".to_string()),
+    };
+    current.set_conda_package(platform, "libzlib-1.3", fresh.clone());
+
+    current.restore_missing_versions(&previous, "conda:old", &ExcludedPlatforms::new());
+
+    assert_eq!(current.tools["conda:old"].len(), 1);
+    assert_eq!(
+        current.get_conda_package(platform, "libzlib-1.3"),
+        Some(&fresh)
+    );
+    assert_eq!(
+        current.get_conda_package(platform, "ncurses-6.4"),
+        previous.get_conda_package(platform, "ncurses-6.4")
+    );
+}
+
+#[test]
+fn restore_missing_versions_keeps_the_platforms_this_run_did_not_lock() {
+    // A skipped task locked 1.0.0 for two platforms. This run rebuilt the same entry for one;
+    // the other's record must come back, and the one this run locked must stay as it is.
+    let platform = |checksum: &str| PlatformInfo {
+        checksum: Some(checksum.to_string()),
+        ..Default::default()
+    };
+    let mut previous_entry = basic_tool("1.0.0", "aqua:widget");
+    previous_entry.platforms = BTreeMap::from([
+        ("linux-x64".to_string(), platform("sha256:old-linux")),
+        ("macos-arm64".to_string(), platform("sha256:macos")),
+        ("windows-x64".to_string(), platform("sha256:windows")),
+    ]);
+    let mut previous = Lockfile::default();
+    previous
+        .tools
+        .insert("widget".to_string(), vec![previous_entry]);
+
+    let mut rebuilt = basic_tool("1.0.0", "aqua:widget");
+    rebuilt.platforms = BTreeMap::from([("linux-x64".to_string(), platform("sha256:new-linux"))]);
+    rebuilt.unsupported_platforms = BTreeSet::from(["windows-x64".to_string()]);
+    let mut current = Lockfile::default();
+    current.tools.insert("widget".to_string(), vec![rebuilt]);
+    current.restore_missing_versions(&previous, "widget", &ExcludedPlatforms::new());
+
+    let entries = &current.tools["widget"];
+    assert_eq!(entries.len(), 1, "{entries:?}");
+    let platforms = &entries[0].platforms;
+    assert_eq!(
+        platforms["linux-x64"].checksum.as_deref(),
+        Some("sha256:new-linux")
+    );
+    assert_eq!(
+        platforms["macos-arm64"].checksum.as_deref(),
+        Some("sha256:macos")
+    );
+    assert!(!platforms.contains_key("windows-x64"), "{platforms:?}");
+}
+
+#[test]
+fn restore_missing_versions_keeps_the_platforms_found_unsupported_before() {
+    // A skipped task found 1.0.0 unsupported on two platforms. This run locked one of them and
+    // did not look at the other, whose marker must come back so that `mise lock --check` does
+    // not count it as missing.
+    let mut previous_entry = basic_tool("1.0.0", "aqua:widget");
+    previous_entry.unsupported_platforms =
+        BTreeSet::from(["linux-x64".to_string(), "windows-x64".to_string()]);
+    let mut previous = Lockfile::default();
+    previous
+        .tools
+        .insert("widget".to_string(), vec![previous_entry]);
+
+    let mut rebuilt = basic_tool("1.0.0", "aqua:widget");
+    rebuilt.platforms = BTreeMap::from([(
+        "linux-x64".to_string(),
+        PlatformInfo {
+            checksum: Some("sha256:linux".to_string()),
+            ..Default::default()
+        },
+    )]);
+    let mut current = Lockfile::default();
+    current.tools.insert("widget".to_string(), vec![rebuilt]);
+    current.restore_missing_versions(&previous, "widget", &ExcludedPlatforms::new());
+
+    let entry = &current.tools["widget"][0];
+    assert_eq!(
+        entry.unsupported_platforms,
+        BTreeSet::from(["windows-x64".to_string()])
+    );
+    assert!(entry.platforms.contains_key("linux-x64"), "{entry:?}");
+}
+
+#[test]
+fn restore_missing_versions_keeps_platform_results_of_another_backend_out() {
+    // The tool moved from aqua to github at the same version and options. What aqua downloaded,
+    // or found no build of, says nothing about github, so none of it comes back.
+    let mut previous_entry = basic_tool("1.0.0", "aqua:widget");
+    previous_entry.unsupported_platforms = BTreeSet::from(["windows-x64".to_string()]);
+    previous_entry.platforms = BTreeMap::from([(
+        "macos-arm64".to_string(),
+        PlatformInfo {
+            checksum: Some("sha256:aqua".to_string()),
+            ..Default::default()
+        },
+    )]);
+    previous_entry.specifiers = BTreeSet::from(["1".to_string()]);
+    let mut previous = Lockfile::default();
+    previous
+        .tools
+        .insert("widget".to_string(), vec![previous_entry]);
+
+    let mut rebuilt = basic_tool("1.0.0", "github:owner/widget");
+    rebuilt.platforms = BTreeMap::from([(
+        "linux-x64".to_string(),
+        PlatformInfo {
+            checksum: Some("sha256:linux".to_string()),
+            ..Default::default()
+        },
+    )]);
+    let mut current = Lockfile::default();
+    current.tools.insert("widget".to_string(), vec![rebuilt]);
+    current.restore_missing_versions(&previous, "widget", &ExcludedPlatforms::new());
+
+    let entries = &current.tools["widget"];
+    assert_eq!(entries.len(), 1, "{entries:?}");
+    let entry = &entries[0];
+    assert!(entry.unsupported_platforms.is_empty(), "{entry:?}");
+    assert_eq!(
+        entry.platforms.keys().collect::<Vec<_>>(),
+        ["linux-x64"],
+        "{entry:?}"
+    );
+    assert!(entry.specifiers.contains("1"), "{entry:?}");
+}
+
+#[test]
 fn restore_missing_versions_brings_back_conda_package_records() {
     let path = std::env::temp_dir().join("test_restore_conda_records.lock");
     std::fs::write(
@@ -6277,7 +6536,7 @@ backend = "conda:jq"
     let previous = Lockfile::read(&path).unwrap();
 
     let mut current = Lockfile::default();
-    current.restore_missing_versions(&previous, "jq");
+    current.restore_missing_versions(&previous, "jq", &ExcludedPlatforms::new());
 
     assert!(current.has_platforms("jq", "1.7.1"));
     assert!(
@@ -6313,4 +6572,140 @@ fn the_global_lockfile_is_matched_as_written() {
         &lockfile,
         &project.join(".config/mise.lock")
     ));
+}
+
+/// Which previous entries an `os` exclusion keeps out when `mise lock` restores them, as it
+/// does for a skipped task file. Each case excludes `macos-arm64` for the run's requests and
+/// says whether the entry under test gets that row back.
+#[test]
+fn restoring_matches_an_os_exclusion_only_to_an_entry_it_names_without_doubt() {
+    let opts = |pairs: &[(&str, &str)]| -> BTreeMap<String, String> {
+        pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect()
+    };
+    let none = BTreeMap::new;
+    let url_x = || opts(&[("url", "https://example.invalid/x.tar.gz")]);
+    let other = || opts(&[("bin", "other")]);
+    struct Case {
+        name: &'static str,
+        // the previous lockfile's entry for widget@1.0.0
+        previous: (Option<&'static str>, BTreeMap<String, String>),
+        // the run's requests for widget@1.0.0, each excluding macos-arm64
+        requests: Vec<(&'static str, BTreeMap<String, String>)>,
+        // whether safe mode skipped a task file, whose requests the run did not see
+        skipped: bool,
+        restored: bool,
+    }
+    let cases = [
+        Case {
+            name: "the exact entry stays out",
+            previous: (Some("http:widget"), none()),
+            requests: vec![("http:widget", none())],
+            skipped: true,
+            restored: false,
+        },
+        Case {
+            name: "an entry with other options keeps its row (4726517415)",
+            previous: (Some("http:widget"), other()),
+            requests: vec![("http:widget", none())],
+            skipped: true,
+            restored: true,
+        },
+        Case {
+            name: "an entry from another backend keeps its row (4726517415)",
+            previous: (Some("http:elsewhere"), none()),
+            requests: vec![("http:widget", none())],
+            skipped: true,
+            restored: true,
+        },
+        Case {
+            name: "a legacy entry with the same options stays out (4726558471, 4726564982)",
+            previous: (None, url_x()),
+            requests: vec![("http:widget", url_x())],
+            skipped: true,
+            restored: false,
+        },
+        Case {
+            name: "a legacy entry with other options keeps its row (4726581190)",
+            previous: (None, other()),
+            requests: vec![("http:widget", url_x())],
+            skipped: true,
+            restored: true,
+        },
+        Case {
+            name: "a legacy entry without options keeps its row beside a request with options \
+                   (4726611377, 4726663915)",
+            previous: (None, none()),
+            requests: vec![("http:widget", url_x())],
+            skipped: true,
+            restored: true,
+        },
+        Case {
+            name: "a legacy entry without options keeps its row beside a request without them \
+                   (4726663915)",
+            previous: (None, none()),
+            requests: vec![("http:widget", none())],
+            skipped: true,
+            restored: true,
+        },
+        Case {
+            name: "with nothing skipped, a legacy entry without options matches on its options",
+            previous: (None, none()),
+            requests: vec![("http:widget", none())],
+            skipped: false,
+            restored: false,
+        },
+        Case {
+            name: "with nothing skipped, a legacy entry without options keeps a row for others",
+            previous: (None, none()),
+            requests: vec![("http:widget", url_x())],
+            skipped: false,
+            restored: true,
+        },
+    ];
+    for case in cases {
+        let (backend, options) = &case.previous;
+        let mut entry = basic_tool("1.0.0", "unused");
+        entry.backend = backend.map(str::to_string);
+        entry.options = options.clone();
+        for platform in ["linux-x64", "macos-arm64"] {
+            entry
+                .platforms
+                .insert(platform.to_string(), PlatformInfo::default());
+        }
+        let mut previous = Lockfile::default();
+        previous
+            .tools
+            .insert("widget".to_string(), vec![entry.clone()]);
+        let mut excluded = ExcludedPlatforms::new();
+        excluded.set_task_file_skipped(case.skipped);
+        for (backend, options) in &case.requests {
+            excluded.insert(ExcludedPlatform {
+                tool: "widget".to_string(),
+                version: "1.0.0".to_string(),
+                backend: backend.to_string(),
+                options: options.clone(),
+                platform: "macos-arm64".to_string(),
+            });
+        }
+        let mut current = Lockfile::default();
+        current.restore_missing_versions(&previous, "widget", &excluded);
+        let restored = current.tools["widget"]
+            .iter()
+            .find(|e| e.backend == entry.backend && e.options == entry.options)
+            .unwrap_or_else(|| panic!("{}: entry not restored", case.name));
+        assert!(
+            restored.platforms.contains_key("linux-x64"),
+            "{}",
+            case.name
+        );
+        assert_eq!(
+            restored.platforms.contains_key("macos-arm64"),
+            case.restored,
+            "{}",
+            case.name
+        );
+    }
 }

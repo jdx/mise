@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+
+# A task file the global config includes from outside its built-in task folders
+# is the user's own, so the input groups it names render with its `vars`.
+
+export MISE_EXPERIMENTAL=1 MISE_TRUSTED_CONFIG_PATHS="" MISE_YES=0
+unset CI GITHUB_ACTIONS GITHUB_ACTION 2>/dev/null || true
+
+mkdir -p "$HOME/my-tasks"
+cat <<'EOF' >"$HOME/my-tasks/build.toml"
+[build]
+run = "true"
+sources = ["@group:src"]
+vars = { dir = "lib" }
+EOF
+cat <<EOF >"$MISE_CONFIG_DIR/config.toml"
+[task_config]
+includes = ["$HOME/my-tasks/build.toml"]
+
+[task_config.input_groups]
+src = ["{{ vars.dir }}/**"]
+EOF
+
+mkdir project
+cd project || exit 1
+assert_contains "mise tasks info build --json" "lib/**"
+assert_not_contains "mise tasks info build --json" "vars.dir"

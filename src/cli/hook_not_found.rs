@@ -2,7 +2,8 @@ use crate::request_exit;
 
 use eyre::Result;
 
-use crate::config::{Config, Settings};
+use crate::config::config_file::is_path_trusted;
+use crate::config::{Config, ConfigMap, Settings, is_global_config};
 use crate::registry::{REGISTRY, tool_enabled};
 use crate::shell::ShellType;
 use crate::toolset::ToolsetBuilder;
@@ -24,12 +25,28 @@ pub(crate) struct HookNotFound {
 
 impl HookNotFound {
     pub(crate) async fn run(self) -> Result<()> {
+        // A mistyped command is not a request to run this directory's config, so an untrusted
+        // config is left out and the trusted ones (global config) still decide what to
+        // auto-install. No warning: hook-env already warns once on entering the directory.
+        crate::config::skip_untrusted_configs();
         let mut config = Config::get().await?;
         let settings = Settings::try_get()?;
         if settings.not_found_auto_install {
-            let mut ts = ToolsetBuilder::new().build(&config).await?;
+            // A plain tool list loads without trust, but it is no consent to install, so only
+            // trusted config decides which version is asked for. Merged in, an untrusted file's
+            // request would take the place of global config's and leave nothing to install.
+            let trusted: ConfigMap = config
+                .config_files
+                .iter()
+                .filter(|(path, _)| is_global_config(path) || is_path_trusted(path))
+                .map(|(path, cf)| (path.clone(), cf.clone()))
+                .collect();
+            let mut ts = ToolsetBuilder::new()
+                .with_config_files(trusted)
+                .build(&config)
+                .await?;
             if ts
-                .install_missing_bin(&mut config, &self.bin)
+                .install_missing_bin(&mut config, &self.bin, false)
                 .await?
                 .is_some()
             {
@@ -41,6 +58,7 @@ impl HookNotFound {
                     .list_current_versions()
                     .into_iter()
                     .any(|(_, version)| version.ba().short == tool)
+                && !untrusted_config_may_request(&config, tool)
             {
                 Use::use_global_registry_tool(tool).await?;
                 return Ok(());
@@ -48,6 +66,24 @@ impl HookNotFound {
         }
         Err(request_exit(127))
     }
+}
+
+/// Whether a project config left out of the toolset for want of trust asks for `tool`, or may.
+/// Its request is not one to install, but it is the project's choice of that tool, which a
+/// mistyped command must not answer by writing the latest version into global config. A plain
+/// tool list is read for its tool names, without installing anything; a config that was
+/// skipped unread could ask for any tool, so it counts as asking for this one.
+fn untrusted_config_may_request(config: &Config, tool: &str) -> bool {
+    !crate::config::skipped_untrusted_configs().is_empty()
+        || config
+            .config_files
+            .iter()
+            .filter(|(path, _)| !is_global_config(path) && !is_path_trusted(path))
+            .any(|(_, cf)| {
+                cf.to_tool_request_set().map_or(true, |requests| {
+                    requests.list_tools().iter().any(|ba| ba.short == tool)
+                })
+            })
 }
 
 fn registry_bin_provider(bin: &str, settings: &Settings) -> Option<&'static str> {

@@ -202,6 +202,12 @@ pub trait ConfigFile: Debug + Send + Sync {
             })
             .unwrap_or_default()
     }
+    /// [`Self::tool_backends`] without a tool whose every version is a `path:` one, which
+    /// safe mode ignores in project config. These are the tools a project config asks for in
+    /// safe mode.
+    fn safe_mode_project_tool_backends(&self) -> Vec<String> {
+        self.tool_backends()
+    }
     /// Whether any tool's version or options is a template, on any platform.
     fn has_templated_tool_versions(&self) -> bool {
         !self.templated_tool_backends().is_empty()
@@ -989,9 +995,18 @@ pub fn trust_check(path: &Path) -> eyre::Result<()> {
     }
     ensure_trust_can_approve(path)?;
     // The prompt hook neither asks nor trusts. The parsed command catches `mise -q hook-env`;
-    // argv[1] covers config loaded before the command line is parsed.
+    // argv[1] covers config loaded before the command line is parsed. A mise the shell runs
+    // for its own integration, such as the `mise tasks --usage` that completion starts under
+    // `run`, or the command-not-found handler, runs unasked too, for a line nobody has
+    // entered: there is nobody to prompt, and neither a `--yes` on that line nor the `yes`
+    // setting is a decision to trust.
     let prompt_hook = cmd == "hook-env" || typed_consent::is_prompt_hook();
-    if !prompt_hook && !strict && !is_ignored(&config_root) && !is_ignored(path) {
+    if !prompt_hook
+        && !typed_consent::run_for_shell_integration()
+        && !strict
+        && !is_ignored(&config_root)
+        && !is_ignored(path)
+    {
         // A typed command implies trust like the commands above, so an ignored project's
         // nested root is left to the prompt too.
         if implicit_trust_may_record(path, &config_root)

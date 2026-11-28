@@ -532,7 +532,7 @@ async fn which_shim(
             .await?
     {
         for tv in ts
-            .install_missing_bin(config, shim_name)
+            .install_missing_bin(config, shim_name, true)
             .await?
             .unwrap_or_default()
         {
@@ -584,7 +584,7 @@ async fn which_shim(
     // offline completion so `usage complete-word` fails locally instead.
     if !completion_offline && Settings::get().not_found_auto_install {
         for tv in ts
-            .install_missing_bin(config, shim_name)
+            .install_missing_bin(config, shim_name, true)
             .await?
             .unwrap_or_default()
         {

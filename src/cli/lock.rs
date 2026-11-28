@@ -1438,9 +1438,16 @@ impl Lock {
             .await?;
         outcome.resolution_errors.extend(resolution_errors);
         let stale_versions = self.stale_versions_if_pruned(&lockfile, &resolvable);
+        let replaced = self.replaced_versions(
+            &lockfile,
+            &resolved,
+            &resolvable,
+            &stale_versions,
+            crate::config::safe_mode_skipped_task_file(),
+        );
         outcome
             .platform_regressions
-            .extend(self.platform_regression_errors(&resolved, &stale_versions, &results));
+            .extend(self.platform_regression_errors(&resolved, &replaced, &results));
         if run.setup.generate {
             outcome
                 .platform_regressions
@@ -1449,7 +1456,7 @@ impl Lock {
                     &resolved,
                     &resolvable,
                     target_platforms,
-                    &stale_versions,
+                    &replaced,
                 ));
         }
         if !self.json {
@@ -1505,8 +1512,20 @@ impl Lock {
             run.setup.installed.unwrap_or_default(),
         )
         .await?;
+        // What a request's `os` option excludes was dropped on purpose, so it stays dropped.
+        let mut excluded = lockfile::generate::os_excluded_platforms(tools, target_platforms)?;
+        let skipped = crate::config::safe_mode_skipped_task_file();
+        excluded.set_task_file_skipped(skipped);
         for short in withheld {
-            lockfile.restore_missing_versions(previous, short);
+            lockfile.restore_missing_versions(previous, short, &excluded);
+        }
+        // Safe mode left out a task file, so `tools` lacks what its tasks request, and a
+        // version only they pin was dropped above. Keep every locked version, as
+        // `prune_stale_versions` does outside generate mode.
+        if skipped {
+            for short in previous.tools().keys() {
+                lockfile.restore_missing_versions(previous, short, &excluded);
+            }
         }
         Ok((Vec::new(), Vec::new()))
     }
@@ -1625,15 +1644,22 @@ impl Lock {
         let resolution_succeeded = resolution_errors.is_empty();
         outcome.resolution_errors.extend(resolution_errors);
 
+        let replaced = self.replaced_versions(
+            &previous,
+            &lockfile,
+            tools,
+            &stale_versions,
+            crate::config::safe_mode_skipped_task_file(),
+        );
         let mut platform_regressions =
-            self.platform_regression_errors(&lockfile, &stale_versions, &results);
+            self.platform_regression_errors(&lockfile, &replaced, &results);
         if generate {
             platform_regressions.extend(self.generated_platform_regression_errors(
                 &previous,
                 &lockfile,
                 tools,
                 target_platforms,
-                &stale_versions,
+                &replaced,
             ));
         }
         if !platform_regressions.is_empty() {
@@ -2329,6 +2355,11 @@ impl Lock {
     /// Note: This must be called AFTER process_tools() so that provenance checks
     /// can compare against the old version entries before they are removed.
     fn prune_stale_versions(&self, lockfile: &mut Lockfile, tools: &[LockTool]) -> Result<()> {
+        // The versions, and the options, that a task file safe mode did not read pins are
+        // unknown, so every locked entry stays, dependency graphs included.
+        if crate::config::safe_mode_skipped_task_file() {
+            return Ok(());
+        }
         let current_versions = self.current_tool_versions(tools);
         for (short, versions) in &current_versions {
             lockfile.retain_tool_versions(short, versions);
@@ -2416,8 +2447,47 @@ impl Lock {
         lockfile: &Lockfile,
         tools: &[LockTool],
     ) -> BTreeMap<String, Vec<String>> {
+        if crate::config::safe_mode_skipped_task_file() {
+            return BTreeMap::new();
+        }
         let current_versions = self.current_tool_versions(tools);
         self.stale_versions_for_current(lockfile, &current_versions)
+    }
+
+    /// The locked versions this run replaces, which the platform regression checks guard.
+    /// Usually those are `stale_versions`, the ones pruning removes. When safe mode skipped
+    /// a task file nothing is pruned, but generation still drops a pin whose every request
+    /// this run moved to another version, so they are the versions of `tools` that
+    /// `previous` locked and `result` no longer has.
+    fn replaced_versions(
+        &self,
+        previous: &Lockfile,
+        result: &Lockfile,
+        tools: &[LockTool],
+        stale_versions: &BTreeMap<String, Vec<String>>,
+        task_file_skipped: bool,
+    ) -> BTreeMap<String, Vec<String>> {
+        if !task_file_skipped {
+            return stale_versions.clone();
+        }
+        self.current_tool_versions(tools)
+            .into_keys()
+            .filter_map(|short| {
+                let kept: BTreeSet<&str> = result
+                    .tools_for(&short)
+                    .into_iter()
+                    .flatten()
+                    .map(|tool| tool.version.as_str())
+                    .collect();
+                let dropped: BTreeSet<String> = previous
+                    .tools_for(&short)?
+                    .iter()
+                    .filter(|tool| !kept.contains(tool.version.as_str()))
+                    .map(|tool| tool.version.clone())
+                    .collect();
+                (!dropped.is_empty()).then(|| (short, dropped.into_iter().collect()))
+            })
+            .collect()
     }
 
     fn platform_regression_errors(
@@ -2605,6 +2675,14 @@ impl Lock {
         config_paths: &[PathBuf],
         effective_config_files: &ConfigMap,
     ) -> Option<ToolSelectors> {
+        // The tools of a task file safe mode did not read are unknown, so no entry is stale.
+        if let Some(skipped) = crate::config::safe_mode_skipped_task_source() {
+            debug!(
+                "skipping stale-tool pruning for {}: safe mode skipped {skipped}",
+                display_path(target_lockfile_path)
+            );
+            return None;
+        }
         let (mut configured_tools, mut configured_backends) = self.configured_tool_selectors(tools);
         let config_path_set: BTreeSet<&PathBuf> = config_paths.iter().collect();
 
@@ -4298,6 +4376,36 @@ mod tests {
         assert_eq!(errors.len(), 1);
         assert!(errors[0].contains("failed to resolve dummy@2.0.0 for windows-x64"));
         assert!(errors[0].contains("locked version(s) 1.0.0"));
+    }
+
+    #[test]
+    fn test_generated_platform_regression_with_a_skipped_task_file_checks_dropped_pins() {
+        // Safe mode skipped a task file, so nothing counts as stale, but generation moved
+        // dummy's only request from 1.0.0 to 2.0.0 and dropped 1.0.0, which windows had.
+        let cmd = lock_cmd(&[]);
+        let previous = lockfile_with_dummy_version("1.0.0", &["linux-x64", "windows-x64"]);
+        let generated = lockfile_with_dummy_version("2.0.0", &["linux-x64"]);
+        let tools = vec![configured_tool("dummy", "2.0.0")];
+        let platforms = vec![
+            Platform::parse("linux-x64").unwrap(),
+            Platform::parse("windows-x64").unwrap(),
+        ];
+        let replaced = cmd.replaced_versions(&previous, &generated, &tools, &BTreeMap::new(), true);
+
+        let errors = cmd.generated_platform_regression_errors(
+            &previous, &generated, &tools, &platforms, &replaced,
+        );
+
+        assert_eq!(errors.len(), 1, "{errors:?}");
+        assert!(errors[0].contains("failed to resolve dummy@2.0.0 for windows-x64"));
+
+        // A pin the skipped task still holds stays in the lockfile and is not replaced.
+        let mut kept = generated.clone();
+        kept.restore_missing_versions(&previous, "dummy", &Default::default());
+        assert!(
+            cmd.replaced_versions(&previous, &kept, &tools, &BTreeMap::new(), true)
+                .is_empty()
+        );
     }
 
     #[test]

@@ -160,6 +160,12 @@ When a command needs a config that is not trusted:
 - Without a terminal, such as in a script or an editor extension, mise cannot
   ask, so the command fails with
   [`Config files in <path> are not trusted`](/errors.html#untrusted-config).
+- Shell completion never asks. It fails as a command without a terminal does,
+  so it completes no task names until you trust the config.
+- The shell's command-not-found handler never asks and says nothing about it.
+  It leaves the untrusted config out, so only trusted config, such as global
+  config, decides what it
+  [auto-installs](/configuration/settings.html#not_found_auto_install).
 - Shell activation never asks. It skips the untrusted config, warns
   `<path> is not trusted, run mise trust to enable it`, and still applies the
   trusted ones.
@@ -262,8 +268,10 @@ trusted and records nothing. Configs on the ignore list or under
 do not load. `CI` also turns on [`yes`](/configuration/settings.html#yes).
 
 Outside CI, `--yes` or `MISE_YES=1` answers the trust prompt with yes, which
-records trust. Paranoid mode turns off both the CI exemption and `--yes` for
-trust.
+records trust. That applies to a command you entered: shell activation, shell
+completion and the shell's command-not-found handler run mise unasked, so they
+neither ask nor take `--yes` or `MISE_YES=1` for an answer. Paranoid mode turns off both the CI exemption and
+`--yes` for trust.
 
 ### Manage trust
 
@@ -445,8 +453,12 @@ These are skipped without an error, so resolution commands keep working:
   no GitHub, GitLab or Forgejo token (unless global config names the same host),
   and a tool that project config declares gets no `~/.netrc` credentials for
   the hosts its `url`, `checksum_url`, `version_list_url`, `version_date_url`
-  or `api_url` names. Tools from global and system config keep theirs. A
-  project that points at a private forge or file server therefore cannot list
+  or `api_url` names. That includes a monorepo subproject's tools and a task's
+  `tools`. Only tools that global or system config declares or aliases, and no
+  project requests, keep theirs and keep `env` in their templates, as do the
+  `tools` of a global task, including one from a task file that global config
+  includes from anywhere; a tool named only on the command line, in a tool stub
+  or by `MISE_<TOOL>_VERSION` does not. A project that points at a private forge or file server therefore cannot list
   or download versions there.
 - A project `[tool_alias]` for a tool that global config declares, so a
   repository cannot point your tool at another backend, options or versions.
@@ -463,6 +475,13 @@ These are skipped without an error, so resolution commands keep working:
 - Remote `include` entries in project config, which mise does not fetch.
 - Remote task files (`file = "https://…"` or `git::…`) in project config. Their
   tasks are listed from their TOML alone.
+- Remote `task_config.includes` entries (`git::…`, `oci::…` or `zip::…`) in
+  project config, which mise does not fetch. The tasks they hold are not listed.
+- Project task files that resolve outside the project, whether named by `~`,
+  an absolute path or `..`, or reached through a link. mise warns about each
+  one. Task files elsewhere in the same git checkout or monorepo still load.
+  After skipping either kind of task file, `mise lock` removes no tool or
+  version from `mise.lock`, since it cannot tell which ones those tasks use.
 - Project `[deps]`, so `mise deps` and `mise exec` do not run a repository's
   dependency providers. Providers in global and system config still run.
 - Project daemon declarations. Daemons also do not start or stop when you change

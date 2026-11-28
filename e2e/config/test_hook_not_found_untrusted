@@ -1,0 +1,106 @@
+#!/usr/bin/env bash
+
+# The shell's command-not-found handler runs mise after every mistyped command.
+# That is not a request to run the directory's config, so an untrusted project
+# config is left out without a word, its tools are not installed, and nothing
+# is trusted. Global config still decides what to auto-install.
+
+export MISE_TRUSTED_CONFIG_PATHS=""
+unset CI GITHUB_ACTIONS GITHUB_ACTION 2>/dev/null || true
+
+cat <<'EOF' >"$MISE_CONFIG_DIR/config.toml"
+[tools]
+tiny = "3.1.0"
+EOF
+# The tiny plugin and a version of it are present, so mise knows it provides
+# rtx-tiny; neither configured version is installed.
+mise install tiny@2.1.0
+
+cat <<'EOF' >mise.toml
+[env]
+NEEDS_TRUST = "{{ env.HOME }}"
+
+[tools]
+tiny = "3.0.0"
+EOF
+
+err="$HOME/hook-not-found.err"
+for yes in 0 1; do
+  status=0
+  MISE_YES=$yes mise hook-not-found -s bash -- nosuchbin >/dev/null 2>"$err" </dev/null || status=$?
+  assert "echo $status" "127"
+  assert_empty "cat '$err'"
+  assert_contains "mise trust --show" ": untrusted"
+done
+ok "[trust] a mistyped command in an untrusted project prints nothing and trusts nothing"
+
+# On a terminal, where a typed mise command would trust the project.
+if command -v script >/dev/null 2>&1 && script -qec true /dev/null >/dev/null 2>&1; then
+  for yes in 0 1; do
+    status=0
+    timeout 10 script -qec "MISE_YES=$yes mise hook-not-found -s bash -- nosuchbin" /dev/null </dev/null >"$err" 2>&1 || status=$?
+    assert "echo $status" "127"
+    assert_empty "cat '$err'"
+    assert_contains "mise trust --show" ": untrusted"
+  done
+  ok "[trust] the same holds on a terminal"
+fi
+assert_directory_not_exists "$MISE_STATE_DIR/ignored-configs"
+
+# Global config's tool is installed; the untrusted project's is not.
+# Read the installs from disk: a typed `mise ls` under MISE_YES=1 would trust
+# the project itself.
+mise hook-not-found -s bash -- rtx-tiny </dev/null
+assert_contains "mise trust --show" ": untrusted"
+assert_directory_exists "$MISE_DATA_DIR/installs/tiny/3.1.0"
+assert_directory_not_exists "$MISE_DATA_DIR/installs/tiny/3.0.0"
+ok "[trust] global config still auto-installs from an untrusted project"
+
+# A plain tool list loads without trust, but a mistyped command is no consent
+# to install what an untrusted one lists.
+rm mise.toml
+echo "tiny 3.0.0" >.tool-versions
+# Its request does not take the place of global config's either, so the global
+# version is still installed.
+(cd "$HOME" && mise uninstall tiny@3.1.0)
+assert_directory_not_exists "$MISE_DATA_DIR/installs/tiny/3.1.0"
+mise hook-not-found -s bash -- rtx-tiny </dev/null
+assert_contains "mise trust --show" ": untrusted"
+assert_directory_not_exists "$MISE_DATA_DIR/installs/tiny/3.0.0"
+assert_directory_exists "$MISE_DATA_DIR/installs/tiny/3.1.0"
+ok "[trust] an untrusted .tool-versions is not installed on command-not-found"
+
+assert "mise trust ."
+mise hook-not-found -s bash -- rtx-tiny </dev/null
+assert_directory_exists "$MISE_DATA_DIR/installs/tiny/3.0.0"
+ok "[trust] a trusted .tool-versions still is"
+
+# With registry auto-install on, a bin that no configured tool provides is
+# installed and written into global config. A tool an untrusted project asks
+# for is the project's choice of it, so it is neither installed nor written.
+mkdir -p "$HOME/registry-untrusted"
+cd "$HOME/registry-untrusted"
+: >"$MISE_CONFIG_DIR/config.toml"
+export MISE_NOT_FOUND_AUTO_INSTALL_REGISTRY=1
+echo "tiny 3.0.0" >.tool-versions
+status=0
+mise hook-not-found -s bash -- rtx-tiny </dev/null || status=$?
+assert "echo $status" "127"
+assert_not_contains "cat $MISE_CONFIG_DIR/config.toml" "tiny"
+ok "[trust] a tool an untrusted .tool-versions lists is not added to global config"
+
+# A config skipped unread could ask for any tool, so none is added.
+rm .tool-versions
+cat <<'EOF2' >mise.toml
+[env]
+NEEDS_TRUST = "{{ env.HOME }}"
+
+[tools]
+tiny = "3.0.0"
+EOF2
+status=0
+mise hook-not-found -s bash -- rtx-tiny </dev/null || status=$?
+assert "echo $status" "127"
+assert_not_contains "cat $MISE_CONFIG_DIR/config.toml" "tiny"
+assert_contains "mise trust --show" ": untrusted"
+ok "[trust] nor one with an untrusted mise.toml"

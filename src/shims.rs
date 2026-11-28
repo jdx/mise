@@ -164,7 +164,7 @@ pub async fn install_missing_wrapper_command(
             .should_install_missing_registry_bin_provider(config, command)
             .await?
     {
-        ts.install_missing_bin(config, command).await?;
+        ts.install_missing_bin(config, command, true).await?;
         return Ok(());
     }
     if ts.which(config, command).await.is_some() {
@@ -173,7 +173,7 @@ pub async fn install_missing_wrapper_command(
     if ts.has_missing_lazy_bin_provider(config, command).await? {
         ts.install_missing_lazy_bin(config, command).await?;
     } else if Settings::get().not_found_auto_install {
-        ts.install_missing_bin(config, command).await?;
+        ts.install_missing_bin(config, command, true).await?;
     }
     Ok(())
 }

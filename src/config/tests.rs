@@ -205,6 +205,38 @@ fn test_collect_task_files_follows_valid_directory_symlinks() -> Result<()> {
     Ok(())
 }
 
+/// Safe mode would skip every file below a link to a directory outside the project, so the
+/// walk does not go into it: it could be large, or unreadable and fail the walk. A link that
+/// stays inside is still followed.
+#[test]
+fn test_collect_task_files_within_does_not_follow_links_out_of_bounds() -> Result<()> {
+    let tmp = TempDir::new()?;
+    let base = fs::canonicalize(tmp.path())?;
+    let project = base.join("project");
+    let root = project.join("mise-tasks");
+    fs::create_dir_all(project.join("shared"))?;
+    fs::create_dir_all(&root)?;
+    fs::create_dir_all(base.join("outside"))?;
+    fs::write(project.join("shared/inside"), "echo ok")?;
+    fs::write(base.join("outside/private"), "echo private")?;
+    std::os::unix::fs::symlink(project.join("shared"), root.join("shared"))?;
+    std::os::unix::fs::symlink(base.join("outside"), root.join("outside"))?;
+
+    // control: without bounds both links are followed
+    assert_eq!(
+        collect_task_files(&root, &[])?.len(),
+        2,
+        "{:?}",
+        collect_task_files(&root, &[])?
+    );
+    assert_eq!(
+        collect_task_files_within(&root, &[], Some(std::slice::from_ref(&project)))?,
+        vec![root.join("shared/inside")]
+    );
+
+    Ok(())
+}
+
 #[test]
 fn test_collect_task_files_skips_links_back_into_the_walk() -> Result<()> {
     let tmp = TempDir::new()?;
@@ -254,11 +286,14 @@ fn test_collect_task_files_stops_at_the_entry_limit() -> Result<()> {
 
     let control = TempDir::new()?;
     let root = maze(control.path(), 1)?;
-    assert_eq!(collect_task_files_with_limit(&root, &[], 1_000)?.len(), 1);
+    assert_eq!(
+        collect_task_files_with_limit(&root, &[], None, 1_000)?.len(),
+        1
+    );
 
     let hostile = TempDir::new()?;
     let root = maze(hostile.path(), 4)?;
-    let err = collect_task_files_with_limit(&root, &[], 1_000).unwrap_err();
+    let err = collect_task_files_with_limit(&root, &[], None, 1_000).unwrap_err();
     assert!(err.to_string().contains("more than 1000 entries"), "{err}");
 
     Ok(())

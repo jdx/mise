@@ -85,6 +85,36 @@ assert_contains_text "$output" "not trusted"
 assert_not_contains_text "$output" "PROJECT-SETUP"
 assert_fail "test -e '$marker'"
 
+echo "=== a global task hook does not install an untrusted project's tools ==="
+# a plain tool list loads without trust; nobody asked for it to be installed
+mkdir -p tools-only
+echo "dummy 1.0.0" >tools-only/.tool-versions
+output="$(cd tools-only && mise hook-env -s bash 2>&1)"
+assert_contains_text "$output" "GLOBAL-GREET"
+assert_directory_not_exists "$MISE_DATA_DIR/installs/dummy/1.0.0"
+assert_contains "mise -C tools-only trust --show" "untrusted"
+
+echo "=== a project task hook does not install an untrusted parent's tools ==="
+mkdir -p tools-parent/proj
+echo "dummy 1.0.0" >tools-parent/.tool-versions
+cat <<'EOF' >tools-parent/proj/mise.toml
+[tasks.setup]
+run = 'echo PROJECT-SETUP'
+
+[hooks]
+enter = { task = "setup" }
+EOF
+mise trust tools-parent/proj >/dev/null
+output="$(cd tools-parent/proj && mise hook-env -s bash 2>&1)"
+assert_contains_text "$output" "PROJECT-SETUP"
+assert_directory_not_exists "$MISE_DATA_DIR/installs/dummy/1.0.0"
+
+echo "=== a task hook installs the tools of a trusted parent ==="
+mise trust tools-parent >/dev/null
+output="$(cd tools-parent/proj && mise hook-env -s bash 2>&1)"
+assert_contains_text "$output" "PROJECT-SETUP"
+assert_directory_exists "$MISE_DATA_DIR/installs/dummy/1.0.0"
+
 echo "=== untrusted file tasks send a global task hook to the global root ==="
 mkdir -p scripts-only/mise-tasks
 touch scripts-only/.tool-versions
