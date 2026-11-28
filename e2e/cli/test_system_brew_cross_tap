@@ -6,7 +6,7 @@ fi
 
 export MISE_SYSTEM_BREW_PREFIX="$HOME/brew-cross-tap-prefix"
 metadata="$TMPDIR/cross-tap-metadata"
-mkdir -p "$metadata"/{core/formula,parent,mirror}
+mkdir -p "$metadata"/{core/formula,core/cask,parent,mirror}
 
 formula() {
   local name="$1" version="$2" extra="${3:-}"
@@ -22,16 +22,21 @@ formula core-leaf 3 ', "dependencies":["leaf-alias"]' >"$metadata/core/formula/c
 formula core-target 4 ', "aliases":["leaf-alias"]' >"$metadata/core/formula/core-target.json"
 printf '[%s,%s]\n' "$(cat "$metadata/core/formula/core-leaf.json")" "$(cat "$metadata/core/formula/core-target.json")" \
   >"$metadata/core/formula.json"
+printf '%s\n' '{"token":"example-app","version":"1","url":"https://example.invalid/app.zip","sha256":"no_check","depends_on":{"formula":["example/main/root"]}}' \
+  >"$metadata/core/cask/example-app.json"
+printf '[%s]\n' "$(cat "$metadata/core/cask/example-app.json")" >"$metadata/core/cask.json"
 start_http_server --dir "$metadata"
 
-cat >mise.toml <<EOF
+cat >"$MISE_CONFIG_DIR/config.toml" <<EOF
 [settings.url_replacements]
 "https://formulae.brew.sh/api" = "http://127.0.0.1:$HTTP_PORT/core"
 "https://raw.githubusercontent.com/example/homebrew-main/HEAD/api/formula" = "http://127.0.0.1:$HTTP_PORT/parent"
 "https://raw.githubusercontent.com/fork/custom-tools/HEAD/api/formula" = "http://127.0.0.1:$HTTP_PORT/mirror"
 "https://raw.githubusercontent.com/example/homebrew-tools/HEAD" = "http://127.0.0.1:$HTTP_PORT/unconfigured-tap"
 "https://api.github.com/repos/example/" = "http://127.0.0.1:$HTTP_PORT/taps/"
+EOF
 
+cat >mise.toml <<'EOF'
 [bootstrap.brew.taps]
 "example/tools" = "https://github.com/fork/custom-tools.git"
 
@@ -60,6 +65,22 @@ for keg in child/2 obsolete/1; do
     >"$MISE_SYSTEM_BREW_PREFIX/Cellar/$keg/INSTALL_RECEIPT.json"
   ln -s "../Cellar/$keg" "$MISE_SYSTEM_BREW_PREFIX/opt/${keg%/*}"
 done
+output="$(mise bootstrap packages prune --manager brew --dry-run)"
+assert_contains_text "$output" "remove brew:obsolete@1"
+assert_not_contains_text "$output" "remove brew:child@2"
+
+# The only package is now a cask in a tracked project. Its transitive formula
+# still needs the tap URL declared in that tracked project's config.
+: >mise.toml
+mkdir tracked
+cat >tracked/mise.toml <<'EOF'
+[bootstrap.brew.taps]
+"example/tools" = "https://github.com/fork/custom-tools.git"
+
+[bootstrap.packages]
+"brew-cask:example-app" = "latest"
+EOF
+mise -C tracked ls
 output="$(mise bootstrap packages prune --manager brew --dry-run)"
 assert_contains_text "$output" "remove brew:obsolete@1"
 assert_not_contains_text "$output" "remove brew:child@2"

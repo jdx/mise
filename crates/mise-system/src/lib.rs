@@ -592,11 +592,12 @@ pub(crate) fn package_manager_is_enabled(name: &str) -> bool {
 
 /// Aggregate `[bootstrap.packages]` from the current merged config plus every
 /// tracked config file, mirroring the way `mise prune` protects tool versions
-/// still referenced by other projects.
+/// still referenced by other projects. Return the merged brew tap URLs even
+/// when no formula is directly configured.
 #[cfg(unix)]
 pub async fn packages_from_config_and_tracked_config_files(
     config: &Config,
-) -> Result<Vec<ManagerPackages>> {
+) -> Result<(Vec<ManagerPackages>, BTreeMap<String, String>)> {
     let tracked_config_files = config.get_tracked_config_files().await?;
     packages_from_config_files_and_tracked_config_files(
         &config.config_files(),
@@ -698,7 +699,7 @@ pub async fn package_requests_for_manager_from_config_and_tracked_config_files(
 fn packages_from_config_files_and_tracked_config_files(
     current_config_files: &ConfigMap,
     tracked_config_files: &ConfigMap,
-) -> Result<Vec<ManagerPackages>> {
+) -> Result<(Vec<ManagerPackages>, BTreeMap<String, String>)> {
     let mut by_mgr: IndexMap<String, Vec<PackageRequest>> = IndexMap::new();
     let mut manager_options = IndexMap::new();
     let current_brew_taps = brew_taps_from_config_files(current_config_files);
@@ -718,7 +719,7 @@ fn packages_from_config_files_and_tracked_config_files(
         packages_from_config_files_with_brew_taps(tracked_config_files, &tracked_brew_taps, false)?,
     );
 
-    resolve_managers(
+    let packages = resolve_managers(
         by_mgr,
         manager_options,
         &tracked_brew_taps,
@@ -726,7 +727,8 @@ fn packages_from_config_files_and_tracked_config_files(
             strict: false,
             applies_together: false,
         },
-    )
+    )?;
+    Ok((packages, tracked_brew_taps.into_iter().collect()))
 }
 
 #[cfg(unix)]
@@ -3023,7 +3025,8 @@ mod tests {
             "#,
         )])?;
 
-        let packages = packages_from_config_files_and_tracked_config_files(&current, &tracked)?;
+        let (packages, _) =
+            packages_from_config_files_and_tracked_config_files(&current, &tracked)?;
         let brew = packages
             .into_iter()
             .find(|mp| mp.manager.name() == "brew")
@@ -3347,7 +3350,8 @@ mod tests {
             "#,
         )])?;
 
-        let packages = packages_from_config_files_and_tracked_config_files(&current, &tracked)?;
+        let (packages, _) =
+            packages_from_config_files_and_tracked_config_files(&current, &tracked)?;
         let apps = packages
             .into_iter()
             .find(|packages| packages.manager.name() == "macos-app")
@@ -3369,7 +3373,8 @@ mod tests {
             "#,
         )])?;
 
-        let packages = packages_from_config_files_and_tracked_config_files(&current, &tracked)?;
+        let (packages, _) =
+            packages_from_config_files_and_tracked_config_files(&current, &tracked)?;
         let apps = packages
             .into_iter()
             .find(|packages| packages.manager.name() == "macos-app")
@@ -3397,7 +3402,8 @@ mod tests {
             "#,
         )])?;
 
-        let packages = packages_from_config_files_and_tracked_config_files(&current, &tracked)?;
+        let (packages, _) =
+            packages_from_config_files_and_tracked_config_files(&current, &tracked)?;
         let casks = packages
             .into_iter()
             .find(|packages| packages.manager.name() == "brew-cask")
@@ -3931,7 +3937,8 @@ mod tests {
             "#,
         )])?;
 
-        let packages = packages_from_config_files_and_tracked_config_files(&current, &tracked)?;
+        let (packages, _) =
+            packages_from_config_files_and_tracked_config_files(&current, &tracked)?;
         let brew = packages
             .iter()
             .find(|mp| mp.manager.name() == "brew")
@@ -3963,7 +3970,8 @@ mod tests {
             "#,
         )])?;
 
-        let packages = packages_from_config_files_and_tracked_config_files(&current, &tracked)?;
+        let (packages, _) =
+            packages_from_config_files_and_tracked_config_files(&current, &tracked)?;
         let brew = packages
             .iter()
             .find(|mp| mp.manager.name() == "brew")
@@ -4136,7 +4144,7 @@ mod tests {
         )])?;
 
         assert!(packages_from_config_files(&config_files)?.is_empty());
-        let packages = packages_from_config_files_and_tracked_config_files(
+        let (packages, _) = packages_from_config_files_and_tracked_config_files(
             &config_files,
             &ConfigMap::default(),
         )?;

@@ -158,9 +158,11 @@ impl SystemPrune {
             bail!("brew is not available: {}", manager.unavailable_reason());
         }
         let config = Config::get().await?;
-        let packages = system::packages_from_config_and_tracked_config_files(&config).await?;
-        let brew_packages = packages.iter().find(|mp| mp.manager.name() == "brew");
-        let mut configured = brew_packages
+        let (packages, taps) =
+            system::packages_from_config_and_tracked_config_files(&config).await?;
+        let mut configured = packages
+            .iter()
+            .find(|mp| mp.manager.name() == "brew")
             .map(|mp| mp.requests.clone())
             .unwrap_or_default();
         let configured_casks = packages
@@ -169,11 +171,7 @@ impl SystemPrune {
             .map(|mp| mp.requests.as_slice())
             .unwrap_or_default();
         configured.extend(brew::cask_formula_dependencies(configured_casks).await?);
-        let default_taps = system::brew_taps_from_config(&config).into_iter().collect();
-        let taps = brew_packages
-            .and_then(|mp| mp.options.brew_taps())
-            .unwrap_or(&default_taps);
-        let plan = match brew::prune_plan(&configured, taps).await {
+        let plan = match brew::prune_plan(&configured, &taps).await {
             Ok(plan) => plan,
             Err(err) => return Err(with_declaring_config_files(&config, err).await),
         };
@@ -214,8 +212,8 @@ impl SystemPrune {
             );
         }
         let config = Config::get().await?;
-        let configured = system::packages_from_config_and_tracked_config_files(&config)
-            .await?
+        let (packages, _) = system::packages_from_config_and_tracked_config_files(&config).await?;
+        let configured = packages
             .into_iter()
             .find(|mp| mp.manager.name() == "brew-cask")
             .map(|mp| mp.requests)
