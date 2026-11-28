@@ -11,7 +11,8 @@
 //! created: one the user deleted and made again at the same path is theirs. Under a target that is
 //! not tracked, deployed by a mise from before this record existed and not applied since, any
 //! directory the removal empties still goes, as it did then. A record that exists but cannot be
-//! read is left as it is, and while it is there removals take no directory under any target.
+//! read is left as it is, and while it is there removals take no directory under any target and
+//! applies write under no walking target.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -105,6 +106,17 @@ impl CreatedDirs {
         }
     }
 
+    /// An error when the record cannot be read, so nothing can be added to it.
+    pub(crate) fn ensure_readable(&self) -> eyre::Result<()> {
+        if self.unreadable {
+            eyre::bail!(
+                "files: {} cannot be read; fix or remove it",
+                record_path().display_user()
+            );
+        }
+        Ok(())
+    }
+
     fn unreadable() -> Self {
         Self {
             unreadable: true,
@@ -175,6 +187,10 @@ impl CreatedDirs {
 
     /// Record `dir` as mise's, as the directory that is there now. Whether that changed the record.
     fn insert(&mut self, dir: PathBuf) -> bool {
+        // the record is TOML, which holds only UTF-8 paths; mise leaves such a directory behind
+        if dir.to_str().is_none() {
+            return false;
+        }
         let Some(id) = identity(&dir) else {
             return false;
         };
@@ -184,14 +200,12 @@ impl CreatedDirs {
 
 /// Load the record, let `change` modify it, and write it back when `change` says it changed it,
 /// holding a lock so that two mise processes do not each overwrite what the other recorded. A
-/// record that cannot be read is left as it is, which already keeps every directory.
+/// record that cannot be read is left as it is, and the update fails: what it would add is lost.
 fn update(change: impl FnOnce(&mut CreatedDirs) -> bool) -> eyre::Result<()> {
     let path = record_path();
     let _lock = mise_util::lock_file::LockFile::new(&path).lock()?;
     let mut record = CreatedDirs::load();
-    if record.unreadable {
-        return Ok(());
-    }
+    record.ensure_readable()?;
     if change(&mut record) {
         record.save()?;
     }
@@ -233,10 +247,19 @@ pub(crate) fn track(
             if std::fs::symlink_metadata(&path).is_err() {
                 continue;
             }
-            for dir in path.ancestors().skip(1) {
-                if !dir.starts_with(&target) {
-                    break;
-                }
+            let dirs = path
+                .ancestors()
+                .skip(1)
+                .take_while(|dir| dir.starts_with(&target))
+                .collect::<Vec<_>>();
+            // a path in a tracked target beneath this one is that target's to account for, and
+            // one reached through a link says nothing of whose the directories it shows are
+            if dirs.iter().any(|dir| {
+                (*dir != target && record.tracks(dir)) || file::is_symlink_or_junction(dir)
+            }) {
+                continue;
+            }
+            for dir in dirs {
                 record.insert(dir.to_path_buf());
             }
         }

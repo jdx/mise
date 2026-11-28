@@ -7655,7 +7655,17 @@ fn track_walking_targets<'a>(
     let record = crate::created_dirs::CreatedDirs::load();
     let requests = requests
         .into_iter()
-        .filter(|req| shares_target(req) && !record.tracks(&req.target))
+        .filter(|req| shares_target(req))
+        .collect::<Vec<_>>();
+    if requests.is_empty() {
+        return Ok(());
+    }
+    // whether a target is tracked is unknown, and recording one is impossible, so nothing is
+    // written under a walking target until the record is fixed
+    record.ensure_readable()?;
+    let requests = requests
+        .into_iter()
+        .filter(|req| !record.tracks(&req.target))
         .collect::<Vec<_>>();
     if requests.is_empty() {
         return Ok(());

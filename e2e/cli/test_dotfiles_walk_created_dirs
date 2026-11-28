@@ -118,13 +118,16 @@ assert_succeed "mise dot unapply ~/t --yes"
 assert_fail "test -e $HOME/t/new"
 assert_succeed "test -d $HOME/elsewhere/sub"
 
-# a record mise cannot read keeps every directory
+# a record mise cannot read keeps every directory, and refuses an apply that
+# would write under a target it cannot record
 assert_succeed "mise dot apply --yes"
 echo "not toml [" >"$MISE_STATE_DIR/dotfiles/created_dirs.toml"
 assert_succeed "mise dot unapply ~/t --yes"
 assert_fail "test -L $HOME/t/new/sub/file"
 assert_succeed "test -d $HOME/t/new/sub"
 assert "cat $MISE_STATE_DIR/dotfiles/created_dirs.toml" "not toml ["
+assert_fail_contains "mise dot apply --yes" "cannot be read; fix or remove it"
+assert_fail "test -L $HOME/t/new/sub/file"
 
 # a target that is a link to a directory is followed, not replaced, so the
 # user's directories it shows are not recorded as mise's
@@ -142,7 +145,7 @@ mkdir -p "$HOME/t/app" "$MISE_STATE_DIR/dotfiles"
 chmod 555 "$MISE_STATE_DIR/dotfiles"
 assert_fail_contains "mise dot apply --yes" "cannot record what mise creates under"
 chmod 755 "$MISE_STATE_DIR/dotfiles"
-assert_fail "test -e $HOME/t/new"
+assert "find $HOME/t -mindepth 1" "$HOME/t/app"
 
 # so is a target the apply would create
 rm -rf "$HOME/t"
