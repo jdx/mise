@@ -1452,6 +1452,10 @@ mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
 
+    /// A `mise run --shell` that cannot be split into words on any platform. Windows reads single
+    /// quotes as part of a word, so only an unmatched double quote fails everywhere.
+    const UNPARSABLE_SHELL: &str = "\"";
+
     fn tera_v1() -> crate::test::SettingsGuard {
         let guard = crate::test::SettingsGuard::lock();
         Settings::override_with(|settings| settings.tera_v1 = Some(true)).unwrap();
@@ -1523,7 +1527,7 @@ mod tests {
             (Some("dash"), None, true, bash, posix_quoted),
             (None, Some("fish -c"), true, bash, posix_quoted),
             // A `--shell` the script does not use is not read.
-            (None, Some("'"), false, bash, posix_quoted),
+            (None, Some(UNPARSABLE_SHELL), false, bash, posix_quoted),
         ];
         for (task_shell, run_shell, file_shell, prefix, expected) in cases {
             Settings::override_with(|settings| {
@@ -1607,10 +1611,16 @@ mod tests {
         let cases: [(_, _, String, &[String], _); 14] = [
             // A `--shell` that cannot be parsed is not read for a script that renders a shebang,
             // where a value that no shell quotes goes in as it is.
-            (None, Some("'"), rendered_bash.clone(), &word, false),
             (
                 None,
-                Some("'"),
+                Some(UNPARSABLE_SHELL),
+                rendered_bash.clone(),
+                &word,
+                false,
+            ),
+            (
+                None,
+                Some(UNPARSABLE_SHELL),
                 "{{ '#!/usr/bin/env bash' }}\necho hi".into(),
                 &[],
                 false,
@@ -1695,7 +1705,7 @@ mod tests {
             ..Default::default()
         };
         let scripts = vec![rendered_bash];
-        let parser = TaskScriptParser::new(None).with_run_shell(Some("'".into()));
+        let parser = TaskScriptParser::new(None).with_run_shell(Some(UNPARSABLE_SHELL.into()));
         let (_, spec) = parser
             .parse_run_scripts(&config, &task, &scripts, &Default::default())
             .await
@@ -1711,7 +1721,11 @@ mod tests {
             )
             .await
             .unwrap_err();
-        assert!(!format!("{err:#}").contains("Write the shebang"), "{err:#}");
+        let parse_err = crate::path::split_shell_command(UNPARSABLE_SHELL).unwrap_err();
+        assert!(
+            format!("{err:#}").contains(&parse_err.to_string()),
+            "{err:#}"
+        );
     }
 
     #[test]

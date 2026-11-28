@@ -608,8 +608,9 @@ status. Uncommitted changes in your checkout play no part: REV is a commit.
 - Submodules are initialized at REV, using your clones of them as a reference,
   so only objects they lack are fetched. They are initialized only when the
   directory you run from, or one above it in the repository, is trusted in
-  your checkout, since their URLs are REV's to choose; in paranoid mode they
-  are not initialized. Git hooks do not run, neither your checkout's nor any
+  your checkout, or a config REV has there is, such as a `conf.d` folder,
+  since their URLs are REV's to choose. In paranoid mode they are not
+  initialized, not even for config trusted by `trusted_config_paths`. Git hooks do not run, neither your checkout's nor any
   that REV keeps in the repository.
 - Ignored files are not there: a fresh worktree has no `target/`,
   `node_modules/` or `.env`. Pass `--at-setup CMD` to prepare them. It runs in
