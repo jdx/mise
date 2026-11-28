@@ -344,7 +344,7 @@ mod tests {
 
     #[test]
     fn dry_run_preserves_inherited_package_options() {
-        let inherited = PackageTomlConfig::Options(PackageOptionsTomlConfig {
+        let inherited = PackageTomlConfig::Options(Box::new(PackageOptionsTomlConfig {
             version: "1.0.0".to_string(),
             os: vec!["macos".to_string()],
             env: vec!["work".to_string()],
@@ -357,13 +357,13 @@ mod tests {
             channel: None,
             classic: None,
             names: Default::default(),
-        });
+        }));
         assert_eq!(
             imported_package_value(None, Some(&inherited)).to_string(),
             r#"{ version = "latest", os = ["macos"], env = ["work"] }"#
         );
 
-        let adopted = PackageTomlConfig::Options(PackageOptionsTomlConfig {
+        let adopted = PackageTomlConfig::Options(Box::new(PackageOptionsTomlConfig {
             version: "1.0.0".to_string(),
             os: vec![],
             env: vec![],
@@ -376,13 +376,13 @@ mod tests {
             channel: None,
             classic: None,
             names: Default::default(),
-        });
+        }));
         assert_eq!(
             imported_package_value(None, Some(&adopted)).to_string(),
             r#"{ version = "latest", adopt = true }"#
         );
 
-        let appdir = PackageTomlConfig::Options(PackageOptionsTomlConfig {
+        let appdir = PackageTomlConfig::Options(Box::new(PackageOptionsTomlConfig {
             version: "1.0.0".to_string(),
             os: vec![],
             env: vec![],
@@ -395,7 +395,7 @@ mod tests {
             channel: None,
             classic: None,
             names: Default::default(),
-        });
+        }));
         assert_eq!(
             imported_package_value(None, Some(&appdir)).to_string(),
             r#"{ version = "latest", appdir = "/Applications" }"#
