@@ -610,12 +610,13 @@ pub(super) async fn choose_definition(name: &str, target: &TargetArgs) -> Result
 }
 
 /// Refuses to write task script `script` through a link out of its project; see
-/// [`config_file::script_check_before_write`].
-pub(super) async fn script_check_before_write(script: &Path) -> Result<()> {
+/// [`config_file::script_check_before_write`]. Returns the path to write, with the links this
+/// check approved resolved.
+pub(super) async fn script_check_before_write(script: &Path) -> Result<PathBuf> {
     let script = path_absolutize::Absolutize::absolutize(script)?;
     match script_project_root(&script).await? {
         Some(root) => config_file::script_check_before_write(&script, &root),
-        None => Ok(()),
+        None => Ok(script.into_owned()),
     }
 }
 

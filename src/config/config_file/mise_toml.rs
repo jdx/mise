@@ -442,21 +442,7 @@ fn drop_unverified_platform_urls(
             }
         }
     }
-    // The platforms that have a url, in either spelling.
-    let tables = PLATFORM_TABLES
-        .into_iter()
-        .filter_map(|table| opts.get(table)?.as_table());
-    let mut with_url: Vec<String> = tables
-        .flatten()
-        .filter(|(_, entry)| entry.as_table().is_some_and(|e| e.contains_key("url")))
-        .map(|(platform, _)| spelling(platform))
-        .collect();
-    with_url.extend(
-        opts.keys()
-            .filter_map(|k| flat_platform_option(k))
-            .filter(|(_, field)| *field == "url")
-            .map(|(platform, _)| spelling(&platform)),
-    );
+    let with_url = platforms_with_url(opts);
     // Whether a platform's download is still checked is the http backend's own lookup, so the
     // spellings it reads and the values it ignores (a `checksum` array, say) count the same.
     let left = ToolVersionOptions {
@@ -474,15 +460,6 @@ fn drop_unverified_platform_urls(
         .filter(|platform| (top_checksum_dropped || lost.contains(platform)) && !checked(platform))
         .cloned()
         .collect();
-    // A platform with no url of its own downloads from the top-level one, as the http backend
-    // falls back to it. When such a platform lost the checksum that checked it, the top-level url
-    // would download it unchecked, so that url goes, unless it was given on the command line.
-    let inherits_unchecked = lost
-        .iter()
-        .any(|platform| !with_url.contains(platform) && !checked(platform));
-    if inherits_unchecked && !explicit.contains_key("url") && opts.shift_remove("url").is_some() {
-        removed.push("url".to_string());
-    }
     for table in PLATFORM_TABLES {
         let written: Vec<String> = opts
             .get(table)
@@ -511,7 +488,40 @@ fn drop_unverified_platform_urls(
         }
         !unchecked_url
     });
+    // A platform with no url of its own downloads from the top-level one, as the http backend
+    // falls back to it. When such a platform lost the checksum that checked it, the top-level url
+    // would download it unchecked, so that url goes, unless it was given on the command line.
+    // This is decided after the removals above: a platform whose own url just went falls back
+    // to the top-level one too.
+    let with_url = platforms_with_url(opts);
+    let inherits_unchecked = lost
+        .iter()
+        .any(|platform| !with_url.contains(platform) && !checked(platform));
+    if inherits_unchecked && !explicit.contains_key("url") && opts.shift_remove("url").is_some() {
+        removed.push("url".to_string());
+    }
     removed
+}
+
+/// The platforms in `opts` that have a url of their own, in either spelling, each spelled as
+/// [`crate::backend::static_helpers::preferred_platform_spelling`] spells it.
+fn platforms_with_url(opts: &IndexMap<String, toml::Value>) -> Vec<String> {
+    use crate::backend::static_helpers::preferred_platform_spelling as spelling;
+    let tables = PLATFORM_TABLES
+        .into_iter()
+        .filter_map(|table| opts.get(table)?.as_table());
+    let mut with_url: Vec<String> = tables
+        .flatten()
+        .filter(|(_, entry)| entry.as_table().is_some_and(|e| e.contains_key("url")))
+        .map(|(platform, _)| spelling(platform))
+        .collect();
+    with_url.extend(
+        opts.keys()
+            .filter_map(|k| flat_platform_option(k))
+            .filter(|(_, field)| *field == "url")
+            .map(|(platform, _)| spelling(&platform)),
+    );
+    with_url
 }
 
 /// The platform and field of flat per-platform option `key`, which the http backend reads as
@@ -3806,6 +3816,24 @@ checksum_url = ["c"]"#,
             super::drop_unverified_platform_urls(&mut o, &Default::default(), &[], lost(), false);
         assert!(removed.is_empty(), "{removed:?}");
         assert!(o.contains_key("url"));
+    }
+
+    #[test]
+    fn a_platform_whose_own_url_goes_takes_the_top_level_url_it_falls_back_to() {
+        // linux-x64 lost its checksum, so its own url goes. Without that url it would download
+        // from the top-level one, which nothing checks either.
+        let lost = vec![vec!["platforms".to_string(), "linux-x64".to_string()]];
+        let mut o: indexmap::IndexMap<String, toml::Value> = [
+            ("url".to_string(), "u".into()),
+            ("platforms_linux_x64_url".to_string(), "l".into()),
+        ]
+        .into_iter()
+        .collect();
+        let removed =
+            super::drop_unverified_platform_urls(&mut o, &Default::default(), &[], lost, false);
+        assert!(removed.contains(&"platforms_linux_x64_url".to_string()));
+        assert!(removed.contains(&"url".to_string()), "{removed:?}");
+        assert!(o.is_empty(), "{o:?}");
     }
 
     #[test]

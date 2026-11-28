@@ -47,10 +47,13 @@ impl TasksEdit {
         };
         let file = &task.config_source;
         if !file.exists() {
-            super::write::script_check_before_write(file).await?;
-            file::create_dir_all(file.parent().unwrap())?;
-            file::write(file, default_task())?;
-            file::make_executable(file)?;
+            // Write to the destination the check approved, not through the links again.
+            let destination = super::write::script_check_before_write(file).await?;
+            if let Some(parent) = destination.parent() {
+                file::create_dir_all(parent)?;
+            }
+            file::write(&destination, default_task())?;
+            file::make_executable(&destination)?;
         }
         if self.path {
             miseprintln!("{}", file.display());

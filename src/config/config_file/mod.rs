@@ -666,6 +666,29 @@ fn looks_like_config_file(path: &Path) -> bool {
         || config::has_own_config_filename(path)
 }
 
+/// The project directory `path` belongs to, whatever paranoid mode makes its trust root: the
+/// project a link inside it leads from, or that holds the nested root it is in, else its config
+/// root.
+pub fn config_project(path: &Path) -> PathBuf {
+    config_root::linked_project(path)
+        .or_else(|| config_root::nested_root_project(path))
+        .unwrap_or_else(|| config_root::config_root(path))
+}
+
+/// The paths of the project at `project` with a trust record that approves them as config,
+/// whether or not they are still on disk. In paranoid mode each config is its own trust root, so
+/// these are the files the user approved there, a config that another branch brings back
+/// included. Env file approvals are not trust in a config and are left out.
+pub fn trusted_configs_of_project(project: &Path) -> Vec<PathBuf> {
+    let project = record_identity(project);
+    trusted_paths_below(&project)
+        .into_iter()
+        .filter(|path| {
+            config_project(path) == project && !TrustRecord::find(path).is_env_file_approval()
+        })
+        .collect()
+}
+
 pub fn config_trust_root(path: &Path) -> PathBuf {
     if settings::is_loaded() && Settings::get().paranoid.config() {
         path.to_path_buf()
@@ -1045,7 +1068,10 @@ pub(crate) fn env_file_trust_check_from(
     declared_in: Option<&Path>,
 ) -> eyre::Result<bool> {
     if Settings::safe_mode() {
-        debug!("safe mode: not loading env file {}", display_path(path));
+        debug!(
+            "safe mode: not loading env file {}",
+            style::display_path_escaped(path)
+        );
         return Ok(false);
     }
     named_env_file_trust_check(path, declared_in)
@@ -1808,9 +1834,10 @@ pub fn checked_write_destination(path: &Path) -> Result<PathBuf> {
 
 /// Refuses to write task script `script`, found in a task directory of config root `root`,
 /// through a link that leaves the root: the script itself, or a directory between the root and
-/// the script. See [`script_check_before_remove`] for the rule.
-pub fn script_check_before_write(script: &Path, root: &Path) -> Result<()> {
-    script_link_check(script, root, true).map(drop)
+/// the script. See [`script_check_before_remove`] for the rule. Returns the path to write: the
+/// script with the links this check approved resolved, so the write goes where it passed.
+pub fn script_check_before_write(script: &Path, root: &Path) -> Result<PathBuf> {
+    script_link_check(script, root, true)
 }
 
 /// Refuses to remove task script `script`, found in a task directory of config root `root`,
@@ -1834,13 +1861,11 @@ pub fn script_check_before_remove(script: &Path, root: &Path) -> Result<PathBuf>
 fn script_link_check(script: &Path, root: &Path, follow_own_link: bool) -> Result<PathBuf> {
     let script = script.absolutize()?;
     let mut root = root.absolutize()?.into_owned();
-    // A conf.d folder is a config root of its own, but it sits in a project's config directory,
-    // and a link there is the project's. When the folder or a directory above it links out, the
-    // project is the boundary, as it is for the folder's trust and lockfile.
-    let folder_config = root.join("mise.toml");
-    if config::is_conf_d_folder_file(&folder_config)
-        && let Some(project) = config_root::linked_project(&folder_config)
-    {
+    // A conf.d folder, and `.config/mise` with a `mise.toml` of its own, are config roots of
+    // their own, but they sit in a project's directory, and a link there is the project's. When
+    // the root or a directory above it, up to the project, is a link, the project is the
+    // boundary, as it is for the root's trust and lockfile and for config writes.
+    if let Some(project) = config_root::linked_project(&root.join("mise.toml")) {
         root = project;
     }
     let (Some(dir), Some(name)) = (script.parent(), script.file_name()) else {
@@ -3507,5 +3532,40 @@ mod hashed_path_filename_tests {
 
         file::remove_file(&marker).unwrap();
         untrust(&mono).unwrap();
+    }
+
+    /// A task script is written where the check followed its links to, so a link that changes
+    /// after the check cannot send the write elsewhere.
+    #[test]
+    fn a_task_script_write_goes_to_the_destination_the_check_approved() {
+        let tmp = tempfile::tempdir().unwrap();
+        let project = tmp.path().canonicalize().unwrap().join("project");
+        std::fs::create_dir_all(project.join("real")).unwrap();
+        std::os::unix::fs::symlink("real", project.join("mise-tasks")).unwrap();
+        let destination =
+            script_check_before_write(&project.join("mise-tasks/new"), &project).unwrap();
+        assert_eq!(destination, project.join("real/new"));
+    }
+
+    /// `.config/mise` holding a `mise.toml` is a config root of its own, but a link at it is the
+    /// project's, so it does not take the root, and a task written there, out of the project.
+    #[test]
+    fn a_task_root_that_is_itself_a_link_out_of_the_project_is_not_followed() {
+        let tmp = tempfile::tempdir().unwrap();
+        let base = tmp.path().canonicalize().unwrap();
+        let project = base.join("project");
+        let outside = base.join("outside/mise");
+        std::fs::create_dir_all(outside.join("tasks")).unwrap();
+        std::fs::write(outside.join("mise.toml"), "").unwrap();
+        std::fs::create_dir_all(project.join(".config")).unwrap();
+        std::os::unix::fs::symlink(&outside, project.join(".config/mise")).unwrap();
+        let root = project.join(".config/mise");
+        assert_eq!(config_root::config_root(&root.join("mise.toml")), root);
+        let err = script_check_before_write(&root.join("tasks/new"), &root).unwrap_err();
+        assert!(
+            format!("{err:#}").contains("through a linked directory"),
+            "{err:#}"
+        );
+        assert!(script_check_before_remove(&root.join("tasks/new"), &root).is_err());
     }
 }

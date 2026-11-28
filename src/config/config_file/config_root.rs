@@ -751,3 +751,28 @@ mod windows_tests {
         );
     }
 }
+
+/// Trust records hold paths in the form `canonicalize` gives them, which on Windows starts with
+/// `\\?\`. `mise untrust` compares a record of a nested root with the roots worked out from it,
+/// so those keep that form. Not unix-only, so `windows-unit` checks the prefix.
+#[cfg(test)]
+mod canonical_form_tests {
+    use super::*;
+
+    #[test]
+    fn the_roots_of_a_canonical_path_keep_its_form() {
+        let temp = tempfile::tempdir().unwrap();
+        let project = temp.path().canonicalize().unwrap().join("proj");
+        let nested_roots = [
+            project.join(".config").join("mise"),
+            project.join(".mise").join("conf.d").join("x"),
+        ];
+        for root in nested_roots {
+            std::fs::create_dir_all(&root).unwrap();
+            let probe = root.join("mise.toml");
+            assert_eq!(config_root(&probe), root);
+            assert_eq!(nested_root_project(&probe).as_ref(), Some(&project));
+            assert_eq!(linked_project(&probe), None);
+        }
+    }
+}

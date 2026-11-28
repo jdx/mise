@@ -3207,6 +3207,15 @@ pub fn config_files_in_dir_for_any_env(dir: &Path) -> IndexSet<PathBuf> {
     files
 }
 
+/// [`config_files_in_dir_for_any_env`] plus the files in `dir` named in `filenames`, such as the
+/// idiomatic version files that paranoid mode asks trust for: every config of the project at
+/// `dir` that `mise trust` can approve on its own.
+pub fn project_config_files(dir: &Path, filenames: &[String]) -> IndexSet<PathBuf> {
+    let mut files = config_files_in_dir_for_any_env(dir);
+    files.extend(filenames.iter().flat_map(|f| config_glob(dir, f)));
+    files
+}
+
 pub fn config_paths_in_dir(dir: &Path) -> Vec<PathBuf> {
     config_paths_in_dir_with_filenames(dir, &DEFAULT_CONFIG_FILENAMES)
 }
