@@ -312,6 +312,12 @@ impl Use {
         {
             bail!("--tool-option requires a TOML config file");
         }
+        // Refuse a destination the save would refuse before installing anything, so a refused
+        // write leaves the installed tools as they were. The save checks again, as the links can
+        // change while the tools install.
+        if !self.is_dry_run() {
+            config_file::symlink_check_before_write(cf.get_path())?;
+        }
         let pin = self.pin || !self.fuzzy && (Settings::get().pin || Settings::get().asdf_compat);
         let mut resolve_options = ResolveOptions {
             latest_versions: false,
