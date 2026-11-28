@@ -4666,7 +4666,7 @@ pub(crate) fn update_lockfiles(
             } else {
                 build_rekey_decisions(versions, existing_lockfile.tools_for(&short))
             };
-            let (mut merged_tools, consumed_keys) = merge_tool_entries(
+            let merged = merge_tool_entries(
                 entries,
                 existing_lockfile.tools_for(&short),
                 |version, platform| {
@@ -4675,7 +4675,21 @@ pub(crate) fn update_lockfiles(
                         .cloned()
                         .flatten()
                 },
-            )?;
+            );
+            let (mut merged_tools, consumed_keys) = match merged {
+                Ok(merged) => merged,
+                Err(err) => {
+                    // Pins that disagree leave a version with no entry no
+                    // repository to verify against. Installing that version
+                    // is refused, so keep the package's entries as they are
+                    // rather than fail the update for every other tool.
+                    warn!(
+                        "not updating {short} in {}: {err:#}",
+                        display_path(&lockfile_path)
+                    );
+                    continue;
+                }
+            };
             if is_monorepo_root_lockfile {
                 preserve_absent_tool_entries(
                     &mut merged_tools,
