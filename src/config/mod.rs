@@ -3873,7 +3873,8 @@ pub fn is_global_config(path: &Path) -> bool {
 /// `mise use -g` creates is not among them. A file directly in the global or system config
 /// directory, or in its `conf.d`, is global config by where it is, and so is a folder fragment
 /// in that `conf.d` (see [`global_folder_fragment`]); a file deeper below it is a project like
-/// any other.
+/// any other. A directory that `MISE_GLOBAL_CONFIG_FILE` or `MISE_SYSTEM_CONFIG_FILE` replaces
+/// holds no global config, as discovery reads only the file the variable names.
 pub fn is_global_config_write(path: &Path) -> bool {
     if is_global_config(path) || env::MISE_GLOBAL_CONFIG_FILE.as_deref() == Some(path) {
         return true;
@@ -3881,11 +3882,26 @@ pub fn is_global_config_write(path: &Path) -> bool {
     let Some(parent) = path.parent() else {
         return false;
     };
-    [&*dirs::CONFIG, &*dirs::SYSTEM_CONFIG]
-        .into_iter()
+    global_config_dirs()
         .flat_map(|dir| [dir.to_path_buf(), dir.join("conf.d")])
         .any(|dir| file::same_file(parent, &dir))
         || global_folder_fragment(path).is_some()
+}
+
+/// The global and system config directories that discovery reads, as
+/// [`is_global_config_for_any_env`] has them: one that `MISE_GLOBAL_CONFIG_FILE` or
+/// `MISE_SYSTEM_CONFIG_FILE` replaces is left out.
+fn global_config_dirs() -> impl Iterator<Item = &'static Path> {
+    [
+        env::MISE_GLOBAL_CONFIG_FILE
+            .is_none()
+            .then_some(*dirs::CONFIG),
+        env::MISE_SYSTEM_CONFIG_FILE
+            .is_none()
+            .then_some(*dirs::SYSTEM_CONFIG),
+    ]
+    .into_iter()
+    .flatten()
 }
 
 /// The spelling in the global or system config directory of `path`, when `path` is a folder
@@ -3897,8 +3913,7 @@ fn global_folder_fragment(path: &Path) -> Option<PathBuf> {
     let name = path.file_name()?;
     let dir = path.parent()?;
     let real_dir = dir.canonicalize().ok();
-    [*dirs::CONFIG, *dirs::SYSTEM_CONFIG]
-        .into_iter()
+    global_config_dirs()
         .find_map(|config| {
             let conf_d = config.join("conf.d");
             let folder = match &real_dir {
@@ -4048,8 +4063,7 @@ fn global_config_spelling(path: &Path) -> Option<PathBuf> {
     let real = resolve_for_write(path)?;
     let dir = real.parent()?;
     let name = real.file_name()?;
-    [*dirs::CONFIG, *dirs::SYSTEM_CONFIG]
-        .into_iter()
+    global_config_dirs()
         .flat_map(|config| [config.to_path_buf(), config.join("conf.d")])
         .find(|candidate| candidate.canonicalize().is_ok_and(|c| c == dir))
         .map(|candidate| candidate.join(name))
@@ -4057,13 +4071,12 @@ fn global_config_spelling(path: &Path) -> Option<PathBuf> {
 }
 
 /// `path` with every link resolved, for a file that may not exist yet: its own link, if it is a
-/// dangling one, and then its directory.
+/// dangling one, and then its directory, through the part of it that exists, so a folder of
+/// `conf.d` that the write would create is compared where the write creates it.
 fn resolve_for_write(path: &Path) -> Option<PathBuf> {
-    path.canonicalize().ok().or_else(|| {
-        let target = crate::file::atomic_write_target(path).ok()?;
-        let dir = target.parent()?.canonicalize().ok()?;
-        Some(dir.join(target.file_name()?))
-    })
+    path.canonicalize()
+        .ok()
+        .or_else(|| crate::file::atomic_write_target(path).ok())
 }
 
 /// Whether global or system config discovery loads `path` from its config
