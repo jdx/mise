@@ -1919,6 +1919,26 @@ pub const BROWSER_ASSET_MAX_RETRIES: i64 = 1;
 /// required by release assets or repository content. Shared by GitHub-backed installers so they
 /// resolve private downloads consistently.
 pub async fn pick_reachable_asset_url(browser_url: &str, api_url: &str) -> String {
+    pick_reachable_url(browser_url, api_url, None).await
+}
+
+/// [`pick_reachable_asset_url`] for a file a release links to, which a third
+/// party chose: the probe carries `headers`, the forge credentials the request
+/// for the file is meant to carry, and none of the credentials the HTTP client
+/// adds by host alone, as the request itself does.
+pub async fn pick_reachable_release_link_url(
+    browser_url: &str,
+    api_url: &str,
+    headers: &HeaderMap,
+) -> String {
+    pick_reachable_url(browser_url, api_url, Some(headers)).await
+}
+
+async fn pick_reachable_url(
+    browser_url: &str,
+    api_url: &str,
+    headers: Option<&HeaderMap>,
+) -> String {
     if browser_url == api_url {
         return browser_url.to_string();
     }
@@ -1927,10 +1947,19 @@ pub async fn pick_reachable_asset_url(browser_url: &str, api_url: &str) -> Strin
     // settings) is for the download itself. When github.com's edge answers 5xx
     // for a URL, it tends to keep doing so while the API endpoint still serves
     // the file.
-    match crate::http::HTTP
-        .head_without_netrc(browser_url, BROWSER_ASSET_MAX_RETRIES)
-        .await
-    {
+    let probe = match headers {
+        Some(headers) => {
+            crate::http::HTTP
+                .head_without_netrc_or_host_auth(browser_url, headers, BROWSER_ASSET_MAX_RETRIES)
+                .await
+        }
+        None => {
+            crate::http::HTTP
+                .head_without_netrc(browser_url, BROWSER_ASSET_MAX_RETRIES)
+                .await
+        }
+    };
+    match probe {
         Ok(resp) => {
             let is_html = resp
                 .headers()

@@ -1526,13 +1526,38 @@ impl Client {
         url: U,
         max_retries: i64,
     ) -> Result<Response> {
+        let url = url.into_url()?;
+        let headers = host_auth_headers(&url)?;
+        self.head_without_netrc_with(url, &headers, max_retries)
+            .await
+    }
+
+    /// [`Self::head_without_netrc`] with `headers` in place of the credentials
+    /// [`host_auth_headers`] adds by host alone, for a URL a third party chose,
+    /// such as a link in a release (see [`TextRequest::without_host_auth`]).
+    pub async fn head_without_netrc_or_host_auth<U: IntoUrl>(
+        &self,
+        url: U,
+        headers: &HeaderMap,
+        max_retries: i64,
+    ) -> Result<Response> {
+        let url = url.into_url()?;
+        let mut all = crate::github::media_type_headers(&url);
+        all.extend(headers.clone());
+        self.head_without_netrc_with(url, &all, max_retries).await
+    }
+
+    async fn head_without_netrc_with(
+        &self,
+        url: Url,
+        headers: &HeaderMap,
+        max_retries: i64,
+    ) -> Result<Response> {
         ensure!(
             !crate::network::offline(&Settings::get()),
             "offline mode is enabled"
         );
-        let url = url.into_url()?;
-        let headers = host_auth_headers(&url)?;
-        let retry_state = new_retry_state(&headers, true);
+        let retry_state = new_retry_state(headers, true);
         let resp = retry_async_with_retries(
             "HEAD",
             &url,

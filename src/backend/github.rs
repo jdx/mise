@@ -484,7 +484,7 @@ fn ensure_registry_provenance(
 /// (a private repository). A custom API (GitHub Enterprise, a self-hosted
 /// GitLab or Forgejo) is used directly.
 async fn asset_download_url(asset: &ReleaseAsset) -> String {
-    release_file_url(&asset.url, &asset.url_api).await
+    release_file_url(&asset.url, &asset.url_api, None).await
 }
 
 /// Downloads a release's checksum files from where the install download would get
@@ -497,14 +497,20 @@ struct ForgeChecksumSource<'a> {
 
 impl asset_matcher::ChecksumSource for ForgeChecksumSource<'_> {
     async fn fetch_text(&self, file: &Asset) -> Result<String> {
-        let url = release_file_url(&file.url, &file.url_api).await;
-        let headers = if self.backend.is_gitlab() {
-            gitlab::get_headers(&url, &self.api_url)?
-        } else if self.backend.is_forgejo() {
-            forgejo::get_headers(&url, &self.api_url)?
-        } else {
-            github::get_headers(&url, &self.api_url)?
+        let forge_headers = |url: &str| {
+            if self.backend.is_gitlab() {
+                gitlab::get_headers(url, &self.api_url)
+            } else if self.backend.is_forgejo() {
+                forgejo::get_headers(url, &self.api_url)
+            } else {
+                github::get_headers(url, &self.api_url)
+            }
         };
+        // The probe that picks between the browser and API URLs carries the
+        // same forge headers as the request, and nothing added by host.
+        let probe_headers = forge_headers(&file.url)?;
+        let url = release_file_url(&file.url, &file.url_api, Some(&probe_headers)).await;
+        let headers = forge_headers(&url)?;
         // The release chooses this URL, and a GitLab or Forgejo release link can
         // point anywhere. The response is recorded as the asset's checksum (in
         // `mise.lock`, or a mismatch error), so the request carries only the
@@ -520,11 +526,20 @@ impl asset_matcher::ChecksumSource for ForgeChecksumSource<'_> {
 }
 
 /// [`asset_download_url`] for any file in a release, such as a checksum file.
-async fn release_file_url(url: &str, url_api: &str) -> String {
+/// With `probe_headers`, the probe of the browser URL carries only those, not
+/// the credentials the HTTP client adds by host alone.
+async fn release_file_url(
+    url: &str,
+    url_api: &str,
+    probe_headers: Option<&reqwest::header::HeaderMap>,
+) -> String {
     if url_api.is_empty() {
         url.to_string()
     } else if is_public_forge_api_url(url_api) {
-        github::pick_reachable_asset_url(url, url_api).await
+        match probe_headers {
+            Some(headers) => github::pick_reachable_release_link_url(url, url_api, headers).await,
+            None => github::pick_reachable_asset_url(url, url_api).await,
+        }
     } else {
         debug!(
             "Since the tool resides on a custom GitHub/GitLab API ({:?}), the asset download will be performed using the given API instead of browser URL download",
