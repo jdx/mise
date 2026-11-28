@@ -2854,9 +2854,8 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-1.0.0-dar
     }
 
     /// Real release set for bazelbuild/buildtools v7.1.2 — three bare binaries
-    /// per platform. This is the case the ubi backend covers via e2e
-    /// (`e2e/cli/test_upgrade`: `ubi:bazelbuild/buildtools[matching=buildifier]`);
-    /// ported here so the github backend has the same coverage at the unit level.
+    /// per platform, the unit-level counterpart of `e2e/cli/test_upgrade`'s
+    /// `github:bazelbuild/buildtools[matching=buildifier,...]`.
     fn bazel_buildtools_assets() -> Vec<String> {
         vec![
             "buildifier-darwin-amd64".to_string(),

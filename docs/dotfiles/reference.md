@@ -391,6 +391,23 @@ files under those paths alone even if `.git` has since been removed. When a
 shared history contains commit pointers, pull and adoption skip them instead
 of restoring unavailable Git objects or removing an existing checkout.
 
+### Cache directories {#cache-directories}
+
+A directory inside a tracked directory that holds a valid
+[`CACHEDIR.TAG`](https://bford.info/cachedir/) is a cache: Cargo's `target/` is
+one, and many other tools tag theirs. mise does not read or save anything
+inside it, and no `include` or `!glob` rule brings its files back.
+`mise dot files -r` lists them as inside a cache directory. To save one anyway,
+track the cache directory as its own entry.
+
+`node_modules` directories carry no tag. When a save reads 1,000 or more files
+from them, mise suggests excluding them, which also stops it from walking
+them:
+
+```sh
+mise dot exclude node_modules
+```
+
 ### Capture warnings {#capture-warnings}
 
 Saves warn when an include list selects a credential-named file for plaintext
@@ -520,6 +537,14 @@ mise schedules each tracked file on its own:
    fraction of that interval, at most five minutes.
 4. After a quiet period of four intervals, and at least five minutes, the file
    returns to the base interval.
+5. Files at the base interval wait for each other: when several change
+   together, mise saves them in one checkpoint once the last of them is quiet,
+   at most 30 seconds after the first changed.
+6. An automatic save that changes only files the newest checkpoint changed
+   replaces that checkpoint instead of following it, when that checkpoint is
+   also an automatic save, is less than five minutes old, and has not been
+   synced. The replacement keeps its number and its start time. A change to
+   what is tracked, an explicit save, or a sync starts a new checkpoint.
 
 The longer interval affects only that file. Other files save normally, and
 explicit saves and the checkpoints before bootstrap, rollback, or undo still

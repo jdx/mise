@@ -34,6 +34,7 @@ impl Vfox {
             locked_checksum: None,
             cmd_env: None,
             hook_dependencies: None,
+            detach_cmds: false,
             default_inline_shell: None,
             raw_stdio: false,
             terminal_lock: None,
@@ -157,7 +158,8 @@ async fn test_env_keys() {
     // Asserted rather than snapshotted: the dummy plugin reports the install dir itself on
     // Windows and its `bin` subdirectory elsewhere (see test_env_keys_for_install_dir), and
     // the separators differ too, so one snapshot cannot describe both.
-    let install_dir = vfox.install_dir.join("dummy").join("1.0.0");
+    // The hook gets the install directory as an absolute path.
+    let install_dir = std::path::absolute(vfox.install_dir.join("dummy").join("1.0.0")).unwrap();
     let expected = if cfg!(windows) {
         install_dir
     } else {
@@ -181,6 +183,7 @@ async fn test_env_keys_for_install_dir() {
         )
         .await
         .unwrap();
+    let install_dir = std::path::absolute(install_dir).unwrap();
     let expected = if cfg!(windows) {
         install_dir
     } else {
@@ -735,4 +738,248 @@ async fn test_download_to_reports_progress() {
     let seen = seen.lock().unwrap();
     assert_eq!(seen.first(), Some(&(0, Some(8))));
     assert_eq!(seen.last(), Some(&(8, Some(8))));
+}
+
+/// A plugin whose `Available` reports, as versions, the directories its
+/// `io.popen`, `os.execute` and `cmd.exec` children start in, and whether
+/// `GIT_DIR` reaches them.
+#[cfg(unix)]
+fn cwd_probe_plugin(plugins: &Path) {
+    let dir = plugins.join("cwd-probe");
+    std::fs::create_dir_all(dir.join("hooks")).unwrap();
+    std::fs::write(
+        dir.join("metadata.lua"),
+        r#"PLUGIN = {}
+PLUGIN.name = "cwd-probe"
+PLUGIN.version = "0.1.0"
+PLUGIN.minRuntimeVersion = "0.3.0"
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("hooks/available.lua"),
+        r#"function PLUGIN:Available(ctx)
+    local cmd = require("cmd")
+    local handle = io.popen("pwd")
+    local popen_cwd = handle:read("*l")
+    handle:close()
+    local out = os.tmpname()
+    os.execute("pwd > '" .. out .. "'")
+    local f = io.open(out)
+    local execute_cwd = f:read("*l")
+    f:close()
+    os.remove(out)
+    local exec_cwd = cmd.exec("pwd"):gsub("%s+$", "")
+    local git_dir = cmd.exec("echo \"git_dir=${GIT_DIR-unset}\""):gsub("%s+$", "")
+    return {
+        { version = popen_cwd },
+        { version = execute_cwd },
+        { version = exec_cwd },
+        { version = git_dir },
+    }
+end
+"#,
+    )
+    .unwrap();
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn listing_versions_runs_hook_commands_outside_the_working_directory() {
+    let plugins = tempfile::tempdir().unwrap();
+    cwd_probe_plugin(plugins.path());
+    let mut vfox = Vfox::test();
+    vfox.plugin_dir = plugins.path().to_path_buf();
+    let mut env = IndexMap::new();
+    env.insert(
+        "PATH".to_string(),
+        std::env::var("PATH").unwrap_or_default(),
+    );
+    env.insert("GIT_DIR".to_string(), "/project/.git".to_string());
+    vfox.cmd_env = Some(env);
+
+    let versions: Vec<String> = vfox
+        .list_available_versions("cwd-probe")
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|v| v.version)
+        .collect();
+
+    let home = homedir::my_home().unwrap().unwrap().canonicalize().unwrap();
+    let cwd = std::env::current_dir().unwrap().canonicalize().unwrap();
+    assert_ne!(home, cwd, "the test must run outside the home directory");
+    for seen in &versions[..3] {
+        assert_eq!(
+            Path::new(seen).canonicalize().unwrap(),
+            home,
+            "{versions:?}"
+        );
+    }
+    assert_eq!(versions[3], "git_dir=unset");
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn env_hooks_still_run_in_the_working_directory() {
+    let plugins = tempfile::tempdir().unwrap();
+    cwd_probe_plugin(plugins.path());
+    let mut vfox = Vfox::test();
+    vfox.plugin_dir = plugins.path().to_path_buf();
+
+    let plugin = vfox.get_sdk_with_env("cwd-probe").unwrap();
+    let seen: String = plugin
+        .eval_async(mlua::chunk! {
+            local handle = io.popen("pwd")
+            local cwd = handle:read("*l")
+            handle:close()
+            return cwd
+        })
+        .await
+        .unwrap();
+    assert_eq!(
+        Path::new(&seen).canonicalize().unwrap(),
+        std::env::current_dir().unwrap().canonicalize().unwrap()
+    );
+}
+
+/// A plugin whose install-related hooks report the paths mise handed them.
+#[cfg(unix)]
+fn path_probe_plugin(plugins: &Path) {
+    let dir = plugins.join("path-probe");
+    std::fs::create_dir_all(dir.join("hooks")).unwrap();
+    std::fs::write(
+        dir.join("metadata.lua"),
+        r#"PLUGIN = {}
+PLUGIN.name = "path-probe"
+PLUGIN.version = "0.1.0"
+PLUGIN.minRuntimeVersion = "0.3.0"
+"#,
+    )
+    .unwrap();
+    for (hook, function) in [
+        ("backend_install", "BackendInstall"),
+        ("backend_uninstall", "BackendUninstall"),
+    ] {
+        std::fs::write(
+            dir.join(format!("hooks/{hook}.lua")),
+            format!(
+                "function PLUGIN:{function}(ctx)\n    error(\"paths=\" .. ctx.install_path .. \",\" .. ctx.download_path)\nend\n"
+            ),
+        )
+        .unwrap();
+    }
+    std::fs::write(
+        dir.join("hooks/mise_install_satisfied.lua"),
+        "function PLUGIN:MiseInstallSatisfied(ctx)\n    return { satisfied = false, reason = ctx.path }\nend\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("hooks/env_keys.lua"),
+        "function PLUGIN:EnvKeys(ctx)\n    return { { key = \"SEEN\", value = ctx.path } }\nend\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("hooks/backend_exec_env.lua"),
+        "function PLUGIN:BackendExecEnv(ctx)\n    return { env_vars = { { key = \"SEEN\", value = ctx.install_path } } }\nend\n",
+    )
+    .unwrap();
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn install_hooks_get_absolute_paths() {
+    let plugins = tempfile::tempdir().unwrap();
+    path_probe_plugin(plugins.path());
+    let mut vfox = Vfox::test();
+    vfox.plugin_dir = plugins.path().to_path_buf();
+    let cwd = std::env::current_dir().unwrap();
+    let expected = format!(
+        "paths={},{}",
+        cwd.join("rel/install").display(),
+        cwd.join("rel/download").display()
+    );
+
+    let install = vfox
+        .backend_install(
+            "path-probe",
+            "tool",
+            "1.0.0",
+            PathBuf::from("rel/install"),
+            PathBuf::from("rel/download"),
+            IndexMap::new(),
+        )
+        .await
+        .unwrap_err();
+    assert!(format!("{install:?}").contains(&expected), "{install:?}");
+
+    let uninstall = vfox
+        .backend_uninstall(
+            "path-probe",
+            "tool",
+            "1.0.0",
+            PathBuf::from("rel/install"),
+            PathBuf::from("rel/download"),
+            IndexMap::new(),
+        )
+        .await
+        .unwrap_err();
+    assert!(
+        format!("{uninstall:?}").contains(&expected),
+        "{uninstall:?}"
+    );
+
+    let satisfied = vfox
+        .mise_install_satisfied(
+            "path-probe",
+            "1.0.0",
+            "rel/install",
+            IndexMap::<String, String>::new(),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        satisfied.reason.as_deref(),
+        cwd.join("rel/install").to_str()
+    );
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn env_hooks_get_absolute_paths() {
+    let plugins = tempfile::tempdir().unwrap();
+    path_probe_plugin(plugins.path());
+    let mut vfox = Vfox::test();
+    vfox.plugin_dir = plugins.path().to_path_buf();
+    vfox.detach_cmds = true;
+    let expected = std::env::current_dir().unwrap().join("rel/install");
+    let seen = |keys: Vec<crate::hooks::env_keys::EnvKey>| {
+        keys.into_iter()
+            .find(|key| key.key == "SEEN")
+            .map(|key| PathBuf::from(key.value))
+    };
+
+    let env_keys = vfox
+        .env_keys_for_install_dir(
+            "path-probe",
+            "1.0.0",
+            "rel/install",
+            IndexMap::<String, String>::new(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(seen(env_keys), Some(expected.clone()));
+
+    let exec_env = vfox
+        .backend_exec_env(
+            "path-probe",
+            "tool",
+            "1.0.0",
+            PathBuf::from("rel/install"),
+            IndexMap::new(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(seen(exec_env), Some(expected));
 }

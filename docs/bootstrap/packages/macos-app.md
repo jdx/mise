@@ -1,18 +1,54 @@
 ---
-description: "Install a macOS app from a vendor download URL, verified by its checksum, when no cask exists."
+description: "Install a macOS app from a vendor download or a Homebrew cask, verified by its checksum, without writing to the Homebrew prefix."
 ---
 
-# Direct macOS app downloads (macos-app)
+# macOS apps without Homebrew (macos-app)
 
-The `macos-app` manager installs an app bundle from a download you declare, for
-a vendor or internal app that has no Homebrew cask. You give the URL, checksum,
-and version yourself, and mise verifies the download before installing it into
-`/Applications`.
+The `macos-app` manager installs an app bundle into `/Applications` and keeps
+its install records in mise's state directory. It never writes to the Homebrew
+prefix, and needs no `brew` binary.
 
-Prefer [`brew-cask`](/bootstrap/packages/brew-cask.html) when a suitable cask
-exists: the cask supplies the download details and tracks new releases for
-you. `macos-app` cannot discover releases, so you update each declaration by
-hand.
+The download comes from one of two places:
+
+- [an official Homebrew cask](#install-from-a-homebrew-cask), which supplies
+  the current version, URL, and checksum;
+- [a download you declare](#declare-a-download), for a vendor or internal app
+  that has no cask.
+
+Prefer [`brew-cask`](/bootstrap/packages/brew-cask.html) when you want
+Homebrew to own the app. Use `macos-app` with a cask when the Homebrew prefix
+belongs to another user, such as a second account on a shared Mac.
+
+## Install from a Homebrew cask
+
+Set `cask` to an official cask token:
+
+```toml
+[bootstrap.packages]
+"macos-app:figma" = { cask = "figma", os = "macos" }
+```
+
+mise reads the cask's current version, download, and checksum from Homebrew's
+cask index, verifies the download, and installs only the cask's app bundle. The
+cask must:
+
+- be an official cask; tap casks such as `owner/tap/name` are rejected;
+- install only app bundles, with no pkg installers, command-line binaries,
+  fonts, or install scripts;
+- publish a checksum for its download, and depend on no other cask or formula.
+
+mise refuses a cask that does not meet these rules, and names the reason; install
+that one with `brew-cask` instead. Homebrew publishes only a cask's current
+version, so `version` cannot be set with `cask`, and neither can `url`,
+`sha256`, or `artifact`.
+
+Updates work as they do for `brew-cask`. `mise bootstrap packages apply`
+installs the cask's current version when the app is missing, and leaves an
+installed app alone. `mise bootstrap packages upgrade` installs the cask's
+current version when it differs from the installed one; an app that the cask
+marks as updating itself is replaced only when the installed bundle is older
+than the cask and not running. Uninstall and zap steps in the cask are
+not run; see [Remove an app](#remove-an-app).
 
 ## Declare a download
 
@@ -102,7 +138,7 @@ app was being staged; it was left untouched
 A dry run warns about an existing app it does not own, but cannot tell whether
 adoption succeeds, because it has not downloaded the archive to compare.
 
-## Update a declared app
+## Update a declared download {#update-a-declared-app}
 
 For each new release, change `version` and `sha256`, and change `url` if it
 does not use <code v-pre>{{version}}</code> or the vendor changed its URL

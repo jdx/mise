@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+# The watcher folds another autosave of the files its unpublished previous
+# autosave changed into that one; other files, and explicit saves, are not
+# folded into.
+require_cmd git
+
+repo="$MISE_STATE_DIR/history/repo.git"
+export repo
+commits() { git --git-dir="$repo" rev-list --count HEAD; }
+subject() { git --git-dir="$repo" log -1 --format=%s; }
+# the newest checkpoint's copy of the file ending in $1
+saved() { git --git-dir="$repo" show "HEAD:$(git --git-dir="$repo" ls-tree -r --name-only HEAD | grep -m1 "$1\$")"; }
+export -f commits subject saved
+
+echo one >~/.fold-a
+echo one >~/.fold-b
+assert_succeed 'mise dot track ~/.fold-a ~/.fold-b'
+base=$(commits)
+
+echo two >~/.fold-a
+assert_succeed 'mise dot watch --once'
+assert commits "$((base + 1))"
+first=$(git --git-dir="$repo" rev-parse HEAD)
+
+# the same file again: the autosave is replaced, still describing its
+# change against the checkpoint before it
+echo three >~/.fold-a
+assert_succeed 'mise dot watch --once'
+assert commits "$((base + 1))"
+assert subject "edited ~/.fold-a"
+assert_fail "test $first = $(git --git-dir="$repo" rev-parse HEAD)"
+assert "saved .fold-a" "three"
+
+# another file follows it
+echo two >~/.fold-b
+assert_succeed 'mise dot watch --once'
+assert commits "$((base + 2))"
+assert subject "edited ~/.fold-b"
+
+# both files, one of them new to the newest autosave: follows it
+echo four >~/.fold-a
+echo three >~/.fold-b
+assert_succeed 'mise dot watch --once'
+assert commits "$((base + 3))"
+
+# an explicit save is never replaced
+echo four >~/.fold-b
+assert_succeed 'mise dot save'
+assert commits "$((base + 4))"
+echo five >~/.fold-b
+assert_succeed 'mise dot watch --once'
+assert commits "$((base + 5))"
+
+# a description written for the checkpoint before (an annotation commit
+# between it and the autosave) does not stop the next autosave folding
+assert_succeed 'mise dot history describe latest "tweaked fold-b"'
+assert commits "$((base + 6))"
+echo six >~/.fold-a
+assert_succeed 'mise dot watch --once'
+assert commits "$((base + 7))"
+echo seven >~/.fold-a
+assert_succeed 'mise dot watch --once'
+assert commits "$((base + 7))"
+assert subject "edited ~/.fold-a"
+assert "saved .fold-a" "seven"

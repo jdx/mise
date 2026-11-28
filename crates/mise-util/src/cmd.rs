@@ -2490,6 +2490,8 @@ impl<'a> CmdLineRunner<'a> {
             return Ok(());
         }
 
+        sandbox.validate_connect_ports()?;
+
         // Fail early if per-host network filtering is requested
         #[cfg(any(target_os = "linux", target_os = "macos"))]
         sandbox.reject_allow_net()?;
@@ -2544,23 +2546,15 @@ impl<'a> CmdLineRunner<'a> {
             let sandbox = sandbox.clone();
             unsafe {
                 self.cmd.as_std_mut().pre_exec(move || {
-                    if sandbox.effective_deny_read()
-                        || sandbox.effective_deny_write()
-                        || sandbox.effective_deny_unix()
-                        || sandbox.effective_deny_net()
-                        || sandbox.deny_process
-                    {
+                    if sandbox.needs_landlock() {
                         crate::sandbox::landlock_apply(&sandbox, &initial_program)
                             .map_err(|e| std::io::Error::other(e.to_string()))?;
                     }
                     // the filter also refuses terminal input injection, which every
                     // sandbox needs
                     if sandbox.restricts_more_than_env() {
-                        crate::sandbox::seccomp_apply(
-                            sandbox.effective_deny_net(),
-                            sandbox.deny_process,
-                        )
-                        .map_err(|e| std::io::Error::other(e.to_string()))?;
+                        crate::sandbox::seccomp_apply(&sandbox)
+                            .map_err(|e| std::io::Error::other(e.to_string()))?;
                     }
                     Ok(())
                 });
@@ -3017,7 +3011,7 @@ where
 
 /// [`cmd_read_async_inherited_env`] for a `program` command the caller has
 /// already given its environment and working directory.
-pub(crate) async fn cmd_read_async_command(
+pub async fn cmd_read_async_command(
     mut cmd: tokio::process::Command,
     program: &str,
     args: &[&str],

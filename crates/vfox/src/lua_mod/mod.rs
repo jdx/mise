@@ -10,6 +10,7 @@ mod http;
 mod json;
 mod log;
 mod pcall;
+mod popen;
 mod semver;
 mod strings;
 

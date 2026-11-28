@@ -74,7 +74,11 @@ impl ConfigLs {
         table.truncate(self.truncate.truncate);
         for cfg in configs {
             let ts = cfg.to_tool_request_set()?;
-            let tools = ts.list_tools().into_iter().join(", ");
+            let tools = ts
+                .list_tools()
+                .into_iter()
+                .map(|ba| crate::toolset::install_state::state_short(&ba.short))
+                .join(", ");
             let tools = if tools.is_empty() {
                 Cell::new("(none)")
                     .add_attribute(Attribute::Italic)
@@ -131,7 +135,7 @@ impl ConfigLs {
                     .to_tool_request_set()?
                     .list_tools()
                     .into_iter()
-                    .map(|s| s.to_string())
+                    .map(|ba| crate::toolset::install_state::state_short(&ba.short).into_owned())
                     .collect();
                 Ok(serde_json::json!({
                     "path": cf.get_path().to_string_lossy(),

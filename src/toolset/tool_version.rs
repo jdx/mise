@@ -954,7 +954,9 @@ impl ToolVersion {
     pub fn style(&self) -> String {
         format!(
             "{}{}",
-            style(&self.ba().short).blue().for_stderr(),
+            style(install_state::state_short(&self.ba().short))
+                .blue()
+                .for_stderr(),
             style(&format!("@{}", self.version)).for_stderr()
         )
     }
@@ -1419,7 +1421,14 @@ impl ToolVersion {
         // fetching for fully-qualified versions (e.g. "2.3.2") that aren't installed.
         // Prefix versions like "2" still need remote resolution to find e.g. "2.1.0".
         // "latest" also needs remote resolution but is handled in the block above.
-        if prefer_offline && !opts.latest_versions && v.matches('.').count() >= 2 {
+        // A backend whose dotted versions can still be prefixes (java's
+        // "liberica-21.0.13.1" for "liberica-21.0.13.1+5") opts out, so these
+        // commands resolve such a version the way `mise install` does.
+        if prefer_offline
+            && !opts.latest_versions
+            && v.matches('.').count() >= 2
+            && backend.dotted_version_names_a_release(&v)
+        {
             return build(v);
         }
         // A fully-qualified version usually names itself, so prefer-offline

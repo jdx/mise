@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 
-if [[ "$(uname)" != "Linux" ]]; then
-  exit 0
-fi
+case "$(uname -s):$(uname -m)" in
+  Linux:x86_64 | Linux:aarch64) hash=(sha256sum) ;;
+  Darwin:arm64) hash=(shasum -a 256) ;;
+  *) exit 0 ;;
+esac
 
 prefix="$PWD/brew-prefix"
 version_dir="$prefix/Caskroom/example/1.0.0"
@@ -13,7 +15,7 @@ state="$PWD/state"
 mkdir -p "$version_dir/bin" "$prefix/bin"
 printf '#!/bin/sh\n' >"$binary"
 ln -s "$binary" "$target"
-digest="$(printf %s "$binary" | sha256sum | cut -d' ' -f1)"
+digest="$(printf %s "$binary" | "${hash[@]}" | cut -d' ' -f1)"
 
 cat >"$version_dir/.mise-cask.toml" <<EOF
 schema_version = 3
@@ -33,10 +35,15 @@ cat >mise.toml <<EOF
 [bootstrap.packages]
 EOF
 
-assert_contains \
-  "MISE_SYSTEM_BREW_PREFIX=$prefix MISE_STATE_DIR=$state mise bootstrap packages prune --manager brew-cask --dry-run" \
-  "remove brew-cask:example@1.0.0"
-assert_succeed \
-  "MISE_SYSTEM_BREW_PREFIX=$prefix MISE_STATE_DIR=$state mise bootstrap packages prune --manager brew-cask --yes"
+export MISE_SYSTEM_BREW_PREFIX="$prefix"
+export MISE_STATE_DIR="$state"
+
+hint='mise bootstrap packages prune -m brew-cask --dry-run'
+assert_contains "mise bootstrap packages prune --yes 2>&1" "$hint"
+assert_succeed "test -e $target"
+assert_not_contains "MISE_SYSTEM_PACKAGES_MANAGERS=brew mise bootstrap packages prune --dry-run 2>&1" "$hint"
+
+assert_contains "$hint" "remove brew-cask:example@1.0.0"
+assert_succeed "mise bootstrap packages prune --manager brew-cask --yes"
 assert_fail "test -e $target"
 assert_fail "test -e $prefix/Caskroom/example"

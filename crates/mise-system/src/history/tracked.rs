@@ -307,6 +307,10 @@ pub struct Walk {
     pub skipped: BTreeSet<usize>,
     /// Repositories found inside a tracked directory, skipped whole.
     pub nested: Vec<PathReason>,
+    /// Tagged cache directories found inside a tracked directory, skipped
+    /// whole. Not reported as omissions on every save, but recorded with
+    /// the checkpoint so a rollback never treats their files as deleted.
+    pub caches: Vec<PathReason>,
     pub incomplete: Vec<PathReason>,
     pub warnings: Vec<String>,
     /// Notices that claim selected contents were saved.
@@ -778,6 +782,9 @@ impl TrackedSet {
         if inside_nested_repository(owner, path) {
             return Some(DropReason::NestedRepository);
         }
+        if inside_cache_directory(owner, path) {
+            return Some(DropReason::CacheDirectory);
+        }
         let judged = path != owner.path || kind == Kind::File;
         if judged && exclude.is_match(path, &owner.path) {
             return Some(DropReason::GlobalExclude);
@@ -863,6 +870,11 @@ impl TrackedSet {
                 continue;
             }
             walk_entry(set, index, entry, &exclude, &hard, &mut walk);
+        }
+        // counted before the credential guard below drops anything, so the
+        // hint reflects what the walk had to read
+        if let Some(hint) = node_modules_hint(&walk.files, &set.entries) {
+            walk.warnings.push(hint);
         }
         // Protected files are excluded from capture itself, never kept in
         // a hidden local-only history. Explicit encryption permits key files
@@ -966,6 +978,22 @@ impl TrackedSet {
             .collect();
         let mut omitted = walk.omitted.clone();
         omitted.extend(self.invalid.iter().cloned());
+        // **A skipped cache is not an absence.** Recorded so a rollback
+        // to this checkpoint reads its files as omitted rather than
+        // deleted, even after the tag is gone and the directory is
+        // ordinary content.
+        // A cache that is itself local-only is left out: its path would
+        // otherwise reach the shared commit trailer, and an excluded path
+        // needs no omission record to be safe from a rollback.
+        omitted.extend(
+            walk.caches
+                .iter()
+                .filter(|cache| {
+                    let path = file::replace_path(&cache.path);
+                    !self.local.iter().any(|local| path.starts_with(local))
+                })
+                .cloned(),
+        );
         Coverage {
             entries,
             exclude: self.exclude.clone(),
@@ -1141,6 +1169,16 @@ fn walk_entry(
             walk.nested.push(PathReason {
                 path: display_path(path),
                 reason,
+            });
+            walker.skip_current_dir();
+            continue;
+        }
+        // a tagged cache directory (Cargo's `target/`, for one) holds
+        // nothing worth restoring and is not entered at all
+        if file_type.is_dir() && is_cache_directory(path) {
+            walk.caches.push(PathReason {
+                path: display_path(path),
+                reason: CACHE_DIRECTORY_REASON.into(),
             });
             walker.skip_current_dir();
             continue;
@@ -2264,6 +2302,7 @@ impl ExclusionReasons<'_> {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum DropReason {
     NestedRepository,
+    CacheDirectory,
     GlobalExclude,
     EntryExclude,
     NotIncluded,
@@ -2273,6 +2312,7 @@ impl DropReason {
     fn as_str(self) -> &'static str {
         match self {
             Self::NestedRepository => "inside a nested repository",
+            Self::CacheDirectory => CACHE_DIRECTORY_REASON,
             Self::GlobalExclude => "excluded by [history] exclude",
             Self::EntryExclude => "excluded by the entry's exclude list",
             Self::NotIncluded => "not selected by the entry's include list",
@@ -2302,6 +2342,119 @@ fn inside_nested_repository(owner: &TrackedEntry, path: &Path) -> bool {
     path.ancestors()
         .take_while(|ancestor| ancestor.starts_with(&owner.path) && *ancestor != owner.path)
         .any(|ancestor| ancestor.join(".git").exists())
+}
+
+/// How many files under `node_modules` directories a walk reads before it
+/// suggests excluding them.
+const NODE_MODULES_HINT_FILES: usize = 1000;
+
+/// A suggestion to exclude `node_modules` when a walk read many files from
+/// one, or `None`.
+///
+/// **A hint, not a default exclusion.** What a tracked directory holds is
+/// the user's to decide, and a rule mise adds on its own is a file that
+/// silently stops being saved. But a package tree is almost never meant
+/// to be in history, and reading it on every save is what makes every
+/// `mise dot` command slow, so the walk says so and names the fix.
+fn node_modules_hint(
+    files: &BTreeMap<PathBuf, (usize, Policy)>,
+    entries: &[TrackedEntry],
+) -> Option<String> {
+    let mut dirs: BTreeMap<PathBuf, usize> = BTreeMap::new();
+    for (path, (owner, _)) in files {
+        let Some(root) = entries.get(*owner).map(|entry| entry.path.as_path()) else {
+            continue;
+        };
+        let Ok(rel) = path.strip_prefix(root) else {
+            continue;
+        };
+        let mut dir = root.to_path_buf();
+        for component in rel.components() {
+            dir.push(component);
+            if component.as_os_str() == "node_modules" {
+                *dirs.entry(dir).or_default() += 1;
+                break;
+            }
+        }
+    }
+    let total: usize = dirs.values().sum();
+    if total < NODE_MODULES_HINT_FILES {
+        return None;
+    }
+    let mut largest: Vec<_> = dirs.into_iter().collect();
+    largest.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    let named: Vec<String> = largest
+        .iter()
+        .take(3)
+        .map(|(dir, _)| display_path(dir))
+        .collect();
+    let more = match largest.len().saturating_sub(named.len()) {
+        0 => String::new(),
+        n => format!(" and {n} more"),
+    };
+    Some(format!(
+        "{total} files are saved from node_modules directories ({}{more}), which slows every save; `mise dot exclude node_modules` skips them",
+        named.join(", ")
+    ))
+}
+
+/// Why a tagged cache directory is left out of every capture.
+pub(crate) const CACHE_DIRECTORY_REASON: &str = "inside a cache directory (CACHEDIR.TAG)";
+
+/// The first bytes of a `CACHEDIR.TAG` file, from the Cache Directory
+/// Tagging Specification (<https://bford.info/cachedir/>).
+const CACHEDIR_TAG_SIGNATURE: &[u8] = b"Signature: 8a477f597d28d172789f06886806bc55";
+
+/// Whether `dir` declares itself a cache with a valid `CACHEDIR.TAG`.
+///
+/// Cargo's `target/`, and the caches of many other tools, carry the tag:
+/// everything in them can be regenerated, and they can hold hundreds of
+/// thousands of files. The signature is checked, as the specification
+/// asks, so a file that merely has the name does not hide a directory.
+fn is_cache_directory(dir: &Path) -> bool {
+    use std::io::Read;
+    let tag = dir.join("CACHEDIR.TAG");
+    // only a regular file is read: opening a FIFO with no writer blocks,
+    // and a walk must never hang on a name
+    if !std::fs::symlink_metadata(&tag).is_ok_and(|meta| meta.is_file()) {
+        return false;
+    }
+    let mut options = std::fs::OpenOptions::new();
+    options.read(true);
+    // O_NONBLOCK keeps a FIFO swapped in since the check above from blocking
+    // the open, and the descriptor is checked again below
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(nix::libc::O_NONBLOCK | nix::libc::O_NOFOLLOW);
+    }
+    let Ok(file) = options.open(&tag) else {
+        return false;
+    };
+    if !file.metadata().is_ok_and(|meta| meta.is_file()) {
+        return false;
+    }
+    let mut head = Vec::with_capacity(CACHEDIR_TAG_SIGNATURE.len());
+    file.take(CACHEDIR_TAG_SIGNATURE.len() as u64)
+        .read_to_end(&mut head)
+        .is_ok_and(|_| head == CACHEDIR_TAG_SIGNATURE)
+}
+
+/// Whether `path` lies in a tagged cache directory below `owner`'s root.
+///
+/// The same rule the walk applies when it decides whether to descend, so
+/// retention, listings and the watcher agree with what a capture holds.
+/// The root itself is not judged: tracking a cache directory directly
+/// captures it, as tracking a repository directly does.
+fn inside_cache_directory(owner: &TrackedEntry, path: &Path) -> bool {
+    path.ancestors()
+        .take_while(|ancestor| ancestor.starts_with(&owner.path) && *ancestor != owner.path)
+        // a symlink is captured as a link, so the cache its target may be
+        // does not decide whether it is excluded
+        .any(|ancestor| {
+            std::fs::symlink_metadata(ancestor).is_ok_and(|meta| meta.is_dir())
+                && is_cache_directory(ancestor)
+        })
 }
 
 /// Which `[history] exclude` rules cannot be used, each named with the
@@ -4949,6 +5102,197 @@ mod tests {
         assert!(walk.nested.is_empty());
         assert!(set.would_capture(&plugin.join("init.lua")).unwrap());
         assert!(!set.would_capture(&plugin.join(".git/HEAD")).unwrap());
+    }
+
+    #[test]
+    fn a_tagged_cache_directory_is_skipped_unless_tracked_directly() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("project");
+        let target = root.join("target");
+        let fake = root.join("not-a-cache");
+        std::fs::create_dir_all(target.join("debug")).unwrap();
+        std::fs::create_dir_all(&fake).unwrap();
+        std::fs::write(
+            target.join("CACHEDIR.TAG"),
+            "Signature: 8a477f597d28d172789f06886806bc55\n# cargo\n",
+        )
+        .unwrap();
+        std::fs::write(target.join("debug/build.o"), "obj").unwrap();
+        // a file with the name but not the signature marks nothing
+        std::fs::write(fake.join("CACHEDIR.TAG"), "not a tag").unwrap();
+        std::fs::write(fake.join("keep.toml"), "x").unwrap();
+        std::fs::write(root.join("config.toml"), "top").unwrap();
+        let mut set = TrackedSet::default();
+        set.push(entry(&root));
+        let walk = set.walk().unwrap();
+        assert!(walk.files.contains_key(&root.join("config.toml")));
+        assert!(walk.files.contains_key(&fake.join("keep.toml")));
+        assert!(!walk.files.keys().any(|path| path.starts_with(&target)));
+        // retention and listings agree with the walk
+        assert!(!set.would_capture(&target.join("debug/build.o")).unwrap());
+        assert!(!set.would_capture(&target.join("CACHEDIR.TAG")).unwrap());
+        assert_eq!(
+            set.exclusion_reasons()
+                .unwrap()
+                .of(&target.join("debug/build.o")),
+            Some("inside a cache directory (CACHEDIR.TAG)")
+        );
+        assert!(set.would_capture(&fake.join("keep.toml")).unwrap());
+        // the skip is recorded with the checkpoint, not reported as an
+        // omission, so a rollback after the tag is removed reads the cache's
+        // files as never saved rather than deleted
+        assert!(walk.omitted.is_empty());
+        let coverage = set.coverage(&walk);
+        std::fs::remove_file(target.join("CACHEDIR.TAG")).unwrap();
+        assert!(matches!(
+            crate::history::replay::classify_coverage(
+                &coverage,
+                &display_path(target.join("debug/build.o"))
+            ),
+            crate::history::replay::PathState::Omitted(reason) if reason == CACHE_DIRECTORY_REASON
+        ));
+        std::fs::write(
+            target.join("CACHEDIR.TAG"),
+            "Signature: 8a477f597d28d172789f06886806bc55\n",
+        )
+        .unwrap();
+        // tracking the cache directory itself captures it
+        set.push(entry(&target));
+        let walk = set.walk().unwrap();
+        assert!(walk.files.contains_key(&target.join("debug/build.o")));
+        assert!(set.would_capture(&target.join("debug/build.o")).unwrap());
+    }
+
+    #[test]
+    fn a_local_only_cache_stays_out_of_the_shared_record() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("project");
+        let private = root.join("private");
+        let target = root.join("target");
+        let tag = "Signature: 8a477f597d28d172789f06886806bc55\n";
+        for cache in [&private, &target] {
+            std::fs::create_dir_all(cache).unwrap();
+            std::fs::write(cache.join("CACHEDIR.TAG"), tag).unwrap();
+        }
+        let mut set = TrackedSet {
+            entries: vec![entry(&root)],
+            local: vec![private.clone()],
+            ..Default::default()
+        };
+        set.keep_local_out();
+        let walk = set.walk().unwrap();
+        let shared = set.shared_coverage(set.coverage(&walk), &walk);
+        let omitted: Vec<_> = shared.omitted.iter().map(|o| o.path.clone()).collect();
+        // the shared cache is still recorded, the local-only one is not
+        assert_eq!(omitted, vec![display_path(&target)]);
+    }
+
+    #[test]
+    fn a_cache_omission_does_not_cover_a_separately_tracked_entry_inside_it() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("project");
+        let target = root.join("target");
+        let settings = target.join("settings");
+        std::fs::create_dir_all(&settings).unwrap();
+        std::fs::write(
+            target.join("CACHEDIR.TAG"),
+            "Signature: 8a477f597d28d172789f06886806bc55\n",
+        )
+        .unwrap();
+        std::fs::write(target.join("build.o"), "obj").unwrap();
+        std::fs::write(settings.join("a.toml"), "a").unwrap();
+        let mut set = TrackedSet::default();
+        set.push(entry(&root));
+        set.push(entry(&settings));
+        let walk = set.walk().unwrap();
+        assert!(walk.files.contains_key(&settings.join("a.toml")));
+        let coverage = set.coverage(&walk);
+        let classify =
+            |path: &Path| crate::history::replay::classify_coverage(&coverage, &display_path(path));
+        // the skipped cache contents stay omitted
+        assert!(matches!(
+            classify(&target.join("build.o")),
+            crate::history::replay::PathState::Omitted(_)
+        ));
+        // a file the settings entry did not hold is absent from it
+        assert!(matches!(
+            classify(&settings.join("new.toml")),
+            crate::history::replay::PathState::Absent
+        ));
+    }
+
+    /// A FIFO named `CACHEDIR.TAG` blocks whoever opens it while no writer
+    /// is present, so it is never opened, and the walk finishes.
+    #[cfg(unix)]
+    #[test]
+    fn a_fifo_named_cachedir_tag_is_not_read() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("project");
+        let dir = root.join("odd");
+        std::fs::create_dir_all(&dir).unwrap();
+        let fifo = dir.join("CACHEDIR.TAG");
+        let status = std::process::Command::new("mkfifo")
+            .arg(&fifo)
+            .status()
+            .unwrap();
+        assert!(status.success());
+        std::fs::write(dir.join("keep.toml"), "x").unwrap();
+        assert!(!is_cache_directory(&dir));
+        let mut set = TrackedSet::default();
+        set.push(entry(&root));
+        let walk = set.walk().unwrap();
+        assert!(walk.files.contains_key(&dir.join("keep.toml")));
+        assert!(walk.caches.is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_link_to_a_tagged_cache_is_captured_as_a_link() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("project");
+        let cache = tmp.path().join("cache");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::create_dir_all(&cache).unwrap();
+        std::fs::write(
+            cache.join("CACHEDIR.TAG"),
+            "Signature: 8a477f597d28d172789f06886806bc55\n",
+        )
+        .unwrap();
+        let link = root.join("link");
+        std::os::unix::fs::symlink(&cache, &link).unwrap();
+        let mut set = TrackedSet::default();
+        set.push(entry(&root));
+        assert!(set.would_capture(&link).unwrap());
+        assert!(set.walk().unwrap().caches.is_empty());
+    }
+
+    #[test]
+    fn many_saved_node_modules_files_suggest_excluding_them() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("agent");
+        let mut set = TrackedSet::default();
+        set.push(entry(&root));
+        let owned = |path: PathBuf| (path, (0, set.entries[0].policy));
+        let mut files: BTreeMap<_, _> = (0..NODE_MODULES_HINT_FILES)
+            .map(|i| owned(root.join(format!("node_modules/pkg{i}/index.js"))))
+            .collect();
+        files.extend([owned(root.join("settings.json"))]);
+        let hint = node_modules_hint(&files, &set.entries).unwrap();
+        assert!(
+            hint.starts_with(&format!(
+                "{NODE_MODULES_HINT_FILES} files are saved from node_modules directories ({})",
+                display_path(root.join("node_modules"))
+            )),
+            "{hint}"
+        );
+        assert!(hint.contains("`mise dot exclude node_modules`"));
+        // a nested package tree counts toward its outermost node_modules
+        files.pop_first();
+        files.extend([owned(root.join("node_modules/a/node_modules/b/index.js"))]);
+        assert!(node_modules_hint(&files, &set.entries).is_some());
+        // below the threshold, nothing is said
+        files.pop_first();
+        assert_eq!(node_modules_hint(&files, &set.entries), None);
     }
 
     #[test]

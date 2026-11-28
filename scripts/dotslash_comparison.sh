@@ -18,7 +18,7 @@ PATH="$TEMP_DIR:$PATH"
 cat >.mise.toml <<'EOF'
 [tools]
 hyperfine = "latest"
-"ubi:facebook/dotslash" = "latest"
+"github:facebook/dotslash" = "latest"
 node = "20.0.0"
 EOF
 
@@ -27,7 +27,7 @@ mise install
 
 # Add tools to PATH
 PATH="$(mise where hyperfine)/bin:$PATH"
-PATH="$(mise where ubi:facebook/dotslash):$PATH"
+PATH="$(mise where github:facebook/dotslash):$PATH"
 PATH="$(mise where node)/bin:$PATH"
 
 # Verify installations

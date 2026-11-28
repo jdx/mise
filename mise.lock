@@ -338,53 +338,53 @@ backend = "cargo:flamegraph"
 specifiers = ["latest"]
 
 [[tools.communique]]
-version = "1.9.0"
+version = "1.10.0"
 backend = "packslip:github.com/jdx/communique"
 specifiers = ["latest"]
 
 [tools.communique."platforms.linux-arm64"]
-checksum = "sha256:7294bbc92bfc8e130ec2b41f5eb56615fa5f12094d5d25ab884aeede4d022bd8"
-url = "https://github.com/jdx/communique/releases/download/v1.9.0/communique-aarch64-unknown-linux-gnu.tar.gz"
+checksum = "sha256:b68b4cdece477720c240ad3fe95da1f861d6c6eed3fabb6b6cbca5792ae3a011"
+url = "https://github.com/jdx/communique/releases/download/v1.10.0/communique-aarch64-unknown-linux-gnu.tar.gz"
 signer = "sigstore-oidc:https://github.com/jdx/communique/.github/workflows/release.yml"
 
 [tools.communique."platforms.linux-arm64-musl"]
-checksum = "sha256:d1e4f0b3f359587af1da328afcc676179f4afb5232e1b83071b5301e695b9ec2"
-url = "https://github.com/jdx/communique/releases/download/v1.9.0/communique-aarch64-unknown-linux-musl.tar.gz"
+checksum = "sha256:13082c7448f28afc9cfff05a2d200c94c88408d9a72ea440e51a6ffb670de382"
+url = "https://github.com/jdx/communique/releases/download/v1.10.0/communique-aarch64-unknown-linux-musl.tar.gz"
 signer = "sigstore-oidc:https://github.com/jdx/communique/.github/workflows/release.yml"
 
 [tools.communique."platforms.linux-x64"]
-checksum = "sha256:70f62b13c0cd7470bf4967675a497c94cf571eaadea164fdce3b78592a79cceb"
-url = "https://github.com/jdx/communique/releases/download/v1.9.0/communique-x86_64-unknown-linux-gnu.tar.gz"
+checksum = "sha256:eea710b316daab5a2a24cb8b049e8cc147a4dd2496811d005d5b085e967f2742"
+url = "https://github.com/jdx/communique/releases/download/v1.10.0/communique-x86_64-unknown-linux-gnu.tar.gz"
 signer = "sigstore-oidc:https://github.com/jdx/communique/.github/workflows/release.yml"
 
 [tools.communique."platforms.linux-x64-baseline"]
-checksum = "sha256:70f62b13c0cd7470bf4967675a497c94cf571eaadea164fdce3b78592a79cceb"
-url = "https://github.com/jdx/communique/releases/download/v1.9.0/communique-x86_64-unknown-linux-gnu.tar.gz"
+checksum = "sha256:eea710b316daab5a2a24cb8b049e8cc147a4dd2496811d005d5b085e967f2742"
+url = "https://github.com/jdx/communique/releases/download/v1.10.0/communique-x86_64-unknown-linux-gnu.tar.gz"
 signer = "sigstore-oidc:https://github.com/jdx/communique/.github/workflows/release.yml"
 
 [tools.communique."platforms.linux-x64-musl"]
-checksum = "sha256:0682f073dce94bc91769cc5e4e51c79d44ae9c41e6fd5da591013619834264cf"
-url = "https://github.com/jdx/communique/releases/download/v1.9.0/communique-x86_64-unknown-linux-musl.tar.gz"
+checksum = "sha256:9125cc661660c3a2c21102306659e026d60d363030c6152ed6ae2e5568e9cad7"
+url = "https://github.com/jdx/communique/releases/download/v1.10.0/communique-x86_64-unknown-linux-musl.tar.gz"
 signer = "sigstore-oidc:https://github.com/jdx/communique/.github/workflows/release.yml"
 
 [tools.communique."platforms.linux-x64-musl-baseline"]
-checksum = "sha256:0682f073dce94bc91769cc5e4e51c79d44ae9c41e6fd5da591013619834264cf"
-url = "https://github.com/jdx/communique/releases/download/v1.9.0/communique-x86_64-unknown-linux-musl.tar.gz"
+checksum = "sha256:9125cc661660c3a2c21102306659e026d60d363030c6152ed6ae2e5568e9cad7"
+url = "https://github.com/jdx/communique/releases/download/v1.10.0/communique-x86_64-unknown-linux-musl.tar.gz"
 signer = "sigstore-oidc:https://github.com/jdx/communique/.github/workflows/release.yml"
 
 [tools.communique."platforms.macos-arm64"]
-checksum = "sha256:df8841de8cb883c21d3334894294d678b11320b11be8958fae7c7494b5f5d013"
-url = "https://github.com/jdx/communique/releases/download/v1.9.0/communique-aarch64-apple-darwin.tar.gz"
+checksum = "sha256:6233609124bc010f0f57d74404c71d758476648640e58b42682b7d91dbd58d12"
+url = "https://github.com/jdx/communique/releases/download/v1.10.0/communique-aarch64-apple-darwin.tar.gz"
 signer = "sigstore-oidc:https://github.com/jdx/communique/.github/workflows/release.yml"
 
 [tools.communique."platforms.windows-x64"]
-checksum = "sha256:d7f59523ca33459bef5fa229ba82ff4c94ef7a38ade9531f4ddcd3bb94865133"
-url = "https://github.com/jdx/communique/releases/download/v1.9.0/communique-x86_64-pc-windows-msvc.zip"
+checksum = "sha256:f38503eba9c60887b5a57e60eb2dd6af31713c89cd667270e0a466bf882dee98"
+url = "https://github.com/jdx/communique/releases/download/v1.10.0/communique-x86_64-pc-windows-msvc.zip"
 signer = "sigstore-oidc:https://github.com/jdx/communique/.github/workflows/release.yml"
 
 [tools.communique."platforms.windows-x64-baseline"]
-checksum = "sha256:d7f59523ca33459bef5fa229ba82ff4c94ef7a38ade9531f4ddcd3bb94865133"
-url = "https://github.com/jdx/communique/releases/download/v1.9.0/communique-x86_64-pc-windows-msvc.zip"
+checksum = "sha256:f38503eba9c60887b5a57e60eb2dd6af31713c89cd667270e0a466bf882dee98"
+url = "https://github.com/jdx/communique/releases/download/v1.10.0/communique-x86_64-pc-windows-msvc.zip"
 signer = "sigstore-oidc:https://github.com/jdx/communique/.github/workflows/release.yml"
 
 [[tools.gh]]
@@ -604,56 +604,6 @@ checksum = "sha256:e939dd8c0eeeb620e70d30aa9aa21c671be078876660a831a82d07e372f0f
 url = "https://github.com/jdx/jactionlint/releases/download/v2.6.0/jactionlint_2.6.0_windows_amd64.zip"
 url_api = "https://api.github.com/repos/jdx/jactionlint/releases/assets/740516065"
 provenance = "github-attestations"
-
-[[tools.jouet]]
-version = "0.0.5"
-backend = "packslip:github.com/jdx/jouet"
-specifiers = ["v0.0.5"]
-
-[tools.jouet."platforms.linux-arm64"]
-checksum = "sha256:daa436027a33f07f88246379c57e95dc3ef2bb05db40a7f160b0f77268373488"
-url = "https://github.com/jdx/jouet/releases/download/v0.0.5/jouet-aarch64-unknown-linux-gnu.tar.gz"
-signer = "sigstore-oidc:https://github.com/jdx/jouet/.github/workflows/release.yml"
-
-[tools.jouet."platforms.linux-arm64-musl"]
-checksum = "sha256:755501a2fc01728570abf01ffc80ce1c7e243cb0e03b74c09dd9e5d34e5026b7"
-url = "https://github.com/jdx/jouet/releases/download/v0.0.5/jouet-aarch64-unknown-linux-musl.tar.gz"
-signer = "sigstore-oidc:https://github.com/jdx/jouet/.github/workflows/release.yml"
-
-[tools.jouet."platforms.linux-x64"]
-checksum = "sha256:ee580e5f85c0145c73b2ac25d227ba651247a58883c4135039fed489adfd7e0a"
-url = "https://github.com/jdx/jouet/releases/download/v0.0.5/jouet-x86_64-unknown-linux-gnu.tar.gz"
-signer = "sigstore-oidc:https://github.com/jdx/jouet/.github/workflows/release.yml"
-
-[tools.jouet."platforms.linux-x64-baseline"]
-checksum = "sha256:ee580e5f85c0145c73b2ac25d227ba651247a58883c4135039fed489adfd7e0a"
-url = "https://github.com/jdx/jouet/releases/download/v0.0.5/jouet-x86_64-unknown-linux-gnu.tar.gz"
-signer = "sigstore-oidc:https://github.com/jdx/jouet/.github/workflows/release.yml"
-
-[tools.jouet."platforms.linux-x64-musl"]
-checksum = "sha256:daee411fd3bde271f85404cb9d7ae0485dbc5f6ed96e99dd201e682d32c0b331"
-url = "https://github.com/jdx/jouet/releases/download/v0.0.5/jouet-x86_64-unknown-linux-musl.tar.gz"
-signer = "sigstore-oidc:https://github.com/jdx/jouet/.github/workflows/release.yml"
-
-[tools.jouet."platforms.linux-x64-musl-baseline"]
-checksum = "sha256:daee411fd3bde271f85404cb9d7ae0485dbc5f6ed96e99dd201e682d32c0b331"
-url = "https://github.com/jdx/jouet/releases/download/v0.0.5/jouet-x86_64-unknown-linux-musl.tar.gz"
-signer = "sigstore-oidc:https://github.com/jdx/jouet/.github/workflows/release.yml"
-
-[tools.jouet."platforms.macos-arm64"]
-checksum = "sha256:83ee1fd9608ad515dbdd49971feb97e99bc80aa069880094951d00c9c49b849b"
-url = "https://github.com/jdx/jouet/releases/download/v0.0.5/jouet-aarch64-apple-darwin.tar.gz"
-signer = "sigstore-oidc:https://github.com/jdx/jouet/.github/workflows/release.yml"
-
-[tools.jouet."platforms.windows-x64"]
-checksum = "sha256:6f98ff2a58d18a4543ca76741552164ef19216c91dfb3f700d238924b4a87ba8"
-url = "https://github.com/jdx/jouet/releases/download/v0.0.5/jouet-x86_64-pc-windows-msvc.zip"
-signer = "sigstore-oidc:https://github.com/jdx/jouet/.github/workflows/release.yml"
-
-[tools.jouet."platforms.windows-x64-baseline"]
-checksum = "sha256:6f98ff2a58d18a4543ca76741552164ef19216c91dfb3f700d238924b4a87ba8"
-url = "https://github.com/jdx/jouet/releases/download/v0.0.5/jouet-x86_64-pc-windows-msvc.zip"
-signer = "sigstore-oidc:https://github.com/jdx/jouet/.github/workflows/release.yml"
 
 [[tools.jq]]
 version = "1.8.2"

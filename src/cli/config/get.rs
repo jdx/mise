@@ -67,7 +67,7 @@ impl ConfigGet {
             if !file.exists() {
                 bail!("config file not found: {}", display_path(&file));
             }
-            let content = std::fs::read_to_string(&file)?;
+            let content = super::read_target(&file)?;
             let config: toml::Value = toml::de::from_str(&content)?;
             let mut value = &config;
             if let Some(key) = &self.key {

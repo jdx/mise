@@ -224,8 +224,6 @@ writes these keys for a new lockfile, plus the current platform's:
 - On a musl Linux system, the current platform's key ends in `-musl`.
 - Bun adds `-baseline` on x64 CPUs without AVX2, such as `linux-x64-baseline`
   or `macos-x64-baseline`, and `-musl-baseline` on musl x64 without AVX2.
-- The deprecated `ubi` backend appends its `exe` and `matching` options and the
-  downloaded file name to the key.
 
 `--platform` accepts the qualifiers `gnu`, `glibc`, `musl`, `msvc`, `baseline`
 and `musl-baseline`.

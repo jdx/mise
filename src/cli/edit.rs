@@ -90,7 +90,6 @@ impl BackendProvider for MiseBackendProvider {
                 BackendType::Spm => ("spm", Some("Install Swift packages")),
                 BackendType::Http => ("http", Some("Download files from HTTP URLs")),
                 BackendType::S3 => ("s3", Some("Download from S3 buckets")),
-                BackendType::Ubi => ("ubi", Some("Universal Binary Installer")),
                 // Skip internal/meta types
                 BackendType::Core
                 | BackendType::Vfox

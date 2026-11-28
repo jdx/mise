@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use super::SyncMode;
 use super::format::{self, RepoState};
 use super::layout::{Located, Roots, is_configuration};
-use super::network::{PushOutcome, Remote, UPSTREAM_REF};
+use super::network::{PUSHING_REF, PushOutcome, Remote, UPSTREAM_REF};
 use super::reconcile::{self, Conflict, Object, PathPlan};
 use super::{publish, share, state};
 use crate::history::checkpoint::Store;
@@ -313,6 +313,8 @@ pub(crate) fn sync_locked(
                 repo.delete_ref(UPSTREAM_REF)?;
             }
             status.last_fetch = Some(hstore::now_rfc3339());
+            // what an interrupted push left origin holding is fetched now
+            repo.delete_ref(PUSHING_REF)?;
         }
         let mut upstream_commit = repo.ref_oid(UPSTREAM_REF)?;
         outcome.fetched_upstream = upstream_commit.clone();
@@ -409,11 +411,14 @@ pub(crate) fn sync_locked(
             // push must retry from it, without treating it as another
             // writer's change or dropping either parent history.
             shared.checkpoint = Some(commit.clone());
+            // origin may accept this before we can record that it did
+            repo.update_ref(PUSHING_REF, &commit, repo.ref_oid(PUSHING_REF)?.as_deref())?;
             match publish::push(&remote, &origin.branch, &commit, upstream_commit.as_deref())? {
                 PushOutcome::Done => {
                     outcome.published = Some(commit.clone());
                     status.last_publish = Some(hstore::now_rfc3339());
                     repo.update_ref(UPSTREAM_REF, &commit, upstream_commit.as_deref())?;
+                    repo.delete_ref(PUSHING_REF)?;
                     upstream_commit = Some(commit);
                     // the published plans are acknowledged now
                     let mut next_state = sync_state.clone();
@@ -446,12 +451,15 @@ pub(crate) fn sync_locked(
                     )?;
                     break;
                 }
+                // origin answered: the commit is not there
                 PushOutcome::Rejected(reason) if attempts < PUSH_RETRIES => {
+                    repo.delete_ref(PUSHING_REF)?;
                     debug!("history sync: publication rejected, fetching again: {reason}");
                     remote.fetch(&origin.branch)?;
                     upstream_commit = repo.ref_oid(UPSTREAM_REF)?;
                 }
                 PushOutcome::Rejected(reason) => {
+                    repo.delete_ref(PUSHING_REF)?;
                     bail!("publication kept being rejected after {attempts} attempts: {reason}")
                 }
             }
@@ -786,6 +794,7 @@ fn prepare(
             None => sync_state.remove(path),
         };
     }
+    let uncaptured = uncaptured_upstream(repo, upstream);
     let reconcile_set = |set: &TrackedSet| {
         // one compiled exclude set for the whole pass: the question is
         // asked once per upstream path and the patterns do not change
@@ -809,6 +818,7 @@ fn prepare(
             eligible(&roots, set, &exclude, &plan.branch_path)
                 || (plan.skipped.is_some() && owns_stream(&roots, set, &plan.branch_path))
         });
+        plans.retain(|plan| !uncaptured_deletion(&roots, set, &uncaptured, plan));
         for (path, object) in shared {
             if reconcile::is_gitlink(Some(object))
                 || !eligible(&roots, set, &exclude, path)
@@ -1088,6 +1098,70 @@ fn owns_stream(roots: &Roots, tracked: &TrackedSet, branch_path: &str) -> bool {
             .is_some_and(|entry| entry.variant.is_none()),
         Located::Marker | Located::Unmapped => false,
     }
+}
+
+/// Streams the incoming commit recorded as not captured: a directory the
+/// saving machine skipped (a cache, a nested repository) or could not read.
+/// They stay portable stream names, variant included, so a skip in one
+/// variant never matches a path of another and no local spelling of the
+/// home directory enters the comparison. A commit from an older mise, or
+/// one whose record cannot be read, names none, which is how sync behaved
+/// before.
+fn uncaptured_upstream(
+    repo: &crate::history::shadow::HistoryRepo,
+    upstream: &reconcile::Upstream,
+) -> Vec<String> {
+    let Some(commit) = &upstream.commit else {
+        return vec![];
+    };
+    repo.uncaptured_streams(commit).unwrap_or_default()
+}
+
+/// **What the saving machine skipped is not a deletion.** Another machine
+/// that tags a directory as a cache stops saving it, so its next commit
+/// lacks files this machine still has and still tracks (it has no tag).
+/// Applying that absence would delete them here; the commit records the
+/// skip, and a plain deletion under it is left alone. An omission counts
+/// only for the entry owning the path, as when a save retains files
+/// (`omission_covers`), so a file deleted under a separately tracked entry
+/// inside the skipped directory is still deleted.
+fn uncaptured_deletion(
+    roots: &Roots,
+    tracked: &TrackedSet,
+    uncaptured: &[String],
+    plan: &PathPlan,
+) -> bool {
+    if uncaptured.is_empty()
+        || !matches!(plan.apply, Some(None))
+        || plan.publish.is_some()
+        || plan.conflict.is_some()
+    {
+        return false;
+    }
+    let under = |stream: &str| {
+        plan.branch_path == stream
+            || plan
+                .branch_path
+                .strip_prefix(stream)
+                .is_some_and(|rest| rest.starts_with('/'))
+    };
+    // only omissions of this very stream; both sides then locate through
+    // the same roots, so the owning-entry comparison sees one spelling
+    let covering: Vec<PathBuf> = uncaptured
+        .iter()
+        .filter(|stream| under(stream))
+        .filter_map(|stream| roots.locate(stream).path().map(Path::to_path_buf))
+        .collect();
+    if covering.is_empty() {
+        return false;
+    }
+    let located = roots.locate(&plan.branch_path);
+    let Some(path) = located.path() else {
+        return false;
+    };
+    tracked.entry_for(path).is_some_and(|entry| {
+        crate::history::checkpoint::omission_covers(&covering, path, &entry.path)
+    })
 }
 
 // Legacy pointers produce only skip diagnostics, so their owning stream
@@ -1538,6 +1612,90 @@ mod nested_repository_tests {
     use super::*;
     use crate::files::{FileMode, FilePolicy};
     use crate::history::tracked::{TrackedEntry, normalize};
+
+    #[test]
+    fn a_peer_skipped_directory_is_not_deleted_here() {
+        let temp = tempfile::tempdir().unwrap();
+        let home = normalize(temp.path());
+        let roots = Roots {
+            home: home.clone(),
+            config_dir: home.join(".config/mise"),
+        };
+        let policy = FilePolicy::for_mode(FileMode::Track);
+        let mut tracked = TrackedSet::default();
+        tracked.push(TrackedEntry::new(home.join("project"), "track", policy));
+        tracked.push(TrackedEntry::new(
+            home.join("project/target/config"),
+            "track",
+            policy,
+        ));
+        let uncaptured = vec!["home/project/target".to_string()];
+        let plan = |path: &str, apply: Option<Option<Object>>| PathPlan {
+            branch_path: path.into(),
+            apply,
+            ..Default::default()
+        };
+        // a deletion under the peer's skipped cache is left alone
+        let deletion = plan("home/project/target/build.o", Some(None));
+        assert!(uncaptured_deletion(
+            &roots,
+            &tracked,
+            &uncaptured,
+            &deletion
+        ));
+        // outside it, or under a separately tracked entry inside it, a
+        // deletion is still a deletion
+        for path in [
+            "home/project/other.toml",
+            "home/project/target/config/a.toml",
+        ] {
+            let deletion = plan(path, Some(None));
+            assert!(!uncaptured_deletion(
+                &roots,
+                &tracked,
+                &uncaptured,
+                &deletion
+            ));
+        }
+        // an incoming write is never held back
+        let write = plan(
+            "home/project/target/build.o",
+            Some(Some(("100644".into(), "0".repeat(40)))),
+        );
+        assert!(!uncaptured_deletion(&roots, &tracked, &uncaptured, &write));
+        // a skip in one variant says nothing about another's stream, either
+        // way round
+        let deletion = plan("home@linux/project/target/build.o", Some(None));
+        assert!(!uncaptured_deletion(
+            &roots,
+            &tracked,
+            &uncaptured,
+            &deletion
+        ));
+        let variant_skip = vec!["home@macos/project/target".to_string()];
+        let deletion = plan("home/project/target/build.o", Some(None));
+        assert!(!uncaptured_deletion(
+            &roots,
+            &tracked,
+            &variant_skip,
+            &deletion
+        ));
+        let deletion = plan("home@macos/project/target/build.o", Some(None));
+        assert!(uncaptured_deletion(
+            &roots,
+            &tracked,
+            &variant_skip,
+            &deletion
+        ));
+        // a sibling whose name only starts the same is not under the skip
+        let deletion = plan("home/project/target2/build.o", Some(None));
+        assert!(!uncaptured_deletion(
+            &roots,
+            &tracked,
+            &uncaptured,
+            &deletion
+        ));
+    }
 
     #[test]
     fn incoming_files_leave_live_nested_repositories_alone() {
