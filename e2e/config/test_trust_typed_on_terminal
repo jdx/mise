@@ -161,6 +161,19 @@ fi
 # These check the mode of a directory, not who owns it, so they also run as root,
 # as Linux CI does: a 777 directory counts as writable by other accounts.
 
+# Whether every directory from $1 up to / is sticky or writable by its owner
+# alone. mise checks all of them for a config outside the project, and the e2e
+# harness runs in a container whose /tmp is a 777 directory that is not sticky.
+entries_guarded_up_from() {
+  local dir
+  dir="$(cd "$1" && pwd -P)"
+  while :; do
+    [[ -z "$(find "$dir" -maxdepth 0 -perm /022 ! -perm -1000)" ]] || return 1
+    [[ $dir == / ]] && return 0
+    dir="$(dirname "$dir")"
+  done
+}
+
 # A link to the user's own file in a directory any account may write: another
 # account could put its own file there after the trust is recorded.
 mkdir ../shared
@@ -175,18 +188,23 @@ assert_not_contains_text "$output" "$notice"
 assert_untrusted
 forget_trust
 chmod 755 ../shared
-output="$(on_pty 'mise env')"
-assert_contains_text "$output" "$notice"
-assert_not_contains_text "$output" "Trust them?"
-forget_trust
+# Under a /tmp any account may write, the directories above ../shared keep the
+# prompt too, so only where they do not can this show it is ../shared's mode.
+if entries_guarded_up_from ../shared; then
+  output="$(on_pty 'mise env')"
+  assert_contains_text "$output" "$notice"
+  assert_not_contains_text "$output" "Trust them?"
+  forget_trust
+fi
+rm mise.toml
 ok "[trust] a link into a directory another account may write still asks"
 
-# The same file reached through a second link, in a directory any account may
-# write: that account could point the second link elsewhere.
+# The project's own file reached through a link in a directory any account may
+# write: that account could point the link elsewhere. The file is in the
+# project, so ../hop is the only directory outside it that mise checks.
 mkdir ../hop
-ln -s ../shared/mise.toml ../hop/link
+ln -s "$PWD/mise.toml.orig" ../hop/link
 chmod 777 ../hop
-rm mise.toml
 ln -s ../hop/link mise.toml
 output="$(on_pty 'mise env')" || true
 assert_contains_text "$output" "Trust them?"
