@@ -148,7 +148,7 @@ assert "ls ~/.local/mybin/unmanaged" "$HOME/.local/mybin/unmanaged"
 # target such as HOME. Template ownership records live one level down.
 rm -rf "$MISE_STATE_DIR/dotfiles"
 assert_succeed "mise dotfiles apply --yes"
-assert "find '$MISE_STATE_DIR/dotfiles' -maxdepth 1 -type f | wc -l | tr -d ' '" "1"
+assert "find '$MISE_STATE_DIR/dotfiles' -maxdepth 1 -type f ! -name created_dirs.toml | wc -l | tr -d ' '" "1"
 mkdir ~/.local/mybin/private
 chmod 000 ~/.local/mybin/private
 assert_not_contains "MISE_DEBUG=1 mise dotfiles status 2>&1" "$HOME/.local/mybin/private"

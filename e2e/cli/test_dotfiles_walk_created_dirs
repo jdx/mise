@@ -95,3 +95,13 @@ assert_succeed "mise dot apply --yes"
 assert_succeed "mise dot unapply ~/t --yes"
 assert_fail "test -e $HOME/t/new/sub"
 assert_succeed "test -d $HOME/t/new"
+
+# a file of the user's that a forced apply replaced with a directory is mise's
+rm -rf "$HOME/t"
+mkdir -p "$HOME/t"
+echo "blocker" >"$HOME/t/new"
+assert_fail "mise dot apply --yes"
+assert_succeed "mise dot apply --yes --force"
+assert "readlink $HOME/t/new/sub/file" "$DOTS/pkg/new/sub/file"
+assert_succeed "mise dot unapply ~/t --yes"
+assert_fail "test -e $HOME/t/new"

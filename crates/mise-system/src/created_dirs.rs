@@ -92,13 +92,18 @@ impl CreatedDirs {
         }
     }
 
-    /// Write the record, dropping directories and targets that no longer exist. A record that
+    /// Write the record, dropping directories that are no longer the ones recorded and targets that
+    /// are gone. A record that
     /// cannot be written only leaves directories behind later, so it warns.
     fn save(mut self) {
         self.version = VERSION;
         self.dirs
             .retain(|dir, id| identity(dir).as_deref() == Some(id.as_str()));
-        self.targets.retain(|target| target.is_dir());
+        // a target that cannot be read now may still be there, and dropping it would let a
+        // removal take the user's directories under it, so only one that is gone is dropped
+        self.targets.retain(|target| {
+            !matches!(std::fs::symlink_metadata(target), Err(err) if err.kind() == std::io::ErrorKind::NotFound)
+        });
         let path = record_path();
         let result = if self.targets.is_empty() && self.dirs.is_empty() {
             if path.exists() {

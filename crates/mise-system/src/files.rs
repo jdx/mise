@@ -20,7 +20,7 @@
 //! (global -> local, local overrides by target key) and are only ever
 //! applied by an explicit command, never implicitly.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -5976,6 +5976,8 @@ fn execute_layer(
             // what is missing now is what a failed apply may have to take away again
             let mut created = missing_ancestors(&req.target);
             let walks = shares_target(req);
+            // what a forced apply replaces with a directory, which is then mise's too
+            let mut replaced = vec![];
             if walks {
                 if std::fs::symlink_metadata(&req.target).is_err() {
                     created.push(req.target.clone());
@@ -5983,17 +5985,23 @@ fn execute_layer(
                 // and the directories the walk creates beneath it
                 for (_, target) in walk_source_files(req).unwrap_or_default() {
                     created.extend(missing_ancestors(&target));
+                    if opts.force {
+                        replaced.extend(blocking_ancestors(&req.target, &target));
+                    }
                 }
             }
             if let Err(err) = apply_one(req, rendered.as_deref(), written) {
                 settle_failed_apply(req, &created, &stale, pending);
                 if walks {
-                    crate::created_dirs::record(&req.target, &[created, unfolded].concat());
+                    crate::created_dirs::record(
+                        &req.target,
+                        &[created, unfolded, replaced].concat(),
+                    );
                 }
                 return Err(err);
             }
             if walks {
-                crate::created_dirs::record(&req.target, &[created, unfolded].concat());
+                crate::created_dirs::record(&req.target, &[created, unfolded, replaced].concat());
             }
             // a target that appeared since planning is left alone and not
             // written, so it is not this group's to prune
@@ -7620,21 +7628,54 @@ fn track_walking_targets<'a>(config: &Config, requests: impl IntoIterator<Item =
     if requests.is_empty() {
         return;
     }
-    let mut deployed: BTreeMap<PathBuf, Vec<PathBuf>> = requests
-        .iter()
-        .map(|req| (lexical_normalize(&req.target), vec![]))
-        .collect();
+    // one slot per target, whatever letter case each entry spells it in where that is the same
+    // directory, with each entry's paths respelled under the slot's spelling
+    let mut deployed: Vec<(PathBuf, Vec<PathBuf>)> = vec![];
+    for req in &requests {
+        let target = lexical_normalize(&req.target);
+        if !deployed
+            .iter()
+            .any(|(slot, _)| file::same_location_ignoring_case(slot, &target))
+        {
+            deployed.push((target, vec![]));
+        }
+    }
     let active = files_from_config(config).unwrap_or_default();
     for req in requests.into_iter().chain(&active) {
-        if shares_target(req)
-            && let Some(paths) = deployed.get_mut(&lexical_normalize(&req.target))
+        if !shares_target(req) {
+            continue;
+        }
+        let target = lexical_normalize(&req.target);
+        if let Some((slot, paths)) = deployed
+            .iter_mut()
+            .find(|(slot, _)| file::same_location_ignoring_case(slot, &target))
         {
-            paths.extend(deployed_under(req));
+            paths.extend(deployed_under(req).into_iter().map(|path| {
+                let path = lexical_normalize(&path);
+                match path.strip_prefix(&target) {
+                    Ok(rel) => slot.join(rel),
+                    Err(_) => path,
+                }
+            }));
         }
     }
     for (target, paths) in deployed {
         crate::created_dirs::track(&target, paths);
     }
+}
+
+/// Ancestors of `path` at or beneath `root` that exist as something other than a real directory,
+/// such as a file or a link, which a forced apply replaces with a directory.
+fn blocking_ancestors(root: &Path, path: &Path) -> Vec<PathBuf> {
+    path.ancestors()
+        .skip(1)
+        .take_while(|dir| dir.starts_with(root))
+        .filter(|dir| {
+            std::fs::symlink_metadata(dir).is_ok_and(|meta| !meta.is_dir())
+                || file::is_symlink_or_junction(dir)
+        })
+        .map(Path::to_path_buf)
+        .collect()
 }
 
 /// Ancestors of `path` that do not exist yet, outermost first.
