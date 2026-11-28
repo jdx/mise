@@ -306,13 +306,14 @@ pub(crate) async fn download_file(
 /// with the same fallback [`download_file`] uses. It fails once more than
 /// [`MAX_MANIFEST_BYTES`] has arrived.
 pub(crate) async fn fetch_text(url: &str) -> Result<String> {
-    let reason = match HTTP_FETCH
+    let mut request = HTTP_FETCH
         .get_text_request(url)
         .headers(&headers_for(url)?)
-        .max_bytes(MAX_MANIFEST_BYTES as usize)
-        .send()
-        .await
-    {
+        .max_bytes(MAX_MANIFEST_BYTES as usize);
+    if github::release_asset_from_url(url).is_some() {
+        request = request.max_retries(github::BROWSER_ASSET_MAX_RETRIES);
+    }
+    let reason = match request.send().await {
         Ok(text) if !is_sign_in_page(url, text.as_bytes()) => return Ok(text),
         Ok(_) => Unreachable::SignIn,
         Err(err) => Unreachable::Failed(err),
@@ -2494,7 +2495,7 @@ mod tests {
             "test/packslip-download-fallback-{}",
             server.socket_address().port()
         );
-        let files = ["tool.tar.gz", "tool.bash"];
+        let files = ["tool.tar.gz", "tool.bash", "packslip.sigstore.json"];
         let browser = |name: &str| format!("https://github.com/{repo}/releases/download/v1/{name}");
         let api = |id| format!("https://api.github.com/repos/{repo}/releases/assets/{id}");
         let metadata = serde_json::json!({
@@ -2538,11 +2539,15 @@ mod tests {
                 .with_body(name)
                 .create_async()
                 .await;
-            let dest = dir.path().join(name);
-            download_file(&browser(name), &dest, None, None, None)
-                .await
-                .unwrap();
-            assert_eq!(file::read_to_string(&dest).unwrap(), name);
+            let url = browser(name);
+            let content = if name == "packslip.sigstore.json" {
+                fetch_text(&url).await.unwrap()
+            } else {
+                let dest = dir.path().join(name);
+                download_file(&url, &dest, None, None, None).await.unwrap();
+                file::read_to_string(&dest).unwrap()
+            };
+            assert_eq!(content, name);
             browser_download.assert_async().await;
             api_download.assert_async().await;
         }

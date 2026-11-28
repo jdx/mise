@@ -63,11 +63,7 @@ impl BunPlugin {
     async fn published_checksum(shasums_url: &str, filename: &str) -> Result<Option<String>> {
         let result = HTTP
             .get_text_request(shasums_url)
-            .retries(
-                Settings::get()
-                    .http_retries
-                    .min(github::BROWSER_ASSET_MAX_RETRIES),
-            )
+            .max_retries(github::BROWSER_ASSET_MAX_RETRIES)
             .send()
             .await;
         let content = match result {

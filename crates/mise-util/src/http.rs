@@ -2868,6 +2868,12 @@ impl TextRequest<'_> {
         self
     }
 
+    /// Cap the configured retry budget, including when it is already zero.
+    pub fn max_retries(mut self, max_retries: i64) -> Self {
+        self.retries = self.retries.min(max_retries);
+        self
+    }
+
     /// Accept an HTML body instead of rejecting it, for callers that parse
     /// arbitrary content such as directory listings.
     pub fn allow_html(mut self) -> Self {
