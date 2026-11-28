@@ -1438,9 +1438,16 @@ impl Lock {
             .await?;
         outcome.resolution_errors.extend(resolution_errors);
         let stale_versions = self.stale_versions_if_pruned(&lockfile, &resolvable);
+        let replaced = self.replaced_versions(
+            &lockfile,
+            &resolved,
+            &resolvable,
+            &stale_versions,
+            crate::config::safe_mode_skipped_task_file(),
+        );
         outcome
             .platform_regressions
-            .extend(self.platform_regression_errors(&resolved, &stale_versions, &results));
+            .extend(self.platform_regression_errors(&resolved, &replaced, &results));
         if run.setup.generate {
             outcome
                 .platform_regressions
@@ -1449,7 +1456,7 @@ impl Lock {
                     &resolved,
                     &resolvable,
                     target_platforms,
-                    &stale_versions,
+                    &replaced,
                 ));
         }
         if !self.json {
@@ -1633,15 +1640,22 @@ impl Lock {
         let resolution_succeeded = resolution_errors.is_empty();
         outcome.resolution_errors.extend(resolution_errors);
 
+        let replaced = self.replaced_versions(
+            &previous,
+            &lockfile,
+            tools,
+            &stale_versions,
+            crate::config::safe_mode_skipped_task_file(),
+        );
         let mut platform_regressions =
-            self.platform_regression_errors(&lockfile, &stale_versions, &results);
+            self.platform_regression_errors(&lockfile, &replaced, &results);
         if generate {
             platform_regressions.extend(self.generated_platform_regression_errors(
                 &previous,
                 &lockfile,
                 tools,
                 target_platforms,
-                &stale_versions,
+                &replaced,
             ));
         }
         if !platform_regressions.is_empty() {
@@ -2434,6 +2448,42 @@ impl Lock {
         }
         let current_versions = self.current_tool_versions(tools);
         self.stale_versions_for_current(lockfile, &current_versions)
+    }
+
+    /// The locked versions this run replaces, which the platform regression checks guard.
+    /// Usually those are `stale_versions`, the ones pruning removes. When safe mode skipped
+    /// a task file nothing is pruned, but generation still drops a pin whose every request
+    /// this run moved to another version, so they are the versions of `tools` that
+    /// `previous` locked and `result` no longer has.
+    fn replaced_versions(
+        &self,
+        previous: &Lockfile,
+        result: &Lockfile,
+        tools: &[LockTool],
+        stale_versions: &BTreeMap<String, Vec<String>>,
+        task_file_skipped: bool,
+    ) -> BTreeMap<String, Vec<String>> {
+        if !task_file_skipped {
+            return stale_versions.clone();
+        }
+        self.current_tool_versions(tools)
+            .into_keys()
+            .filter_map(|short| {
+                let kept: BTreeSet<&str> = result
+                    .tools_for(&short)
+                    .into_iter()
+                    .flatten()
+                    .map(|tool| tool.version.as_str())
+                    .collect();
+                let dropped: BTreeSet<String> = previous
+                    .tools_for(&short)?
+                    .iter()
+                    .filter(|tool| !kept.contains(tool.version.as_str()))
+                    .map(|tool| tool.version.clone())
+                    .collect();
+                (!dropped.is_empty()).then(|| (short, dropped.into_iter().collect()))
+            })
+            .collect()
     }
 
     fn platform_regression_errors(
@@ -4322,6 +4372,36 @@ mod tests {
         assert_eq!(errors.len(), 1);
         assert!(errors[0].contains("failed to resolve dummy@2.0.0 for windows-x64"));
         assert!(errors[0].contains("locked version(s) 1.0.0"));
+    }
+
+    #[test]
+    fn test_generated_platform_regression_with_a_skipped_task_file_checks_dropped_pins() {
+        // Safe mode skipped a task file, so nothing counts as stale, but generation moved
+        // dummy's only request from 1.0.0 to 2.0.0 and dropped 1.0.0, which windows had.
+        let cmd = lock_cmd(&[]);
+        let previous = lockfile_with_dummy_version("1.0.0", &["linux-x64", "windows-x64"]);
+        let generated = lockfile_with_dummy_version("2.0.0", &["linux-x64"]);
+        let tools = vec![configured_tool("dummy", "2.0.0")];
+        let platforms = vec![
+            Platform::parse("linux-x64").unwrap(),
+            Platform::parse("windows-x64").unwrap(),
+        ];
+        let replaced = cmd.replaced_versions(&previous, &generated, &tools, &BTreeMap::new(), true);
+
+        let errors = cmd.generated_platform_regression_errors(
+            &previous, &generated, &tools, &platforms, &replaced,
+        );
+
+        assert_eq!(errors.len(), 1, "{errors:?}");
+        assert!(errors[0].contains("failed to resolve dummy@2.0.0 for windows-x64"));
+
+        // A pin the skipped task still holds stays in the lockfile and is not replaced.
+        let mut kept = generated.clone();
+        kept.restore_missing_versions(&previous, "dummy");
+        assert!(
+            cmd.replaced_versions(&previous, &kept, &tools, &BTreeMap::new(), true)
+                .is_empty()
+        );
     }
 
     #[test]
