@@ -919,7 +919,11 @@ impl HistoryRepo {
         };
         let record: super::store::CommitRecord = serde_json::from_str(trailer)
             .wrap_err_with(|| format!("reading history metadata for {commit}"))?;
-        Ok(record.omitted.into_iter().chain(record.incomplete).collect())
+        Ok(record
+            .omitted
+            .into_iter()
+            .chain(record.incomplete)
+            .collect())
     }
 
     /// [`Self::read_meta`] through an open repository, so a walk over many
