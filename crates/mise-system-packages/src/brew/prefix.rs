@@ -180,7 +180,8 @@ fn sudo_invoking_uid() -> Option<u32> {
 /// directories (or of a directory a standard directory links to) could swap
 /// a directory for a symlink between a check and a write and have root
 /// create files wherever they like. Each of those must be owned by root or
-/// by the user who ran `sudo mise`.
+/// by the user who ran `sudo mise`, and none of them may be writable by every
+/// user without the sticky bit (see [`world_writable_component`]).
 ///
 /// A prefix spelled with `..` is refused for every user, before anything is
 /// checked or created: see [`refuse_parent_steps`].
@@ -206,7 +207,35 @@ pub(super) fn refuse_foreign_as_root() -> Result<()> {
             path.display(),
         );
     }
+    if let Some((path, mode)) = world_writable_component(&prefix, &bootstrap_dirs(&prefix)) {
+        bail!(
+            "{} is writable by every user (mode {:04o}) and has no sticky bit, so mise will not \
+             install into or change the Homebrew prefix {} as root: any user could rename what \
+             is in it and redirect root's writes. Remove write access for others (`chmod o-w \
+             {}`) or set the sticky bit",
+            path.display(),
+            mode & 0o7777,
+            prefix.display(),
+            path.display(),
+        );
+    }
     Ok(())
+}
+
+/// The first existing path of `guarded_paths` that every user can write to
+/// without the sticky bit, and its mode. Anyone could then replace an entry
+/// in it with a symlink. With the sticky bit (`/tmp`), only an entry's owner
+/// can rename or remove it. A group-writable directory passes: Homebrew's
+/// usual layout gives the admin group write access, so the group is trusted
+/// as much as the owner. A symlink's own mode means nothing, so links are
+/// judged by the directory that holds them, which is also listed.
+fn world_writable_component(prefix: &Path, dirs: &[PathBuf]) -> Option<(PathBuf, u32)> {
+    use std::os::unix::fs::MetadataExt;
+    guarded_paths(prefix, dirs).into_iter().find_map(|path| {
+        let meta = path.symlink_metadata().ok()?;
+        let mode = meta.mode();
+        (!meta.is_symlink() && mode & 0o002 != 0 && mode & 0o1000 == 0).then_some((path, mode))
+    })
 }
 
 /// Refuse a prefix with a `..` in it. Where `a/missing/../b` leads depends on
@@ -574,6 +603,38 @@ mod tests {
         ] {
             assert!(refuse_parent_steps(Path::new(prefix)).is_ok(), "{prefix}");
         }
+    }
+
+    /// a directory every user can write to lets any of them swap its entries
+    /// for links, unless the sticky bit stops them; the group is trusted
+    #[test]
+    fn root_refuses_a_world_writable_directory_without_the_sticky_bit() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path().canonicalize().unwrap();
+        for (mode, refused) in [(0o777, true), (0o1777, false), (0o775, false)] {
+            let parent = base.join(format!("{mode:o}"));
+            let prefix = parent.join("prefix");
+            std::fs::create_dir_all(prefix.join("Cellar")).unwrap();
+            std::fs::set_permissions(&parent, std::fs::Permissions::from_mode(mode)).unwrap();
+            let found = world_writable_component(&prefix, &[prefix.join("Cellar")]);
+            if refused {
+                let (path, found_mode) = found.unwrap();
+                assert_eq!(path, parent);
+                assert_eq!(found_mode & 0o7777, mode);
+            } else {
+                assert_eq!(found, None, "{mode:o}");
+            }
+        }
+        // a standard directory that is world-writable counts as much
+        let prefix = base.join("775/prefix");
+        std::fs::set_permissions(
+            prefix.join("Cellar"),
+            std::fs::Permissions::from_mode(0o777),
+        )
+        .unwrap();
+        let (path, _) = world_writable_component(&prefix, &[prefix.join("Cellar")]).unwrap();
+        assert_eq!(path, prefix.join("Cellar"));
     }
 
     #[test]
