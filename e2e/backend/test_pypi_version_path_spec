@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+require_cmd python3
+
+# The version of a PyPI package reaches pipx and uv as `<package>==<version>`. When that is not a
+# requirement, pip takes it for a path and installs the project or archive of that name from its
+# working directory. A version from a plain tool list must not do that, and a shim can start the
+# install inside an untrusted project, so the installers run outside it.
+mkdir -p "$HOME/bin"
+cat >"$HOME/bin/pipx" <<'SH'
+#!/usr/bin/env bash
+[[ $1 == "install" ]] || exit 0
+echo "$PWD" >>"$HOME/pipx-pwd"
+echo "$*" >>"$HOME/pipx-args"
+mkdir -p "$PIPX_BIN_DIR"
+printf '#!/bin/sh\necho hi\n' >"$PIPX_BIN_DIR/cwd-test"
+chmod +x "$PIPX_BIN_DIR/cwd-test"
+SH
+cat >"$HOME/bin/uv" <<'SH'
+#!/usr/bin/env bash
+if [[ $1 == "--version" ]]; then
+  echo "uv 0.8.5"
+  exit 0
+fi
+[[ "$1 $2" == "tool install" ]] || exit 1
+echo "$PWD" >>"$HOME/uv-pwd"
+echo "$*" >>"$HOME/uv-args"
+mkdir -p "$UV_TOOL_BIN_DIR"
+printf '#!/bin/sh\necho hi\n' >"$UV_TOOL_BIN_DIR/cwd-test"
+chmod +x "$UV_TOOL_BIN_DIR/cwd-test"
+SH
+chmod u+x "$HOME/bin/pipx" "$HOME/bin/uv"
+export PATH="$HOME/bin:$PATH"
+
+mkdir -p srv/pypi/cwd-test
+cat >srv/pypi/cwd-test/json <<'JSON'
+{"releases": {"1.0.0": [{"upload_time_iso_8601": "2024-01-01T00:00:00Z", "yanked": false}]}}
+JSON
+start_http_server --dir srv
+export MISE_PYPI_REGISTRY_URL="http://127.0.0.1:$HTTP_PORT/pypi/{}/json"
+export MISE_USE_VERSIONS_HOST=0
+
+# What pip would install for these versions if it were started here.
+mkdir -p "cwd-test==1.0.0/x"
+touch "cwd-test==1.0.0.zip"
+
+for uvx in 0 1; do
+  export MISE_PYPI_UVX=$uvx
+  assert_fail "mise install pypi:cwd-test@1.0.0/x" "is not a PyPI version"
+  assert_fail "mise install pypi:cwd-test@1.0.0.zip" "is not a PyPI version"
+done
+assert_fail "test -e '$HOME/pipx-args'"
+assert_fail "test -e '$HOME/uv-args'"
+
+MISE_PYPI_UVX=0 mise install pypi:cwd-test@1.0.0
+assert_contains "cat '$HOME/pipx-args'" "install cwd-test==1.0.0"
+assert "cat '$HOME/pipx-pwd'" "$(mise where pypi:cwd-test@1.0.0)"
+
+mise uninstall pypi:cwd-test@1.0.0
+MISE_PYPI_UVX=1 mise install pypi:cwd-test@1.0.0
+assert_contains "cat '$HOME/uv-args'" "tool install cwd-test==1.0.0"
+assert "cat '$HOME/uv-pwd'" "$(mise where pypi:cwd-test@1.0.0)"

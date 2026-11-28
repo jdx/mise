@@ -332,6 +332,30 @@ impl<'a> PipxOptions<'a> {
         Ok(Some(tool))
     }
 
+    /// A uv configuration file repeating the indexes, when one of them sets
+    /// `exclude-newer`.
+    ///
+    /// The lock runs uv with `--no-config`, which keeps the project's
+    /// `[[tool.uv.index]]` URLs but drops their `exclude-newer`, so the cutoff
+    /// would still reject an index that publishes no upload times. uv reads a
+    /// file passed with `--config-file` despite `--no-config`. The file repeats
+    /// every index, in order, so their priority stays the one the project gives.
+    fn uv_config_file(&self) -> Result<Option<toml::Table>> {
+        let indexes = self.indexes()?;
+        if !indexes
+            .iter()
+            .any(|index| index.contains_key("exclude-newer"))
+        {
+            return Ok(None);
+        }
+        let mut config = toml::Table::new();
+        config.insert(
+            "index".into(),
+            toml::Value::Array(indexes.into_iter().map(toml::Value::Table).collect()),
+        );
+        Ok(Some(config))
+    }
+
     fn has_uv_only_options(&self) -> Result<bool> {
         Ok(!self.with()?.is_empty()
             || !self.expose()?.is_empty()
@@ -1028,6 +1052,9 @@ impl Backend for PIPXBackend {
         }
 
         let request = self.tool_name().parse::<PipxRequest>()?;
+        if let PipxRequest::Pypi(package) = &request {
+            validate_pypi_version(package, &tv.version)?;
+        }
 
         if let Some(uv_program) = uv_program {
             let package_request = request.uvx_request(&tv.version, &options);
@@ -1687,6 +1714,9 @@ impl PIPXBackend {
             .env("UV_TOOL_DIR", tv.install_path())
             .env("UV_TOOL_BIN_DIR", tv.install_path().join("bin"))
             .env("UV_INDEX", Self::get_index_url()?)
+            // `uv tool install` takes a path as well as a requirement and resolves it from its
+            // working directory, and a shim can start this install inside an untrusted project.
+            .current_dir(tv.install_path())
             .prepend_path(ts.list_paths(config).await)?
             .prepend_path(vec![tv.install_path().join("bin")])?
             .prepend_path(b.dependency_toolset(config).await?.list_paths(config).await)
@@ -1717,6 +1747,10 @@ impl PIPXBackend {
             .env_remove("PIPX_SHARED_LIBS")
             .env("PIPX_HOME", tv.install_path())
             .env("PIPX_BIN_DIR", tv.install_path().join("bin"))
+            // pip installs the project or archive a request names from its working directory
+            // when the request is not a requirement, and a shim can start this install inside an
+            // untrusted project.
+            .current_dir(tv.install_path())
             .prepend_path(ts.list_paths(config).await)?
             .prepend_path(vec![tv.install_path().join("bin")])?
             .prepend_path(b.dependency_toolset(config).await?.list_paths(config).await)
@@ -1993,6 +2027,32 @@ where
     }
 }
 
+/// Reject a PyPI package version that is not a version.
+///
+/// The version reaches pipx and uv as `<package>==<version>`. When that is not a requirement,
+/// pip takes it for a path: `1.0/x` or `1.0.zip` would install the project or archive of that
+/// name in place of the registry package. A plain tool list sets the version without trust, so
+/// only the characters a PEP 440 version or a `1.*` match needs are accepted, and no archive
+/// file extension.
+fn validate_pypi_version(package: &str, version: &str) -> Result<()> {
+    const ARCHIVE_EXTENSIONS: &[&str] = &[
+        ".zip", ".whl", ".tar", ".gz", ".tgz", ".bz2", ".tbz", ".xz", ".txz", ".lz", ".tlz",
+        ".lzma", ".zst",
+    ];
+    let lower = version.to_ascii_lowercase();
+    let valid = !version.is_empty()
+        && version
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || ".-_+!*".contains(c))
+        && !ARCHIVE_EXTENSIONS.iter().any(|ext| lower.ends_with(ext));
+    if !valid {
+        bail!(
+            "pypi:{package}: {version:?} is not a PyPI version; set a release version such as 1.2.3 in the config"
+        );
+    }
+    Ok(())
+}
+
 impl FromStr for PipxRequest {
     type Err = eyre::Error;
 
@@ -2225,8 +2285,39 @@ fn stamp_pep440_prerelease(mut version: VersionInfo) -> VersionInfo {
 mod tests {
     use super::{
         GitSource, PIPXBackend, PipxOptions, PipxRequest, PypiPackage, PypiRelease, SelectedPython,
-        UV_EXCLUDE_NEWER_VERSION, is_pypi_index, uv_args_select_python,
+        UV_EXCLUDE_NEWER_VERSION, is_pypi_index, uv_args_select_python, validate_pypi_version,
     };
+
+    #[test]
+    fn pypi_version_rejects_paths_and_archives() {
+        for version in [
+            "latest",
+            "2.6.0",
+            "2024.10.5",
+            "24.1.0rc1",
+            "1.0.post1",
+            "1!2.0.dev3",
+            "2.1.0+cu118",
+            "2.*",
+        ] {
+            assert!(validate_pypi_version("ruff", version).is_ok(), "{version}");
+        }
+        for version in [
+            "2.6.0/x",
+            "2.6.0\\x",
+            "2.6.0.zip",
+            "2.6.0.whl",
+            "2.6.0.TAR.GZ",
+            "2.6.0+x.tgz",
+            "2.6.0@https://example.com/x",
+            "2.6.0 @ file:x",
+            "2.6.0,<3",
+            ">=2",
+            "",
+        ] {
+            assert!(validate_pypi_version("ruff", version).is_err(), "{version}");
+        }
+    }
 
     #[test]
     fn test_is_pypi_index() {
@@ -3326,6 +3417,32 @@ cccccccccccccccccccccccccccccccccccccccc\trefs/heads/main\n";
             let err = indexes(rejected).unwrap_err().to_string();
             assert!(err.contains("minimum_release_age"), "{err}");
         }
+    }
+
+    #[test]
+    fn uv_config_file_repeats_indexes_only_for_exclude_newer() {
+        let config = |indexes: &str| {
+            let mut opts = ToolVersionOptions::default();
+            opts.opts
+                .insert("indexes".to_string(), toml::Value::String(indexes.into()));
+            PipxOptions::new(&opts).uv_config_file().unwrap()
+        };
+        assert_eq!(
+            config(r#"[{"name":"p","url":"https://p.example/simple/"}]"#),
+            None
+        );
+        let config = config(
+            r#"[{"name":"a","url":"https://a.example/simple/"},{"name":"p","url":"https://p.example/simple/","exclude-newer":false}]"#,
+        )
+        .unwrap();
+        let names = config["index"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|index| index["name"].as_str().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(names, ["a", "p"]);
+        assert_eq!(config["index"][1].get("exclude-newer"), Some(&false.into()));
     }
 
     #[test]

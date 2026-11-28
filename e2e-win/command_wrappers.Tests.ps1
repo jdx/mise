@@ -50,6 +50,8 @@ env = { WRAP_TEST = "1" }
                 [Environment]::SetEnvironmentVariable($saved.Name, $saved.Value, 'Process')
             }
         }
+        . "$PSScriptRoot\fixture-executables.ps1"
+        Wait-MiseFixtureExecutables -Directory $TestDrive
     }
 
     It 'applies the wrapper through <mode>-mode shims' -ForEach @(
@@ -67,9 +69,105 @@ env = { WRAP_TEST = "1" }
         $output | Should -Contain 'WRAPPED:1'
         $output | Should -Contain 'REAL_TOOL:--fixed check'
 
+        # Windows command names ignore case, so another spelling reaches the wrapper too.
+        $output = mise x -- WrapTool check 2>&1
+        $LASTEXITCODE | Should -Be 0 -Because "mise x output: $($output | Out-String)"
+        $output | Should -Contain 'WRAPPED:1'
+        $output | Should -Contain 'REAL_TOOL:--fixed check'
+
         $output = & $shim check 2>&1
         $LASTEXITCODE | Should -Be 0 -Because "shim output: $($output | Out-String)"
         $output | Should -Contain 'WRAPPED:1'
         $output | Should -Contain 'REAL_TOOL:--fixed check'
+    }
+
+    It 'passes a wrapper shim another project left on to the next command' {
+        $config = Get-Content $env:MISE_CONFIG_FILE -Raw
+        $nextGreet = Join-Path $toolDir 'greet.cmd'
+        $exeDir = Join-Path $TestDrive 'exebin'
+        $path = $env:PATH
+        try {
+            $env:MISE_WINDOWS_SHIM_MODE = 'hardlink'
+            $binDir = Join-Path $env:MISE_DATA_DIR 'bin'
+            $hardlinkMise = Join-Path $binDir 'mise.exe'
+            New-Item -ItemType Directory -Path $binDir -Force | Out-Null
+            $misePath = (Get-Command -Type Application mise -All | Select-Object -First 1).Source
+            Copy-Item $misePath $hardlinkMise
+
+            # Another project's wrapper leaves a shim for `greet`.
+            "[wrappers.greet]`ncommand = `"wrapcmd`"`n" |
+                Out-File -FilePath $env:MISE_CONFIG_FILE -Encoding utf8NoBOM
+            & $hardlinkMise reshim --force
+            $LASTEXITCODE | Should -Be 0
+            $leftover = Join-Path $wrapperDir 'greet.exe'
+            (Get-Item -Path $leftover).LinkType | Should -Be 'HardLink'
+
+            # The config wraps another command again, so the shim passes `greet` on. Run by its
+            # path the shim is `greet.exe`, and the next `greet` is a batch file.
+            $config | Out-File -FilePath $env:MISE_CONFIG_FILE -Encoding utf8NoBOM -NoNewline
+            "@echo off`r`necho NEXT_GREET:%*`r`n" |
+                Out-File -FilePath $nextGreet -Encoding ascii -NoNewline
+            $output = & $leftover hello 2>&1
+            $LASTEXITCODE | Should -Be 0 -Because "shim output: $($output | Out-String)"
+            $output | Should -Contain 'NEXT_GREET:hello'
+
+            # With a `greet.exe` behind the batch file, `greet` and `greet.exe` are two lookups.
+            # `greet` runs the batch file, which comes first, and `greet.exe` runs the `.exe`.
+            # cmd starts the shim by the name it was given, so the shim repeats that lookup.
+            New-Item -ItemType Directory -Path $exeDir -Force | Out-Null
+            Copy-Item $env:ComSpec (Join-Path $exeDir 'greet.exe')
+            $env:PATH = "$wrapperDir;$toolDir;$exeDir;$originalPath"
+            $output = & $env:ComSpec /d /c 'greet /c echo EXE_GREET' 2>&1
+            $LASTEXITCODE | Should -Be 0 -Because "shim output: $($output | Out-String)"
+            $output | Should -Contain 'NEXT_GREET:/c echo EXE_GREET'
+            $output = & $env:ComSpec /d /c 'greet.exe /c echo EXE_GREET' 2>&1
+            $LASTEXITCODE | Should -Be 0 -Because "shim output: $($output | Out-String)"
+            $output | Should -Contain 'EXE_GREET'
+
+            # That `greet.exe` is a native child of the shim. It gets the PATH the shim was
+            # started with, as Windows wrote it: `set PATH` prints it with PATHEXT.
+            $output = & $env:ComSpec /d /c 'greet.exe /c set PATH' 2>&1
+            $LASTEXITCODE | Should -Be 0 -Because "shim output: $($output | Out-String)"
+            $childPath = @($output | Where-Object { $_ -match '^PATH=' })
+            $childPath | Should -HaveCount 1 -Because "shim output: $($output | Out-String)"
+            ($childPath[0] -replace '^PATH=', '') | Should -BeExactly $env:PATH
+
+            # PowerShell starts the shim by the path of the file it found for `greet`, so the
+            # shim takes that for a lookup of `greet`.
+            $output = greet /c echo EXE_GREET 2>&1
+            $LASTEXITCODE | Should -Be 0 -Because "shim output: $($output | Out-String)"
+            $output | Should -Contain 'NEXT_GREET:/c echo EXE_GREET'
+            $env:PATH = $path
+            Remove-Item $nextGreet
+
+            # A project has a task of that name, with its launcher in a directory only mise adds
+            # to PATH. A native task launcher is a copy of mise-shim.exe, the file an exe-mode
+            # shim is. It runs its task, so the leftover shim must run it like any other command
+            # and not look for a tool. Stubs are for a project's own tasks, so the task is not in
+            # the global config.
+            $project = Join-Path $TestDrive 'project'
+            New-Item -ItemType Directory -Path $project -Force | Out-Null
+            @'
+[env]
+_.path = "taskbin"
+
+[tasks.greet]
+run = "echo TASK_GREET"
+'@ | Out-File -FilePath (Join-Path $project 'mise.toml') -Encoding utf8NoBOM
+            Set-Location $project
+            $output = mise generate task-stubs --dir taskbin --windows-launcher exe 2>&1
+            $LASTEXITCODE | Should -Be 0 -Because "generate output: $($output | Out-String)"
+            Test-Path 'taskbin\greet.exe' -PathType Leaf | Should -BeTrue
+            Test-Path $leftover -PathType Leaf | Should -BeTrue
+
+            $output = & $hardlinkMise x -- cmd /c greet 2>&1
+            $LASTEXITCODE | Should -Be 0 -Because "mise x output: $($output | Out-String)"
+            $output | Should -Contain 'TASK_GREET'
+        } finally {
+            Set-Location TestDrive:
+            $env:PATH = $path
+            Remove-Item $nextGreet -ErrorAction SilentlyContinue
+            $config | Out-File -FilePath $env:MISE_CONFIG_FILE -Encoding utf8NoBOM -NoNewline
+        }
     }
 }

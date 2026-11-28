@@ -50,7 +50,7 @@ indexmap = { version = "2", features = ["serde"] }
 indoc = "2"
 itertools = "0.15"
 jdx-tar = "1"
-jiff = "0.2"
+jiff = "1"
 jsonc-parser = { version = "0.34", features = ["cst", "serde", "serde_json"] }
 junction = "2"
 log = "0.4"
@@ -66,7 +66,7 @@ nodejs-semver = "7"
 nucleo-matcher = "0.3"
 num_cpus = "1"
 once_cell = "1"
-packslip = { version = "1.5", default-features = false }
+packslip = { version = "1.11.3", default-features = false }
 path-absolutize = "4"
 petgraph = "0.8"
 pgp = "0.21"

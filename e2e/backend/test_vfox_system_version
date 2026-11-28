@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+# `system` names a tool mise did not install, yet it always counts as
+# installed. No vfox plugin hook may run for it, and a built-in plugin used as
+# `<plugin>:<tool>` never loads Lua from the current directory.
+
+marker="$PWD/hook-ran"
+
+TOOL_DIR="$PWD/systool"
+mkdir -p "$TOOL_DIR/hooks" "$MISE_DATA_DIR/installs/systool/1.0.0"
+cat >"$TOOL_DIR/metadata.lua" <<'LUA'
+PLUGIN = { name = "systool", version = "0.1.0" }
+LUA
+cat >"$TOOL_DIR/hooks/env_keys.lua" <<LUA
+function PLUGIN:EnvKeys(ctx)
+  io.open("$marker", "a"):close()
+  return { { key = "PATH", value = ctx.path .. "/bin" } }
+end
+LUA
+mise plugins link systool "$TOOL_DIR"
+
+BACKEND_DIR="$PWD/sys-backend"
+mkdir -p "$BACKEND_DIR/hooks"
+cat >"$BACKEND_DIR/metadata.lua" <<'LUA'
+PLUGIN = { name = "sys-backend", version = "0.1.0" }
+LUA
+cat >"$BACKEND_DIR/hooks/backend_list_versions.lua" <<'LUA'
+function PLUGIN:BackendListVersions(ctx)
+  return { versions = { "1.0.0" } }
+end
+LUA
+cat >"$BACKEND_DIR/hooks/backend_install.lua" <<'LUA'
+function PLUGIN:BackendInstall(ctx)
+  return {}
+end
+LUA
+cat >"$BACKEND_DIR/hooks/backend_exec_env.lua" <<LUA
+function PLUGIN:BackendExecEnv(ctx)
+  io.open("$marker", "a"):close()
+  return { env_vars = { { key = "PATH", value = ctx.install_path .. "/bin" } } }
+end
+LUA
+mise plugins link sys-backend "$BACKEND_DIR"
+
+# The hooks run for a version that is installed.
+echo "systool 1.0.0" >.tool-versions
+assert "mise bin-paths" "$MISE_DATA_DIR/installs/systool/1.0.0/bin"
+assert_succeed "test -e '$marker'"
+rm "$marker"
+
+for tool in systool sys-backend:tool; do
+  echo "$tool system" >.tool-versions
+  assert_empty "mise bin-paths"
+  assert_succeed "mise hook-env -s bash"
+  assert_succeed "mise env -s bash"
+  assert_fail "test -e '$marker'"
+done
+
+# A project that ships hooks for the built-in oci plugin, which has no backend
+# hooks of its own: none of them is loaded.
+mkdir -p project/hooks
+for hook in backend_exec_env backend_list_versions; do
+  cat >"project/hooks/$hook.lua" <<LUA
+io.open("$marker", "a"):close()
+function PLUGIN:BackendExecEnv(ctx) return { env_vars = {} } end
+function PLUGIN:BackendListVersions(ctx) return { versions = { "1.0.0" } } end
+LUA
+done
+cd project || exit 1
+for version in system stable; do
+  echo "oci:demo $version" >.tool-versions
+  mise hook-env -s bash >/dev/null 2>&1 || true
+  mise env -s bash >/dev/null 2>&1 || true
+  mise bin-paths >/dev/null 2>&1 || true
+  assert_fail "test -e '$marker'"
+done
+echo "oci:demo 1.0.0" >.tool-versions
+assert_fail_contains "mise ls-remote oci:demo" "vfox plugin oci has no hooks/backend_list_versions.lua"
+assert_fail "test -e '$marker'"

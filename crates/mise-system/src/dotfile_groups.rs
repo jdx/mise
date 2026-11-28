@@ -986,9 +986,13 @@ impl RecordedPath {
     /// was deployed under, makes the path resolve somewhere else, such as
     /// into a dotfiles source after a tree was folded into one directory
     /// link. A path that physically lies inside `dotfiles.root` is a source
-    /// file, whatever it was recorded as.
+    /// file, whatever it was recorded as. As root, neither is a path reached
+    /// through a link another user could have made above the entry target.
     fn safe_to_remove(&self) -> bool {
-        !behind_symlink(&self.target, &self.root) && !inside_dotfiles_root(&self.target)
+        !behind_symlink(&self.target, &self.root)
+            && !inside_dotfiles_root(&self.target)
+            && crate::managed_files::untrusted_parent_as_root(&self.target)
+                .is_ok_and(|reason| reason.is_none())
     }
 }
 

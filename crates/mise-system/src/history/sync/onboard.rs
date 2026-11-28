@@ -84,8 +84,23 @@ fn preview_store(store: &Store) -> Result<(tempfile::TempDir, Store)> {
     Ok((temp, preview))
 }
 
+/// A directory for the staged configuration, closed to other users whatever the umask: files are
+/// staged here decrypted and stay for the whole bootstrap preview.
+fn private_tempdir() -> Result<tempfile::TempDir> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        Ok(tempfile::Builder::new()
+            .permissions(std::fs::Permissions::from_mode(0o700))
+            .tempdir()?)
+    }
+    // the temp directory is the user's own there
+    #[cfg(not(unix))]
+    Ok(tempfile::tempdir()?)
+}
+
 fn preview_configuration(store: &Store) -> Result<tempfile::TempDir> {
-    let temp = tempfile::tempdir()?;
+    let temp = private_tempdir()?;
     let repo = store
         .repo()
         .ok_or_else(|| eyre::eyre!("preview requires git"))?;
@@ -616,6 +631,15 @@ async fn durable_access(url: &str, branch: &str) -> bool {
 mod preview_tests {
     use super::*;
     use crate::history::tracked::TrackedEntry;
+
+    #[cfg(unix)]
+    #[test]
+    fn the_configuration_preview_is_closed_to_other_users() {
+        use std::os::unix::fs::PermissionsExt;
+        let temp = private_tempdir().unwrap();
+        let mode = std::fs::metadata(temp.path()).unwrap().permissions().mode();
+        assert_eq!(mode & 0o7777, 0o700, "{}", temp.path().display());
+    }
 
     #[test]
     fn blanket_resolution_is_scoped_to_conflicts_and_never_promises_the_rest() {

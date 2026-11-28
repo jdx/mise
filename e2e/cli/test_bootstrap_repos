@@ -211,6 +211,16 @@ assert_contains "mise bootstrap repos status" "current"
 assert_succeed "mise bootstrap repos status --missing"
 assert_not_contains "mise bootstrap repos apply --dry-run" "checkout"
 
+# a checkout another user owns is a conflict: git's ownership check stays on,
+# so commands in that repository's .git/config never run
+git -C "$HOME/src/annotated" config core.fsmonitor "touch $PWD/fsmonitor_ran #"
+assert_contains "GIT_TEST_ASSUME_DIFFERENT_OWNER=1 mise bootstrap repos status" "safe.directory"
+assert_contains "GIT_TEST_ASSUME_DIFFERENT_OWNER=1 mise bootstrap status" "conflict"
+assert_fail "GIT_TEST_ASSUME_DIFFERENT_OWNER=1 mise bootstrap repos apply --yes" "safe.directory"
+assert_fail "GIT_TEST_ASSUME_DIFFERENT_OWNER=1 mise bootstrap repos apply --dry-run" "safe.directory"
+assert_fail "test -e $PWD/fsmonitor_ran"
+git -C "$HOME/src/annotated" config --unset core.fsmonitor
+
 # existing non-empty non-git paths are conflicts
 mkdir -p "$HOME/src/conflict"
 echo "local" >"$HOME/src/conflict/file.txt"

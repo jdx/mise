@@ -198,4 +198,76 @@ mod tests {
             assert!(format!("{err:#}").contains("is not a commit in"));
         }
     }
+
+    /// A `refs/replace/<sha>` ref makes git read another commit under the
+    /// pinned name. The remote gets one into a gix clone by pointing its
+    /// `HEAD` at it, and the files checked out must still be the pin's.
+    #[test]
+    fn clone_by_sha_ignores_replace_refs() {
+        let _settings = crate::test::SettingsGuard::lock();
+        let tmp = tempfile::tempdir().unwrap();
+        let src = tmp.path().join("src");
+        std::fs::create_dir_all(&src).unwrap();
+
+        let git_in = |dir: &std::path::Path, args: &[&str]| {
+            let out = Command::new("git")
+                .args(args)
+                .current_dir(dir)
+                .output()
+                .expect("spawn git");
+            assert!(
+                out.status.success(),
+                "git {args:?} failed: {}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+            String::from_utf8(out.stdout).unwrap().trim().to_string()
+        };
+        git_in(&src, &["-c", "init.defaultBranch=main", "init", "-q"]);
+        git_in(&src, &["config", "user.email", "t@t"]);
+        git_in(&src, &["config", "user.name", "t"]);
+        git_in(&src, &["config", "commit.gpgsign", "false"]);
+        std::fs::write(src.join("file"), "pinned").unwrap();
+        git_in(&src, &["add", "file"]);
+        git_in(&src, &["commit", "-q", "-m", "pinned"]);
+        let sha = git_in(&src, &["rev-parse", "HEAD"]);
+        std::fs::write(src.join("file"), "other").unwrap();
+        git_in(&src, &["commit", "-q", "-a", "-m", "other"]);
+
+        let replace = format!("refs/replace/{sha}");
+        git_in(&src, &["update-ref", &replace, "main"]);
+        git_in(&src, &["symbolic-ref", "HEAD", &replace]);
+
+        let url = format!("file://{}", src.display());
+        for gix in [true, false] {
+            Settings::override_with(|s| {
+                s.gix = Some(gix);
+                s.libgit2 = Some(false);
+            })
+            .unwrap();
+            let dst = tmp.path().join(format!("dst-{gix}"));
+            Git::new(&dst)
+                .clone(&url, CloneOptions::default().branch(&sha))
+                .expect("clone with SHA must succeed");
+            assert_eq!(git_in(&dst, &["rev-parse", "HEAD"]), sha);
+            assert_eq!(
+                std::fs::read_to_string(dst.join("file")).unwrap(),
+                "pinned",
+                "clone by SHA with gix={gix}"
+            );
+
+            // The same pin reached by updating a clone of the remote's `HEAD`.
+            let dst = tmp.path().join(format!("dst-update-{gix}"));
+            let git = Git::new(&dst);
+            git.clone(&url, CloneOptions::default())
+                .expect("clone must succeed");
+            git.update(Some(sha.clone()))
+                .expect("update to SHA must succeed");
+            assert_eq!(git_in(&dst, &["rev-parse", "HEAD"]), sha);
+            assert_eq!(
+                std::fs::read_to_string(dst.join("file")).unwrap(),
+                "pinned",
+                "update to SHA with gix={gix}"
+            );
+        }
+    }
 }

@@ -42,6 +42,24 @@ repository's config can run code.
   run with it. It does not sandbox mise while it evaluates config, installs
   tools, or runs hooks. Run untrusted projects or tools in an isolated
   environment without access to your usual files or credentials.
+- **Resource exhaustion.** Input that mise reads before you trust it, or that
+  comes from the network, must not make mise hang, crash, or use unbounded
+  memory, disk or CPU. A report that such input does is a security bug. This
+  covers:
+  - project config, `.tool-versions` and `mise.lock` you have not
+    [trusted](#configuration-trust), and any `.miserc.toml`, which never needs
+    trust, including what [`mise activate`](/cli/activate.html) reads when you
+    `cd` into a repository you just cloned
+  - anything mise reads in [safe mode](#safe-mode)
+  - remote metadata, such as version lists, release APIs, checksum lists,
+    registry templates and OAuth responses
+  - downloaded archives, such as decompression bombs or archives with too many
+    entries, even when [download verification](#download-verification) passes
+
+  Trusted config and the tools and tasks it runs are out of scope. Trusted
+  config can already run commands as you, so a trusted config that loops or
+  allocates a lot is a bug, not a vulnerability. The same goes for a tool you
+  chose to install that is large.
 
 ## Configuration trust
 
@@ -61,7 +79,9 @@ A `mise.toml` loads without trust when it has no template syntax
   name that is the URL of a host other than github.com or gitlab.com, which
   mise would send your forge token to, and no
   [`path:`](/dev-tools/versions.html) version, which puts a directory on `PATH`
-  without an install
+  without an install, and no `ref:` or `rev:` version, which can name any
+  commit the forge serves, such as a pull request from a fork (`tag:` and
+  `branch:` versions load without trust)
 - `[tasks]`, as long as no task lists `secrets`
 
 Anything else needs trust, including tool option tables, `[env]`, `[hooks]`,
@@ -71,13 +91,15 @@ commands or other settings before you trust it. Other files follow the same
 idea:
 
 - `.tool-versions` needs trust only when it contains template syntax, inline
-  tool options such as `node[postinstall=...] 24`, or a `path:` version.
+  tool options such as `node[postinstall=...] 24`, or a `path:`, `ref:` or
+  `rev:` version.
 - Idiomatic version files such as `.nvmrc` need trust only when they contain a
-  `path:` version.
+  `path:`, `ref:` or `rev:` version.
 - A project's [`mise.lock`](/dev-tools/mise-lock.html) is read with its config.
   Until that config is trusted, the lockfile only pins versions and checksums:
   mise ignores an entry that locks a tool to a backend other than the one its
-  tool key or the registry selects, or that adds options, and downloads from
+  tool key or the registry selects, that adds options, or that locks a `ref:` or
+  `rev:` version, and downloads from
   where the backend normally would instead of the lockfile's URLs and
   dependency graphs.
 - Task files, including TOML files from
@@ -95,9 +117,17 @@ idea:
   environments but cannot drop or reorder one that a global or system
   `miserc.toml` selects. The project's own environments come after the global
   ones and override them, so a global environment protects only settings that
-  project config cannot set, such as `paranoid`. The other keys a project file
-  can set change which project files load and how far up mise looks for them;
-  they cannot hide global or system config. Global and system `conf.d`
+  project config cannot set, such as `paranoid`. The environments a project
+  adds or turns on select only project files, never a global or system
+  `config.<env>.toml`. The other keys a project file can set change which
+  project files load and how far up mise looks for them;
+  they cannot hide global or system config. A project's `ignored_config_paths`
+  adds to the list it inherits and cannot remove an entry, so a project under
+  an ignored path stays ignored. Its environment names may use only letters,
+  digits, `_`, `-` and `.`, so they cannot carry shell or template syntax into
+  a trusted config that uses `{{ mise_env }}`. Its override filenames must be
+  file names ending in `.toml` or `tool-versions`, so they cannot make mise
+  read a file such as `~/.netrc` as config. Global and system `conf.d`
   fragments follow only the global and system `env_conf_d`. Templates in a
   project `.miserc.toml` see no environment variables and may use only `if`
   statements and a short list of functions and filters, so they cannot leak your
@@ -205,7 +235,8 @@ Two settings decide trust by location:
   `trusted_config_paths` and `mise trust`. mise reads it before it looks for
   config files, so set it in a [`.miserc.toml`](/configuration.html#miserc) or
   in `MISE_IGNORED_CONFIG_PATHS`. A project's `.miserc.toml` cannot ignore
-  global or system config.
+  global or system config, and it can add entries but cannot remove one set
+  in a global or system `miserc.toml` or in a parent directory.
 
 ```toml
 # ~/.config/mise/config.toml
@@ -270,7 +301,9 @@ These fail with `<operation> is disabled in safe mode (MISE_SAFE=1)`:
   config.
 - Running tasks.
 - The tool options `postinstall` and `install_env`, and the `spm:` backend's
-  `install_command`.
+  `install_command`. `mise lock` does not run uv for a `pypi:` tool that sets
+  `install_env`, so it warns and locks that tool's version without a
+  [dependency graph](/dev-tools/mise-lock.html#dependency-graphs).
 - asdf plugin scripts, so tools from the `asdf:` backend cannot list or install
   versions.
 - Requests to S3, which are signed with your AWS credentials, so tools from the
@@ -316,6 +349,12 @@ These are skipped without an error, so resolution commands keep working:
   for their commands and does not install them on first use.
 - Project `[settings]`, so a repository cannot turn off verification or redirect
   a backend.
+- The `packslip:` backend's
+  [`trust = "vendor"`](/dev-tools/backends/packslip.html#trust) option, unless a
+  `[tools]` entry of global or system config sets it for the same tool, so a
+  repository cannot exempt a release from the
+  [`packslip.stampers`](/configuration/settings.html#packslip.stampers) you
+  require. This applies to a tool named on the command line too.
 - Remote `include` entries in project config, which mise does not fetch.
 - Remote task files (`file = "https://…"` or `git::…`) in project config. Their
   tasks are listed from their TOML alone.
@@ -463,6 +502,11 @@ The cutoff applies when mise has to choose a version, for a prefix such as
 - An installed version that matches the request. The cutoff limits which new
   versions mise downloads; it does not deactivate one you have. `mise lock` with
   a configured cutoff, rather than the default, re-checks installed matches.
+
+Two release tags can spell one version, such as `2.0.0` and `v2.0.0`. For
+`github:`, `gitlab:` and `forgejo:` tools, a version the cutoff chose is
+installed from a release of it that is older than the cutoff. If the only
+release mise finds for it is newer, the install fails instead.
 
 For `packslip:` tools, mise compares the cutoff with the release's verified
 transparency-log time; see

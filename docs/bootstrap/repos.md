@@ -129,6 +129,22 @@ does not match `url`. An empty directory is treated as missing and cloned into.
 Pass `--skip-dirty` to skip repositories with local changes, with a warning,
 and update the rest. Conflicts still stop the run before anything changes.
 
+### Checkouts owned by another user
+
+mise leaves Git's [`safe.directory`](https://git-scm.com/docs/git-config#Documentation/git-config.txt-safedirectory)
+check on, so a checkout that another user owns is a conflict: its
+`.git/config` can name commands that Git runs, such as `core.fsmonitor`. If
+you trust such a checkout, tell Git so once:
+
+```sh
+git config --global --add safe.directory /srv/app
+```
+
+When mise runs as root, a checkout path that crosses a symlink in a directory
+another user can write is a conflict too, as it is for
+[`[bootstrap.files]`](/bootstrap/files.html): that user could point the clone
+or update at a directory of their choosing. Declare the resolved path instead.
+
 ### How origins are matched
 
 These forms count as the same repository, with host names compared

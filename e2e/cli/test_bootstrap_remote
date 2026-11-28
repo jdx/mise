@@ -209,6 +209,22 @@ assert_contains "cat $ssh_log" "root@ad-hoc.test"
 assert_contains "cat $ssh_log" "bootstrap --dry-run --yes"
 assert_fail "test -d $remote_stage"
 
+# Config search on the target stops at the staging directory: a mise.toml
+# another user left in its parent (the target's /tmp) is never loaded, even
+# when --yes would answer its trust prompt.
+planted_parent="$remote_stage-planted"
+planted_marker="$PWD/planted-config-ran"
+trap 'rm -rf "$planted_parent"' EXIT
+mkdir -p "$planted_parent"
+cat >"$planted_parent/mise.toml" <<EOF
+[env]
+PLANTED = "{{ exec(command='touch $planted_marker; echo planted') }}"
+EOF
+: >"$ssh_log"
+assert_succeed "REMOTE_STAGE=$planted_parent/stage mise bootstrap remote layered --dry-run --yes"
+assert_contains "cat $ssh_log" "MISE_CEILING_PATHS=$planted_parent/stage"
+assert_fail "test -e $planted_marker"
+
 # A home directory is not a project: refuse it unless --yes says otherwise.
 : >"$ssh_log"
 home_out=$(mise bootstrap remote --host root@ad-hoc.test --source "$HOME" --remote-mise "$HOME/.local/bin/mise" --dry-run 2>&1 || true)

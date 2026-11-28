@@ -124,48 +124,560 @@ fn clear_lockfile_caches() {
 }
 
 /// A shorter lockfile parses faster than a cache file is opened and read.
-const PARSED_TOML_CACHE_MIN_LEN: usize = 4096;
+const LOCKFILE_ENTRIES_CACHE_MIN_LEN: usize = 4096;
 
-/// The table a lockfile's `content` parses to. Parsing is most of what reading
-/// a lockfile that covers every platform costs, and every command reads it, so
-/// the table is kept in the cache directory, in a file named by a hash of
-/// `content`: a lockfile that changed in any way names another file, so no
-/// edit can be answered from an older parse. Only text that parsed is kept, so
-/// a lockfile with a syntax error reports it on every read.
-fn parse_lockfile_toml(content: &str) -> Result<toml::Table, toml::de::Error> {
-    parse_lockfile_toml_under(&crate::dirs::CACHE.join("lockfiles"), content)
+/// Bump this when [`CachedEntries`] changes shape or [`LockfileEntries::parse`]
+/// changes what it returns. Each cache entry is also keyed by the build time,
+/// but Cargo does not rerun `build.rs` for an edit to this file alone, so a
+/// rebuilt dev binary can keep the build time of the one before it.
+const LOCKFILE_ENTRIES_CACHE_REVISION: u32 = 1;
+
+/// What a lockfile's text says on its own: its revision, each tool's entries,
+/// and the sections [`Lockfile::read`] reads after them. Nothing here depends
+/// on where the file is, on the settings, or on the registry, so two lockfiles
+/// with the same text have the same entries. [`Lockfile::read`] does the rest
+/// on every read: sidecar paths, backend names, the entries it warns about and
+/// ignores, and the checks on the revision.
+#[derive(Debug)]
+struct LockfileEntries {
+    /// The text holds no keys at all.
+    empty: bool,
+    lockfile_version: u32,
+    /// Each tool's entries, in the parser's order.
+    tools: Vec<(String, Vec<LockfileTool>)>,
+    /// Every top-level key other than the revision and the tools.
+    rest: toml::Table,
 }
 
-/// [`parse_lockfile_toml`] with its cache entries in `cache_dir`.
-fn parse_lockfile_toml_under(
-    cache_dir: &Path,
-    content: &str,
-) -> Result<toml::Table, toml::de::Error> {
-    if content.len() < PARSED_TOML_CACHE_MIN_LEN {
-        return toml::from_str(content);
+impl LockfileEntries {
+    /// The entries `content` parses to. Reading a lockfile that covers every
+    /// platform is mostly parsing its text and checking each entry, and every
+    /// command reads it, so the entries are kept in the cache directory, in a
+    /// file named by a hash of `content` and by this build of mise: a lockfile
+    /// that changed in any way names another file, so no edit can be answered
+    /// from an older parse, and another mise checks the text itself. Only
+    /// entries that parsed are kept, so a lockfile with an error reports it on
+    /// every read. `toml_err` turns a syntax error into the one to report.
+    fn of(content: &str, toml_err: impl FnOnce(toml::de::Error) -> Report) -> Result<Self> {
+        Self::of_under(&crate::dirs::CACHE.join("lockfiles"), content, toml_err)
     }
-    let name = format!("{}.msgpack.z", blake3::hash(content.as_bytes()).to_hex());
-    parse_lockfile_toml_in(&cache_dir.join(name), content)
+
+    /// [`Self::of`] with its cache entries in `cache_dir`.
+    fn of_under(
+        cache_dir: &Path,
+        content: &str,
+        toml_err: impl FnOnce(toml::de::Error) -> Report,
+    ) -> Result<Self> {
+        if content.len() < LOCKFILE_ENTRIES_CACHE_MIN_LEN {
+            return Ok(Self::parse(content, toml_err, false)?.0);
+        }
+        let hash = blake3::hash(content.as_bytes()).to_hex();
+        let name = format!("{hash}.entries.msgpack.z");
+        Self::of_in(&cache_dir.join(name), content, toml_err)
+    }
+
+    fn of_in(
+        cache_file: &Path,
+        content: &str,
+        toml_err: impl FnOnce(toml::de::Error) -> Report,
+    ) -> Result<Self> {
+        let cache = crate::cache::CacheManagerBuilder::new(cache_file)
+            .with_cache_key(format!(
+                "{LOCKFILE_ENTRIES_CACHE_REVISION}:{}",
+                crate::build_time::built_info::BUILT_TIME_UTC
+            ))
+            .with_positional_fields()
+            .build::<CachedEntries>();
+        if cache.has_fresh_value() {
+            match cache.get_cached().and_then(Self::try_from) {
+                Ok(entries) => return Ok(entries),
+                Err(err) => debug!("failed to read {}: {err:#}", display_path(cache_file)),
+            }
+        }
+        let (entries, graph_sources) = Self::parse(content, toml_err, true)?;
+        // A cache directory that cannot be written is not worth a warning on
+        // every prompt.
+        if let Err(err) = cache.write(&CachedEntries::new(&entries, graph_sources)) {
+            debug!("failed to write {}: {err:#}", display_path(cache_file));
+        }
+        Ok(entries)
+    }
+
+    /// Parses `content`. With `keep_graph_sources`, also returns the parsed
+    /// TOML of each entry that holds a dependency graph, in the order the
+    /// entries appear: a graph is not kept in the cache in its typed form, so
+    /// [`CachedEntries`] stores those entries as they were written.
+    fn parse(
+        content: &str,
+        toml_err: impl FnOnce(toml::de::Error) -> Report,
+        keep_graph_sources: bool,
+    ) -> Result<(Self, Vec<toml::Value>)> {
+        let mut table: toml::Table = toml::from_str(content).map_err(toml_err)?;
+        if table.is_empty() {
+            let entries = Self {
+                empty: true,
+                lockfile_version: 0,
+                tools: vec![],
+                rest: table,
+            };
+            return Ok((entries, vec![]));
+        }
+        let lockfile_version = table
+            .remove("lockfile_version")
+            .map(|value| value.try_into())
+            .transpose()?
+            .unwrap_or(0);
+        if lockfile_version > CURRENT_LOCKFILE_VERSION {
+            bail!(
+                "unsupported lockfile version {lockfile_version}; this mise supports up to version {CURRENT_LOCKFILE_VERSION}"
+            );
+        }
+        let tools_table = table
+            .remove("tools")
+            .map(into_table)
+            .transpose()?
+            .unwrap_or_default();
+        let mut graph_sources = vec![];
+        let mut tools = Vec::with_capacity(tools_table.len());
+        for (short, value) in tools_table {
+            let toml::Value::Array(arr) = value else {
+                bail!(
+                    "invalid lockfile format for tool {short}: expected array ([[tools.{short}]])"
+                );
+            };
+            let mut versions = Vec::with_capacity(arr.len());
+            for value in arr {
+                let holds_graph = value.get("aube").is_some() || value.get("uv").is_some();
+                let source = (keep_graph_sources && holds_graph).then(|| value.clone());
+                versions.push(LockfileTool::try_from(value)?);
+                graph_sources.extend(source);
+            }
+            tools.push((short, versions));
+        }
+        let entries = Self {
+            empty: false,
+            lockfile_version,
+            tools,
+            rest: table,
+        };
+        Ok((entries, graph_sources))
+    }
 }
 
-fn parse_lockfile_toml_in(
-    cache_file: &Path,
-    content: &str,
-) -> Result<toml::Table, toml::de::Error> {
-    let cache = crate::cache::CacheManagerBuilder::new(cache_file).build::<toml::Table>();
-    if cache.has_fresh_value() {
-        match cache.get_cached() {
-            Ok(table) => return Ok(table),
-            Err(err) => debug!("failed to read {}: {err:#}", display_path(cache_file)),
+/// [`LockfileEntries`] as the cache file holds them. The `Cached*` types
+/// mirror the lockfile's own field for field, with nothing skipped or
+/// defaulted, because the cache has to return every field the parser set: the
+/// lockfile types' own serialization is the lockfile format, which leaves
+/// fields out. Each conversion names every field, so a field added to a
+/// lockfile type does not compile until it is added here.
+#[derive(Clone, Serialize, Deserialize)]
+struct CachedEntries {
+    empty: bool,
+    lockfile_version: u32,
+    tools: Vec<(String, Vec<CachedToolEntry>)>,
+    rest: Vec<(String, CachedValue)>,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+enum CachedToolEntry {
+    Typed(CachedTool),
+    /// An entry with a dependency graph, as its parsed TOML: reading it back
+    /// runs the same [`LockfileTool::try_from`] the lockfile's text went
+    /// through.
+    Source(CachedValue),
+}
+
+/// A TOML value. The cache file names no fields, and `toml::Value` tells a
+/// date from a table by a field's name, so it is kept as this instead.
+#[derive(Clone, Serialize, Deserialize)]
+enum CachedValue {
+    String(String),
+    Integer(i64),
+    Float(f64),
+    Boolean(bool),
+    /// As TOML writes it.
+    Datetime(String),
+    Array(Vec<CachedValue>),
+    Table(Vec<(String, CachedValue)>),
+}
+
+impl From<&toml::Value> for CachedValue {
+    fn from(value: &toml::Value) -> Self {
+        match value {
+            toml::Value::String(s) => Self::String(s.clone()),
+            toml::Value::Integer(i) => Self::Integer(*i),
+            toml::Value::Float(f) => Self::Float(*f),
+            toml::Value::Boolean(b) => Self::Boolean(*b),
+            toml::Value::Datetime(date) => Self::Datetime(date.to_string()),
+            toml::Value::Array(array) => Self::Array(array.iter().map(Into::into).collect()),
+            toml::Value::Table(table) => Self::Table(cached_table(table)),
         }
     }
-    let table = toml::from_str(content)?;
-    // A cache directory that cannot be written is not worth a warning on
-    // every prompt.
-    if let Err(err) = cache.write(&table) {
-        debug!("failed to write {}: {err:#}", display_path(cache_file));
+}
+
+/// The value `cached` was made from. Not a `TryFrom`: `toml::Value::try_from`
+/// is toml's own function, which serializes its argument.
+fn value_from_cached(cached: CachedValue) -> Result<toml::Value> {
+    Ok(match cached {
+        CachedValue::String(s) => toml::Value::String(s),
+        CachedValue::Integer(i) => toml::Value::Integer(i),
+        CachedValue::Float(f) => toml::Value::Float(f),
+        CachedValue::Boolean(b) => toml::Value::Boolean(b),
+        CachedValue::Datetime(date) => toml::Value::Datetime(date.parse()?),
+        CachedValue::Array(array) => toml::Value::Array(
+            array
+                .into_iter()
+                .map(value_from_cached)
+                .collect::<Result<_>>()?,
+        ),
+        CachedValue::Table(table) => toml::Value::Table(table_from_cached(table)?),
+    })
+}
+
+fn cached_table(table: &toml::Table) -> Vec<(String, CachedValue)> {
+    table
+        .iter()
+        .map(|(key, value)| (key.clone(), value.into()))
+        .collect()
+}
+
+fn table_from_cached(table: Vec<(String, CachedValue)>) -> Result<toml::Table> {
+    table
+        .into_iter()
+        .map(|(key, value)| Ok((key, value_from_cached(value)?)))
+        .collect()
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+struct CachedTool {
+    version: String,
+    backend: Option<String>,
+    specifiers: Vec<String>,
+    options: Vec<(String, String)>,
+    platforms: Vec<(String, CachedPlatform)>,
+    provenance_repository: Option<String>,
+    unsupported_platforms: Vec<String>,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+struct CachedPlatform {
+    install: Option<String>,
+    checksum: Option<String>,
+    checksum_source: Option<ChecksumSource>,
+    size: Option<u64>,
+    url: Option<String>,
+    url_api: Option<String>,
+    conda_deps: Option<Vec<String>>,
+    provenance: Option<CachedProvenance>,
+    provenance_verified: Option<bool>,
+    github_attestations: Option<GithubAttestationsStatus>,
+    signer: Option<String>,
+    attested_by: Option<String>,
+    repository_id: Option<String>,
+    repository_owner_id: Option<String>,
+    additional_artifacts: Vec<CachedArtifact>,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+struct CachedArtifact {
+    checksum: Option<String>,
+    checksum_source: Option<ChecksumSource>,
+    size: Option<u64>,
+    url: String,
+    url_api: Option<String>,
+    provenance: Option<CachedProvenance>,
+    provenance_verified: Option<bool>,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+enum CachedProvenance {
+    Minisign,
+    Cosign,
+    Slsa(Option<String>),
+    GithubAttestations,
+}
+
+impl CachedEntries {
+    /// `graph_sources` is what [`LockfileEntries::parse`] returned with
+    /// `entries`: the parsed TOML of each entry that holds a graph, in order.
+    fn new(entries: &LockfileEntries, graph_sources: Vec<toml::Value>) -> Self {
+        let LockfileEntries {
+            empty,
+            lockfile_version,
+            tools,
+            rest,
+        } = entries;
+        let mut graph_sources = graph_sources.into_iter();
+        let tools = tools
+            .iter()
+            .map(|(short, versions)| {
+                let versions = versions
+                    .iter()
+                    .map(|tool| match CachedTool::without_graph(tool) {
+                        Some(tool) => CachedToolEntry::Typed(tool),
+                        None => CachedToolEntry::Source(
+                            (&graph_sources
+                                .next()
+                                .expect("an entry with a graph has its source"))
+                                .into(),
+                        ),
+                    })
+                    .collect();
+                (short.clone(), versions)
+            })
+            .collect();
+        Self {
+            empty: *empty,
+            lockfile_version: *lockfile_version,
+            tools,
+            rest: cached_table(rest),
+        }
     }
-    Ok(table)
+}
+
+impl TryFrom<CachedEntries> for LockfileEntries {
+    type Error = Report;
+    fn try_from(cached: CachedEntries) -> Result<Self> {
+        let CachedEntries {
+            empty,
+            lockfile_version,
+            tools,
+            rest,
+        } = cached;
+        let tools = tools
+            .into_iter()
+            .map(|(short, versions)| {
+                let versions = versions
+                    .into_iter()
+                    .map(|entry| match entry {
+                        CachedToolEntry::Typed(tool) => Ok(tool.into()),
+                        CachedToolEntry::Source(value) => {
+                            LockfileTool::try_from(value_from_cached(value)?)
+                        }
+                    })
+                    .collect::<Result<Vec<_>>>()?;
+                Ok((short, versions))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        Ok(Self {
+            empty,
+            lockfile_version,
+            tools,
+            rest: table_from_cached(rest)?,
+        })
+    }
+}
+
+impl CachedTool {
+    /// `None` for an entry that holds a dependency graph.
+    fn without_graph(tool: &LockfileTool) -> Option<Self> {
+        let LockfileTool {
+            version,
+            backend,
+            specifiers,
+            options,
+            platforms,
+            aube: None,
+            uv: None,
+            provenance,
+            unsupported_platforms,
+        } = tool
+        else {
+            return None;
+        };
+        Some(Self {
+            version: version.clone(),
+            backend: backend.clone(),
+            specifiers: specifiers.iter().cloned().collect(),
+            options: options.clone().into_iter().collect(),
+            platforms: platforms
+                .iter()
+                .map(|(platform, info)| (platform.clone(), info.into()))
+                .collect(),
+            provenance_repository: provenance.as_ref().map(|provenance| {
+                let PackageProvenance { repository } = provenance;
+                repository.clone()
+            }),
+            unsupported_platforms: unsupported_platforms.iter().cloned().collect(),
+        })
+    }
+}
+
+impl From<CachedTool> for LockfileTool {
+    fn from(cached: CachedTool) -> Self {
+        let CachedTool {
+            version,
+            backend,
+            specifiers,
+            options,
+            platforms,
+            provenance_repository,
+            unsupported_platforms,
+        } = cached;
+        Self {
+            version,
+            backend,
+            specifiers: specifiers.into_iter().collect(),
+            options: options.into_iter().collect(),
+            platforms: platforms
+                .into_iter()
+                .map(|(platform, info)| (platform, info.into()))
+                .collect(),
+            aube: None,
+            uv: None,
+            provenance: provenance_repository.map(|repository| PackageProvenance { repository }),
+            unsupported_platforms: unsupported_platforms.into_iter().collect(),
+        }
+    }
+}
+
+impl From<&PlatformInfo> for CachedPlatform {
+    fn from(info: &PlatformInfo) -> Self {
+        let PlatformInfo {
+            install,
+            checksum,
+            checksum_source,
+            size,
+            url,
+            url_api,
+            // Set by a plugin that resolves a URL, never by a lockfile.
+            download_headers: _,
+            conda_deps,
+            provenance,
+            provenance_verified,
+            github_attestations,
+            signer,
+            attested_by,
+            repository_id,
+            repository_owner_id,
+            additional_artifacts,
+        } = info;
+        Self {
+            install: install.clone(),
+            checksum: checksum.clone(),
+            checksum_source: *checksum_source,
+            size: *size,
+            url: url.clone(),
+            url_api: url_api.clone(),
+            conda_deps: conda_deps.clone(),
+            provenance: provenance.as_ref().map(Into::into),
+            provenance_verified: *provenance_verified,
+            github_attestations: *github_attestations,
+            signer: signer.clone(),
+            attested_by: attested_by.clone(),
+            repository_id: repository_id.clone(),
+            repository_owner_id: repository_owner_id.clone(),
+            additional_artifacts: additional_artifacts.iter().map(Into::into).collect(),
+        }
+    }
+}
+
+impl From<CachedPlatform> for PlatformInfo {
+    fn from(cached: CachedPlatform) -> Self {
+        let CachedPlatform {
+            install,
+            checksum,
+            checksum_source,
+            size,
+            url,
+            url_api,
+            conda_deps,
+            provenance,
+            provenance_verified,
+            github_attestations,
+            signer,
+            attested_by,
+            repository_id,
+            repository_owner_id,
+            additional_artifacts,
+        } = cached;
+        Self {
+            install,
+            checksum,
+            checksum_source,
+            size,
+            url,
+            url_api,
+            download_headers: None,
+            conda_deps,
+            provenance: provenance.map(Into::into),
+            provenance_verified,
+            github_attestations,
+            signer,
+            attested_by,
+            repository_id,
+            repository_owner_id,
+            additional_artifacts: additional_artifacts.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+impl From<&ArtifactInfo> for CachedArtifact {
+    fn from(artifact: &ArtifactInfo) -> Self {
+        let ArtifactInfo {
+            checksum,
+            checksum_source,
+            size,
+            url,
+            url_api,
+            provenance,
+            provenance_verified,
+        } = artifact;
+        Self {
+            checksum: checksum.clone(),
+            checksum_source: *checksum_source,
+            size: *size,
+            url: url.clone(),
+            url_api: url_api.clone(),
+            provenance: provenance.as_ref().map(Into::into),
+            provenance_verified: *provenance_verified,
+        }
+    }
+}
+
+impl From<CachedArtifact> for ArtifactInfo {
+    fn from(cached: CachedArtifact) -> Self {
+        let CachedArtifact {
+            checksum,
+            checksum_source,
+            size,
+            url,
+            url_api,
+            provenance,
+            provenance_verified,
+        } = cached;
+        Self {
+            checksum,
+            checksum_source,
+            size,
+            url,
+            url_api,
+            provenance: provenance.map(Into::into),
+            provenance_verified,
+        }
+    }
+}
+
+impl From<&ProvenanceType> for CachedProvenance {
+    fn from(provenance: &ProvenanceType) -> Self {
+        match provenance {
+            ProvenanceType::Minisign => Self::Minisign,
+            ProvenanceType::Cosign => Self::Cosign,
+            ProvenanceType::Slsa { url } => Self::Slsa(url.clone()),
+            ProvenanceType::GithubAttestations => Self::GithubAttestations,
+        }
+    }
+}
+
+impl From<CachedProvenance> for ProvenanceType {
+    fn from(cached: CachedProvenance) -> Self {
+        match cached {
+            CachedProvenance::Minisign => Self::Minisign,
+            CachedProvenance::Cosign => Self::Cosign,
+            CachedProvenance::Slsa(url) => Self::Slsa { url },
+            CachedProvenance::GithubAttestations => Self::GithubAttestations,
+        }
+    }
 }
 
 /// [`Lockfile::read`], parsing a file again only once it has changed. A
@@ -338,9 +850,9 @@ fn warn_outdated_lockfile(path: &Path, remedy: &str) {
         && outdated_lockfile_version_today(
             version,
             jiff::Timestamp::now()
-                .to_zoned(jiff::tz::TimeZone::UTC)
+                .to_zoned_datetime(jiff::tz::TimeZone::UTC)
                 .date(),
-            || jiff::Zoned::now().date(),
+            || jiff::ZonedDateTime::now().date(),
         )
     {
         warn_once!(
@@ -925,6 +1437,11 @@ impl ArtifactInfo {
         self.checksum.is_some() && self.provenance.is_some()
     }
 
+    /// See [`PlatformInfo::has_vouched_checksum`].
+    pub(crate) fn has_vouched_checksum(&self) -> bool {
+        self.checksum.is_some() && !self.url.is_empty()
+    }
+
     fn merge_with(&self, other: &ArtifactInfo) -> ArtifactInfo {
         if self.url != other.url {
             return self.clone();
@@ -1123,6 +1640,15 @@ impl PlatformInfo {
     /// True when the lockfile has checksum-backed, successfully verified provenance.
     pub(crate) fn has_checksum_and_provenance(&self) -> bool {
         self.checksum.is_some() && self.provenance.is_some()
+    }
+
+    /// True when the checksum may stand in for verifying the download again:
+    /// the entry still has the URL it was recorded with. A checksum without
+    /// one ([`Self::is_pinned_without_url`]) pins the bytes, but a lockfile
+    /// that is not trusted does not get to say they were verified, so an
+    /// install checks them as it would with no lockfile.
+    pub(crate) fn has_vouched_checksum(&self) -> bool {
+        self.checksum.is_some() && self.url.is_some()
     }
 
     /// True for an entry that pins the artifact by checksum alone, which is
@@ -1862,31 +2388,20 @@ impl Lockfile {
         let content = file::read_config_to_string(path)?;
         let generated_header_url = existing_lockfile_doc_url(&content);
         // Named by the link, not its target: the link decides whether to quote.
-        let mut table = parse_lockfile_toml(&content).map_err(|err| {
+        let LockfileEntries {
+            empty,
+            lockfile_version,
+            tools,
+            rest: mut table,
+        } = LockfileEntries::of(&content, |err| {
             crate::config::config_file::diagnostic::hide_linked_source(err, &content, link)
         })?;
-        if table.is_empty() {
+        if empty {
             return Ok(Lockfile {
                 generated_header_url,
                 ..Default::default()
             });
         }
-        let lockfile_version = table
-            .remove("lockfile_version")
-            .map(|value| value.try_into())
-            .transpose()?
-            .unwrap_or(0);
-        if lockfile_version > CURRENT_LOCKFILE_VERSION {
-            bail!(
-                "unsupported lockfile version {lockfile_version}; this mise supports up to version {CURRENT_LOCKFILE_VERSION}"
-            );
-        }
-
-        let tools = table
-            .remove("tools")
-            .map(into_table)
-            .transpose()?
-            .unwrap_or_default();
 
         let mut lockfile = Lockfile {
             lockfile_version,
@@ -1894,16 +2409,7 @@ impl Lockfile {
             ..Default::default()
         };
 
-        for (short, value) in tools {
-            let versions = match value {
-                toml::Value::Array(arr) => arr
-                    .into_iter()
-                    .map(LockfileTool::try_from)
-                    .collect::<Result<Vec<_>>>()?,
-                _ => bail!(
-                    "invalid lockfile format for tool {short}: expected array ([[tools.{short}]])"
-                ),
-            };
+        for (short, versions) in tools {
             let versions = versions
                 .into_iter()
                 .map(|mut entry| -> Result<_> {
@@ -5879,7 +6385,12 @@ fn backend_names_no_tool(full: &str) -> bool {
 /// project is trusted its lock may confirm the backend the tool key or the
 /// registry selects, or that the user installed the tool with, but not
 /// replace it.
-fn locked_backend_needs_trust(short: &str, full: &str) -> bool {
+///
+/// The registry selects one backend for a tool at `version`: the first that
+/// this platform and configuration allow. The others it lists are fallbacks,
+/// often a third-party asdf or vfox plugin, and moving a tool onto one of them
+/// is a choice of backend like any other.
+fn locked_backend_needs_trust(short: &str, full: &str, version: &str) -> bool {
     if crate::args::split_bracketed_opts(full).is_some() {
         return true;
     }
@@ -5891,7 +6402,8 @@ fn locked_backend_needs_trust(short: &str, full: &str) -> bool {
         |full: &'static str| crate::args::split_bracketed_opts(full).map_or(full, |(full, _)| full);
     let registry = crate::registry::REGISTRY
         .get(short.as_ref())
-        .is_some_and(|tool| tool.backends.iter().any(|b| without_opts(b.full) == full));
+        .and_then(|tool| tool.backends_for_version(Some(version)).first().copied())
+        .is_some_and(|selected| without_opts(selected) == full);
     !registry && crate::toolset::install_state::get_tool_full(&short).as_deref() != Some(full)
 }
 
@@ -5910,12 +6422,25 @@ impl Lockfile {
         for (short, entries) in &mut self.tools {
             entries.retain_mut(|entry| {
                 if let Some(full) = &entry.backend
-                    && locked_backend_needs_trust(short, full)
+                    && locked_backend_needs_trust(short, full, &entry.version)
                 {
                     // The same file is read for each config and for the
                     // merged view, so warn once per entry.
                     warn_once!(
                         "{} locks {short}@{} to {full}, which needs its config to be trusted; ignoring the entry. Run `mise trust` to use it",
+                        display_path(path),
+                        entry.version,
+                    );
+                    return false;
+                }
+                // A version that needs trust in the config needs it here too, or the lockfile
+                // would turn a `latest` request into it. Safe mode loads such a config without
+                // trust, so it keeps the pin as well.
+                if !Settings::safe_mode()
+                    && crate::config::config_file::version_requires_trust(&entry.version)
+                {
+                    warn_once!(
+                        "{} locks {short} to {}, which needs its config to be trusted; ignoring the entry. Run `mise trust` to use it",
                         display_path(path),
                         entry.version,
                     );
@@ -5936,12 +6461,14 @@ impl Lockfile {
                     info.url = None;
                     info.url_api = None;
                     info.conda_deps = None;
+                    info.provenance = None;
                     // Extra archives are matched to the backend's patterns by
                     // position, so each keeps its checksum. Without a URL the
                     // backend resolves the asset itself.
                     for artifact in &mut info.additional_artifacts {
                         artifact.url.clear();
                         artifact.url_api = None;
+                        artifact.provenance = None;
                     }
                 }
                 true
