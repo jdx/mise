@@ -43,6 +43,32 @@ local function disable_cache()
     end
 end
 
+--- Whether a path is absolute: `/x`, `\x`, or a Windows drive path like `C:\x`.
+local function is_absolute(path)
+    return path:match("^[/\\]") ~= nil or path:match("^%a:[/\\]") ~= nil
+end
+
+--- The absolute path of the configured pyproject, or nil when there is none.
+--- A relative path means relative to the project, so it is resolved against
+--- the project root only. Without one there is no project to resolve it
+--- against: the current directory is not it (mise may run this hook from
+--- another directory, and runs the hook's commands from the home directory),
+--- so skip virtualenv activation rather than check one directory and run
+--- Poetry in another.
+local function resolve_pyproject(pyproject, project_root)
+    if is_absolute(pyproject) then
+        return pyproject
+    end
+    if not project_root or project_root == "" then
+        return nil
+    end
+    -- A backslash separates directories only on Windows; elsewhere it can be
+    -- part of a directory name.
+    local trailing = RUNTIME.osType == "windows" and "[/\\]$" or "/$"
+    local sep = project_root:match(trailing) and "" or "/"
+    return project_root .. sep .. pyproject
+end
+
 function PLUGIN:EnvKeys(ctx)
     local file = require("file")
     local bin_path = file.join_path(ctx.path, "bin")
@@ -64,10 +90,9 @@ function PLUGIN:EnvKeys(ctx)
         return env_keys
     end
 
-    -- Resolve relative path against project root
-    local project_root = os.getenv("MISE_PROJECT_ROOT")
-    if project_root and pyproject:sub(1, 1) ~= "/" then
-        pyproject = project_root .. "/" .. pyproject
+    pyproject = resolve_pyproject(pyproject, os.getenv("MISE_PROJECT_ROOT"))
+    if not pyproject then
+        return env_keys
     end
     watch_files({ pyproject })
 
@@ -78,10 +103,9 @@ function PLUGIN:EnvKeys(ctx)
     end
     f:close()
 
-    local pyproject_dir = pyproject:match("(.*/)")
-    if not pyproject_dir then
-        pyproject_dir = "."
-    end
+    -- resolve_pyproject returns an absolute path, so it always has a directory
+    -- part, and every command below runs in that same directory.
+    local pyproject_dir = pyproject:match("^(.*[/\\])")
     watch_files({ pyproject_dir .. "uv.lock", pyproject_dir .. "poetry.lock" })
 
     -- Check for uv.lock - if present, let uv manage the venv

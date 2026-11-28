@@ -5635,8 +5635,85 @@ packages:
       - name: kotlin-lsp
     version_constraint: "false"
     version_overrides:
-      - version_constraint: semver("< 262.8190.0")
+      - version_constraint: semver("< 261.13587.0")
         no_asset: true
+      - version_constraint: semver("< 262.4739.0")
+        url: https://download.jetbrains.com/kotlin-lsp/{{.SemVer}}/kotlin-lsp-{{.SemVer}}-{{.OS}}-{{.Arch}}.zip
+        format: zip
+        replacements:
+          amd64: x64
+          arm64: aarch64
+          darwin: mac
+          windows: win
+        checksum:
+          type: http
+          url: https://download.jetbrains.com/kotlin-lsp/{{.SemVer}}/kotlin-lsp-{{.SemVer}}-{{.OS}}-{{.Arch}}.zip.sha256
+          algorithm: sha256
+        files:
+          - name: kotlin-lsp
+            src: kotlin-lsp.sh
+        overrides:
+          - goos: windows
+            files:
+              - name: kotlin-lsp
+                src: kotlin-lsp.cmd
+      - version_constraint: semver("< 262.8190.0")
+        url: https://download.jetbrains.com/kotlin-lsp/{{.SemVer}}/kotlin-server-{{.SemVer}}.tar.gz
+        format: tar.gz
+        append_ext: false
+        checksum:
+          type: http
+          url: https://download.jetbrains.com/kotlin-lsp/{{.SemVer}}/kotlin-server-{{.SemVer}}.tar.gz.sha256
+          algorithm: sha256
+        files:
+          - name: kotlin-lsp
+            src: kotlin-server-{{.SemVer}}/bin/intellij-server
+        overrides:
+          - goos: linux
+            goarch: arm64
+            url: https://download.jetbrains.com/kotlin-lsp/{{.SemVer}}/kotlin-server-{{.SemVer}}-aarch64.tar.gz
+            checksum:
+              type: http
+              url: https://download.jetbrains.com/kotlin-lsp/{{.SemVer}}/kotlin-server-{{.SemVer}}-aarch64.tar.gz.sha256
+              algorithm: sha256
+          - goos: darwin
+            goarch: amd64
+            url: https://download.jetbrains.com/kotlin-lsp/{{.SemVer}}/kotlin-server-{{.SemVer}}.sit
+            format: zip
+            checksum:
+              type: http
+              url: https://download.jetbrains.com/kotlin-lsp/{{.SemVer}}/kotlin-server-{{.SemVer}}.sit.sha256
+              algorithm: sha256
+          - goos: darwin
+            goarch: arm64
+            url: https://download.jetbrains.com/kotlin-lsp/{{.SemVer}}/kotlin-server-{{.SemVer}}-aarch64.sit
+            format: zip
+            checksum:
+              type: http
+              url: https://download.jetbrains.com/kotlin-lsp/{{.SemVer}}/kotlin-server-{{.SemVer}}-aarch64.sit.sha256
+              algorithm: sha256
+          - goos: windows
+            goarch: amd64
+            url: https://download.jetbrains.com/kotlin-lsp/{{.SemVer}}/kotlin-server-{{.SemVer}}.win.zip
+            format: zip
+            checksum:
+              type: http
+              url: https://download.jetbrains.com/kotlin-lsp/{{.SemVer}}/kotlin-server-{{.SemVer}}.win.zip.sha256
+              algorithm: sha256
+            files:
+              - name: kotlin-lsp
+                src: bin/intellij-server
+          - goos: windows
+            goarch: arm64
+            url: https://download.jetbrains.com/kotlin-lsp/{{.SemVer}}/kotlin-server-{{.SemVer}}-aarch64.win.zip
+            format: zip
+            checksum:
+              type: http
+              url: https://download.jetbrains.com/kotlin-lsp/{{.SemVer}}/kotlin-server-{{.SemVer}}-aarch64.win.zip.sha256
+              algorithm: sha256
+            files:
+              - name: kotlin-lsp
+                src: bin/intellij-server
       - version_constraint: "true"
         url: https://download.jetbrains.com/language-server/kotlin-server/{{.SemVer}}/kotlin-server-{{.SemVer}}.tar.gz
         format: tar.gz

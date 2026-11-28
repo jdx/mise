@@ -1,5 +1,137 @@
 # Changelog
 
+## [2026.11.15](https://github.com/jdx/mise/releases/tag/v2026.11.15) - 2026-11-28
+
+### 🚀 Features
+
+- **(backend)** **breaking** remove the ubi backend by @jdx in [#16167](https://github.com/jdx/mise/pull/16167)
+- **(bootstrap)** install official app casks through macos-app without the Homebrew prefix by @jdx in [#16161](https://github.com/jdx/mise/pull/16161)
+- **(dotfiles)** add [history] git_name to name history commits by machine by @jdx in [#16166](https://github.com/jdx/mise/pull/16166)
+- **(dotfiles)** fold repeated autosaves and save files changed together in one checkpoint by @jdx in [#16169](https://github.com/jdx/mise/pull/16169)
+- **(exec)** allow outbound TCP by port on Linux by @jdx in [#16183](https://github.com/jdx/mise/pull/16183)
+- **(install)** stop reporting installs to mise-versions by @jdx in [#16119](https://github.com/jdx/mise/pull/16119)
+- **(npm)** add node option that pins the Node a tool's executables run on by @jdx in [#16149](https://github.com/jdx/mise/pull/16149)
+- **(release)** ship best-effort FreeBSD x86_64 binaries by @jdx in [#16152](https://github.com/jdx/mise/pull/16152)
+- **(trust)** add `mise trust --worktrees` so bare-repo worktrees can share trust by @jdx in [#16155](https://github.com/jdx/mise/pull/16155)
+
+### 🐛 Bug Fixes
+
+- **(backend)** don't fall back to a cached tool when an explicit backend doesn't resolve by @jdx in [#16179](https://github.com/jdx/mise/pull/16179)
+- **(bootstrap)** warn instead of reporting an add when macOS keeps a login item out of the list by @jdx in [#16145](https://github.com/jdx/mise/pull/16145)
+- **(bootstrap)** pour bottles for git-backed tap formulae by @jdx in [#16174](https://github.com/jdx/mise/pull/16174)
+- **(bootstrap)** keep pkg casks during forced prune by @jdx in [#16180](https://github.com/jdx/mise/pull/16180)
+- **(bootstrap)** preserve cask command wrapper payloads by @jdx in [#16175](https://github.com/jdx/mise/pull/16175)
+- **(bootstrap)** suggest cask prune when no formulae can be pruned by @jdx in [#16181](https://github.com/jdx/mise/pull/16181)
+- **(bootstrap)** preserve directory xattrs when staging DMGs by @jdx in [#16184](https://github.com/jdx/mise/pull/16184)
+- **(bootstrap)** resolve Homebrew formula dependencies from their own tap by @jdx in [#16173](https://github.com/jdx/mise/pull/16173)
+- **(bun)** accept a leading v in .bun-version and tool versions by @jdx in [#16130](https://github.com/jdx/mise/pull/16130)
+- **(dotfiles)** send new mise dot track entries to write_targets.dotfiles by @jdx in [#16150](https://github.com/jdx/mise/pull/16150)
+- **(dotfiles)** skip empty pull checkpoints and name files in merge commits by @jdx in [#16163](https://github.com/jdx/mise/pull/16163)
+- **(dotfiles)** skip CACHEDIR.TAG caches, hint at node_modules, and refuse untracked pull paths early by @jdx in [#16143](https://github.com/jdx/mise/pull/16143)
+- **(dotfiles)** keep the user's empty directories when removing walked files by @jdx in [#16147](https://github.com/jdx/mise/pull/16147)
+- **(dotnet)** detect installs in the wrong mode by @jdx in [#16172](https://github.com/jdx/mise/pull/16172)
+- **(http)** keep every pinned URL when downloads finish together on Windows by @jdx in [#16144](https://github.com/jdx/mise/pull/16144)
+- **(http)** stop staged downloads leaking when mise execs or is killed by @jdx in [#16151](https://github.com/jdx/mise/pull/16151)
+- **(install)** hold install output while a confirmation prompt is open by @jdx in [#16134](https://github.com/jdx/mise/pull/16134)
+- **(install)** preview pipx tools before their dependencies are installed by @jdx in [#16176](https://github.com/jdx/mise/pull/16176)
+- **(install)** fall back to GitHub API assets for packslip and bun by @jdx in [#16177](https://github.com/jdx/mise/pull/16177)
+- **(java)** resolve .sdkmanrc ids to the exact build and make exec agree with install by @jdx in [#16156](https://github.com/jdx/mise/pull/16156)
+- **(lock)** stop remote task files from failing install and lock on Windows by @jdx in [#16132](https://github.com/jdx/mise/pull/16132)
+- **(lock)** lock per-tool python in locked mode and keep it on mise lock <tool> by @jdx in [#16138](https://github.com/jdx/mise/pull/16138)
+- **(npm)** stop npm.shell_out version lookups re-entering mise through a foreign node shim by @jdx in [#16136](https://github.com/jdx/mise/pull/16136)
+- **(npm)** don't save version lists built from an old cached packument by @jdx in [#16148](https://github.com/jdx/mise/pull/16148)
+- **(pypi)** honor exclude-newer = false on an index during mise lock by @jdx in [#16141](https://github.com/jdx/mise/pull/16141)
+- **(pypi)** pick the newest git tag as latest, not the last in text order by @jdx in [#16170](https://github.com/jdx/mise/pull/16170)
+- **(ruby)** let trusted project config set ruby.apply_patches again by @jdx in [#16131](https://github.com/jdx/mise/pull/16131)
+- **(shim)** keep shims of installed tools that enable_tools or disable_tools exclude by @jdx in [#16139](https://github.com/jdx/mise/pull/16139)
+- **(task)** install locked conda task tools with their lockfile dependencies by @jdx in [#16154](https://github.com/jdx/mise/pull/16154)
+- **(wrappers)** put the wrapper directory first on PATH for mise x, tasks and mise env by @jdx in [#16070](https://github.com/jdx/mise/pull/16070)
+
+### 🚜 Refactor
+
+- **(config)** box the options table of a bootstrap package entry by @jdx in [#16162](https://github.com/jdx/mise/pull/16162)
+
+### 📚 Documentation
+
+- **(install)** remind manual installers to activate mise by @jdx in [#16140](https://github.com/jdx/mise/pull/16140)
+- **(security)** say which resource exhaustion is in the threat model by @jdx in [#16133](https://github.com/jdx/mise/pull/16133)
+
+### ⚡ Performance
+
+- **(lockfile)** cache a lockfile's parsed entries instead of its TOML table by @jdx in [#16095](https://github.com/jdx/mise/pull/16095)
+- benchmark `mise x` and the shims by @jdx in [#16164](https://github.com/jdx/mise/pull/16164)
+
+### 🧪 Testing
+
+- **(bootstrap)** keep the planted-config check within valid staging paths by @jdx in [#16158](https://github.com/jdx/mise/pull/16158)
+- run unit tests in parallel under nextest by @jdx in [#16187](https://github.com/jdx/mise/pull/16187)
+
+### 📦️ Dependency Updates
+
+- update mise tools by @renovate[bot] in [#16057](https://github.com/jdx/mise/pull/16057)
+- update docker images by @renovate[bot] in [#16055](https://github.com/jdx/mise/pull/16055)
+- update rust crate nix to 0.32 by @renovate[bot] in [#16058](https://github.com/jdx/mise/pull/16058)
+- update jdx crates by @renovate[bot] in [#16048](https://github.com/jdx/mise/pull/16048)
+- update github actions by @renovate[bot] in [#16056](https://github.com/jdx/mise/pull/16056)
+- lock file maintenance by @renovate[bot] in [#16061](https://github.com/jdx/mise/pull/16061)
+- update node.js to v26 by @renovate[bot] in [#16059](https://github.com/jdx/mise/pull/16059)
+- update jdx/renovate-config workflows to v1.2.1 by jdx in [ae4f4de](https://github.com/jdx/mise/commit/ae4f4de5f26ef1106740b21bf1f90abe4770567b)
+- update rust crate jiff to v1 by @jdx in [#16142](https://github.com/jdx/mise/pull/16142)
+
+### 📦 Registry
+
+- add lean 4 by @jdx in [#16178](https://github.com/jdx/mise/pull/16178)
+- add recyclarr by @jdx in [#16182](https://github.com/jdx/mise/pull/16182)
+- add kotlin-lsp ([aqua:Kotlin/kotlin-lsp](https://github.com/Kotlin/kotlin-lsp)) by @jdx in [#16146](https://github.com/jdx/mise/pull/16146)
+
+### Chore
+
+- **(release)** stop crediting @jdx in release notes and add a notes preview by @jdx in [#16165](https://github.com/jdx/mise/pull/16165)
+- remove jouet by @jdx in [752ab2b](https://github.com/jdx/mise/commit/752ab2b8e83261b1774b148e934a6fb151bd825f)
+
+### Ci
+
+- **(release)** build the Ubuntu PPA with rustc 1.97 by @jdx in [#16103](https://github.com/jdx/mise/pull/16103)
+- use jdx/workflows link-discussions by @claude in [25bdf1d](https://github.com/jdx/mise/commit/25bdf1dac713710f4232330a74a0df5d649c0886)
+- add caller concurrency to link-discussions by @claude in [deb6ea0](https://github.com/jdx/mise/commit/deb6ea02f9261354c254de8b3195d60e1991eb83)
+- add GitHub Actions workflow lockfile by @claude in [270ae57](https://github.com/jdx/mise/commit/270ae57cdf8fe4c1969e3ba8fe9421b72abde625)
+- build unit-macos with one mbx install so native crates compile once by @jdx in [#16186](https://github.com/jdx/mise/pull/16186)
+- use hosted Windows runners when the self-hosted queue is deep by @jdx in [#16185](https://github.com/jdx/mise/pull/16185)
+- reuse e2e Docker containers between tests by @jdx in [#16188](https://github.com/jdx/mise/pull/16188)
+- compile shared crates once in test:unit-ci by @jdx in [#16189](https://github.com/jdx/mise/pull/16189)
+
+### Security
+
+- **(aqua)** match downloads to the requested release and bound registry templates by @jdx in [#16071](https://github.com/jdx/mise/pull/16071)
+- **(backend)** verify native cargo binaries and bound what cargo and spm read from packages by @jdx in [#16077](https://github.com/jdx/mise/pull/16077)
+- **(backend)** tighten archive extraction and stop ubi sending tokens to other hosts by @jdx in [#16075](https://github.com/jdx/mise/pull/16075)
+- **(backend)** refuse go: names that aren't package paths and bound go and s3 version lookups by @jdx in [#16081](https://github.com/jdx/mise/pull/16081)
+- **(brew)** keep bottle installs inside the Homebrew prefix and harden binary relocation by @jdx in [#16076](https://github.com/jdx/mise/pull/16076)
+- **(config)** narrow what an untrusted project's tool versions and lockfile can make mise do by @jdx in [#16092](https://github.com/jdx/mise/pull/16092)
+- **(config)** limit what a project .miserc.toml can select and stop rendering untrusted settings by @jdx in [#16083](https://github.com/jdx/mise/pull/16083)
+- **(core)** require trust for project virtualenvs and install the builds mise.lock pins by @jdx in [#16072](https://github.com/jdx/mise/pull/16072)
+- **(github)** check release assets against every checksum list and refuse mismatched releases by @jdx in [#16078](https://github.com/jdx/mise/pull/16078)
+- **(github)** run credential commands from your home directory and bound OAuth and relay traffic by @jdx in [#16080](https://github.com/jdx/mise/pull/16080)
+- **(http)** keep tokens, netrc logins and headers on the servers they were set up for by @jdx in [#16091](https://github.com/jdx/mise/pull/16091)
+- **(packslip)** pin signing keys by fingerprint and stop project config waiving stampers in safe mode by @jdx in [#16085](https://github.com/jdx/mise/pull/16085)
+- **(shell)** quote env names, values and completions so a checkout cannot run code in your shell by @jdx in [#16087](https://github.com/jdx/mise/pull/16087)
+- **(task)** stop task dirs, handed-down env and fish arguments from running as code by @jdx in [#16074](https://github.com/jdx/mise/pull/16074)
+- **(vfox)** confine plugin code and downloads, and stop hook-env from installing plugins by @jdx in [#16093](https://github.com/jdx/mise/pull/16093)
+- **(vfox)** run plugin hook commands outside untrusted directories by @jdx in [#16094](https://github.com/jdx/mise/pull/16094)
+- refuse terminal input injection in sandboxes, verify OCI base layers and bound LSP work by @jdx in [#16073](https://github.com/jdx/mise/pull/16073)
+- keep dotfiles, bootstrap and daemon imports from acting on files other users control by @jdx in [#16089](https://github.com/jdx/mise/pull/16089)
+- tie release signatures and attestations to the version being installed by @jdx in [#16088](https://github.com/jdx/mise/pull/16088)
+
+### New Contributors
+
+- @claude made their first contribution
+
+### 📦 Aqua Registry Updates
+
+#### Updated Packages (1)
+
+- [`Kotlin/kotlin-lsp`](https://github.com/Kotlin/kotlin-lsp)
+
 ## [2026.11.14](https://github.com/jdx/mise/releases/tag/v2026.11.14) - 2026-11-24
 
 ### 🚀 Features
