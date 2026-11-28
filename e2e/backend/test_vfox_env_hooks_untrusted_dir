@@ -109,6 +109,13 @@ mise trust --ignore settings-trusted
 assert_not_contains "cd settings-trusted/sub && mise env" "/settings-trusted/sub/.venv"
 assert_contains "cd settings-trusted && MISE_TRUSTED_CONFIG_PATHS=$PWD/settings-trusted/mise.toml mise env" "VIRTUAL_ENV=$PWD/settings-trusted/.venv"
 assert_contains "cd settings-trusted/sub && MISE_TRUSTED_CONFIG_PATHS=$PWD/settings-trusted/mise.toml mise env" "VIRTUAL_ENV=$PWD/settings-trusted/sub/.venv"
+# an ignored_config_paths pattern that names a symlink keeps the project it
+# leads to ignored, though the symlink's target matches no pattern
+make_repo project/real-poetry pyproject.toml
+ln -s real-poetry project/poetry-link
+linked="MISE_PROJECT_ROOT=$PWD/project/poetry-link"
+assert_contains "cd project/sub && $linked mise env" "/poetry-link/.venv"
+assert_not_contains "cd project/sub && MISE_IGNORED_CONFIG_PATHS='$PWD/project/poetry-lin?' $linked mise env" "/poetry-link/.venv"
 
 # once trusted, the virtualenv is activated as before, except in safe mode
 mise trust pipenv-repo
