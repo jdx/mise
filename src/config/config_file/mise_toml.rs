@@ -315,12 +315,14 @@ fn drop_unlent_templates(
     let tool = request.ba().short.clone();
     let options = request.options_mut();
     let mut dropped = vec![];
+    let mut unverified = vec![];
     options.opts.retain(|k, v| {
         let written: Vec<_> = templates
             .iter()
             .filter_map(|t| t.written.opts.get(k))
             .collect();
-        let keep = explicit.opts.contains_key(k) || keep_lent_parts(v, &written, &tool, k);
+        let keep = explicit.opts.contains_key(k)
+            || keep_lent_parts(v, &written, std::slice::from_ref(k), &mut unverified);
         if !keep {
             dropped.push(k.clone());
         }
@@ -331,6 +333,15 @@ fn drop_unlent_templates(
         && options.opts.shift_remove("url").is_some()
     {
         warn_unverified_url(&tool, "url");
+    }
+    // A platform with no checksum of its own is checked against the top-level one, as the
+    // http backend looks a platform's option up there when the platform does not set it.
+    if !options.opts.keys().any(|k| is_checksum_option(k)) {
+        for at in unverified {
+            if remove_url_at(&mut options.opts, &at) {
+                warn_unverified_url(&tool, &format!("{}.url", at.join(".")));
+            }
+        }
     }
     options.core.install_env.retain(|k, v| {
         !matches!(v, EnvValue::String(s) if contains_template_syntax(s))
@@ -344,12 +355,13 @@ fn drop_unlent_templates(
 /// Whether to keep option value `value`, after dropping from it the table entries that hold
 /// template syntax and are not written as they are in one of `written`, the same option's value
 /// in each config that lent its templates. A table none of whose entries is left is dropped.
-/// `at` names the value in the options of `tool`, for the warning [`warn_unverified_url`] gives.
+/// `at` is the path to `value` in the tool's options. A table whose `url` loses its checksum
+/// this way (see [`drops_unverified_url`]) has its path added to `unverified`.
 fn keep_lent_parts(
     value: &mut toml::Value,
     written: &[&toml::Value],
-    tool: &str,
-    at: &str,
+    at: &[String],
+    unverified: &mut Vec<Vec<String>>,
 ) -> bool {
     if !toml_value_has_template(value) || written.contains(&&*value) {
         return true;
@@ -363,16 +375,50 @@ fn keep_lent_parts(
             .iter()
             .filter_map(|w| w.as_table()?.get(k))
             .collect();
-        let keep = keep_lent_parts(entry, &written, tool, &format!("{at}.{k}"));
+        let mut entry_at = at.to_vec();
+        entry_at.push(k.to_string());
+        let keep = keep_lent_parts(entry, &written, &entry_at, unverified);
         if !keep {
             dropped.push(k.to_string());
         }
         keep
     });
-    if drops_unverified_url(&dropped, table.keys()) && table.remove("url").is_some() {
-        warn_unverified_url(tool, &format!("{at}.url"));
+    if drops_unverified_url(&dropped, table.keys()) && table.contains_key("url") {
+        unverified.push(at.to_vec());
     }
     !table.is_empty()
+}
+
+/// Removes the `url` of the table at path `at` in `opts`, and each table on the way that is
+/// left empty. Whether there was one.
+fn remove_url_at(opts: &mut indexmap::IndexMap<String, toml::Value>, at: &[String]) -> bool {
+    fn remove_below(value: &mut toml::Value, at: &[String]) -> bool {
+        let Some(table) = value.as_table_mut() else {
+            return false;
+        };
+        let Some((key, rest)) = at.split_first() else {
+            return table.remove("url").is_some();
+        };
+        let Some(entry) = table.get_mut(key) else {
+            return false;
+        };
+        let removed = remove_below(entry, rest);
+        if removed && entry.as_table().is_some_and(toml::Table::is_empty) {
+            table.remove(key);
+        }
+        removed
+    }
+    let Some((key, rest)) = at.split_first() else {
+        return false;
+    };
+    let Some(value) = opts.get_mut(key) else {
+        return false;
+    };
+    let removed = remove_below(value, rest);
+    if removed && value.as_table().is_some_and(toml::Table::is_empty) {
+        opts.shift_remove(key);
+    }
+    removed
 }
 
 /// Whether a `url` beside the `dropped` options would be left with no checksum: one of them is
@@ -382,8 +428,11 @@ fn drops_unverified_url<'a>(
     dropped: &[String],
     mut kept: impl Iterator<Item = &'a String>,
 ) -> bool {
-    let is_checksum = |k: &String| k.starts_with("checksum");
-    dropped.iter().any(is_checksum) && !kept.any(is_checksum)
+    dropped.iter().any(|k| is_checksum_option(k)) && !kept.any(|k| is_checksum_option(k))
+}
+
+fn is_checksum_option(key: &str) -> bool {
+    key.starts_with("checksum")
 }
 
 fn warn_unverified_url(tool: &str, at: &str) {

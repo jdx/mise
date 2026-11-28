@@ -3782,27 +3782,22 @@ pub(crate) fn is_project_link_to_global_config(path: &Path) -> bool {
 /// a project file linked to a global config file, or a project's `.mise` or `.config` linked to
 /// the global config directory, where the file need not exist yet.
 ///
-/// What decides is where each link on the way to the file is placed, not where it leads: two
-/// spellings of global config resolve to the same file whoever placed the link between them.
-/// A link that global config's own spelling also passes through is the user's layout (a
-/// linked `~/.config`). Any other link is the user's own only when it sits above the directory
-/// the path spells as its project, in a directory that holds the global config directory: a
-/// linked `/home`, or a link to the home directory placed beside it. A link at or below that
-/// project directory, or one placed in a directory that does not hold global config, such as
-/// a checkout's `home` linked to the home directory, is a project's link to global config.
+/// What decides is where each link on the way to the file is placed and what it stands for, not
+/// where the file finally lands: two spellings of global config resolve to the same file whoever
+/// placed the link between them, and the user's global config directory may itself link into a
+/// dotfiles checkout anywhere. A link that global config's own spelling also passes through is
+/// the user's layout (a linked `~/.config`). Any other link is the user's own only when it is
+/// another name for a directory above the global config directory, placed in such a directory
+/// itself, and not below the directory the path spells as its project: a linked `/home`, or a
+/// link to the home directory placed beside it (see [`is_alias_above_global_config_dir`]). A
+/// link to the global config directory itself (`~/cfg` or a project's `.mise`), one below the
+/// project directory, or one placed in a directory that does not hold global config, such as a
+/// checkout's `home` linked to the home directory, is a project's link to global config.
 pub(crate) fn write_reaches_global_config_through_link(path: &Path) -> bool {
     let Some(global) = global_config_spelling(path) else {
         return false;
     };
-    let Some(target_dir) = resolve_for_write(path).and_then(|real| {
-        if real == path {
-            return None;
-        }
-        real.parent().map(Path::to_path_buf)
-    }) else {
-        return false;
-    };
-    if global == path {
+    if global == path || resolve_for_write(path).is_none_or(|real| real == path) {
         return false;
     }
     let users_links = link_placements(&global)
@@ -3810,9 +3805,43 @@ pub(crate) fn write_reaches_global_config_through_link(path: &Path) -> bool {
         .collect::<Vec<_>>();
     let project = config_file::config_root::spelled_project(path);
     link_placements(path).any(|(spelled, placement)| {
-        let in_project = spelled.starts_with(&project) && spelled != project;
-        !users_links.contains(&placement) && (in_project || !target_dir.starts_with(&placement.0))
+        let below_project = spelled.starts_with(&project) && spelled != project;
+        !users_links.contains(&placement)
+            && (below_project
+                || !is_alias_above_global_config_dir(spelled, &placement.0, path, &global))
     })
+}
+
+/// Whether `link`, a symlink on `path` placed in `link_dir` (resolved), is another name for a
+/// directory above the directory of `global`, the spelling of the global config file `path`
+/// reaches, and is placed in such a directory too: `/usr/home` for `/home`, or `~/../linkhome`
+/// for `~`. The rest of `path` below the link must spell the global config file as `global`
+/// does below that directory, so the link stands above the global config directory, which is
+/// compared as spelled, before any link the two paths share is followed.
+fn is_alias_above_global_config_dir(
+    link: &Path,
+    link_dir: &Path,
+    path: &Path,
+    global: &Path,
+) -> bool {
+    let (Ok(rest), Ok(target)) = (path.strip_prefix(link), link.canonicalize()) else {
+        return false;
+    };
+    let Some(config_dir) = global.parent().map(|dir| match dir.parent() {
+        Some(owner) if dir.ends_with("conf.d") => owner,
+        _ => dir,
+    }) else {
+        return false;
+    };
+    let (mut placed_above, mut stands_above) = (false, false);
+    for holder in config_dir.ancestors().skip(1) {
+        let Ok(resolved) = holder.canonicalize() else {
+            continue;
+        };
+        placed_above |= resolved == link_dir;
+        stands_above |= resolved == target && global.strip_prefix(holder).is_ok_and(|r| r == rest);
+    }
+    placed_above && stands_above
 }
 
 /// The links (symlinks, and junctions on Windows) `path` passes through on the way to its file,

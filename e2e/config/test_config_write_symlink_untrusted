@@ -103,6 +103,10 @@ cd "$HOME" || exit 1
 ln -s .config/mise .mise
 assert_fail_contains "mise set --file .mise/config.toml HOMELINK=1 2>&1" "Write global config with"
 assert_not_contains "cat $HOME/.config/mise/config.toml" "HOMELINK"
+# nor is one that is the project directory itself, as `~/cfg` is for `~/cfg/config.toml`
+ln -s .config/mise cfg
+assert_fail_contains "mise set --file cfg/config.toml CFGLINK=1 2>&1" "Write global config with"
+assert_not_contains "cat $HOME/.config/mise/config.toml" "CFGLINK"
 cd "$back" || exit 1
 
 echo "=== nor is one that would create a global config file ==="
@@ -134,6 +138,17 @@ echo "[env]" >"$xdg/real/mise/config.toml"
 ln -s "$xdg/real" "$xdg/alias"
 assert "MISE_CONFIG_DIR=$xdg/real/mise mise set --file $xdg/alias/mise/config.toml OUTSIDE=1"
 assert_contains "cat $xdg/real/mise/config.toml" 'OUTSIDE = "1"'
+
+echo "=== also when the global config directory links into a dotfiles checkout ==="
+# The link to the home directory is judged against where global config is
+# spelled, not against where the dotfiles checkout puts the file.
+mv "$HOME/.config/mise" "$top/dotfiles-mise"
+ln -s "$top/dotfiles-mise" "$HOME/.config/mise"
+ln -s "$HOME" "$HOME/h"
+assert "mise set --file $HOME/h/.config/mise/config.toml DOTFILES=1"
+assert_contains "cat $top/dotfiles-mise/config.toml" 'DOTFILES = "1"'
+assert "mise set --file $linkhome/.config/mise/config.toml VIALINK2=1"
+assert_contains "cat $top/dotfiles-mise/config.toml" 'VIALINK2 = "1"'
 
 echo "=== a project's link to the home directory is not followed to global config ==="
 mkdir -p ../home-link
