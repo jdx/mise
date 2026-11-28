@@ -83,7 +83,7 @@ impl Backend for GoBackend {
     }
 
     async fn remote_version_cache_context(&self, config: &Arc<Config>) -> Result<Option<String>> {
-        let env = self.dependency_env(config).await?;
+        let env = self.go_routing_env(config).await?;
         Ok(go_routing_cache_context(&env))
     }
 
@@ -153,7 +153,7 @@ impl Backend for GoBackend {
         }
 
         let candidates = self.module_candidates()?;
-        let env = self.dependency_env(config).await?;
+        let env = self.go_routing_env(config).await?;
         // Ask for @latest directly instead of listing every tag and fetching
         // metadata for each one; modules with thousands of tags make that
         // listing take minutes. When private-module routing is configured, go
@@ -202,7 +202,7 @@ impl Backend for GoBackend {
             trace!("Skipping Go module release date for {version} due to offline mode");
             return Ok(None);
         }
-        let env = self.dependency_env(config).await?;
+        let env = self.go_routing_env(config).await?;
         let proxies = if go_native_resolution_enabled(&env) {
             vec![]
         } else {
@@ -212,6 +212,7 @@ impl Backend for GoBackend {
         // Module versions carry the `v` prefix that listing strips off.
         let version = format!("v{}", version.trim_start_matches('v'));
         let candidates = self.module_candidates()?;
+        let lookup_timeout = Settings::get().fetch_remote_versions_timeout();
         // One full pass per route, not one per candidate: a package path's first
         // candidates are not the module root, and spending the timeout on a
         // `go list` miss for one of those would strand the request before the
@@ -235,11 +236,15 @@ impl Backend for GoBackend {
                     candidates,
                     proxy_date,
                     native_route,
+                    // Half the lookup's budget, so a hung `go list` is reported
+                    // as that path's failure while the proxy step has had its
+                    // share, before the whole lookup times out.
+                    lookup_timeout / 2,
                     |mod_path| self.fetch_go_module_version_metadata(config, mod_path, &version),
                 )
                 .await
             },
-            Settings::get().fetch_remote_versions_timeout(),
+            lookup_timeout,
         )
         .await
     }
@@ -466,33 +471,45 @@ fn is_transient_go_network_failure(stderr: &str) -> bool {
 /// verification is never a missing version, whatever else the output quotes:
 /// Go found the version and refused what it downloaded.
 fn is_missing_go_version(stderr: &str, package: &str, version: &str) -> bool {
+    package
+        .match_indices('/')
+        .map(|(i, _)| &package[..i])
+        .chain([package])
+        .any(|module| is_missing_module_version(stderr, module, version))
+}
+
+/// Whether `go` output says that `version` of `module` itself does not exist,
+/// by the rule [`is_missing_go_version`] describes, for that one module path.
+///
+/// Go has no other way to say so: `go list -m` exits 1 for every failure, and
+/// with `-e` its `Error` field holds the same text. The wording is the same from
+/// Go 1.21 on; anything else, such as a version-control or network failure, is
+/// not a missing version.
+fn is_missing_module_version(stderr: &str, module: &str, version: &str) -> bool {
     const VERIFICATION_MARKERS: &[&str] = &["verifying ", "checksum mismatch", "security error"];
     let stderr = stderr.to_lowercase();
     if VERIFICATION_MARKERS.iter().any(|m| stderr.contains(m)) {
         return false;
     }
-    let version = version.to_lowercase();
-    package
-        .match_indices('/')
-        .map(|(i, _)| &package[..i])
-        .chain([package])
-        .any(|module| {
-            let token = format!("{}@{version}: ", module.to_lowercase());
-            stderr.match_indices(&token).any(|(i, _)| {
-                let before = &stderr[..i];
-                let at_boundary = before.chars().next_back().is_none_or(char::is_whitespace);
-                let required = before.contains(" requires\n");
-                at_boundary
-                    && !required
-                    && says_version_is_missing(&stderr[i + token.len()..], module, &version)
-            })
-        })
+    let token = format!("{}@{}: ", module.to_lowercase(), version.to_lowercase());
+    stderr.match_indices(&token).any(|(i, _)| {
+        let before = &stderr[..i];
+        let at_boundary = before.chars().next_back().is_none_or(char::is_whitespace);
+        let required = before.contains(" requires\n");
+        at_boundary
+            && !required
+            && says_version_is_missing(&stderr[i + token.len()..], module, version)
+    })
 }
 
 /// Whether `rest`, the text after a `module@version: ` token, is one of the two
-/// messages [`is_missing_go_version`] describes. `rest` and `version` are in
-/// lower case, `module` is as written.
+/// messages [`is_missing_go_version`] describes. `rest` is in lower case,
+/// `module` and `version` are as written.
 fn says_version_is_missing(rest: &str, module: &str, version: &str) -> bool {
+    // A proxy URL escapes the version's capitals as it does the module's.
+    let encoded_version = encode_module_path(version).to_lowercase();
+    let version = version.to_lowercase();
+    let version = version.as_str();
     let next_word = |s: &str| {
         s.split(char::is_whitespace)
             .next()
@@ -514,7 +531,7 @@ fn says_version_is_missing(rest: &str, module: &str, version: &str) -> bool {
     if let Some(rest) = rest.strip_prefix("reading ") {
         let url = next_word(rest);
         let info = format!(
-            "/{}/@v/{version}.info:",
+            "/{}/@v/{encoded_version}.info:",
             encode_module_path(module).to_lowercase()
         );
         let status = rest[url.len()..].trim_start();
@@ -625,14 +642,14 @@ impl GoBackend {
         config: &Arc<Config>,
         candidates: &[String],
     ) -> eyre::Result<Option<Vec<VersionInfo>>> {
-        let env = self.dependency_env(config).await?;
+        let env = self.go_routing_env(config).await?;
         if go_native_resolution_enabled(&env) {
             return Ok(None);
         }
 
         // Read GOPROXY from the effective mise environment. In particular, this
         // includes values supplied through [env], which are not necessarily in
-        // mise's own process environment.
+        // mise's own process environment, and those saved with `go env -w`.
         let proxies = parse_goproxy(env.get("GOPROXY").map(String::as_str));
         if proxies.is_empty() {
             return Ok(None);
@@ -675,7 +692,19 @@ impl GoBackend {
         })
     }
 
-    /// Environment for `go list` metadata queries.
+    /// The environment for every lookup of versions and their dates: mise's
+    /// own, with the module routing settings as Go reads them, including those
+    /// saved with `go env -w` (see [`effective_go_routing`]).
+    async fn go_routing_env(&self, config: &Arc<Config>) -> eyre::Result<BTreeMap<String, String>> {
+        let mut env = self.dependency_env(config).await?;
+        let go = self.spawn_program(config, None, "go").await;
+        let routing = effective_go_routing(&go, &env).await;
+        apply_go_routing(&mut env, routing);
+        Ok(env)
+    }
+
+    /// Environment for `go list` metadata queries, from
+    /// [`Self::go_routing_env`].
     ///
     /// Adds `GOTOOLCHAIN=local` on top of the normal dependency env so that an
     /// untrusted project `go.mod` cannot make `go` download and re-exec a
@@ -692,7 +721,7 @@ impl GoBackend {
     /// `GOPROXY` is narrowed to `direct` or `off` by [`restrict_go_list_routes`],
     /// so `go list` never reads a module proxy's answer with no size limit.
     async fn go_list_env(&self, config: &Arc<Config>) -> eyre::Result<BTreeMap<String, String>> {
-        let mut env = self.dependency_env(config).await?;
+        let mut env = self.go_routing_env(config).await?;
         env.insert("GOTOOLCHAIN".to_string(), "local".to_string());
         env.insert("GOWORK".to_string(), "off".to_string());
         restrict_go_list_routes(&mut env);
@@ -1398,7 +1427,11 @@ async fn proxy_release_date(
         candidates
             .iter()
             .map(|path| {
-                let endpoint = format!("{}/@v/{version}.info", encode_module_path(path));
+                let endpoint = format!(
+                    "{}/@v/{}.info",
+                    encode_module_path(path),
+                    encode_module_version(version)
+                );
                 let proxies = proxies.to_vec();
                 tokio::spawn(mise_util::untrusted_hosts::inherit_trusted_scope(
                     async move { query_proxy_version_metadata(&proxies, &endpoint).await },
@@ -1447,16 +1480,26 @@ async fn proxy_release_date(
 /// but its repository has is therefore what `go install` takes, and the
 /// parent's date the proxies gave is another release's. With a route past the
 /// proxies, each candidate they cleanly missed is asked through `go_list`,
-/// all at once, and the deepest that answers dates the version. A candidate
-/// `go_list` cannot date counts as a miss, as most deeper candidates are not
-/// modules at all. A proxy error has already ended the lookup by now:
-/// `ProxyReleaseDate::Unknown` is returned as it is.
+/// all at once, and the answers are read deepest first, as Go reads them: the
+/// first that dates the version settles it, without waiting for the
+/// shallower ones, which are dropped (`go list` is killed on drop).
+///
+/// Only Go saying that the module has no such version (see
+/// [`is_missing_module_version`]) is a miss that moves on to a shallower
+/// path, as most deeper candidates are not modules at all. Any other failure,
+/// such as a network or version-control error, leaves the date unknown, as Go
+/// reports such an error rather than take a shorter path. A `go list` that
+/// does not answer within `go_list_deadline` is such a failure, so a hang is
+/// reported as itself rather than as the whole lookup timing out. A proxy error
+/// has already ended the lookup by now: `ProxyReleaseDate::Unknown` is returned
+/// as it is.
 async fn release_date_past_proxies<'a, F, Fut>(
     tool: &str,
     version: &str,
     candidates: &'a [String],
     proxy_date: ProxyReleaseDate,
     native_route: bool,
+    go_list_deadline: std::time::Duration,
     go_list: F,
 ) -> Result<Option<String>>
 where
@@ -1468,15 +1511,28 @@ where
         ProxyReleaseDate::Unknown(err) => return Err(err),
         ProxyReleaseDate::NotServed => (candidates.len(), None),
     };
-    let mut failure = None;
     if native_route {
-        let answers =
-            futures_util::future::join_all(candidates[..missed].iter().map(go_list)).await;
-        for answer in answers {
+        let mut answers: futures_util::stream::FuturesOrdered<_> = candidates[..missed]
+            .iter()
+            .map(|path| {
+                let answer = go_list(path);
+                async move {
+                    tokio::time::timeout(go_list_deadline, answer)
+                        .await
+                        .unwrap_or_else(|_| {
+                            Err(eyre!("go list did not answer within {go_list_deadline:?}"))
+                        })
+                }
+            })
+            .collect();
+        let mut paths = candidates[..missed].iter();
+        while let Some(answer) = futures_util::StreamExt::next(&mut answers).await {
+            let path = paths.next().map(String::as_str).unwrap_or_default();
             match answer {
                 Ok(metadata) => return Ok(metadata.time),
+                Err(err) if is_missing_module_version(&format!("{err:#}"), path, version) => {}
                 Err(err) => {
-                    failure.get_or_insert(err);
+                    return Err(err.wrap_err(format!("go list could not date {path}@{version}")));
                 }
             }
         }
@@ -1487,15 +1543,12 @@ where
             "no GOPROXY entry serves {tool}@{version}, and none goes to its source"
         )),
         // Only versions the listing already produced reach this, so the
-        // module does resolve; nothing answering for it means something was
-        // broken rather than undated. A private module under the default
-        // `proxy,direct` GOPROXY is not on the proxy, and reporting no date
-        // for it would hand the cutoff an undated version to treat as
-        // eligible.
-        None => match failure {
-            Some(err) => Err(err),
-            None => Ok(None),
-        },
+        // module does resolve; every route saying it has no such version
+        // means something was broken rather than undated. A private module
+        // under the default `proxy,direct` GOPROXY is not on the proxy, and
+        // reporting no date for it would hand the cutoff an undated version
+        // to treat as eligible.
+        None => Err(eyre!("no route Go takes has {tool}@{version}")),
     }
 }
 
@@ -1590,6 +1643,90 @@ async fn query_proxy_version_metadata(
         ProxyVersionInfoResult::Error
     } else {
         ProxyVersionInfoResult::NotFound
+    }
+}
+
+/// The settings that decide where Go fetches a module from.
+const GO_ROUTING_SETTINGS: &[&str] = &["GOPROXY", "GOPRIVATE", "GONOPROXY"];
+
+/// What `go env -json` says the [`GO_ROUTING_SETTINGS`] are for `go` run with
+/// `env`, or `None` when it cannot say. Answers are kept for the process, by
+/// `go` and the environment it is given.
+///
+/// Go reads each setting from the environment, then from the file
+/// `go env -w` writes (`GOENV`, by default `go/env` in the user's config
+/// directory), then from `$GOROOT/go.env`, which a distribution may change.
+/// Asking the same `go` that mise runs follows all three, as only Go can.
+async fn effective_go_routing(
+    go: &OsStr,
+    env: &BTreeMap<String, String>,
+) -> Option<BTreeMap<String, String>> {
+    type Answers = HashMap<String, Option<BTreeMap<String, String>>>;
+    static ANSWERS: std::sync::LazyLock<std::sync::Mutex<Answers>> =
+        std::sync::LazyLock::new(Default::default);
+    let key = hash_to_str(&(go, env));
+    if let Some(answer) = ANSWERS.lock().ok().and_then(|a| a.get(&key).cloned()) {
+        return answer;
+    }
+    let mut go_env = env.clone();
+    go_env.insert("GOTOOLCHAIN".to_string(), "local".to_string());
+    go_env.insert("GOWORK".to_string(), "off".to_string());
+    let args: Vec<&str> = ["env", "-json"]
+        .into_iter()
+        .chain(GO_ROUTING_SETTINGS.iter().copied())
+        .collect();
+    let answer = match go_list(go, &args, &go_env).await {
+        Ok(json) => parse_go_routing(&json),
+        Err(err) => {
+            debug!("go env could not report the module routing settings: {err:#}");
+            None
+        }
+    };
+    if let Ok(mut answers) = ANSWERS.lock() {
+        answers.insert(key, answer.clone());
+    }
+    answer
+}
+
+/// The [`GO_ROUTING_SETTINGS`] from `go env -json` output, or `None` unless it
+/// names every one of them.
+fn parse_go_routing(json: &str) -> Option<BTreeMap<String, String>> {
+    let mut values: BTreeMap<String, String> = serde_json::from_str(json).ok()?;
+    GO_ROUTING_SETTINGS
+        .iter()
+        .map(|key| Some((key.to_string(), values.remove(*key)?)))
+        .collect()
+}
+
+/// Put Go's own routing settings into `env`. Without them (`None`), mise cannot
+/// tell whether a saved setting keeps Go off `direct`, so every `direct` entry
+/// in GOPROXY becomes `off`: listing still asks the proxies, and nothing is
+/// fetched from version control that Go might not have fetched.
+fn apply_go_routing(env: &mut BTreeMap<String, String>, routing: Option<BTreeMap<String, String>>) {
+    match routing {
+        Some(routing) => env.extend(routing),
+        None => {
+            let goproxy = env
+                .get("GOPROXY")
+                .filter(|s| !s.is_empty())
+                .map(String::as_str)
+                .unwrap_or(DEFAULT_GOPROXY);
+            let without_direct = goproxy
+                .split_inclusive([',', '|'])
+                .map(|entry| {
+                    let (name, sep) = match entry.strip_suffix([',', '|']) {
+                        Some(name) => (name, &entry[name.len()..]),
+                        None => (entry, ""),
+                    };
+                    if name.trim() == "direct" {
+                        format!("off{sep}")
+                    } else {
+                        entry.to_string()
+                    }
+                })
+                .collect();
+            env.insert("GOPROXY".to_string(), without_direct);
+        }
     }
 }
 
@@ -1725,6 +1862,15 @@ fn parse_goproxy_value(goproxy: &str) -> Vec<GoProxy> {
     proxies
 }
 
+/// Encode a version per https://go.dev/ref/mod#goproxy-protocol, as Go's
+/// `module.EscapeVersion` does: capitals are escaped the same way as in a
+/// module path, so `v1.0.0-RC1` is `v1.0.0-!r!c1` in a proxy URL and in a
+/// module cache, where a case-insensitive file system could not tell it from
+/// `v1.0.0-rc1` otherwise.
+fn encode_module_version(version: &str) -> String {
+    encode_module_path(version)
+}
+
 /// Encode a module path per https://go.dev/ref/mod#goproxy-protocol
 fn encode_module_path(path: &str) -> String {
     let mut encoded = String::with_capacity(path.len());
@@ -1787,7 +1933,7 @@ async fn fetch_proxy_version_infos(
         join_set.spawn(mise_util::untrusted_hosts::inherit_trusted_scope(
             async move {
                 let _permit = sem.acquire_owned().await.expect("semaphore closed");
-                let endpoint = format!("{encoded}/@v/{version}.info");
+                let endpoint = format!("{encoded}/@v/{}.info", encode_module_version(&version));
                 let info = query_proxy_version_metadata(proxies.as_slice(), &endpoint).await;
                 (version, info)
             },
@@ -3062,6 +3208,68 @@ mod tests {
         })
     }
 
+    /// A `go list` deadline no test reaches.
+    const NO_DEADLINE: std::time::Duration = std::time::Duration::from_secs(600);
+
+    /// What `go list -m -json -- {module}@{version}` fails with, as mise
+    /// reports it, when Go says the module has no such version. Go 1.21 and
+    /// Go 1.27 print the same words for a module that is a directory of its
+    /// repository.
+    fn no_such_version(module: &str, version: &str, revision: &str) -> eyre::Report {
+        eyre!(
+            "go list -mod=readonly -m -json -- {module}@{version} failed: exit code 1\n\
+             go: {module}@{version}: invalid version: unknown revision {revision}"
+        )
+    }
+
+    #[test]
+    fn only_go_saying_so_makes_a_module_version_missing() {
+        let missing = |output: &str, module: &str, version: &str| {
+            is_missing_module_version(output, module, version)
+        };
+        // Go 1.21.13 and 1.27.2 with GOPROXY=direct, for directories of
+        // github.com/golangci/golangci-lint and of golang.org/x/tools.
+        let module = "github.com/golangci/golangci-lint/cmd/golangci-lint";
+        assert!(missing(
+            &format!(
+                "{:#}",
+                no_such_version(module, "v1.55.0", "cmd/golangci-lint/v1.55.0")
+            ),
+            module,
+            "v1.55.0"
+        ));
+        assert!(missing(
+            "go: golang.org/x/tools/cmd/goimports@v0.20.0: invalid version: unknown revision cmd/goimports/v0.20.0",
+            "golang.org/x/tools/cmd/goimports",
+            "v0.20.0"
+        ));
+        // From a proxy, under the whole chain that GOPRIVATE routing keeps.
+        assert!(missing(
+            "go: example.com/tool/cmd/x@v1.2.3: reading https://proxy.golang.org/example.com/tool/cmd/x/@v/v1.2.3.info: 404 Not Found",
+            "example.com/tool/cmd/x",
+            "v1.2.3"
+        ));
+        // A proxy URL holds the version escaped.
+        assert!(missing(
+            "go: example.com/tool@v1.0.0-RC1: reading https://proxy.golang.org/example.com/tool/@v/v1.0.0-!r!c1.info: 410 Gone",
+            "example.com/tool",
+            "v1.0.0-RC1"
+        ));
+
+        // Failures that say nothing about the version: the network, the
+        // repository, the import path, and the same words about another module.
+        for output in [
+            "go: github.com/golangci/golangci-lint/cmd/golangci-lint@v1.55.0: invalid version: git ls-remote -q --end-of-options https://github.com/golangci/golangci-lint in /tmp/modcache/cache/vcs/f74d: exit status 128:\n\tfatal: unable to access 'https://github.com/golangci/golangci-lint/': Failed to connect to github.com port 443 via 127.0.0.1 after 0 ms: Could not connect to server",
+            "go: github.com/golangci/golangci-lint/cmd/golangci-lint@v1.55.0: unrecognized import path \"github.com/golangci/golangci-lint/cmd/golangci-lint\": https fetch: Get \"https://github.com/golangci/golangci-lint/cmd/golangci-lint?go-get=1\": proxyconnect tcp: dial tcp 127.0.0.1:9: connect: connection refused",
+            "go: github.com/golangci/golangci-lint/cmd/golangci-lint@v1.55.0: invalid version: git ls-remote -q --end-of-options origin in /tmp/modcache/cache/vcs/a378: exit status 128:\n\tremote: Repository not found.",
+            "go list did not answer within 30s",
+            "go: github.com/golangci/golangci-lint@v1.55.0: invalid version: unknown revision v1.55.0",
+            "go: github.com/golangci/golangci-lint/cmd/golangci-lint@v1.55.0: verifying module: checksum mismatch; unknown revision cmd/golangci-lint/v1.55.0",
+        ] {
+            assert!(!missing(output, module, "v1.55.0"), "{output}");
+        }
+    }
+
     #[tokio::test]
     async fn a_nested_module_off_the_proxy_is_dated_before_its_parent() {
         let candidates = ["example.com/tool/cmd/tool", "example.com/tool"].map(String::from);
@@ -3078,6 +3286,7 @@ mod tests {
             &candidates,
             parent_on_proxy(),
             true,
+            NO_DEADLINE,
             |path: &String| {
                 let found = path == "example.com/tool/cmd/tool";
                 async move {
@@ -3090,14 +3299,19 @@ mod tests {
         .unwrap();
         assert_eq!(date.as_deref(), Some("2026-07-01T00:00:00Z"));
 
-        // When `direct` has no such module either, the parent's date stands.
+        // When Go says `direct` has no such module either, the parent's date
+        // stands.
         let date = release_date_past_proxies(
             "example.com/tool/cmd/tool",
             "v1.0.0",
             &candidates,
             parent_on_proxy(),
             true,
-            |_: &String| async { Err(eyre!("unknown revision cmd/tool/v1.0.0")) },
+            NO_DEADLINE,
+            |path: &String| {
+                let err = no_such_version(path, "v1.0.0", "cmd/tool/v1.0.0");
+                async { Err(err) }
+            },
         )
         .await
         .unwrap();
@@ -3110,6 +3324,7 @@ mod tests {
             &candidates,
             parent_on_proxy(),
             false,
+            NO_DEADLINE,
             never_asked,
         )
         .await
@@ -3123,11 +3338,88 @@ mod tests {
             &candidates,
             ProxyReleaseDate::Unknown(eyre!("module proxy could not be reached")),
             true,
+            NO_DEADLINE,
             never_asked,
         )
         .await
         .unwrap_err();
         assert!(format!("{err:#}").contains("could not be reached"));
+    }
+
+    #[tokio::test]
+    async fn a_nested_module_go_cannot_reach_leaves_the_date_unknown() {
+        let candidates = ["example.com/tool/cmd/tool", "example.com/tool"].map(String::from);
+        let parent_on_proxy = || ProxyReleaseDate::Found {
+            missed: 1,
+            time: Some("2020-01-01T00:00:00Z".to_string()),
+        };
+        // A version-control failure on the nested module is not a miss: the
+        // module may well be there, so the parent's date is not taken for it.
+        let err = release_date_past_proxies(
+            "example.com/tool/cmd/tool",
+            "v1.0.0",
+            &candidates,
+            parent_on_proxy(),
+            true,
+            NO_DEADLINE,
+            |_: &String| async {
+                Err(eyre!(
+                    "go: example.com/tool/cmd/tool@v1.0.0: invalid version: git ls-remote -q --end-of-options https://example.com/tool: exit status 128:\n\tfatal: unable to access 'https://example.com/tool/': Could not resolve host: example.com"
+                ))
+            },
+        )
+        .await
+        .unwrap_err();
+        let err = format!("{err:#}");
+        assert!(
+            err.contains("go list could not date example.com/tool/cmd/tool@v1.0.0"),
+            "{err}"
+        );
+        assert!(err.contains("Could not resolve host"), "{err}");
+
+        // A `go list` that hangs is that path's failure once its deadline
+        // passes, well before the lookup's own timeout would end everything.
+        let lookup = release_date_past_proxies(
+            "example.com/tool/cmd/tool",
+            "v1.0.0",
+            &candidates,
+            parent_on_proxy(),
+            true,
+            std::time::Duration::from_millis(50),
+            |_: &String| std::future::pending(),
+        );
+        let err = tokio::time::timeout(std::time::Duration::from_secs(10), lookup)
+            .await
+            .expect("a hung go list should end at its deadline")
+            .unwrap_err();
+        let err = format!("{err:#}");
+        assert!(
+            err.contains("go list could not date example.com/tool/cmd/tool@v1.0.0"),
+            "{err}"
+        );
+        assert!(err.contains("did not answer within"), "{err}");
+
+        // When every route says it has no such version, nothing dates the
+        // version that listing produced, and the date is unknown.
+        let err = release_date_past_proxies(
+            "example.com/tool/cmd/tool",
+            "v1.0.0",
+            &candidates,
+            ProxyReleaseDate::NotServed,
+            true,
+            NO_DEADLINE,
+            |path: &String| {
+                let revision = match path.as_str() {
+                    "example.com/tool" => "v1.0.0",
+                    _ => "cmd/tool/v1.0.0",
+                };
+                let err = no_such_version(path, "v1.0.0", revision);
+                async { Err(err) }
+            },
+        )
+        .await
+        .unwrap_err();
+        assert!(format!("{err:#}").contains("no route Go takes has"));
     }
 
     #[tokio::test]
@@ -3143,13 +3435,14 @@ mod tests {
             &candidates,
             ProxyReleaseDate::NotServed,
             true,
+            NO_DEADLINE,
             |path: &String| {
                 let barrier = barrier.clone();
                 let path = path.clone();
                 async move {
                     barrier.wait().await;
                     match path.as_str() {
-                        "example.com/a/b/c" => Err(eyre!("not a module")),
+                        "example.com/a/b/c" => Err(no_such_version(&path, "v1.0.0", "b/c/v1.0.0")),
                         "example.com/a/b" => dated("v1.0.0", "2026-08-01T00:00:00Z"),
                         _ => dated("v1.0.0", "2020-01-01T00:00:00Z"),
                     }
@@ -3163,6 +3456,32 @@ mod tests {
         // The deepest candidate that answers dates the version.
         assert_eq!(date.as_deref(), Some("2026-08-01T00:00:00Z"));
 
+        // The deepest answer settles it without waiting for a shallower
+        // candidate, here one that never answers.
+        let lookup = release_date_past_proxies(
+            "example.com/a/b/c",
+            "v1.0.0",
+            &candidates,
+            ProxyReleaseDate::NotServed,
+            true,
+            NO_DEADLINE,
+            |path: &String| {
+                let deepest = path == "example.com/a/b/c";
+                async move {
+                    if deepest {
+                        dated("v1.0.0", "2026-09-01T00:00:00Z")
+                    } else {
+                        std::future::pending().await
+                    }
+                }
+            },
+        );
+        let date = tokio::time::timeout(std::time::Duration::from_secs(10), lookup)
+            .await
+            .expect("a shallower candidate should not hold the deepest answer")
+            .unwrap();
+        assert_eq!(date.as_deref(), Some("2026-09-01T00:00:00Z"));
+
         // With no proxy serving it and no route past them, the date is
         // unknown rather than missing.
         let err = release_date_past_proxies(
@@ -3171,11 +3490,127 @@ mod tests {
             &candidates,
             ProxyReleaseDate::NotServed,
             false,
+            NO_DEADLINE,
             never_asked,
         )
         .await
         .unwrap_err();
         assert!(format!("{err:#}").contains("none goes to its source"));
+    }
+
+    #[tokio::test]
+    async fn a_version_with_capitals_is_escaped_in_proxy_and_cache_paths() {
+        let mut server = mockito::Server::new_async().await;
+        let info = server
+            .mock("GET", "/example.com/!tool/@v/v1.0.0-!r!c1.info")
+            .with_status(200)
+            .with_body(r#"{"Version":"v1.0.0-RC1","Time":"2026-04-01T00:00:00Z"}"#)
+            .expect(2)
+            .create_async()
+            .await;
+        let proxies = parse_goproxy_value(&server.url());
+        let candidates = [String::from("example.com/Tool")];
+        assert!(matches!(
+            proxy_release_date(&proxies, &candidates, "v1.0.0-RC1").await,
+            ProxyReleaseDate::Found { missed: 0, time: Some(time) }
+                if time == "2026-04-01T00:00:00Z"
+        ));
+        let infos =
+            fetch_proxy_version_infos(&proxies, "example.com/Tool", &["v1.0.0-RC1".to_string()])
+                .await;
+        assert_eq!(infos.len(), 1);
+        assert_eq!(infos[0].created_at.as_deref(), Some("2026-04-01T00:00:00Z"));
+        info.assert_async().await;
+
+        // A module cache lays the version out the same way.
+        let (_cache, cache_url) = module_cache(&[(
+            "example.com/!tool/@v/v1.0.0-!r!c1.info",
+            r#"{"Version":"v1.0.0-RC1","Time":"2026-04-02T00:00:00Z"}"#,
+        )]);
+        assert!(matches!(
+            proxy_release_date(&parse_goproxy_value(&cache_url), &candidates, "v1.0.0-RC1").await,
+            ProxyReleaseDate::Found { missed: 0, time: Some(time) }
+                if time == "2026-04-02T00:00:00Z"
+        ));
+    }
+
+    #[test]
+    fn go_routing_settings_are_read_from_go_env() {
+        let routing = parse_go_routing(
+            r#"{"GONOPROXY": "", "GOPRIVATE": "corp.example/*", "GOPROXY": "https://corp.example/proxy"}"#,
+        )
+        .unwrap();
+        assert_eq!(routing["GOPROXY"], "https://corp.example/proxy");
+        assert_eq!(routing["GOPRIVATE"], "corp.example/*");
+        assert_eq!(routing["GONOPROXY"], "");
+        // An answer that leaves one out is no answer.
+        assert_eq!(parse_go_routing(r#"{"GOPROXY": "off"}"#), None);
+        assert_eq!(parse_go_routing("not json"), None);
+
+        // A saved setting replaces what mise's environment would have meant.
+        let mut env = BTreeMap::from([("PATH".to_string(), "/usr/bin".to_string())]);
+        apply_go_routing(
+            &mut env,
+            Some(BTreeMap::from([
+                ("GOPROXY".to_string(), "off".to_string()),
+                ("GOPRIVATE".to_string(), String::new()),
+                ("GONOPROXY".to_string(), String::new()),
+            ])),
+        );
+        assert_eq!(env["GOPROXY"], "off");
+        assert!(!go_has_native_route(&env));
+        restrict_go_list_routes(&mut env);
+        assert_eq!(env["GOPROXY"], "off");
+
+        // Without Go's answer, no route goes to `direct`, and the proxies
+        // stay in their order.
+        let without_go = |goproxy: Option<&str>| {
+            let mut env: BTreeMap<String, String> = goproxy
+                .map(|v| ("GOPROXY".to_string(), v.to_string()))
+                .into_iter()
+                .collect();
+            apply_go_routing(&mut env, None);
+            assert!(!go_has_native_route(&env));
+            env["GOPROXY"].clone()
+        };
+        assert_eq!(without_go(None), "https://proxy.golang.org,off");
+        assert_eq!(
+            without_go(Some("https://a.example| direct ,https://b.example")),
+            "https://a.example|off,https://b.example"
+        );
+        assert_eq!(without_go(Some("direct")), "off");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn go_routing_settings_come_from_the_go_mise_runs() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let script = |name: &str, body: &str| {
+            let go = dir.path().join(name);
+            std::fs::write(&go, format!("#!/bin/sh\n{body}\n")).unwrap();
+            std::fs::set_permissions(&go, std::fs::Permissions::from_mode(0o755)).unwrap();
+            go
+        };
+        // This `go` answers only the question mise asks, with what
+        // `go env -w GOPROXY=off` would leave it saying.
+        let go = script(
+            "go",
+            r#"[ "$*" = "env -json GOPROXY GOPRIVATE GONOPROXY" ] || exit 2
+[ "$GOTOOLCHAIN" = local ] || exit 3
+echo '{"GONOPROXY": "", "GOPRIVATE": "", "GOPROXY": "off"}'"#,
+        );
+        let env = BTreeMap::from([("GOPROXY".to_string(), "direct".to_string())]);
+        let routing = effective_go_routing(go.as_os_str(), &env).await.unwrap();
+        assert_eq!(routing["GOPROXY"], "off");
+
+        // A `go` that cannot answer leaves the settings unknown.
+        let broken = script(
+            "broken-go",
+            "echo 'go: reading go env file: bad line' >&2; exit 1",
+        );
+        assert_eq!(effective_go_routing(broken.as_os_str(), &env).await, None);
     }
 
     /// A `file://` entry keeps its place in the chain, as Go asks it.
