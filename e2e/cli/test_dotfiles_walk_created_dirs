@@ -28,7 +28,7 @@ assert_fail "test -e $HOME/t/gone"
 # the user's directory stays when its last link goes
 rm "$DOTS/pkg/app/conf"
 assert_succeed "mise dot apply --yes"
-assert_fail "test -e $HOME/t/app/conf"
+assert_fail "test -L $HOME/t/app/conf"
 assert_succeed "test -d $HOME/t/app"
 
 # unapplying the group takes the directories mise made, not the user's
@@ -105,3 +105,22 @@ assert_succeed "mise dot apply --yes --force"
 assert "readlink $HOME/t/new/sub/file" "$DOTS/pkg/new/sub/file"
 assert_succeed "mise dot unapply ~/t --yes"
 assert_fail "test -e $HOME/t/new"
+
+# forcing a link to a directory out of the way: the directories made in its
+# place, and those beneath it that the link used to show, are mise's
+rm -rf "$HOME/t" "$HOME/elsewhere"
+mkdir -p "$HOME/t" "$HOME/elsewhere/sub"
+ln -s "$HOME/elsewhere" "$HOME/t/new"
+assert_succeed "mise dot apply --yes --force"
+assert "readlink $HOME/t/new/sub/file" "$DOTS/pkg/new/sub/file"
+assert_succeed "mise dot unapply ~/t --yes"
+assert_fail "test -e $HOME/t/new"
+assert_succeed "test -d $HOME/elsewhere/sub"
+
+# a record mise cannot read keeps every directory
+assert_succeed "mise dot apply --yes"
+echo "not toml [" >"$MISE_STATE_DIR/dotfiles/created_dirs.toml"
+assert_succeed "mise dot unapply ~/t --yes"
+assert_fail "test -L $HOME/t/new/sub/file"
+assert_succeed "test -d $HOME/t/new/sub"
+assert "cat $MISE_STATE_DIR/dotfiles/created_dirs.toml" "not toml ["

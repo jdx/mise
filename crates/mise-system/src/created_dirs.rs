@@ -8,9 +8,10 @@
 //!
 //! A target is *tracked* once an apply has recorded what it creates. Removals under a tracked
 //! target take only the directories recorded here, and only while each is still the directory mise
-//! created: one the user deleted and made again at the same path is theirs. Under a target that is not tracked, deployed by
-//! a mise from before this record existed and not applied since, any directory the removal empties
-//! still goes, as it did then.
+//! created: one the user deleted and made again at the same path is theirs. Under a target that is
+//! not tracked, deployed by a mise from before this record existed and not applied since, any
+//! directory the removal empties still goes, as it did then. A record that exists but cannot be
+//! read is left as it is, and while it is there removals take no directory under any target.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -33,6 +34,14 @@ pub(crate) struct CreatedDirs {
     targets: BTreeSet<PathBuf>,
     /// directories mise created at or beneath a tracked target, each with its [`identity`]
     dirs: BTreeMap<PathBuf, String>,
+    /// the record is there but could not be read, so which directories are mise's is unknown
+    #[serde(skip)]
+    unreadable: bool,
+}
+
+/// Whether `path` is known to be gone, rather than there or unreadable for now.
+fn gone(path: &Path) -> bool {
+    matches!(std::fs::symlink_metadata(path), Err(err) if err.kind() == std::io::ErrorKind::NotFound)
 }
 
 fn record_path() -> PathBuf {
@@ -64,8 +73,9 @@ fn identity(dir: &Path) -> Option<String> {
 }
 
 impl CreatedDirs {
-    /// The record, or an empty one when there is none. One that cannot be read tracks nothing,
-    /// which leaves removals as they were before the record existed.
+    /// The record, or an empty one when there is none. One that cannot be read, or that another
+    /// version of mise wrote, is marked unreadable: it lets no removal take a directory, and it is
+    /// not written over.
     pub(crate) fn load() -> Self {
         let path = record_path();
         if !path.exists() {
@@ -80,30 +90,36 @@ impl CreatedDirs {
                     "files: ignoring dotfiles state {} of another version",
                     path.display_user()
                 );
-                Self::default()
+                Self::unreadable()
             }
             Err(err) => {
                 warn!(
                     "files: failed to read dotfiles state {}: {err}",
                     path.display_user()
                 );
-                Self::default()
+                Self::unreadable()
             }
         }
     }
 
-    /// Write the record, dropping directories that are no longer the ones recorded and targets that
-    /// are gone. A record that
-    /// cannot be written only leaves directories behind later, so it warns.
+    fn unreadable() -> Self {
+        Self {
+            unreadable: true,
+            ..Self::default()
+        }
+    }
+
+    /// Write the record, dropping directories that are gone or no longer the ones recorded, and
+    /// targets that are gone. One that cannot be read now may still be there, so it is kept. A
+    /// record that cannot be written only leaves directories behind later, so it warns.
     fn save(mut self) {
         self.version = VERSION;
         self.dirs
-            .retain(|dir, id| identity(dir).as_deref() == Some(id.as_str()));
-        // a target that cannot be read now may still be there, and dropping it would let a
-        // removal take the user's directories under it, so only one that is gone is dropped
-        self.targets.retain(|target| {
-            !matches!(std::fs::symlink_metadata(target), Err(err) if err.kind() == std::io::ErrorKind::NotFound)
-        });
+            .retain(|dir, id| match std::fs::symlink_metadata(dir) {
+                Ok(_) => identity(dir).as_deref() == Some(id.as_str()),
+                Err(_) => !gone(dir),
+            });
+        self.targets.retain(|target| !gone(target));
         let path = record_path();
         let result = if self.targets.is_empty() && self.dirs.is_empty() {
             if path.exists() {
@@ -127,6 +143,9 @@ impl CreatedDirs {
 
     /// Whether removing files deployed under `target` may remove the emptied directory `dir`.
     pub(crate) fn may_remove(&self, target: &Path, dir: &Path) -> bool {
+        if self.unreadable {
+            return false;
+        }
         if !self.tracks(target) {
             return true;
         }
@@ -136,6 +155,9 @@ impl CreatedDirs {
 
     /// Whether `target` is tracked.
     pub(crate) fn tracks(&self, target: &Path) -> bool {
+        if self.unreadable {
+            return true;
+        }
         let target = lexical_normalize(target);
         self.targets.contains(&target)
             || self
@@ -169,20 +191,24 @@ impl CreatedDirs {
 }
 
 /// Load the record, let `change` modify it, and write it back when `change` says it changed it,
-/// holding a lock so that two mise processes do not each overwrite what the other recorded.
+/// holding a lock so that two mise processes do not each overwrite what the other recorded. Without
+/// the lock, or with a record that cannot be read, nothing is written.
 fn update(change: impl FnOnce(&mut CreatedDirs) -> bool) {
     let path = record_path();
     let _lock = match mise_util::lock_file::LockFile::new(&path).lock() {
-        Ok(lock) => Some(lock),
+        Ok(lock) => lock,
         Err(err) => {
             warn!(
                 "files: failed to lock dotfiles state {}: {err}",
                 path.display_user()
             );
-            None
+            return;
         }
     };
     let mut record = CreatedDirs::load();
+    if record.unreadable {
+        return;
+    }
     if change(&mut record) {
         record.save();
     }
@@ -199,7 +225,10 @@ pub(crate) fn track(target: &Path, deployed: impl IntoIterator<Item = PathBuf>) 
         if record.tracks(&target) {
             return false;
         }
-        for path in deployed {
+        // beneath a tracked target, what mise created is already recorded, and anything else
+        // there is the user's
+        let nested = target.ancestors().skip(1).any(|dir| record.tracks(dir));
+        for path in deployed.into_iter().filter(|_| !nested) {
             let path = lexical_normalize(&path);
             if std::fs::symlink_metadata(&path).is_err() {
                 continue;
@@ -256,6 +285,13 @@ mod tests {
     use super::*;
 
     #[test]
+    fn unreadable_record_removes_no_dir() {
+        let record = CreatedDirs::unreadable();
+        assert!(record.tracks(Path::new("/h/t")));
+        assert!(!record.may_remove(Path::new("/h/t"), Path::new("/h/t/app")));
+    }
+
+    #[test]
     fn untracked_target_removes_any_emptied_dir() {
         let record = CreatedDirs::default();
         assert!(record.may_remove(Path::new("/h/t"), Path::new("/h/t/app")));
@@ -270,6 +306,12 @@ mod tests {
         std::fs::create_dir_all(target.join("app")).unwrap();
         let mut record = CreatedDirs::default();
         record.targets.insert(target.clone());
+        if identity(&made).is_none() {
+            // a filesystem with no birth time records nothing, and removes nothing
+            assert!(!record.insert(made.clone()));
+            assert!(!record.may_remove(&target, &made));
+            return;
+        }
         assert!(record.insert(made.clone()));
         assert!(record.may_remove(&target, &made));
         assert!(record.may_remove(&target.join("."), &target.join("./made")));
@@ -284,7 +326,11 @@ mod tests {
         std::fs::create_dir_all(&made).unwrap();
         let mut record = CreatedDirs::default();
         record.targets.insert(target.clone());
-        record.insert(made.clone());
+        if !record.insert(made.clone()) {
+            // a filesystem with no birth time records nothing to compare
+            return;
+        }
+        assert!(record.may_remove(&target, &made));
         // the user deletes it and makes it again, which may reuse its inode
         std::fs::remove_dir(&made).unwrap();
         std::fs::create_dir(&made).unwrap();

@@ -5955,23 +5955,41 @@ fn execute_layer(
             refuse_untrusted_parents(req)?;
             // a link to a source directory unfolded into a real one is a directory mise made
             let unfolded = written.len();
-            if req.mode == FileMode::SymlinkEach {
-                unfold_source_links(req, written)?;
-            }
+            let unfold = if req.mode == FileMode::SymlinkEach {
+                unfold_source_links(req, written)
+            } else {
+                Ok(())
+            };
             let unfolded = written[unfolded..].to_vec();
+            // what was unfolded stays unfolded when a later step fails, so it is recorded then too
+            let recording = |result: Result<()>| {
+                if result.is_err() && shares_target(req) {
+                    crate::created_dirs::record(&req.target, &unfolded);
+                }
+                result
+            };
+            recording(unfold)?;
             // the links the entry recorded as its own, which a failed apply may finish pruning
             // (see `settle_failed_apply`)
             // each with where it points now, which the captured link must match exactly
-            let stale = if req.mode == FileMode::SymlinkEach {
-                stale_links(req)?
-                    .into_iter()
-                    .filter_map(|link| std::fs::read_link(&link).ok().map(|dest| (link, dest)))
-                    .collect()
-            } else {
-                HashMap::new()
-            };
-            let pending =
-                journal::begin_changes_with(DOTFILES_PART, &req.target_raw, touched_paths(req)?)?;
+            let mut stale = HashMap::new();
+            if req.mode == FileMode::SymlinkEach {
+                recording(stale_links(req).map(|links| {
+                    stale.extend(links.into_iter().filter_map(|link| {
+                        std::fs::read_link(&link).ok().map(|dest| (link, dest))
+                    }));
+                }))?;
+            }
+            let mut pending = None;
+            recording((|| {
+                pending = Some(journal::begin_changes_with(
+                    DOTFILES_PART,
+                    &req.target_raw,
+                    touched_paths(req)?,
+                )?);
+                Ok(())
+            })())?;
+            let pending = pending.expect("journal begun");
             let start = written.len();
             // what is missing now is what a failed apply may have to take away again
             let mut created = missing_ancestors(&req.target);
@@ -5982,11 +6000,14 @@ fn execute_layer(
                 if std::fs::symlink_metadata(&req.target).is_err() {
                     created.push(req.target.clone());
                 }
+                if opts.force && blocks_dir(&req.target) {
+                    replaced.push(req.target.clone());
+                }
                 // and the directories the walk creates beneath it
                 for (_, target) in walk_source_files(req).unwrap_or_default() {
                     created.extend(missing_ancestors(&target));
                     if opts.force {
-                        replaced.extend(blocking_ancestors(&req.target, &target));
+                        replaced.extend(replaced_ancestors(&req.target, &target));
                     }
                 }
             }
@@ -6532,6 +6553,7 @@ pub fn execute_unapply(
         return Ok(());
     }
     if opts.dry_run {
+        let created = crate::created_dirs::CreatedDirs::load();
         for plan in todo {
             for path in &plan.paths {
                 let suffix = if plan.conditional {
@@ -6544,7 +6566,7 @@ pub fn execute_unapply(
             for dir in prunable_created_dirs(plan.req) {
                 miseprintln!("rmdir {} (if empty)", dir.display_user());
             }
-            if plan.cleanup_empty_dirs {
+            if plan.cleanup_empty_dirs && created.may_remove(&plan.req.target, &plan.req.target) {
                 miseprintln!("rmdir {} (if empty)", plan.req.target.display_user());
             }
             if opts.verbose && plan.cleanup_empty_dirs {
@@ -7600,6 +7622,8 @@ fn deployed_under(req: &FileRequest) -> Vec<PathBuf> {
                     .map(|link| link.target),
             );
         }
+        // and the links reconciliation is about to remove as this entry's
+        paths.extend(stale_links(req).unwrap_or_default());
     }
     if let Some(group) = &req.group
         && let Some(record) = crate::dotfile_groups::load_record(group)
@@ -7665,17 +7689,26 @@ fn track_walking_targets<'a>(config: &Config, requests: impl IntoIterator<Item =
 }
 
 /// Ancestors of `path` at or beneath `root` that exist as something other than a real directory,
-/// such as a file or a link, which a forced apply replaces with a directory.
-fn blocking_ancestors(root: &Path, path: &Path) -> Vec<PathBuf> {
-    path.ancestors()
+/// such as a file or a link, which a forced apply replaces with a directory. Each directory beneath the outermost of them is made new too, wherever the old link showed one.
+fn replaced_ancestors(root: &Path, path: &Path) -> Vec<PathBuf> {
+    let ancestors = path
+        .ancestors()
         .skip(1)
         .take_while(|dir| dir.starts_with(root))
-        .filter(|dir| {
-            std::fs::symlink_metadata(dir).is_ok_and(|meta| !meta.is_dir())
-                || file::is_symlink_or_junction(dir)
-        })
-        .map(Path::to_path_buf)
-        .collect()
+        .collect::<Vec<_>>();
+    match ancestors.iter().rposition(|dir| blocks_dir(dir)) {
+        Some(outermost) => ancestors[..=outermost]
+            .iter()
+            .map(|dir| dir.to_path_buf())
+            .collect(),
+        None => vec![],
+    }
+}
+
+/// Whether `path` is there as something other than a real directory: a file or a link.
+fn blocks_dir(path: &Path) -> bool {
+    std::fs::symlink_metadata(path).is_ok_and(|meta| !meta.is_dir())
+        || file::is_symlink_or_junction(path)
 }
 
 /// Ancestors of `path` that do not exist yet, outermost first.
