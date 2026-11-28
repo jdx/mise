@@ -2620,9 +2620,10 @@ impl Client {
             && !(options.netrc_replacement_only && url.host() == original_url.host())
         {
             let before = final_headers.get(AUTHORIZATION).cloned();
-            final_headers = replacement_netrc_credentials(final_headers, &original_url, &url, || {
-                netrc_headers(&url)
-            })?;
+            final_headers =
+                replacement_netrc_credentials(final_headers, &original_url, &url, || {
+                    netrc_headers(&url)
+                })?;
             netrc_fallback_used = url.host() == original_url.host()
                 && final_headers.get(AUTHORIZATION) != before.as_ref();
         }
