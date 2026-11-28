@@ -75,6 +75,11 @@ assert_contains "mise trust --show" ": trusted"
 cd ../wt-c || exit 1
 mise trust --ignore
 assert_contains "mise trust --show" ": untrusted"
+# and --worktrees still finds the ignored config, re-trusting it here
+assert_contains "mise trust --worktrees 2>&1" "wt-c in all worktrees"
+assert_contains "mise trust --show" ": trusted"
+mise trust --ignore
+assert_contains "mise trust --show" ": untrusted"
 cd ../elsewhere/wt-b || exit 1
 assert_contains "mise trust --show" ": trusted"
 
@@ -94,3 +99,7 @@ assert_fail "mise trust --worktrees" "not in a checkout of a git repository"
 # paranoid mode ties trust to contents, so it refuses a grant by path
 cd ../wt-a || exit 1
 assert_fail "MISE_PARANOID=1 mise trust --worktrees" "paranoid"
+# the config category alone is enough
+assert_fail "MISE_PARANOID=config mise trust --worktrees" "paranoid"
+# and the other categories alone leave it available
+assert_contains "MISE_PARANOID=env_files mise trust --worktrees 2>&1" "in all worktrees"

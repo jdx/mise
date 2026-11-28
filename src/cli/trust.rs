@@ -325,9 +325,16 @@ impl Trust {
                  each config file's contents. Run `mise trust` in each worktree instead."
             );
         }
+        // A config ignored here still counts: it is the one the user means, and
+        // the grant for every worktree is separate from this checkout's ignore.
+        let nearest = || {
+            config::load_config_paths(&self.config_filenames, true)
+                .into_iter()
+                .find(|p| !is_global_config(p))
+        };
         let path = match self.config_file()? {
             Some(filename) => filename,
-            None => match nearest_local_config_file(&self.config_filenames) {
+            None => match nearest() {
                 Some(path) => path,
                 None => bail!("No config file found to trust."),
             },
