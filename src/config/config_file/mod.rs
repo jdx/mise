@@ -178,7 +178,7 @@ impl EffectiveToolRequests {
 /// `config_files` are the loaded config files from the highest priority down. Only those that
 /// load together with `edited` are counted: for a global file, the other global files; for a
 /// file that is not loaded here, such as one `--path` names, the global files and the loaded
-/// files whose directory holds it. `edited` takes the place of the loaded file at its path; a
+/// files read from a directory that holds it, conf.d folder fragments with their project. `edited` takes the place of the loaded file at its path; a
 /// file not loaded yet is created next to the closest configs, so it is counted first. A file
 /// other than `edited` that cannot list its tools is left out, since the edit does not change it.
 pub fn ensure_edit_keeps_tool_request_count(
@@ -188,14 +188,20 @@ pub fn ensure_edit_keeps_tool_request_count(
     let path = edited.get_path();
     let loaded = config_files.contains_key(path);
     let global = crate::config::is_global_config(path);
-    let root = edited.config_root();
+    // The directory whose discovery reads a config file. A conf.d folder fragment is its own
+    // config root, but it is read with the project that holds it, as a conf.d file is.
+    let discovered_from = |p: &Path, cf: &dyn ConfigFile| match p.parent() {
+        Some(folder) if crate::config::is_conf_d_folder_file(p) => config_root::config_root(folder),
+        _ => cf.config_root(),
+    };
+    let root = discovered_from(path, edited.as_ref());
     let loads_with_edited = |p: &Path, cf: &Arc<dyn ConfigFile>| {
         if crate::config::is_global_config(p) {
             true
         } else if global {
             false
         } else {
-            loaded || root.starts_with(cf.config_root())
+            loaded || root.starts_with(discovered_from(p, cf.as_ref()))
         }
     };
     let mut files: Vec<&Arc<dyn ConfigFile>> = config_files
@@ -2095,6 +2101,38 @@ mod tests {
         std::fs::create_dir_all(dir.path().join("sub")).unwrap();
         let below = toml("sub/mise.toml", "[tools]\npython = \"3\"\n");
         assert!(ensure_edit_keeps_tool_request_count(&files, &below).is_err());
+    }
+
+    /// A conf.d folder fragment has its own config root but loads with the project that holds
+    /// it, so a new file in that project counts it, and a new fragment counts the project.
+    #[test]
+    fn conf_d_folder_fragments_count_with_their_project() {
+        let dir = tempfile::tempdir().unwrap();
+        let toml = |name: &str, body: &str| -> Arc<dyn ConfigFile> {
+            Arc::new(MiseToml::from_str(body, &dir.path().join(name)).unwrap())
+        };
+        let full = format!("[tools]\nnode = [{}]\n", "\"1\",".repeat(MAX_TOOL_REQUESTS));
+        let python = "[tools]\npython = \"3\"\n";
+        let loaded = |cf: &Arc<dyn ConfigFile>| -> IndexMap<PathBuf, Arc<dyn ConfigFile>> {
+            [(cf.get_path().to_path_buf(), cf.clone())]
+                .into_iter()
+                .collect()
+        };
+        for fragment in [
+            ".mise/conf.d/tools/mise.toml",
+            "mise/conf.d/tools/mise.toml",
+        ] {
+            let files = loaded(&toml(fragment, &full));
+            let err = ensure_edit_keeps_tool_request_count(&files, &toml("mise.toml", python))
+                .unwrap_err();
+            assert!(
+                err.to_string().contains("1001 tool versions"),
+                "{fragment}: {err}"
+            );
+        }
+        let files = loaded(&toml("mise.toml", &full));
+        let new_fragment = toml(".mise/conf.d/tools/mise.toml", python);
+        assert!(ensure_edit_keeps_tool_request_count(&files, &new_fragment).is_err());
     }
 
     /// A `.tool-versions` edit is counted as it will be saved, not as the file was read.
