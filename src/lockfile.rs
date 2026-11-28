@@ -2296,7 +2296,17 @@ impl Lockfile {
             };
             let mut is_excluded = |platform: &String| {
                 record.platform.clone_from(platform);
-                entry.backend.is_some() && excluded.contains(&record)
+                if entry.backend.is_some() {
+                    excluded.contains(&record)
+                } else {
+                    // A legacy entry names no backend, so nothing tells which request it is
+                    // for: it is matched by tool and version, as before entries were told apart.
+                    excluded.iter().any(|e| {
+                        e.tool == record.tool
+                            && e.version == record.version
+                            && e.platform == record.platform
+                    })
+                }
             };
             let recorded = entry.platforms.len() + entry.unsupported_platforms.len();
             let platforms = std::mem::take(&mut entry.platforms)
@@ -5832,7 +5842,8 @@ impl UnsupportedPlatforms {
 /// A platform record of one lockfile entry that `mise lock` left out on purpose, because the
 /// `os` option of the request that entry is for excludes it. The entry is the tool's key, its
 /// version, backend and options, so a request for the same version from another backend, or
-/// with other options, is not affected.
+/// with other options, is not affected. A legacy entry that records no backend is matched by
+/// the tool's key and version alone.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ExcludedPlatform {
     pub tool: String,

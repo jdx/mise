@@ -2202,6 +2202,30 @@ mod tests {
         let excluded = os_excluded_platforms(&tools, &platforms).unwrap();
         generated.restore_missing_versions(&previous(), "fixture", &excluded);
         assert!(generated.tools_for("fixture").is_none());
+
+        // A legacy entry records no backend, so it is matched by tool and version: its
+        // excluded rows stay out too.
+        let mut legacy = Lockfile::default();
+        for platform in ["linux-x64", "macos-arm64"] {
+            legacy.set_platform_info(
+                "fixture",
+                "1.0",
+                None,
+                &BTreeMap::new(),
+                platform,
+                PlatformInfo {
+                    checksum: Some("sha256:legacy".into()),
+                    ..Default::default()
+                },
+            );
+        }
+        assert!(legacy.tools_for("fixture").unwrap()[0].backend.is_none());
+        generated.restore_missing_versions(&legacy, "fixture", &excluded);
+        assert!(
+            generated.tools_for("fixture").is_none(),
+            "{:?}",
+            generated.tools_for("fixture")
+        );
     }
 
     /// A tool configured with URL credentials is selected under its
