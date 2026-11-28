@@ -87,6 +87,8 @@ impl Unuse {
             let (_lock, cf) = config_file::lock_and_parse_or_init(cf.get_path()).await?;
             let removed_here = self.remove_from(cf.as_ref())?;
             if !removed_here.is_empty() {
+                // A removal can uncover the requests of a file it shadowed.
+                config_file::ensure_edit_keeps_tool_request_count(&config.config_files, &cf)?;
                 cf.save()?;
                 let removals = removed_here.iter().join(", ");
                 info!("removed: {removals} from {}", display_path(cf.get_path()));
