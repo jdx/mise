@@ -304,19 +304,34 @@ fn restore_option_templates(request: &mut ToolRequest, templates: &[ToolOptionTe
 /// unrendered until the version is known. Written into another file, a later run without safe
 /// mode would render it there. In a table option such as `platforms`, only the entries that
 /// hold such a template are dropped.
+///
+/// A dropped checksum would leave its `url` to download unchecked, so a `url` beside it goes
+/// too, unless another checksum is pinned there: see [`drops_unverified_url`].
 fn drop_unlent_templates(
     request: &mut ToolRequest,
     templates: &[ToolOptionTemplate],
     explicit: &ToolVersionOptions,
 ) {
+    let tool = request.ba().short.clone();
     let options = request.options_mut();
+    let mut dropped = vec![];
     options.opts.retain(|k, v| {
         let written: Vec<_> = templates
             .iter()
             .filter_map(|t| t.written.opts.get(k))
             .collect();
-        explicit.opts.contains_key(k) || keep_lent_parts(v, &written)
+        let keep = explicit.opts.contains_key(k) || keep_lent_parts(v, &written, &tool, k);
+        if !keep {
+            dropped.push(k.clone());
+        }
+        keep
     });
+    if !explicit.opts.contains_key("url")
+        && drops_unverified_url(&dropped, options.opts.keys())
+        && options.opts.shift_remove("url").is_some()
+    {
+        warn_unverified_url(&tool, "url");
+    }
     options.core.install_env.retain(|k, v| {
         !matches!(v, EnvValue::String(s) if contains_template_syntax(s))
             || explicit.core.install_env.contains_key(k)
@@ -329,21 +344,52 @@ fn drop_unlent_templates(
 /// Whether to keep option value `value`, after dropping from it the table entries that hold
 /// template syntax and are not written as they are in one of `written`, the same option's value
 /// in each config that lent its templates. A table none of whose entries is left is dropped.
-fn keep_lent_parts(value: &mut toml::Value, written: &[&toml::Value]) -> bool {
+/// `at` names the value in the options of `tool`, for the warning [`warn_unverified_url`] gives.
+fn keep_lent_parts(
+    value: &mut toml::Value,
+    written: &[&toml::Value],
+    tool: &str,
+    at: &str,
+) -> bool {
     if !toml_value_has_template(value) || written.contains(&&*value) {
         return true;
     }
     let toml::Value::Table(table) = value else {
         return false;
     };
+    let mut dropped = vec![];
     table.retain(|k, entry| {
         let written: Vec<_> = written
             .iter()
             .filter_map(|w| w.as_table()?.get(k))
             .collect();
-        keep_lent_parts(entry, &written)
+        let keep = keep_lent_parts(entry, &written, tool, &format!("{at}.{k}"));
+        if !keep {
+            dropped.push(k.to_string());
+        }
+        keep
     });
+    if drops_unverified_url(&dropped, table.keys()) && table.remove("url").is_some() {
+        warn_unverified_url(tool, &format!("{at}.url"));
+    }
     !table.is_empty()
+}
+
+/// Whether a `url` beside the `dropped` options would be left with no checksum: one of them is
+/// a checksum (`checksum`, `checksum_url`) and none of the options left, `kept`, is. The http
+/// backend only checks a download against its publisher's checksum when `checksum_url` is set.
+fn drops_unverified_url<'a>(
+    dropped: &[String],
+    mut kept: impl Iterator<Item = &'a String>,
+) -> bool {
+    let is_checksum = |k: &String| k.starts_with("checksum");
+    dropped.iter().any(is_checksum) && !kept.any(is_checksum)
+}
+
+fn warn_unverified_url(tool: &str, at: &str) {
+    warn!(
+        "not saving {tool}'s {at}: safe mode leaves out its checksum, which is a template, and without it the download would not be checked"
+    );
 }
 
 const TOOL_SELECTOR_KEYS: [&str; 4] = ["version", "prefix", "ref", "path"];

@@ -141,6 +141,36 @@ pub fn config_root(path: &Path) -> PathBuf {
         CONFIG_ROOT_CACHE.lock().unwrap().insert(path, root.clone());
         return root;
     }
+    let out = spelled_config_root(&path);
+    CONFIG_ROOT_CACHE.lock().unwrap().insert(path, out.clone());
+    out
+}
+
+/// The project directory a config at `path` would belong to by how `path` is spelled, as if it
+/// were not global config: the directory that holds its `.config`, `.mise` or `mise` directory,
+/// or for a `conf.d` entry, the one that holds that `conf.d`'s config directory.
+pub(crate) fn spelled_project(path: &Path) -> PathBuf {
+    let conf_d_owner = path
+        .ancestors()
+        .skip(1)
+        .take(2)
+        .find(|dir| dir.file_name().is_some_and(|name| name == "conf.d"))
+        .and_then(Path::parent);
+    let root = match conf_d_owner {
+        Some(owner) => spelled_config_root(&owner.join("config.toml")),
+        None => spelled_config_root(path),
+    };
+    if root.ends_with(".config/mise")
+        && let Some(outer) = root.parent().and_then(Path::parent)
+    {
+        return outer.to_path_buf();
+    }
+    root
+}
+
+/// [`config_root`] read from the names in `path` alone, for an absolute `path`.
+fn spelled_config_root(path: &Path) -> PathBuf {
+    let path = path.to_path_buf();
     let parts = path
         .components()
         .map(|c| c.as_os_str().to_string_lossy().to_string())
@@ -219,7 +249,7 @@ pub fn config_root(path: &Path) -> PathBuf {
             }
         })
     };
-    let out = if parent == "mise-tasks" || parent == ".mise-tasks" {
+    if parent == "mise-tasks" || parent == ".mise-tasks" {
         grandparent_path()
     } else if (parent == "tasks" || parent == "conf.d") && is_mise_dir(grandparent) {
         if great_grandparent == ".config" {
@@ -239,9 +269,7 @@ pub fn config_root(path: &Path) -> PathBuf {
         root
     } else {
         parent_path()
-    };
-    CONFIG_ROOT_CACHE.lock().unwrap().insert(path, out.clone());
-    out
+    }
 }
 
 #[cfg(test)]
