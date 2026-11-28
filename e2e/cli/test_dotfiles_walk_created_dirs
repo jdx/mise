@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# e2e:non-root
 # A symlink-each or directory-copy target is shared with the user's files.
 # Removing what mise deployed there removes the directories mise created once
 # they are empty, and leaves the user's own directories, even empty ones.
