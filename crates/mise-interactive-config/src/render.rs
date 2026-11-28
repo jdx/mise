@@ -276,6 +276,16 @@ impl Renderer {
         Ok(())
     }
 
+    /// Show an error long enough to read it
+    pub(crate) fn flash_error(&mut self, message: &str) -> io::Result<()> {
+        let style = Style::new().red().bold();
+        writeln!(self.term, "{}", style.apply_to(message))?;
+        self.term.flush()?;
+        std::thread::sleep(std::time::Duration::from_secs(3));
+        self.term.clear_last_lines(1)?;
+        Ok(())
+    }
+
     /// Render a loading indicator
     pub(crate) fn render_loading(
         &mut self,

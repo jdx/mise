@@ -1,5 +1,6 @@
 use super::*;
 use crate::cursor::{AddButtonKind, CursorTarget};
+use console::Key;
 
 /// Run "Load .env" on the `[env]` section of `editor`, entering `file`.
 fn load_dotenv(editor: &mut InteractiveConfig, file: &str) {
@@ -60,8 +61,29 @@ fn save_writes_nothing_when_the_check_before_it_fails() {
     let path = dir.path().join("mise.toml");
     let mut editor =
         InteractiveConfig::new(path.clone()).before_save(|_| Err(io::Error::other("refused")));
-    let err = editor.save().unwrap_err();
-    assert_eq!(err.to_string(), "refused");
+    editor.doc.modified = true;
+    assert!(!editor.save().unwrap());
+    assert!(!path.exists());
+    assert!(editor.doc.modified);
+}
+
+#[test]
+fn a_refused_save_keeps_the_editor_open_with_the_edits() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("mise.toml");
+    let mut editor =
+        InteractiveConfig::new(path.clone()).before_save(|_| Err(io::Error::other("refused")));
+    editor.doc = TomlDocument::parse("[env]\nA = \"1\"\n").unwrap();
+    editor.doc.modified = true;
+    editor.mode = Mode::ConfirmQuit;
+    assert!(
+        editor
+            .handle_confirm_quit_key(Key::Char('y'))
+            .unwrap()
+            .is_none()
+    );
+    assert!(matches!(editor.mode, Mode::Navigate));
+    assert!(editor.doc.to_toml().contains("A = \"1\""));
     assert!(!path.exists());
 }
 

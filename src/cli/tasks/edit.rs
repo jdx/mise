@@ -1,4 +1,4 @@
-use crate::config::Config;
+use crate::config::{Config, config_file};
 use crate::task::Task;
 use crate::{dirs, file};
 use eyre::Result;
@@ -47,11 +47,14 @@ impl TasksEdit {
         };
         let file = &task.config_source;
         let create = !file.exists();
-        // A script the editor will write is checked like one mise writes, also when it exists:
-        // the editor follows its links, and the check refuses one out of the project. The
+        // A file the editor will write is checked like one mise writes, also when it exists: the
+        // editor follows its links, and the check refuses one out of the project. A script is
+        // checked as `mise tasks add --file` checks it, a TOML file as config writes are. The
         // editor then opens the destination the check approved, not the links again.
         let destination = if create || (!self.path && !super::write::is_toml(file)) {
             super::write::script_check_before_write(file).await?
+        } else if !self.path {
+            config_file::checked_write_destination(file)?
         } else {
             file.clone()
         };

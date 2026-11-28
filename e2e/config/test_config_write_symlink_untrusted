@@ -383,3 +383,15 @@ assert "mise trust ."
 assert "EDITOR=echo mise tasks edit ed" "$(cd ../outside/edit && pwd -P)/ed"
 # --path only prints the path, so it writes nothing and checks nothing
 assert "mise tasks edit --path ed" "$PWD/mise-tasks/ed"
+
+echo "=== mise tasks edit checks a TOML task file that links out of the project ==="
+# The editor saves the file through its link, so the config write check applies to it as it does
+# to `mise tasks rm`, and the editor opens the file the check approved.
+mkdir -p ../edit-toml ../outside/edit-toml
+printf '[tasks.tt]\nrun = "echo hi"\n' >../outside/edit-toml/mise.toml
+cd ../edit-toml || exit 1
+ln -s ../outside/edit-toml/mise.toml mise.toml
+assert_fail_contains "EDITOR=echo mise tasks edit tt 2>&1" "refusing to write"
+assert "mise tasks edit --path tt" "$PWD/mise.toml"
+assert "mise trust mise.toml"
+assert "EDITOR=echo mise tasks edit tt" "$(cd ../outside/edit-toml && pwd -P)/mise.toml"
