@@ -54,12 +54,15 @@ pub(crate) fn config_source(path: &Path) -> String {
 
 /// The project a config was found in: its config root, or for a conf.d folder fragment the
 /// directory that holds the `conf.d`.
+///
+/// A fragment's project comes from the directories the fragment is in. The `mise.toml` beside
+/// its `conf.d` can be a link to global config, whose root is not the project.
 fn enclosing_project(path: &Path) -> PathBuf {
     let root = config_root(path);
     if is_conf_d_folder_file(path)
         && let Some(conf_d) = root.parent()
     {
-        return config_root(&conf_d.join("mise.toml"));
+        return spelled_config_root(&conf_d.join("mise.toml"));
     }
     root
 }
@@ -203,7 +206,8 @@ pub(crate) fn spelled_project(path: &Path) -> PathBuf {
     root
 }
 
-/// [`config_root`] read from the names in `path` alone, for an absolute `path`.
+/// The root of the config at the absolute `path` from its name and the directories it is in,
+/// whatever file is there: [`config_root`] without its global config lookup.
 fn spelled_config_root(path: &Path) -> PathBuf {
     let path = path.to_path_buf();
     let parts = path
@@ -639,6 +643,30 @@ mod tests {
 
         assert!(is_conf_d_folder_file(&link));
         assert_eq!(config_root(&link), *env::MISE_GLOBAL_CONFIG_ROOT);
+    }
+
+    /// A fragment belongs to the project that holds its `conf.d`, also when the `mise.toml`
+    /// beside that `conf.d` is a link to global config.
+    #[test]
+    fn a_fragment_belongs_to_its_project_beside_a_link_to_global_config() {
+        let temp = tempfile::tempdir().unwrap();
+        let project = temp.path().join("proj");
+        let conf_d = project.join(".mise").join("conf.d");
+        std::fs::create_dir_all(conf_d.join("x")).unwrap();
+        std::os::unix::fs::symlink(
+            crate::config::global_config_path(),
+            conf_d.join("mise.toml"),
+        )
+        .unwrap();
+        let fragment = conf_d.join("x").join("mise.toml");
+        std::fs::write(&fragment, "").unwrap();
+        assert!(is_global_config(&conf_d.join("mise.toml")));
+
+        assert_eq!(nested_root_project(&fragment), Some(project.clone()));
+        std::fs::remove_file(&fragment).unwrap();
+        std::fs::remove_dir(conf_d.join("x")).unwrap();
+        std::os::unix::fs::symlink(temp.path(), conf_d.join("x")).unwrap();
+        assert_eq!(linked_project(&fragment), Some(project));
     }
 
     #[test]

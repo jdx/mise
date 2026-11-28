@@ -3811,8 +3811,22 @@ fn project_vouches_for_linked_lockfile(path: &Path, project: &Path) -> bool {
 /// path leads: the global or system lockfile, or a trusted project's outside safe mode.
 fn owner_vouches_for_lockfile(path: &Path) -> bool {
     is_global_lockfile(path)
-        || (!Settings::safe_mode()
-            && Config::maybe_get().is_some_and(|config| lockfile_is_trusted(&config, path)))
+        || Config::maybe_get().is_some_and(|config| {
+            global_config_keeps_lockfile(&config, path)
+                || (!Settings::safe_mode() && lockfile_is_trusted(&config, path))
+        })
+}
+
+/// Whether a loaded global or system config keeps its lockfile at `path`, beside the file as
+/// mise loaded it. A global config dir linked into a dotfiles checkout can load from the
+/// checkout's own path, where [`is_global_lockfile`] does not match it. A project file linked to
+/// global config is not that config, and a monorepo's shared lockfile is not beside it.
+fn global_config_keeps_lockfile(config: &Config, path: &Path) -> bool {
+    config.config_files.keys().any(|config_path| {
+        crate::config::is_global_config(config_path)
+            && !crate::config::is_project_link_to_global_config(config_path)
+            && same_path_as_written(&lockfile_path_for_config(config_path, None).0, path)
+    })
 }
 
 /// Checks if a config path is a "local" config (should go to mise.local.lock)
