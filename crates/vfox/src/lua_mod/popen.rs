@@ -66,13 +66,12 @@ pub(crate) fn mod_popen(lua: &Lua) -> LuaResult<()> {
     io.set("type", io_type)?;
     // `io.close(handle)` closes these handles as `handle:close()` does.
     let stock_close: Option<Function> = io.get("close")?;
-    let io_close =
-        lua.create_function(move |_, args: LuaMultiValue| -> LuaResult<LuaMultiValue> {
+    let io_close = lua.create_function(
+        move |lua, args: LuaMultiValue| -> LuaResult<LuaMultiValue> {
             if let Some(LuaValue::UserData(ud)) = args.front()
                 && let Ok(mut file) = ud.borrow_mut::<PopenFile>()
             {
-                file.open()?.close();
-                return Ok(LuaMultiValue::from_iter([LuaValue::Boolean(true)]));
+                return file.close_result(lua);
             }
             match &stock_close {
                 Some(stock) => stock.call(args),
@@ -80,7 +79,8 @@ pub(crate) fn mod_popen(lua: &Lua) -> LuaResult<()> {
                     "io.close is not available".to_string(),
                 )),
             }
-        })?;
+        },
+    )?;
     io.set("close", io_close)
 }
 
@@ -133,13 +133,15 @@ fn popen(
 ///
 /// It answers as a Lua 5.1 popen file does, the version mlua is built with: `close`
 /// returns `true` once the child is reaped, whatever its exit status (5.1's
-/// `pclose` reports no status), `write` returns `true`, writes are buffered,
-/// a failed read, write or flush returns `nil, message, errno` (see
-/// [`IoFailure`]), and any use of a closed handle, a second `close` included,
-/// raises "attempt to use a closed file".
+/// `pclose` reports no status), unless the child exits with status 0 and
+/// flushing what is still buffered fails (see [`Self::close`]), `write` returns
+/// `true`, writes are buffered, a failed read, write, flush or close returns
+/// `nil, message, errno` (see [`IoFailure`]), and any use of a closed handle, a
+/// second `close` included, raises "attempt to use a closed file".
 struct PopenFile {
     /// Buffered as a C `FILE` is, so a short write fails only once it is
-    /// flushed, by `flush` or by `close`, which reports no failure.
+    /// flushed, by `flush` or by `close`. A failed write or flush drops what
+    /// is buffered.
     stdin: Option<BufWriter<ChildStdin>>,
     stdout: Option<Box<dyn BufRead + Send + Sync>>,
     /// Whether writes go through [`lf_as_crlf`]: a pipe opened with `"w"`, not
@@ -252,14 +254,39 @@ impl PopenFile {
             .ok_or_else(|| LuaError::external(IoFailure::bad_descriptor()))
     }
 
-    fn close(&mut self) {
+    /// Closes the pipes and reaps the child, as glibc's `pclose` does: the
+    /// failure is that of flushing what is still buffered, reported only when
+    /// the child exits with status 0 (otherwise `pclose` returns that status,
+    /// which Lua 5.1 reads as success), or of reaping the child.
+    fn close(&mut self) -> Option<IoFailure> {
         self.closed = true;
+        let flushed = self.stdin.as_mut().map_or(Ok(()), |stdin| stdin.flush());
         // Closing the pipes first lets a child blocked on a full pipe see EOF or
         // EPIPE and exit, as `pclose` does.
         self.stdin = None;
         self.stdout = None;
-        if let Some(mut child) = self.child.take() {
-            let _ = child.wait();
+        let mut child = self.child.take()?;
+        match child.wait() {
+            Ok(status) if status.success() => flushed.err().map(|err| IoFailure::from(&err)),
+            Ok(_) => None,
+            Err(err) => Some(IoFailure::from(&err)),
+        }
+    }
+
+    /// Drops the bytes still buffered for the child, as a C `FILE` does once a
+    /// write to it fails, so `close` does not try them again.
+    fn discard_buffered(&mut self) {
+        if let Some(stdin) = self.stdin.take() {
+            let (inner, _) = stdin.into_parts();
+            self.stdin = Some(BufWriter::new(inner));
+        }
+    }
+
+    /// What `close` returns to Lua: `true`, or the failure.
+    fn close_result(&mut self, lua: &Lua) -> LuaResult<LuaMultiValue> {
+        match self.open()?.close() {
+            Some(failure) => failure.into_lua_multi(lua),
+            None => true.into_lua_multi(lua),
         }
     }
 
@@ -462,7 +489,9 @@ impl IntoLuaMulti for IoFailure {
 
 impl Drop for PopenFile {
     fn drop(&mut self) {
-        self.close();
+        if !self.closed {
+            self.close();
+        }
     }
 }
 
@@ -522,6 +551,7 @@ impl UserData for PopenFile {
                 };
                 if let Err(err) = written {
                     failure = Some(IoFailure::from(&err));
+                    this.discard_buffered();
                 }
             }
             match failure {
@@ -530,16 +560,16 @@ impl UserData for PopenFile {
             }
         });
         methods.add_method_mut("flush", |lua, this, ()| {
-            let stdin = this.open()?.stdin.as_mut();
-            match stdin.map(|stdin| stdin.flush()) {
-                Some(Err(err)) => IoFailure::from(&err).into_lua_multi(lua),
+            let this = this.open()?;
+            match this.stdin.as_mut().map(|stdin| stdin.flush()) {
+                Some(Err(err)) => {
+                    this.discard_buffered();
+                    IoFailure::from(&err).into_lua_multi(lua)
+                }
                 _ => true.into_lua_multi(lua),
             }
         });
-        methods.add_method_mut("close", |_, this, ()| {
-            this.open()?.close();
-            Ok(true)
-        });
+        methods.add_method_mut("close", |lua, this, ()| this.close_result(lua));
     }
 }
 
@@ -649,30 +679,46 @@ mod tests {
             local gone = io.popen("exec 0<&-", "w")
             note(gone:write(string.rep("x", 1048576)))
             note(gone:close())
+            // A child that closes its stdin, then writes the marker file `name` and
+            // exits with `code`. It is open once the marker is there; the status
+            // file holds the exit status of a child that could not write it.
+            local function closed_child(name, code)
+                local marker = $out .. "." .. name
+                local status = marker .. ".status"
+                local h = io.popen(
+                    "exec 0<&-; true > '" .. marker .. "' || echo $? > '" .. status
+                        .. "'; exit " .. code,
+                    "w"
+                )
+                local deadline = os.time() + 10
+                repeat
+                    local found = io.open(marker)
+                    if found then found:close() end
+                    if not found and os.time() > deadline then
+                        local failed = io.open(status)
+                        local why = failed and failed:read("*l") or "unknown"
+                        if failed then failed:close() end
+                        error("the child did not write " .. marker .. " in 10s; exit status: " .. why)
+                    end
+                until found
+                return h
+            end
             // a short write waits in the handle's buffer, so it is the flush that
-            // finds the child gone; the marker file says it has closed its stdin,
-            // and the status file holds the exit status of a child that could not
-            // write the marker
-            local closed = $out .. ".closed"
-            local status = closed .. ".status"
-            local short = io.popen(
-                "exec 0<&-; true > '" .. closed .. "' || echo $? > '" .. status .. "'",
-                "w"
-            )
-            local deadline = os.time() + 10
-            repeat
-                local marker = io.open(closed)
-                if marker then marker:close() end
-                if not marker and os.time() > deadline then
-                    local failed = io.open(status)
-                    local code = failed and failed:read("*l") or "unknown"
-                    if failed then failed:close() end
-                    error("the child did not write " .. closed .. " in 10s; exit status: " .. code)
-                end
-            until marker
+            // finds the child gone, and the failed flush drops it
+            local short = closed_child("flushed", 0)
             note(short:write("x"))
             note(short:flush())
             note(short:close())
+            // with no flush, close reports it, unless the child exits non-zero
+            local unflushed = closed_child("unflushed", 0)
+            note(unflushed:write("x"))
+            note(unflushed:close())
+            local failed = closed_child("failed", 3)
+            note(failed:write("x"))
+            note(failed:close())
+            local via_io = closed_child("via_io", 0)
+            note(via_io:write("x"))
+            note(io.close(via_io))
             // a bad argument still raises
             local b = io.popen("cat >/dev/null", "w")
             note((pcall(b.write, b, {})))
@@ -696,6 +742,10 @@ mod tests {
         assert_eq!(expected[8], "nil,Broken pipe,32");
         assert_eq!(expected[10], "true");
         assert_eq!(expected[11], "nil,Broken pipe,32");
+        assert_eq!(expected[12], "true");
+        assert_eq!(expected[14], "nil,Broken pipe,32");
+        assert_eq!(expected[16], "true");
+        assert_eq!(expected[18], "nil,Broken pipe,32");
         assert_eq!(
             std::fs::read_to_string(dir.path().join("out")).unwrap(),
             std::fs::read_to_string(stock_dir.path().join("out")).unwrap()
