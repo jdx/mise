@@ -51,6 +51,27 @@ fn test_to_toml() {
 }
 
 #[test]
+fn test_to_toml_keeps_tool_versions_strings() {
+    let mut doc = TomlDocument::new();
+    doc.add_entry(0, "node".to_string(), "true".to_string());
+    doc.add_entry(0, "go".to_string(), "false".to_string());
+    let env = doc.sections.iter().position(|s| s.name == "env").unwrap();
+    doc.add_entry(env, "FLAG".to_string(), "true".to_string());
+    let toml = doc.to_toml();
+    assert!(toml.contains(r#"node = "true""#), "{toml}");
+    assert!(toml.contains(r#"go = "false""#), "{toml}");
+    assert!(toml.contains("FLAG = true"), "{toml}");
+
+    let content = r#"[tools]
+node = ["true", "22"]
+rust = { version = "false", postinstall = "true" }
+"#;
+    let toml = TomlDocument::parse(content).unwrap().to_toml();
+    assert!(toml.contains(r#"node = ["true", "22"]"#), "{toml}");
+    assert!(toml.contains(r#"version = "false""#), "{toml}");
+}
+
+#[test]
 fn test_roundtrip_keeps_comments() {
     // Everything here came back stripped before: the banner, the comment
     // above the section, the comment above an entry, and the same-line

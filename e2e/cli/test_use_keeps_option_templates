@@ -81,3 +81,36 @@ dummy = { version = "2.0.0", url = "https://example.com/1" }'
 assert "MISE_SAFE=1 mise use dummy@2.0.0"
 assert "cat mise.toml" '[tools]
 dummy = { version = "2.0.0", url = "https://example.com/{{ 1 }}" }'
+
+# an expression that reads `version` is left unrendered until the version is
+# known, so in safe mode a project's option can still hold one after loading.
+# Copied into another file, a later run without safe mode would render it
+# there, so that option is left out of the other file
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[tools]
+TOML
+cat >mise.toml <<'TOML'
+[tools]
+dummy = { version = "1.0.0", url = "https://example.com/{{ version | upper }}", note = "kept" }
+TOML
+rm -rf other
+mkdir other
+assert "MISE_SAFE=1 mise use --path other/mise.toml dummy@2.0.0"
+assert_not_contains "cat other/mise.toml" "version |"
+assert_contains "cat other/mise.toml" 'note = "kept"'
+assert "MISE_SAFE=1 mise use -g dummy@2.0.0"
+assert_not_contains "cat $MISE_CONFIG_DIR/config.toml" "version |"
+assert "MISE_SAFE=1 mise use dummy@2.0.0"
+assert_contains "cat mise.toml" 'url = "https://example.com/{{ version | upper }}"'
+
+# in a table such as `platforms`, only the entry holding the template is left out
+cat >mise.toml <<'TOML'
+[tools]
+dummy = { version = "1.0.0", platforms = { linux-x64 = { url = "https://example.com/{{ version | upper }}" }, macos-arm64 = { url = "https://example.com/plain" } } }
+TOML
+rm -rf other
+mkdir other
+assert "MISE_SAFE=1 mise use --path other/mise.toml dummy@2.0.0"
+assert_not_contains "cat other/mise.toml" "version |"
+assert_not_contains "cat other/mise.toml" "linux-x64"
+assert_contains "cat other/mise.toml" 'url = "https://example.com/plain"'

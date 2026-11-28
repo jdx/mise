@@ -297,6 +297,55 @@ fn restore_option_templates(request: &mut ToolRequest, templates: &[ToolOptionTe
     }
 }
 
+/// Drop each option of `request` that still holds template syntax and is neither given on the
+/// command line (`explicit`) nor written as a template in `templates`. Safe mode keeps project
+/// config other than the file being written out of `templates`, but an option such a project
+/// declares can still be a template after loading: an expression that reads `version` is left
+/// unrendered until the version is known. Written into another file, a later run without safe
+/// mode would render it there. In a table option such as `platforms`, only the entries that
+/// hold such a template are dropped.
+fn drop_unlent_templates(
+    request: &mut ToolRequest,
+    templates: &[ToolOptionTemplate],
+    explicit: &ToolVersionOptions,
+) {
+    let options = request.options_mut();
+    options.opts.retain(|k, v| {
+        let written: Vec<_> = templates
+            .iter()
+            .filter_map(|t| t.written.opts.get(k))
+            .collect();
+        explicit.opts.contains_key(k) || keep_lent_parts(v, &written)
+    });
+    options.core.install_env.retain(|k, v| {
+        !matches!(v, EnvValue::String(s) if contains_template_syntax(s))
+            || explicit.core.install_env.contains_key(k)
+            || templates
+                .iter()
+                .any(|t| t.written.install_env.get(k) == Some(&*v))
+    });
+}
+
+/// Whether to keep option value `value`, after dropping from it the table entries that hold
+/// template syntax and are not written as they are in one of `written`, the same option's value
+/// in each config that lent its templates. A table none of whose entries is left is dropped.
+fn keep_lent_parts(value: &mut toml::Value, written: &[&toml::Value]) -> bool {
+    if !toml_value_has_template(value) || written.contains(&&*value) {
+        return true;
+    }
+    let toml::Value::Table(table) = value else {
+        return false;
+    };
+    table.retain(|k, entry| {
+        let written: Vec<_> = written
+            .iter()
+            .filter_map(|w| w.as_table()?.get(k))
+            .collect();
+        keep_lent_parts(entry, &written)
+    });
+    !table.is_empty()
+}
+
 const TOOL_SELECTOR_KEYS: [&str; 4] = ["version", "prefix", "ref", "path"];
 
 fn tool_request_selector(request: &ToolRequest) -> (&'static str, String) {
@@ -1933,6 +1982,7 @@ impl ConfigFile for MiseToml {
         // replace `{{ env.TOKEN }}` with the token, so a value that a template renders to is
         // written as that template.
         let templates = self.templates_for_rewrite(ba);
+        let safe_mode = Settings::safe_mode();
         // The registry's defaults for a tool are not the file's to record: they apply on their
         // own, and writing them would pin today's registry choices (such as packslip's
         // `workflow`) into the user's config. An option the file already spells out stays.
@@ -1957,6 +2007,9 @@ impl ConfigFile for MiseToml {
                     || defaults.opts.get(k) != Some(v)
             });
             restore_option_templates(tr, &templates);
+            if safe_mode {
+                drop_unlent_templates(tr, &templates, &explicit);
+            }
         }
         let mut tools = self.tools.lock().unwrap();
         let is_tools_sorted = is_tools_sorted(&tools); // was it previously sorted (if so we'll keep it sorted)
