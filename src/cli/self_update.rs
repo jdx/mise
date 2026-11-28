@@ -1352,6 +1352,12 @@ mod release_asset_tests {
             ),
             ("macos", "x64", "x86_64-apple-darwin", "macos-x64.tar.gz"),
             (
+                "freebsd",
+                "x64",
+                "x86_64-unknown-freebsd",
+                "freebsd-x64.tar.gz",
+            ),
+            (
                 "windows",
                 "arm64",
                 "aarch64-pc-windows-msvc",
