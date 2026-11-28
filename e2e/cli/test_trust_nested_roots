@@ -86,3 +86,31 @@ mv branchy/.config other-branch-config
 assert_contains "mise untrust branchy 2>&1" "untrusted ~/workdir/branchy/.config/mise"
 mv other-branch-config branchy/.config
 assert_not_contains "mise -C branchy trust --show 2>&1" ": trusted"
+
+# Ignoring a project and trusting it again brings back a nested root the user approved on its
+# own, and keeps the ignore the user gave a nested root by naming its file. With a directory,
+# `mise trust` picks a file in .mise/conf.d/x, so it records only that root and the project, and
+# .config/mise is the root these cases look at.
+make_clone again .config/mise
+mkdir -p again/.mise/conf.d/x
+echo "# empty" >again/.mise/conf.d/x/mise.local.toml
+mise trust again/mise.toml
+mise trust again/.config/mise/mise.local.toml
+assert "mise trust --ignore again 2>&1" "mise ignored ~/workdir/again
+mise ignored ~/workdir/again/.mise/conf.d/x"
+assert_not_contains "mise -C again trust --show 2>&1" ": trusted"
+assert "mise trust again 2>&1" "mise trusted ~/workdir/again/.mise/conf.d/x"
+assert_contains "mise -C again trust --show 2>&1" "~/workdir/again: trusted"
+assert_contains "mise -C again trust --show 2>&1" "~/workdir/again/.config/mise: trusted"
+assert_contains "mise -C again env" "FROM_CLONE=loaded"
+
+make_clone kept .config/mise
+mkdir -p kept/.mise/conf.d/x
+echo "# empty" >kept/.mise/conf.d/x/mise.local.toml
+mise trust kept/mise.toml
+mise trust kept/.config/mise/mise.local.toml
+mise trust --ignore kept/.config/mise/mise.local.toml
+mise trust --ignore kept
+mise trust kept
+assert_contains "mise -C kept trust --show 2>&1" "~/workdir/kept: trusted"
+assert_contains "mise -C kept trust --show 2>&1" "~/workdir/kept/.config/mise: untrusted"

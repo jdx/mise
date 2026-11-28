@@ -2755,8 +2755,16 @@ fn user_config_filenames_from(var: impl Fn(&str) -> Option<String>) -> Vec<Strin
 /// file covers. Environment files count for every environment, as the trust of their root
 /// covers them (`config_files_in_dir_for_any_env`), not only for the ones `MISE_ENV`, which a
 /// `.miserc.toml` can set, selects.
+///
+/// The search starts in the directory holding `path`, so it covers every directory above the
+/// file whatever directory mise runs in: `mise trust app/.mise/config.staging.toml` from the
+/// parent decides the same as from inside `app`.
 pub(crate) fn has_own_config_filename(path: &Path) -> bool {
-    let start = env::current_dir().unwrap_or_default();
+    let start = path
+        .absolutize()
+        .ok()
+        .and_then(|path| path.parent().map(Path::to_path_buf))
+        .unwrap_or_else(|| env::current_dir().unwrap_or_default());
     has_own_config_filename_from(path, &start, &user_config_filenames())
 }
 
@@ -2931,7 +2939,10 @@ pub static IGNORED_CONFIG_FILES: Lazy<IndexSet<PathBuf>> = Lazy::new(|| {
             if config_file::is_config_ignored_via_setting(p) {
                 return true;
             }
-            (config_file::is_persisted_ignored(&ctr) || config_file::is_persisted_ignored(p))
+            // A root nested in an ignored project is ignored with it, as discovery leaves it out.
+            (config_file::is_persisted_ignored(&ctr)
+                || config_file::is_persisted_ignored(p)
+                || config_file::project_is_ignored(p))
                 && !config_file::is_trusted_via_config_paths(p)
         })
         .collect()
@@ -6488,11 +6499,13 @@ async fn load_local_tasks_with_context(
                     hierarchy_dirs.reverse();
                     for hierarchy_dir in hierarchy_dirs {
                         for config_path in config_paths_in_dir(&hierarchy_dir) {
-                            if !seen_config_paths.insert(file::desymlink_path(&config_path)) {
+                            // an ignored subproject is left out, as config discovery leaves it
+                            // out. This runs first so an ignored link does not mark its target as
+                            // seen and hide the config of the project it points into.
+                            if config_path_is_ignored(&config_path, false) {
                                 continue;
                             }
-                            // an ignored subproject is left out, as config discovery leaves it out
-                            if config_path_is_ignored(&config_path, false) {
+                            if !seen_config_paths.insert(file::desymlink_path(&config_path)) {
                                 continue;
                             }
                             match config_file::parse(&config_path).await {

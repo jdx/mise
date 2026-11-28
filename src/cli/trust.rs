@@ -229,9 +229,8 @@ fn refused_roots(path: &Path, cfr: &Path, named_file: bool) -> Vec<PathBuf> {
     if named_file || Settings::get().paranoid.config() {
         return vec![cfr.to_path_buf()];
     }
-    let project =
-        config_file::config_root::nested_root_project(path).unwrap_or_else(|| cfr.to_path_buf());
-    let mut roots = vec![project.clone(), cfr.to_path_buf()];
+    let mut roots = project_roots(path, cfr);
+    let project = roots[0].clone();
     for file in config::config_files_in_dir_for_any_env(&project) {
         if !is_global_config(&file) {
             let root = config_trust_root(&file);
@@ -241,6 +240,14 @@ fn refused_roots(path: &Path, cfr: &Path, named_file: bool) -> Vec<PathBuf> {
         }
     }
     roots.into_iter().unique().collect()
+}
+
+/// The project that `path` belongs to, then `cfr` when that is a root nested in it: the roots
+/// that stand for the project itself, without the other roots nested in it.
+fn project_roots(path: &Path, cfr: &Path) -> Vec<PathBuf> {
+    let project =
+        config_file::config_root::nested_root_project(path).unwrap_or_else(|| cfr.to_path_buf());
+    [project, cfr.to_path_buf()].into_iter().unique().collect()
 }
 
 /// The nested roots of the project at `roots[0]` that have a trust record but are not in
@@ -422,7 +429,17 @@ impl Trust {
         }
         let cfr = cli_trust_root(&path, self.named_file());
         let roots = refused_roots(&path, &cfr, self.named_file());
-        for root in &roots {
+        // The project's ignore covers every root nested in it, also one that arrives later
+        // (`project_is_ignored`), so the nested roots get no ignore of their own. That keeps the
+        // project's ignore apart from one the user gave a nested root by naming its file:
+        // `mise trust` of the project lifts the first and leaves the second, and a nested root
+        // the user approved counts again.
+        let ignored = if self.named_file() || Settings::get().paranoid.config() {
+            roots.clone()
+        } else {
+            project_roots(&path, &cfr)
+        };
+        for root in &ignored {
             config_file::add_ignored(root.clone())?;
         }
         // `mise trust` also approved the file itself when only `env_files` is on.
@@ -433,7 +450,7 @@ impl Trust {
         {
             config_file::add_ignored(path.clone())?;
         }
-        for root in &roots {
+        for root in &ignored {
             info!("ignored {}", display_path_escaped(&root.canonicalize()?));
         }
         warn_trusted_via_settings(&roots);
@@ -452,6 +469,15 @@ impl Trust {
             },
         };
         config_file::ensure_trust_can_approve(&path)?;
+        // Trusting a project lifts its ignore, which `--ignore` records on the project's root
+        // even when the file picked here lives in a root nested in it.
+        if !self.named_file()
+            && !Settings::get().paranoid.config()
+            && let Some(filename) = self.config_file()?
+            && let Some(project) = config_file::config_root::nested_root_project(&filename)
+        {
+            config_file::rm_ignored(project)?;
+        }
         config_file::trust(&path)?;
         // With only `env_files` on, a file named like a config may be an env file. Its content
         // hash is checked on its own, so approve it as well as its directory.
@@ -688,11 +714,19 @@ impl Trust {
         let trusted = config::load_config_paths(&self.config_filenames, true)
             .into_iter()
             .filter(|p| !is_global_config(p))
-            .map(|p| config_trust_root(&p))
-            .unique()
+            .unique_by(|p| config_trust_root(p))
             // The same check as loading: in paranoid mode a linked config's target record does
             // not count, and `trusted_config_paths` can trust the project that holds the link.
-            .map(|p| (display_path_escaped(&p), !needs_trust(&p)))
+            // A root nested in an ignored project is ignored with it, whatever its own record.
+            .map(|p| {
+                let root = config_trust_root(&p);
+                let trusted = if config_file::project_is_ignored(&p) {
+                    config_file::is_path_trusted(&p)
+                } else {
+                    !needs_trust(&root)
+                };
+                (display_path_escaped(&root), trusted)
+            })
             .rev()
             .collect::<Vec<_>>();
         if trusted.is_empty() {

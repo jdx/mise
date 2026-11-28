@@ -170,6 +170,9 @@ fn resolved_path_guarded(root: &Path, file: &Path) -> bool {
     let (Ok(resolved_root), Ok(target)) = (root.canonicalize(), file.canonicalize()) else {
         return false;
     };
+    if !links_guarded(&resolved_root, file) {
+        return false;
+    }
     if !target.starts_with(&resolved_root) {
         return target.ancestors().skip(1).all(entries_guarded);
     }
@@ -179,6 +182,96 @@ fn resolved_path_guarded(root: &Path, file: &Path) -> bool {
         .take_while(|dir| *dir != resolved_root.as_path())
         .all(owned_by_user)
         && (resolved_root.as_path() == root || resolved_root.ancestors().all(entries_guarded))
+}
+
+/// Whether each link the system follows from `file` to the file it opens can be changed only by
+/// the user or root. `canonicalize` goes straight to the end, so a link on the way, or a directory
+/// that is a link, would go unchecked, and whoever may write the directory holding it, or owns it
+/// in a sticky one, could point it at their own file after the trust is recorded.
+///
+/// The path is followed one component at a time, as the system does. Each link has to belong to
+/// the user or root, and so does the directory that holds it, which no other account may write
+/// unless it is sticky; so does each directory entered after that, except the ones above the
+/// resolved root, which are not checked for a root reached without a link either.
+#[cfg(unix)]
+fn links_guarded(resolved_root: &Path, file: &Path) -> bool {
+    use std::collections::VecDeque;
+    use std::ffi::OsString;
+    use std::os::unix::fs::MetadataExt;
+    use std::path::Component;
+    enum Step {
+        Root,
+        Up,
+        Name(OsString),
+    }
+    let steps = |path: &Path| -> Vec<Step> {
+        path.components()
+            .filter_map(|c| match c {
+                Component::RootDir | Component::Prefix(_) => Some(Step::Root),
+                Component::ParentDir => Some(Step::Up),
+                Component::CurDir => None,
+                Component::Normal(name) => Some(Step::Name(name.to_os_string())),
+            })
+            .collect()
+    };
+    // The kernel gives up with `ELOOP` after this many links.
+    const MAX_LINKS: usize = 40;
+    let uid = nix::unistd::geteuid().as_raw();
+    let mut pending: VecDeque<Step> = steps(file).into();
+    let mut current = PathBuf::from("/");
+    let mut links = 0;
+    while let Some(step) = pending.pop_front() {
+        let name = match step {
+            Step::Root => {
+                current = PathBuf::from("/");
+                continue;
+            }
+            // `..` is an entry of `current` too, read like any other, so `current` is checked
+            // the same way before it is left: every directory the lookup reads an entry from
+            // has to be guarded, also one a link's target only passes through.
+            Step::Up => {
+                let above_root = current != resolved_root && resolved_root.starts_with(&current);
+                if !above_root && !entries_guarded(&current) {
+                    return false;
+                }
+                current.pop();
+                continue;
+            }
+            Step::Name(name) => name,
+        };
+        let next = current.join(&name);
+        let Ok(meta) = next.symlink_metadata() else {
+            return false;
+        };
+        if meta.file_type().is_symlink() {
+            links += 1;
+            let Ok(target) = next.read_link() else {
+                return false;
+            };
+            if links > MAX_LINKS
+                || (meta.uid() != uid && meta.uid() != 0)
+                || !entries_guarded(&current)
+            {
+                return false;
+            }
+            for step in steps(&target).into_iter().rev() {
+                pending.push_front(step);
+            }
+        } else {
+            let above_root = current != resolved_root && resolved_root.starts_with(&current);
+            if !above_root && !entries_guarded(&current) {
+                return false;
+            }
+            current = next;
+        }
+    }
+    true
+}
+
+/// See the Unix [`owned_by_user`]: ownership does not gate this on Windows.
+#[cfg(not(unix))]
+fn links_guarded(_resolved_root: &Path, _file: &Path) -> bool {
+    true
 }
 
 /// Whether only the user, or root, can replace an entry of directory `dir`: it belongs to one
@@ -737,5 +830,59 @@ mod tests {
             &linked_root.join("inside").join("mise.toml")
         ));
         mode(&base, 0o700);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn ownership_checks_each_link_on_the_way() {
+        use std::os::unix::fs::{PermissionsExt, symlink};
+        let mode = |path: &Path, mode| {
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).unwrap()
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path().canonicalize().unwrap();
+        let (root, shared, hop) = (base.join("proj"), base.join("shared"), base.join("hop"));
+        for dir in [&root, &shared, &hop] {
+            std::fs::create_dir_all(dir).unwrap();
+        }
+        let own = shared.join("mise.toml");
+        std::fs::write(&own, "").unwrap();
+        // `proj/mise.toml` -> `hop/link` -> `shared/mise.toml`: `canonicalize` skips `hop`.
+        symlink(&own, hop.join("link")).unwrap();
+        let via_link = root.join("mise.toml");
+        symlink(hop.join("link"), &via_link).unwrap();
+        // `proj/.config` -> `hop/dir/sub`, where `hop/dir` is a link to `shared`'s parent.
+        std::fs::create_dir_all(shared.join("sub")).unwrap();
+        std::fs::write(shared.join("sub").join("mise.toml"), "").unwrap();
+        symlink(&shared, hop.join("dir")).unwrap();
+        symlink(hop.join("dir").join("sub"), root.join(".config")).unwrap();
+        let via_dir = root.join(".config").join("mise.toml");
+        // A relative link whose `..` is resolved from where it points.
+        symlink("../hop/link", root.join("config.toml")).unwrap();
+        let relative = root.join("config.toml");
+        // A link whose target enters `hop` and leaves it again with `..`.
+        symlink("../hop/../shared/mise.toml", root.join("mise.local.toml")).unwrap();
+        let through = root.join("mise.local.toml");
+        let files = [&via_link, &via_dir, &relative, &through];
+
+        mode(&hop, 0o755);
+        for file in files {
+            assert!(owned_below(&root, file), "{}", file.display());
+        }
+        // Anyone may replace the links in `hop`, though none is on the final path.
+        mode(&hop, 0o777);
+        for file in files {
+            assert!(!owned_below(&root, file), "{}", file.display());
+        }
+        // Sticky: only the user, who owns the links, may replace them.
+        mode(&hop, 0o1777);
+        for file in files {
+            assert!(owned_below(&root, file), "{}", file.display());
+        }
+        mode(&hop, 0o755);
+
+        // A loop is refused, not followed forever.
+        symlink(base.join("loop"), base.join("loop")).unwrap();
+        assert!(!links_guarded(&root, &base.join("loop")));
     }
 }
