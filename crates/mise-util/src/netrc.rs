@@ -1,9 +1,9 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
 use netrc_jdx::Netrc;
 
-use crate::dirs;
+use crate::{dirs, file};
 use mise_settings::Settings;
 
 /// Cached parsed netrc file
@@ -13,7 +13,7 @@ static NETRC: LazyLock<Option<Netrc>> = LazyLock::new(|| {
         return None;
     }
 
-    let path = netrc_path();
+    let path = netrc_path()?;
     if !path.exists() {
         return None;
     }
@@ -58,10 +58,10 @@ static NETRC: LazyLock<Option<Netrc>> = LazyLock::new(|| {
 /// 1. Custom path from settings (netrc_file)
 /// 2. %USERPROFILE%\_netrc on Windows (Windows convention)
 /// 3. ~/.netrc (Unix default, also Windows fallback)
-fn netrc_path() -> PathBuf {
+fn netrc_path() -> Option<PathBuf> {
     let settings = Settings::get();
     if let Some(path) = &settings.netrc_file {
-        return path.clone();
+        return configured_netrc_path(path);
     }
 
     #[cfg(windows)]
@@ -69,11 +69,26 @@ fn netrc_path() -> PathBuf {
         // On Windows, try _netrc first (Windows convention)
         let windows_netrc = dirs::HOME.join("_netrc");
         if windows_netrc.exists() {
-            return windows_netrc;
+            return Some(windows_netrc);
         }
     }
 
-    dirs::HOME.join(".netrc")
+    Some(dirs::HOME.join(".netrc"))
+}
+
+/// `netrc_file` with `~/` expanded. A path that is still relative is refused:
+/// it would name a file in whatever directory mise runs in, which a cloned
+/// repository supplies, so the repository would choose the logins mise sends.
+fn configured_netrc_path(path: &Path) -> Option<PathBuf> {
+    let path = file::replace_path(path);
+    if !path.is_absolute() {
+        warn!(
+            "ignoring netrc_file {}: it is not an absolute path, so mise is not using a netrc file. Set netrc_file to an absolute path or one that starts with ~/",
+            path.display()
+        );
+        return None;
+    }
+    Some(path)
 }
 
 /// Look up credentials for a given host from the netrc file
@@ -98,5 +113,17 @@ mod tests {
         )
         .unwrap();
         assert_eq!(netrc.credentials("example.com"), Some(("user", "pa#ss")));
+    }
+
+    #[test]
+    fn configured_netrc_path_expands_home_and_refuses_relative_paths() {
+        assert_eq!(
+            configured_netrc_path(Path::new("~/.config/netrc")),
+            Some(dirs::HOME.join(".config").join("netrc"))
+        );
+        let absolute = dirs::HOME.join("netrc");
+        assert_eq!(configured_netrc_path(&absolute), Some(absolute));
+        assert_eq!(configured_netrc_path(Path::new("~~/netrc")), None);
+        assert_eq!(configured_netrc_path(Path::new("x/netrc")), None);
     }
 }
