@@ -302,6 +302,12 @@ impl CondaBackend {
         Ok(pinned && dest.exists() && Self::verify_checksum(dest, checksum)?)
     }
 
+    /// Whether `dest` exists and holds the same bytes as `downloaded`.
+    fn same_archive(downloaded: &std::path::Path, dest: &std::path::Path) -> Result<bool> {
+        Ok(dest.exists()
+            && hash::file_hash_sha256(downloaded, None)? == hash::file_hash_sha256(dest, None)?)
+    }
+
     /// Download a file to dest with optional checksum verification.
     /// Uses atomic writes: downloads to a temp file, verifies, then renames.
     /// If dest already exists and the sha256 checksum matches, skips download.
@@ -326,11 +332,14 @@ impl CondaBackend {
         }
 
         if let Err(err) = file::rename(&temp, dest) {
-            let _ = file::remove_all(&temp);
-
             // Another concurrent installer may have won the race and written `dest`.
-            // If `dest` now exists and verifies, treat this as success.
-            if Self::cached_archive_matches(dest, checksum)? {
+            // If `dest` now holds what was just downloaded from `url`, treat this as
+            // success. With no sha256 pin, that is checked against the download, since
+            // the winner may have fetched a same-named archive from another channel.
+            let won =
+                Self::cached_archive_matches(dest, checksum)? || Self::same_archive(&temp, dest)?;
+            let _ = file::remove_all(&temp);
+            if won {
                 return Ok(());
             }
 
@@ -1999,5 +2008,20 @@ mod tests {
         assert!(!CondaBackend::cached_archive_matches(&dest, Some("md5:abc")).unwrap());
         let other = format!("sha256:{}", "0".repeat(64));
         assert!(!CondaBackend::cached_archive_matches(&dest, Some(&other)).unwrap());
+    }
+
+    /// An unpinned download that loses the rename race accepts the winner's file
+    /// only when it holds the same bytes.
+    #[test]
+    fn lost_race_accepts_only_the_same_archive() {
+        let dir = tempfile::tempdir().unwrap();
+        let downloaded = dir.path().join("pkg-1.0-0.conda.tmp");
+        let dest = dir.path().join("pkg-1.0-0.conda");
+        std::fs::write(&downloaded, b"archive").unwrap();
+        assert!(!CondaBackend::same_archive(&downloaded, &dest).unwrap());
+        std::fs::write(&dest, b"other channel").unwrap();
+        assert!(!CondaBackend::same_archive(&downloaded, &dest).unwrap());
+        std::fs::write(&dest, b"archive").unwrap();
+        assert!(CondaBackend::same_archive(&downloaded, &dest).unwrap());
     }
 }
