@@ -3555,10 +3555,12 @@ fn apply_netrc_credentials(
     // Compare host only: netrc lookup and forge-token selection are both
     // host-scoped, so a path/query-only rewrite on the same host must not
     // let netrc clobber a still-valid forge token.
-    // A login in the URL (the user's, or a replacement rule's) is the credential
-    // written for this request, and reqwest sends it as Authorization; a netrc
-    // header would replace it, which curl does not do either.
-    if !url.username().is_empty() || url.password().is_some() {
+    // A full login in the URL (the user's, or a replacement rule's) is the
+    // credential written for this request, and reqwest sends it as Authorization;
+    // a netrc header would replace it, which curl does not do either. A URL with
+    // only a user name still takes its password from netrc, as in curl, and
+    // [`netrc_authorization`] keeps that to the entry for the same user.
+    if url.password().is_some() {
         return final_headers;
     }
     let host_changed = url.host() != original_url.host();
@@ -3621,13 +3623,26 @@ fn netrc_credential_headers(url: &Url) -> HeaderMap {
     let mut headers = HeaderMap::new();
     if let Some(host) = url.host_str()
         && let Some((login, password)) = netrc::get_credentials(host)
+        && let Some(value) = netrc_authorization(url, &login, &password)
     {
-        let credentials = BASE64_STANDARD.encode(format!("{login}:{password}"));
-        if let Ok(value) = HeaderValue::from_str(&format!("Basic {credentials}")) {
-            headers.insert(reqwest::header::AUTHORIZATION, value);
-        }
+        headers.insert(reqwest::header::AUTHORIZATION, value);
     }
     headers
+}
+
+/// The Basic Authorization header for a netrc entry. A URL that names a user
+/// takes the entry only when its login is that user, as curl does; otherwise
+/// the URL's user would be sent with another user's password.
+fn netrc_authorization(url: &Url, login: &str, password: &str) -> Option<HeaderValue> {
+    if !url.username().is_empty() {
+        // Compare the encoded forms, so `a%40b` in the URL matches the login `a@b`.
+        let mut entry = url.clone();
+        if entry.set_username(login).is_err() || entry.username() != url.username() {
+            return None;
+        }
+    }
+    let credentials = BASE64_STANDARD.encode(format!("{login}:{password}"));
+    HeaderValue::from_str(&format!("Basic {credentials}")).ok()
 }
 
 /// Resolve the `rel="next"` target of a `Link` header against the URL it came from.

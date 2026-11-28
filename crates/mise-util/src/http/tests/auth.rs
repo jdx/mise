@@ -443,6 +443,25 @@ fn test_apply_netrc_leaves_a_url_login_alone() {
     let url: Url = "https://user:pw@example.com/file".parse().unwrap();
     let out = apply_netrc_credentials(HeaderMap::new(), &url, &url, basic_netrc_headers());
     assert!(auth_value(&out).is_empty());
+    // but a URL with only a user name takes the password from netrc
+    let url: Url = "https://user@example.com/file".parse().unwrap();
+    let out = apply_netrc_credentials(HeaderMap::new(), &url, &url, basic_netrc_headers());
+    assert_eq!(auth_value(&out), vec!["Basic bmV0cmM=".to_string()]);
+}
+
+#[test]
+fn netrc_entry_is_used_only_for_the_user_a_url_names() {
+    let basic = |login: &str, password: &str| {
+        let credentials = BASE64_STANDARD.encode(format!("{login}:{password}"));
+        Some(HeaderValue::from_str(&format!("Basic {credentials}")).unwrap())
+    };
+    let url: Url = "https://example.com/file".parse().unwrap();
+    assert_eq!(netrc_authorization(&url, "user", "pw"), basic("user", "pw"));
+    let url: Url = "https://user@example.com/file".parse().unwrap();
+    assert_eq!(netrc_authorization(&url, "user", "pw"), basic("user", "pw"));
+    assert_eq!(netrc_authorization(&url, "other", "pw"), None);
+    let url: Url = "https://a%40b@example.com/file".parse().unwrap();
+    assert_eq!(netrc_authorization(&url, "a@b", "pw"), basic("a@b", "pw"));
 }
 
 /// Credentials stay with the host and port they were written for. A scheme
