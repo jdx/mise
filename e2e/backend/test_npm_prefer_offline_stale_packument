@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+
+# `mise ls` is a prefer-offline command, so the npm backend answers it from a
+# cached packument however old it is. The version list and `latest` it builds
+# from that packument must not be saved as if just fetched: otherwise `install`,
+# `latest` and `upgrade` keep the old answer for `fetch_remote_versions_cache`.
+# https://github.com/jdx/mise/issues/16105
+
+# The packument, not the shared versions host, is what this test ages.
+export MISE_USE_VERSIONS_HOST=0
+
+cat >mise.toml <<'EOF'
+[tools]
+"npm:left-pad" = "latest"
+EOF
+
+mise ls-remote npm:left-pad >/dev/null
+packument=$(ls "$MISE_CACHE_DIR"/npm-meta/*/left-pad.json)
+
+# Rewind the cached packument to before 1.3.0 was published, fetched long ago,
+# with validators the registry will not answer 304 to.
+jq '.fetched_at = 0
+  | .etag = "W/\"old\""
+  | del(.last_modified)
+  | .packument.versions |= with_entries(select(.key != "1.3.0"))
+  | .packument["dist-tags"].latest = "1.2.0"' "$packument" >"$packument.old"
+mv "$packument.old" "$packument"
+# Forget the version list and `latest` mise derived earlier.
+rm -rf "$MISE_CACHE_DIR/npm-left-pad"
+
+# `mise ls` stays offline and answers from the old packument...
+assert_contains "mise ls npm:left-pad" "1.2.0"
+# ...without saving what it derived from it.
+assert_empty "find '$MISE_CACHE_DIR' -path '*npm-left-pad*' \( -name 'remote_versions-*' -o -name 'latest_version-*' \)"
+
+# The next commands that may use the network ask the registry.
+assert "mise latest npm:left-pad" "1.3.0"
+assert "mise ls-remote npm:left-pad | tail -1" "1.3.0"
+assert_contains "mise install --dry-run 2>&1" "npm:left-pad@1.3.0"
