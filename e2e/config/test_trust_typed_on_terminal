@@ -161,13 +161,18 @@ fi
 # These check the mode of a directory, not who owns it, so they also run as root,
 # as Linux CI does: a 777 directory counts as writable by other accounts.
 
-# Whether every directory from $1 up to / is sticky or writable by its owner
-# alone. mise checks all of them for a config outside the project, and the e2e
-# harness runs in a container whose /tmp is a 777 directory that is not sticky.
+# Whether every directory from $1 up to / belongs to this user or root, and is
+# sticky or writable by its owner alone, as mise requires of each of them for a
+# config outside the project. The e2e harness runs in a container whose /tmp is
+# a 777 directory that is not sticky. mise also accepts a directory writable by
+# the user's private group; this says no to it, which only skips the check.
 entries_guarded_up_from() {
-  local dir
-  dir="$(cd "$1" && pwd -P)"
+  local dir uid owner
+  dir="$(cd "$1" && pwd -P)" || return 1
+  uid="$(id -u)" || return 1
   while :; do
+    owner="$(stat -c %u "$dir" 2>/dev/null || stat -f %u "$dir")" || return 1
+    [[ $owner == 0 || $owner == "$uid" ]] || return 1
     [[ -z "$(find "$dir" -maxdepth 0 -perm /022 ! -perm -1000)" ]] || return 1
     [[ $dir == / ]] && return 0
     dir="$(dirname "$dir")"
