@@ -323,7 +323,7 @@ impl Edit {
             // The file can become a link while the editor is open, so where it leads is
             // checked again when it is saved.
             .before_save(|path| {
-                config_file::symlink_check_before_write(path)
+                config_file::checked_write_destination(path)
                     .map_err(|e| std::io::Error::other(e.to_string()))
             })
             .with_tool_provider(Box::new(MiseToolProvider))

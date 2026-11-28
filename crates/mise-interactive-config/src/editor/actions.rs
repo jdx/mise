@@ -121,10 +121,13 @@ impl InteractiveConfig {
         if self.dry_run {
             self.renderer.flash_message("Dry-run mode: not saving")?;
         } else {
-            if let Some(check) = &self.before_save {
-                check(&self.path)?;
-            }
-            self.doc.save(&self.path)?;
+            // The check names the file it approved, so the save goes there even if the path
+            // is made a link after the check.
+            let destination = match &self.before_save {
+                Some(check) => check(&self.path)?,
+                None => self.path.clone(),
+            };
+            self.doc.save(&destination)?;
             self.doc.modified = false;
             self.renderer.flash_message("Saved")?;
         }

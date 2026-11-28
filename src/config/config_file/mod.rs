@@ -847,12 +847,21 @@ fn granted_by_this_command(config_root: &Path) {
 }
 
 /// Whether this process trusted `config_root`, rather than finding it trusted when it started.
+/// A root below a monorepo root that this process trusted counts too: the monorepo root's
+/// marker trusts it, so it needs no record of its own, and its trust came from this command
+/// just the same. Such a root counts even when it was also trusted on its own before, as the
+/// monorepo root's trust would hide that.
 fn trusted_by_this_command(config_root: &Path) -> bool {
-    GRANTED_BY_THIS_COMMAND
-        .lock()
-        .unwrap()
-        .as_ref()
-        .is_some_and(|roots| roots.contains(&resolved_root(config_root)))
+    let granted = GRANTED_BY_THIS_COMMAND.lock().unwrap();
+    let Some(roots) = granted.as_ref() else {
+        return false;
+    };
+    let root = resolved_root(config_root);
+    roots.contains(&root)
+        || root
+            .ancestors()
+            .skip(1)
+            .any(|dir| roots.contains(dir) && has_monorepo_marker(dir))
 }
 
 /// Whether a command that implies trust may record it for `path`. An ignore always wins: the user
@@ -1220,11 +1229,17 @@ fn is_trusted_without_config_paths(
 /// project trusted as one, and its grandparent when it is a file, which lies in its root.
 fn trusted_monorepo_ancestor(canonical: &Path) -> bool {
     let own_levels = if canonical.is_dir() { 1 } else { 2 };
-    canonical.ancestors().skip(own_levels).any(|dir| {
-        let record = dirs::TRUSTED_CONFIGS.join(record_name(dir));
-        (with_appended_extension(&record, "monorepo").exists() || has_legacy_monorepo_marker(dir))
-            && is_trusted_with(dir, false)
-    })
+    canonical
+        .ancestors()
+        .skip(own_levels)
+        .any(|dir| has_monorepo_marker(dir) && is_trusted_with(dir, false))
+}
+
+/// Whether `dir`, resolved, is marked as a monorepo root, under the current record name or an
+/// older one.
+fn has_monorepo_marker(dir: &Path) -> bool {
+    let record = dirs::TRUSTED_CONFIGS.join(record_name(dir));
+    with_appended_extension(&record, "monorepo").exists() || has_legacy_monorepo_marker(dir)
 }
 
 remove_by!("2027.11.0", "legacy-trust-record-names");
@@ -1773,7 +1788,16 @@ pub fn script_check_before_remove(script: &Path, root: &Path) -> Result<PathBuf>
 /// [`script_check_before_remove`]. Returns the path the change goes to.
 fn script_link_check(script: &Path, root: &Path, follow_own_link: bool) -> Result<PathBuf> {
     let script = script.absolutize()?;
-    let root = root.absolutize()?;
+    let mut root = root.absolutize()?.into_owned();
+    // A conf.d folder is a config root of its own, but it sits in a project's config directory,
+    // and a link there is the project's. When the folder or a directory above it links out, the
+    // project is the boundary, as it is for the folder's trust and lockfile.
+    let folder_config = root.join("mise.toml");
+    if config::is_conf_d_folder_file(&folder_config)
+        && let Some(project) = config_root::linked_project(&folder_config)
+    {
+        root = project;
+    }
     let (Some(dir), Some(name)) = (script.parent(), script.file_name()) else {
         return Ok(script.into_owned());
     };
@@ -2605,6 +2629,25 @@ mod tests {
             detect_config_file_with_settings(Path::new("/foo/bar/mise.toml"), &settings).await,
             ConfigFileDetection::Recognized(ConfigFileType::MiseToml)
         ));
+    }
+
+    #[test]
+    fn a_root_trusted_through_a_monorepo_root_this_command_trusted_is_trusted_by_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let mono = dir.path().canonicalize().unwrap().join("mono");
+        let child = mono.join("packages/app");
+        std::fs::create_dir_all(&child).unwrap();
+        granted_by_this_command(&mono);
+        assert!(trusted_by_this_command(&mono));
+        // Without the marker the monorepo root does not trust the child, so neither does this
+        // command.
+        assert!(!trusted_by_this_command(&child));
+        let record = dirs::TRUSTED_CONFIGS.join(record_name(&mono));
+        let marker = with_appended_extension(&record, "monorepo");
+        file::create_dir_all(marker.parent().unwrap()).unwrap();
+        std::fs::write(&marker, "").unwrap();
+        assert!(trusted_by_this_command(&child));
+        std::fs::remove_file(&marker).unwrap();
     }
 
     #[cfg(unix)]

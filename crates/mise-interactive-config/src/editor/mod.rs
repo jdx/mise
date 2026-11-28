@@ -54,8 +54,9 @@ pub struct InteractiveConfig {
     pub(crate) before_save: Option<BeforeSave>,
 }
 
-/// A check run on the config path right before the editor writes it.
-pub(crate) type BeforeSave = Box<dyn Fn(&std::path::Path) -> io::Result<()> + Send + Sync>;
+/// A check run on the config path right before the editor writes it, returning the file to write.
+pub(crate) type BeforeSave =
+    Box<dyn Fn(&std::path::Path) -> io::Result<std::path::PathBuf> + Send + Sync>;
 
 impl InteractiveConfig {
     /// Create a new config editor for a new file with default sections
@@ -157,11 +158,13 @@ impl InteractiveConfig {
     }
 
     /// Run `check` on the config path right before each save. When it fails, the editor writes
-    /// nothing and returns its error. The file can change while the editor is open, so a check
-    /// made before the editor started does not cover the save.
+    /// nothing and returns its error. Otherwise it returns the file the check approved, which
+    /// the editor writes instead of the path, so the save goes to the file the check saw. The
+    /// file can change while the editor is open, so a check made before the editor started does
+    /// not cover the save.
     pub fn before_save(
         mut self,
-        check: impl Fn(&std::path::Path) -> io::Result<()> + Send + Sync + 'static,
+        check: impl Fn(&std::path::Path) -> io::Result<std::path::PathBuf> + Send + Sync + 'static,
     ) -> Self {
         self.before_save = Some(Box::new(check));
         self

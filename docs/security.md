@@ -201,8 +201,10 @@ started and safe mode is off. Trust that the same command grants does not
 count, however it grants it: because you typed it in the project (see
 [Typed in a terminal](#typed-in-a-terminal)), because you answered yes to the
 prompt, or because `--yes` or `MISE_YES` is set. The prompt names the
-directory, not where its links lead. Otherwise the write fails, names the link and its
-target, and tells you to run `mise trust` there. A link into mise's
+directory, not where its links lead. Otherwise the write fails and names the link and
+its target. Outside safe mode it tells you to run `mise trust` there and run the
+command again. In safe mode trust does not help, so it tells you to write the file
+the link leads to directly, or to replace the link. A link into mise's
 state directory, a dangling link that leads out of the directory, and a
 project's link to global config are never followed, trusted or not; write
 global config with `-g`. A global config file that links into a dotfiles

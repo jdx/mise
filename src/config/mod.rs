@@ -3851,8 +3851,9 @@ pub fn is_global_config(path: &Path) -> bool {
 ///
 /// Discovery lists the global config files that exist, so the `config.toml` that a first
 /// `mise use -g` creates is not among them. A file directly in the global or system config
-/// directory, or in its `conf.d`, is global config by where it is; a file deeper below it is
-/// a project like any other.
+/// directory, or in its `conf.d`, is global config by where it is, and so is a folder fragment
+/// in that `conf.d` (see [`global_folder_fragment`]); a file deeper below it is a project like
+/// any other.
 pub fn is_global_config_write(path: &Path) -> bool {
     if is_global_config(path) || env::MISE_GLOBAL_CONFIG_FILE.as_deref() == Some(path) {
         return true;
@@ -3864,6 +3865,39 @@ pub fn is_global_config_write(path: &Path) -> bool {
         .into_iter()
         .flat_map(|dir| [dir.to_path_buf(), dir.join("conf.d")])
         .any(|dir| file::same_file(parent, &dir))
+        || global_folder_fragment(path).is_some()
+}
+
+/// The spelling in the global or system config directory of `path`, when `path` is a folder
+/// fragment there, one that discovery would load from a folder of `conf.d`, whether or not the
+/// file or its folder exists yet. The folder is found as an entry of `conf.d` that `path`'s
+/// directory resolves to, so a link to the folder, or a folder the user linked into `conf.d`,
+/// is spelled as discovery spells it; a folder that does not exist yet is spelled in `conf.d`.
+fn global_folder_fragment(path: &Path) -> Option<PathBuf> {
+    let name = path.file_name()?;
+    let dir = path.parent()?;
+    let real_dir = dir.canonicalize().ok();
+    [*dirs::CONFIG, *dirs::SYSTEM_CONFIG]
+        .into_iter()
+        .find_map(|config| {
+            let conf_d = config.join("conf.d");
+            let folder = match &real_dir {
+                Some(real) => std::fs::read_dir(&conf_d)
+                    .ok()?
+                    .flatten()
+                    .map(|entry| conf_d.join(entry.file_name()))
+                    .find(|folder| folder.canonicalize().is_ok_and(|c| c == *real))?,
+                None => {
+                    let folder_name = dir.file_name()?;
+                    if !file::same_file(dir.parent()?, &conf_d) {
+                        return None;
+                    }
+                    conf_d.join(folder_name)
+                }
+            };
+            Some(folder.join(name))
+        })
+        .filter(|file| is_conf_d_folder_file(file))
 }
 
 /// Whether `path` is one of the global override files, which outrank all project config.
@@ -3983,7 +4017,7 @@ fn link_placements(
 
 /// Where global or system config is spelled for a file `path` resolves to: where discovery
 /// found it, or for a file that does not exist yet, the global or system config directory (or
-/// its `conf.d`) that `path`'s directory resolves to.
+/// its `conf.d`, or a folder fragment's folder there) that `path`'s directory resolves to.
 fn global_config_spelling(path: &Path) -> Option<PathBuf> {
     if let Some(global) = discovered_global_config(path) {
         return Some(global);
@@ -3995,6 +4029,7 @@ fn global_config_spelling(path: &Path) -> Option<PathBuf> {
         .flat_map(|config| [config.to_path_buf(), config.join("conf.d")])
         .find(|candidate| candidate.canonicalize().is_ok_and(|c| c == dir))
         .map(|candidate| candidate.join(name))
+        .or_else(|| global_folder_fragment(path))
 }
 
 /// `path` with every link resolved, for a file that may not exist yet.

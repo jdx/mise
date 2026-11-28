@@ -131,6 +131,14 @@ assert_not_contains "cat $HOME/.config/mise/config.toml" "HOMELINK"
 ln -s .config/mise cfg
 assert_fail_contains "mise set --file cfg/config.toml CFGLINK=1 2>&1" "Write global config with"
 assert_not_contains "cat $HOME/.config/mise/config.toml" "CFGLINK"
+# nor is one to a folder of global config's conf.d, for a fragment that does not exist yet
+mkdir -p .config/mise/conf.d/folder
+rm .mise
+ln -s .config/mise/conf.d/folder .mise
+assert_fail_contains "mise set --file .mise/mise.toml FRAGLINK=1 2>&1" "Write global config with"
+assert_fail "test -e $HOME/.config/mise/conf.d/folder/mise.toml"
+rm .mise
+ln -s .config/mise .mise
 cd "$back" || exit 1
 
 echo "=== nor is one that would create a global config file ==="
@@ -230,6 +238,20 @@ assert_fail_contains "MISE_YES=1 mise tasks rm out 2>&1" "through a linked direc
 assert "test -e ../outside/tasks/out"
 assert_fail_contains "mise tasks add --file new -- echo new 2>&1" "through a linked directory"
 assert_fail "test -e ../outside/tasks/new"
+
+echo "=== nor is a conf.d folder linked out of the project, though it is a config root ==="
+mkdir -p ../task-folder/.mise/conf.d ../outside/folder/tasks
+printf '#!/usr/bin/env bash\necho folder\n' >../outside/folder/tasks/fout
+chmod +x ../outside/folder/tasks/fout
+printf '[task_config]\nincludes = ["tasks"]\n' >../outside/folder/mise.toml
+cd ../task-folder || exit 1
+echo "[tools]" >mise.toml
+ln -s ../../../outside/folder .mise/conf.d/folder
+# safe mode loads the folder untrusted, and never follows a link out of the project
+assert_contains "MISE_SAFE=1 mise tasks ls" "fout"
+assert_fail_contains "MISE_SAFE=1 MISE_YES=1 mise tasks rm fout 2>&1" "through a linked directory"
+assert "test -e ../outside/folder/tasks/fout"
+cd ../task-link || exit 1
 
 echo "=== a task script's own link out is removed, not followed ==="
 rm mise-tasks

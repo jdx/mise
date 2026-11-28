@@ -64,3 +64,15 @@ fn save_writes_nothing_when_the_check_before_it_fails() {
     assert_eq!(err.to_string(), "refused");
     assert!(!path.exists());
 }
+
+#[test]
+fn save_writes_to_the_file_the_check_approved() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("mise.toml");
+    let approved = dir.path().join("approved.toml");
+    let to = approved.clone();
+    let mut editor = InteractiveConfig::new(path.clone()).before_save(move |_| Ok(to.clone()));
+    editor.save().unwrap();
+    assert!(approved.exists());
+    assert!(!path.exists());
+}

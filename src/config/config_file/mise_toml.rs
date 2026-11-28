@@ -341,6 +341,7 @@ fn drop_unlent_templates(
     if !crate::backend::http::has_top_level_checksum(options) {
         for at in drop_unverified_platform_urls(
             &mut options.opts,
+            &explicit.opts,
             &dropped,
             unverified,
             top_checksum_dropped,
@@ -360,8 +361,9 @@ fn drop_unlent_templates(
 /// Whether to keep option value `value`, after dropping from it the table entries that hold
 /// template syntax and are not written as they are in one of `written`, the same option's value
 /// in each config that lent its templates. A table none of whose entries is left is dropped.
-/// `at` is the path to `value` in the tool's options. A table whose `url` loses its checksum
-/// this way (see [`drops_unverified_url`]) has its path added to `unverified`.
+/// `at` is the path to `value` in the tool's options. A table that loses its last checksum
+/// this way (see [`drops_unverified_url`]) has its path added to `unverified`, also with no
+/// `url` of its own: a platform's url can be a flat key beside its table.
 fn keep_lent_parts(
     value: &mut toml::Value,
     written: &[&toml::Value],
@@ -388,7 +390,7 @@ fn keep_lent_parts(
         }
         keep
     });
-    if drops_unverified_url(&dropped, table.iter()) && table.contains_key("url") {
+    if drops_unverified_url(&dropped, table.iter()) {
         unverified.push(at.to_vec());
     }
     !table.is_empty()
@@ -411,8 +413,11 @@ const PLATFORM_TABLES: [&str; 2] = ["platforms", "platform"];
 /// The http backend looks up a platform's url and its checksum each under every spelling of the
 /// platform (`macos-x64`, `darwin-amd64`, ...), so the spellings are one platform here too: a
 /// `darwin-arm64` url is checked against a `macos-arm64` checksum.
+///
+/// A url given on the command line, in `explicit`, is kept: it was not lent by another config.
 fn drop_unverified_platform_urls(
     opts: &mut IndexMap<String, toml::Value>,
+    explicit: &IndexMap<String, toml::Value>,
     dropped: &[String],
     unverified: Vec<Vec<String>>,
     top_checksum_dropped: bool,
@@ -478,7 +483,11 @@ fn drop_unverified_platform_urls(
             .cloned()
             .collect();
         for platform in written {
-            if remove_url_at(opts, &[table.to_string(), platform.clone()]) {
+            let given = explicit
+                .get(table)
+                .and_then(|entries| entries.get(&platform)?.get("url"))
+                .is_some();
+            if !given && remove_url_at(opts, &[table.to_string(), platform.clone()]) {
                 removed.push(format!("{table}.{platform}.url"));
             }
         }
@@ -486,7 +495,7 @@ fn drop_unverified_platform_urls(
     opts.retain(|k, _| {
         let unchecked_url = flat_platform_option(k).is_some_and(|(platform, field)| {
             field == "url" && unchecked.contains(&spelling(&platform))
-        });
+        }) && !explicit.contains_key(k);
         if unchecked_url {
             removed.push(k.clone());
         }
@@ -3558,7 +3567,8 @@ mod tests {
         .unwrap()
         .into_iter()
         .collect();
-        let removed = super::drop_unverified_platform_urls(&mut o, &[], vec![], true);
+        let removed =
+            super::drop_unverified_platform_urls(&mut o, &Default::default(), &[], vec![], true);
         assert_eq!(removed, ["platforms.linux-x64.url"]);
         assert!(o["platforms"]["macos-arm64"].get("url").is_some());
     }
@@ -3580,7 +3590,8 @@ mod tests {
             platforms_macos_arm64_checksum = "sha256:1"
             platforms = { windows-x64 = { url = "w" }, freebsd-x64 = { url = "f", checksum = "sha256:2" } }
         "#});
-        let removed = super::drop_unverified_platform_urls(&mut o, &[], vec![], true);
+        let removed =
+            super::drop_unverified_platform_urls(&mut o, &Default::default(), &[], vec![], true);
         assert_eq!(
             removed,
             [
@@ -3607,7 +3618,13 @@ mod tests {
             platforms = { windows-x64 = { url = "w" } }
         "#});
         let dropped = ["platforms_linux_x64_checksum_url".to_string()];
-        let removed = super::drop_unverified_platform_urls(&mut o, &dropped, vec![], false);
+        let removed = super::drop_unverified_platform_urls(
+            &mut o,
+            &Default::default(),
+            &dropped,
+            vec![],
+            false,
+        );
         assert_eq!(removed, ["platforms_linux_x64_url"]);
         assert!(o.contains_key("platforms_macos_arm64_url"));
         assert!(o["platforms"]["windows-x64"].get("url").is_some());
@@ -3621,7 +3638,13 @@ mod tests {
             vec!["platforms".to_string(), "linux-x64".to_string()],
             vec!["platforms".to_string(), "macos-arm64".to_string()],
         ];
-        let removed = super::drop_unverified_platform_urls(&mut o, &[], unverified, false);
+        let removed = super::drop_unverified_platform_urls(
+            &mut o,
+            &Default::default(),
+            &[],
+            unverified,
+            false,
+        );
         assert_eq!(removed, ["platforms.macos-arm64.url"]);
         assert!(o["platforms"]["linux-x64"].get("url").is_some());
     }
@@ -3642,7 +3665,13 @@ mod tests {
         "#});
         let unverified = vec![vec!["platforms".to_string(), "macos-arm64".to_string()]];
         let dropped = ["platforms_linux_x64_checksum".to_string()];
-        let removed = super::drop_unverified_platform_urls(&mut o, &dropped, unverified, false);
+        let removed = super::drop_unverified_platform_urls(
+            &mut o,
+            &Default::default(),
+            &dropped,
+            unverified,
+            false,
+        );
         assert_eq!(
             removed,
             [
@@ -3657,7 +3686,8 @@ mod tests {
             platforms_macos_x86_64_checksum = "sha256:1"
             platforms = { darwin-x64 = { url = "m" } }
         "#});
-        let removed = super::drop_unverified_platform_urls(&mut o, &[], vec![], true);
+        let removed =
+            super::drop_unverified_platform_urls(&mut o, &Default::default(), &[], vec![], true);
         assert!(removed.is_empty(), "{removed:?}");
         assert!(o["platforms"]["darwin-x64"].get("url").is_some());
     }
@@ -3676,7 +3706,8 @@ mod tests {
             platforms_macos_aarch64_checksum_url = { a = "c" }
             platforms = { darwin-arm64 = { url = "m" }, linux-amd64 = { url = "l" }, linux-x64 = { checksum = ["sha256:1"] } }
         "#});
-        let removed = super::drop_unverified_platform_urls(&mut o, &[], vec![], true);
+        let removed =
+            super::drop_unverified_platform_urls(&mut o, &Default::default(), &[], vec![], true);
         assert_eq!(
             removed,
             ["platforms.darwin-arm64.url", "platforms.linux-amd64.url"]
@@ -3696,8 +3727,63 @@ checksum_url = ["c"]"#,
             platforms = { darwin-arm64 = { url = "m", checksum_url = ["c"] } }
         "#});
         let unverified = vec![vec!["platforms".to_string(), "darwin-arm64".to_string()]];
-        let removed = super::drop_unverified_platform_urls(&mut o, &[], unverified, false);
+        let removed = super::drop_unverified_platform_urls(
+            &mut o,
+            &Default::default(),
+            &[],
+            unverified,
+            false,
+        );
         assert_eq!(removed, ["platforms.darwin-arm64.url"]);
+    }
+
+    #[test]
+    fn a_platform_table_that_loses_its_checksum_takes_the_flat_url_with_it() {
+        // The table holds only the checksum; its url is a flat key beside it.
+        let mut platforms: toml::Value =
+            toml::from_str::<toml::Table>(r#"linux-x64 = { checksum_url = "{{ vars.sums }}" }"#)
+                .unwrap()
+                .into();
+        let mut unverified = vec![];
+        let keep = super::keep_lent_parts(
+            &mut platforms,
+            &[],
+            &["platforms".to_string()],
+            &mut unverified,
+        );
+        assert!(!keep);
+        assert_eq!(unverified, [vec!["platforms", "linux-x64"]]);
+        let mut o: indexmap::IndexMap<String, toml::Value> =
+            [("platforms_linux_x64_url".to_string(), "l".into())]
+                .into_iter()
+                .collect();
+        let removed = super::drop_unverified_platform_urls(
+            &mut o,
+            &Default::default(),
+            &[],
+            unverified,
+            false,
+        );
+        assert_eq!(removed, ["platforms_linux_x64_url"]);
+    }
+
+    #[test]
+    fn a_platform_url_given_on_the_command_line_is_kept() {
+        let given: indexmap::IndexMap<String, toml::Value> = toml::from_str::<toml::Table>(
+            r#"
+            platforms_linux_x64_url = "l"
+            platforms = { macos-arm64 = { url = "m" } }
+            "#,
+        )
+        .unwrap()
+        .into_iter()
+        .collect();
+        let mut o = given.clone();
+        o.insert("platforms_linux_arm64_url".to_string(), "a".into());
+        let removed = super::drop_unverified_platform_urls(&mut o, &given, &[], vec![], true);
+        assert_eq!(removed, ["platforms_linux_arm64_url"]);
+        assert!(o.contains_key("platforms_linux_x64_url"));
+        assert!(o["platforms"]["macos-arm64"].get("url").is_some());
     }
 
     #[test]
