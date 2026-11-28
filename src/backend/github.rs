@@ -5,10 +5,10 @@ use crate::backend::backend_type::BackendType;
 use crate::backend::options::{BackendOptions, VersionOrder};
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::{
-    ArchiveLayout, VerifiableError, ensure_plain_asset_name, get_filename_from_url,
-    install_artifact, is_weak_checksum, lock_url, lookup_platform_key, lookup_with_fallback,
-    pinned_checksum, render_bin_path, tag_candidates, template_string, try_allowed_release_tags,
-    verify_artifact, with_login_of,
+    ArchiveLayout, VerifiableError, ensure_plain_asset_name, forget_locked_login,
+    get_filename_from_url, install_artifact, is_weak_checksum, lock_url, lookup_platform_key,
+    lookup_with_fallback, pin_download_with_login, pinned_checksum, render_bin_path,
+    tag_candidates, template_string, try_allowed_release_tags, verify_artifact, with_login_of,
 };
 use crate::backend::{MISE_BINS_DIR, SecurityFeature, runtime_path_for_install_path};
 use crate::config::{Config, Settings, SettingsExt};
@@ -1594,7 +1594,9 @@ impl Backend for UnifiedGitBackend {
                     let download_headers = if additional.url_api.is_empty() {
                         None
                     } else {
-                        Some(self.forge_headers(&additional.url_api, &opts.api_url())?)
+                        Some(crate::lockfile::DownloadHeaders::Client(
+                            self.forge_headers(&additional.url_api, &opts.api_url())?,
+                        ))
                     };
                     let (url, url_api, checksum) =
                         lock_urls_of(&additional, |url| self.forge_headers(url, &opts.api_url()))
@@ -1616,7 +1618,9 @@ impl Backend for UnifiedGitBackend {
                 let download_headers = if asset.url_api.is_empty() {
                     None
                 } else {
-                    Some(self.forge_headers(&asset.url_api, &opts.api_url())?)
+                    Some(crate::lockfile::DownloadHeaders::Client(
+                        self.forge_headers(&asset.url_api, &opts.api_url())?,
+                    ))
                 };
                 let checksum_source = locked_digest_source(&asset, primary_downloaded);
                 let (url, url_api, checksum) =
@@ -2304,7 +2308,7 @@ impl UnifiedGitBackend {
 
         ctx.pr.set_message(format!("download {filename}"));
         HTTP.download_file_linked(
-            url,
+            &url,
             &file_path,
             &headers,
             pinned.as_deref(),
@@ -2342,6 +2346,12 @@ impl UnifiedGitBackend {
                 lockfile_has_checksum,
             )
             .await);
+        }
+        // The entry records the URLs without a login, so `mise lock` could not
+        // fetch the artifact to replace a missing, md5 or sha1 checksum: pin
+        // what was downloaded through the login now.
+        if let Some(info) = tv.lock_platforms.get_mut(&platform_key) {
+            forget_locked_login(info, &url, &file_path)?;
         }
 
         let settings = Settings::get();
@@ -2436,7 +2446,7 @@ impl UnifiedGitBackend {
         let headers = self.forge_headers(&url, &opts.api_url())?;
 
         ctx.pr.set_message(format!("download {filename}"));
-        HTTP.download_file_with_headers(url, &file_path, &headers, Some(ctx.pr.as_ref()))
+        HTTP.download_file_with_headers(&url, &file_path, &headers, Some(ctx.pr.as_ref()))
             .await?;
         ctx.pr.next_operation();
 
@@ -2451,6 +2461,13 @@ impl UnifiedGitBackend {
             )
             .await);
         }
+        // As for the main asset: the recorded URL has no login.
+        pin_download_with_login(
+            &mut artifact_info.checksum,
+            &mut artifact_info.checksum_source,
+            &url,
+            &file_path,
+        )?;
         let expected_provenance =
             expected_install_provenance(artifact_info.provenance.clone(), required);
         if has_lockfile_integrity && !Settings::get().force_provenance_verify() {
@@ -4014,6 +4031,62 @@ fn template_string_for_target(template: &str, tv: &ToolVersion, target: &Platfor
 mod tests {
     use super::*;
     use crate::backend::static_helpers::try_release_tags;
+
+    /// An install recording an asset it downloaded through a login keeps its
+    /// md5 pin from mise.lock through `record_release_asset`; the pin taken
+    /// after the download replaces it by the archive's sha256, as aqua's does,
+    /// for the main asset and an additional one, since `mise lock` could not
+    /// fetch the URL recorded without the login.
+    #[test]
+    fn test_install_pins_a_weak_checksum_downloaded_through_a_login() {
+        let dir = tempfile::tempdir().unwrap();
+        let archive = dir.path().join("t.tar.gz");
+        std::fs::write(&archive, b"artifact").unwrap();
+        let sha256 = format!(
+            "sha256:{}",
+            crate::hash::file_hash_sha256(&archive, None).unwrap()
+        );
+        let md5 = "md5:8e5b948a454515dbabfc7eb718daa52f";
+        let login = "https://ci:token@ghe.example/o/t/releases/download/v1/t.tar.gz";
+        let plain = "https://ghe.example/o/t/releases/download/v1/t.tar.gz";
+        let asset = ReleaseAsset {
+            name: "t.tar.gz".to_string(),
+            url: login.to_string(),
+            url_api: String::new(),
+            digest: None,
+            release_tag: None,
+        };
+
+        let mut info = PlatformInfo {
+            checksum: Some(md5.to_string()),
+            checksum_source: Some(ChecksumSource::VersionsHost),
+            ..Default::default()
+        };
+        record_release_asset(&mut info, &asset, None);
+        assert_eq!(info.checksum.as_deref(), Some(md5));
+        forget_locked_login(&mut info, login, &archive).unwrap();
+        assert_eq!(info.url.as_deref(), Some(plain));
+        assert_eq!(info.checksum.as_deref(), Some(sha256.as_str()));
+        assert_eq!(info.checksum_source, None);
+
+        let mut artifact = ArtifactInfo {
+            url: plain.to_string(),
+            checksum: Some(md5.to_string()),
+            ..Default::default()
+        };
+        pin_download_with_login(
+            &mut artifact.checksum,
+            &mut artifact.checksum_source,
+            login,
+            &archive,
+        )
+        .unwrap();
+        assert_eq!(artifact.checksum.as_deref(), Some(sha256.as_str()));
+        // A download without a login keeps the pin it was checked against.
+        let mut checksum = Some(md5.to_string());
+        pin_download_with_login(&mut checksum, &mut None, plain, &archive).unwrap();
+        assert_eq!(checksum.as_deref(), Some(md5));
+    }
 
     /// A Forgejo attachment URL is built from `api_url`, login included. The
     /// lockfile records it without the login, and a locked install puts the

@@ -810,7 +810,7 @@ impl Backend for VfoxBackend {
 
         Ok(PlatformInfo {
             url,
-            download_headers,
+            download_headers: download_headers.map(crate::lockfile::DownloadHeaders::Plugin),
             provenance,
             ..Default::default()
         })

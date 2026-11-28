@@ -1581,11 +1581,13 @@ impl Backend for HttpBackend {
         // md5/sha1 checksum is settled here from the URL with its login and
         // the configured `headers`, which are sent but not recorded either.
         let headers = opts.headers_for_target(Some(tv.version.as_str()), target)?;
-        let lock_url = resolve_lock_url(&url, Some(&headers), &mut checksum).await?;
+        let headers =
+            (!headers.is_empty()).then_some(crate::lockfile::DownloadHeaders::Client(headers));
+        let lock_url = resolve_lock_url(&url, headers.as_ref(), &mut checksum).await?;
 
         Ok(PlatformInfo {
             download_url: crate::lockfile::LoginUrl::of(&url),
-            download_headers: (!headers.is_empty()).then_some(headers),
+            download_headers: headers,
             url: Some(lock_url),
             checksum,
             ..Default::default()

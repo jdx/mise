@@ -1248,7 +1248,7 @@ pub(crate) fn with_login_of(mut url: url::Url, base: &url::Url) -> url::Url {
 /// are not recorded.
 pub(crate) async fn resolve_lock_url(
     url: &str,
-    headers: Option<&reqwest::header::HeaderMap>,
+    headers: Option<&crate::lockfile::DownloadHeaders>,
     checksum: &mut Option<String>,
 ) -> Result<String> {
     let lock_url = lock_url(url);
@@ -1273,13 +1273,31 @@ pub(crate) fn forget_locked_login(
     download_url: &str,
     archive: &Path,
 ) -> Result<()> {
-    let has_login = |url: &str| lock_url(url) != url;
-    if has_login(download_url) && info.checksum.as_deref().is_none_or(is_weak_checksum) {
-        info.checksum = Some(format!("sha256:{}", hash::file_hash_sha256(archive, None)?));
-        info.checksum_source = None;
-    }
+    pin_download_with_login(
+        &mut info.checksum,
+        &mut info.checksum_source,
+        download_url,
+        archive,
+    )?;
     info.url = info.url.as_deref().map(lock_url);
     info.url_api = info.url_api.as_deref().map(lock_url);
+    Ok(())
+}
+
+/// The pin [`forget_locked_login`] gives an entry, for any lockfile entry's
+/// `checksum` and `checksum_source`: when `download_url` holds a login and
+/// `checksum` is missing or md5 or sha1, it becomes the sha256 of `archive`,
+/// downloaded from there and verified.
+pub(crate) fn pin_download_with_login(
+    checksum: &mut Option<String>,
+    checksum_source: &mut Option<crate::lockfile::ChecksumSource>,
+    download_url: &str,
+    archive: &Path,
+) -> Result<()> {
+    if lock_url(download_url) != download_url && checksum.as_deref().is_none_or(is_weak_checksum) {
+        *checksum = Some(format!("sha256:{}", hash::file_hash_sha256(archive, None)?));
+        *checksum_source = None;
+    }
     Ok(())
 }
 

@@ -6242,7 +6242,7 @@ fn same_persisted_data_ignores_download_headers() {
     let mut headers = reqwest::header::HeaderMap::new();
     headers.insert("authorization", "Bearer secret".parse().unwrap());
     let resolved = PlatformInfo {
-        download_headers: Some(headers),
+        download_headers: Some(crate::lockfile::DownloadHeaders::Client(headers)),
         ..stored.clone()
     };
     assert!(stored.same_persisted_data(&resolved));

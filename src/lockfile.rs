@@ -1432,7 +1432,7 @@ pub struct ArtifactInfo {
     /// Request headers `url` needs, as [`PlatformInfo::download_headers`]: used
     /// only to download the artifact for its checksum; never written.
     #[serde(skip)]
-    pub download_headers: Option<reqwest::header::HeaderMap>,
+    pub download_headers: Option<DownloadHeaders>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub provenance: Option<ProvenanceType>,
     /// Opaque legacy metadata, preserved only to avoid churn with older clients.
@@ -1533,6 +1533,20 @@ impl LoginUrl {
     }
 }
 
+/// Request headers an artifact is downloaded with, and the downloader that
+/// sends them, the one its install uses, so `mise lock` fetches the artifact
+/// as the install does.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum DownloadHeaders {
+    /// Sent by mise's HTTP client, as an http or forge backend install sends
+    /// them: `headers_forward` rules apply, and credentials (headers and a
+    /// login) are dropped when a URL replacement or redirect changes the host.
+    Client(reqwest::header::HeaderMap),
+    /// A vfox plugin's `PreInstall` headers, sent by the vfox downloader only
+    /// to the origin of the plugin's URL, as a vfox install sends them.
+    Plugin(reqwest::header::HeaderMap),
+}
+
 impl std::fmt::Debug for LoginUrl {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_tuple("LoginUrl")
@@ -1557,10 +1571,10 @@ pub struct PlatformInfo {
     pub url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub url_api: Option<String>,
-    /// Request headers `url` needs, from the plugin that resolved it. Used
+    /// Request headers `url` needs, from the backend that resolved it. Used
     /// only to download the artifact for its checksum; never written.
     #[serde(skip)]
-    pub download_headers: Option<reqwest::header::HeaderMap>,
+    pub download_headers: Option<DownloadHeaders>,
     /// `url` with the login it is recorded without, from the config that
     /// resolved it. Used only to download the artifact for its checksum;
     /// never written.

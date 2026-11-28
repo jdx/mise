@@ -1523,7 +1523,7 @@ async fn check_replaced_weak_pins(
 async fn artifact_checksum(
     url: &str,
     api_url: Option<&str>,
-    headers: Option<&reqwest::header::HeaderMap>,
+    headers: Option<&DownloadHeaders>,
     expected: &[(&str, &str)],
 ) -> Result<String> {
     let check = |path: &std::path::Path| -> Result<()> {
@@ -1555,12 +1555,7 @@ async fn artifact_checksum(
     // Headers resolved for the API asset endpoint (a forge token) are only valid
     // there; the browser URL was reachable without them.
     let headers = headers.filter(|_| api_url.is_none_or(|api_url| api_url == url));
-    match headers.filter(|headers| !headers.is_empty()) {
-        Some(headers) => {
-            crate::backend::vfox::download_with_plugin_headers(&url, &path, headers).await?
-        }
-        None => crate::http::HTTP.download_file(&url, &path, None).await?,
-    }
+    download_with_headers(&url, &path, headers).await?;
     check(&path)?;
     Ok(format!(
         "sha256:{}",
@@ -1568,11 +1563,32 @@ async fn artifact_checksum(
     ))
 }
 
+/// Download `url` to `path` with `headers`, through the downloader that sends
+/// them at install time (see [`DownloadHeaders`]).
+async fn download_with_headers(
+    url: &str,
+    path: &std::path::Path,
+    headers: Option<&DownloadHeaders>,
+) -> Result<()> {
+    match headers {
+        Some(DownloadHeaders::Plugin(headers)) if !headers.is_empty() => {
+            crate::backend::vfox::download_with_plugin_headers(url, path, headers).await
+        }
+        Some(DownloadHeaders::Client(headers)) if !headers.is_empty() => {
+            let headers = crate::http::with_host_auth(&reqwest::Url::parse(url)?, headers)?;
+            crate::http::HTTP
+                .download_file_with_headers(url, path, &headers, None)
+                .await
+        }
+        _ => crate::http::HTTP.download_file(url, path, None).await,
+    }
+}
+
 /// [`download_for_verification`], after which an md5 or sha1 `checksum` the
 /// download matched is replaced by the download's sha256.
 pub(crate) async fn download_for_strong_checksum(
     url: &str,
-    headers: Option<&reqwest::header::HeaderMap>,
+    headers: Option<&DownloadHeaders>,
     checksum: &mut Option<String>,
 ) -> Result<()> {
     let directory = download_with_headers_for_verification(url, headers, checksum).await?;
@@ -1595,17 +1611,14 @@ pub(crate) async fn download_for_verification(
 /// [`download_for_verification`], sending `headers` with the request.
 async fn download_with_headers_for_verification(
     url: &str,
-    headers: Option<&reqwest::header::HeaderMap>,
+    headers: Option<&DownloadHeaders>,
     checksum: &mut Option<String>,
 ) -> Result<tempfile::TempDir> {
     let directory = tempfile::tempdir()?;
     let path = directory.path().join("artifact");
-    match (crate::backend::http::local_artifact_path(url)?, headers) {
-        (Some(local), _) => crate::file::copy(&local, &path)?,
-        (None, Some(headers)) if !headers.is_empty() => {
-            crate::backend::vfox::download_with_plugin_headers(url, &path, headers).await?
-        }
-        (None, _) => crate::http::HTTP.download_file(url, &path, None).await?,
+    match crate::backend::http::local_artifact_path(url)? {
+        Some(local) => crate::file::copy(&local, &path)?,
+        None => download_with_headers(url, &path, headers).await?,
     }
     if let Some((algorithm, expected)) = checksum.as_deref().and_then(|value| value.split_once(':'))
     {
@@ -2909,11 +2922,64 @@ mod tests {
         let mut headers = reqwest::header::HeaderMap::new();
         headers.insert("x-mirror-token", "s3cret".parse().unwrap());
         let mut checksum = Some(format!("md5:{ARTIFACT_MD5}"));
-        download_for_strong_checksum(&url, Some(&headers), &mut checksum)
+        download_for_strong_checksum(&url, Some(&DownloadHeaders::Client(headers)), &mut checksum)
             .await
             .unwrap();
         assert_eq!(checksum, Some(format!("sha256:{ARTIFACT_SHA256}")));
         with_headers.assert_async().await;
+    }
+
+    /// An http backend's headers are sent as its install sends them, through
+    /// mise's HTTP client: a redirect to another origin gets the headers that
+    /// `headers_forward` lets through, and not the login of the configured URL.
+    #[tokio::test]
+    async fn configured_headers_follow_a_redirect_as_the_install_sends_them() {
+        let mut origin = mockito::Server::new_async().await;
+        let mut storage = mockito::Server::new_async().await;
+        // Paths no other test serves: downloads are cached per invocation.
+        let redirect = origin
+            .mock("GET", "/forwarded-headers.tar.gz")
+            .match_header("authorization", "Basic Y2k6dG9rZW4=")
+            .match_header("x-mirror-token", "s3cret")
+            .with_status(302)
+            .with_header(
+                "location",
+                &format!("{}/forwarded-headers-storage.tar.gz", storage.url()),
+            )
+            .expect(1)
+            .create_async()
+            .await;
+        let stored = storage
+            .mock("GET", "/forwarded-headers-storage.tar.gz")
+            .match_header("authorization", mockito::Matcher::Missing)
+            .match_header("x-mirror-token", "s3cret")
+            .with_body("artifact")
+            .expect(1)
+            .create_async()
+            .await;
+        let url = format!("{}/forwarded-headers.tar.gz", origin.url());
+        let name = reqwest::header::HeaderName::from_static("x-mirror-token");
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert(name.clone(), "s3cret".parse().unwrap());
+        let host = reqwest::Url::parse(&storage.url())
+            .unwrap()
+            .host_str()
+            .unwrap()
+            .to_string();
+        let (rule, hosts) = mise_util::http::forward_rule_header(&name, &[host]).unwrap();
+        headers.insert(rule, hosts);
+        let mut info = PlatformInfo {
+            url: Some(url.clone()),
+            download_url: crate::lockfile::LoginUrl::of(
+                &url.replace("http://", "http://ci:token@"),
+            ),
+            download_headers: Some(DownloadHeaders::Client(headers)),
+            ..Default::default()
+        };
+        complete_artifact_checksums(&mut info).await.unwrap();
+        assert_eq!(info.checksum, Some(format!("sha256:{ARTIFACT_SHA256}")));
+        redirect.assert_async().await;
+        stored.assert_async().await;
     }
 
     #[tokio::test]
@@ -2999,7 +3065,7 @@ mod tests {
         };
         let artifact = |url: &str| crate::lockfile::ArtifactInfo {
             url: url.into(),
-            download_headers: Some(headers.clone()),
+            download_headers: Some(DownloadHeaders::Client(headers.clone())),
             ..Default::default()
         };
         let mut new = PlatformInfo {
@@ -3367,7 +3433,7 @@ mod tests {
         headers.insert("authorization", "Bearer secret".parse().unwrap());
         let mut info = PlatformInfo {
             url: Some(format!("{}/artifact.zip", server.url())),
-            download_headers: Some(headers),
+            download_headers: Some(DownloadHeaders::Plugin(headers)),
             ..Default::default()
         };
         complete_artifact_checksums(&mut info).await.unwrap();
@@ -3397,6 +3463,7 @@ mod tests {
         headers.insert("authorization", "Bearer secret".parse().unwrap());
         let browser_url = format!("{}/browser", server.url());
         let api_url = format!("{}/api/asset", server.url());
+        let headers = DownloadHeaders::Client(headers);
         let checksum = artifact_checksum(&browser_url, Some(&api_url), Some(&headers), &[])
             .await
             .unwrap();
@@ -3423,6 +3490,7 @@ mod tests {
         headers.insert("authorization", "Bearer secret".parse().unwrap());
         let browser_url = format!("{}/browser", server.url());
         let api_url = format!("{}/api/asset", server.url());
+        let headers = DownloadHeaders::Client(headers);
         let checksum = artifact_checksum(&browser_url, Some(&api_url), Some(&headers), &[])
             .await
             .unwrap();
