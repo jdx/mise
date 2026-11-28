@@ -1542,13 +1542,15 @@ impl Backend for CondaBackend {
         let records = self
             .solve_packages(vec![match_spec], platform, opts, tv.before_date)
             .await
-            // `mise lock` shows only this error's own message, so it keeps the
-            // solver's, which names the `minimum_release_age` cutoff.
-            .map_err(|err| {
-                eyre::eyre!(
-                    "failed to solve {tool_name} for {}: {err:#}",
+            // `mise lock` shows only this error's own message, so it names the
+            // `minimum_release_age` cutoff itself. The solver's error stays out of
+            // it: it can quote a channel URL with a token in its path or query.
+            .wrap_err_with(|| match tv.before_date {
+                Some(before) => format!(
+                    "failed to solve {tool_name} for {} with packages released before {before} (minimum_release_age)",
                     target.to_key()
-                )
+                ),
+                None => format!("failed to solve {tool_name} for {}", target.to_key()),
             })?;
 
         let tool_name_norm = tool_name.to_lowercase();
