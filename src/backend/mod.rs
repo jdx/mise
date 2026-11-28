@@ -4324,6 +4324,15 @@ pub trait Backend: Debug + Send + Sync {
         false
     }
 
+    /// Whether a version with at least two dots, such as "1.2.3", names one
+    /// release as written. Prefer-offline commands (`exec`, `hook-env`) then use
+    /// it without listing remote versions when nothing installed matches it.
+    /// Return `false` for a backend whose dotted versions can still be prefixes
+    /// of several releases, so those commands resolve them like `mise install`.
+    fn dotted_version_names_a_release(&self, _version: &str) -> bool {
+        true
+    }
+
     /// Whether `version` names a rolling release channel (e.g. zig's "master")
     /// rather than a concrete version. Cheap (no network). Channels are re-resolved
     /// to a concrete version like "latest" so `mise upgrade`/`outdated` can track

@@ -504,6 +504,40 @@ impl Backend for JavaPlugin {
         self.list_remote_versions_for_options(selection_opts).await
     }
 
+    /// "temurin-21.0.13" and "21.0.13" are prefixes of builds such as "21.0.13+11", so
+    /// only the catalog can tell whether a dotted version names one build.
+    fn dotted_version_names_a_release(&self, _version: &str) -> bool {
+        false
+    }
+
+    /// Versions converted from `.sdkmanrc` that name a build by something other than its
+    /// catalog version. See [`sdkman_catalog_match`].
+    async fn resolve_exact_version(
+        &self,
+        _config: &Arc<Config>,
+        version: &str,
+    ) -> eyre::Result<Option<String>> {
+        let Some(query) = SdkmanQuery::parse(version) else {
+            return Ok(None);
+        };
+        let metadata = self.fetch_java_metadata("ga").await?;
+        let platform = current_java_platform();
+        let matches = sdkman_catalog_match(metadata, &query, &platform);
+        // The catalog listing's order, which picks the same build `ls-remote` lists last.
+        let listed = self
+            .list_remote_versions_for_options(&ToolVersionOptions::default())
+            .await?;
+        match listed.into_iter().rfind(|v| matches.contains(&v.version)) {
+            Some(v) => Ok(Some(v.version)),
+            None => Err(eyre::eyre!(
+                "no {} build of Java {} found for {}",
+                query.prefix,
+                query.version,
+                platform.to_key()
+            )),
+        }
+    }
+
     fn list_installed_versions_matching(&self, query: &str) -> Vec<String> {
         let versions = self.list_installed_versions();
         // Java doesn't support the `prerelease` opt-in; always filter.
@@ -579,33 +613,7 @@ impl Backend for JavaPlugin {
                 .split_once('=')
                 .unwrap_or_default()
                 .1;
-            if !version.contains('-') {
-                return Ok(vec![version.to_string()]);
-            }
-            let (version, vendor) = version.rsplit_once('-').unwrap_or_default();
-            let vendor = match vendor {
-                "amzn" => "corretto",
-                "albba" => "dragonwell",
-                "graalce" => "graalvm-community",
-                "librca" => "liberica",
-                "open" => "openjdk",
-                "ms" => "microsoft",
-                "sapmchn" => "sapmachine",
-                "sem" => "semeru-openj9",
-                "tem" => "temurin",
-                _ => vendor, // either same vendor name or unsupported
-            };
-            if vendor == "temurin"
-                && let Some(version) = temurin_hotfix_version(version)
-            {
-                return Ok(vec![format!("{vendor}-{version}")]);
-            }
-            let mut version = version.split(['+', '-']).collect::<Vec<&str>>()[0];
-            // if vendor is zulu, we can only match the major version
-            if vendor == "zulu" {
-                version = version.split_once('.').unwrap_or_default().0;
-            }
-            Ok(vec![format!("{vendor}-{version}")])
+            Ok(vec![sdkman_java_version(version.trim())])
         } else {
             Ok(normalize_idiomatic_contents(contents)
                 .lines()
@@ -751,24 +759,249 @@ impl Backend for JavaPlugin {
     }
 }
 
-/// SDKMAN names a Temurin release with a fourth component: a hotfix such as `26.0.2.1+1`, which
-/// the catalog lists under that same version, or a regular release such as `21.0.13.0+9`, where
-/// the zero is padding. A `.0` fourth component maps to the three-part version with its build
-/// number. Returns `None` for any other shape, so the version is used as it is.
-fn temurin_hotfix_version(version: &str) -> Option<String> {
-    let (core, build) = version.split_once('+')?;
-    let build: u32 = build.parse().ok()?;
-    let parts = core.split('.').collect::<Vec<_>>();
-    let [major, minor, patch, hotfix] = parts[..] else {
-        return None;
+/// The mise version for a Java id from `.sdkmanrc`. SDKMAN writes an id as
+/// `<version>[-<variant>][+<build>]-<vendor>`, such as `21.0.13.1-fx+5-librca`, and each vendor
+/// pads or spells its versions differently from the mise catalog. The result names the same build:
+/// the catalog version itself, or a prefix only that build continues (`temurin-21.0.13+9` for
+/// `21.0.13+9.0.LTS`). Builds the catalog does not list by the version SDKMAN uses (Zulu, Liberica
+/// NIK, JetBrains Runtime) get a version that [`SdkmanQuery`] resolves against the catalog. An id
+/// with no exact counterpart yields a version that resolves to nothing, so installing it fails
+/// instead of picking another build.
+fn sdkman_java_version(id: &str) -> String {
+    let Some((version, vendor)) = id.rsplit_once('-') else {
+        return id.to_string();
     };
-    let hotfix: u32 = hotfix.parse().ok()?;
-    if hotfix == 0 {
-        // A regular release: the zero is padding. Keeping the build number matches the catalog
-        // entry (`21.0.13+9.0.LTS`) without also matching a hotfix such as `21.0.13+101`.
-        return Some(format!("{major}.{minor}.{patch}+{build}"));
+    let (version, build) = match version.split_once('+') {
+        Some((version, build)) => (version, Some(build)),
+        None => (version, None),
+    };
+    let (core, variant) = match version.split_once('-') {
+        Some((core, variant)) => (core, Some(variant)),
+        None => (version, None),
+    };
+    let vendor = match vendor {
+        "amzn" => "corretto",
+        "albba" => "dragonwell",
+        "graal" => "oracle-graalvm",
+        "graalce" => "graalvm-community",
+        "jbr" => "jetbrains",
+        "librca" => "liberica",
+        "nik" => "liberica-nik",
+        "open" => "openjdk",
+        "ms" => "microsoft",
+        "sapmchn" => "sapmachine",
+        "sem" => "semeru-openj9",
+        "tem" => "temurin",
+        _ => vendor, // either same vendor name or unsupported
+    };
+    let prefix = match variant {
+        Some("fx") => format!("{vendor}-javafx"),
+        Some(variant) => format!("{vendor}-{variant}"),
+        None => vendor.to_string(),
+    };
+    let parts = core.split('.').collect::<Vec<_>>();
+    // SDKMAN pads most versions to four components; the catalog drops a `.0` fourth one.
+    let unpadded = match parts[..] {
+        [major, minor, patch, "0"] => format!("{major}.{minor}.{patch}"),
+        _ => core.to_string(),
+    };
+    let with_build = |version: &str| match build {
+        Some(build) => format!("{version}+{build}"),
+        None => version.to_string(),
+    };
+    let version = match vendor {
+        // `21.0.13+9` continues only into `21.0.13+9.0.LTS`, not into a hotfix such as
+        // `21.0.13+101`.
+        "temurin" | "liberica-nik" => with_build(&unpadded),
+        // Liberica names Java 8 releases `8u514+5`.
+        "liberica" => match unpadded.strip_prefix("8.0.") {
+            Some(update) => with_build(&format!("8u{update}")),
+            None => with_build(&unpadded),
+        },
+        "corretto" => corretto_version(&parts, build),
+        "oracle-graalvm" | "oracle" | "openjdk" | "sapmachine" | "microsoft"
+        | "graalvm-community" => unpadded,
+        // SDKMAN drops the dot of the build number: `+1163125` is `-b1163.125`.
+        "jetbrains" => match build {
+            Some(build) => format!("{unpadded}-b{build}"),
+            None => unpadded,
+        },
+        // Semeru releases have a fourth component the catalog keeps: `17.0.20` is `17.0.20.0`.
+        "semeru-openj9" if build.is_none() && parts.len() == 3 => format!("{core}.0"),
+        "kona" => match build {
+            Some(build) => format!("{core}.b{build}"),
+            None => core.to_string(),
+        },
+        "mandrel" => mandrel_version(&parts),
+        "zulu" => zulu_java_version(&parts, build),
+        _ => with_build(core),
+    };
+    // A Liberica NIK release names the JDK it bundles (`openjdk25`) before its own version.
+    // SDKMAN leaves that out, and `25.0.4.r25` gives only its major.
+    if vendor == "liberica-nik"
+        && let Some(nik) = version.split_once(".r").map(|(nik, _)| nik)
+    {
+        return format!("{prefix}-{nik}");
     }
-    None
+    format!("{prefix}-{version}")
+}
+
+/// Corretto versions append the build and revision: SDKMAN's `26.0.2.0+11.1` is `26.0.2.11.1`.
+/// Java 8 releases are `8.<update>.<two-digit build>.<revision>`, which SDKMAN writes as
+/// `8.514.1.1` or `8.0.512.0+8.1`.
+fn corretto_version(parts: &[&str], build: Option<&str>) -> String {
+    let pad = |build: &str| format!("{build:0>2}");
+    match (parts, build) {
+        (["8", "0", update, "0"], Some(build)) => match build.split_once('.') {
+            Some((build, revision)) => format!("8.{update}.{}.{revision}", pad(build)),
+            None => format!("8.{update}.{}", pad(build)),
+        },
+        (["8", update, build, revision], None) => format!("8.{update}.{}.{revision}", pad(build)),
+        ([major, minor, patch, "0"], Some(build)) => format!("{major}.{minor}.{patch}.{build}"),
+        _ => {
+            let core = parts.join(".");
+            match build {
+                Some(build) => format!("{core}+{build}"),
+                None => core,
+            }
+        }
+    }
+}
+
+/// Mandrel releases are `<version>-Final+java<major>`. SDKMAN writes `25.0.4.1`, or
+/// `25.0.2.r25` with the Java major.
+fn mandrel_version(parts: &[&str]) -> String {
+    match parts.split_last() {
+        Some((java, version)) if java.starts_with('r') => {
+            let mut version = version.to_vec();
+            version.resize(4, "0");
+            format!("{}-Final+java{}", version.join("."), &java[1..])
+        }
+        _ => format!("{}-Final", parts.join(".")),
+    }
+}
+
+/// The Java version a Zulu id names, which the catalog lists as `java_version`. SDKMAN pads it
+/// to four components and writes Azul's `21.0.13.0.3` builds as `21.0.13.0+3.1`; a CRaC id has
+/// a fifth component for its own revision.
+fn zulu_java_version(parts: &[&str], build: Option<&str>) -> String {
+    match parts {
+        [major, minor, patch, "0"] => match build.and_then(|b| b.split_once('.')) {
+            Some((update, _)) => format!("{major}.{minor}.{patch}.0.{update}"),
+            None => format!("{major}.{minor}.{patch}"),
+        },
+        [version @ .., _revision] if parts.len() == 5 => version.join("."),
+        _ => parts.join("."),
+    }
+}
+
+/// A version converted from `.sdkmanrc` that names a build by something other than its catalog
+/// version, which only the catalog can turn into a version mise can install. Each of these
+/// matches no catalog version as written.
+struct SdkmanQuery<'a> {
+    /// The vendor and features, such as `zulu-javafx`.
+    prefix: &'a str,
+    version: &'a str,
+    kind: SdkmanQueryKind,
+}
+
+enum SdkmanQueryKind {
+    /// A Zulu build by its Java version, such as `zulu-javafx-8.0.512`. Zulu's own versions
+    /// never have a `0` second component (`8.98.0.111`).
+    ZuluJavaVersion,
+    /// A Liberica NIK build without the JDK it bundles, such as `liberica-nik-25.0.5.1+1` for
+    /// `liberica-nik-openjdk25-25.0.5.1+1`, or without a build number.
+    NikVersion,
+    /// A JetBrains Runtime build whose build number lost its dot, such as
+    /// `jetbrains-21.0.11-b1163125` for `jetbrains-21.0.11-b1163.125`.
+    JetbrainsBuild,
+    /// A Semeru release by its padded version, such as `semeru-openj9-22.0.1.0`, which older
+    /// releases list as `22.0.1+8_openj9-0.45.0`.
+    SemeruRelease,
+}
+
+impl<'a> SdkmanQuery<'a> {
+    fn parse(query: &'a str) -> Option<Self> {
+        let at = query
+            .match_indices('-')
+            .find(|(i, _)| query[i + 1..].starts_with(|c: char| c.is_ascii_digit()))?
+            .0;
+        let (prefix, version) = (&query[..at], &query[at + 1..]);
+        let kind = if prefix == "zulu" || prefix.starts_with("zulu-") {
+            let parts = version.split('.').collect::<Vec<_>>();
+            if parts.len() < 3 || parts[1] != "0" {
+                return None;
+            }
+            SdkmanQueryKind::ZuluJavaVersion
+        } else if matches!(prefix, "liberica-nik" | "liberica-nik-javafx") {
+            SdkmanQueryKind::NikVersion
+        } else if prefix == "jetbrains"
+            && version
+                .rsplit_once("-b")
+                .is_some_and(|(_, build)| build.chars().all(|c| c.is_ascii_digit()))
+        {
+            SdkmanQueryKind::JetbrainsBuild
+        } else if prefix == "semeru-openj9" && semeru_release(version).is_some() {
+            SdkmanQueryKind::SemeruRelease
+        } else {
+            return None;
+        };
+        Some(Self {
+            prefix,
+            version,
+            kind,
+        })
+    }
+}
+
+/// The Java version of a padded Semeru version: `22.0.1` for `22.0.1.0`.
+fn semeru_release(version: &str) -> Option<&str> {
+    version
+        .strip_suffix(".0")
+        .filter(|release| release.split('.').count() == 3)
+}
+
+/// The catalog versions `query` names on `platform`.
+fn sdkman_catalog_match(
+    metadata: &HashMap<String, JavaMetadata>,
+    query: &SdkmanQuery,
+    platform: &Platform,
+) -> Vec<String> {
+    metadata
+        .values()
+        .filter(|m| {
+            let key = m.to_version_string(platform);
+            let Some(prefix) = key.strip_suffix(&format!("-{}", m.version)) else {
+                return false;
+            };
+            match query.kind {
+                SdkmanQueryKind::ZuluJavaVersion => {
+                    prefix == query.prefix && m.java_version == query.version
+                }
+                SdkmanQueryKind::NikVersion => {
+                    let jdk = m.java_version.split('.').next().unwrap_or_default();
+                    prefix.strip_suffix(&format!("-openjdk{jdk}")) == Some(query.prefix)
+                        && (m.version == query.version
+                            || (!query.version.contains('+')
+                                && m.version.starts_with(&format!("{}+", query.version))))
+                }
+                SdkmanQueryKind::JetbrainsBuild => {
+                    prefix == query.prefix
+                        && m.version.rsplit_once("-b").is_some_and(|(v, b)| {
+                            format!("{v}-b{}", b.replace('.', "")) == query.version
+                        })
+                }
+                SdkmanQueryKind::SemeruRelease => {
+                    prefix == query.prefix
+                        && (m.version == query.version
+                            || semeru_release(query.version).is_some_and(|release| {
+                                m.version.starts_with(&format!("{release}+"))
+                            }))
+                }
+            }
+        })
+        .map(|m| m.to_version_string(platform))
+        .collect()
 }
 
 /// Every metadata entry under its full version string, plus a shorthand entry like
@@ -1255,23 +1488,8 @@ mod tests {
         assert!(match_versions(&["temurin-21.0.1"], &format!("temurin-{long}-")).is_empty());
     }
 
-    /// A numeric query must not bleed into a longer version: "11.0.1" selects
-    /// "11.0.1" and its build numbers, never "11.0.10".
-    #[test]
-    fn temurin_padded_versions_use_the_catalog_build_number() {
-        // a hotfix is listed under its own version, so it is left alone
-        assert_eq!(temurin_hotfix_version("26.0.2.1+1"), None);
-        assert_eq!(temurin_hotfix_version("25.0.5.1+2"), None);
-        assert_eq!(temurin_hotfix_version("21.0.2+13"), None);
-        assert_eq!(temurin_hotfix_version("26.0.2.1"), None);
-        assert_eq!(
-            temurin_hotfix_version("26.0.2.0+1").as_deref(),
-            Some("26.0.2+1")
-        );
-    }
-
     #[tokio::test]
-    async fn sdkmanrc_temurin_versions_match_the_catalog() {
+    async fn sdkmanrc_ids_name_the_same_build() {
         let dir = tempfile::tempdir().unwrap();
         let parse = async |contents: &str| {
             let path = dir.path().join(".sdkmanrc");
@@ -1281,12 +1499,119 @@ mod tests {
                 .await
                 .unwrap()
         };
-        assert_eq!(parse("java=26.0.2.1+1-tem\n").await, ["temurin-26.0.2.1"]);
-        assert_eq!(parse("java=21.0.2+13-tem\n").await, ["temurin-21.0.2"]);
-        assert_eq!(parse("java=21.0.13.0+9-tem\n").await, ["temurin-21.0.13+9"]);
-        assert_eq!(parse("java=8.0.512.0+9-tem\n").await, ["temurin-8.0.512+9"]);
-        assert_eq!(parse("java=21.0.2.1+1-amzn\n").await, ["corretto-21.0.2.1"]);
-        assert_eq!(parse("java=21.0.2-zulu\n").await, ["zulu-21"]);
+        for (id, version) in [
+            // Temurin: a `.0` fourth component is padding; the build stays
+            ("26.0.2.1+1-tem", "temurin-26.0.2.1+1"),
+            ("21.0.2+13-tem", "temurin-21.0.2+13"),
+            ("21.0.13.0+9-tem", "temurin-21.0.13+9"),
+            ("8.0.512.0+9-tem", "temurin-8.0.512+9"),
+            // Liberica keeps the build and the JavaFX or CRaC variant
+            ("21.0.13.1+5-librca", "liberica-21.0.13.1+5"),
+            ("21.0.13.1-fx+5-librca", "liberica-javafx-21.0.13.1+5"),
+            ("21.0.13.1-crac+6-librca", "liberica-crac-21.0.13.1+6"),
+            ("8.0.514.0-fx+5-librca", "liberica-javafx-8u514+5"),
+            ("24.0.1.0-fx+1-nik", "liberica-nik-javafx-24.0.1+1"),
+            ("25.0.4.r25-nik", "liberica-nik-25.0.4"),
+            ("26.0.2.0+11.1-amzn", "corretto-26.0.2.11.1"),
+            ("8.514.1.1-amzn", "corretto-8.514.01.1"),
+            ("8.0.512.0+8.1-amzn", "corretto-8.512.08.1"),
+            ("25.0.5.1-graal", "oracle-graalvm-25.0.5.1"),
+            ("24.0.0.0-graal", "oracle-graalvm-24.0.0"),
+            ("26.0.0.0+35-open", "openjdk-26.0.0"),
+            ("26.0.2+1-sapmchn", "sapmachine-26.0.2"),
+            ("17.0.20-sem", "semeru-openj9-17.0.20.0"),
+            ("25.0.5.1+635102-jbr", "jetbrains-25.0.5.1-b635102"),
+            ("21.0.11.0+1163125-jbr", "jetbrains-21.0.11-b1163125"),
+            ("25.0.5.1+1-kona", "kona-25.0.5.1.b1"),
+            ("25.0.4.1-mandrel", "mandrel-25.0.4.1-Final"),
+            ("25.0.2.r25-mandrel", "mandrel-25.0.2.0-Final+java25"),
+            // Zulu ids carry the Java version, which the catalog resolves
+            ("8.0.512.0-fx+9-zulu", "zulu-javafx-8.0.512"),
+            ("21.0.13.1+2-zulu", "zulu-21.0.13.1"),
+            ("21.0.13.0-fx+3.1-zulu", "zulu-javafx-21.0.13.0.3"),
+            ("27.0.1.1.1-crac+1-zulu", "zulu-crac-27.0.1.1"),
+            ("21.0.2-zulu", "zulu-21.0.2"),
+            ("21.0.2", "21.0.2"),
+        ] {
+            assert_eq!(parse(&format!("java={id}\n")).await, [version], "{id}");
+        }
+    }
+
+    fn catalog_entry(
+        vendor: &str,
+        version: &str,
+        java_version: &str,
+        features: &[&str],
+    ) -> JavaMetadata {
+        JavaMetadata {
+            vendor: vendor.to_string(),
+            image_type: Some("jdk".to_string()),
+            version: version.to_string(),
+            java_version: java_version.to_string(),
+            features: Some(features.iter().map(|f| f.to_string()).collect()),
+            jvm_impl: "hotspot".to_string(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn sdkman_queries_match_the_catalog_build() {
+        let platform = Platform::parse("linux-x64").unwrap();
+        let mut metadata = HashMap::new();
+        for m in [
+            catalog_entry("zulu", "8.98.0.111", "8.0.512", &[]),
+            catalog_entry("zulu", "8.98.0.111", "8.0.512", &["javafx"]),
+            catalog_entry("zulu", "8.98.0.201", "8.0.514", &["javafx"]),
+            catalog_entry("liberica-nik", "25.0.5.1+1", "25.0.5.1+5", &["javafx"]),
+            catalog_entry("liberica-nik", "25.0.4+1", "25.0.4+10", &[]),
+            catalog_entry("jetbrains", "21.0.11-b1163.125", "21.0.11-b1163.125", &[]),
+            catalog_entry("jetbrains", "21.0.11-b1163.12", "21.0.11-b1163.12", &[]),
+            JavaMetadata {
+                jvm_impl: "openj9".to_string(),
+                ..catalog_entry("semeru", "22.0.1+8_openj9-0.45.0", "22.0.1+8", &[])
+            },
+            JavaMetadata {
+                jvm_impl: "openj9".to_string(),
+                ..catalog_entry("semeru", "21.0.13.0", "21.0.13.0", &[])
+            },
+            JavaMetadata {
+                jvm_impl: "openj9".to_string(),
+                ..catalog_entry("semeru", "21.0.13.10", "21.0.13.10", &[])
+            },
+        ] {
+            JavaPlugin::insert_java_metadata(&mut metadata, m, &platform);
+        }
+        let find = |query: &str| {
+            let query = SdkmanQuery::parse(query).unwrap();
+            sdkman_catalog_match(&metadata, &query, &platform)
+        };
+        assert_eq!(find("zulu-javafx-8.0.512"), ["zulu-javafx-8.98.0.111"]);
+        assert_eq!(find("zulu-8.0.512"), ["zulu-8.98.0.111"]);
+        assert!(find("zulu-8.0.513").is_empty());
+        assert_eq!(
+            find("liberica-nik-javafx-25.0.5.1+1"),
+            ["liberica-nik-javafx-openjdk25-25.0.5.1+1"]
+        );
+        assert_eq!(
+            find("liberica-nik-25.0.4"),
+            ["liberica-nik-openjdk25-25.0.4+1"]
+        );
+        assert_eq!(
+            find("jetbrains-21.0.11-b1163125"),
+            ["jetbrains-21.0.11-b1163.125"]
+        );
+        assert_eq!(
+            find("semeru-openj9-22.0.1.0"),
+            ["semeru-openj9-22.0.1+8_openj9-0.45.0"]
+        );
+        assert_eq!(find("semeru-openj9-21.0.13.0"), ["semeru-openj9-21.0.13.0"]);
+        assert!(SdkmanQuery::parse("semeru-openj9-21.0.13.10").is_none());
+        // versions that name a catalog build as written are not sdkman queries
+        assert!(SdkmanQuery::parse("zulu-8.98.0.111").is_none());
+        assert!(SdkmanQuery::parse("zulu-8").is_none());
+        assert!(SdkmanQuery::parse("liberica-nik-openjdk25-25.0.4+1").is_none());
+        assert!(SdkmanQuery::parse("jetbrains-21.0.11-b1163.125").is_none());
+        assert!(SdkmanQuery::parse("temurin-21.0.13").is_none());
     }
 
     #[test]
@@ -1302,6 +1627,8 @@ mod tests {
         );
     }
 
+    /// A numeric query must not bleed into a longer version: "11.0.1" selects
+    /// "11.0.1" and its build numbers, never "11.0.10".
     #[test]
     fn numeric_query_does_not_match_a_longer_version() {
         let versions = ["11.0.1", "11.0.1+13", "11.0.10", "11.0.10+9"];
