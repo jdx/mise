@@ -212,13 +212,23 @@ assert_contains "MISE_ENV=staging mise -C dotfiles env" "DOTFILES=dotfiles"
 assert_contains "mise -C ~ env" "DOTFILES=dotfiles"
 
 # A global config file for an environment that is not selected is still global config, not the
-# checkout's: ignoring or untrusting the checkout leaves it alone.
+# checkout's: ignoring or untrusting the checkout leaves it alone. An environment name can hold a
+# dot, as in `config.prod.eu.toml`.
 printf '[env]\nGLOBAL_STAGING = "gstaged"\n' >dotfiles/.config/mise/config.staging.toml
+printf '[env]\nGLOBAL_PROD_EU = "prodeu"\n' >dotfiles/.config/mise/config.prod.eu.toml
+printf '[env]\nGLOBAL_PROD_EU_LOCAL = "prodeulocal"\n' >dotfiles/.config/mise/config.prod.eu.local.toml
 assert_contains "MISE_ENV=staging mise -C ~ env" "GLOBAL_STAGING=gstaged"
+assert_contains "MISE_ENV=prod.eu mise -C ~ env" "GLOBAL_PROD_EU=prodeu"
+assert_contains "MISE_ENV=prod.eu mise -C ~ env" "GLOBAL_PROD_EU_LOCAL=prodeulocal"
 assert_not_contains "mise trust --ignore dotfiles 2>&1" "config.staging.toml"
+assert_not_contains "mise trust --ignore dotfiles 2>&1" "config.prod.eu"
 assert_contains "MISE_ENV=staging mise -C ~ env" "GLOBAL_STAGING=gstaged"
+assert_contains "MISE_ENV=prod.eu mise -C ~ env" "GLOBAL_PROD_EU=prodeu"
+assert_contains "MISE_ENV=prod.eu mise -C ~ env" "GLOBAL_PROD_EU_LOCAL=prodeulocal"
 assert_not_contains "mise untrust dotfiles 2>&1" "config.staging.toml"
+assert_not_contains "mise untrust dotfiles 2>&1" "config.prod.eu"
 assert_contains "MISE_ENV=staging mise -C ~ env" "GLOBAL_STAGING=gstaged"
+assert_contains "MISE_ENV=prod.eu mise -C ~ env" "GLOBAL_PROD_EU=prodeu"
 
 # A checkout that is itself the global config dir still has project config of its own, such as
 # `.mise/config.toml`, which global discovery does not load: naming the checkout revokes or

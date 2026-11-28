@@ -3916,12 +3916,21 @@ pub fn is_global_config_for_any_env(path: &Path) -> bool {
         return false;
     };
     let path = file::desymlink_path_cached(dir).join(name);
-    // The environments that could select the file are among the parts of its name.
+    // The environment that could select the file is the rest of its name after the first dot, as
+    // in `config.prod.eu.toml` or `conf.d/node.prod.eu.local.toml`, with or without `.local`.
     let environments: Vec<String> = name
-        .to_string_lossy()
-        .split('.')
-        .map(str::to_string)
-        .collect();
+        .to_str()
+        .and_then(|name| name.strip_suffix(".toml"))
+        .and_then(|stem| stem.split_once('.'))
+        .map(|(_, rest)| {
+            [Some(rest), rest.strip_suffix(".local")]
+                .into_iter()
+                .flatten()
+                .filter(|environment| !environment.is_empty())
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default();
     let incoming = [path.clone()].into_iter().collect();
     [
         (env::MISE_GLOBAL_CONFIG_FILE.is_none()).then_some(*dirs::CONFIG),
