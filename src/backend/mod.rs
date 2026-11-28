@@ -799,7 +799,14 @@ pub fn get(ba: &BackendArg) -> Option<ABackend> {
     if ba.has_registry_version() {
         return arg_to_backend(ba.clone());
     }
-    if (ba.explicit_opts().is_some() || ba.has_explicit_backend())
+    // An explicit backend that does not resolve, such as an unknown or removed
+    // prefix, has no backend. The cached tool with the same short name is a
+    // different backend, and answering with it would install the wrong tool
+    // instead of letting `BackendArg::backend` report the selection.
+    if ba.has_explicit_backend() {
+        return arg_to_backend(ba.clone());
+    }
+    if ba.explicit_opts().is_some()
         && let Some(backend) = arg_to_backend(ba.clone())
     {
         return Some(backend);
@@ -1709,6 +1716,21 @@ mod tests {
             reader.join().expect("reader panicked during reset");
         }
         assert!(reads_during_reset > 0, "no reader ran while resetting");
+    }
+
+    #[tokio::test]
+    async fn test_get_does_not_answer_an_unresolved_explicit_backend_from_the_cache() {
+        let _settings = crate::test::SettingsGuard::lock();
+        load_tools().await.unwrap();
+        // The core tool is cached under its short name.
+        assert!(get(&BackendArg::from("node")).is_some());
+        let ba = BackendArg::new("node".to_string(), Some("bogus:owner/repo".to_string()));
+        assert!(ba.has_explicit_backend());
+        assert!(
+            get(&ba).is_none(),
+            "an explicit backend that does not resolve got the cached core node"
+        );
+        assert!(ba.backend().is_err());
     }
 
     fn create_test_backend_arg(tool: &str) -> Arc<BackendArg> {
