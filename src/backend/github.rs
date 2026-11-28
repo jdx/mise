@@ -3921,7 +3921,7 @@ fn template_string_for_target(template: &str, tv: &ToolVersion, target: &Platfor
     // takes its legacy placeholders through the same render, which also turns that text back
     // into the data it was.
     let source = if has_legacy_placeholder {
-        crate::backend::static_helpers::legacy_placeholders_as_tera(template, &LEGACY_NAMES)
+        crate::backend::static_helpers::legacy_placeholders_as_tera(template, &LEGACY_NAMES, false)
     } else {
         template.to_string()
     };
@@ -4807,6 +4807,28 @@ mod tests {
         assert_eq!(
             template_string_for_target("tool-{version}-{os}-{amd64_arch}", &tv, &target),
             "tool-2.3.0-macos-amd64"
+        );
+    }
+
+    /// The GitHub backend renders its patterns with Tera 2 whatever `tera_v1` says, so the
+    /// legacy placeholder scan reads a `\"` in a string as Tera 2 does, as an escaped quote.
+    #[test]
+    fn test_legacy_placeholder_scan_follows_tera_2_under_tera_v1() {
+        let _settings = crate::test::SettingsGuard::lock();
+        Settings::override_with(|settings| settings.tera_v1 = Some(true)).unwrap();
+        let tv = ToolVersion::new(
+            crate::toolset::ToolRequest::new(
+                std::sync::Arc::new(BackendArg::from("github:example/tool")),
+                "2.3.0",
+                crate::toolset::ToolSource::Argument,
+            )
+            .unwrap(),
+            "2.3.0".into(),
+        );
+        let target = PlatformTarget::new(crate::platform::Platform::parse("macos-x64").unwrap());
+        assert_eq!(
+            template_string_for_target(r#"{{ "a\" }}{version}" }}-{version}"#, &tv, &target),
+            r#"a" }}{version}-2.3.0"#
         );
     }
 

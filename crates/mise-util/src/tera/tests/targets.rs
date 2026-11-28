@@ -317,3 +317,22 @@ fn test_template_tag_end_skips_string_literals() {
     let _guard = SettingsGuard::tera_v1();
     cases(true);
 }
+
+/// The engine passed in decides how strings are read, whatever `tera_v1` says.
+#[test]
+fn test_template_tag_end_for_reads_strings_as_the_given_engine() {
+    let _guard = SettingsGuard::tera_v1();
+    let escaped = r#"{{ "a\" }}" }}rest"#;
+    assert_eq!(template_tag_end_for(escaped, "}}", false), Some(14));
+    assert_eq!(template_tag_end_for(escaped, "}}", true), Some(10));
+}
+
+/// A raw block runs to its first `{% endraw %}`, any `-` markers included, or to the end.
+#[test]
+fn test_raw_block_end() {
+    assert_eq!(raw_block_end("{% raw %}{{x{% endraw %}rest"), Some(24));
+    assert_eq!(raw_block_end("{%- raw -%}{{x{%- endraw -%}rest"), Some(28));
+    assert_eq!(raw_block_end("{%raw%}{{x"), Some(10));
+    assert_eq!(raw_block_end("{% if raw %}"), None);
+    assert_eq!(raw_block_end("{{ raw }}"), None);
+}

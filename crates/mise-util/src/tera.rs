@@ -161,6 +161,17 @@ pub fn unescape_template_syntax(text: &str) -> std::borrow::Cow<'_, str> {
 /// or `{% %}` tag does not end it. The configured engine's strings are read: Tera 2 lets a `\`
 /// escape the quote that would close one, and Tera 1 does not.
 pub fn template_tag_end(tag: &str, close: &str) -> Option<usize> {
+    tag_end(tag, close, use_tera_v1)
+}
+
+/// [`template_tag_end`] for a template that Tera 1 (`tera_v1`) or Tera 2 renders whatever the
+/// setting says, such as one that a backend always renders with Tera 2.
+pub fn template_tag_end_for(tag: &str, close: &str, tera_v1: bool) -> Option<usize> {
+    tag_end(tag, close, || tera_v1)
+}
+
+/// [`template_tag_end`], with `tera_v1` read only when a string in the tag has a `\`.
+fn tag_end(tag: &str, close: &str, tera_v1: impl Fn() -> bool) -> Option<usize> {
     let bytes = tag.as_bytes();
     let mut escapes = None;
     let mut i = 2;
@@ -170,7 +181,7 @@ pub fn template_tag_end(tag: &str, close: &str) -> Option<usize> {
             i += 1;
             loop {
                 match *bytes.get(i)? {
-                    b'\\' if *escapes.get_or_insert_with(|| !use_tera_v1()) => i += 2,
+                    b'\\' if *escapes.get_or_insert_with(|| !tera_v1()) => i += 2,
                     b if b == quote => break,
                     _ => i += 1,
                 }
@@ -183,12 +194,31 @@ pub fn template_tag_end(tag: &str, close: &str) -> Option<usize> {
     None
 }
 
+/// When `text` starts with a `{% raw %}` tag, `-` markers included, the end of the block: just
+/// after the first `{% endraw %}` that follows, or the end of `text` when none does. Tera outputs
+/// everything in between as text, so no tag opens there, whatever it looks like.
+pub fn raw_block_end(text: &str) -> Option<usize> {
+    static RAW_OPEN: Lazy<Regex> = Lazy::new(|| Regex::new(r"^\{%-?\s*raw\s*-?%\}").unwrap());
+    static RAW_CLOSE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\{%-?\s*endraw\s*-?%\}").unwrap());
+    let open = RAW_OPEN.find(text)?;
+    Some(
+        RAW_CLOSE
+            .find(&text[open.end()..])
+            .map_or(text.len(), |close| open.end() + close.end()),
+    )
+}
+
 pub enum TeraEngine {
     V2(Box<Tera>),
     V1(Box<tera1::Tera>),
 }
 
 impl TeraEngine {
+    /// Whether this is the Tera 1 engine that the `tera_v1` setting selects.
+    pub fn is_v1(&self) -> bool {
+        matches!(self, Self::V1(_))
+    }
+
     fn render_str(&mut self, input: &str, context: &Context) -> TeraResult<String> {
         match self {
             Self::V2(tera) => tera

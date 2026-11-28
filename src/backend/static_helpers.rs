@@ -810,7 +810,9 @@ pub(crate) fn template_string_strict(template: &str, version: Option<&str>) -> R
 /// Only the text between template tags is rewritten. A `{name}` inside a tag, such as in the
 /// string argument of `{{ os(macos="t-{version}") }}`, or in a `{% raw %}` block is text that
 /// Tera outputs as it is, and a `{{ name }}` put there would come out as those characters.
-pub(crate) fn legacy_placeholders_as_tera(template: &str, names: &[&str]) -> String {
+/// `tera_v1` is whether Tera 1 renders the result, whose strings take no `\` escapes, and
+/// not Tera 2; a backend that always renders with one of them passes that one.
+pub(crate) fn legacy_placeholders_as_tera(template: &str, names: &[&str], tera_v1: bool) -> String {
     let legacy: Vec<(&str, String)> = names
         .iter()
         .map(|name| (*name, format!("{{{name}}}")))
@@ -823,41 +825,28 @@ pub(crate) fn legacy_placeholders_as_tera(template: &str, names: &[&str]) -> Str
     }
     let mut out = String::with_capacity(template.len());
     let mut rest = template;
-    let mut in_raw = false;
     while let Some(at) = legacy_tag_open(rest, &legacy) {
         let (text, tag) = rest.split_at(at);
-        if in_raw {
-            out.push_str(text);
-        } else {
-            out.push_str(&rewrite_legacy_placeholders(text, &legacy));
-        }
-        let close = match tag.as_bytes()[1] {
-            b'{' => "}}",
-            b'%' => "%}",
-            _ => "#}",
-        };
-        let Some(end) = crate::tera::template_tag_end(tag, close) else {
+        out.push_str(&rewrite_legacy_placeholders(text, &legacy));
+        // A raw block is copied whole: what looks like a tag in it, such as an unclosed `{{`,
+        // is text, so the scan goes on after its `{% endraw %}`.
+        let end = crate::tera::raw_block_end(tag).or_else(|| {
+            let close = match tag.as_bytes()[1] {
+                b'{' => "}}",
+                b'%' => "%}",
+                _ => "#}",
+            };
+            crate::tera::template_tag_end_for(tag, close, tera_v1)
+        });
+        let Some(end) = end else {
             // an unclosed tag runs to the end, as Tera reads it
             out.push_str(tag);
             return out;
         };
-        if close == "%}" {
-            let word =
-                tag[2..end - close.len()].trim_matches(|c: char| c == '-' || c.is_whitespace());
-            if word == "raw" {
-                in_raw = true;
-            } else if word == "endraw" {
-                in_raw = false;
-            }
-        }
         out.push_str(&tag[..end]);
         rest = &tag[end..];
     }
-    if in_raw {
-        out.push_str(rest);
-    } else {
-        out.push_str(&rewrite_legacy_placeholders(rest, &legacy));
-    }
+    out.push_str(&rewrite_legacy_placeholders(rest, &legacy));
     out
 }
 
@@ -925,7 +914,7 @@ fn render_template(template: &str, version: &str, mut tera: crate::tera::TeraEng
     ctx.insert("version", version);
 
     let source = if legacy {
-        legacy_placeholders_as_tera(template, &["version"])
+        legacy_placeholders_as_tera(template, &["version"], tera.is_v1())
     } else {
         template.to_string()
     };
@@ -2345,25 +2334,27 @@ mod tests {
         assert_eq!(
             legacy_placeholders_as_tera(
                 r#"https://e.com/{version}/{{ os(macos="t-{version}") }}"#,
-                &names
+                &names,
+                false
             ),
             r#"https://e.com/{{ version }}/{{ os(macos="t-{version}") }}"#
         );
         assert_eq!(
             legacy_placeholders_as_tera(
                 "{% if true %}{version}{% endif %}{# {version} #}{% raw %}{version}{% endraw %}{version}",
-                &names
+                &names,
+                false
             ),
             "{% if true %}{{ version }}{% endif %}{# {version} #}{% raw %}{version}{% endraw %}{{ version }}"
         );
         // a closer inside the string does not end the tag
         assert_eq!(
-            legacy_placeholders_as_tera(r#"{{ "}}{version}" }}-{version}"#, &names),
+            legacy_placeholders_as_tera(r#"{{ "}}{version}" }}-{version}"#, &names, false),
             r#"{{ "}}{version}" }}-{{ version }}"#
         );
         // a `{` before a placeholder is text, not a tag
         assert_eq!(
-            legacy_placeholders_as_tera("a{{version}/{% if true %}b{% endif %}", &names),
+            legacy_placeholders_as_tera("a{{version}/{% if true %}b{% endif %}", &names, false),
             r#"a{{ "{" }}{{ version }}/{% if true %}b{% endif %}"#
         );
         let render =
@@ -2371,6 +2362,57 @@ mod tests {
         assert_eq!(
             render(r#"https://e.com/{version}/{{ "t-{version}" }}"#),
             "https://e.com/1.0.0/t-{version}"
+        );
+    }
+
+    /// A raw block is text up to its `{% endraw %}`, whatever it holds and whichever `-`
+    /// markers its tags have, so an unclosed `{{` in it does not hide the placeholders after it.
+    #[test]
+    fn test_legacy_placeholders_after_a_raw_block_are_rewritten() {
+        let names = ["version"];
+        for (open, close) in [
+            ("{% raw %}", "{% endraw %}"),
+            ("{%raw%}", "{%endraw%}"),
+            ("{%- raw -%}", "{%- endraw -%}"),
+            ("{%- raw %}", "{% endraw -%}"),
+            ("{% raw -%}", "{%- endraw %}"),
+        ] {
+            assert_eq!(
+                legacy_placeholders_as_tera(
+                    &format!("{open}{{{{label {{version}} {{# x{close}-{{version}}"),
+                    &names,
+                    false
+                ),
+                format!("{open}{{{{label {{version}} {{# x{close}-{{{{ version }}}}"),
+                "{open}"
+            );
+        }
+        // an unclosed raw block runs to the end
+        assert_eq!(
+            legacy_placeholders_as_tera("{version}{% raw %}{{label {version}", &names, false),
+            "{{ version }}{% raw %}{{label {version}"
+        );
+        let render =
+            |template: &str| render_template(template, "1.0.0", crate::tera::get_tera(None));
+        assert_eq!(
+            render("{% raw %}{{label{% endraw %}-{version}"),
+            "{{label-1.0.0"
+        );
+    }
+
+    /// Tera 2 lets a `\` escape a quote in a string and Tera 1 does not, so a tag ends where
+    /// the engine that renders the template ends it.
+    #[test]
+    fn test_legacy_placeholder_scan_reads_strings_as_the_engine_does() {
+        let names = ["version"];
+        let template = r#"{{ "a\" }}{version}" }}-{version}"#;
+        assert_eq!(
+            legacy_placeholders_as_tera(template, &names, false),
+            r#"{{ "a\" }}{version}" }}-{{ version }}"#
+        );
+        assert_eq!(
+            legacy_placeholders_as_tera(template, &names, true),
+            r#"{{ "a\" }}{{ version }}" }}-{{ version }}"#
         );
     }
 
