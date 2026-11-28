@@ -3095,6 +3095,22 @@ impl Task {
         config: &Arc<Config>,
         usage_values: &IndexMap<String, tera::Value>,
     ) -> Result<()> {
+        // In the same scope as `render`: a task only the operator wrote keeps `env` and `vars`
+        // for the templates deferred until its usage args are known. Boxed for the same reason.
+        let operators = self.is_operators();
+        let render = Box::pin(self.render_usage_fields(config, usage_values));
+        if operators {
+            crate::tera::with_templates_trusted(true, render).await
+        } else {
+            render.await
+        }
+    }
+
+    async fn render_usage_fields(
+        &mut self,
+        config: &Arc<Config>,
+        usage_values: &IndexMap<String, tera::Value>,
+    ) -> Result<()> {
         if usage_values.is_empty() {
             return Ok(());
         }
