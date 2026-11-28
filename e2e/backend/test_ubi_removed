@@ -33,3 +33,17 @@ node = "ubi:nodejs/node"
 node = "22"
 EOF2
 assert_fail "mise install" "node: ubi:nodejs/node: the ubi backend was removed from mise"
+
+# A shorthand that mise.lock pins to ubi: must not quietly switch to the
+# registry's backend.
+cat <<EOF2 >mise.toml
+[tools]
+gh = "2.0.0"
+EOF2
+cat <<EOF2 >mise.lock
+[[tools.gh]]
+version = "2.0.0"
+backend = "ubi:cli/cli[exe=gh]"
+EOF2
+assert_fail "mise install" "gh: ubi:cli/cli[exe=gh]: the ubi backend was removed from mise"
+assert_fail "mise install" "mise.lock pins gh to this backend"

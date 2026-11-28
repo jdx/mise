@@ -556,7 +556,24 @@ impl BackendArg {
     pub(crate) fn removed_backend_error(&self) -> Option<String> {
         self.removed_backend_error_before_lookup().or_else(|| {
             let full = self.full();
-            backend::removed_backend_error(&full).map(|msg| format!("{}: {msg}", self.short))
+            let msg = backend::removed_backend_error(&full)?;
+            let short = unalias_backend(&self.short);
+            let locked = config::is_loaded()
+                && lockfile::get_locked_backend_for_version(
+                    &Config::get_(),
+                    &short,
+                    self.registry_version.as_deref(),
+                )
+                .is_some_and(|locked| backend::removed_backend_error(&locked).is_some());
+            Some(if locked {
+                format!(
+                    "{}: {msg}. mise.lock pins {short} to this backend: delete its \
+                     entries there to install it from the registry's backend",
+                    self.short
+                )
+            } else {
+                format!("{}: {msg}", self.short)
+            })
         })
     }
 
