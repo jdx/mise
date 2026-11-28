@@ -107,7 +107,7 @@ pub fn linked_global_project(path: &Path) -> Option<PathBuf> {
     if global == path {
         return None;
     }
-    let root = root_by_name(&path);
+    let root = spelled_config_root(&path);
     if root.ends_with(".config/mise")
         && let Some(outer) = root.parent().and_then(Path::parent)
     {
