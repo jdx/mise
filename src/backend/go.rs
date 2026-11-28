@@ -1023,7 +1023,9 @@ fn program_outside_cwd(
             names
                 .iter()
                 .map(|name| dir.join(name))
-                .find(|candidate| candidate.is_file() && crate::file::is_executable(candidate))
+                // Spawnable rather than executable: on Windows a `go.ps1` may
+                // come first, and `Command::new` cannot start it.
+                .find(|candidate| candidate.is_file() && crate::file::is_spawnable(candidate))
         })
         .map_or_else(
             || program.to_os_string(),
@@ -1469,6 +1471,22 @@ mod tests {
         assert_eq!(
             resolve("go", &BTreeMap::new()),
             std::path::PathBuf::from("go")
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn go_list_program_is_one_windows_can_spawn() {
+        let work = tempfile::tempdir().unwrap();
+        let cwd = work.path();
+        for (dir, name) in [("scripts", "go.ps1"), ("sdk", "go.exe")] {
+            std::fs::create_dir_all(cwd.join(dir)).unwrap();
+            std::fs::write(cwd.join(dir).join(name), "").unwrap();
+        }
+        let env = BTreeMap::from([("Path".to_string(), "scripts;sdk".to_string())]);
+        assert_eq!(
+            std::path::PathBuf::from(program_outside_cwd(OsStr::new("go"), &env, cwd)),
+            cwd.join("sdk").join("go.exe")
         );
     }
 
