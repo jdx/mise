@@ -71,6 +71,22 @@ includes = ["~/private/credentials.toml"]
 EOF
 assert_not_contains "MISE_SAFE=1 mise prune --dry-run 2>&1" "s3cr3t"
 
+echo "=== a conf.d folder that links outside the project does not move its bounds ==="
+# A folder fragment's includes resolve in the folder the link leads to, and are
+# judged against the project that holds the link.
+mkdir -p "$HOME/linked-fragment/private" .mise/conf.d
+cp "$HOME/private/hosts.toml" "$HOME/linked-fragment/private/"
+cat <<'EOF' >"$HOME/linked-fragment/mise.toml"
+[task_config]
+includes = ["private/hosts.toml"]
+EOF
+ln -s "$HOME/linked-fragment" .mise/conf.d/linked
+echo '[tools]' >mise.toml
+assert_contains "mise tasks ls --json 2>&1" "t0k3n"
+assert_not_contains "MISE_SAFE=1 mise tasks ls --json 2>&1" "t0k3n"
+assert_contains "MISE_SAFE=1 mise tasks ls 2>&1" "resolves outside the project"
+rm -r .mise
+
 echo "=== includes inside the project still load ==="
 mkdir -p ci/tasks
 cat <<'EOF' >ci/inside.toml
