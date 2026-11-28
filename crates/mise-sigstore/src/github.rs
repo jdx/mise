@@ -298,10 +298,7 @@ async fn verify_sources(
         log::debug!(
             "cached GitHub attestation verification failed overall: no attestation verified"
         );
-        return Err(AttestationError::Verification(join_error_strings(
-            errors,
-            || "No valid attestations found".to_string(),
-        )));
+        return Err(no_attestation_verified(errors, trust_root_failures));
     }
     if !errors.is_empty() {
         log::debug!(
@@ -311,6 +308,24 @@ async fn verify_sources(
     }
     warn_if_trust_root_unreachable(trust_root_failures);
     Ok(sources)
+}
+
+/// Why none of the attestations checked verified, from each one's `errors`.
+/// When every failure was a trust root that could not be loaded
+/// ([`AttestationError::TrustRoot`]), no signature was checked, let alone
+/// rejected, so the error says that rather than that verification failed:
+/// a caller that keeps a rejection must not keep this one.
+pub(crate) fn no_attestation_verified(
+    errors: Vec<String>,
+    trust_root_failures: usize,
+) -> AttestationError {
+    let nothing_checked = trust_root_failures > 0 && trust_root_failures == errors.len();
+    let message = join_error_strings(errors, || "No valid attestations found".to_string());
+    if nothing_checked {
+        AttestationError::TrustRoot(message)
+    } else {
+        AttestationError::Verification(message)
+    }
 }
 
 /// Verification passes when any one attestation verifies, so attestations that

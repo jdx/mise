@@ -419,15 +419,63 @@ async fn unreachable_tuf_repository_is_a_trust_root_error_not_a_signature_failur
         &mut TrustRoots::default(),
     )
     .await;
+    // With only the skipped bundle, nothing was checked: that is a trust root
+    // error, not a signature that failed, for both aggregators.
+    let unchecked = crate::bundle::verify_attestation_bundles_for_artifact(
+        Artifact::from(&digest),
+        &[public_good_attestation()],
+        "jdx/mise",
+        &[],
+        None,
+        &mut TrustRoots::default(),
+    )
+    .await;
+    let unchecked_sources = crate::github::verify_github_attestation_sources_for_artifact(
+        Artifact::from(&digest),
+        &[public_good_attestation()],
+        &[],
+        None,
+    )
+    .await;
     crate::set_tuf_url(None);
 
     assert!(verified.unwrap());
+    assert!(
+        matches!(unchecked, Err(AttestationError::TrustRoot(_))),
+        "{unchecked:?}"
+    );
+    assert!(
+        matches!(unchecked_sources, Err(AttestationError::TrustRoot(_))),
+        "{unchecked_sources:?}"
+    );
     let warnings: Vec<_> = captured_messages(&capture)
         .into_iter()
         .filter(|message| message.contains("were not checked because a TUF trust root"))
         .collect();
     assert_eq!(warnings.len(), 1, "{warnings:?}");
     assert!(warnings[0].starts_with("1 GitHub attestation(s) were not checked"));
+}
+
+#[test]
+fn only_unloadable_trust_roots_are_a_trust_root_error() {
+    let trust_root = || AttestationError::TrustRoot("tuf unreachable".to_string()).to_string();
+    assert!(matches!(
+        crate::github::no_attestation_verified(vec![trust_root(), trust_root()], 2),
+        AttestationError::TrustRoot(_)
+    ));
+    // one signature that was checked and failed makes it a rejection
+    assert!(matches!(
+        crate::github::no_attestation_verified(
+            vec![trust_root(), "signature mismatch".to_string()],
+            1
+        ),
+        AttestationError::Verification(ref msg) if msg.contains("signature mismatch")
+    ));
+    // nothing to check at all is not a trust root failure
+    assert!(matches!(
+        crate::github::no_attestation_verified(Vec::new(), 0),
+        AttestationError::Verification(ref msg) if msg == "No valid attestations found"
+    ));
 }
 
 #[test]

@@ -225,6 +225,7 @@ async fn verify_attestation_uncached(
     let mut digest = None;
     let mut mirror_err = None;
     let mut rejected = None;
+    let mut confirming = None;
     if use_versions_host_for_attestations(api_url, use_versions_host) {
         let artifact_digest = mise_sigstore::calculate_file_digest(artifact_path).await?;
         match verify_with_mirror(
@@ -240,7 +241,16 @@ async fn verify_attestation_uncached(
         {
             MirrorVerdict::Done(result) => return result,
             MirrorVerdict::AskGithub => {}
-            MirrorVerdict::ConfirmWithGithub(err) => rejected = Some(err),
+            MirrorVerdict::ConfirmWithGithub(err) => {
+                rejected = Some(err);
+                confirming = Some(KeptRejection::new(
+                    &format!("{owner}/{repo}"),
+                    &artifact_digest,
+                    tags,
+                    expected_workflow,
+                    None,
+                ));
+            }
             MirrorVerdict::RetryGithub(err) => mirror_err = Some(err),
         }
         digest = Some(artifact_digest);
@@ -264,14 +274,16 @@ async fn verify_attestation_uncached(
         },
     )
     .await;
-    accept_renamed_repository(owner, repo, api_url, result)
-        .await
-        .map_err(|err| {
-            rejection_stands(
-                after_mirror_failure(err, owner, repo, mirror_err.as_ref()),
-                rejected,
-            )
-        })
+    let result = accept_renamed_repository(owner, repo, api_url, result).await;
+    if let Some(kept) = &confirming {
+        kept.settle(&result);
+    }
+    result.map_err(|err| {
+        rejection_stands(
+            after_mirror_failure(err, owner, repo, mirror_err.as_ref()),
+            rejected,
+        )
+    })
 }
 
 /// Attestations name the repository as it was when they were made, so after
@@ -344,6 +356,7 @@ pub async fn verify_attestation_with_predicate_type(
     let artifact_digest = mise_sigstore::calculate_file_digest(artifact_path).await?;
     let mut mirror_err = None;
     let mut rejected = None;
+    let mut confirming = None;
     if use_versions_host_for_attestations(api_url, use_versions_host) {
         match verify_with_mirror(
             artifact_path,
@@ -358,12 +371,21 @@ pub async fn verify_attestation_with_predicate_type(
         {
             MirrorVerdict::Done(result) => return result,
             MirrorVerdict::AskGithub => {}
-            MirrorVerdict::ConfirmWithGithub(err) => rejected = Some(err),
+            MirrorVerdict::ConfirmWithGithub(err) => {
+                rejected = Some(err);
+                confirming = Some(KeptRejection::new(
+                    &format!("{owner}/{repo}"),
+                    &artifact_digest,
+                    tags,
+                    expected_workflow,
+                    Some(predicate_type),
+                ));
+            }
             MirrorVerdict::RetryGithub(err) => mirror_err = Some(err),
         }
     }
     let client = attestation_client(api_url.unwrap_or(crate::github::API_URL))?;
-    let attestations = client
+    let result = match client
         .fetch_attestations(FetchParams {
             owner: owner.to_string(),
             repo: Some(format!("{owner}/{repo}")),
@@ -372,22 +394,28 @@ pub async fn verify_attestation_with_predicate_type(
             predicate_type: Some(predicate_type.to_string()),
         })
         .await
-        .map_err(|err| {
-            rejection_stands(
-                after_mirror_failure(err, owner, repo, mirror_err.as_ref()),
-                rejected,
+    {
+        Ok(attestations) => {
+            let result = mise_sigstore::verify_github_attestation_with_attestations(
+                artifact_path,
+                &attestations,
+                owner,
+                repo,
+                tags,
+                expected_workflow,
             )
-        })?;
-    let result = mise_sigstore::verify_github_attestation_with_attestations(
-        artifact_path,
-        &attestations,
-        owner,
-        repo,
-        tags,
-        expected_workflow,
-    )
-    .await;
-    accept_renamed_repository(owner, repo, api_url, result).await
+            .await;
+            accept_renamed_repository(owner, repo, api_url, result).await
+        }
+        Err(err) => Err(rejection_stands(
+            after_mirror_failure(err, owner, repo, mirror_err.as_ref()),
+            rejected,
+        )),
+    };
+    if let Some(kept) = &confirming {
+        kept.settle(&result);
+    }
+    result
 }
 
 /// Reason the pre-download attestation probe could not complete.
@@ -575,12 +603,20 @@ fn mirrored_attestations_key(repo: &str, digest: &str) -> String {
 
 fn mirrored_attestations_cache(key: &str) -> crate::cache::CacheManager<MirroredAttestations> {
     crate::cache::CacheManagerBuilder::new(
-        crate::dirs::CACHE
-            .join("github")
-            .join(format!("{key}.msgpack.z")),
+        attestations_cache_dir().join(format!("{key}.msgpack.z")),
     )
     .with_fresh_duration(Some(MIRRORED_ATTESTATIONS_TTL))
     .build()
+}
+
+/// Where kept attestations and rejections ([`KeptRejection`]) are written:
+/// the cache dir, or in a test the temporary one it set up.
+fn attestations_cache_dir() -> std::path::PathBuf {
+    #[cfg(test)]
+    if let Some(dir) = tests::TEST_CACHE_DIR.with_borrow(Clone::clone) {
+        return dir;
+    }
+    crate::dirs::CACHE.join("github")
 }
 
 /// Only a complete set is kept: one missing a bundle is asked for again next
@@ -629,6 +665,115 @@ fn forget_mirrored_attestations(repo: &str, digest: &str) {
         debug!("failed to drop kept attestations for {repo}: {err:#}");
     }
     MIRRORED_ATTESTATIONS.lock().unwrap().remove(&key);
+}
+
+/// That a set of attestations mise-versions served for one artifact was
+/// rejected under one policy (the tags, signer workflow and predicate type
+/// asked for), kept on disk until an answer settles the artifact.
+///
+/// A rejected set is dropped, and mise-versions asked again
+/// ([`refreshed_mirrored_attestations`]), so without this the next command
+/// would find nothing kept and take a "none" from mise-versions as final.
+/// While one is kept, a "none" or a failed lookup from mise-versions has
+/// GitHub confirm the digest ([`unless_rejected`]), and the rejection stands
+/// when GitHub cannot answer ([`rejection_stands`]). A set that verifies, or
+/// GitHub confirming that there are no attestations, forgets it. Only a set
+/// that was checked and refused is kept ([`is_rejection`]): one left
+/// unchecked because a trust root could not be loaded rejects nothing.
+struct KeptRejection {
+    full: String,
+    key: String,
+}
+
+impl KeptRejection {
+    fn new(
+        full: &str,
+        artifact_digest: &str,
+        tags: &[String],
+        expected_workflow: Option<&str>,
+        predicate_type: Option<&str>,
+    ) -> Self {
+        let policy = (
+            full.to_ascii_lowercase(),
+            format!("sha256:{artifact_digest}"),
+            tags,
+            expected_workflow,
+            predicate_type,
+        );
+        Self {
+            full: full.to_string(),
+            key: format!(
+                "attestation-rejection-{}",
+                crate::hash::hash_to_str(&policy)
+            ),
+        }
+    }
+
+    fn cache(&self) -> crate::cache::CacheManager<String> {
+        crate::cache::CacheManagerBuilder::new(
+            attestations_cache_dir().join(format!("{}.msgpack.z", self.key)),
+        )
+        .build()
+    }
+
+    /// The rejection a command before this one kept.
+    fn load(&self) -> Option<AttestationError> {
+        let cache = self.cache();
+        if !cache.has_fresh_value() {
+            return None;
+        }
+        match cache.get_cached() {
+            Ok(rejection) => Some(AttestationError::Verification(format!(
+                "attestations mise-versions served for {} were rejected, and nothing has settled this artifact since: {rejection}",
+                self.full
+            ))),
+            Err(err) => {
+                debug!(
+                    "failed to read the attestation rejection kept for {}: {err:#}",
+                    self.full
+                );
+                None
+            }
+        }
+    }
+
+    fn keep(&self, rejection: &AttestationError) {
+        if let Err(err) = self.cache().write(&rejection.to_string()) {
+            debug!(
+                "failed to keep the attestation rejection for {}: {err:#}",
+                self.full
+            );
+        }
+    }
+
+    fn forget(&self) {
+        if let Err(err) = self.cache().clear() {
+            debug!(
+                "failed to drop the attestation rejection kept for {}: {err:#}",
+                self.full
+            );
+        }
+    }
+
+    /// Record mise-versions' `verdict` once `rejection_is_new` says whether
+    /// the rejection it carries, if any, was made in this command.
+    fn record(&self, verdict: &MirrorVerdict, rejection_is_new: bool) {
+        match verdict {
+            MirrorVerdict::Done(Ok(_)) => self.forget(),
+            MirrorVerdict::Done(Err(err)) if is_rejection(err) => self.keep(err),
+            MirrorVerdict::ConfirmWithGithub(err) if rejection_is_new => self.keep(err),
+            _ => {}
+        }
+    }
+
+    /// GitHub's `result` once it was asked to confirm the artifact
+    /// ([`MirrorVerdict::ConfirmWithGithub`]): a verification or "no
+    /// attestations" settles it; anything else leaves the rejection kept.
+    fn settle(&self, result: &AttestationResult<bool>) {
+        if matches!(result, Ok(_) | Err(AttestationError::NoAttestations)) {
+            self.forget();
+        }
+    }
 }
 
 /// The verdict on attestations from mise-versions for `full` that verify but
@@ -745,9 +890,20 @@ fn unless_rejected(
 /// Why a set mise-versions served earlier was rejected, from `err`, the
 /// reason it did not verify: one naming another release's tag, say. The
 /// refresh asked for then has to settle the digest ([`unless_rejected`]).
-/// "No attestations" and a failed lookup reject nothing.
+/// Only a rejection counts ([`is_rejection`]).
 fn kept_set_rejection(err: Option<AttestationError>) -> Option<AttestationError> {
-    err.filter(|err| !matches!(err, AttestationError::NoAttestations) && !is_api_failure(err))
+    err.filter(is_rejection)
+}
+
+/// Whether `err` says attestations were checked and refused. "No
+/// attestations", a failed lookup, a trust root that could not be loaded
+/// (so no signature was checked) and an artifact that could not be read
+/// reject nothing.
+fn is_rejection(err: &AttestationError) -> bool {
+    !matches!(
+        err,
+        AttestationError::NoAttestations | AttestationError::TrustRoot(_) | AttestationError::Io(_)
+    ) && !is_api_failure(err)
 }
 
 /// GitHub's `err` when it was asked to confirm that an artifact whose set
@@ -895,7 +1051,22 @@ async fn verify_with_mirror(
         unreachable!("the second pass always returns")
     }
     .await;
-    unless_rejected(verdict, &mut rejected)
+    // A rejection made in an earlier command stands until something settles
+    // the artifact ([`KeptRejection`]).
+    let kept = KeptRejection::new(
+        &full,
+        artifact_digest,
+        tags,
+        expected_workflow,
+        predicate_type,
+    );
+    let rejection_is_new = rejected.is_some();
+    if !rejection_is_new {
+        rejected = kept.load();
+    }
+    let verdict = unless_rejected(verdict, &mut rejected);
+    kept.record(&verdict, rejection_is_new);
+    verdict
 }
 
 /// Whether mise-versions' attestations for `owner/repo` at `digest` include
@@ -1287,6 +1458,31 @@ pub async fn verify_forge_attestation_sources_for_sha512(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    thread_local! {
+        /// The cache dir [`attestations_cache_dir`] answers with in this
+        /// test, set by [`temp_cache`].
+        pub(super) static TEST_CACHE_DIR: std::cell::RefCell<Option<std::path::PathBuf>> =
+            const { std::cell::RefCell::new(None) };
+    }
+
+    /// Kept attestations and rejections go to a temporary dir until this is
+    /// dropped, instead of the cache dir of whoever runs the tests.
+    struct TempCache {
+        _dir: tempfile::TempDir,
+    }
+
+    impl Drop for TempCache {
+        fn drop(&mut self) {
+            TEST_CACHE_DIR.set(None);
+        }
+    }
+
+    fn temp_cache() -> TempCache {
+        let dir = tempfile::tempdir().unwrap();
+        TEST_CACHE_DIR.set(Some(dir.path().to_path_buf()));
+        TempCache { _dir: dir }
+    }
 
     fn listed() -> RepoListing {
         RepoListing::Listed
@@ -2039,6 +2235,10 @@ mod tests {
     /// Keep `attestations` for `repo` at `digest` as [`mirrored_attestations`]
     /// does, on disk and for this command.
     fn keep_for_test(repo: &str, digest: &str, attestations: MirroredAttestations) {
+        assert!(
+            TEST_CACHE_DIR.with_borrow(Option::is_some),
+            "set up a temp_cache() before keeping attestations"
+        );
         let key = mirrored_attestations_key(repo, digest);
         mirrored_attestations_cache(&key)
             .write(&attestations)
@@ -2062,6 +2262,7 @@ mod tests {
     #[test]
     fn test_kept_attestations_of_another_repository_are_dropped_and_asked_again() {
         let _settings = SettingsGuard::new(None);
+        let _cache = temp_cache();
         let repo = "acme/kept-by-another";
         let digest = "sha256:1";
         let attestation: mise_sigstore::Attestation =
@@ -2220,6 +2421,20 @@ mod tests {
         assert!(kept_set_rejection(None).is_none());
         assert!(kept_set_rejection(Some(AttestationError::NoAttestations)).is_none());
         assert!(kept_set_rejection(Some(AttestationError::Api("502".to_string()))).is_none());
+        // a set left unchecked because its signing keys could not be loaded,
+        // or an artifact that could not be read, rejects nothing either
+        assert!(
+            kept_set_rejection(Some(AttestationError::TrustRoot(
+                "tuf-repo-cdn.sigstore.dev unreachable".to_string()
+            )))
+            .is_none()
+        );
+        assert!(
+            kept_set_rejection(Some(AttestationError::Io(std::io::Error::other(
+                "read failed"
+            ))))
+            .is_none()
+        );
     }
 
     #[test]
@@ -2243,9 +2458,9 @@ mod tests {
         ));
     }
 
-    #[tokio::test]
-    async fn test_a_refresh_that_keeps_nothing_drops_the_kept_set() {
-        // a mise-versions stand-in that now has no attestations for the digest
+    /// A mise-versions stand-in that has no attestations for any digest, with
+    /// the settings that route mise-versions to it.
+    fn empty_mise_versions() -> SettingsGuard {
         let server = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let url = format!("http://{}", server.local_addr().unwrap());
         std::thread::spawn(move || {
@@ -2261,9 +2476,19 @@ mod tests {
                 );
             }
         });
-        let _settings = SettingsGuard::new(Some(indexmap::indexmap! {
-            "https://mise-versions.jdx.dev".to_string() => url,
-        }));
+        // Set explicitly, so MISE_USE_VERSIONS_HOST=false cannot skip the test.
+        SettingsGuard::with_versions_host(
+            Some(indexmap::indexmap! {
+                "https://mise-versions.jdx.dev".to_string() => url,
+            }),
+            Some(true),
+        )
+    }
+
+    #[tokio::test]
+    async fn test_a_refresh_that_keeps_nothing_drops_the_kept_set() {
+        let _settings = empty_mise_versions();
+        let _cache = temp_cache();
         let repo = "acme/refreshed-empty";
         let digest = "sha256:2";
         let attestation: mise_sigstore::Attestation =
@@ -2278,6 +2503,116 @@ mod tests {
             "the superseded set stayed on disk"
         );
         assert!(!kept_in_this_command(repo, digest));
+    }
+
+    /// A rejection outlives the command that made it: the next one finds
+    /// nothing kept and mise-versions answering "none", and still has GitHub
+    /// confirm the digest instead of passing an optional verification.
+    #[tokio::test]
+    async fn test_a_rejection_outlives_the_command_that_made_it() {
+        let _settings = empty_mise_versions();
+        let _cache = temp_cache();
+        let owner = "acme";
+        let repo = "rejected-before";
+        let full = format!("{owner}/{repo}");
+        let digest = "3".repeat(64);
+        let tags = vec!["v1.0.0".to_string()];
+        let kept = KeptRejection::new(&full, &digest, &tags, None, None);
+
+        // the command that rejected the set, then had GitHub confirm
+        let rejection = AttestationError::Verification("made by evil/tool".to_string());
+        kept.record(&MirrorVerdict::ConfirmWithGithub(rejection), true);
+
+        let verdict =
+            verify_with_mirror(Path::new("unread"), owner, repo, &tags, None, None, &digest).await;
+        let MirrorVerdict::ConfirmWithGithub(err) = verdict else {
+            panic!("mise-versions answering none erased a kept rejection");
+        };
+        assert!(
+            matches!(err, AttestationError::Verification(ref msg) if msg.contains("evil/tool")),
+            "{err}"
+        );
+        // GitHub cannot answer: the rejection stands, and stays kept
+        assert!(matches!(
+            rejection_stands(AttestationError::Api("503".to_string()), Some(err)),
+            AttestationError::Verification(_)
+        ));
+        kept.settle(&Err(AttestationError::Api("503".to_string())));
+        assert!(kept.load().is_some());
+
+        // another policy (another release's tag) was not rejected
+        let other_tag = vec!["v2.0.0".to_string()];
+        assert!(matches!(
+            verify_with_mirror(
+                Path::new("unread"),
+                owner,
+                repo,
+                &other_tag,
+                None,
+                None,
+                &digest
+            )
+            .await,
+            MirrorVerdict::Done(Err(AttestationError::NoAttestations))
+        ));
+
+        // GitHub confirming that there are none settles the artifact
+        kept.settle(&Err(AttestationError::NoAttestations));
+        assert!(kept.load().is_none());
+        assert!(matches!(
+            verify_with_mirror(Path::new("unread"), owner, repo, &tags, None, None, &digest).await,
+            MirrorVerdict::Done(Err(AttestationError::NoAttestations))
+        ));
+    }
+
+    #[test]
+    fn test_only_a_rejection_is_kept_and_a_verification_forgets_it() {
+        let _settings = SettingsGuard::new(None);
+        let _cache = temp_cache();
+        let kept = KeptRejection::new("acme/kept-rejection", &"4".repeat(64), &[], None, None);
+
+        // a set left unchecked because the signing keys could not be loaded
+        kept.record(
+            &MirrorVerdict::Done(Err(AttestationError::TrustRoot(
+                "tuf-repo-cdn.sigstore.dev unreachable".to_string(),
+            ))),
+            false,
+        );
+        kept.record(
+            &MirrorVerdict::Done(Err(AttestationError::NoAttestations)),
+            false,
+        );
+        assert!(kept.load().is_none());
+
+        // a fresh set that fails is kept, and so is one rejected in this
+        // command that GitHub is asked to confirm
+        kept.record(
+            &MirrorVerdict::Done(Err(AttestationError::Verification(
+                "made for refs/tags/v0.9.0".to_string(),
+            ))),
+            false,
+        );
+        assert!(
+            matches!(kept.load(), Some(AttestationError::Verification(ref msg)) if msg.contains("refs/tags/v0.9.0"))
+        );
+        // one loaded from an earlier command is not written again
+        let loaded = kept.load().unwrap();
+        kept.record(&MirrorVerdict::ConfirmWithGithub(loaded), false);
+        let reloaded = kept.load().unwrap().to_string();
+        assert_eq!(reloaded.matches("were rejected").count(), 1, "{reloaded}");
+
+        // a set that verifies forgets it, and so does GitHub verifying
+        kept.record(&MirrorVerdict::Done(Ok(true)), false);
+        assert!(kept.load().is_none());
+        kept.record(
+            &MirrorVerdict::ConfirmWithGithub(AttestationError::WorkflowMismatch(
+                "release.yml".to_string(),
+            )),
+            true,
+        );
+        assert!(kept.load().is_some());
+        kept.settle(&Ok(true));
+        assert!(kept.load().is_none());
     }
 
     #[test]

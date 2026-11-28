@@ -1,5 +1,7 @@
 use super::*;
-use crate::github::{log_attestation_method_failure, warn_if_trust_root_unreachable};
+use crate::github::{
+    log_attestation_method_failure, no_attestation_verified, warn_if_trust_root_unreachable,
+};
 
 pub(crate) async fn verify_attestation_bundles(
     attestations: &[Attestation],
@@ -106,10 +108,7 @@ pub(crate) async fn verify_attestation_bundles_for_artifact(
         });
     }
 
-    Err(AttestationError::Verification(join_error_strings(
-        errors,
-        || "No valid attestations found".to_string(),
-    )))
+    Err(no_attestation_verified(errors, trust_root_failures))
 }
 
 pub(crate) fn is_snappy_content_type(headers: &HeaderMap) -> bool {
