@@ -6,6 +6,7 @@ use crate::config::config_file::config_trust_root;
 use crate::config::{Settings, config_file, config_files_in_dir, is_global_config};
 use crate::file::{display_path, remove_file};
 use crate::toolset::{ResolveOptions, ToolsetBuilder};
+use crate::ui::style::display_path_escaped;
 use crate::{config, dirs, env, file};
 use eyre::{Result, bail};
 use itertools::Itertools;
@@ -305,7 +306,7 @@ fn warn_trusted_via_settings(roots: &[PathBuf]) {
         }
         warn!(
             "{} is trusted via settings so it will still be trusted.",
-            display_path(&root)
+            display_path_escaped(&root)
         );
         warned.push(root);
     }
@@ -346,7 +347,7 @@ pub(super) fn untrust_config_file(
     for root in &roots {
         // A recorded nested root may be gone from the checkout; its record holds it resolved.
         let root = root.canonicalize().unwrap_or_else(|_| root.clone());
-        info!("untrusted {}", display_path(&root));
+        info!("untrusted {}", display_path_escaped(&root));
     }
     let cfr = roots[0].canonicalize()?;
     warn_trusted_via_settings(&roots);
@@ -357,8 +358,8 @@ pub(super) fn untrust_config_file(
     {
         warn!(
             "{} is a git worktree of {} which is trusted, so it will still be trusted. Untrust that path or use `mise trust --ignore`.",
-            display_path(&cfr),
-            display_path(&main_path)
+            display_path_escaped(&cfr),
+            display_path_escaped(&main_path)
         );
     }
 
@@ -385,7 +386,7 @@ pub(super) fn resolve_config_file(config_file: Option<&PathBuf>) -> Result<Optio
             "Path does not exist: {}\n\
              mise resolves this to a trust root before recording anything, and that resolution is \
              lexical — a path that is not there would act on its parent directory instead.",
-            display_path(config_file)
+            display_path_escaped(config_file)
         );
     }
     Ok(Some(if config_file.is_dir() {
@@ -416,7 +417,7 @@ impl Trust {
             bail!(
                 "{} is global config, which cannot be ignored with `mise trust --ignore`. \
                  Use the `ignored_config_paths` setting instead.",
-                display_path(&path)
+                display_path_escaped(&path)
             );
         }
         let cfr = cli_trust_root(&path, self.named_file());
@@ -433,7 +434,7 @@ impl Trust {
             config_file::add_ignored(path.clone())?;
         }
         for root in &roots {
-            info!("ignored {}", display_path(&root.canonicalize()?));
+            info!("ignored {}", display_path_escaped(&root.canonicalize()?));
         }
         warn_trusted_via_settings(&roots);
         Ok(())
@@ -463,7 +464,7 @@ impl Trust {
             config_file::trust(&file)?;
         }
         let cfr = path.canonicalize()?;
-        info!("trusted {}", display_path(&cfr));
+        info!("trusted {}", display_path_escaped(&cfr));
         Ok(())
     }
 
@@ -480,7 +481,7 @@ impl Trust {
     fn trust_root(root: &Path) -> Result<()> {
         config_file::ensure_trust_can_approve(root)?;
         config_file::trust(root)?;
-        info!("trusted {}", display_path(&root.canonicalize()?));
+        info!("trusted {}", display_path_escaped(&root.canonicalize()?));
         Ok(())
     }
 
@@ -513,7 +514,10 @@ impl Trust {
             }
             let status = cmd.status()?;
             if !status.success() {
-                warn!("could not trust env files in {}", display_path(&dir));
+                warn!(
+                    "could not trust env files in {}",
+                    display_path_escaped(&dir)
+                );
             }
         }
         Ok(())
@@ -575,7 +579,7 @@ impl Trust {
             }
             for path in pending {
                 config_file::trust_env_file(&path)?;
-                info!("trusted {}", display_path(&path.canonicalize()?));
+                info!("trusted {}", display_path_escaped(&path.canonicalize()?));
                 trusted += 1;
             }
         }
@@ -690,7 +694,7 @@ impl Trust {
             .unique()
             // The same check as loading: in paranoid mode a linked config's target record does
             // not count, and `trusted_config_paths` can trust the project that holds the link.
-            .map(|p| (display_path(&p), !needs_trust(&p)))
+            .map(|p| (display_path_escaped(&p), !needs_trust(&p)))
             .rev()
             .collect::<Vec<_>>();
         if trusted.is_empty() {

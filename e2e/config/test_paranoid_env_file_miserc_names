@@ -71,3 +71,28 @@ output="$(mise trust --all 2>&1)"
 assert_contains_text "$output" "trusted ~/workdir/top/app"
 assert_not_contains_text "$output" "trusted ~/workdir/top/app/project.toml"
 assert_contains "cd app && mise env" "APP_TEST=loaded"
+
+# A config for an environment that is not selected is config too: trusting it trusts the
+# project, and it loads once the environment is selected.
+mkdir ~/stage
+cat <<'TOML' >~/stage/mise.staging.toml
+[env]
+STAGE_TEST = "{{ exec(command='echo loaded') }}"
+TOML
+output="$(cd ~/stage && mise trust mise.staging.toml 2>&1)"
+assert_contains_text "$output" "trusted ~/stage"
+assert_not_contains_text "$output" "trusted ~/stage/mise.staging.toml"
+assert_contains "cd ~/stage && MISE_ENV=staging mise env" "STAGE_TEST=loaded"
+
+# `MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES=none` turns `.tool-versions` off and names no file, so
+# approving an env file named `none` does not trust its directory.
+mkdir ~/off
+echo 'GREETING="hello"' >~/off/none
+cat <<'TOML' >~/off/mise.toml
+[env]
+OFF_TEST = "{{ exec(command='echo loaded') }}"
+TOML
+export MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES=none
+assert_contains "cd ~/off && MISE_ENV_FILE=none mise trust none 2>&1" "trusted ~/off/none"
+assert_not_contains "cd ~/off && MISE_ENV_FILE=none mise hook-env -s bash 2>&1 || true" "OFF_TEST"
+assert_not_contains "cd ~/off && mise trust --show 2>&1" "off: trusted"

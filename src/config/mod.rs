@@ -2717,32 +2717,51 @@ const LOCAL_CONFIG_FILENAMES: [&str; 10] = [
 /// The config filenames that the `MISE_OVERRIDE_*_FILENAMES` and `MISE_DEFAULT_*_FILENAME`
 /// environment variables set, without the ones a `.miserc.toml` adds.
 fn user_config_filenames() -> Vec<String> {
+    user_config_filenames_from(|var| std::env::var(var).ok())
+}
+
+/// [`user_config_filenames`] reading the variables through `var`, so tests need no global state.
+/// `MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES=none` turns `.tool-versions` discovery off, as in
+/// `env::MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES`: it names no file, and counting it would let an
+/// env file named `none` trust its directory.
+fn user_config_filenames_from(var: impl Fn(&str) -> Option<String>) -> Vec<String> {
     let mut names = vec![];
-    for var in [
+    for name in [
         "MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES",
         "MISE_OVERRIDE_CONFIG_FILENAMES",
     ] {
-        if let Ok(value) = std::env::var(var) {
+        if let Some(value) = var(name) {
+            if name == "MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES" && value == "none" {
+                continue;
+            }
             names.extend(value.split(':').filter(|s| !s.is_empty()).map(String::from));
         }
     }
-    for var in [
+    for name in [
         "MISE_DEFAULT_TOOL_VERSIONS_FILENAME",
         "MISE_DEFAULT_CONFIG_FILENAME",
     ] {
-        if let Ok(value) = std::env::var(var) {
+        if let Some(value) = var(name).filter(|v| !v.is_empty()) {
             names.push(value);
         }
     }
     names
 }
 
-/// Whether `path` is found under one of mise's own config filenames, or under a name that the
-/// `MISE_OVERRIDE_*_FILENAMES` and `MISE_DEFAULT_*_FILENAME` environment variables set. A name
-/// that only a `.miserc.toml` adds does not count: a project's `.miserc.toml` loads before
-/// anything is trusted, so it must not decide what an approval of a file covers.
+/// Whether `path` is found under one of mise's own config filenames, for any environment, or
+/// under a name that the `MISE_OVERRIDE_*_FILENAMES` and `MISE_DEFAULT_*_FILENAME` environment
+/// variables set. A name that only a `.miserc.toml` adds does not count: a project's
+/// `.miserc.toml` loads before anything is trusted, so it must not decide what an approval of a
+/// file covers. Environment files count for every environment, as the trust of their root
+/// covers them (`config_files_in_dir_for_any_env`), not only for the ones `MISE_ENV`, which a
+/// `.miserc.toml` can set, selects.
 pub(crate) fn has_own_config_filename(path: &Path) -> bool {
-    let user_names = user_config_filenames();
+    let start = env::current_dir().unwrap_or_default();
+    has_own_config_filename_from(path, &start, &user_config_filenames())
+}
+
+/// [`has_own_config_filename`] searching from `start` with the operator-set names `user_names`.
+fn has_own_config_filename_from(path: &Path, start: &Path, user_names: &[String]) -> bool {
     // A name the user set counts wherever the file is: the search below only looks in the
     // working directory and the ones above it, and would miss `child/project.toml`.
     if path
@@ -2762,9 +2781,46 @@ pub(crate) fn has_own_config_filename(path: &Path) -> bool {
     let Ok(path) = path.absolutize() else {
         return false;
     };
-    load_config_paths(&names, true)
+    let is_path = |config: &PathBuf| config.absolutize().is_ok_and(|config| config == path);
+    if load_config_paths_from(start, &names, true)
         .iter()
-        .any(|config| config.absolutize().is_ok_and(|config| config == path))
+        .any(is_path)
+    {
+        return true;
+    }
+    // Environment files, matched without the `MISE_ENV` filter loading applies, as
+    // `config_files_in_dir_for_any_env` matches them for the trust of their root. With
+    // `env_conf_d` on, loading also skips dotted `conf.d` fragments of other environments.
+    let any_env: Vec<String> = any_env_config_patterns()
+        .into_iter()
+        .chain(
+            [".config/mise", "mise", ".mise"]
+                .into_iter()
+                .map(|prefix| format!("{prefix}/conf.d/*.toml")),
+        )
+        .collect();
+    all_dirs_from(start).unwrap_or_default().iter().any(|dir| {
+        any_env
+            .iter()
+            .any(|pattern| config_glob(dir, pattern).iter().any(is_path))
+    })
+}
+
+/// mise's own environment config filename patterns with the environment left open: they match
+/// `mise.staging.toml`, `.config/mise/config.prod.local.toml` and
+/// `mise/conf.d/web/mise.dev.toml` whatever `MISE_ENV` selects. `conf.d/*.toml` already holds
+/// the dotted `conf.d` fragments.
+fn any_env_config_patterns() -> Vec<String> {
+    [".config/mise", "mise", ".mise"]
+        .into_iter()
+        .flat_map(|prefix| {
+            [
+                format!("{prefix}.*.toml"),
+                format!("{prefix}/config.*.toml"),
+                format!("{prefix}/conf.d/*/mise.*.toml"),
+            ]
+        })
+        .collect()
 }
 /// `.local` override filenames for one directory, lowest precedence first. They
 /// outrank every shared and environment file in the same directory, except the
@@ -3080,14 +3136,8 @@ pub fn config_files_in_dir(dir: &Path) -> IndexSet<PathBuf> {
 pub fn config_files_in_dir_for_any_env(dir: &Path) -> IndexSet<PathBuf> {
     let mut files = config_files_in_dir(dir);
     if env::MISE_OVERRIDE_CONFIG_FILENAMES.is_empty() {
-        for prefix in [".config/mise", "mise", ".mise"] {
-            for pattern in [
-                format!("{prefix}.*.toml"),
-                format!("{prefix}/config.*.toml"),
-                format!("{prefix}/conf.d/*/mise.*.toml"),
-            ] {
-                files.extend(config_glob(dir, &pattern));
-            }
+        for pattern in any_env_config_patterns() {
+            files.extend(config_glob(dir, &pattern));
         }
     }
     files
