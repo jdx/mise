@@ -127,8 +127,19 @@ pub fn forge_token_denied_at(forge: Forge, url: &url::Url) -> bool {
 
 /// [`forge_token_denied_at`] for a lookup that knows only the host, such as
 /// `mise token`: the token is withheld when any origin on `host` is denied.
+/// `forge`'s own public hosts are the exception. A lookup by one of those
+/// names is for the public API over https, which keeps its token, so a project
+/// `api_url` such as `http://api.github.com` withholds the token only from
+/// requests to that origin ([`forge_token_denied_at`]), not from every lookup
+/// in the process.
 pub fn forge_token_denied(forge: Forge, host: &str) -> bool {
     let host = parse_host(host);
+    if host
+        .as_ref()
+        .is_some_and(|host| forge.public_hosts().contains(&host.to_string().as_str()))
+    {
+        return false;
+    }
     forge_token_denied_where(
         forge,
         |origin| matches!((origin, &host), (url::Origin::Tuple(_, h, _), Some(host)) if h == host),
@@ -384,6 +395,36 @@ mod tests {
         ));
         // a lookup by host alone withholds it while any origin there is denied
         assert!(forge_token_denied(Forge::GitLab, "git.corp.example"));
+        reset();
+    }
+
+    #[test]
+    fn a_public_forge_origin_off_https_denies_only_requests_to_it() {
+        let _lock = crate::testing::lock_ignoring_poison(&crate::testing::SETTINGS_LOCK);
+        reset();
+        let url = |s: &str| url::Url::parse(s).unwrap();
+        deny_forge_token_for_url("http://api.github.com");
+        deny_forge_token_for_url("https://api.github.com:8443");
+        deny_forge_token_for_url("http://gitlab.com/api/v4");
+
+        assert!(forge_token_denied_at(
+            Forge::GitHub,
+            &url("http://api.github.com/repos")
+        ));
+        assert!(forge_token_denied_at(
+            Forge::GitHub,
+            &url("https://api.github.com:8443/repos")
+        ));
+        assert!(forge_token_denied_at(
+            Forge::GitLab,
+            &url("http://gitlab.com/api/v4/projects")
+        ));
+        // the public API over https, which a lookup by host alone is for, keeps it
+        assert!(!forge_token_denied(Forge::GitHub, "api.github.com"));
+        assert!(!forge_token_denied(Forge::GitHub, "github.com"));
+        assert!(!forge_token_denied(Forge::GitLab, "gitlab.com"));
+        // another forge's token is still withheld from those hosts
+        assert!(forge_token_denied(Forge::GitLab, "api.github.com"));
         reset();
     }
 

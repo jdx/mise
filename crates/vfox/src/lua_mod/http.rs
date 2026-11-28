@@ -182,9 +182,12 @@ fn add_default_headers(lua: &Lua, url: &str, mut headers: HeaderMap) -> HeaderMa
     // release-download URLs causes GitHub to 302 to objects.githubusercontent.com
     // (instead of the public release-assets host), which then 401s once
     // reqwest strips the Authorization header on the cross-origin redirect.
-    // Mirrors src/github.rs::is_github_api_url.
-    let is_api =
-        host == "api.github.com" || (host.starts_with("api.") && host.ends_with(".ghe.com"));
+    // Mirrors src/github.rs::is_github_api_url. The token is looked up by host
+    // alone, so it goes only to that API over https on the default port, never
+    // in clear text or to another port of the host.
+    let is_api = url.scheme() == "https"
+        && url.port().is_none()
+        && (host == "api.github.com" || (host.starts_with("api.") && host.ends_with(".ghe.com")));
 
     if is_api && let Some(token) = github_token(lua) {
         if let Ok(value) = HeaderValue::from_str(&format!("Bearer {token}")) {
