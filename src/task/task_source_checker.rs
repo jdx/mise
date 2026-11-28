@@ -747,12 +747,17 @@ pub(crate) fn glob_walk_pruned(
 /// taken as it is named, even when its name holds glob metacharacters, and as with
 /// [`glob_walk`] a `*` stays within one directory and only `**` descends. `pattern` separates
 /// components with `/`, and on Windows also with `\`.
+/// A trailing separator selects directories, as it does in a shell.
 pub(crate) fn glob_walk_in(base: &Path, pattern: &str) -> Result<GlobWalker> {
     let components = glob_components(pattern, cfg!(windows));
     let max_depth = (!components.contains(&"**")).then_some(components.len());
+    let mut glob = components.join("/");
+    if pattern.ends_with('/') || (cfg!(windows) && pattern.ends_with('\\')) {
+        glob.push('/');
+    }
     build_glob_walker(
         base.to_path_buf(),
-        components.join("/"),
+        glob,
         max_depth,
         false,
         &DirPruner::none(),
@@ -770,22 +775,23 @@ fn glob_components(pattern: &str, windows: bool) -> Vec<&str> {
 
 fn build_glob_walker(
     base: PathBuf,
-    mut glob_pattern: String,
+    glob_pattern: String,
     max_depth: Option<usize>,
     case_insensitive: bool,
     pruner: &DirPruner,
 ) -> Result<GlobWalker> {
-    if glob_pattern.starts_with('!') {
-        glob_pattern.insert(0, '\\');
-    }
-
     // globwalk treats a lone `*` as a gitignore pattern that matches at any
     // depth; anchor it so it only matches directly under the base.
-    let override_pattern = if glob_pattern == "*" {
+    let mut override_pattern = if glob_pattern == "*" {
         "/*".to_string()
     } else {
         glob_pattern.clone()
     };
+    // In a gitignore line a leading `!` negates and a leading `#` starts a
+    // comment, which adds no rule; escaped, each is a character of a name.
+    if override_pattern.starts_with(['!', '#']) {
+        override_pattern.insert(0, '\\');
+    }
     let mut overrides = OverrideBuilder::new(&base);
     overrides.case_insensitive(case_insensitive)?;
     overrides.add(&override_pattern)?;

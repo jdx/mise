@@ -1680,6 +1680,8 @@ mod tests {
             "cloned/docs/.env.example",
             "env.d/a.env",
             "env.d/nested/b.env",
+            "#dev-local.env",
+            "!x.env",
         ] {
             let file = root.join(file);
             std::fs::create_dir_all(file.parent().unwrap()).unwrap();
@@ -1701,6 +1703,11 @@ mod tests {
             glob("**/.env.example"),
             files(&["cloned/.env.example", "cloned/docs/.env.example"])
         );
+        // a leading `#` or `!` is part of a name, not gitignore syntax
+        assert_eq!(glob("#dev*.env"), files(&["#dev-local.env"]));
+        assert_eq!(glob("!x*"), files(&["!x.env"]));
+        // a trailing separator selects directories, which hold no file to load
+        assert_eq!(glob(".env.*/"), files(&[]));
     }
 
     /// A global `_.file` or `_.source` entry is exempt from paranoid env-file trust only when
