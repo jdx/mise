@@ -10,8 +10,9 @@ cat <<EOF >mise.toml
 dummy = { version = "latest", postinstall = "dummy" }
 EOF
 
-# Remove any existing dummy installation to force reinstall
-rm -rf "$MISE_DATA_DIR/installs/dummy"
+# Remove any existing dummy installation to force reinstall. Uninstall rather
+# than delete installs/dummy: an installation can live outside it.
+mise uninstall --all dummy
 
 # Install the tool — the postinstall hook should be able to run the dummy command
 output=$(mise install dummy 2>&1)
@@ -78,7 +79,7 @@ cat >mise.toml <<'EOF'
 dummy = { version = "1.0.0", depends = ["asdf:strict-dependency"] }
 "asdf:strict-dependency" = "1.0.0"
 EOF
-rm -rf "$MISE_DATA_DIR/installs/dummy/1.0.0"
+mise uninstall --all dummy
 rm -rf "$MISE_DATA_DIR/installs/strict-dependency/1.0.0"
 assert_fail_contains "mise install dummy" "selected version is not installed"
 assert_fail_contains "mise install dummy" "mise install asdf:strict-dependency@1.0.0"
@@ -123,7 +124,7 @@ cat >mise.toml <<EOF
 [tools]
 dummy = { version = "1.0.0", depends = ["system-only-dependency"], postinstall = "system-only-dependency > '$SYSTEM_MARKER'" }
 EOF
-rm -rf "$MISE_DATA_DIR/installs/dummy/1.0.0"
+mise uninstall --all dummy
 mise install dummy
 assert "cat '$SYSTEM_MARKER'" "system"
 
@@ -136,7 +137,7 @@ cat >mise.toml <<'EOF'
 dummy = { version = "1.0.0", depends = ["asdf:path-error"] }
 "asdf:path-error" = "1.0.0"
 EOF
-rm -rf "$MISE_DATA_DIR/installs/dummy/1.0.0"
+mise uninstall --all dummy
 path_error_output="$(quiet_assert_fail "mise install dummy")"
 assert_contains_text "$path_error_output" "failed to list bin paths for install dependency"
 assert_contains_text "$path_error_output" "path-error@1.0.0"
@@ -151,7 +152,7 @@ cat >mise.toml <<'EOF'
 dummy = { version = "1.0.0", depends = ["asdf:zero-paths"] }
 "asdf:zero-paths" = "1.0.0"
 EOF
-rm -rf "$MISE_DATA_DIR/installs/dummy/1.0.0"
+mise uninstall --all dummy
 mise install dummy
 assert_contains "mise ls --installed dummy" "1.0.0"
 
@@ -190,7 +191,7 @@ cat >mise.toml <<EOF
 dummy = { version = "1.0.0", depends = ["asdf:path-order"], postinstall = "dummy > '$TARGET_ORDER_MARKER'; dependency-command > '$DEPENDENCY_ORDER_MARKER'" }
 "asdf:path-order" = "1.0.0"
 EOF
-rm -rf "$MISE_DATA_DIR/installs/dummy/1.0.0"
+mise uninstall --all dummy
 mise install dummy
 assert_contains "cat '$TARGET_ORDER_MARKER'" "This is Dummy 1.0.0"
 assert "cat '$DEPENDENCY_ORDER_MARKER'" "managed-dependency"

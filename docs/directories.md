@@ -107,8 +107,8 @@ building paths from them.
 it where mise starts, not in `[env]`, or an install can use one directory while
 later commands and shims look in another.
 
-The experimental [identity install layout](/dev-tools/install-layout.html)
-installs into `installs/<label>-<hash>/`, such as `installs/age-hlencrst`, and
+The experimental [identity install layout](/dev-tools/install-layout.html), on
+with `experimental = true` unless `install_layout = "legacy"`, installs into `installs/<label>-<hash>/`, such as `installs/age-hlencrst`, and
 makes `installs/age/1.2.1` a link to it. Its catalog in `installs/.mise/`
 records which directory holds each installation; it is not a cache, so back it
 up with the installs. On Windows the installations go into `i\` beside

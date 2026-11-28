@@ -26,34 +26,41 @@ use crate::file;
 use crate::toolset::{ToolRequest, ToolVersion};
 use crate::{dirs, env};
 
-/// Whether the identity layout is on: `install_layout = "identity"`, which
-/// requires `experimental`. On Windows, where the shorter install store helps
-/// most, `experimental` alone turns it on when `install_layout` is unset.
+/// Whether the identity layout is on: `install_layout = "identity"`, or
+/// `experimental = true` with `install_layout` unset. `install_layout = "legacy"`
+/// turns it off, experimental or not. It needs `experimental` either way.
 pub fn enabled() -> bool {
     let Ok(settings) = crate::config::Settings::try_get() else {
         return false;
     };
-    if !requested(settings.install_layout.as_deref(), settings.experimental) {
-        return false;
+    match settings.install_layout.as_deref() {
+        Some("legacy") => false,
+        Some("identity") if !settings.experimental => {
+            warn_once!(
+                "[experimental] install_layout = \"identity\" requires experimental = true; \
+                 installing into the legacy layout"
+            );
+            false
+        }
+        Some("identity") => true,
+        // Not a silent choice either way: an unknown value is reported and the
+        // setting is taken as unset.
+        Some(other) => {
+            warn_once!(
+                "install_layout = \"{other}\" is neither \"identity\" nor \"legacy\"; \
+                 using the default"
+            );
+            default_enabled(&settings)
+        }
+        None => default_enabled(&settings),
     }
-    if !settings.experimental {
-        warn_once!(
-            "[experimental] install_layout = \"identity\" requires experimental = true; \
-             installing into the legacy layout"
-        );
-        return false;
-    }
-    true
 }
 
-/// Whether the settings ask for the identity layout, before `experimental` is
-/// checked: explicitly, or on Windows by leaving `install_layout` unset with
-/// `experimental` on.
-fn requested(install_layout: Option<&str>, experimental: bool) -> bool {
-    match install_layout {
-        Some(layout) => layout == "identity",
-        None => cfg!(windows) && experimental,
-    }
+/// The layout with `install_layout` unset: on with experimental features. Unit
+/// tests run with `experimental` forced on for everything; they get this layout
+/// only when they ask for it.
+fn default_enabled(settings: &crate::config::Settings) -> bool {
+    settings.experimental && !mise_util::testing::in_tests()
 }
 
 /// Backends whose installs are not a plain directory mise owns, so a receipt and
@@ -2137,15 +2144,6 @@ pub fn dir_name_of(path: &Path) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    #[test]
-    fn requested_follows_install_layout_and_windows_experimental() {
-        assert!(super::requested(Some("identity"), true));
-        assert!(super::requested(Some("identity"), false));
-        assert!(!super::requested(Some("legacy"), true));
-        assert!(!super::requested(None, false));
-        assert_eq!(super::requested(None, true), cfg!(windows));
-    }
-
     #[test]
     fn clear_leftover_removes_only_what_a_failed_install_left() {
         let tmp = tempfile::tempdir().unwrap();

@@ -20,7 +20,8 @@ assert_contains "echo '$output'" "failed:"
 assert_contains "echo '$output'" "POST"
 
 # Test 2: Invalid hook script (nonexistent command) should warn
-rm -rf ~/.local/share/mise/installs/dummy
+# Uninstall rather than delete installs/dummy: the installation can live outside it.
+mise uninstall --all dummy
 cat <<EOF >mise.toml
 [tools]
 dummy = 'latest'

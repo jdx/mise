@@ -33,7 +33,10 @@ assert_fail 'MISE_PIPX_UVX=0 mise install --force pipx:mkdocs' 'require uv'
 
 # Assert that mkdocs 1.6.0 has been installed with pipx
 # (mkdocs conveniently returns its installation path in with --version)
-assert_contains "mise x -- mkdocs --version" "/mise/installs/pipx-mkdocs/1.6.0/"
+# mise x reinstalls it first if the failed --force above removed it.
+mkdocs_version="$(mise x -- mkdocs --version)"
+mkdocs_path="$(mise where pipx:mkdocs@1.6.0)"
+assert_contains "echo '$mkdocs_version'" "/mise${mkdocs_path#"$MISE_DATA_DIR"}/"
 
 assert_succeed "mise up --bump python"
 assert_succeed "'$MISE_DATA_DIR/installs/pipx-mkdocs/1.6.0/mkdocs/bin/python' -c 'import rich'"
