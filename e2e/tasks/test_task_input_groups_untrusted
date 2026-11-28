@@ -131,6 +131,9 @@ cat <<EOF >child3/setup.sh
 touch "$ran/sourced"
 export dir=lib
 EOF
+# `global` is not a task field a config can set: the schema leaves it out, and
+# mise ignores it, deciding from where the file lives.
+# schema: invalid
 cat <<'EOF' >child3/mise.toml
 [tasks.build]
 run = "true"
