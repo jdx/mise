@@ -3815,7 +3815,7 @@
           "unevaluatedProperties": false,
           "properties": {
             "dotfiles": {
-              "description": "Global config file where `mise dot add` creates new `[dotfiles]` entries.",
+              "description": "Global config file where `mise dot add` and `mise dot track` create new `[dotfiles]` entries.",
               "type": "string"
             },
             "packages": {
