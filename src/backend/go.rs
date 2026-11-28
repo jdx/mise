@@ -223,38 +223,21 @@ impl Backend for GoBackend {
                 // `Ok(None)`: it would take the version as checked and let it
                 // past the cutoff without a word. Keep the first real failure so
                 // this can report one.
-                let mut failure: Option<eyre::Report> = None;
-                for mod_path in candidates {
-                    if proxies.is_empty() {
-                        break;
-                    }
-                    let endpoint = format!("{}/@v/{version}.info", encode_module_path(mod_path));
-                    match query_proxy_version_metadata(&proxies, &endpoint).await {
-                        ProxyVersionInfoResult::Found(info) => return Ok(info.time),
-                        // The module proxy does not serve this path; another
-                        // candidate or `go list` still might.
-                        ProxyVersionInfoResult::NotFound => {}
-                        ProxyVersionInfoResult::Error => {
-                            failure.get_or_insert_with(|| {
-                                eyre!("module proxy could not be reached for {mod_path}@{version}")
-                            });
-                        }
-                        // The date stays unknown, as it was when listing read
-                        // the same answer, and `go list` is not sent to read it
-                        // again with no limit on its size.
-                        ProxyVersionInfoResult::TooLarge => {
-                            return Err(eyre!(
-                                "module proxy answered with more than {} KiB for {mod_path}@{version}",
-                                GO_PROXY_VERSION_INFO_MAX_BYTES / 1024
-                            ));
-                        }
-                    }
-                }
+                let (mut failure, refused) =
+                    match proxy_release_date(&proxies, candidates, &version).await {
+                        ProxyReleaseDate::Found(time) => return Ok(time),
+                        ProxyReleaseDate::Unanswered { failure, refused } => (failure, refused),
+                    };
                 // A private module under the default `proxy,direct` GOPROXY is
                 // not on the proxy, and reporting no date for it would hand the
                 // cutoff an undated version to treat as eligible — the exact gap
                 // this exists to close.
                 for mod_path in candidates {
+                    // `go list` asks the same proxies, and would read the
+                    // answer refused for its size again with no limit on it.
+                    if refused.contains(&mod_path.as_str()) {
+                        continue;
+                    }
                     match self
                         .fetch_go_module_version_metadata(config, mod_path, &version)
                         .await
@@ -1239,6 +1222,59 @@ fn parse_proxy_version_list(body: &str) -> Option<Vec<String>> {
     (versions.len() <= GO_MODULE_VERSIONS_LIMIT).then_some(versions)
 }
 
+/// What the module proxies said about the release date of `version`.
+enum ProxyReleaseDate<'a> {
+    /// A candidate's `.info` answered; its date may still be missing.
+    Found(Option<String>),
+    /// No candidate answered. `failure` is the first one that failed rather
+    /// than not being served, and `refused` the paths whose answer was too
+    /// large to read.
+    Unanswered {
+        failure: Option<eyre::Report>,
+        refused: Vec<&'a str>,
+    },
+}
+
+/// Ask the module proxies for the release date of `version` (with its `v`)
+/// under each of `candidates` in turn. A path whose answer is refused for its
+/// size is one failure among the others: a later candidate, the module root
+/// say, can still give the date.
+async fn proxy_release_date<'a>(
+    proxies: &[GoProxy],
+    candidates: &'a [String],
+    version: &str,
+) -> ProxyReleaseDate<'a> {
+    let mut failure: Option<eyre::Report> = None;
+    let mut refused = Vec::new();
+    if proxies.is_empty() {
+        return ProxyReleaseDate::Unanswered { failure, refused };
+    }
+    for mod_path in candidates {
+        let endpoint = format!("{}/@v/{version}.info", encode_module_path(mod_path));
+        match query_proxy_version_metadata(proxies, &endpoint).await {
+            ProxyVersionInfoResult::Found(info) => return ProxyReleaseDate::Found(info.time),
+            // The module proxy does not serve this path; another candidate or
+            // `go list` still might.
+            ProxyVersionInfoResult::NotFound => {}
+            ProxyVersionInfoResult::Error => {
+                failure.get_or_insert_with(|| {
+                    eyre!("module proxy could not be reached for {mod_path}@{version}")
+                });
+            }
+            ProxyVersionInfoResult::TooLarge => {
+                failure.get_or_insert_with(|| {
+                    eyre!(
+                        "module proxy answered with more than {} KiB for {mod_path}@{version}",
+                        GO_PROXY_VERSION_INFO_MAX_BYTES / 1024
+                    )
+                });
+                refused.push(mod_path.as_str());
+            }
+        }
+    }
+    ProxyReleaseDate::Unanswered { failure, refused }
+}
+
 async fn query_proxy_list(proxies: &[GoProxy], encoded_path: &str) -> ProxyListResult {
     let mut too_many = false;
     for proxy in proxies {
@@ -1308,6 +1344,9 @@ async fn query_proxy_version_metadata(
         {
             Ok(body) => match serde_json::from_str::<GoModuleVersionMetadata>(&body) {
                 Ok(info) => return ProxyVersionInfoResult::Found(info),
+                // Like an error, an answer that does not parse keeps an
+                // earlier proxy's oversized one, which `go list` would read.
+                Err(_) if too_large => return ProxyVersionInfoResult::TooLarge,
                 Err(_) => return ProxyVersionInfoResult::Error,
             },
             Err(e) => {
@@ -2039,6 +2078,94 @@ mod tests {
         assert!(matches!(refused, ProxyVersionInfoResult::TooLarge));
         small.assert_async().await;
         large.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn proxy_release_date_goes_past_an_oversized_answer() {
+        let oversized = format!(
+            r#"{{"Version":"v1.0.0","Time":"2026-04-08T12:56:30Z{}"}}"#,
+            " ".repeat(GO_PROXY_VERSION_INFO_MAX_BYTES)
+        );
+        let mut server = mockito::Server::new_async().await;
+        let package = server
+            .mock("GET", "/example.com/tool/cmd/tool/@v/v1.0.0.info")
+            .with_status(200)
+            .with_body(oversized)
+            .expect(2)
+            .create_async()
+            .await;
+        let root = server
+            .mock("GET", "/example.com/tool/@v/v1.0.0.info")
+            .with_status(200)
+            .with_body(r#"{"Version":"v1.0.0","Time":"2026-05-01T00:00:00Z"}"#)
+            .create_async()
+            .await;
+        let proxies = parse_goproxy_value(&server.url());
+        let candidates = ["example.com/tool/cmd/tool", "example.com/tool"].map(String::from);
+
+        // The package path's answer is refused, and the module root still
+        // gives the date the cutoff is checked against.
+        assert!(matches!(
+            proxy_release_date(&proxies, &candidates, "v1.0.0").await,
+            ProxyReleaseDate::Found(Some(time)) if time == "2026-05-01T00:00:00Z"
+        ));
+        root.assert_async().await;
+
+        // Where no other path answers, the refusal is the failure reported,
+        // and the refused path is named so that `go list` skips it.
+        let missing = server
+            .mock("GET", "/example.com/other/@v/v1.0.0.info")
+            .with_status(404)
+            .create_async()
+            .await;
+        let candidates = ["example.com/tool/cmd/tool", "example.com/other"].map(String::from);
+        match proxy_release_date(&proxies, &candidates, "v1.0.0").await {
+            ProxyReleaseDate::Unanswered { failure, refused } => {
+                assert!(format!("{:#}", failure.unwrap()).contains("more than 64 KiB"));
+                assert_eq!(refused, ["example.com/tool/cmd/tool"]);
+            }
+            ProxyReleaseDate::Found(_) => panic!("no candidate should answer"),
+        }
+        missing.assert_async().await;
+        package.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn proxy_version_metadata_keeps_a_refusal_through_an_unparseable_answer() {
+        let oversized = format!(
+            r#"{{"Version":"v1.0.0","Time":"2026-04-08T12:56:30Z{}"}}"#,
+            " ".repeat(GO_PROXY_VERSION_INFO_MAX_BYTES)
+        );
+        let mut server = mockito::Server::new_async().await;
+        let large = server
+            .mock("GET", "/first/example.com/tool/@v/v1.0.0.info")
+            .with_status(200)
+            .with_body(oversized)
+            .create_async()
+            .await;
+        let garbled = server
+            .mock("GET", "/second/example.com/tool/@v/v1.0.0.info")
+            .with_status(200)
+            .with_body("not json")
+            .expect(2)
+            .create_async()
+            .await;
+        let url = server.url();
+        let endpoint = "example.com/tool/@v/v1.0.0.info";
+
+        let chain = parse_goproxy_value(&format!("{url}/first|{url}/second"));
+        assert!(matches!(
+            query_proxy_version_metadata(&chain, endpoint).await,
+            ProxyVersionInfoResult::TooLarge
+        ));
+        // Without the earlier refusal, the same answer is an error.
+        let alone = parse_goproxy_value(&format!("{url}/second"));
+        assert!(matches!(
+            query_proxy_version_metadata(&alone, endpoint).await,
+            ProxyVersionInfoResult::Error
+        ));
+        large.assert_async().await;
+        garbled.assert_async().await;
     }
 
     #[test]
