@@ -2877,7 +2877,14 @@ fn expand_target_pattern(pattern: &str, captures: &[String]) -> Option<PathBuf> 
 }
 
 fn normalize_path_separators(path: &str) -> String {
-    path.replace('\\', "/")
+    // Only Windows separates with `\`. On unix it is an ordinary file-name
+    // character: rewriting it would let a file named `..\x` expand to a
+    // target outside the directory its pattern names.
+    if cfg!(windows) {
+        path.replace('\\', "/")
+    } else {
+        path.to_string()
+    }
 }
 
 fn native_path_separators(path: &str) -> String {
@@ -2917,6 +2924,10 @@ where
 pub fn check(config: &Config, req: &FileRequest, secrets: &SecretValues) -> Result<FileState> {
     if req.mode == FileMode::Track {
         return Ok(FileState::Tracked);
+    }
+    // apply refuses this entry as root, whatever lies behind the link
+    if let Some(reason) = crate::managed_files::untrusted_parent_as_root(&req.target)? {
+        bail!("{reason}");
     }
     if req.mode.has_source() && !req.source.exists() && !keeps_existing(req) {
         return Ok(FileState::SourceMissing);
@@ -3533,12 +3544,7 @@ fn write_private(path: &Path, content: &str) -> Result<()> {
     #[cfg(unix)]
     {
         use std::io::Write as _;
-        use std::os::unix::fs::OpenOptionsExt as _;
-        let mut file = std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .mode(FNOX_PERMISSIONS)
-            .open(path)
+        let mut file = create_private(path)
             .wrap_err_with(|| format!("failed to create {}", path.display_user()))?;
         file.write_all(content.as_bytes())
             .wrap_err_with(|| format!("failed to write {}", path.display_user()))?;
@@ -3548,6 +3554,19 @@ fn write_private(path: &Path, content: &str) -> Result<()> {
     {
         file::write(path, content)
     }
+}
+
+/// Create a new file at `path` that only its owner can open; the caller
+/// gives it its final mode once its content is in place.
+fn create_private(path: &Path) -> std::io::Result<std::fs::File> {
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt as _;
+        options.mode(FNOX_PERMISSIONS);
+    }
+    options.open(path)
 }
 
 /// Render every configured dotfile template before a full bootstrap can
@@ -5082,7 +5101,7 @@ fn git_tracked_paths(source: &Path) -> Result<Vec<GitTrackedPath>> {
     root_command
         .arg("-C")
         .arg(source)
-        .args(["-c", "safe.directory=*", "rev-parse", "--show-toplevel"])
+        .args(["rev-parse", "--show-toplevel"])
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
     mise_util::git::sanitize_git_command(&mut root_command);
@@ -5106,18 +5125,10 @@ fn git_tracked_paths(source: &Path) -> Result<Vec<GitTrackedPath>> {
             }
         );
     }
-    let root = root_output
-        .stdout
-        .strip_suffix(b"\n")
-        .unwrap_or(&root_output.stdout);
-    let root = root.strip_suffix(b"\r").unwrap_or(root);
-    let safe = format!("safe.directory={}", path_buf_from_git_bytes(root).display());
     let mut command = Command::new("git");
     command
         .arg("-C")
         .arg(source)
-        .arg("-c")
-        .arg(safe)
         .arg("-c")
         .arg("core.autocrlf=false")
         .args(["ls-files", "-z", "--cached", "--stage", "--", "."])
@@ -5901,6 +5912,7 @@ fn execute_layer(
     }
     for link in &plan.reconciliation.stale_links {
         if link_points_to(&link.source, &link.target) {
+            crate::managed_files::refuse_untrusted_parent_as_root(&link.target)?;
             let item = link.target.display_user().to_string();
             // parents up to the entry target may be pruned once empty
             let root = plan
@@ -5932,6 +5944,7 @@ fn execute_layer(
         for (req, rendered) in &plan.todo {
             current = Some((*req, written.len()));
             recheck_removal(req, rendered.as_deref(), opts.force)?;
+            refuse_untrusted_parents(req)?;
             if req.mode == FileMode::SymlinkEach {
                 unfold_source_links(req, written)?;
             }
@@ -6097,6 +6110,12 @@ fn plan_apply_after<'a>(
         if req.mode == FileMode::Track {
             continue;
         }
+        // as root, a link another user made in a parent directory would send
+        // the write wherever that user likes, so it is never followed
+        if let Some(reason) = untrusted_parents(req).unwrap_or_else(|err| Some(err.to_string())) {
+            broken.push(format!("  [dotfiles].\"{}\": {reason}", req.target_raw));
+            continue;
+        }
         // report every problem in one pass instead of fix-and-retry — a
         // render or check failure on one entry must not hide the rest
         if opts.dry_run
@@ -6256,6 +6275,52 @@ fn plan_apply_after<'a>(
 
 /// The plan classified a removal's target before the confirmation prompt; an
 /// edit made since then must not be removed without `--force`.
+/// The plan vetted the target's parents before the confirmation prompt and
+/// any template ran; root looks again before it writes, and before the journal
+/// opens, so a refusal leaves nothing to recover. The files a walked directory
+/// places are vetted here too: a link at the target, or beneath it, is a
+/// parent of theirs. See [`crate::managed_files::untrusted_parent_as_root`].
+fn refuse_untrusted_parents(req: &FileRequest) -> Result<()> {
+    use crate::managed_files::refuse_untrusted_parent_as_root;
+    refuse_untrusted_parent_as_root(&req.target)?;
+    if crate::managed_files::checks_parents_as_root() && walks_source_dir(req) {
+        for (_, target) in walk_source_files(req)? {
+            refuse_untrusted_parent_as_root(&target)?;
+        }
+    }
+    Ok(())
+}
+
+/// Why root refuses `req` before anything is written: the plan asks what
+/// [`refuse_untrusted_parents`] asks at the moment of the change, for the
+/// target and every file a walked directory places, so a dry run fails where
+/// apply would.
+fn untrusted_parents(req: &FileRequest) -> Result<Option<String>> {
+    untrusted_parents_for(req, crate::managed_files::checks_parents_as_root())
+}
+
+/// [`untrusted_parents`] with whether mise runs as root passed in.
+fn untrusted_parents_for(req: &FileRequest, as_root: bool) -> Result<Option<String>> {
+    use crate::managed_files::untrusted_parent_for;
+    if let Some(reason) = untrusted_parent_for(&req.target, as_root)? {
+        return Ok(Some(reason));
+    }
+    if as_root && walks_source_dir(req) {
+        for (_, target) in walk_source_files(req)? {
+            if let Some(reason) = untrusted_parent_for(&target, as_root)? {
+                return Ok(Some(format!("{}: {reason}", target.display_user())));
+            }
+        }
+    }
+    Ok(None)
+}
+
+/// Whether `req` places each file of a source directory under its target,
+/// so that a link beneath the target is a parent of what it writes.
+fn walks_source_dir(req: &FileRequest) -> bool {
+    (req.mode == FileMode::SymlinkEach || req.mode == FileMode::Copy) && req.source.is_dir()
+}
+
 fn recheck_removal(req: &FileRequest, rendered: Option<&str>, force: bool) -> Result<()> {
     if !force
         && removes_target(req, rendered)
@@ -6500,6 +6565,11 @@ pub fn execute_unapply(
         HashSet::new()
     };
     for plan in todo {
+        // every path, not only the target: a link beneath a walked directory
+        // is a parent of the files in it
+        for path in &plan.paths {
+            crate::managed_files::refuse_untrusted_parent_as_root(path)?;
+        }
         let mut paths: Vec<(PathBuf, Capture)> = plan
             .paths
             .iter()
@@ -6552,6 +6622,10 @@ fn plan_unapply_one<'a>(
     let mut cleanup_empty_dirs = false;
     let mut conditional = false;
     let mut clear_symlink_each_state = false;
+    // as root, a parent link another user made is never followed
+    if let Some(reason) = crate::managed_files::untrusted_parent_as_root(&req.target)? {
+        bail!("{reason}");
+    }
     if records_created_dirs(req) && !req.target.exists() && !req.target.is_symlink() {
         // Nothing to remove, but a record left by an earlier removal (a
         // `remove_empty` apply, or the user deleting the file) still claims
@@ -7644,9 +7718,9 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>, written: &mut Vec<PathBu
                         let mut from = CopySource::open(&source, &target)?;
                         file::remove_file(&target)?;
                         written.push(target.clone());
-                        let to = std::fs::File::create(&target)
+                        let to = create_private(&target)
                             .wrap_err_with(copy_failure(&source, &target))?;
-                        from.copy_into(to)?;
+                        from.copy_into(to, from.source_mode())?;
                     } else if target.is_file() {
                         // a file that already matches in content and mode is
                         // left alone, as the plan shows: rewriting it would
@@ -7677,9 +7751,7 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>, written: &mut Vec<PathBu
                     }
                 }
             } else {
-                replace_recorded(&req.target, written, || {
-                    file::copy(&req.source, &req.target)
-                })?;
+                replace_recorded(&req.target, written, || write_target(req, rendered))?;
                 save_copy_state(req);
                 // the copy took the source's permissions; an explicit
                 // `permissions` overrides them
@@ -7690,8 +7762,8 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>, written: &mut Vec<PathBu
             }
         }
         FileMode::Template => {
+            replace_recorded(&req.target, written, || write_target(req, rendered))?;
             let rendered = rendered.expect("rendered template content");
-            replace_recorded(&req.target, written, || file::write(&req.target, rendered))?;
             #[cfg(unix)]
             match req.permissions {
                 Some(permissions) => set_mode(&req.target, permissions)?,
@@ -7704,15 +7776,12 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>, written: &mut Vec<PathBu
         FileMode::Track => unreachable!("tracked files are never written"),
         FileMode::Absent => unreachable!("absent targets are removed above"),
         FileMode::Content => {
-            replace_recorded(&req.target, written, || {
-                file::write(&req.target, req.content.as_deref().expect("inline content"))
-            })?;
+            replace_recorded(&req.target, written, || write_target(req, rendered))?;
             #[cfg(unix)]
             set_mode(&req.target, req.permissions.unwrap_or(0o600))?;
         }
         FileMode::Fnox => {
-            let content = rendered.expect("content fnox stores");
-            replace_recorded(&req.target, written, || write_private(&req.target, content))?;
+            replace_recorded(&req.target, written, || write_target(req, rendered))?;
             #[cfg(unix)]
             if let Some(permissions) = req.permissions {
                 set_mode(&req.target, permissions)?;
@@ -7735,6 +7804,37 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>, written: &mut Vec<PathBu
     }
     record_created_dirs(req, &created_dirs);
     Ok(())
+}
+
+/// Create the single file `req` writes at its cleared target. It is
+/// readable only by its owner while its content is written, whatever the
+/// umask, and never more open than the mode it ends with: a target meant to
+/// be private is never briefly open to others.
+fn write_target(req: &FileRequest, rendered: Option<&str>) -> Result<()> {
+    match req.mode {
+        FileMode::Copy => {
+            // an explicit `permissions` replaces the source's mode, so that
+            // mode must never be applied first; without one, `fs::copy`
+            // creates the target with the source's mode, which is its final one
+            #[cfg(unix)]
+            if let Some(permissions) = req.permissions {
+                use std::os::unix::fs::PermissionsExt as _;
+                let mut from = CopySource::open(&req.source, &req.target)?;
+                let to = create_private(&req.target)
+                    .wrap_err_with(copy_failure(&req.source, &req.target))?;
+                return from.copy_into(to, std::fs::Permissions::from_mode(permissions));
+            }
+            file::copy(&req.source, &req.target)
+        }
+        FileMode::Template => {
+            write_private(&req.target, rendered.expect("rendered template content"))
+        }
+        FileMode::Content => {
+            write_private(&req.target, req.content.as_deref().expect("inline content"))
+        }
+        FileMode::Fnox => write_private(&req.target, rendered.expect("content fnox stores")),
+        mode => unreachable!("{} entries do not write one file", mode.name()),
+    }
 }
 
 #[cfg(unix)]
@@ -7920,14 +8020,25 @@ impl<'a> CopySource<'a> {
         })
     }
 
-    /// Write the source's content and permission bits into the open `to`,
-    /// as `fs::copy` would.
-    fn copy_into(&mut self, mut to: std::fs::File) -> Result<()> {
+    /// Write the source's content into the open `to`, then give it `mode`.
+    /// `to` is made private to its owner first, so a file being overwritten
+    /// in place does not show new content under its old, wider mode.
+    fn copy_into(&mut self, mut to: std::fs::File, mode: std::fs::Permissions) -> Result<()> {
         let failed = copy_failure(self.source, self.target);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            to.set_permissions(std::fs::Permissions::from_mode(FNOX_PERMISSIONS))
+                .wrap_err_with(&failed)?;
+        }
         std::io::copy(&mut self.file, &mut to).wrap_err_with(&failed)?;
-        to.set_permissions(self.metadata.permissions())
-            .wrap_err_with(&failed)?;
+        to.set_permissions(mode).wrap_err_with(&failed)?;
         Ok(())
+    }
+
+    /// The source's permission bits, which a copy takes as `fs::copy` would.
+    fn source_mode(&self) -> std::fs::Permissions {
+        self.metadata.permissions()
     }
 }
 
@@ -7948,15 +8059,91 @@ fn copy_failure<'a>(source: &'a Path, target: &'a Path) -> impl Fn() -> String +
 /// file (a directory behind a link, say) fails before the target is touched.
 /// An open that fails (a read-only target file or filesystem) changes
 /// nothing and records nothing.
+///
+/// The file is replaced by a new one instead when its current mode lets
+/// someone read it whom the new mode does not ([`mode_drops_readers`]): a
+/// reader who opened the old file keeps its handle after a chmod, and would
+/// read the new content through it. See [`replace_copy_recorded`].
 fn overwrite_recorded(source: &Path, target: &Path, written: &mut Vec<PathBuf>) -> Result<()> {
     let mut from = CopySource::open(source, target)?;
+    if let Ok(current) = std::fs::symlink_metadata(target)
+        && mode_drops_readers(&current.permissions(), &from.source_mode())
+    {
+        return replace_copy_recorded(&mut from, &current, written);
+    }
     let to = std::fs::OpenOptions::new()
         .write(true)
         .truncate(true)
         .open(target)
         .wrap_err_with(copy_failure(source, target))?;
     written.push(target.to_path_buf());
-    from.copy_into(to)
+    from.copy_into(to, from.source_mode())
+}
+
+/// Replace the existing file at the copy's target, whose metadata is
+/// `current`, with a new file holding the source's content.
+///
+/// The replacement keeps what an in-place overwrite keeps: the old file's
+/// owner and group, with the source's content and mode. mise refuses, and
+/// leaves the target as it was, when it could not overwrite the target in
+/// place (it cannot open it for writing) or cannot give the new file the old
+/// owner and group. The new file is written beside the target and takes its
+/// name only once its content, owner and mode are all in place, so a copy
+/// that fails part-way leaves the old file, and the target is recorded in
+/// `written` only once it has been replaced.
+fn replace_copy_recorded(
+    from: &mut CopySource<'_>,
+    current: &std::fs::Metadata,
+    written: &mut Vec<PathBuf>,
+) -> Result<()> {
+    let target = from.target;
+    let failed = copy_failure(from.source, target);
+    std::fs::OpenOptions::new()
+        .write(true)
+        .open(target)
+        .wrap_err_with(&failed)?;
+    let parent = target
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    let new = tempfile::Builder::new()
+        .prefix(".mise-")
+        .tempfile_in(parent)
+        .wrap_err_with(&failed)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt as _;
+        let owner = (Some(current.uid().into()), Some(current.gid().into()));
+        nix::unistd::fchown(new.as_file(), owner.0, owner.1)
+            .wrap_err_with(|| format!("{}: could not keep the file's owner", failed()))?;
+    }
+    #[cfg(not(unix))]
+    let _ = current;
+    let mode = from.source_mode();
+    from.copy_into(new.as_file().try_clone().wrap_err_with(&failed)?, mode)?;
+    new.as_file().sync_all().wrap_err_with(&failed)?;
+    new.persist(target)
+        .map_err(|err| err.error)
+        .wrap_err_with(&failed)?;
+    written.push(target.to_path_buf());
+    Ok(())
+}
+
+/// Whether a file at mode `current` can be read by a group or other user
+/// that mode `new` would shut out. Only such a change makes writing new
+/// content into the existing file a leak: whoever can open it now can open
+/// it under `new` too. Windows has no such bits, so nothing is shut out.
+fn mode_drops_readers(current: &std::fs::Permissions, new: &std::fs::Permissions) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        current.mode() & 0o044 & !new.mode() != 0
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (current, new);
+        false
+    }
 }
 
 /// Run `write` against a `target` that does not exist yet, recording the
@@ -9397,6 +9584,26 @@ source = "oldrc""#,
         assert_eq!(target, PathBuf::from("/home/me/.config/theme-a.toml"));
     }
 
+    /// On unix a backslash is an ordinary file-name character, so a source
+    /// file named `..\mise\conf.d\zz.toml` is one file inside the target
+    /// directory, not a path that climbs out of it.
+    #[cfg(unix)]
+    #[test]
+    fn test_wildcard_expansion_keeps_backslash_in_file_name() {
+        let captures = wildcard_captures(
+            "/repo/presets/**/*.toml",
+            Path::new(r"/repo/presets/..\mise\conf.d\zz.toml"),
+        )
+        .unwrap();
+        let target = expand_target_pattern("/home/me/.config/app/**/*.toml", &captures).unwrap();
+        assert_eq!(
+            target,
+            PathBuf::from(r"/home/me/.config/app/..\mise\conf.d\zz.toml")
+        );
+        assert_eq!(target.parent(), Some(Path::new("/home/me/.config/app")));
+    }
+
+    #[cfg(windows)]
     #[test]
     fn test_windows_separator_wildcard_expansion() {
         let captures = wildcard_captures(
@@ -9411,6 +9618,7 @@ source = "oldrc""#,
         );
     }
 
+    #[cfg(windows)]
     #[test]
     fn test_windows_separator_recursive_wildcard_expansion() {
         let captures = wildcard_captures(
@@ -10789,6 +10997,231 @@ source = "oldrc""#,
         file::create_dir_all(&directory)?;
         chmod_no_follow(&directory, 0o700)?;
         assert_eq!(mode_of(&directory)?, 0o700);
+        Ok(())
+    }
+
+    /// A file whose mode is set after it is written must not be readable by
+    /// others while it is being written: an `0600` secret copied from an
+    /// `0644` source, or rendered from a template, would otherwise exist for a
+    /// moment with the umask's mode, long enough for another user to open it.
+    #[cfg(unix)]
+    #[test]
+    fn targets_that_get_a_mode_later_are_created_owner_only() -> Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("source");
+        file::write(&source, "secret")?;
+        std::fs::set_permissions(&source, std::fs::Permissions::from_mode(0o644))?;
+        for mode in [
+            FileMode::Copy,
+            FileMode::Template,
+            FileMode::Content,
+            FileMode::Fnox,
+        ] {
+            let target = dir.path().join(mode.name());
+            let mut req = link_req(&source, &target, mode);
+            req.permissions = Some(0o640);
+            req.content = (mode == FileMode::Content).then(|| "secret".into());
+            let rendered = matches!(mode, FileMode::Template | FileMode::Fnox).then_some("secret");
+
+            write_target(&req, rendered)?;
+            assert_eq!(
+                permission_bits(&std::fs::metadata(&target)?) & !0o640,
+                0,
+                "{} is more open than its mode before that mode is set",
+                mode.name()
+            );
+            assert_eq!(std::fs::read_to_string(&target)?, "secret");
+
+            std::fs::remove_file(&target)?;
+            apply_one(&req, rendered, &mut vec![])?;
+            assert_eq!(
+                permission_bits(&std::fs::metadata(&target)?),
+                0o640,
+                "{}",
+                mode.name()
+            );
+        }
+        Ok(())
+    }
+
+    /// As root, the plan refuses a directory entry when a file it would place
+    /// lies beneath a link, as apply does, not only when the target itself
+    /// crosses one.
+    #[cfg(unix)]
+    #[test]
+    fn the_plan_checks_the_files_a_directory_entry_places_as_root() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("source");
+        file::create_dir_all(source.join("nested"))?;
+        file::write(source.join("nested").join("file"), "x")?;
+        let target = dir.path().join("target");
+        let elsewhere = dir.path().join("elsewhere");
+        file::create_dir_all(&target)?;
+        // the group may write here, so root does not take the link beneath for its own
+        std::fs::set_permissions(&target, std::os::unix::fs::PermissionsExt::from_mode(0o770))?;
+        file::create_dir_all(&elsewhere)?;
+        std::os::unix::fs::symlink(&elsewhere, target.join("nested"))?;
+        // the target alone crosses no link
+        assert_eq!(
+            crate::managed_files::untrusted_parent_for(&target, true)?,
+            None
+        );
+        for mode in [FileMode::Copy, FileMode::SymlinkEach] {
+            let req = link_req(&source, &target, mode);
+            assert_eq!(untrusted_parents_for(&req, false)?, None, "{}", mode.name());
+            let reason = untrusted_parents_for(&req, true)?
+                .unwrap_or_else(|| panic!("{}: a placed file crosses a link", mode.name()));
+            assert!(reason.contains("nested"), "{}: {reason}", mode.name());
+        }
+        Ok(())
+    }
+
+    /// Which mode changes shut a reader out, and so need a new file.
+    #[cfg(unix)]
+    #[test]
+    fn mode_drops_readers_only_when_a_reader_loses_access() {
+        use std::os::unix::fs::PermissionsExt;
+        for (current, new, drops) in [
+            (0o644, 0o600, true),
+            (0o640, 0o600, true),
+            (0o604, 0o640, true),
+            (0o644, 0o644, false),
+            (0o600, 0o644, false),
+            (0o600, 0o600, false),
+            (0o622, 0o600, false),
+            (0o640, 0o440, false),
+        ] {
+            assert_eq!(
+                mode_drops_readers(
+                    &std::fs::Permissions::from_mode(current),
+                    &std::fs::Permissions::from_mode(new)
+                ),
+                drops,
+                "{current:o} -> {new:o}"
+            );
+        }
+    }
+
+    /// Overwriting a copy whose new mode shuts out readers of the old one
+    /// writes a new file: a handle opened on the old file before the change
+    /// still reads only the old content. When nobody loses access the file
+    /// is overwritten in place.
+    #[cfg(unix)]
+    #[test]
+    fn an_overwrite_that_narrows_the_mode_does_not_reach_old_readers() -> Result<()> {
+        use std::io::Read as _;
+        use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("source");
+        let target = dir.path().join("target");
+        file::write(&source, "secret")?;
+        std::fs::set_permissions(&source, std::fs::Permissions::from_mode(0o600))?;
+
+        file::write(&target, "old")?;
+        std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o644))?;
+        let mut reader = std::fs::File::open(&target)?;
+        let mut written = vec![];
+        overwrite_recorded(&source, &target, &mut written)?;
+        let mut seen = String::new();
+        reader.read_to_string(&mut seen)?;
+        assert_eq!(seen, "old");
+        assert_eq!(std::fs::read_to_string(&target)?, "secret");
+        assert_eq!(permission_bits(&std::fs::metadata(&target)?), 0o600);
+        assert_eq!(written, vec![target.clone()]);
+
+        let inode = std::fs::metadata(&target)?.ino();
+        file::write(&source, "secret 2")?;
+        overwrite_recorded(&source, &target, &mut vec![])?;
+        assert_eq!(std::fs::metadata(&target)?.ino(), inode);
+        assert_eq!(std::fs::read_to_string(&target)?, "secret 2");
+        Ok(())
+    }
+
+    /// The groups this process belongs to. `nix::unistd::getgroups` does not
+    /// exist on macOS, so this asks libc.
+    #[cfg(unix)]
+    fn process_groups() -> Result<Vec<nix::unistd::Gid>> {
+        // SAFETY: a null buffer of size zero asks for the number of groups and
+        // writes nothing.
+        let count = unsafe { nix::libc::getgroups(0, std::ptr::null_mut()) };
+        if count < 0 {
+            return Err(std::io::Error::last_os_error().into());
+        }
+        let mut groups: Vec<nix::libc::gid_t> = vec![0; count as usize];
+        // SAFETY: `groups` holds `count` values, and getgroups fails instead of
+        // writing more than that.
+        let count = unsafe { nix::libc::getgroups(count, groups.as_mut_ptr()) };
+        if count < 0 {
+            return Err(std::io::Error::last_os_error().into());
+        }
+        groups.truncate(count as usize);
+        Ok(groups.into_iter().map(nix::unistd::Gid::from_raw).collect())
+    }
+
+    /// What replacing a copy whose mode narrows keeps, and when it refuses:
+    /// the replacement keeps the old file's owner and group, a target mise
+    /// cannot write is refused, and a copy that fails part-way leaves the old
+    /// file in place.
+    #[cfg(unix)]
+    #[test]
+    fn a_narrowing_replacement_keeps_the_owner_or_leaves_the_target() -> Result<()> {
+        use std::io::Read as _;
+        use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
+        // a group of ours other than the one new files get, when we have one
+        let other_group = process_groups()?
+            .into_iter()
+            .find(|gid| *gid != nix::unistd::getegid());
+        let unreadable = Path::new("/proc/self/mem");
+        for (name, target_mode, source, replaced) in [
+            ("writable", 0o644, None, true),
+            ("read-only", 0o444, None, false),
+            ("copy fails", 0o644, Some(unreadable), false),
+        ] {
+            if source.is_some_and(|source| !source.exists()) {
+                continue;
+            }
+            // root opens a read-only file for writing, so nothing is refused
+            if target_mode & 0o200 == 0 && nix::unistd::geteuid().is_root() {
+                continue;
+            }
+            let dir = tempfile::tempdir()?;
+            let target = dir.path().join("target");
+            let secret = dir.path().join("source");
+            file::write(&secret, "secret")?;
+            std::fs::set_permissions(&secret, std::fs::Permissions::from_mode(0o600))?;
+            file::write(&target, "old")?;
+            if let Some(gid) = other_group {
+                nix::unistd::chown(&target, None, Some(gid))?;
+            }
+            std::fs::set_permissions(&target, std::fs::Permissions::from_mode(target_mode))?;
+            let before = std::fs::metadata(&target)?;
+            let mut reader = std::fs::File::open(&target)?;
+            let mut written = vec![];
+            let result = overwrite_recorded(source.unwrap_or(&secret), &target, &mut written);
+            let after = std::fs::metadata(&target)?;
+            assert_eq!(result.is_ok(), replaced, "{name}: {result:?}");
+            assert_eq!(
+                (after.uid(), after.gid()),
+                (before.uid(), before.gid()),
+                "{name}"
+            );
+            let mut seen = String::new();
+            reader.read_to_string(&mut seen)?;
+            assert_eq!(seen, "old", "{name}");
+            if replaced {
+                assert_eq!(std::fs::read_to_string(&target)?, "secret", "{name}");
+                assert_eq!(permission_bits(&after), 0o600, "{name}");
+                assert_eq!(written, vec![target.clone()], "{name}");
+            } else {
+                assert_eq!(after.ino(), before.ino(), "{name}");
+                assert_eq!(std::fs::read_to_string(&target)?, "old", "{name}");
+                assert_eq!(permission_bits(&after), target_mode, "{name}");
+                assert_eq!(written, Vec::<PathBuf>::new(), "{name}");
+            }
+            let leftovers = std::fs::read_dir(dir.path())?.count();
+            assert_eq!(leftovers, 2, "{name}: only the source and target remain");
+        }
         Ok(())
     }
 

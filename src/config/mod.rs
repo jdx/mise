@@ -2772,16 +2772,13 @@ static TOML_CONFIG_FILENAMES: Lazy<Vec<String>> = Lazy::new(|| {
         .map(|s| s.to_string())
         .collect()
 });
-static TOML_CONFIG_MATCHERS: Lazy<Vec<globset::GlobMatcher>> = Lazy::new(|| {
+static TOML_CONFIG_MATCHERS: Lazy<Vec<globset::GlobSet>> = Lazy::new(|| {
     TOML_CONFIG_FILENAMES
         .iter()
         .filter_map(|pattern| {
-            globset::GlobBuilder::new(pattern)
-                .literal_separator(true)
-                .build()
+            config_file::compile_path_glob(pattern)
                 .map_err(|e| warn!("failed to compile config glob pattern {pattern}: {e}"))
                 .ok()
-                .map(|glob| glob.compile_matcher())
         })
         .collect()
 });
@@ -2932,9 +2929,56 @@ fn is_environment_conf_d_file(path: &Path) -> bool {
 }
 
 /// Whether `path` is in the global or system config directory, whose `conf.d`
-/// fragments follow [`env::global_env_conf_d`].
+/// fragments follow [`env::global_env_conf_d`] and whose environment files
+/// follow [`env::MISE_GLOBAL_ENV_WITH_AUTO`].
 fn is_in_global_config_dir(path: &Path) -> bool {
     path.starts_with(*dirs::CONFIG) || path.starts_with(*dirs::SYSTEM_CONFIG)
+}
+
+/// The environments that select the config files beside `path`. Those a
+/// project `.miserc.toml` adds or drops select project files only.
+fn mise_env_with_auto_for(path: &Path) -> &'static [String] {
+    if is_in_global_config_dir(path) {
+        &env::MISE_GLOBAL_ENV_WITH_AUTO
+    } else {
+        &env::MISE_ENV_WITH_AUTO
+    }
+}
+
+/// Whether the walk up from a directory found `path` in the global or system
+/// config directory while a project `.miserc.toml` changed the environments.
+/// The walk reaches `~/.config/mise` from the home directory, or through a
+/// `.config/mise` link a repository ships, and lists its files by the
+/// project's environments and at a project file's rank. Global discovery,
+/// which follows [`env::MISE_GLOBAL_ENV_WITH_AUTO`], lists those files
+/// instead, so with this filter a project can neither add a global environment
+/// file nor push one below global `config.toml`.
+///
+/// A file the walk found by a config filename with a directory in it stays: only
+/// the user's own `.miserc.toml` or environment can list such a name, and no
+/// environment selects the file it names.
+fn is_global_config_found_by_project_envs(path: &Path) -> bool {
+    *env::MISE_GLOBAL_ENV_WITH_AUTO != *env::MISE_ENV_WITH_AUTO
+        && !is_named_by_user_config_filename(path)
+        && (is_global_config(path)
+            || is_in_global_config_dir(path)
+            || path.parent().is_some_and(|dir| {
+                let dir = file::desymlink_path(dir);
+                [*dirs::CONFIG, *dirs::SYSTEM_CONFIG]
+                    .into_iter()
+                    .any(|global| dir.starts_with(file::desymlink_path(global)))
+            }))
+}
+
+/// Whether `path` ends in an `override_config_filenames` or
+/// `override_tool_versions_filenames` entry that has a directory in it. A
+/// project `.miserc.toml` can list only file names there.
+fn is_named_by_user_config_filename(path: &Path) -> bool {
+    env::MISE_OVERRIDE_CONFIG_FILENAMES
+        .iter()
+        .chain(env::MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES.iter().flatten())
+        .filter(|name| Path::new(name).components().count() > 1)
+        .any(|name| path.ends_with(name))
 }
 
 /// The `env_conf_d` setting and decision that apply to `path`.
@@ -2985,7 +3029,9 @@ fn load_config_glob(dir: &Path, pattern: &str) -> Vec<PathBuf> {
             if is_unconditional_conf_d_pattern(pattern) {
                 !is_environment_conf_d_file(path)
             } else if let Some((environment, _)) = conf_d_file_environment(path) {
-                env::MISE_ENV_WITH_AUTO.iter().any(|env| env == environment)
+                mise_env_with_auto_for(path)
+                    .iter()
+                    .any(|env| env == environment)
             } else {
                 true
             }
@@ -3030,7 +3076,7 @@ pub fn environments_for_config_path(path: &Path) -> Vec<String> {
     let Some(filename) = path.file_name().and_then(|name| name.to_str()) else {
         return vec![];
     };
-    env::MISE_ENV_WITH_AUTO
+    mise_env_with_auto_for(path)
         .iter()
         .filter(|environment| {
             ["config", "mise", ".mise"].into_iter().any(|prefix| {
@@ -3157,6 +3203,7 @@ fn loadable_config_files_in_dir(dir: &Path, filenames: &[String]) -> IndexSet<Pa
         .iter()
         .flat_map(|f| load_config_glob(dir, f))
         .filter(|p| !config_path_is_ignored(p, false))
+        .filter(|p| !is_global_config_found_by_project_envs(p))
         .unique_by(|p| file::desymlink_path(p))
         .collect()
 }
@@ -3212,6 +3259,7 @@ fn nearest_local_config_file(start: &Path, filenames: &[String]) -> Option<PathB
             .iter()
             .flat_map(|f| glob(&dir, f).unwrap_or_default())
             .filter(|p| !config_path_is_ignored(p, false))
+            .filter(|p| !is_global_config_found_by_project_envs(p))
             .unique_by(|p| file::desymlink_path(p))
             .collect();
         if let Some(cf) = first_config_file(&files)
@@ -3256,6 +3304,7 @@ fn load_config_paths_from_dirs(
         })
         .collect::<Vec<_>>();
 
+    config_files.retain(|p| !is_global_config_found_by_project_envs(p));
     // rev: these groups are lowest-first, this list is highest-first
     config_files.splice(0..0, override_config_files().into_iter().rev());
     config_files.extend(global_config_files().into_iter().rev());
@@ -3282,10 +3331,16 @@ fn load_config_paths_from_dirs(
 /// Callers pass mise's own config filenames, with the idiomatic filenames
 /// added when they look for those too, so every other entry is idiomatic.
 fn idiomatic_filenames_in(config_filenames: &[String]) -> Vec<&str> {
+    // A set: both lists grow with the selected environments and the override
+    // filenames, so a scan of one per entry of the other is quadratic.
+    let own: HashSet<&str> = DEFAULT_CONFIG_FILENAMES
+        .iter()
+        .map(String::as_str)
+        .collect();
     config_filenames
         .iter()
-        .filter(|f| !DEFAULT_CONFIG_FILENAMES.contains(f))
         .map(String::as_str)
+        .filter(|f| !own.contains(f))
         .collect()
 }
 
@@ -3646,6 +3701,7 @@ pub async fn load_config_hierarchy_from_dir(
         })
         .collect::<Vec<_>>();
 
+    config_files.retain(|p| !is_global_config_found_by_project_envs(p));
     // rev: these groups are lowest-first, this list is highest-first
     config_files.splice(0..0, override_config_files().into_iter().rev());
     config_files.extend(global_config_files().into_iter().rev());
@@ -3911,7 +3967,7 @@ pub(crate) fn override_config_files() -> IndexSet<PathBuf> {
     }
     let mut files = vec![dirs::CONFIG.join("config.override.toml")];
     files.extend(
-        env::MISE_ENV_WITH_AUTO
+        env::MISE_GLOBAL_ENV_WITH_AUTO
             .iter()
             .map(|environment| dirs::CONFIG.join(format!("config.{environment}.override.toml"))),
     );
@@ -3995,7 +4051,7 @@ pub(crate) fn config_files_with_incoming(
     }
     files.extend(conf_folder_files("mise.toml"));
     files.extend([dir.join("config.toml"), dir.join("mise.toml")]);
-    for environment in &*env::MISE_ENV_WITH_AUTO {
+    for environment in &*env::MISE_GLOBAL_ENV_WITH_AUTO {
         if env_conf_d {
             files.extend(conf_d_environment_candidates(
                 &conf_files,
@@ -4011,7 +4067,7 @@ pub(crate) fn config_files_with_incoming(
     }
     files.extend(conf_folder_files("mise.local.toml"));
     files.extend([dir.join("config.local.toml"), dir.join("mise.local.toml")]);
-    for environment in &*env::MISE_ENV_WITH_AUTO {
+    for environment in &*env::MISE_GLOBAL_ENV_WITH_AUTO {
         if env_conf_d {
             files.extend(conf_d_environment_candidates(
                 &conf_files,
@@ -4064,7 +4120,7 @@ fn conf_d_environment_candidates(
 /// target: with no `config.toml` yet, `mise use -g` creates one rather than putting a
 /// machine-local tool into an environment module.
 fn global_write_candidates() -> IndexSet<PathBuf> {
-    let envs = &*env::MISE_ENV_WITH_AUTO;
+    let envs = &*env::MISE_GLOBAL_ENV_WITH_AUTO;
     global_config_files()
         .into_iter()
         .filter(|p| !is_active_env_config_file(p, envs))

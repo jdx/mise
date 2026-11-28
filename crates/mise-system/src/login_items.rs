@@ -143,7 +143,13 @@ pub async fn status(request: &LoginItemsRequest) -> Result<Vec<LoginItemStatus>>
 }
 
 /// Add the missing items and, for `exclusive`, remove the undeclared ones.
-pub async fn apply(statuses: &[LoginItemStatus], dry_run: bool) -> Result<()> {
+///
+/// Returns the apps that macOS accepted but kept out of the user's login
+/// items list. This happens when an organization's MDM profile
+/// (`com.apple.servicemanagement`) covers the app: macOS moves the item to a
+/// managed list that `LSSharedFileList` does not show, and answers later adds
+/// with "record exists" without putting the item back.
+pub async fn apply(statuses: &[LoginItemStatus], dry_run: bool) -> Result<Vec<PathBuf>> {
     for s in statuses {
         match s.state {
             LoginItemState::Present => {}
@@ -162,20 +168,37 @@ pub async fn apply(statuses: &[LoginItemStatus], dry_run: bool) -> Result<()> {
         }
     }
     if dry_run {
-        return Ok(());
+        return Ok(vec![]);
     }
     let statuses = statuses.to_vec();
     tokio::task::spawn_blocking(move || {
-        for s in statuses {
+        for s in &statuses {
             match s.state {
                 LoginItemState::Present => {}
                 LoginItemState::Missing => sys::add(&s.path)?,
                 LoginItemState::Undeclared => sys::remove(&s.path)?,
             }
         }
-        Ok(())
+        if !statuses.iter().any(|s| s.state == LoginItemState::Missing) {
+            return Ok(vec![]);
+        }
+        Ok(not_added(&statuses, &sys::current()?))
     })
     .await?
+}
+
+/// The apps `apply` tried to add that are still not in the list. Pure.
+fn not_added(statuses: &[LoginItemStatus], current: &[PathBuf]) -> Vec<PathBuf> {
+    let current: Vec<_> = current
+        .iter()
+        .map(|path| mise_util::file::canonicalize_or_self(path))
+        .collect();
+    statuses
+        .iter()
+        .filter(|s| s.state == LoginItemState::Missing)
+        .filter(|s| !current.contains(&mise_util::file::canonicalize_or_self(&s.path)))
+        .map(|s| s.path.clone())
+        .collect()
 }
 
 #[cfg(target_os = "macos")]
@@ -407,6 +430,29 @@ mod tests {
                     state: LoginItemState::Missing
                 },
             ]
+        );
+    }
+
+    #[test]
+    fn not_added_lists_adds_that_did_not_land() {
+        let statuses = plan(
+            &request(
+                &[
+                    "/Applications/Ghostty.app",
+                    "/Applications/Slack.app",
+                    "/Applications/Microsoft Outlook.app",
+                ],
+                false,
+            ),
+            &[PathBuf::from("/Applications/Ghostty.app")],
+        );
+        let after = vec![
+            PathBuf::from("/Applications/Ghostty.app"),
+            PathBuf::from("/Applications/Slack.app"),
+        ];
+        assert_eq!(
+            not_added(&statuses, &after),
+            vec![PathBuf::from("/Applications/Microsoft Outlook.app")]
         );
     }
 
