@@ -1760,7 +1760,7 @@ mod tests {
         ));
         tracked.keep_local_out();
         let cache = |name: &str| store::PathReason {
-            path: mise_util::file::display_path(&home.join(name)),
+            path: mise_util::file::display_path(home.join(name)),
             reason: crate::history::tracked::CACHE_DIRECTORY_REASON.into(),
         };
         let walk = crate::history::tracked::Walk {

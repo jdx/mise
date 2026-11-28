@@ -5147,7 +5147,7 @@ mod tests {
         assert!(matches!(
             crate::history::replay::classify_coverage(
                 &coverage,
-                &display_path(&target.join("debug/build.o"))
+                &display_path(target.join("debug/build.o"))
             ),
             crate::history::replay::PathState::Omitted(reason) if reason == CACHE_DIRECTORY_REASON
         ));
@@ -5281,7 +5281,7 @@ mod tests {
         assert!(
             hint.starts_with(&format!(
                 "{NODE_MODULES_HINT_FILES} files are saved from node_modules directories ({})",
-                display_path(&root.join("node_modules"))
+                display_path(root.join("node_modules"))
             )),
             "{hint}"
         );
