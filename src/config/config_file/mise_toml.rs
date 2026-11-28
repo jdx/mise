@@ -1808,17 +1808,40 @@ impl Deferred {
     /// Put the deferred code back in `rendered`, the escaped output of the config-load render. A
     /// `{` just before a placeholder is escaped too: substituted text that ends in `{` would
     /// otherwise join the `{{` of the code put back after it into `{{{`.
-    fn restore(&self, mut rendered: String) -> String {
-        for (i, expr) in self.exprs.iter().enumerate() {
-            let placeholder = format!("{}{i}__", self.mark);
-            rendered = rendered
-                .replace(
-                    &format!("{{{placeholder}"),
-                    &format!("{{{{ \"{{\" }}}}{placeholder}"),
-                )
-                .replace(&placeholder, expr);
+    ///
+    /// This is one pass over `rendered` that looks up each placeholder where it finds it, so an
+    /// option with many blocks costs no more than its length.
+    fn restore(&self, rendered: String) -> String {
+        if self.exprs.is_empty() {
+            return rendered;
         }
-        rendered
+        let mut out = String::with_capacity(rendered.len());
+        let mut rest = rendered.as_str();
+        while let Some(at) = rest.find(&self.mark) {
+            let after = &rest[at + self.mark.len()..];
+            let digits = after.len() - after.trim_start_matches(|c: char| c.is_ascii_digit()).len();
+            let number = &after[..digits];
+            // the number as `defer` writes it, then the closing `__`
+            let expr = number
+                .parse::<usize>()
+                .ok()
+                .filter(|i| i.to_string() == number && after[digits..].starts_with("__"))
+                .and_then(|i| self.exprs.get(i));
+            let Some(expr) = expr else {
+                out.push_str(&rest[..at + self.mark.len()]);
+                rest = after;
+                continue;
+            };
+            out.push_str(&rest[..at]);
+            if out.ends_with('{') {
+                out.pop();
+                out.push_str("{{ \"{\" }}");
+            }
+            out.push_str(expr);
+            rest = &after[digits + 2..];
+        }
+        out.push_str(rest);
+        out
     }
 }
 
@@ -4595,6 +4618,24 @@ mod tests {
         let (out, deferred) = shield_raw_blocks(&input);
         assert!(deferred.exprs.is_empty());
         assert_eq!(out, input);
+    }
+
+    /// Every block of an option that has many goes back in its place as the code it was.
+    #[test]
+    fn test_many_raw_blocks_are_put_back() {
+        use crate::tera::{TeraEngine, render_str};
+        let input: String = (0..3000)
+            .map(|i| format!("{i}:{{% raw %}}{{{{ version }}}}{{% endraw %}};"))
+            .collect();
+        let mut tera = TeraEngine::V2(Box::default());
+        let option = render_option_for_backend(shield_raw_blocks(&input), |s| {
+            Ok(render_str(&mut tera, s, &tera::Context::new())?)
+        })
+        .unwrap();
+        let expected: String = (0..3000)
+            .map(|i| format!("{i}:{{{{ version }}}};"))
+            .collect();
+        assert_eq!(option, expected);
     }
 
     #[tokio::test]

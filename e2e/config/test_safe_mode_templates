@@ -28,19 +28,22 @@ cat <<'EOF' >"$MISE_CONFIG_DIR/config.toml"
 mirror_token = "operator-secret"
 
 [tasks.global-task]
-run = "echo global"
+run = "echo {{ arg(name='mirror', default=vars.mirror_token) }}"
 description = "global={{ vars.mirror_token }}"
 EOF
 cat <<'EOF' >mise.toml
 [tasks.build]
-run = "echo build"
+run = "echo {{ arg(name='mirror', default=vars.mirror_token | default(value='none')) }}"
 description = "token={{ vars | json_encode }}"
 EOF
 assert_contains "mise tasks ls" "operator-secret"
 assert_not_contains "MISE_SAFE=1 mise tasks ls" 'token={"mirror_token"'
 assert_contains "MISE_SAFE=1 mise tasks ls" "token={}"
-# a task global config declares is the operator's and keeps them
+# a task global config declares is the operator's and keeps them, in the run
+# script its usage is read from too
 assert_contains "MISE_SAFE=1 mise tasks ls" "global=operator-secret"
+assert_contains "MISE_SAFE=1 mise tasks info global-task" "arg <mirror> default=operator-secret"
+assert_contains "MISE_SAFE=1 mise tasks info build" "arg <mirror> default=none"
 # so is a file task in the global task directory, which keeps env too
 mkdir -p "$MISE_CONFIG_DIR/tasks"
 cat <<'EOF' >"$MISE_CONFIG_DIR/tasks/gfile"

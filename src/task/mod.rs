@@ -144,6 +144,23 @@ pub(crate) trait TaskToolValueExt {
     fn render_templates(&mut self, tera: &mut TeraEngine, context: &tera::Context) -> Result<()>;
 }
 
+/// `future`, a render of a task's templates, in that task's scope: a task only the operator wrote
+/// ([`Task::is_operators`]) keeps `env` and `vars` for its templates in safe mode, in its
+/// metadata, its `run` scripts and its usage spec alike. Boxed: held inline, the scope nests the
+/// render's future in that of every caller, which then takes too deep a layout for the compiler
+/// to build.
+fn in_task_template_scope<'a, T: 'a>(
+    operators: bool,
+    future: impl std::future::Future<Output = T> + Send + 'a,
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = T> + Send + 'a>> {
+    let future = Box::pin(future);
+    if operators {
+        Box::pin(crate::tera::with_templates_trusted(true, future))
+    } else {
+        future
+    }
+}
+
 fn task_tool_value_has_template(value: &toml::Value) -> bool {
     match value {
         toml::Value::String(value) => contains_template_syntax(value),
@@ -249,8 +266,10 @@ impl TaskToolValueExt for TaskToolValue {
                 for (key, value) in map.opts.iter_mut() {
                     if task_tool_value_has_template(value) {
                         // `install_env` goes to the installer as this render leaves it, as it
-                        // does for `[tools]`: nothing renders it again to undo an escape.
-                        render_value(value, tera, context, key != "install_env")?;
+                        // does for `[tools]`: nothing renders it again to undo an escape. That
+                        // holds for a flat `install_env.FOO` key too.
+                        let for_backend = key != "install_env" && !key.starts_with("install_env.");
+                        render_value(value, tera, context, for_backend)?;
                     }
                 }
             }
@@ -2065,7 +2084,20 @@ impl Task {
             }
         }
     }
+    /// The task's usage spec and its rendered `run` scripts, rendered in the scope of
+    /// [`Self::render`].
     pub(crate) async fn parse_usage_spec_with_vars(
+        &self,
+        config: &Arc<Config>,
+        cwd: Option<PathBuf>,
+        env: &EnvMap,
+        extra_vars: Option<IndexMap<String, String>>,
+    ) -> Result<(usage::Spec, Vec<String>)> {
+        let parse = self.parse_usage_spec_with_vars_unscoped(config, cwd, env, extra_vars);
+        in_task_template_scope(self.is_operators(), parse).await
+    }
+
+    async fn parse_usage_spec_with_vars_unscoped(
         &self,
         config: &Arc<Config>,
         cwd: Option<PathBuf>,
@@ -2165,6 +2197,15 @@ impl Task {
         config: &Arc<Config>,
         strict: bool,
     ) -> Result<usage::Spec> {
+        let parse = self.parse_usage_spec_for_display_unscoped(config, strict);
+        in_task_template_scope(self.is_operators(), parse).await
+    }
+
+    async fn parse_usage_spec_for_display_unscoped(
+        &self,
+        config: &Arc<Config>,
+        strict: bool,
+    ) -> Result<usage::Spec> {
         // The directory only feeds script parsing here. A broken `dir` template is reported
         // by `mise tasks validate` and when the task runs, so it does not fail the spec.
         let dir = self.dir(config).await.unwrap_or(None);
@@ -2203,6 +2244,14 @@ impl Task {
     /// environment directives. This is used before the scheduler starts, where
     /// source/module hooks must not run ahead of task dependencies.
     pub(crate) async fn parse_usage_spec_for_preflight(
+        &self,
+        config: &Arc<Config>,
+    ) -> Result<usage::Spec> {
+        let parse = self.parse_usage_spec_for_preflight_unscoped(config);
+        in_task_template_scope(self.is_operators(), parse).await
+    }
+
+    async fn parse_usage_spec_for_preflight_unscoped(
         &self,
         config: &Arc<Config>,
     ) -> Result<usage::Spec> {
@@ -2248,7 +2297,20 @@ impl Task {
         TaskScriptParser::new(self.config_root.clone()).validate_template_syntax(self, input)
     }
 
+    /// The task's `run` scripts rendered with `args`, in the scope of [`Self::render`].
     pub(crate) async fn render_run_scripts_with_args(
+        &self,
+        config: &Arc<Config>,
+        cwd: Option<PathBuf>,
+        args: &[String],
+        env: &EnvMap,
+        extra_vars: Option<IndexMap<String, String>>,
+    ) -> Result<Vec<(String, Vec<String>)>> {
+        let render = self.render_run_scripts_with_args_unscoped(config, cwd, args, env, extra_vars);
+        in_task_template_scope(self.is_operators(), render).await
+    }
+
+    async fn render_run_scripts_with_args_unscoped(
         &self,
         config: &Arc<Config>,
         cwd: Option<PathBuf>,
@@ -2948,16 +3010,8 @@ impl Task {
     }
 
     pub(crate) async fn render(&mut self, config: &Arc<Config>, config_root: &Path) -> Result<()> {
-        // A task only the operator wrote keeps `env` and `vars` for its templates in safe mode.
-        // Boxed: held inline, the scope nests the render's future in that of every task
-        // loader, which then takes too deep a layout for the compiler to build.
         let operators = self.is_operators();
-        let render = Box::pin(self.render_fields(config, config_root));
-        if operators {
-            crate::tera::with_templates_trusted(true, render).await
-        } else {
-            render.await
-        }
+        in_task_template_scope(operators, self.render_fields(config, config_root)).await
     }
 
     async fn render_fields(&mut self, config: &Arc<Config>, config_root: &Path) -> Result<()> {
@@ -3095,15 +3149,10 @@ impl Task {
         config: &Arc<Config>,
         usage_values: &IndexMap<String, tera::Value>,
     ) -> Result<()> {
-        // In the same scope as `render`: a task only the operator wrote keeps `env` and `vars`
-        // for the templates deferred until its usage args are known. Boxed for the same reason.
+        // In the same scope as `render`, for the templates deferred until its usage args are
+        // known.
         let operators = self.is_operators();
-        let render = Box::pin(self.render_usage_fields(config, usage_values));
-        if operators {
-            crate::tera::with_templates_trusted(true, render).await
-        } else {
-            render.await
-        }
+        in_task_template_scope(operators, self.render_usage_fields(config, usage_values)).await
     }
 
     async fn render_usage_fields(
@@ -7956,7 +8005,13 @@ echo "test"
             "FOO".to_string(),
             toml::Value::String("{{ branch }}".to_string()),
         );
-        let opts = IndexMap::from([("install_env".to_string(), toml::Value::Table(install_env))]);
+        let opts = IndexMap::from([
+            ("install_env".to_string(), toml::Value::Table(install_env)),
+            (
+                "install_env.BAR".to_string(),
+                toml::Value::String("{{ branch }}".to_string()),
+            ),
+        ]);
         let mut tool = TaskToolValue::Map(TaskToolValueMap {
             version: "1.0.0".to_string(),
             opts,
@@ -7969,6 +8024,10 @@ echo "test"
         let options = arg.tvr.unwrap().options();
         assert_eq!(
             options.install_env.get("FOO"),
+            Some(&EnvValue::String("{{ literal }}".to_string()))
+        );
+        assert_eq!(
+            options.install_env.get("BAR"),
             Some(&EnvValue::String("{{ literal }}".to_string()))
         );
     }

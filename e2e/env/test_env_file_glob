@@ -57,6 +57,7 @@ cd .. || exit 1
 mkdir -p profiles
 echo "STAR_PROFILE=1" >'profiles/*.env'
 echo "DEV_PROFILE=1" >profiles/dev.env
+# shellcheck disable=SC2016 # mise expands $PROFILE, not the shell
 for entry in 'profiles/{{ env.PROFILE }}.e*' 'profiles/$PROFILE.e*'; do
   cat <<EOS >.mise.toml
 [env]
@@ -66,3 +67,13 @@ EOS
   assert_not_contains "PROFILE='*' mise env -s bash" "DEV_PROFILE"
   assert_contains "PROFILE=dev mise env -s bash" "DEV_PROFILE=1"
 done
+
+# the branch of a conditional that renders holds the pattern
+cat <<'EOS' >.mise.toml
+[env]
+_.file = "{% if env.PROFILE == 'dev' %}env.d/*.env{% else %}profiles/d*.env{% endif %}"
+EOS
+assert_contains "PROFILE=dev mise env -s bash" "VAR1=1"
+assert_not_contains "PROFILE=dev mise env -s bash" "DEV_PROFILE"
+assert_contains "PROFILE=prod mise env -s bash" "DEV_PROFILE=1"
+assert_not_contains "PROFILE=prod mise env -s bash" "VAR1"
