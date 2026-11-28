@@ -478,5 +478,327 @@ echo "output after the hang"
                     self.assertNotIn("test_quick", output)
 
 
+FAKE_DOCKER = r"""#!/usr/bin/env bash
+# Logs each call, one line per call with every argument cut at its first line,
+# and answers the few calls the e2e scripts make. A `docker run` or `docker exec`
+# of a test fails when the test's name contains "fail". `docker ps` lists the
+# containers named in the file $DOCKER_LIVE.
+line=""
+for arg in "$@"; do line+="${arg%%$'\n'*} "; done
+echo "$line" >>"$DOCKER_LOG"
+last="${!#}"
+case "$1" in
+  ps) [[ -f $DOCKER_LIVE ]] && cat "$DOCKER_LIVE" ;;
+  run)
+    if [[ " $* " == *" -d "* ]]; then
+      echo "id-$(grep -c '^run -d ' "$DOCKER_LOG")"
+    else
+      [[ $last != *fail* ]]
+    fi
+    ;;
+  exec)
+    for arg in "$@"; do
+      case "$arg" in
+        stat) printf '1000:1000\n1000:1000\n1000:1000\n'; exit 0 ;;
+        ls) printf 'core\nnull\n'; exit 0 ;;
+        /mise-src/e2e/run_test) [[ $last != *fail* ]]; exit $? ;;
+      esac
+    done
+    ;;
+esac
+exit 0
+"""
+
+# A run_test that only says which slot it got, and fails if another running
+# test holds the same one.
+SLOT_RUN_TEST = """#!/usr/bin/env bash
+set -euo pipefail
+slot="${MISE_E2E_DOCKER_SLOT:-none}"
+echo "$1 $slot" >>"$COUNTS/seen"
+if [[ $slot != none ]]; then
+  # Two running tests holding one slot cannot both create this directory.
+  mkdir "$COUNTS/held-$slot" || { echo "$1 $slot" >>"$COUNTS/collisions"; exit 1; }
+  mkdir -p "$MISE_E2E_DOCKER_SLOT_ROOT/$slot"
+  echo "$MISE_E2E_DOCKER_SLOT_ROOT" >"$COUNTS/slot-root"
+  sleep 0.3
+  rmdir "$COUNTS/held-$slot"
+fi
+"""
+
+
+class E2EDockerSlotTests(unittest.TestCase):
+    """Container reuse in Docker mode, with a fake `docker` that logs its calls."""
+
+    def setup_tree(self, root, scripts, run_test=None):
+        """Lay out e2e/ with the runner, a Linux binary and the fake docker.
+        Returns the environment to run it in."""
+        e2e = root / "e2e"
+        e2e.mkdir()
+        names = ["run_all_tests", "style.sh", "helpers.sh"]
+        if run_test is None:
+            names += ["run_test", "assert.sh"]
+        for name in names:
+            shutil.copy(ROOT / "e2e" / name, e2e / name)
+        if run_test is not None:
+            (e2e / "run_test").write_text(run_test)
+            (e2e / "run_test").chmod(0o755)
+        (root / "scripts").mkdir()
+        (root / "scripts" / "get-version.sh").write_text("echo test\n")
+        for name, script in scripts.items():
+            (e2e / name).write_text(f"#!/usr/bin/env bash\n{script}\n")
+        # The runner checks that the mise under test is a Linux binary.
+        binary = root / "bin" / "mise"
+        binary.parent.mkdir()
+        shutil.copy(shutil.which("true"), binary)
+        fake = root / "fakebin" / "docker"
+        fake.parent.mkdir()
+        fake.write_text(FAKE_DOCKER)
+        fake.chmod(0o755)
+        for name in ("counts", "hosttmp"):
+            (root / name).mkdir()
+        env = {
+            key: value
+            for key, value in os.environ.items()
+            if not key.startswith(("E2E_", "TEST_", "GITHUB_", "MISE_"))
+        }
+        env.pop("CARGO_TARGET_DIR", None)
+        env.update(
+            PATH=f"{fake.parent}{os.pathsep}{env['PATH']}",
+            MISE_E2E_BIN=str(binary),
+            MISE_E2E_DOCKER="1",
+            MISE_E2E_HOST_TMP=str(root / "hosttmp"),
+            COUNTS=str(root / "counts"),
+            DOCKER_LOG=str(root / "docker.log"),
+            DOCKER_LIVE=str(root / "live"),
+            E2E_RETRY_WAIT_SECONDS="0",
+        )
+        return env
+
+    def run_runner(self, scripts, stub=False, jobs="1", **settings):
+        """Run e2e/run_all_tests with MISE_E2E_DOCKER=1 on `scripts`, a dict of
+        test name to script, with the real run_test or one that only records its
+        slot. Returns the result and the docker calls."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            env = self.setup_tree(root, scripts, SLOT_RUN_TEST if stub else None)
+            env.update(E2E_JOBS=jobs, **settings)
+            result = subprocess.run(
+                ["bash", str(root / "e2e" / "run_all_tests"), *scripts],
+                cwd=root,
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+            log = root / "docker.log"
+            calls = log.read_text().splitlines() if log.exists() else []
+            counts = root / "counts"
+
+            def lines(name):
+                path = counts / name
+                return path.read_text().split("\n")[:-1] if path.exists() else []
+
+            self.seen = [line.split() for line in lines("seen")]
+            self.collisions = lines("collisions")
+            self.slot_root = next(iter(lines("slot-root")), None)
+            self.slot_root_exists = bool(self.slot_root) and Path(self.slot_root).exists()
+            self.leftover = sorted(p.name for p in (root / "hosttmp").iterdir())
+            return result, calls
+
+    @staticmethod
+    def starts(calls):
+        return [c for c in calls if c.startswith("run -d ")]
+
+    @staticmethod
+    def exec_calls(calls):
+        return [c for c in calls if "/mise-src/e2e/run_test" in c]
+
+    def test_no_two_running_tests_share_a_slot(self):
+        scripts = {f"test_{i}": "" for i in range(12)}
+        result, _ = self.run_runner(scripts, stub=True, jobs="3")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.collisions, [])
+        self.assertEqual(len(self.seen), 12)
+        self.assertEqual({slot for _, slot in self.seen}, {"0", "1", "2"})
+
+    def test_a_slot_is_free_again_when_its_test_is_done(self):
+        scripts = {f"test_{i}": "" for i in range(3)}
+        result, _ = self.run_runner(scripts, stub=True, jobs="1")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual({slot for _, slot in self.seen}, {"0"})
+
+    def test_opt_out_gives_no_slots(self):
+        result, _ = self.run_runner(
+            {"test_a": "", "test_b": ""}, stub=True, MISE_E2E_DOCKER_REUSE="0"
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual({slot for _, slot in self.seen}, {"none"})
+
+    def test_no_slots_without_docker(self):
+        result, _ = self.run_runner({"test_a": ""}, stub=True, MISE_E2E_DOCKER="0")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.seen, [["test_a", "none"]])
+
+    def test_invalid_reuse_setting(self):
+        result, _ = self.run_runner(
+            {"test_a": ""}, stub=True, MISE_E2E_DOCKER_REUSE="2"
+        )
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("MISE_E2E_DOCKER_REUSE must be 0 or 1", result.stderr)
+        self.assertEqual(self.seen, [])
+
+    def test_container_is_reused(self):
+        result, calls = self.run_runner({"test_a": "", "test_b": ""})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(len(self.starts(calls)), 1, calls)
+        start = self.starts(calls)[0]
+        self.assertIn("--read-only", start)
+        self.assertIn("--name mise-e2e-", start)
+        self.assertIn("--label mise-e2e=1", start)
+        self.assertIn("--init", start)
+        self.assertIn("sleep infinity", start)
+        self.assertEqual(len(self.exec_calls(calls)), 2)
+        for call in self.exec_calls(calls):
+            self.assertTrue(call.startswith("exec "), call)
+        # The test's environment is the exec's, not the container's.
+        self.assertNotIn(" -e ", start)
+        self.assertIn(" -e MISE_E2E_INSIDE_DOCKER=1 ", self.exec_calls(calls)[0])
+        # Between the two tests the container was reset.
+        reset = [i for i, c in enumerate(calls) if c.startswith("exec --user root ") and "tmp_owner" in c]
+        self.assertEqual(len(reset), 2, calls)
+
+    def test_tokens_are_passed_when_set_and_only_to_the_test(self):
+        result, calls = self.run_runner({"test_a": ""}, GITHUB_TOKEN="secret")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        test_call = self.exec_calls(calls)[0]
+        self.assertIn("-e GITHUB_TOKEN=secret", test_call)
+        self.assertNotIn("MISE_GITHUB_TOKEN", test_call)
+        self.assertEqual([c for c in calls if "secret" in c], [test_call])
+
+    def test_failed_test_container_is_discarded(self):
+        result, calls = self.run_runner({"test_a": "", "test_fail": "", "test_b": ""})
+        self.assertEqual(result.returncode, 1)
+        # test_a's container serves test_fail, which discards it; test_b gets a
+        # new one, and the end of the run removes that one.
+        self.assertEqual(len(self.starts(calls)), 2, calls)
+        failing = next(i for i, c in enumerate(calls) if c.endswith("run_test test_fail "))
+        second_start = [i for i, c in enumerate(calls) if c.startswith("run -d ")][1]
+        removals = [i for i, c in enumerate(calls) if c.startswith("rm -f mise-e2e-")]
+        self.assertTrue(any(failing < i < second_start for i in removals), calls)
+        # The container that passed its test was reset, not removed.
+        first_reset = next(i for i, c in enumerate(calls) if "tmp_owner" in c)
+        self.assertLess(first_reset, failing)
+
+    def test_failed_attempt_is_retried_in_a_new_container(self):
+        result, calls = self.run_runner({"test_fail": ""}, E2E_MAX_ATTEMPTS="2")
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(len(self.starts(calls)), 2, calls)
+        self.assertEqual(len(self.exec_calls(calls)), 2)
+
+    def test_run_ends_with_the_containers_and_directories_gone(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            live = Path(tmp) / "live"
+            live.write_text("id-7\nid-8\n")
+            result, calls = self.run_runner(
+                {"test_a": ""}, stub=True, DOCKER_LIVE=str(live)
+            )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        ps = [c for c in calls if c.startswith("ps ")]
+        self.assertEqual(len(ps), 1, calls)
+        self.assertIn("label=mise-e2e-run=", ps[0])
+        self.assertEqual(
+            sorted(c for c in calls if c.startswith("rm -f ")), ["rm -f id-7 ", "rm -f id-8 "]
+        )
+        self.assertTrue(self.slot_root)
+        self.assertFalse(self.slot_root_exists)
+        self.assertEqual(self.leftover, [])
+
+    def test_interrupted_run_removes_containers_and_directories(self):
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            with self.subTest(signal=sig.name), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                ready = root / "ready"
+                env = self.setup_tree(
+                    root,
+                    {"test_hang": ""},
+                    f"""#!/usr/bin/env bash
+mkdir -p "$MISE_E2E_DOCKER_SLOT_ROOT/$MISE_E2E_DOCKER_SLOT"
+echo "$MISE_E2E_DOCKER_SLOT_ROOT" >"{root}/slot-root"
+touch "{ready}"
+exec sleep 600
+""",
+                )
+                (root / "live").write_text("id-9\n")
+                env["E2E_JOBS"] = "1"
+                process = subprocess.Popen(
+                    ["bash", str(root / "e2e" / "run_all_tests"), "test_hang"],
+                    cwd=root,
+                    env=env,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                )
+                deadline = time.monotonic() + 30
+                while not ready.exists() and time.monotonic() < deadline:
+                    time.sleep(0.05)
+                process.send_signal(sig)
+                process.communicate(timeout=30)
+                self.assertEqual(process.returncode, 130)
+                calls = (root / "docker.log").read_text().splitlines()
+                self.assertIn("rm -f id-9 ", calls)
+                self.assertEqual(list((root / "hosttmp").iterdir()), [])
+                self.assertFalse(Path((root / "slot-root").read_text().strip()).exists())
+
+    def test_marked_tests_keep_a_container_of_their_own(self):
+        result, calls = self.run_runner(
+            {"test_apt": "# e2e:writable-rootfs", "test_plain": ""}
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        own = [c for c in calls if c.startswith("run --rm ")]
+        self.assertEqual(len(own), 1, calls)
+        self.assertNotIn("--read-only", own[0])
+        self.assertTrue(own[0].endswith("run_test test_apt "), own)
+        # The other test ran in a slot container.
+        self.assertEqual(len(self.starts(calls)), 1, calls)
+        plain = next(c for c in calls if c.endswith("run_test test_plain "))
+        self.assertTrue(plain.startswith("exec "), plain)
+
+    def test_non_root_tests_share_the_container_as_nobody(self):
+        result, calls = self.run_runner({"test_pg": "# e2e:non-root", "test_plain": ""})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(len(self.starts(calls)), 1, calls)
+        self.assertNotIn("--user", self.starts(calls)[0])
+        pg = next(c for c in calls if c.endswith("run_test test_pg "))
+        plain = next(c for c in calls if c.endswith("run_test test_plain "))
+        self.assertTrue(pg.startswith("exec --user nobody "), pg)
+        self.assertNotIn("--user", plain)
+
+    def test_opt_out_starts_a_container_per_test(self):
+        result, calls = self.run_runner(
+            {"test_a": "", "test_b": ""}, MISE_E2E_DOCKER_REUSE="0"
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(len([c for c in calls if c.startswith("run --rm ")]), 2, calls)
+        self.assertEqual(self.starts(calls), [])
+        self.assertEqual([c for c in calls if c.startswith("exec ")], [])
+
+    def test_run_test_alone_starts_a_container_per_test(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            env = self.setup_tree(root, {"test_a": ""})
+            result = subprocess.run(
+                ["bash", str(root / "e2e" / "run_test"), "test_a"],
+                cwd=root,
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            calls = (root / "docker.log").read_text().splitlines()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(len(calls), 1, calls)
+        self.assertTrue(calls[0].startswith("run --rm --read-only "), calls)
+
+
 if __name__ == "__main__":
     unittest.main()
