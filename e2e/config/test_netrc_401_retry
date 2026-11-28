@@ -62,3 +62,16 @@ assert_contains "mise ls --installed" "http:netrc-retry"
 
 # The rejected login is sent once; later attempts after the 503 do not resend it.
 assert "wc -l <$HOME/auth-requests | tr -d ' '" "1"
+
+# The same holds on a public mirror a URL replacement points at: its netrc login
+# is a fallback too, so a rejected one is retried once without it.
+rm "$HOME/auth-requests"
+export MISE_URL_REPLACEMENTS="{\"https://netrc-mirror.invalid/\": \"http://127.0.0.1:$port/\"}"
+cat >mise.toml <<TOML
+[tools]
+"http:netrc-mirror" = { version = "1.0.0", url = "https://netrc-mirror.invalid/netrc-mirror" }
+TOML
+
+assert_contains "mise install --verbose 2>&1" "retrying without netrc credentials after 401"
+assert_contains "mise ls --installed" "http:netrc-mirror"
+assert "wc -l <$HOME/auth-requests | tr -d ' '" "1"

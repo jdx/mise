@@ -2826,7 +2826,8 @@ impl Client {
         // than the direct request, or an http mirror fronting an https origin (#7164)
         // becomes unusable.
         ensure_secure_replacement_credentials(&original_url, &url, &final_headers)?;
-        // Set when netrc alone supplied the Authorization header for this host.
+        // Set when netrc changed the Authorization header, on the original host or on
+        // the host a URL replacement sent the request to.
         let mut netrc_fallback_used = false;
         if options.use_netrc
             && !(options.netrc_replacement_only && url.host() == original_url.host())
@@ -2840,8 +2841,7 @@ impl Client {
                 replacement_netrc_headers(&url)
             };
             final_headers = apply_netrc_credentials(final_headers, &original_url, &url, netrc);
-            netrc_fallback_used = url.host() == original_url.host()
-                && final_headers.get(AUTHORIZATION) != before.as_ref();
+            netrc_fallback_used = final_headers.get(AUTHORIZATION) != before.as_ref();
         }
 
         let request_timeout = self.request_timeout();
@@ -2941,8 +2941,9 @@ impl Client {
             }
         }
         // A stale netrc login earns a 401 even from hosts that serve the resource
-        // anonymously (a public GitLab release asset). netrc is only a fallback, so
-        // retry once without it rather than fail. Callers that read the status
+        // anonymously (a public GitLab release asset, or a public mirror a URL
+        // replacement points at). netrc is only a fallback, so retry once without it
+        // rather than fail; a mirror that needs the login fails the same way again. Callers that read the status
         // themselves (`allow_error_status`) keep the 401, and a response from
         // another origin after a redirect never saw the netrc header.
         if netrc_fallback_used
