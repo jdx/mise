@@ -93,6 +93,29 @@ fn outer_project(path: &Path) -> PathBuf {
     project
 }
 
+/// The project whose directory holds `path` when `path` is global config only through a link,
+/// such as a project's `mise.toml` linked to the global config: the project its components name,
+/// as they would for any other file there. `None` for global config at its own path and for a
+/// file that is not global config.
+///
+/// [`config_root`] gives such a link the global root, the home directory, since global config is
+/// trusted for what it resolves to. The project that holds the link is still the one a command
+/// given that directory means.
+pub fn linked_global_project(path: &Path) -> Option<PathBuf> {
+    let path = path.absolutize().ok()?.to_path_buf();
+    let global = discovered_global_config(&path)?;
+    if global == path {
+        return None;
+    }
+    let root = root_by_name(&path);
+    if root.ends_with(".config/mise")
+        && let Some(outer) = root.parent().and_then(Path::parent)
+    {
+        return Some(outer.to_path_buf());
+    }
+    Some(root)
+}
+
 /// The project a config was found in, when a symlink lies between that project's directory and
 /// the config, the config itself included.
 ///

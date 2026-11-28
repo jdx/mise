@@ -75,6 +75,18 @@ mise trust idiomatic/.dummy-version
 assert_contains "mise untrust idiomatic 2>&1" "untrusted ~/workdir/idiomatic/.dummy-version"
 mise trust idiomatic/mise.toml
 assert_fail_contains "mise -C idiomatic current dummy 2>&1" ".dummy-version are not trusted"
+
+# A directory whose only config is an idiomatic version file acts on that file alone, not on a
+# mise.toml it does not have.
+mkdir idonly
+echo "1.0.0" >idonly/.dummy-version
+mise trust idonly/.dummy-version
+assert "mise -C idonly current dummy" "1.0.0"
+assert "mise trust --ignore idonly 2>&1" "mise ignored ~/workdir/idonly/.dummy-version"
+assert_not_contains "mise -C idonly current dummy 2>&1" "1.0.0"
+mise trust idonly/.dummy-version
+assert "mise untrust idonly 2>&1" "mise untrusted ~/workdir/idonly/.dummy-version"
+assert_fail_contains "mise -C idonly current dummy 2>&1" ".dummy-version are not trusted"
 unset MISE_IDIOMATIC_VERSION_FILE_ENABLE_TOOLS
 
 # A config reached through a link stays out of the sweep: its record is the target's, which
@@ -94,14 +106,55 @@ assert_contains "mise untrust onlylink 2>&1" "No trusted config files found"
 assert_contains "mise trust --ignore onlylink 2>&1" "has no config of its own to ignore"
 assert_contains "mise -C other env" "OTHER=other"
 
-# A project's link to global config stands only for itself, and the home directory's configs
-# keep their trust.
+# A trusted config replaced by a link since loses its own record, and the link's target keeps
+# its trust.
+mkdir swapped
+printf '[env]\nTOP = "top"\n' >swapped/mise.toml
+printf '[env]\nSTAGED = "staged"\n' >swapped/mise.staging.toml
+mise trust swapped/mise.toml
+MISE_ENV=staging mise trust swapped/mise.staging.toml
+rm swapped/mise.staging.toml
+ln -s ../other/mise.toml swapped/mise.staging.toml
+assert_contains "mise untrust swapped 2>&1" "untrusted ~/workdir/swapped/mise.staging.toml"
+assert_contains "mise -C other env" "OTHER=other"
+rm swapped/mise.staging.toml
+printf '[env]\nSTAGED = "staged"\n' >swapped/mise.staging.toml
+mise trust swapped/mise.toml
+assert_fail_contains "MISE_ENV=staging mise -C swapped env 2>&1" "not trusted"
+
+# A project's link to global config is left out, and the sweep stays in the project that holds
+# it: the home directory's configs keep their trust.
 printf '[env]\nGLOBAL = "global"\n' >"$MISE_CONFIG_DIR/config.toml"
 mkdir globallink
 ln -s "$MISE_CONFIG_DIR/config.toml" globallink/mise.toml
-assert_contains "mise untrust globallink 2>&1" "untrusted"
+assert_contains "mise untrust globallink 2>&1" "No trusted config files found"
+assert_contains "mise trust --ignore globallink 2>&1" "has no config of its own to ignore"
 printf '[env]\nHOME_VAR = "home"\n' >"$HOME/mise.toml"
 mise trust "$HOME/mise.toml"
 assert_contains "mise -C ~ env" "HOME_VAR=home"
 assert_not_contains "mise untrust globallink 2>&1" "~/mise.toml"
+assert_contains "mise -C ~ env" "HOME_VAR=home"
+
+# With the link picked for the directory (a local config comes last), the project's own configs
+# are still found, as they are with no path.
+mkdir -p globalsib/.config/mise
+printf '[env]\nTOP = "top"\n' >globalsib/mise.toml
+printf '[env]\nNESTED = "nested"\n' >globalsib/.config/mise/config.toml
+ln -s "$MISE_CONFIG_DIR/config.toml" globalsib/mise.local.toml
+trust_globalsib() {
+  mise trust globalsib/mise.toml
+  mise trust globalsib/.config/mise/config.toml
+  assert_contains "mise -C globalsib env" "NESTED=nested"
+}
+trust_globalsib
+assert_contains "mise untrust globalsib 2>&1" "untrusted ~/workdir/globalsib/.config/mise/config.toml"
+assert_fail_contains "mise -C globalsib env 2>&1" "not trusted"
+mise trust globalsib/mise.toml
+assert_fail_contains "mise -C globalsib env 2>&1" "not trusted"
+trust_globalsib
+assert_contains "cd globalsib && mise untrust 2>&1" "untrusted ~/workdir/globalsib/.config/mise/config.toml"
+trust_globalsib
+assert_contains "mise trust --ignore globalsib 2>&1" "ignored ~/workdir/globalsib/mise.toml"
+assert_not_contains "mise -C globalsib env 2>&1" "=top"
+assert_not_contains "mise -C globalsib env 2>&1" "=nested"
 assert_contains "mise -C ~ env" "HOME_VAR=home"
