@@ -2331,6 +2331,18 @@ impl Lock {
     fn prune_stale_versions(&self, lockfile: &mut Lockfile, tools: &[LockTool]) -> Result<()> {
         let current_versions = self.current_tool_versions(tools);
         for (short, versions) in &current_versions {
+            // Entries that pin a package to more than one repository are what refuses
+            // an install of a version they do not cover, so they stay until the user
+            // reconciles them.
+            if lockfile
+                .tools_for(short)
+                .is_some_and(|entries| lockfile::package_pins_disagree(entries))
+            {
+                warn!(
+                    "keeping the old {short} entries in mise.lock: they pin it to more than one repository"
+                );
+                continue;
+            }
             lockfile.retain_tool_versions(short, versions);
         }
         if self.is_unfiltered_lock_run() {

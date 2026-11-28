@@ -7753,6 +7753,22 @@ pub(crate) fn pinned_package_provenance(
     }
 }
 
+/// Whether `entries` pin one backend's package to more than one repository, which
+/// leaves a version they do not cover no repository to verify against.
+pub fn package_pins_disagree(entries: &[LockfileTool]) -> bool {
+    entries
+        .iter()
+        .filter_map(|tool| {
+            Some((
+                tool.backend.as_deref(),
+                &tool.provenance.as_ref()?.repository,
+            ))
+        })
+        .into_group_map()
+        .values()
+        .any(|repositories| repositories.iter().unique().count() > 1)
+}
+
 pub(crate) fn get_locked_backend_for_version(
     config: &Config,
     short: &str,

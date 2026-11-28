@@ -2591,6 +2591,27 @@ fn merge_keeps_a_provenance_pin_when_the_version_changes() {
     );
 }
 
+#[test]
+fn package_pins_disagree_only_across_repositories_of_one_backend() {
+    let pinned = |version: &str, backend: &str, repository: &str| {
+        let mut tool = basic_tool(version, backend);
+        tool.provenance = Some(PackageProvenance {
+            repository: repository.to_string(),
+        });
+        tool
+    };
+    let agree = vec![
+        pinned("1.0.0", "npm:x", "github.com/a/x"),
+        pinned("2.0.0", "npm:x", "github.com/a/x"),
+        basic_tool("0.9.0", "npm:x"),
+        pinned("1.0.0", "npm:@other/x", "github.com/b/x"),
+    ];
+    assert!(!package_pins_disagree(&agree));
+    let mut disagree = agree;
+    disagree.push(pinned("3.0.0", "npm:x", "github.com/evil/x"));
+    assert!(package_pins_disagree(&disagree));
+}
+
 /// `mise lock` in merge mode writes a bumped version with `set_platform_info`, then
 /// prunes the old one, so the new entry has to carry the package's pin itself.
 #[test]
