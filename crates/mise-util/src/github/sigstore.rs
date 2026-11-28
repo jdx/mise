@@ -770,10 +770,14 @@ enum KeptEvidence<'a> {
 /// An artifact's records, by policy.
 #[derive(Clone, Default, serde::Serialize, serde::Deserialize)]
 struct KeptRecords {
+    /// A random number the file is given when it is made, never 0. A file
+    /// that is removed, or cannot be read, starts its count again under
+    /// another one, so generations compare only within one `epoch`.
+    epoch: u64,
     /// The last generation given out: each change, made under the lock,
     /// takes the next one, so a record's generation says which changes it
     /// came after, whatever the clocks say. The file is kept when it holds
-    /// no records, so that the count never starts again.
+    /// no records, so that the count does not start again.
     generation: u64,
     by_policy: std::collections::BTreeMap<String, KeptRecord>,
 }
@@ -820,10 +824,11 @@ struct KeptRejection {
     /// Whether the policy names a predicate type, so that GitHub's "none"
     /// for it says nothing about attestations of other types.
     typed: bool,
-    /// The generation of the records when this was made.
-    seen: u64,
-    /// The generation of the last change this made, or 0.
-    written: std::sync::atomic::AtomicU64,
+    /// The epoch and generation of the records when this was made: `(0, 0)`
+    /// when there were none.
+    seen: (u64, u64),
+    /// The epoch and generation of the last change this made.
+    written: std::sync::Mutex<Option<(u64, u64)>>,
 }
 
 impl KeptRejection {
@@ -844,7 +849,7 @@ impl KeptRejection {
                 predicate_type,
             ))),
             typed: predicate_type.is_some(),
-            seen: 0,
+            seen: (0, 0),
             written: Default::default(),
         })
     }
@@ -857,21 +862,29 @@ impl KeptRejection {
             key: Self::artifact_key(full, digest),
             policy: None,
             typed: false,
-            seen: 0,
+            seen: (0, 0),
             written: Default::default(),
         })
     }
 
     fn seeing(mut self) -> Self {
-        self.seen = self.records().generation;
+        let records = self.records();
+        self.seen = (records.epoch, records.generation);
         self
     }
 
-    /// Whether the record at `generation` was there when this was made, or
-    /// this wrote it.
-    fn covers(&self, generation: u64) -> bool {
-        generation <= self.seen
-            || generation == self.written.load(std::sync::atomic::Ordering::Relaxed)
+    /// The last generation of the records in `epoch` that were there when
+    /// this was made: 0 if the file has been made again since.
+    fn seen_in(&self, epoch: u64) -> u64 {
+        let (seen_epoch, generation) = self.seen;
+        if seen_epoch == epoch { generation } else { 0 }
+    }
+
+    /// Whether the record at `generation` of the records in `epoch` was
+    /// there when this was made, or this wrote it.
+    fn covers(&self, epoch: u64, generation: u64) -> bool {
+        generation <= self.seen_in(epoch)
+            || *self.written.lock().unwrap() == Some((epoch, generation))
     }
 
     fn artifact_key(full: &str, digest: &str) -> String {
@@ -960,6 +973,12 @@ impl KeptRejection {
             }
         };
         let mut records = self.records();
+        if records.epoch == 0 {
+            records = KeptRecords {
+                epoch: rand::random::<u64>().max(1),
+                ..KeptRecords::default()
+            };
+        }
         records.generation += 1;
         let generation = records.generation;
         change(&mut records, generation);
@@ -970,8 +989,7 @@ impl KeptRejection {
             );
             return false;
         }
-        self.written
-            .store(generation, std::sync::atomic::Ordering::Relaxed);
+        *self.written.lock().unwrap() = Some((records.epoch, generation));
         true
     }
 
@@ -1001,7 +1019,7 @@ impl KeptRejection {
                     records
                         .by_policy
                         .get(policy)
-                        .is_some_and(|record| self.covers(record.generation))
+                        .is_some_and(|record| self.covers(records.epoch, record.generation))
                 };
                 if seen(&self.records()) {
                     self.update(|records, _| {
@@ -1023,10 +1041,10 @@ impl KeptRejection {
     /// is asked.
     fn settle(&self, result: &AttestationResult<bool>) {
         match result {
-            Ok(_) => self.settle_policy(|_| KeptAnswer::Present),
+            Ok(_) => self.settle_policy(|_, _| KeptAnswer::Present),
             Err(AttestationError::NoAttestations) if self.typed => {
-                self.settle_policy(|previous| KeptAnswer::Absent {
-                    cutoff: self.seen,
+                self.settle_policy(|previous, cutoff| KeptAnswer::Absent {
+                    cutoff,
                     rejected: previous.and_then(|previous| match &previous.answer {
                         KeptAnswer::Rejected(rejection) => {
                             Some((rejection.clone(), previous.generation))
@@ -1042,15 +1060,17 @@ impl KeptRejection {
     }
 
     /// Replace this policy's record with GitHub's answer, made from the
-    /// record it replaces, unless that record came after GitHub was asked.
-    fn settle_policy(&self, answer: impl FnOnce(Option<&KeptRecord>) -> KeptAnswer) {
+    /// record it replaces and the last generation there before GitHub was
+    /// asked, unless that record came after GitHub was asked.
+    fn settle_policy(&self, answer: impl FnOnce(Option<&KeptRecord>, u64) -> KeptAnswer) {
         let Some(policy) = &self.policy else {
             return;
         };
         self.update(|records, generation| {
+            let epoch = records.epoch;
             let previous = records.by_policy.get(policy);
-            if previous.is_none_or(|previous| self.covers(previous.generation)) {
-                let answer = answer(previous);
+            if previous.is_none_or(|previous| self.covers(epoch, previous.generation)) {
+                let answer = answer(previous, self.seen_in(epoch));
                 records
                     .by_policy
                     .insert(policy.clone(), KeptRecord { answer, generation });
@@ -1062,27 +1082,27 @@ impl KeptRejection {
     /// artifact: every record, and every rejection a typed "none" kept, from
     /// before GitHub was asked is settled.
     fn settle_artifact(&self) {
-        let carried = |record: &KeptRecord| match &record.answer {
+        let carried = |epoch: u64, record: &KeptRecord| match &record.answer {
             KeptAnswer::Absent {
                 rejected: Some((_, generation)),
                 ..
-            } => self.covers(*generation),
+            } => self.covers(epoch, *generation),
             _ => false,
         };
-        let any_seen = self
-            .records()
-            .by_policy
-            .values()
-            .any(|record| self.covers(record.generation) || carried(record));
+        let records = self.records();
+        let any_seen = records.by_policy.values().any(|record| {
+            self.covers(records.epoch, record.generation) || carried(records.epoch, record)
+        });
         if !any_seen {
             return;
         }
         self.update(|records, _| {
+            let epoch = records.epoch;
             records
                 .by_policy
-                .retain(|_, record| !self.covers(record.generation));
+                .retain(|_, record| !self.covers(epoch, record.generation));
             for record in records.by_policy.values_mut() {
-                if carried(record)
+                if carried(epoch, record)
                     && let KeptAnswer::Absent { rejected, .. } = &mut record.answer
                 {
                     *rejected = None;
@@ -3285,6 +3305,27 @@ mod tests {
         untyped().settle(&Err(AttestationError::NoAttestations));
         assert!(untyped().load().is_none());
         assert!(typed().load().is_none());
+
+        // a records file made again while GitHub answers counts from 1
+        // again, under another epoch
+        assert!(untyped().keep(&rejection()));
+        let asking = untyped();
+        let asking_typed = typed();
+        let probing = KeptRejection::for_probe(full, &format!("sha256:{digest}"));
+        untyped().cache().clear().unwrap();
+        assert!(untyped().keep(&rejection()));
+        assert!(typed().keep(&rejection()));
+        asking.settle(&Err(AttestationError::NoAttestations));
+        probing.settle_artifact();
+        asking_typed.settle(&Ok(true));
+        asking_typed.settle(&Err(AttestationError::NoAttestations));
+        for kept in [untyped(), typed()] {
+            assert!(
+                kept.load()
+                    .is_some_and(|err| err.to_string().contains("evil/tool")),
+                "a rejection written to a records file made again was settled"
+            );
+        }
     }
 
     /// GitHub finding none of a predicate type settles its policy only
