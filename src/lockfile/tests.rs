@@ -6288,6 +6288,41 @@ fn restore_missing_versions_brings_back_a_variant_with_other_options() {
 }
 
 #[test]
+fn restore_missing_versions_keeps_the_requests_this_run_did_not_bind() {
+    // A visible request `1` and a skipped task's request `1.0.0` both locked 1.0.0. Generation
+    // rebuilt 1.0.0 for `1` alone; `1.0.0` must stay bound to it, or a later locked run of the
+    // skipped task finds no entry for its request.
+    let mut shared = basic_tool("1.0.0", "aqua:widget");
+    shared.specifiers = BTreeSet::from(["1".to_string(), "1.0.0".to_string()]);
+    let mut previous = Lockfile::default();
+    previous
+        .tools
+        .insert("widget".to_string(), vec![shared.clone()]);
+
+    let mut rebuilt = basic_tool("1.0.0", "aqua:widget");
+    rebuilt.specifiers = BTreeSet::from(["1".to_string()]);
+    let mut current = Lockfile::default();
+    current.tools.insert("widget".to_string(), vec![rebuilt]);
+    current.restore_missing_versions(&previous, "widget");
+    let entries = &current.tools["widget"];
+    assert_eq!(entries.len(), 1, "{entries:?}");
+    assert_eq!(entries[0].specifiers, shared.specifiers);
+
+    // When this run moved `1` to 1.1.0, the restored 1.0.0 keeps only the request it did not
+    // bind, so `1` is not bound to two versions.
+    let mut moved = basic_tool("1.1.0", "aqua:widget");
+    moved.specifiers = BTreeSet::from(["1".to_string()]);
+    let mut current = Lockfile::default();
+    current.tools.insert("widget".to_string(), vec![moved]);
+    current.restore_missing_versions(&previous, "widget");
+    current.restore_missing_versions(&previous, "widget");
+    let entries = &current.tools["widget"];
+    assert_eq!(entries.len(), 2, "{entries:?}");
+    let restored = entries.iter().find(|e| e.version == "1.0.0").unwrap();
+    assert_eq!(restored.specifiers, BTreeSet::from(["1.0.0".to_string()]));
+}
+
+#[test]
 fn restore_missing_versions_brings_back_conda_package_records() {
     let path = std::env::temp_dir().join("test_restore_conda_records.lock");
     std::fs::write(

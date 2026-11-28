@@ -7597,12 +7597,25 @@ pub fn is_task_path_excluded(path: &Path, excludes: &[PathBuf]) -> bool {
 const TASK_DIR_ENTRY_LIMIT: usize = 100_000;
 
 fn collect_task_files(root: &Path, excludes: &[PathBuf]) -> Result<Vec<PathBuf>> {
-    collect_task_files_with_limit(root, excludes, TASK_DIR_ENTRY_LIMIT)
+    collect_task_files_within(root, excludes, None)
+}
+
+/// [`collect_task_files`] that does not follow a link below `root` to a directory outside
+/// `bounds` (see [`safe_mode_task_include_bounds`]): safe mode would skip every file in it, and
+/// walking it first can take long or fail on a folder that is not the project's. The caller
+/// checks `root` itself.
+fn collect_task_files_within(
+    root: &Path,
+    excludes: &[PathBuf],
+    bounds: Option<&[PathBuf]>,
+) -> Result<Vec<PathBuf>> {
+    collect_task_files_with_limit(root, excludes, bounds, TASK_DIR_ENTRY_LIMIT)
 }
 
 fn collect_task_files_with_limit(
     root: &Path,
     excludes: &[PathBuf],
+    bounds: Option<&[PathBuf]>,
     limit: usize,
 ) -> Result<Vec<PathBuf>> {
     let walk = WalkDir::new(root)
@@ -7614,7 +7627,12 @@ fn collect_task_files_with_limit(
                 || (!entry.file_name().to_string_lossy().starts_with('.')
                     && !excludes
                         .iter()
-                        .any(|exclude| file::path_starts_with_resolved(entry.path(), exclude)))
+                        .any(|exclude| file::path_starts_with_resolved(entry.path(), exclude))
+                    // Only a link leaves the directory it is in: below a directory that stays
+                    // inside the bounds, anything else does too.
+                    && !(entry.path_is_symlink()
+                        && entry.file_type().is_dir()
+                        && skip_task_file_outside(entry.path(), bounds)))
         });
     let mut files = vec![];
     for (visited, entry) in walk.enumerate() {
@@ -7687,7 +7705,7 @@ async fn load_tasks_includes(
             .chain(excludes)
             .cloned()
             .collect::<Vec<_>>();
-        let all_files = collect_task_files(root, &all_excludes)?;
+        let all_files = collect_task_files_within(root, &all_excludes, bounds)?;
         let is_toml = |p: &Path| p.extension().map(|e| e == "toml").unwrap_or(false);
         let (toml_files, exec_files): (Vec<_>, Vec<_>) = all_files
             .into_iter()
@@ -7962,8 +7980,8 @@ fn note_remote_include_skipped(include: &str, bounds: Option<&[PathBuf]>) {
 
 /// The directories that, in safe mode, the task files reached through the task includes
 /// of the project config at `dir` must resolve inside: `dir`, the checkout holding it,
-/// and the monorepo it belongs to among `config_files`. A checkout that is the home
-/// directory or one above it does not count, since that holds the user's own files.
+/// and the monorepo it belongs to among `config_files`. A checkout or monorepo that is the
+/// home directory or one above it does not count, since that holds the user's own files.
 /// `None` means there is no limit: outside safe mode, or for global config (`is_global`).
 fn safe_mode_task_include_bounds(
     dir: &Path,
@@ -7976,17 +7994,24 @@ fn safe_mode_task_include_bounds(
     let dir = file::desymlink_path(dir);
     let mut bounds = vec![dir.clone()];
     if let Some(checkout) = dir.ancestors().find(|d| d.join(".git").exists())
-        && !file::desymlink_path(&dirs::HOME).starts_with(checkout)
+        && holds_only_project_files(checkout)
     {
         bounds.push(checkout.to_path_buf());
     }
     if let Some(root) = find_monorepo_root(config_files) {
         let root = file::desymlink_path(&root);
-        if dir.starts_with(&root) {
+        if dir.starts_with(&root) && holds_only_project_files(&root) {
             bounds.push(root);
         }
     }
     Some(bounds)
+}
+
+/// Whether `root`, the checkout or monorepo holding a project, can bound its task includes in
+/// safe mode (see [`safe_mode_task_include_bounds`]): not the home directory or one above it,
+/// which holds the user's own files. `root` is resolved, so `HOME` is compared resolved too.
+fn holds_only_project_files(root: &Path) -> bool {
+    !file::desymlink_path(&dirs::HOME).starts_with(root)
 }
 
 /// Whether safe mode keeps `path`, a task include or a file found below one, from being
@@ -8009,14 +8034,19 @@ fn skip_task_file_outside(path: &Path, bounds: Option<&[PathBuf]>) -> bool {
     if bounds.iter().any(|bound| resolved.starts_with(bound)) {
         return false;
     }
+    let what = if path.is_dir() {
+        "task directory"
+    } else {
+        "task file"
+    };
     record_safe_mode_skip(|| {
         format!(
-            "the task file {}, which resolves outside its project",
+            "the {what} {}, which resolves outside its project",
             display_path(path)
         )
     });
     warn_once!(
-        "ignoring task file {}: it resolves outside the project and safe mode (MISE_SAFE=1) is on; move it into the project to use it in safe mode",
+        "ignoring {what} {}: it resolves outside the project and safe mode (MISE_SAFE=1) is on; move it into the project to use it in safe mode",
         display_path(path)
     );
     true
@@ -9703,11 +9733,12 @@ fn included_task_definitions(
         for include in includes {
             if !walked.insert((include.clone(), excludes.clone()))
                 || is_task_path_excluded(&include, &excludes)
+                || skip_task_file_outside(&include, bounds.as_deref())
             {
                 continue;
             }
             let files = if include.is_dir() {
-                match collect_task_files(&include, &all_excludes) {
+                match collect_task_files_within(&include, &all_excludes, bounds.as_deref()) {
                     Ok(files) => files
                         .into_iter()
                         .filter(|p| match is_toml(p) {
