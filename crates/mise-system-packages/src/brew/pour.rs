@@ -666,7 +666,10 @@ fn lands_in(resolved: Option<&Path>, roots: &[PathBuf]) -> bool {
 /// is installed later resolves to where it will be. None for a symlink loop,
 /// and None for a `..` after a missing component: where that lands depends on
 /// what is created there later (a directory or a link elsewhere), so no answer
-/// given now holds once the prefix changes.
+/// given now holds once the prefix changes. None as well for a path that goes
+/// on (with a name or a `..`) past an existing file or other non-directory:
+/// the kernel refuses that path, so it leads nowhere, while dropping the file
+/// at a `..` would give a place the path never reaches.
 pub(super) fn resolve_symlinks(path: &Path, keg: Option<(&Path, &Path)>) -> Option<PathBuf> {
     use std::path::Component;
     const MAX_LINK_HOPS: usize = 40;
@@ -679,8 +682,14 @@ pub(super) fn resolve_symlinks(path: &Path, keg: Option<(&Path, &Path)>) -> Opti
     let mut resolved = PathBuf::from("/");
     let mut hops = 0;
     let mut missing = false;
+    // the last component read exists and is not a directory (or a link)
+    let mut not_dir = false;
     while let Some(part) = todo.pop() {
-        match part.components().next() {
+        let next = part.components().next();
+        if not_dir && !matches!(next, Some(Component::CurDir) | None) {
+            return None;
+        }
+        match next {
             Some(Component::RootDir | Component::Prefix(_)) => {
                 resolved = PathBuf::from("/");
                 missing = false;
@@ -708,8 +717,11 @@ pub(super) fn resolve_symlinks(path: &Path, keg: Option<(&Path, &Path)>) -> Opti
                     }
                     resolved.pop();
                     todo.extend(pending(&target));
-                } else if on_disk.symlink_metadata().is_err() {
-                    missing = true;
+                } else {
+                    match on_disk.symlink_metadata() {
+                        Ok(meta) => not_dir = !meta.is_dir(),
+                        Err(_) => missing = true,
+                    }
                 }
             }
             Some(Component::CurDir) | None => {}

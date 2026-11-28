@@ -49,7 +49,10 @@ As root, mise refuses to install into or change a prefix when the prefix, a
 directory above it, or one of its standard directories belongs to another user,
 since that user could redirect root's writes. A standard directory that is a
 symlink, such as a Cellar on another disk, is checked along with the directories
-it leads to. The one exception is the user who ran `sudo mise`. For the same
+it leads to. The one exception is the user who ran `sudo mise`. Run as your own
+user, mise makes the same checks before it uses sudo to create the prefix or
+change its owner, trusting you instead of the `sudo mise` user, so it refuses a
+setup that would fail before it creates anything. For the same
 reason, mise refuses a prefix when any of those directories is writable by every
 user (`chmod o+w`) and has no sticky bit. The sticky bit is set on `/tmp`, for
 example, and with it only an entry's owner can rename or remove that entry.
@@ -57,7 +60,9 @@ It does not protect a name that does not exist yet, such as a prefix of
 `/tmp/brew` that mise is about to create: another user could create it first
 as a symlink. So once mise has created the missing prefix and standard
 directories, and before it changes their owner or writes a file, it checks them
-again and refuses a link or directory that appeared in the meantime.
+again and refuses a link or directory that appeared in the meantime. If that
+second check refuses after sudo created directories, the error lists the paths
+that did not exist before, so you can check them and remove them.
 Directories that their group can write to are allowed, because Homebrew's usual
 layout gives an admin group write access. mise trusts the members of that group
 as much as the owner. This check reads only the owner and the mode bits:

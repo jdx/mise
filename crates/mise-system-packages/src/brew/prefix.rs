@@ -211,9 +211,9 @@ fn refuse_redirectable(prefix: &Path, dirs: &[PathBuf], trusted_uid: Option<u32>
             .flatten()
             .map_or_else(|| format!("uid {uid}"), |u| u.name);
         bail!(
-            "{} is owned by {owner}, so mise will not install into or change the Homebrew \
-             prefix {} as root: {owner} could redirect root's writes. Run mise as {owner}, \
-             or make root own {}",
+            "{} is owned by {owner}, so mise will not use root (as root or through sudo) to \
+             install into or change the Homebrew prefix {}: {owner} could redirect root's \
+             writes. Run mise as {owner}, or make root own {}",
             path.display(),
             prefix.display(),
             path.display(),
@@ -222,9 +222,9 @@ fn refuse_redirectable(prefix: &Path, dirs: &[PathBuf], trusted_uid: Option<u32>
     if let Some((path, mode)) = world_writable_component(prefix, dirs) {
         bail!(
             "{} is writable by every user (mode {:04o}) and has no sticky bit, so mise will not \
-             install into or change the Homebrew prefix {} as root: any user could rename what \
-             is in it and redirect root's writes. Remove write access for others (`chmod o-w \
-             {}`) or set the sticky bit",
+             use root (as root or through sudo) to install into or change the Homebrew prefix \
+             {}: any user could rename what is in it and redirect root's writes. Remove write \
+             access for others (`chmod o-w {}`) or set the sticky bit",
             path.display(),
             mode & 0o7777,
             prefix.display(),
@@ -393,6 +393,22 @@ fn bootstrap_dirs(prefix: &Path) -> Vec<PathBuf> {
     dirs
 }
 
+/// Each of `paths` and the directories above it that do not exist, which is
+/// what `mkdir -p` on them would create, parents first.
+fn missing_paths<'a>(paths: impl IntoIterator<Item = &'a PathBuf>) -> Vec<PathBuf> {
+    let mut missing = std::collections::BTreeSet::new();
+    for path in paths {
+        let path = std::path::absolute(path).unwrap_or_else(|_| path.clone());
+        for ancestor in path.ancestors() {
+            if ancestor.symlink_metadata().is_ok() {
+                break;
+            }
+            missing.insert(ancestor.to_path_buf());
+        }
+    }
+    missing.into_iter().collect()
+}
+
 pub(super) fn bootstrap(dry_run: bool) -> Result<()> {
     let prefix = prefix();
     refuse_foreign_as_root()?;
@@ -429,6 +445,17 @@ pub(super) fn bootstrap(dry_run: bool) -> Result<()> {
         return refuse_foreign_as_root();
     }
     if needs_create || needs_chown {
+        // root is about to `mkdir -p` and `chown -R` here. For a non-root user
+        // `refuse_foreign_as_root` checked nothing, so the chain is checked
+        // now, before root creates anything: a refusal after the mkdir would
+        // leave root-owned directories that every later run refuses again
+        let euid = nix::unistd::geteuid();
+        let trusted = if euid.is_root() {
+            sudo_invoking_uid()
+        } else {
+            Some(euid.as_raw())
+        };
+        refuse_redirectable(&prefix, &dirs, trusted)?;
         let Some(user) = prefix_owner() else {
             // never chown to a guessed owner — that can lock the user out
             bail!(
@@ -453,18 +480,24 @@ pub(super) fn bootstrap(dry_run: bool) -> Result<()> {
             return Ok(());
         }
         info!("creating {} (requires sudo once)", prefix.display());
+        let to_create = missing_paths(std::iter::once(&prefix).chain(&dirs));
         sudo::run("mkdir", &mkdir_args, &[])?;
         // root has just run `mkdir -p` on paths that did not all exist, and
         // is about to `chown -R` the prefix: a link created meanwhile in
         // place of a missing one would send both elsewhere, so the chain is
-        // checked for that before the chown, whether or not mise is root
-        let euid = nix::unistd::geteuid();
-        let trusted = if euid.is_root() {
-            sudo_invoking_uid()
-        } else {
-            Some(euid.as_raw())
-        };
-        refuse_redirectable(&prefix, &dirs, trusted)?;
+        // checked again before the chown
+        if let Err(err) = refuse_redirectable(&prefix, &dirs, trusted) {
+            if to_create.is_empty() {
+                return Err(err);
+            }
+            let list: Vec<String> = to_create.iter().map(|p| p.display().to_string()).collect();
+            bail!(
+                "{err}\nThis was found after `sudo mkdir -p` ran, and mise did not change the \
+                 owner of what it created. These paths did not exist before it ran; check \
+                 them and remove what is left as root before trying again: {}",
+                list.join(", ")
+            );
+        }
         sudo::run("chown", &chown_args, &[])?;
         if !writable(&prefix) {
             bail!("{} is still not writable after bootstrap", prefix.display());
@@ -687,6 +720,43 @@ mod tests {
             err.to_string()
                 .contains(&format!("{} is writable by every user", planted.display())),
             "{err}"
+        );
+    }
+
+    /// a non-root user's setup through sudo is checked before `sudo mkdir -p`
+    /// with that user trusted, so a prefix to be created where others could
+    /// redirect it is refused while nothing exists yet; `missing_paths` lists
+    /// what the mkdir would have created, for the message after a late refusal
+    #[test]
+    fn a_doomed_sudo_setup_is_refused_before_anything_is_created() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path().canonicalize().unwrap();
+        let open = base.join("open");
+        std::fs::create_dir(&open).unwrap();
+        std::fs::set_permissions(&open, std::fs::Permissions::from_mode(0o777)).unwrap();
+        let prefix = open.join("brew");
+        let dirs = vec![prefix.join("Cellar"), prefix.join("Homebrew/Library")];
+        let me = Some(nix::unistd::geteuid().as_raw());
+        let err = refuse_redirectable(&prefix, &dirs, me).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("is writable by every user"), "{msg}");
+        assert!(msg.contains("as root or through sudo"), "{msg}");
+        assert!(!prefix.exists());
+
+        assert_eq!(
+            missing_paths(std::iter::once(&prefix).chain(&dirs)),
+            vec![
+                prefix.clone(),
+                prefix.join("Cellar"),
+                prefix.join("Homebrew"),
+                prefix.join("Homebrew/Library"),
+            ]
+        );
+        std::fs::create_dir_all(prefix.join("Cellar")).unwrap();
+        assert_eq!(
+            missing_paths(std::iter::once(&prefix).chain(&dirs)),
+            vec![prefix.join("Homebrew"), prefix.join("Homebrew/Library")]
         );
     }
 
