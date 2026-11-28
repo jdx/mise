@@ -37,6 +37,22 @@ mise install
 assert_contains "cat '$install_dir/.mise-node.json'" '"request": "20.12.2"'
 assert_contains "cat '$install_dir/node_modules/.bin/cowsay'" "$MISE_DATA_DIR/installs/node/20.12.2/bin/node"
 
+# A version that `prune.exclude` keeps still runs on the Node it is bound to,
+# even after no tracked config needs that Node.
+mkdir old
+cat >old/mise.toml <<'EOF2'
+[tools]
+"npm:cowsay" = { version = "1.5.0", node = "20.11.1" }
+EOF2
+mise -C old install
+rm -rf old
+MISE_PRUNE_EXCLUDE=npm:cowsay mise prune --yes
+assert_succeed "test -d '$MISE_DATA_DIR/installs/npm-cowsay/1.5.0'"
+assert_succeed "test -x '$node_dir/bin/node'"
+mise prune --yes
+assert_fail "test -d '$MISE_DATA_DIR/installs/npm-cowsay/1.5.0'"
+assert_fail "test -d '$node_dir'"
+
 # A prefix request binds the installation it resolved to, not the `node/20`
 # link that moves when a newer 20.x installs.
 cat >mise.toml <<'EOF2'

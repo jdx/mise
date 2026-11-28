@@ -1443,7 +1443,14 @@ pub async fn prunable_tools_with_sources(
                 .into_iter()
                 .map(move |tv| ((key.clone(), tv.install_path()), (p.clone(), tv)))
         })
-        .collect::<BTreeMap<((String, String), PathBuf), (Arc<dyn Backend>, ToolVersion)>>();
+        .collect::<PruneCandidates>();
+
+    // Every installation, before any is spared, so the ones that end up kept for
+    // any reason can keep the Node they are bound to (see `keep_nodes_of_kept`).
+    let installed = to_delete
+        .values()
+        .map(|(_, tv)| tv.clone())
+        .collect::<Vec<_>>();
 
     if !tools.is_empty() {
         to_delete.retain(|_, (_, tv)| tools.contains(&tv.ba()));
@@ -1520,11 +1527,48 @@ pub async fn prunable_tools_with_sources(
         !kept
     });
 
+    keep_nodes_of_kept(&installed, &mut to_delete, &mut needed)?;
+
     Ok(PrunableTools {
         to_delete: to_delete.into_values().collect(),
         needed,
         running,
     })
+}
+
+/// Installations prune may remove, keyed by their retention key and install path.
+type PruneCandidates = BTreeMap<((String, String), PathBuf), (Arc<dyn Backend>, ToolVersion)>;
+
+/// An `npm:` installation that prune keeps for any reason — a tracked config, a
+/// stub, `prune.exclude`, a tool not named on the command line, a running process
+/// — still runs on the Node its launchers name, so that Node is kept too. Runs
+/// last because only then is it known which installations stay.
+fn keep_nodes_of_kept(
+    installed: &[ToolVersion],
+    to_delete: &mut PruneCandidates,
+    needed: &mut NeededVersions,
+) -> Result<()> {
+    let deleting = to_delete
+        .keys()
+        .map(|(_, path)| path.clone())
+        .collect::<HashSet<_>>();
+    let mut kept_nodes = NeededVersions::new();
+    for tv in installed {
+        let path = tv.install_path();
+        if !deleting.contains(&path) {
+            keep_bound_node(tv, &path, &mut kept_nodes)?;
+        }
+    }
+    if kept_nodes.is_empty() {
+        return Ok(());
+    }
+    to_delete.retain(|(key, _), (_, tv)| {
+        !kept_nodes.contains_key(key) && !kept_nodes.contains_key(&needed_key(tv))
+    });
+    for (key, sources) in kept_nodes {
+        needed.entry(key).or_default().extend(sources);
+    }
+    Ok(())
 }
 
 async fn is_version_satisfied(
