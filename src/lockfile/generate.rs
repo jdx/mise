@@ -1297,7 +1297,14 @@ async fn check_replaced_weak_pins(
         };
         let mut expected = vec![(pin.as_str(), LOCKED_CHECKSUM)];
         expected.extend(artifact.checksum.as_deref().map(|c| (c, RELEASE_CHECKSUM)));
-        artifact_checksum(tr, &artifact.url, artifact.url_api.as_deref(), None, &expected).await?;
+        artifact_checksum(
+            tr,
+            &artifact.url,
+            artifact.url_api.as_deref(),
+            None,
+            &expected,
+        )
+        .await?;
     }
     Ok(())
 }
@@ -1795,7 +1802,9 @@ mod tests {
         info.checksum_source = Some(crate::lockfile::ChecksumSource::VersionsHost);
         info.additional_artifacts[0].checksum_source =
             Some(crate::lockfile::ChecksumSource::VersionsHost);
-        complete_artifact_checksums(&tv.request, &mut info).await.unwrap();
+        complete_artifact_checksums(&tv.request, &mut info)
+            .await
+            .unwrap();
         assert_eq!(info.checksum.as_deref(), Some(sha256.as_str()));
         assert_eq!(
             info.additional_artifacts[0].checksum.as_deref(),
@@ -1808,7 +1817,9 @@ mod tests {
 
         // The md5 the release lists still has to match.
         let mut info = with_checksum("md5:00000000000000000000000000000000");
-        let err = complete_artifact_checksums(&tv.request, &mut info).await.unwrap_err();
+        let err = complete_artifact_checksums(&tv.request, &mut info)
+            .await
+            .unwrap_err();
         assert!(
             format!("{err:#}").contains("does not match the checksum its release lists"),
             "{err:#}"
@@ -1820,7 +1831,9 @@ mod tests {
             crate::hash::file_hash_blake3(&artifact, None).unwrap()
         );
         let mut info = with_checksum(&blake3);
-        complete_artifact_checksums(&tv.request, &mut info).await.unwrap();
+        complete_artifact_checksums(&tv.request, &mut info)
+            .await
+            .unwrap();
         assert_eq!(info.checksum.as_deref(), Some(blake3.as_str()));
     }
 
@@ -1849,7 +1862,9 @@ mod tests {
 
         // The bytes the URL serves are the ones mise.lock pinned.
         let old = entry(&url, "md5:8e5b948a454515dbabfc7eb718daa52f");
-        check_replaced_weak_pins(&tv.request, &old, &refreshed).await.unwrap();
+        check_replaced_weak_pins(&tv.request, &old, &refreshed)
+            .await
+            .unwrap();
 
         // Other bytes at the same URL stop the refresh, for the primary
         // artifact and for an additional one.
@@ -1863,7 +1878,11 @@ mod tests {
         );
         let mut old = entry(&url, &sha256);
         old.additional_artifacts[0].checksum = Some(other.into());
-        assert!(check_replaced_weak_pins(&tv.request, &old, &refreshed).await.is_err());
+        assert!(
+            check_replaced_weak_pins(&tv.request, &old, &refreshed)
+                .await
+                .is_err()
+        );
 
         // A pin for another URL, or a strong one, says nothing about these bytes.
         let elsewhere = entry("file:///nonexistent/other", other);
@@ -2601,8 +2620,8 @@ mod tests {
             Some(&headers),
             &[],
         )
-            .await
-            .unwrap();
+        .await
+        .unwrap();
         head.assert_async().await;
         browser.assert_async().await;
         assert!(checksum.starts_with("sha256:"));
@@ -2634,8 +2653,8 @@ mod tests {
             Some(&headers),
             &[],
         )
-            .await
-            .unwrap();
+        .await
+        .unwrap();
         head.assert_async().await;
         api.assert_async().await;
         assert!(checksum.starts_with("sha256:"));
