@@ -240,6 +240,11 @@ impl TaskFetcher {
                         t.name
                     ))?;
                 }
+                // Paranoid mode binds the trust of project config to its content, which
+                // covers a remote file only when the config pins it.
+                if !t.global {
+                    crate::config::ensure_remote_task_source_pinned(&source)?;
+                }
 
                 let original = t.clone();
                 let provider = task_file_providers

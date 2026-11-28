@@ -3910,6 +3910,15 @@ https://mise.jdx.dev/sandboxing.html#access-to-particular-hosts
 """#
         arg <HOST>
     }
+    flag --allow-connect-port help="Allow outbound TCP connections to PORT on any IP address (Linux 6.7 or later)" var=#true {
+        long_help #"""
+Allow outbound TCP connections to PORT on any IP address (Linux 6.7 or later)
+
+Blocks TCP connections to other ports and creation of other IP sockets.
+Repeat to allow multiple ports. Conflicts with --deny-net and --deny-all.
+"""#
+        arg <PORT>
+    }
     flag --allow-read help="Allow reads from PATH (implies --deny-read for everything else)" var=#true {
         arg <PATH>
     }
@@ -6139,7 +6148,9 @@ Combines with the other source flags. Alone, ignores committed changes. Needs th
         long_help #"""
 Run the tasks at another git revision, in a temporary worktree
 
-Checks REV out into a detached `git worktree` under mise's temporary directory, with its submodules, and runs the tasks there with that revision's own config and tasks. The worktree is removed afterwards, also when a task fails or is interrupted. Ignored files such as build caches are not there; use `--at-setup` to prepare them.
+Checks REV out into a detached `git worktree` under mise's state directory and runs the tasks there with that revision's own config and tasks. The worktree is removed afterwards, also when a task fails or is interrupted. Ignored files such as build caches are not there; use `--at-setup` to prepare them.
+
+REV's submodules are initialized only when the directory mise runs from, or one above it in the repository, is trusted in the main checkout, or a config REV has there is, such as a `conf.d` folder, since their URLs are REV's to choose. In paranoid mode they are not initialized, not even for config trusted by `trusted_config_paths`.
 
 The config at REV is trusted only if the repository's main checkout is; it is never trusted on its own, by a prompt, or by `--yes`.
 """#
@@ -7448,7 +7459,9 @@ Combines with the other source flags. Alone, ignores committed changes. Needs th
             long_help #"""
 Run the tasks at another git revision, in a temporary worktree
 
-Checks REV out into a detached `git worktree` under mise's temporary directory, with its submodules, and runs the tasks there with that revision's own config and tasks. The worktree is removed afterwards, also when a task fails or is interrupted. Ignored files such as build caches are not there; use `--at-setup` to prepare them.
+Checks REV out into a detached `git worktree` under mise's state directory and runs the tasks there with that revision's own config and tasks. The worktree is removed afterwards, also when a task fails or is interrupted. Ignored files such as build caches are not there; use `--at-setup` to prepare them.
+
+REV's submodules are initialized only when the directory mise runs from, or one above it in the repository, is trusted in the main checkout, or a config REV has there is, such as a `conf.d` folder, since their URLs are REV's to choose. In paranoid mode they are not initialized, not even for config trusted by `trusted_config_paths`.
 
 The config at REV is trusted only if the repository's main checkout is; it is never trusted on its own, by a prompt, or by `--yes`.
 """#

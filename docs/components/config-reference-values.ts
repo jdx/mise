@@ -94,6 +94,7 @@ export const values: Record<string, string> = {
   "tools.<npm:…>.pnpm_args": '"--ignore-scripts"',
   "tools.<npm:…>.bun_args": '"--ignore-scripts"',
   "tools.<npm:…>.npm_args": '"--ignore-scripts"',
+  "tools.<npm:…>.node": '"24"',
   "tools.<pypi:…>.with": '["requests", "rich"]',
   "tools.<pypi:…>.expose": '["flake8"]',
   "tools.<pypi:…>.dependency_prereleases": '"allow"',

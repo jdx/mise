@@ -87,18 +87,9 @@ fn env_reads_match(
     reads: &BTreeMap<String, Option<String>>,
     env: &indexmap::IndexMap<String, String>,
 ) -> bool {
-    reads.iter().all(|(key, seen)| {
-        let current = env.get(key).or_else(|| {
-            if cfg!(windows) {
-                env.iter()
-                    .find(|(k, _)| k.eq_ignore_ascii_case(key))
-                    .map(|(_, v)| v)
-            } else {
-                None
-            }
-        });
-        current.map(|value| hash_sha256_to_str(value)) == *seen
-    })
+    reads
+        .iter()
+        .all(|(key, seen)| get_env_var(env, key).map(|value| hash_sha256_to_str(value)) == *seen)
 }
 
 /// Whether `version` can name a plugin alias like `recommended`. Pinned
@@ -175,6 +166,30 @@ fn lua_sources_fingerprint(plugin_path: &Path) -> String {
     hash_to_str(&sources)
 }
 
+/// The value of `key` in `env`, matching the name case-insensitively on
+/// Windows, where environment names are.
+fn get_env_var<'a>(env: &'a indexmap::IndexMap<String, String>, key: &str) -> Option<&'a String> {
+    find_env_var(env, key, cfg!(windows))
+}
+
+/// [`get_env_var`], with the case rule given: the exact name first, then,
+/// when `ignore_case`, the first name that differs from it only in case.
+fn find_env_var<'a>(
+    env: &'a indexmap::IndexMap<String, String>,
+    key: &str,
+    ignore_case: bool,
+) -> Option<&'a String> {
+    env.get(key).or_else(|| {
+        ignore_case
+            .then(|| {
+                env.iter()
+                    .find(|(k, _)| k.eq_ignore_ascii_case(key))
+                    .map(|(_, v)| v)
+            })
+            .flatten()
+    })
+}
+
 fn remove_env_var(env: &mut indexmap::IndexMap<String, String>, key: &str) {
     #[cfg(windows)]
     {
@@ -234,6 +249,215 @@ fn is_tool_option_env_key(key: &str) -> bool {
     } else {
         matches(key)
     }
+}
+
+/// Whether the user has trusted `dir`: by `mise trust` on it, or because it is
+/// at or below the root of a trusted project config file and no directory
+/// below that root, down to `dir` itself, holds a `.git`. A repository cloned
+/// inside a trusted project is someone else's code, so the project's trust stops
+/// there. Nor does it reach a directory below that root that the user ignored
+/// (`mise trust --ignore`, or `ignored_config_paths` matched against each
+/// directory the walk resolves and against `dir` and its parents as given, so
+/// a pattern naming a symlink covers what is reached through it), or anything
+/// below one;
+/// only a `trusted_config_paths` entry for the directory itself, which
+/// [`is_trusted`] checks, overrides a `mise trust --ignore` there. The root is
+/// as trusted as its config: `is_path_trusted` refuses a root that
+/// `ignored_config_paths` names, and lets a `trusted_config_paths` entry for the
+/// config override a `mise trust --ignore` of the root. Global config does not
+/// vouch for a directory, and safe mode trusts none.
+fn dir_is_trusted(config: &Config, dir: &Path) -> bool {
+    use crate::config::config_file::{
+        is_ignored, is_ignored_via_setting, is_path_trusted, is_trusted,
+    };
+    if Settings::safe_mode() {
+        return false;
+    }
+    if is_trusted(dir) {
+        return true;
+    }
+    let written = dir;
+    let Ok(dir) = dir.canonicalize() else {
+        return false;
+    };
+    config.config_files.values().any(|cf| {
+        if crate::config::is_global_config(cf.get_path()) || !is_path_trusted(cf.get_path()) {
+            return false;
+        }
+        let Ok(root) = cf.config_root().canonicalize() else {
+            return false;
+        };
+        let Ok(below) = dir.strip_prefix(&root) else {
+            return false;
+        };
+        if is_ignored_via_setting(&root) {
+            return false;
+        }
+        // Also as written, before symlinks resolve: a pattern can name a link to
+        // a directory in the project, which the walk below meets only by its
+        // target, and the link ignores everything reached through it.
+        let ignored_as_written = written.ancestors().any(|step| {
+            is_ignored_via_setting(step)
+                && step
+                    .canonicalize()
+                    .is_ok_and(|step| step.starts_with(&root))
+        });
+        if ignored_as_written {
+            return false;
+        }
+        let mut step = root;
+        below.components().all(|component| {
+            step.push(component);
+            step.join(".git").symlink_metadata().is_err() && !is_ignored(&step)
+        })
+    })
+}
+
+/// The `MISE_PROJECT_ROOT` an environment hook gets before
+/// [`withhold_untrusted_dirs`]: config `[env]` over the environment mise
+/// started with, as in [`Backend::dependency_env`]. It reads the config env
+/// only once resolved, so a caller resolves it first; until then it gives only
+/// the starting environment's.
+fn hook_project_root(config: &Config) -> Option<String> {
+    layered_project_root(
+        &env::PRISTINE_ENV,
+        config.env_results_cached(),
+        cfg!(windows),
+    )
+}
+
+/// [`hook_project_root`] for a given starting environment, config env and
+/// case rule. The variables go through a sorted map, as they do into the
+/// hook's env, so a name that differs from `MISE_PROJECT_ROOT` only in case is
+/// found by the same [`find_env_var`] lookup [`withhold_untrusted_dirs`] makes.
+fn layered_project_root(
+    pristine: &BTreeMap<String, String>,
+    config_env: Option<&crate::config::env_directive::EnvResults>,
+    ignore_case: bool,
+) -> Option<String> {
+    let named = |k: &String| k.eq_ignore_ascii_case(PROJECT_ROOT_KEY);
+    let mut env: BTreeMap<String, String> = pristine
+        .iter()
+        .filter(|(k, _)| named(k))
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
+    if let Some(results) = config_env {
+        for key in &results.env_remove {
+            env.remove(key);
+        }
+        env.extend(
+            results
+                .env
+                .iter()
+                .filter(|(k, _)| named(k))
+                .map(|(k, (v, _))| (k.clone(), v.clone())),
+        );
+    }
+    let env: indexmap::IndexMap<String, String> = env.into_iter().collect();
+    find_env_var(&env, PROJECT_ROOT_KEY, ignore_case).cloned()
+}
+
+const PROJECT_ROOT_KEY: &str = "MISE_PROJECT_ROOT";
+
+/// What decides what an environment hook sees of the project: whether the
+/// current directory is trusted, which gives the hook `PWD` and starts its
+/// commands there, and the directory its `MISE_PROJECT_ROOT` names with
+/// whether that is trusted, which keeps the variable (`None` when unset).
+/// `mise trust` and a different `MISE_PROJECT_ROOT` change these without
+/// changing a config file, so cached environments are keyed on them.
+pub(crate) fn env_hook_trust(config: &Config) -> (bool, Option<(String, bool)>) {
+    let cwd = dirs::CWD
+        .as_deref()
+        .is_some_and(|cwd| dir_is_trusted(config, cwd));
+    let project_root = hook_project_root(config).map(|root| {
+        let trusted = dir_is_trusted(config, Path::new(&root));
+        (root, trusted)
+    });
+    (cwd, project_root)
+}
+
+/// Names, one per line, the plugins whose environment hooks are running in
+/// the mise processes above this one. A hook that runs `mise`, as Poetry's
+/// does with `mise which python3`, starts a mise that resolves the same tools
+/// and would run the same hook again, without end. It is set only in the
+/// environment mise builds for the hook, which its `cmd.exec`, `cmd.stream`,
+/// `os.execute` and `io.popen` children get, never on mise's own process.
+const RUNNING_ENV_HOOKS: &str = "__MISE_VFOX_ENV_HOOKS";
+
+/// The plugins [`RUNNING_ENV_HOOKS`] named when this mise started.
+fn env_hooks_running_above() -> &'static [String] {
+    static ABOVE: OnceLock<Vec<String>> = OnceLock::new();
+    ABOVE.get_or_init(|| {
+        env::var(RUNNING_ENV_HOOKS)
+            .unwrap_or_default()
+            .lines()
+            .filter(|name| !name.is_empty())
+            .map(str::to_string)
+            .collect()
+    })
+}
+
+/// [`RUNNING_ENV_HOOKS`] for the children of a plugin's environment hook.
+fn running_env_hooks_value(plugin: &str) -> String {
+    env_hooks_running_above()
+        .iter()
+        .map(String::as_str)
+        .chain([plugin])
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Removes the variables naming a project directory the user has not trusted
+/// from an environment hook's env: `PWD` unless it is the trusted working
+/// directory `trusted_cwd`, and `MISE_PROJECT_ROOT`, which a shell hook leaves
+/// behind.
+fn withhold_untrusted_dirs(
+    config: &Config,
+    env: &mut indexmap::IndexMap<String, String>,
+    trusted_cwd: Option<&Path>,
+) {
+    let same_dir = |a: &Path, b: &Path| match (a.canonicalize(), b.canonicalize()) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => false,
+    };
+    let pwd_ok = match (get_env_var(env, "PWD"), trusted_cwd) {
+        (Some(pwd), Some(cwd)) => same_dir(Path::new(pwd), cwd),
+        _ => false,
+    };
+    if !pwd_ok {
+        remove_env_var(env, "PWD");
+    }
+    if get_env_var(env, PROJECT_ROOT_KEY)
+        .is_some_and(|root| !dir_is_trusted(config, Path::new(root)))
+    {
+        remove_env_var(env, PROJECT_ROOT_KEY);
+    }
+}
+
+/// The tool options a plugin's environment hooks get in safe mode, which
+/// trusts no project config, or `None` outside safe mode.
+///
+/// A request from project config gets none. Any other request, such as a tool
+/// named on the command line or in global config, gets only the options it
+/// carries itself: the options mise looks up in the loaded config, and those
+/// it copies from config onto a command-line request, can come from the
+/// project's `mise.toml`.
+fn safe_mode_options(request: &crate::toolset::ToolRequest) -> Option<ToolOptions> {
+    use crate::toolset::ToolSource;
+    if !Settings::safe_mode() {
+        return None;
+    }
+    Some(match request.source() {
+        ToolSource::MiseToml(path)
+        | ToolSource::MiseTomlDaemon(path)
+        | ToolSource::ToolVersions(path)
+        | ToolSource::IdiomaticVersionFile(path)
+            if !crate::config::is_global_config(path) =>
+        {
+            ToolOptions::default()
+        }
+        _ => request.explicit_options(),
+    })
 }
 
 fn restore_config_tool_option_env(
@@ -919,13 +1143,22 @@ impl VfoxBackend {
         config: &Arc<Config>,
         tv: &ToolVersion,
     ) -> indexmap::IndexMap<String, String> {
+        let options = self.tool_options_for_tv(config, tv).await;
+        self.cmd_env_with_options(config, &options).await
+    }
+
+    async fn cmd_env_with_options(
+        &self,
+        config: &Arc<Config>,
+        options: &ToolOptions,
+    ) -> indexmap::IndexMap<String, String> {
         let mut cmd_env = self
             .dependency_env(config)
             .await
             .unwrap_or_default()
             .into_iter()
             .collect();
-        add_tool_option_env(&mut cmd_env, &self.tool_options_for_tv(config, tv).await);
+        add_tool_option_env(&mut cmd_env, options);
         if let Ok(config_env) = config.env().await {
             restore_config_tool_option_env(&mut cmd_env, &config_env);
         }
@@ -1148,13 +1381,45 @@ impl VfoxBackend {
         config: &Arc<Config>,
         tv: &ToolVersion,
     ) -> eyre::Result<BTreeMap<String, String>> {
-        let opts = self.tool_options_for_tv(config, tv).await;
+        let opts = match safe_mode_options(&tv.request) {
+            Some(opts) => opts,
+            None => self.tool_options_for_tv(config, tv).await,
+        };
+        // A hook that looks in the current directory, for a Pipfile say, and
+        // puts what it finds on PATH would run a program an untrusted project
+        // chose. In such a directory the hook gets no PWD and its commands
+        // start in the home directory.
+        let trusted_cwd = dirs::CWD
+            .as_deref()
+            .filter(|cwd| dir_is_trusted(config, cwd));
+        let cwd_trusted = trusted_cwd.is_some();
+        let hook_env = async || {
+            let mut cmd_env = self.cmd_env_with_options(config, &opts).await;
+            withhold_untrusted_dirs(config, &mut cmd_env, trusted_cwd);
+            cmd_env.insert(
+                RUNNING_ENV_HOOKS.to_string(),
+                running_env_hooks_value(&self.pathname),
+            );
+            cmd_env
+        };
         let install_path = tv.install_path();
+        // The hook's `MISE_PROJECT_ROOT` can come from config `[env]`, which
+        // the key below reads only once it is resolved, so it is resolved
+        // first. When it fails, the hook's env is empty too, so it sees no
+        // root, and results from such a run are kept apart.
+        let env_resolved = config.env_results().await.is_ok();
         let opts_hash = {
             use std::hash::{Hash, Hasher};
             let mut hasher = std::collections::hash_map::DefaultHasher::new();
             opts.hash(&mut hasher);
-            install_path.hash(&mut hasher);
+            // A hook that hands `MISE_PROJECT_ROOT` to a command rather than
+            // reading it with `os.getenv` leaves no record of the read.
+            env_resolved.hash(&mut hasher);
+            env_hook_trust(config).hash(&mut hasher);
+            // The hook gets the install path as an absolute path, and a
+            // relative data directory puts the same relative path in a
+            // different place in each project.
+            std::path::absolute(&install_path)?.hash(&mut hasher);
             // Refs such as `ref:a/b` and `ref:a-b` share an install path, but
             // a hook can read the raw version.
             tv.version.hash(&mut hasher);
@@ -1207,7 +1472,7 @@ impl VfoxBackend {
                             if cached.env_reads.is_empty() {
                                 return Ok(cached.env);
                             }
-                            let current = self.cmd_env_for_tv(config, tv).await;
+                            let current = hook_env().await;
                             if env_reads_match(&cached.env_reads, &current) {
                                 return Ok(cached.env);
                             }
@@ -1220,6 +1485,15 @@ impl VfoxBackend {
                             )
                         }
                     }
+                }
+                // This mise was started by this plugin's own environment hook,
+                // which is still waiting for it to answer.
+                if env_hooks_running_above().contains(&self.pathname) {
+                    debug!(
+                        "skipping the environment hook of {}: it started this mise",
+                        self.pathname
+                    );
+                    return Ok(BTreeMap::new());
                 }
                 // The environment is looked up for every installed tool a
                 // config names, trusted or not, and on every prompt, so a
@@ -1234,8 +1508,9 @@ impl VfoxBackend {
                 let (mut vfox, _log_rx) = self.plugin.vfox();
                 vfox.cmd_env = Some(match cmd_env {
                     Some(cmd_env) => cmd_env,
-                    None => self.cmd_env_for_tv(config, tv).await,
+                    None => hook_env().await,
                 });
+                vfox.detach_cmds = !cwd_trusted;
                 let recorder = vfox::HookDependencyRecorder::default();
                 vfox.hook_dependencies = Some(recorder.clone());
 
@@ -1394,6 +1669,59 @@ mod test {
         assert!(!could_be_alias("system"));
         assert!(!could_be_alias("ref:main"));
         assert!(!could_be_alias(""));
+    }
+
+    #[test]
+    fn test_project_root_lookup_matches_the_hook_filter() {
+        let vars = |pairs: &[(&str, &str)]| {
+            pairs
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect::<BTreeMap<_, _>>()
+        };
+        let hook_env = |vars: &BTreeMap<String, String>| {
+            vars.clone()
+                .into_iter()
+                .collect::<indexmap::IndexMap<_, _>>()
+        };
+        for ignore_case in [false, true] {
+            for pristine in [
+                vars(&[("MISE_PROJECT_ROOT", "/a")]),
+                vars(&[("Mise_Project_Root", "/a")]),
+                vars(&[("Mise_Project_Root", "/a"), ("MISE_PROJECT_ROOT", "/b")]),
+                vars(&[("PATH", "/bin")]),
+            ] {
+                // The key reads the root the filter would keep or remove.
+                assert_eq!(
+                    layered_project_root(&pristine, None, ignore_case),
+                    find_env_var(&hook_env(&pristine), PROJECT_ROOT_KEY, ignore_case).cloned(),
+                    "{pristine:?} ignore_case={ignore_case}"
+                );
+            }
+        }
+        let differently_cased = vars(&[("Mise_Project_Root", "/a")]);
+        assert_eq!(
+            layered_project_root(&differently_cased, None, true).as_deref(),
+            Some("/a")
+        );
+        assert_eq!(layered_project_root(&differently_cased, None, false), None);
+
+        let mut results = crate::config::env_directive::EnvResults::default();
+        results.env.insert(
+            "MISE_PROJECT_ROOT".to_string(),
+            ("/config".to_string(), PathBuf::new()),
+        );
+        assert_eq!(
+            layered_project_root(&vars(&[("MISE_PROJECT_ROOT", "/a")]), Some(&results), true)
+                .as_deref(),
+            Some("/config")
+        );
+        let mut removed = crate::config::env_directive::EnvResults::default();
+        removed.env_remove.insert("MISE_PROJECT_ROOT".to_string());
+        assert_eq!(
+            layered_project_root(&vars(&[("MISE_PROJECT_ROOT", "/a")]), Some(&removed), false),
+            None
+        );
     }
 
     #[test]

@@ -18,6 +18,8 @@ use crate::config::{Config, Settings};
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::parallel;
+use crate::runtime_symlinks::is_runtime_symlink;
+use crate::toolset::install_state;
 use crate::toolset::{ToolRequest, ToolVersion, ToolVersionOptions, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{dirs, env, file, plugins};
@@ -65,6 +67,21 @@ impl DotnetPlugin {
 
     fn is_isolated() -> bool {
         Settings::get().dotnet.isolated
+    }
+
+    fn execution_root(tv: &ToolVersion) -> PathBuf {
+        let install_path = tv.install_path();
+        if Self::is_isolated() {
+            return install_path;
+        }
+        let shared_root = dotnet_root();
+        if matches!(
+            link_origin(&install_path, &shared_root),
+            Some(LinkOrigin::User | LinkOrigin::Unrecorded)
+        ) {
+            return install_path;
+        }
+        shared_root
     }
 
     async fn test_dotnet(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<()> {
@@ -207,6 +224,90 @@ impl Backend for DotnetPlugin {
         Ok(vec![sdk.version])
     }
 
+    fn is_version_installed(
+        &self,
+        _config: &Arc<Config>,
+        tv: &ToolVersion,
+        check_symlink: bool,
+    ) -> bool {
+        if matches!(tv.request, ToolRequest::System { .. }) {
+            return true;
+        }
+        let install_path = tv.install_path();
+        if (check_symlink && is_runtime_symlink(&install_path))
+            || (install_state::is_incomplete(tv.ba(), &tv.state_key())
+                && !crate::backend::is_active_postinstall_install(tv, &install_path))
+        {
+            return false;
+        }
+        // An explicit path is user-managed and carries no concrete SDK version.
+        if matches!(tv.request, ToolRequest::Path { .. }) {
+            return install_path.exists();
+        }
+        if !install_path.join(DOTNET_BIN).is_file() {
+            return false;
+        }
+
+        let shared_root = dotnet_root();
+        let matches_mode = match link_origin(&install_path, &shared_root) {
+            None => Self::is_isolated(),
+            Some(LinkOrigin::Managed) => {
+                !Self::is_isolated() && file::same_file(&install_path, &shared_root)
+            }
+            Some(LinkOrigin::User) => return true,
+            Some(LinkOrigin::Unrecorded) => true,
+        };
+        if !matches_mode {
+            return false;
+        }
+
+        let raw_opts = tv.request.options().literal();
+        let opts = DotnetOptions::new(&raw_opts);
+        let runtime_exists = |framework| {
+            install_path
+                .join("shared")
+                .join(framework)
+                .join(&tv.version)
+                .is_dir()
+        };
+        if opts.runtime().is_some() {
+            return opts.runtime_framework_name().is_some_and(runtime_exists);
+        }
+        install_path.join("sdk").join(&tv.version).is_dir()
+            // Directory listings reconstruct requests without the original runtime option.
+            || (tv.request.source().is_unknown()
+                && RUNTIME_FRAMEWORKS.iter().any(|(_, framework)| runtime_exists(framework)))
+    }
+
+    async fn is_install_satisfied(
+        &self,
+        config: &Arc<Config>,
+        tv: &ToolVersion,
+        check_symlink: bool,
+    ) -> Result<bool> {
+        Ok(!has_unrecorded_link(tv) && self.is_version_installed(config, tv, check_symlink))
+    }
+
+    async fn prepare_install_version(
+        &self,
+        ctx: &InstallContext,
+        tv: ToolVersion,
+    ) -> Result<ToolVersion> {
+        if !ctx.force && has_unrecorded_link(&tv) {
+            eyre::bail!(
+                "{tv} points to an unrecorded .NET root. Run `mise link {tv}` with its current target to keep the link, or `mise install --force {tv}` to reinstall in the active mode."
+            );
+        }
+        Ok(tv)
+    }
+
+    fn record_user_link(&self, link: &Path) -> Result<()> {
+        if let Some(marker) = user_link_marker(link) {
+            file::create_dir_all(marker)?;
+        }
+        Ok(())
+    }
+
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
         let isolated = Self::is_isolated();
         let install_dir = if isolated {
@@ -250,9 +351,13 @@ impl Backend for DotnetPlugin {
             .execute()?;
 
         if !isolated {
+            file::create_dir_all(install_dir.join(SHARED_ROOT_MARKER))?;
             // Symlink install_path -> DOTNET_ROOT so mise can track the installation
             file::remove_all(tv.install_path())?;
             file::make_symlink(&install_dir, &tv.install_path())?;
+            if let Some(marker) = user_link_marker(&tv.install_path()) {
+                file::remove_all(marker)?;
+            }
         }
 
         self.test_dotnet(ctx, &tv).await?;
@@ -266,9 +371,12 @@ impl Backend for DotnetPlugin {
         _pr: &dyn SingleReport,
         tv: &ToolVersion,
     ) -> Result<()> {
-        if Self::is_isolated() {
-            // Isolated: mise handles removal of install_path by default
-        } else {
+        let shared_root = dotnet_root();
+        let install_path = tv.install_path();
+        if !Self::is_isolated()
+            && link_origin(&install_path, &shared_root) == Some(LinkOrigin::Managed)
+            && file::same_file(&install_path, &shared_root)
+        {
             let raw_opts = tv.request.options().literal();
             let opts = DotnetOptions::new(&raw_opts);
             if opts.runtime().is_some() {
@@ -276,16 +384,13 @@ impl Backend for DotnetPlugin {
                 let Some(framework) = opts.runtime_framework_name() else {
                     return Ok(());
                 };
-                let runtime_dir = dotnet_root()
-                    .join("shared")
-                    .join(framework)
-                    .join(&tv.version);
+                let runtime_dir = shared_root.join("shared").join(framework).join(&tv.version);
                 if runtime_dir.exists() {
                     file::remove_all(&runtime_dir)?;
                 }
             } else {
                 // SDK: only remove this SDK version from the shared root
-                let sdk_dir = dotnet_root().join("sdk").join(&tv.version);
+                let sdk_dir = shared_root.join("sdk").join(&tv.version);
                 if sdk_dir.exists() {
                     file::remove_all(&sdk_dir)?;
                 }
@@ -299,11 +404,7 @@ impl Backend for DotnetPlugin {
         _config: &Arc<Config>,
         tv: &ToolVersion,
     ) -> Result<Vec<PathBuf>> {
-        if Self::is_isolated() {
-            Ok(vec![tv.install_path()])
-        } else {
-            Ok(vec![dotnet_root()])
-        }
+        Ok(vec![Self::execution_root(tv)])
     }
 
     async fn exec_env(
@@ -312,11 +413,7 @@ impl Backend for DotnetPlugin {
         _ts: &Toolset,
         tv: &ToolVersion,
     ) -> Result<BTreeMap<String, String>> {
-        let root = if Self::is_isolated() {
-            tv.install_path()
-        } else {
-            dotnet_root()
-        };
+        let root = Self::execution_root(tv);
         let mut env = BTreeMap::from([
             (
                 "DOTNET_ROOT".to_string(),
@@ -334,13 +431,16 @@ impl Backend for DotnetPlugin {
     }
 }
 
+const RUNTIME_FRAMEWORKS: &[(&str, &str)] = &[
+    ("dotnet", "Microsoft.NETCore.App"),
+    ("aspnetcore", "Microsoft.AspNetCore.App"),
+    ("windowsdesktop", "Microsoft.WindowsDesktop.App"),
+];
+
 fn runtime_framework_name(runtime: &str) -> Option<&'static str> {
-    match runtime {
-        "dotnet" => Some("Microsoft.NETCore.App"),
-        "aspnetcore" => Some("Microsoft.AspNetCore.App"),
-        "windowsdesktop" => Some("Microsoft.WindowsDesktop.App"),
-        _ => None,
-    }
+    RUNTIME_FRAMEWORKS
+        .iter()
+        .find_map(|&(name, framework)| (name == runtime).then_some(framework))
 }
 
 fn sdk_list_contains_version(lines: &[String], version: &str) -> bool {
@@ -357,13 +457,56 @@ fn sdk_list_display(lines: &[String]) -> String {
     }
 }
 
+const SHARED_ROOT_MARKER: &str = ".mise-dotnet-shared";
+
+#[derive(PartialEq, Eq)]
+enum LinkOrigin {
+    Managed,
+    User,
+    Unrecorded,
+}
+
+fn link_origin(install_path: &Path, shared_root: &Path) -> Option<LinkOrigin> {
+    if !file::is_symlink_or_junction(install_path) {
+        return None;
+    }
+    if user_link_marker(install_path).is_some_and(|marker| marker.is_dir()) {
+        return Some(LinkOrigin::User);
+    }
+    // Older installs have no marker. Recognize the configured and default roots.
+    if install_path.join(SHARED_ROOT_MARKER).is_dir()
+        || file::same_file(install_path, shared_root)
+        || file::same_file(install_path, &default_dotnet_root())
+    {
+        return Some(LinkOrigin::Managed);
+    }
+    Some(LinkOrigin::Unrecorded)
+}
+
+fn user_link_marker(link: &Path) -> Option<PathBuf> {
+    let target = file::resolve_symlink(link).ok().flatten()?;
+    let key = crate::hash::hash_to_str(&(link, target));
+    Some(dirs::STATE.join("dotnet-user-links").join(key))
+}
+
+fn has_unrecorded_link(tv: &ToolVersion) -> bool {
+    !matches!(
+        tv.request,
+        ToolRequest::System { .. } | ToolRequest::Path { .. }
+    ) && link_origin(&tv.install_path(), &dotnet_root()) == Some(LinkOrigin::Unrecorded)
+}
+
+fn default_dotnet_root() -> PathBuf {
+    dirs::DATA.join("dotnet-root")
+}
+
 fn dotnet_root() -> PathBuf {
     Settings::get()
         .dotnet
         .dotnet_root
         .clone()
         .or(env::var_path("DOTNET_ROOT"))
-        .unwrap_or(dirs::DATA.join("dotnet-root"))
+        .unwrap_or_else(default_dotnet_root)
 }
 
 fn install_script_path() -> PathBuf {

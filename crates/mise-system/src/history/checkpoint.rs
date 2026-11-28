@@ -1395,15 +1395,15 @@ fn retain_omitted(
     for file in repo.ls_tree(parent)? {
         let located = roots.locate(&file.path);
         let Some(path) = located.path() else { continue };
-        if !omitted.iter().any(|omitted| path.starts_with(omitted))
+        let Some(entry) = tracked.entry_for(path) else {
+            continue;
+        };
+        if !omission_covers(&omitted, path, &entry.path)
             || !tracked.would_retain(path)?
             || repo.object_at(tree, &file.path)?.is_some()
         {
             continue;
         }
-        let Some(entry) = tracked.entry_for(path) else {
-            continue;
-        };
         if entry.tree_path(path)? != file.path {
             continue;
         }
@@ -1432,6 +1432,17 @@ fn retain_omitted(
         });
     }
     repo.compose(tree, &overlays)
+}
+
+/// Whether an omission keeps `path`'s saved version. Only an omission at
+/// or below the root of the entry owning `path` counts: a parent entry
+/// skipping a directory (a cache, say) that holds a separately tracked
+/// entry says nothing about that entry, whose own walk saw every file, so
+/// a file deleted there stays deleted.
+pub(super) fn omission_covers(omitted: &[PathBuf], path: &Path, entry_root: &Path) -> bool {
+    omitted
+        .iter()
+        .any(|omitted| path.starts_with(omitted) && omitted.starts_with(entry_root))
 }
 
 /// The directories whose permissions a captured file carries: every
@@ -1692,6 +1703,26 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_parent_omission_does_not_keep_a_tracked_descendants_deleted_file() {
+        let cache = PathBuf::from("/home/u/project/target");
+        let child = Path::new("/home/u/project/target/config");
+        let file = Path::new("/home/u/project/target/config/a.toml");
+        assert!(!omission_covers(std::slice::from_ref(&cache), file, child));
+        // under the entry that recorded it, the omission still keeps it
+        let parent = Path::new("/home/u/project");
+        let cached = Path::new("/home/u/project/target/out");
+        assert!(omission_covers(
+            std::slice::from_ref(&cache),
+            cached,
+            parent
+        ));
+        // and the child's own failed reads still count
+        let failed = PathBuf::from("/home/u/project/target/config/sub");
+        let below = Path::new("/home/u/project/target/config/sub/b.toml");
+        assert!(omission_covers(&[cache, failed], below, child));
+    }
+
+    #[test]
     fn capture_notices_survive_a_metadata_cache_failure() -> Result<()> {
         let temp = tempfile::tempdir()?;
         let store = Store::open_in(temp.path())?;
@@ -1758,6 +1789,39 @@ mod tests {
     /// `tree_path_to_display`, and the skip is matched on the result of
     /// exactly those two — never against `display_path`'s spelling, which
     /// keeps the host separator and leaves `$HOME` expanded off unix.
+    #[test]
+    fn the_trailer_names_a_shared_cache_but_not_a_local_only_one() {
+        let home = mise_util::dirs::HOME.join(".cache-trailer");
+        let mut checkpoint = test_checkpoint("caches", None);
+        let mut tracked = TrackedSet {
+            local: vec![home.join("private")],
+            ..Default::default()
+        };
+        tracked.push(TrackedEntry::new(
+            home.clone(),
+            "track",
+            crate::files::FilePolicy::for_mode(crate::files::FileMode::Track),
+        ));
+        tracked.keep_local_out();
+        let cache = |name: &str| store::PathReason {
+            path: mise_util::file::display_path(home.join(name)),
+            reason: crate::history::tracked::CACHE_DIRECTORY_REASON.into(),
+        };
+        let walk = crate::history::tracked::Walk {
+            entries: tracked.entries.clone(),
+            caches: vec![cache("target"), cache("private")],
+            ..Default::default()
+        };
+        checkpoint.tree.coverage = tracked.coverage(&walk);
+        let rebuilt: Vec<String> = checkpoint
+            .for_commit()
+            .omitted
+            .iter()
+            .map(|path| tree_path_to_display(path))
+            .collect();
+        assert_eq!(rebuilt, vec!["~/.cache-trailer/target".to_string()]);
+    }
+
     #[test]
     fn a_skip_is_matched_on_the_spelling_the_rebuilt_record_holds() {
         let home = mise_util::dirs::HOME.join(".native");

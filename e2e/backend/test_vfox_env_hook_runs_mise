@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+
+# An environment hook that runs mise, as Poetry's does with
+# "mise which python3", starts a mise that resolves the same tools. That mise
+# must not run the same hook again. The hook below counts its depth and stops
+# by itself at 3, so the test stays bounded if the guard breaks.
+
+PLUGIN_DIR="$PWD/vfox-env-hook-runs-mise"
+LOG="$PWD/env-hook-runs"
+
+mkdir -p "$PLUGIN_DIR/hooks"
+
+cat >"$PLUGIN_DIR/metadata.lua" <<'LUA'
+PLUGIN = {}
+PLUGIN.name = "env-hook-runs-mise"
+PLUGIN.version = "0.1.0"
+PLUGIN.homepage = "https://example.com/env-hook-runs-mise"
+PLUGIN.license = "MIT"
+PLUGIN.description = "environment hook that runs mise"
+LUA
+
+cat >"$PLUGIN_DIR/hooks/available.lua" <<'LUA'
+function PLUGIN:Available(ctx)
+	return {
+		{ version = "1.0.0" },
+	}
+end
+LUA
+
+cat >"$PLUGIN_DIR/hooks/pre_install.lua" <<'LUA'
+function PLUGIN:PreInstall(ctx)
+	return { version = ctx.version }
+end
+LUA
+
+cat >"$PLUGIN_DIR/hooks/env_keys.lua" <<LUA
+function PLUGIN:EnvKeys(ctx)
+	local depth = tonumber(os.getenv("HOOK_DEPTH") or "0")
+	local log = io.open([[$LOG]], "a")
+	log:write("depth=" .. depth .. "\n")
+	log:close()
+	if depth < 3 then
+		local handle = io.popen("HOOK_DEPTH=" .. (depth + 1) .. " mise which hook-probe 2>/dev/null")
+		handle:read("*a")
+		handle:close()
+	end
+	return {
+		{ key = "PATH", value = ctx.path .. "/bin" },
+		{ key = "HOOK_RAN", value = "yes" },
+	}
+end
+LUA
+
+git -C "$PLUGIN_DIR" init -q
+git -C "$PLUGIN_DIR" add .
+git -C "$PLUGIN_DIR" -c user.name=mise -c user.email=mise@example.com commit -qm "test(e2e): initialize plugin fixture"
+
+cat >mise.toml <<EOF
+[tools]
+"vfox:file://$PLUGIN_DIR" = "1.0.0"
+EOF
+mise trust mise.toml
+mise install
+
+# a fresh run of the hook, without the result mise cached
+mise cache clear
+: >"$LOG"
+assert_contains "mise env" "HOOK_RAN=yes"
+assert "cat '$LOG'" "depth=0"

@@ -136,8 +136,8 @@ pub fn install_dependency_declarations(request: &ToolRequest) -> InstallDependen
             declarations.insert(request.ba(), dependency);
         }
     }
-    match crate::backend::pipx::selected_python_dependency(request) {
-        Ok(Some(python)) => declarations.insert_versioned(request.ba(), python),
+    match crate::backend::selected_runtime_dependency(request) {
+        Ok(Some(runtime)) => declarations.insert_versioned(request.ba(), runtime),
         Ok(None) => {}
         Err(err) => declarations.metadata_error = Some(format!("{err:#}")),
     }
@@ -175,14 +175,15 @@ impl InstallDependencyContext {
                 })?;
         }
         for (backend, dependency) in toolset.list_current_versions() {
-            let selector_owned = declarations
+            let selected = declarations
                 .versioned()
-                .any(|selected| selected == &dependency.request);
-            if selector_owned {
-                let expected = BackendArg::from("python");
+                .find(|selected| *selected == &dependency.request);
+            if let Some(selected) = selected {
+                let runtime = selected.ba().short.clone();
+                let expected = BackendArg::from(runtime.as_str());
                 if dependency.ba().full_without_opts() != expected.full_without_opts() {
                     bail!(
-                        "selected Python dependency for '{}' is locked to backend '{}', expected '{}'",
+                        "selected {runtime} dependency for '{}' is locked to backend '{}', expected '{}'",
                         request,
                         dependency.ba().full_without_opts(),
                         expected.full_without_opts()
@@ -190,7 +191,9 @@ impl InstallDependencyContext {
                 }
                 let locked = config.invocation_locked_for(request.source(), Settings::get().locked)
                     || request.tool_config_locked(config, true);
-                if locked && !dependency.resolved_from_lockfile() {
+                // `mise lock` records the Python a pipx tool selects; the Node an npm tool
+                // selects is not locked yet, so it resolves like any other request.
+                if runtime == "python" && locked && !dependency.resolved_from_lockfile() {
                     bail!(
                         "selected Python dependency '{}' is missing from this lockfile; run `mise lock`",
                         dependency.request

@@ -279,11 +279,13 @@ be a symlink, it cannot be checked without resolving the tree. The mise client
 also refuses to restore a name that contains a backslash.
 
 The portable metadata set is file contents, directory structure, symbolic links,
-executable state, and the portable permission bits in `mode`. Owners, groups,
-timestamps, devices, sockets, FIFOs, platform ACLs, and extended attributes are
-not restored. Hard links may be restored as independent files. A task result
-that contains an unsupported object is not eligible for remote caching; the
-object is never silently changed.
+executable state, and the portable permission bits in `mode`: the read, write,
+and execute bits for user, group, and other (`0o777`). Setuid, setgid, and
+sticky bits are not recorded by a publisher and are ignored by a reader. Owners,
+groups, timestamps, devices, sockets, FIFOs, platform ACLs, and extended
+attributes are not restored. Hard links may be restored as independent files. A
+task result that contains an unsupported object is not eligible for remote
+caching; the object is never silently changed.
 
 ### Action result
 

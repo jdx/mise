@@ -906,6 +906,32 @@ impl HistoryRepo {
         Self::read_meta_in(&self.gix()?, commit)
     }
 
+    /// The portable streams `commit`'s own record names as omitted or
+    /// incomplete, exactly as written. [`Self::read_meta`] turns them into
+    /// display paths, which drops the variant a stream belongs to.
+    pub(crate) fn uncaptured_streams(&self, commit: &str) -> Result<Vec<String>> {
+        let repo = self.gix()?;
+        let id = gix::ObjectId::from_hex(commit.as_bytes())?;
+        let commit_object = repo.find_commit(id)?;
+        let message = commit_object.message_raw()?;
+        let message = String::from_utf8_lossy(message.as_ref());
+        let Some(trailer) = message
+            .trim()
+            .lines()
+            .rev()
+            .find_map(|line| line.strip_prefix(Self::RECORD_TRAILER))
+        else {
+            return Ok(vec![]);
+        };
+        let record: super::store::CommitRecord = serde_json::from_str(trailer)
+            .wrap_err_with(|| format!("reading history metadata for {commit}"))?;
+        Ok(record
+            .omitted
+            .into_iter()
+            .chain(record.incomplete)
+            .collect())
+    }
+
     /// [`Self::read_meta`] through an open repository, so a walk over many
     /// commits opens it once rather than once per commit.
     pub(crate) fn read_meta_in(repo: &gix::Repository, commit: &str) -> Result<Checkpoint> {
@@ -2676,6 +2702,17 @@ mod tests {
         assert_eq!(
             rebuilt.tree.coverage.incomplete[0].path,
             "~/.native/unreadable"
+        );
+        // sync reads the same record as portable streams
+        let mut streams = repo.uncaptured_streams(&commit).unwrap();
+        streams.sort();
+        assert_eq!(
+            streams,
+            [
+                "home/.native/large",
+                "home/.native/plugin",
+                "home/.native/unreadable"
+            ]
         );
     }
 

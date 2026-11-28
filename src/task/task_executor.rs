@@ -1,6 +1,7 @@
 use crate::args::ToolArg;
 use crate::cmd::CmdLineRunner;
-use crate::config::{Config, Settings, SettingsExt, env_directive::EnvDirective};
+use crate::config::env_directive::{EnvDirective, Rendered};
+use crate::config::{Config, Settings, SettingsExt};
 use crate::duration;
 use crate::env_diff::EnvDiff;
 use crate::file::{can_execute_directly, display_path, replace_path, strip_utf8_bom};
@@ -301,8 +302,17 @@ fn display_first_command(script: &str) -> String {
 #[cfg_attr(not(windows), allow(dead_code))]
 enum InlineArgsStyle {
     PosixCommandText,
+    /// fish takes its arguments in the command text as the POSIX shells do, but not their
+    /// quoting: inside `'...'` it reads `\'` as a quote and `\\` as a backslash. POSIX quoting
+    /// writes a `'` as `'\''` and copies a backslash through, so an argument holding `\'` would
+    /// end its own string there and the rest of it would run as commands.
+    FishCommandText,
     CmdCommandText,
     SeparateArgv,
+    /// An `env` wrapper whose program mise cannot tell, or one that starts cmd, whose quoting is
+    /// for a command line mise hands cmd itself. The shell may read any quoting, so only
+    /// arguments that no shell quotes go in, as they are.
+    Unknown,
 }
 
 /// Whether the shell mise is about to spawn cannot use `dir` as its working directory.
@@ -341,8 +351,45 @@ fn unc_working_dir_error(dir: &Path) -> String {
 }
 
 fn inline_args_style(program: &str, shell_args: &[String]) -> InlineArgsStyle {
-    #[cfg(windows)]
-    {
+    inline_args_style_on(program, shell_args, cfg!(windows))
+}
+
+/// [`inline_args_style`] on Windows or elsewhere, so that the Windows rules are tested anywhere.
+fn inline_args_style_on(program: &str, shell_args: &[String], windows: bool) -> InlineArgsStyle {
+    if !super::task_script_parser::is_env(program) {
+        return launched_shell_args_style(program, shell_args, windows);
+    }
+    // mise starts `env`, and the program `env` starts reads the arguments, so they are quoted for
+    // that program, as the template functions quote theirs.
+    let shell = once(program.to_string())
+        .chain(shell_args.iter().cloned())
+        .collect_vec();
+    let Some(command) = super::task_script_parser::resolve_env(
+        &shell,
+        super::task_script_parser::EnvWords::Separate,
+    ) else {
+        return InlineArgsStyle::Unknown;
+    };
+    let Some((program, shell_args)) = command.split_first() else {
+        return InlineArgsStyle::Unknown;
+    };
+    match launched_shell_args_style(program, shell_args, windows) {
+        // cmd's rules shape the command line mise hands cmd itself, which `env` would get.
+        InlineArgsStyle::CmdCommandText => InlineArgsStyle::Unknown,
+        style => style,
+    }
+}
+
+/// The style for `program` when mise starts it itself.
+fn launched_shell_args_style(
+    program: &str,
+    shell_args: &[String],
+    windows: bool,
+) -> InlineArgsStyle {
+    if crate::path::program_stem(Path::new(program)).as_deref() == Some("fish") {
+        return InlineArgsStyle::FishCommandText;
+    }
+    if windows {
         let runs_command = shell_args
             .iter()
             .any(|f| f.eq_ignore_ascii_case("/c") || f.eq_ignore_ascii_case("/k"));
@@ -353,26 +400,50 @@ fn inline_args_style(program: &str, shell_args: &[String]) -> InlineArgsStyle {
             return InlineArgsStyle::SeparateArgv;
         }
     }
-    #[cfg(not(windows))]
-    let _ = (program, shell_args);
     InlineArgsStyle::PosixCommandText
 }
 
-fn append_inline_args(script: &str, args: &[String], style: InlineArgsStyle) -> String {
+/// `script` with `args` appended for `style`. `None` when the style is
+/// [`InlineArgsStyle::Unknown`] and an argument needs quoting in some shell.
+fn append_inline_args(script: &str, args: &[String], style: InlineArgsStyle) -> Option<String> {
     let args = match style {
         InlineArgsStyle::PosixCommandText => shell_words::join(args),
+        InlineArgsStyle::FishCommandText => args
+            .iter()
+            .map(|arg| crate::shell::fish_escape(arg.into()))
+            .join(" "),
         InlineArgsStyle::CmdCommandText => args
             .iter()
             .map(|arg| crate::path::quote_arg_for_cmd_body(arg))
             .join(" "),
-        InlineArgsStyle::SeparateArgv => return script.to_string(),
+        InlineArgsStyle::SeparateArgv => return Some(script.to_string()),
+        InlineArgsStyle::Unknown => {
+            if !args
+                .iter()
+                .all(|arg| super::task_script_parser::no_shell_quotes(arg))
+            {
+                return None;
+            }
+            args.join(" ")
+        }
     };
-    match (script.is_empty(), args.is_empty()) {
+    Some(match (script.is_empty(), args.is_empty()) {
         (true, true) => String::new(),
         (true, false) => args,
         (false, true) => script.to_string(),
         (false, false) => format!("{script} {args}"),
-    }
+    })
+}
+
+/// The refusal of a task's arguments when mise cannot tell which shell reads them.
+fn unknown_inline_shell_error(task: &Task, shell: &[String]) -> eyre::Report {
+    eyre!(
+        "task {}: mise cannot tell which program its shell `{}` starts, so it cannot quote the \
+         task's arguments for it. Name the program after `env` and its options, for example \
+         `env bash -c`.",
+        task.name,
+        shell.join(" "),
+    )
 }
 
 /// Push a failure onto `failed`, returning whether an earlier one was already
@@ -674,6 +745,7 @@ impl TaskExecutor {
                 .chain(self.sandbox.allow_net.iter())
                 .cloned()
                 .collect(),
+            allow_connect_port: vec![],
             allow_unix: task
                 .allow_unix
                 .iter()
@@ -1299,6 +1371,7 @@ impl TaskExecutor {
                         &task.args,
                         &env,
                         extra_vars.clone(),
+                        self.shell.clone(),
                     )
                     .await?;
 
@@ -1636,11 +1709,12 @@ impl TaskExecutor {
         for mut t in resolve_injected_tasks(config, specs, override_args, self.skip_deps).await? {
             // Apply entry-level env via with_dependency_env (high priority,
             // consistent with depends/depends_post) so it overrides the
-            // sub-task's own declared env.
+            // sub-task's own declared env. The parent rendered the entry's templates, so the
+            // sub-task does not render the result again.
             if let Some(env) = override_env {
                 let env_directives: Vec<EnvDirective> = env
                     .iter()
-                    .map(|(k, v)| EnvDirective::Val(k.clone(), v.clone(), Default::default()))
+                    .map(|(k, v)| EnvDirective::rendered(k.clone(), v.clone(), Rendered::Templates))
                     .collect();
                 t = t.with_dependency_env(&env_directives);
                 if let Some(config_root) = t.config_root.clone() {
@@ -1722,8 +1796,11 @@ impl TaskExecutor {
 
         // Pump subgraph into scheduler and signal completion via oneshot when done
         let (done_tx, mut done_rx) = oneshot::channel::<()>();
-        let task_env_directives: Vec<EnvDirective> =
-            task_env.iter().cloned().map(Into::into).collect();
+        // The parent's env is resolved: its values are final text, whatever they look like.
+        let task_env_directives: Vec<EnvDirective> = task_env
+            .iter()
+            .map(|(k, v)| EnvDirective::rendered(k.clone(), v.clone(), Rendered::Final))
+            .collect();
         {
             let sub_deps_clone = sub_deps.clone();
             let sched_tx = sched_tx.clone();
@@ -1933,11 +2010,8 @@ impl TaskExecutor {
         }
         let shell = task.shell()?.unwrap_or(self.clone_default_inline_shell()?);
         let (program, shell_args) = task_shell_parts(&shell, "inline shell")?;
-        Ok(append_inline_args(
-            script,
-            args,
-            inline_args_style(program, shell_args),
-        ))
+        append_inline_args(script, args, inline_args_style(program, shell_args))
+            .ok_or_else(|| unknown_inline_shell_error(task, &shell))
     }
 
     /// Assemble `(program, args)` for running `file` under an already-resolved `shell`.
@@ -1985,9 +2059,10 @@ impl TaskExecutor {
         args: &[String],
     ) -> Result<(String, Vec<String>, bool)> {
         let shell = task.shell()?.unwrap_or(self.clone_default_inline_shell()?);
-        let (program, _shell_args) = task_shell_parts(&shell, "inline shell")?;
+        let (program, shell_args) = task_shell_parts(&shell, "inline shell")?;
         trace!("using shell: {}", shell.join(" "));
         let mut full_args = shell.clone();
+        let style = inline_args_style(program, shell_args);
 
         #[cfg(windows)]
         {
@@ -2000,9 +2075,9 @@ impl TaskExecutor {
             // in a single outer quote pair, and use `/s` so cmd strips exactly
             // that pair and runs the rest — inner quotes included — verbatim.
             // See discussion #9355.
-            match inline_args_style(program, _shell_args) {
+            match style {
                 InlineArgsStyle::CmdCommandText => {
-                    let cmd_args = crate::path::cmd_verbatim_args(_shell_args, script, args);
+                    let cmd_args = crate::path::cmd_verbatim_args(shell_args, script, args);
                     return Ok((program.to_string(), cmd_args, true));
                 }
                 InlineArgsStyle::SeparateArgv => {
@@ -2013,7 +2088,9 @@ impl TaskExecutor {
                     full_args.extend(args.iter().cloned());
                     return Ok((program.to_string(), full_args[1..].to_vec(), false));
                 }
-                InlineArgsStyle::PosixCommandText => {}
+                InlineArgsStyle::PosixCommandText
+                | InlineArgsStyle::FishCommandText
+                | InlineArgsStyle::Unknown => {}
             }
         }
 
@@ -2022,11 +2099,10 @@ impl TaskExecutor {
         // as part of the command — the documented behavior for inline TOML
         // scripts — rather than as positional parameters. Passing them as separate
         // argv to `bash -c` on Windows shifted the user's first arg into `$0`.
-        // See #9355.
-        let mut script = script.to_string();
-        if !args.is_empty() {
-            script = format!("{script} {}", shell_words::join(args));
-        }
+        // See #9355. The args are quoted for the shell that reads them, by the same
+        // code that builds the command mise shows.
+        let script = append_inline_args(script, args, style)
+            .ok_or_else(|| unknown_inline_shell_error(task, &shell))?;
         full_args.push(script);
         Ok((program.to_string(), full_args[1..].to_vec(), false))
     }
@@ -2036,13 +2112,7 @@ impl TaskExecutor {
     }
 
     fn clone_default_inline_shell(&self) -> Result<Vec<String>> {
-        if let Some(shell) = &self.shell {
-            let mut shell = crate::path::split_shell_command(shell)?;
-            Settings::get().maybe_no_profile(&mut shell);
-            Ok(shell)
-        } else {
-            Settings::get().default_inline_shell()
-        }
+        inline_shell(self.shell.as_deref())
     }
 
     async fn resolve_cache_command_inputs(
@@ -3533,6 +3603,19 @@ fn shell_from_extension(path: &Path) -> Option<Vec<String>> {
     }
 }
 
+/// The shell an inline script runs under when its task sets no `shell`: `mise run --shell`,
+/// else the default inline shell setting.
+pub(super) fn inline_shell(run_shell: Option<&str>) -> Result<Vec<String>> {
+    match run_shell {
+        Some(shell) => {
+            let mut shell = crate::path::split_shell_command(shell)?;
+            Settings::get().maybe_no_profile(&mut shell);
+            Ok(shell)
+        }
+        None => Settings::get().default_inline_shell(),
+    }
+}
+
 /// True when mise hands the file straight to the OS rather than starting a shell for it,
 /// in which case no shell resolution happens and nothing below applies.
 fn runs_without_a_shell(file: &Path) -> bool {
@@ -4019,7 +4102,8 @@ mod tests {
             "echo long_command \\\n  --option1 value1",
             &args,
             InlineArgsStyle::PosixCommandText,
-        );
+        )
+        .unwrap();
         let header = format!("$ {}", display_first_command(&display_script));
         assert_eq!(header, "$ echo long_command --option1 value1 --extra args");
         assert!(!header.contains("\\ "));
@@ -4033,8 +4117,117 @@ mod tests {
                 "echo first\necho last",
                 &args,
                 InlineArgsStyle::PosixCommandText
-            ),
+            )
+            .unwrap(),
             "echo first\necho last 'a with space' second"
+        );
+    }
+
+    #[test]
+    fn test_append_inline_args_uses_fish_quoting() {
+        // POSIX quoting would write the first of these as `'\'\''; touch injected #'`, which
+        // fish reads as the string `''` followed by the command `touch injected`.
+        let args = [
+            r"\'; touch injected #".to_string(),
+            "it's".to_string(),
+            r"C:\dir\".to_string(),
+            "plain".to_string(),
+        ];
+        assert_eq!(
+            append_inline_args("echo", &args, InlineArgsStyle::FishCommandText).unwrap(),
+            r"echo '\\\'; touch injected #' 'it\'s' 'C:\dir\\' plain"
+        );
+    }
+
+    /// When mise cannot tell which program `env` starts, an argument goes in only if no shell
+    /// quotes it, on every OS.
+    #[test]
+    fn test_append_inline_args_refuses_quoting_for_an_unknown_env_shell() {
+        let shell = [
+            "--frobnicate".to_string(),
+            "fish".to_string(),
+            "-c".to_string(),
+        ];
+        for windows in [false, true] {
+            let style = inline_args_style_on("env", &shell, windows);
+            assert_eq!(style, InlineArgsStyle::Unknown, "windows: {windows}");
+            let payload = [r"\'; touch injected #".to_string()];
+            assert_eq!(append_inline_args("echo", &payload, style), None);
+            let plain = ["ok".to_string()];
+            assert_eq!(
+                append_inline_args("echo", &plain, style).as_deref(),
+                Some("echo ok")
+            );
+        }
+    }
+
+    #[test]
+    fn test_inline_args_style_uses_cmd_rules_only_when_mise_starts_cmd() {
+        let flags = ["/d".to_string(), "/s".to_string(), "/c".to_string()];
+        assert_eq!(
+            inline_args_style_on("cmd.exe", &flags, true),
+            InlineArgsStyle::CmdCommandText
+        );
+        // mise starts `env` here, so a command line shaped for cmd would reach `env`.
+        let env_cmd = once("cmd.exe".to_string()).chain(flags).collect_vec();
+        assert_eq!(
+            inline_args_style_on("env", &env_cmd, true),
+            InlineArgsStyle::Unknown
+        );
+        // `env` passes separate arguments through to the program it starts.
+        let env_pwsh = ["pwsh".to_string(), "-Command".to_string()];
+        assert_eq!(
+            inline_args_style_on("env.exe", &env_pwsh, true),
+            InlineArgsStyle::SeparateArgv
+        );
+        let env_bash = ["bash".to_string(), "-c".to_string()];
+        assert_eq!(
+            inline_args_style_on("env.exe", &env_bash, true),
+            InlineArgsStyle::PosixCommandText
+        );
+    }
+
+    #[test]
+    fn test_inline_args_style_knows_fish_from_the_posix_shells() {
+        let flags = ["-c".to_string()];
+        for fish in ["fish", "/usr/bin/fish", "/opt/homebrew/bin/fish"] {
+            assert_eq!(
+                inline_args_style(fish, &flags),
+                InlineArgsStyle::FishCommandText
+            );
+        }
+        for posix in ["sh", "bash", "/bin/zsh"] {
+            assert_eq!(
+                inline_args_style(posix, &flags),
+                InlineArgsStyle::PosixCommandText
+            );
+        }
+        // `env` starts the shell that reads the arguments.
+        let env_fish = ["-S-i".to_string(), "fish".to_string(), "-c".to_string()];
+        assert_eq!(
+            inline_args_style("/usr/bin/env", &env_fish),
+            InlineArgsStyle::FishCommandText
+        );
+        // mise hands `env` each word as an argument, so only an `-S` string is read for quotes,
+        // `$` and `#`: a setting that contains them is a literal value.
+        let env_bash = [
+            "COLOR=#fff".to_string(),
+            "bash".to_string(),
+            "-c".to_string(),
+        ];
+        assert_eq!(
+            inline_args_style("/usr/bin/env", &env_bash),
+            InlineArgsStyle::PosixCommandText
+        );
+        let args = ["a file".to_string()];
+        assert_eq!(
+            append_inline_args("ls", &args, inline_args_style("env", &env_bash)).unwrap(),
+            "ls 'a file'"
+        );
+        let env_split = ["-S".to_string(), "#fff bash".to_string(), "-c".to_string()];
+        assert_eq!(
+            inline_args_style("/usr/bin/env", &env_split),
+            InlineArgsStyle::Unknown
         );
     }
 
@@ -4042,7 +4235,7 @@ mod tests {
     fn test_append_inline_args_uses_cmd_quoting() {
         let args = ["a with space".to_string(), "a&b".to_string()];
         assert_eq!(
-            append_inline_args("echo", &args, InlineArgsStyle::CmdCommandText),
+            append_inline_args("echo", &args, InlineArgsStyle::CmdCommandText).unwrap(),
             r#"echo "a with space" "a&b""#
         );
     }
@@ -4051,7 +4244,7 @@ mod tests {
     fn test_append_inline_args_keeps_separate_argv_off_command_text() {
         let args = ["a with space".to_string()];
         assert_eq!(
-            append_inline_args("Write-Output $args", &args, InlineArgsStyle::SeparateArgv),
+            append_inline_args("Write-Output $args", &args, InlineArgsStyle::SeparateArgv).unwrap(),
             "Write-Output $args"
         );
     }
