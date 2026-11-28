@@ -4358,6 +4358,15 @@ pub trait Backend: Debug + Send + Sync {
         false
     }
 
+    /// Whether a version with at least two dots, such as "1.2.3", names one
+    /// release as written. Prefer-offline commands (`exec`, `hook-env`) then use
+    /// it without listing remote versions when nothing installed matches it.
+    /// Return `false` for a backend whose dotted versions can still be prefixes
+    /// of several releases, so those commands resolve them like `mise install`.
+    fn dotted_version_names_a_release(&self, _version: &str) -> bool {
+        true
+    }
+
     /// Whether `version` names a rolling release channel (e.g. zig's "master")
     /// rather than a concrete version. Cheap (no network). Channels are re-resolved
     /// to a concrete version like "latest" so `mise upgrade`/`outdated` can track
@@ -4726,7 +4735,9 @@ pub trait Backend: Debug + Send + Sync {
             }
         };
         let filter = !self.include_prereleases(selection_opts);
-        let versions = self.fuzzy_match_filter(versions, query, filter);
+        let versions = self
+            .match_request(config, versions, query, selection_opts, filter)
+            .await?;
         let mut versions = self.version_order(selection_opts)?.order(versions);
         // Every caller that resolves a request — `latest`, a prefix, a partial
         // version — takes the last entry of this list, so the cutoff has to be
@@ -4742,6 +4753,37 @@ pub trait Backend: Debug + Send + Sync {
             .await?;
         }
         Ok(versions)
+    }
+
+    /// The versions a request names by something other than a version prefix, such as a
+    /// Java id converted from `.sdkmanrc`, among those listed for `selection_opts`. `None`
+    /// matches the request as a prefix, with [`Backend::fuzzy_match_filter`].
+    async fn versions_named_by(
+        &self,
+        _config: &Arc<Config>,
+        _query: &str,
+        _selection_opts: &ToolVersionOptions,
+    ) -> eyre::Result<Option<HashSet<String>>> {
+        Ok(None)
+    }
+
+    /// The listed versions a request matches: those [`Backend::versions_named_by`]
+    /// gives, or else those it matches as a prefix.
+    async fn match_request(
+        &self,
+        config: &Arc<Config>,
+        versions: Vec<String>,
+        query: &str,
+        selection_opts: &ToolVersionOptions,
+        filter_prereleases: bool,
+    ) -> eyre::Result<Vec<String>> {
+        let named = self
+            .versions_named_by(config, query, selection_opts)
+            .await?;
+        Ok(match named {
+            Some(named) => versions.into_iter().filter(|v| named.contains(v)).collect(),
+            None => self.fuzzy_match_filter(versions, query, filter_prereleases),
+        })
     }
 
     /// Remote versions the release-age cutoff excluded, in listing order.
@@ -4787,11 +4829,14 @@ pub trait Backend: Debug + Send + Sync {
             })
             .collect();
         let matched: HashSet<String> = self
-            .fuzzy_match_filter(
+            .match_request(
+                config,
                 hidden.iter().map(|v| v.version.clone()).collect(),
                 query,
+                &opts,
                 !self.include_prereleases(&opts),
             )
+            .await?
             .into_iter()
             .collect();
         // `latest` resolution falls back to the whole date-filtered list when
