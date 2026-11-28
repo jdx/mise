@@ -470,9 +470,19 @@ fn drop_unverified_platform_urls(
         })
     };
     let unchecked: Vec<String> = with_url
-        .into_iter()
+        .iter()
         .filter(|platform| (top_checksum_dropped || lost.contains(platform)) && !checked(platform))
+        .cloned()
         .collect();
+    // A platform with no url of its own downloads from the top-level one, as the http backend
+    // falls back to it. When such a platform lost the checksum that checked it, the top-level url
+    // would download it unchecked, so that url goes, unless it was given on the command line.
+    let inherits_unchecked = lost
+        .iter()
+        .any(|platform| !with_url.contains(platform) && !checked(platform));
+    if inherits_unchecked && !explicit.contains_key("url") && opts.shift_remove("url").is_some() {
+        removed.push("url".to_string());
+    }
     for table in PLATFORM_TABLES {
         let written: Vec<String> = opts
             .get(table)
@@ -3765,6 +3775,36 @@ checksum_url = ["c"]"#,
             false,
         );
         assert_eq!(removed, ["platforms_linux_x64_url"]);
+    }
+
+    #[test]
+    fn a_platform_that_lost_its_checksum_takes_the_top_level_url_it_downloads_from() {
+        // linux-x64 has no url of its own, so it downloads from the top-level one, which its
+        // dropped checksum checked.
+        let lost = || vec![vec!["platforms".to_string(), "linux-x64".to_string()]];
+        let top: indexmap::IndexMap<String, toml::Value> =
+            [("url".to_string(), "u".into())].into_iter().collect();
+        let mut o = top.clone();
+        let removed =
+            super::drop_unverified_platform_urls(&mut o, &Default::default(), &[], lost(), false);
+        assert_eq!(removed, ["url"]);
+        assert!(!o.contains_key("url"));
+
+        // A url given on the command line is kept.
+        let mut o = top.clone();
+        let removed = super::drop_unverified_platform_urls(&mut o, &top, &[], lost(), false);
+        assert!(removed.is_empty(), "{removed:?}");
+
+        // So is one the platform is still checked against.
+        let mut o = top.clone();
+        o.insert(
+            "platforms_linux_x64_checksum".to_string(),
+            "sha256:x".into(),
+        );
+        let removed =
+            super::drop_unverified_platform_urls(&mut o, &Default::default(), &[], lost(), false);
+        assert!(removed.is_empty(), "{removed:?}");
+        assert!(o.contains_key("url"));
     }
 
     #[test]

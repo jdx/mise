@@ -272,7 +272,7 @@ impl Edit {
                 miseprintln!("{doc}");
             } else {
                 info!("writing to {}", display_path(&path));
-                write_config(&path, doc)?;
+                write_checked_config(&path, doc)?;
             }
         } else if self.should_run_interactive() {
             // Run interactive TOML editor
@@ -286,7 +286,7 @@ impl Edit {
                 miseprintln!("{doc}");
             } else if self.force {
                 info!("writing to {}", display_path(&path));
-                write_config(&path, doc)?;
+                write_checked_config(&path, doc)?;
             } else {
                 info!("writing to {}", display_path(&path));
                 write_new_config(&path, &doc)?;
@@ -433,6 +433,15 @@ fn write_config(path: &Path, doc: String) -> Result<()> {
         file::create_dir_all(parent)?;
     }
     file::write(path, doc)
+}
+
+/// [`write_config`] to the file `path` leads to, checked again just before the write: building
+/// the document awaits (an import parses both files), and a link can change in the meantime.
+/// Writing to the destination the check approved, rather than to `path`, is what the editor's
+/// save does too.
+fn write_checked_config(path: &Path, doc: String) -> Result<()> {
+    let destination = config_file::checked_write_destination(path)?;
+    write_config(&destination, doc)
 }
 
 /// Write the default template to a config that must not exist yet.
@@ -626,6 +635,28 @@ mod tests {
             std::fs::read_to_string(&path).unwrap(),
             "[tools]\nnode = \"22\"\n"
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_import_checks_its_destination_again_when_it_saves() {
+        // The config was a regular file when the command checked it, and a link out of the
+        // project by the time the import has its document ready. Tests trust every project, so
+        // the link leads to a file that does not exist yet, which is refused whatever the trust.
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let project = root.join("swapped");
+        let outside = root.join("outside.toml");
+        std::fs::create_dir_all(&project).unwrap();
+        let path = project.join("mise.toml");
+        std::fs::write(&path, "").unwrap();
+        config_file::symlink_check_before_write(&path).unwrap();
+        std::fs::remove_file(&path).unwrap();
+        std::os::unix::fs::symlink(&outside, &path).unwrap();
+
+        let err = write_checked_config(&path, "[tools]\n".to_string()).unwrap_err();
+        assert!(err.to_string().contains("refusing to write"), "{err}");
+        assert!(!outside.exists());
     }
 
     #[cfg(unix)]

@@ -69,6 +69,14 @@ assert "mise set FOO=bar"
 assert_contains "cat config/real.toml" 'FOO = "bar"'
 assert "test -L mise.toml"
 
+echo "=== so is a directory link inside the project above a directory the write creates ==="
+mkdir -p ../in-link/real
+cd ../in-link || exit 1
+ln -s real .config
+assert "MISE_TRUSTED_CONFIG_PATHS=$PWD mise set --file .config/mise/config.toml NEWDIR=1"
+assert_contains "cat real/mise/config.toml" 'NEWDIR = "1"'
+cd ../proj || exit 1
+
 echo "=== trust that yes grants in a fresh clone does not cover a link out ==="
 mkdir -p ../clone
 cat <<'TOML' >../outside/clone.toml
@@ -251,6 +259,19 @@ ln -s ../../../outside/folder .mise/conf.d/folder
 assert_contains "MISE_SAFE=1 mise tasks ls" "fout"
 assert_fail_contains "MISE_SAFE=1 MISE_YES=1 mise tasks rm fout 2>&1" "through a linked directory"
 assert "test -e ../outside/folder/tasks/fout"
+
+echo "=== nor a task directory linked into a state directory inside the project ==="
+mkdir -p ../task-state/state/scripts
+cd ../task-state || exit 1
+echo "[tools]" >mise.toml
+ln -s state/scripts mise-tasks
+# control: while the state directory is elsewhere, the link inside the project is followed
+assert "MISE_TRUSTED_CONFIG_PATHS=$PWD mise tasks add --file control -- echo control"
+assert "test -e state/scripts/control"
+assert_fail_contains "MISE_TRUSTED_CONFIG_PATHS=$PWD MISE_STATE_DIR=$PWD/state mise tasks add --file planted -- echo planted 2>&1" "in mise's state directory"
+assert_fail "test -e state/scripts/planted"
+assert_fail_contains "MISE_TRUSTED_CONFIG_PATHS=$PWD MISE_STATE_DIR=$PWD/state MISE_YES=1 mise tasks rm control 2>&1" "in mise's state directory"
+assert "test -e state/scripts/control"
 cd ../task-link || exit 1
 
 echo "=== a task script's own link out is removed, not followed ==="

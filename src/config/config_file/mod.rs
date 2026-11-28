@@ -1610,7 +1610,15 @@ pub fn trust_after_write(path: &Path) -> Result<()> {
     if Settings::safe_mode() || config::is_global_config_write(path) {
         return Ok(());
     }
-    trust(&config_trust_root(path))
+    // Trust recorded for a write is this command's: a later write in the same root must not
+    // count it as trust from before the command and follow a link out of the project.
+    let config_root = config_trust_root(path);
+    let was_trusted = is_trusted(&config_root);
+    trust(&config_root)?;
+    if !was_trusted {
+        granted_by_this_command(&config_root);
+    }
+    Ok(())
 }
 
 /// Asks for the trust that [`trust_after_write`] is about to record, before the write.
@@ -1667,6 +1675,12 @@ pub fn symlink_check_before_write(path: &Path) -> Result<()> {
     checked_write_destination(path).map(drop)
 }
 
+/// Whether `destination` is in mise's state directory, where trust records live. Neither a config
+/// write nor a task change goes there, whatever links lead to it.
+fn in_state_dir(destination: &Path) -> bool {
+    destination.starts_with(file::desymlink_path(&dirs::STATE))
+}
+
 /// [`symlink_check_before_write`], returning the file the check approved: `path` in its
 /// directory resolved, or the file its link leads to. Writing there rather than to `path` goes to
 /// the destination this check saw even if a link changes afterwards. That narrows the window to
@@ -1674,9 +1688,10 @@ pub fn symlink_check_before_write(path: &Path) -> Result<()> {
 /// directory it holds open.
 pub fn checked_write_destination(path: &Path) -> Result<PathBuf> {
     // The directory is resolved from the absolute path: a bare file name such as `mise.toml`
-    // has an empty parent, which does not resolve.
+    // has an empty parent, which does not resolve. A directory the write is about to create is
+    // resolved through the part of it that exists, so a link above it is judged where it leads.
     let abs = path.absolutize()?;
-    let dir = abs.parent().and_then(|dir| dir.canonicalize().ok());
+    let dir = abs.parent().map(file::desymlink_path);
     let dir_leads_out = config_root::linked_project(path).is_some_and(|project| {
         let project = project.canonicalize().ok();
         !matches!((&dir, project), (Some(dir), Some(project)) if dir.starts_with(&project))
@@ -1685,15 +1700,14 @@ pub fn checked_write_destination(path: &Path) -> Result<PathBuf> {
     // directory's `.mise` linked to `.config/mise` does, so that case is never waved through,
     // and neither is one that would create a global config file that does not exist yet.
     let to_global = || config::write_reaches_global_config_through_link(&abs);
-    // Trust records live in the state directory. When it is inside the project, a directory link
-    // that stays in the project can still lead into it, so no destination there is accepted.
-    let state_dir = file::desymlink_path(&dirs::STATE);
+    // When the state directory is inside the project, a directory link that stays in the project
+    // can still lead into it, so no destination there is accepted.
     if !path.is_symlink() && !dir_leads_out && !to_global() {
         let destination = match (dir, abs.file_name()) {
             (Some(dir), Some(name)) => dir.join(name),
             _ => abs.to_path_buf(),
         };
-        if destination.starts_with(&state_dir) {
+        if in_state_dir(&destination) {
             return Err(eyre!(
                 "refusing to write {} to {}: it is in mise's state directory. Write the config somewhere else, or replace the linked directory with a regular one",
                 style::display_path_escaped(path),
@@ -1718,7 +1732,7 @@ pub fn checked_write_destination(path: &Path) -> Result<PathBuf> {
     let unresolved = target
         .components()
         .any(|c| matches!(c, std::path::Component::ParentDir));
-    if unresolved || target.starts_with(&state_dir) {
+    if unresolved || in_state_dir(&target) {
         return refuse("the target is in mise's state directory or cannot be resolved");
     }
     // Global config's root is the home directory, which holds the project too, so a project's
@@ -1806,6 +1820,16 @@ fn script_link_check(script: &Path, root: &Path, follow_own_link: bool) -> Resul
     } else {
         dir.canonicalize()?.join(name)
     };
+    // As for config writes: when the state directory is inside the project, a link that stays in
+    // the project can still lead to a trust record.
+    if in_state_dir(&target) {
+        let verb = if follow_own_link { "write" } else { "remove" };
+        return Err(eyre!(
+            "refusing to {verb} task {} at {}: it is in mise's state directory. Replace the linked directory with a regular one",
+            style::display_path_escaped(&script),
+            style::display_path_escaped(&target)
+        ));
+    }
     let Ok(below_root) = script.strip_prefix(&root) else {
         return Ok(target);
     };
@@ -2648,6 +2672,28 @@ mod tests {
         std::fs::write(&marker, "").unwrap();
         assert!(trusted_by_this_command(&child));
         std::fs::remove_file(&marker).unwrap();
+    }
+
+    /// Tests trust every path unless trust is bound to content, so paranoid mode is what leaves
+    /// the config untrusted before the write. Its trust root is then the file itself.
+    #[test]
+    fn trust_recorded_after_a_write_is_this_commands() {
+        use confique::Layer;
+        let _held = crate::test::SettingsGuard::lock();
+        let mut settings = crate::config::settings::SettingsPartial::empty();
+        settings.paranoid = Some(mise_settings::Paranoid::all());
+        Settings::reset(Some(settings));
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().canonicalize().unwrap().join("mise.toml");
+        std::fs::write(&path, "").unwrap();
+        assert!(!is_trusted(&path));
+        let root = config_trust_root(&path);
+        assert_eq!(root, path);
+        trust_after_write(&path).unwrap();
+        assert!(is_trusted(&root));
+        assert!(trusted_by_this_command(&root));
+        untrust(&root).unwrap();
+        Settings::reset(None);
     }
 
     #[cfg(unix)]
