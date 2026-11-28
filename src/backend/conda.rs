@@ -35,7 +35,6 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fmt::Debug;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::LazyLock;
 use std::sync::atomic::{AtomicU64, Ordering};
 use versions::Versioning;
 
@@ -285,7 +284,7 @@ impl CondaBackend {
     /// The records `mise lock` locks: those `fetch` returns, solved for `specs` on
     /// `platform` under the `before` cutoff. Each failure says which step failed. The
     /// fetch's and the solver's own errors can quote a channel URL with a token in it,
-    /// so they replace the error chain with their text, tokens redacted.
+    /// so they are dropped, chain and all, rather than masked.
     async fn lock_records(
         fetch: impl std::future::Future<Output = Result<Vec<RepoDataRecord>>>,
         specs: Vec<MatchSpec>,
@@ -294,19 +293,11 @@ impl CondaBackend {
         target: &str,
         before: Option<jiff::Timestamp>,
     ) -> Result<Vec<RepoDataRecord>> {
-        let fetched = fetch.await.map_err(|e| {
-            eyre::eyre!(
-                "failed to fetch conda repodata for {tool_name} for {target}: {}",
-                redact_channel_credentials(&format!("{e:#}"))
-            )
+        let fetched = fetch.await.map_err(|_| {
+            eyre::eyre!("failed to fetch conda repodata for {tool_name} for {target}")
         })?;
-        Self::solve_records(fetched, specs, platform, before).map_err(|e| {
-            eyre::eyre!(
-                "{}: {}",
-                lock_solve_failure(tool_name, target, before),
-                redact_channel_credentials(&format!("{e:#}"))
-            )
-        })
+        Self::solve_records(fetched, specs, platform, before)
+            .map_err(|_| eyre::eyre!("{}", lock_solve_failure(tool_name, target, before)))
     }
 
     /// Solve the conda environment for `specs` on `platform` from `records`,
@@ -1475,17 +1466,6 @@ impl CondaBackend {
 
 /// The message `mise lock` shows when solving `tool_name` for `target` fails:
 /// it names the `minimum_release_age` cutoff the solver chose under, if any.
-/// `text` with the credentials a conda channel URL can carry masked: the token in a
-/// `/t/<token>/` path and any `user:password@` userinfo.
-fn redact_channel_credentials(text: &str) -> String {
-    static TOKEN: LazyLock<regex::Regex> =
-        LazyLock::new(|| regex::Regex::new(r"/t/[^/\s]+/").unwrap());
-    static USERINFO: LazyLock<regex::Regex> =
-        LazyLock::new(|| regex::Regex::new(r"://[^/@\s]+@").unwrap());
-    let text = TOKEN.replace_all(text, "/t/***/");
-    USERINFO.replace_all(&text, "://***@").into_owned()
-}
-
 fn lock_solve_failure(tool_name: &str, target: &str, before: Option<jiff::Timestamp>) -> String {
     match before {
         Some(before) => format!(
@@ -1946,25 +1926,21 @@ mod tests {
 
         // The solver chose under the cutoff, so the failure names it.
         let err = lock(Ok(vec![new.clone()]), Some(cutoff)).await.unwrap_err();
-        assert!(
-            err.to_string().starts_with(
-                "failed to solve vim for linux-x64 with packages released before 2024-06-01T00:00:00Z (minimum_release_age): "
-            ),
-            "{err}"
+        assert_eq!(
+            format!("{err:#}"),
+            "failed to solve vim for linux-x64 with packages released before 2024-06-01T00:00:00Z (minimum_release_age)"
         );
-        // A fetch failure says so, with the channel's credentials masked in the
-        // fetch's own error, and no error chain left to print them.
+        // A fetch failure says so, with nothing of the fetch's own error, chain
+        // included, left to print a channel token.
         let err = lock(
-            Err(eyre::eyre!(
-                "https://user:pass@example.invalid/t/tk-123/conda-forge"
-            )),
+            Err(eyre::eyre!("https://example.invalid/conda?token=secret")),
             Some(cutoff),
         )
         .await
         .unwrap_err();
         assert_eq!(
             format!("{err:#}"),
-            "failed to fetch conda repodata for vim for linux-x64: https://***@example.invalid/t/***/conda-forge"
+            "failed to fetch conda repodata for vim for linux-x64"
         );
         // Without the cutoff the same records solve.
         let solved = lock(Ok(vec![new]), None).await.unwrap();
