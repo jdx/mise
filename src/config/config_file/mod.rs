@@ -2053,17 +2053,27 @@ pub fn trusted_paths_below(dir: &Path) -> Vec<PathBuf> {
 }
 
 pub fn untrust(path: &Path) -> eyre::Result<()> {
-    rm_ignored(path.to_path_buf())?;
+    untrust_recorded(&record_identity(path))
+}
+
+/// Removes the trust and ignore records of `identity`, a path as a record holds it: resolved
+/// when it was recorded, and not resolved again here. A recorded path that has since become a
+/// link loses its own records this way, while [`untrust`] would resolve the link and remove the
+/// records of the file it leads to, which can be another checkout's.
+pub fn untrust_recorded(identity: &Path) -> eyre::Result<()> {
+    for ignore_path in records_of_identity(&dirs::IGNORED_CONFIGS, identity) {
+        file::remove_file(&ignore_path)?;
+    }
+    IS_IGNORED.lock().unwrap().remove(identity);
     // The current name also covers sidecars left without a record, such as the monorepo marker
     // of a root trusted through `trusted_config_paths`.
-    let current = dirs::TRUSTED_CONFIGS.join(hashed_path_filename(path));
-    let mut records = records_for(&dirs::TRUSTED_CONFIGS, path);
+    let current = dirs::TRUSTED_CONFIGS.join(record_name(identity));
+    let mut records = records_of_identity(&dirs::TRUSTED_CONFIGS, identity);
     if !records.contains(&current) {
         records.push(current);
     }
-    let identity = record_identity(path);
     for hashed_path in records {
-        if record_points_at(&hashed_path, &identity) {
+        if record_points_at(&hashed_path, identity) {
             file::remove_file(&hashed_path)?;
         }
         for ext in ["hash", "monorepo", ENV_FILE_APPROVAL] {
@@ -2185,13 +2195,17 @@ impl TrustRecord {
 /// Every record in `dir` that points at `path`, under its current name and under the older
 /// names.
 fn records_for(dir: &Path, path: &Path) -> Vec<PathBuf> {
-    let identity = record_identity(path);
-    let current = dir.join(hashed_path_filename(path));
+    records_of_identity(dir, &record_identity(path))
+}
+
+/// The records in `dir` that hold `identity`, a path already resolved.
+fn records_of_identity(dir: &Path, identity: &Path) -> Vec<PathBuf> {
+    let current = dir.join(record_name(identity));
     let mut records = vec![];
-    if record_points_at(&current, &identity) {
+    if record_points_at(&current, identity) {
         records.push(current);
     }
-    records.extend(legacy_records(dir, &identity));
+    records.extend(legacy_records(dir, identity));
     records
 }
 
