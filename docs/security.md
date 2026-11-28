@@ -77,10 +77,10 @@ A `mise.toml` loads without trust when it has no template syntax
 - `[tools]` entries whose values are version strings or arrays of version
   strings, with no options in the tool name (`"tool[opt=value]"`), no `spm:`
   name that is the URL of a host other than github.com or gitlab.com, which
-  mise would send your forge token to, no `npm:` tarball URL and no `npm:` or
-  `pypi:` Git URL over `http(s)` on a host other than github.com, gitlab.com or
-  bitbucket.org, which mise or git would send your `~/.netrc` and Git
-  credential-helper logins to, and no
+  mise would send your forge token to, no `npm:` tarball URL, `npm:` Git URL or
+  `pypi:` Git URL that is fetched over `http(s)` from a host other than
+  github.com, gitlab.com or bitbucket.org, which mise or git would send your
+  `~/.netrc` and Git credential-helper logins to, and no
   [`path:`](/dev-tools/versions.html) version, which puts a directory on `PATH`
   without an install, and no `ref:` or `rev:` version, which can name any
   commit the forge serves, such as a pull request from a fork (`tag:` and
