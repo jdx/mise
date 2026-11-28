@@ -2319,9 +2319,9 @@ mod tests {
                 native("echo []"),
             ),
             (
-                &["../../Cargo.toml"],
+                &["../.test-tool-versions"],
                 "echo {{ task_source_files() | first }}",
-                native("echo ../../Cargo.toml"),
+                native("echo ../.test-tool-versions"),
             ),
             (
                 &[concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml")],

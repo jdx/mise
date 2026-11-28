@@ -177,6 +177,22 @@ fn attempt_options(
     (headers, options)
 }
 
+/// The headers and options for the https attempt after the http one could not
+/// reach the server. A retry inside the http attempt may have settled on other
+/// credentials first (netrc turned off after its login earned a 401, a refreshed
+/// or dropped token) before it failed, so the https attempt starts from those.
+fn https_fallback_attempt(
+    headers: &HeaderMap,
+    mut options: SendOnceOptions,
+) -> (HeaderMap, SendOnceOptions) {
+    let Some(retry_state) = options.retry_state.clone() else {
+        return (headers.clone(), options);
+    };
+    let headers = with_saved_authorization(headers, &retry_state);
+    options.use_netrc &= retry_state.lock().unwrap().use_netrc;
+    (headers, options)
+}
+
 /// The parts of a request that stay fixed across retry attempts.
 struct RetryableRequest<'a> {
     method: Method,
@@ -517,6 +533,39 @@ fn prune_shared_downloads(
             true
         }
     });
+}
+
+/// The [`INVOCATION_DOWNLOADS`] entry for a download through `client`. The tool
+/// scope is part of it: a download made for a tool from global config may have
+/// carried netrc credentials that the work of a project tool does not get
+/// ([`crate::untrusted_hosts::netrc_denied`]), so that work must not be handed
+/// its result.
+fn invocation_download_key(
+    client: &Client,
+    url: &Url,
+    headers: &HeaderMap,
+    options: DownloadOptions,
+) -> String {
+    format!(
+        "{client:p}:{}:{options:?}:{:?}",
+        download_request_hash(url, headers),
+        crate::untrusted_hosts::current_tool_scope()
+    )
+}
+
+/// The [`HTTP_CACHE`] entry for a text request. Responses can depend on the
+/// credentials (a token may select a repository), so the headers are part of it,
+/// as a digest so the values are never kept in memory as plain text. So is the
+/// tool scope, for the reason [`invocation_download_key`] gives and its reverse: a
+/// body fetched without credentials for a project tool must not be handed to the
+/// later work of a global tool, which would have sent them.
+fn text_cache_key(url: &Url, headers: &HeaderMap) -> String {
+    let scope = crate::untrusted_hosts::current_tool_scope();
+    if headers.is_empty() {
+        format!("{url}\n{scope:?}")
+    } else {
+        format!("{url}\n{scope:?}\n{}", header_digest(headers))
+    }
 }
 
 /// Own temporary shared artifacts for this command, including cancellation paths.
@@ -1540,13 +1589,44 @@ impl Client {
         url: U,
         max_retries: i64,
     ) -> Result<Response> {
+        // Before the credential lookup, which can refresh a GitHub OAuth token.
         ensure!(
             !crate::network::offline(&Settings::get()),
             "offline mode is enabled"
         );
         let url = url.into_url()?;
         let headers = host_auth_headers(&url)?;
-        let retry_state = new_retry_state(&headers, true);
+        self.head_without_netrc_with(url, &headers, max_retries)
+            .await
+    }
+
+    /// [`Self::head_without_netrc`] with `headers` in place of the credentials
+    /// [`host_auth_headers`] adds by host alone, for a URL a third party chose,
+    /// such as a link in a release (see [`TextRequest::without_host_auth`]).
+    pub async fn head_without_netrc_or_host_auth<U: IntoUrl>(
+        &self,
+        url: U,
+        headers: &HeaderMap,
+        max_retries: i64,
+    ) -> Result<Response> {
+        ensure!(
+            !crate::network::offline(&Settings::get()),
+            "offline mode is enabled"
+        );
+        let url = url.into_url()?;
+        let mut all = crate::github::media_type_headers(&url);
+        all.extend(headers.clone());
+        self.head_without_netrc_with(url, &all, max_retries).await
+    }
+
+    /// The HEAD of the two above; each checks offline mode first.
+    async fn head_without_netrc_with(
+        &self,
+        url: Url,
+        headers: &HeaderMap,
+        max_retries: i64,
+    ) -> Result<Response> {
+        let retry_state = new_retry_state(headers, true);
         let resp = retry_async_with_retries(
             "HEAD",
             &url,
@@ -1598,6 +1678,7 @@ impl Client {
             extra_headers: HeaderMap::new(),
             retries: crate::network::http_retries(&Settings::get()),
             allow_html: false,
+            host_auth: true,
             max_bytes: MAX_BODY_BYTES,
         }
     }
@@ -1611,22 +1692,15 @@ impl Client {
             .await
     }
 
-    /// [`Self::get_text_cached`] with extra request headers. The cache is keyed by URL
-    /// alone, so every caller of one URL within a process must send the same headers.
+    /// [`Self::get_text_cached`] with extra request headers. The cache is keyed by
+    /// [`text_cache_key`]: the URL, the headers and the tool scope.
     pub async fn get_text_cached_with_headers<U: IntoUrl>(
         &self,
         url: U,
         headers: &HeaderMap,
     ) -> Result<String> {
         let url = url.into_url()?;
-        // Responses can depend on the credentials (a token may select a repository), so
-        // they are part of the key, as a digest so the values are never kept in memory
-        // as plain text.
-        let key = if headers.is_empty() {
-            url.to_string()
-        } else {
-            format!("{url}\n{}", header_digest(headers))
-        };
+        let key = text_cache_key(&url, headers);
 
         // Get or create the OnceCell for this URL
         let cell = {
@@ -1886,11 +1960,7 @@ impl Client {
     ) -> Result<DownloadFileMetadata> {
         let url = url.into_url()?;
         if Settings::get().generate_lockfiles() {
-            let key = format!(
-                "{:p}:{}:{options:?}",
-                self,
-                download_request_hash(&url, headers)
-            );
+            let key = invocation_download_key(self, &url, headers, options);
             let shared = {
                 let mut downloads = INVOCATION_DOWNLOADS.lock().unwrap();
                 let entry = downloads.entry(key).or_default();
@@ -2746,7 +2816,8 @@ impl Client {
             Err(err) if url.scheme() == "http" && is_unreachable(&err) => {
                 let mut url = url;
                 url.set_scheme("https").unwrap();
-                self.send_once_with_retry_headers(method, url, headers, verb_label, options)
+                let (headers, options) = https_fallback_attempt(headers, options);
+                self.send_once_with_retry_headers(method, url, &headers, verb_label, options)
                     .await
             }
             Err(err) => Err(err),
@@ -2842,7 +2913,12 @@ impl Client {
         // (replace a public URL with a private mirror authenticated via
         // netrc) without clobbering forge tokens on un-redirected requests.
         let mut final_headers = headers.clone();
-        clear_cross_host_credentials(&mut final_headers, &original_url, &mut url);
+        clear_cross_host_credentials(&mut final_headers, &original_url, &url);
+        // A redirect follows only the rules whose header survived host scoping, so a
+        // netrc login added below for a replacement host never inherits a rule written
+        // for the original host's header. Retries re-attach the full rules because they
+        // start again from the original URL.
+        let redirect_rules = forward_rules.scoped_to(&final_headers);
         // Refuse the downgrade for credentials that survive host scoping: a same-server
         // rewrite keeps the original Authorization, and userinfo written into the rule
         // itself is sent as-is. This runs before netrc because netrc credentials are
@@ -2851,24 +2927,31 @@ impl Client {
         // than the direct request, or an http mirror fronting an https origin (#7164)
         // becomes unusable.
         ensure_secure_replacement_credentials(&original_url, &url, &final_headers)?;
-        // Set when netrc alone supplied the Authorization header for this host.
+        // Set when netrc changed the Authorization header, on the original host or on
+        // the host a URL replacement sent the request to.
         let mut netrc_fallback_used = false;
         if options.use_netrc
             && !(options.netrc_replacement_only && url.host() == original_url.host())
         {
             let before = final_headers.get(AUTHORIZATION).cloned();
-            final_headers =
-                replacement_netrc_credentials(final_headers, &original_url, &url, || {
+            // In safe mode a project tool gets netrc credentials only on a host that
+            // an operator's replacement rule sent the request to.
+            let netrc = || {
+                if url.host() == original_url.host() {
                     netrc_headers(&url)
-                })?;
-            netrc_fallback_used = url.host() == original_url.host()
-                && final_headers.get(AUTHORIZATION) != before.as_ref();
+                } else {
+                    replacement_netrc_headers(&url)
+                }
+            };
+            final_headers =
+                replacement_netrc_credentials(final_headers, &original_url, &url, netrc)?;
+            netrc_fallback_used = final_headers.get(AUTHORIZATION) != before.as_ref();
         }
 
         let request_timeout = self.request_timeout();
         let timeout = matches!(self.kind, ClientKind::Fetch).then_some(request_timeout);
         let resp = match self
-            .send_scoped(&method, &url, &final_headers, &forward_rules, timeout)
+            .send_scoped(&method, &url, &final_headers, &redirect_rules, timeout)
             .await
         {
             Ok(resp) => resp,
@@ -2962,8 +3045,9 @@ impl Client {
             }
         }
         // A stale netrc login earns a 401 even from hosts that serve the resource
-        // anonymously (a public GitLab release asset). netrc is only a fallback, so
-        // retry once without it rather than fail. Callers that read the status
+        // anonymously (a public GitLab release asset, or a public mirror a URL
+        // replacement points at). netrc is only a fallback, so retry once without it
+        // rather than fail; a mirror that needs the login fails the same way again. Callers that read the status
         // themselves (`allow_error_status`) keep the 401, and a response from
         // another origin after a redirect never saw the netrc header.
         if netrc_fallback_used
@@ -3118,6 +3202,7 @@ pub struct TextRequest<'a> {
     extra_headers: HeaderMap,
     retries: i64,
     allow_html: bool,
+    host_auth: bool,
     max_bytes: usize,
 }
 
@@ -3145,6 +3230,20 @@ impl TextRequest<'_> {
         self
     }
 
+    /// Leave out the credentials [`host_auth_headers`] adds by host alone, for a
+    /// URL that a third party chose, such as a link in a release. Sending them
+    /// would fetch for the third party whatever the user can read there; the
+    /// caller passes the credentials the request is meant to carry with
+    /// [`Self::headers`]. A netrc login still follows the tool's scope, as
+    /// on any other request for the tool: a trusted tool sends it, and a
+    /// project tool in safe mode does not, except to a host an operator's URL
+    /// replacement sent the request to, when project config does not name
+    /// that host (see [`crate::untrusted_hosts::netrc_denied_on_replacement_host`]).
+    pub fn without_host_auth(mut self) -> Self {
+        self.host_auth = false;
+        self
+    }
+
     /// Fail once the decoded body passes `limit` bytes instead of
     /// [`MAX_BODY_BYTES`], for a document that is much smaller when genuine
     /// and is parsed before anything has verified it.
@@ -3160,7 +3259,13 @@ impl TextRequest<'_> {
         );
         let mut url = self.url.clone().map_err(|e| eyre!(e))?;
         // Merge GitHub headers with any extra headers provided
-        let mut headers = host_auth_headers(&url)?;
+        // Without host auth no token is looked up, but a GitHub API URL still
+        // gets the media type, or the Contents API answers with JSON.
+        let mut headers = if self.host_auth {
+            host_auth_headers(&url)?
+        } else {
+            crate::github::media_type_headers(&url)
+        };
         headers.extend(self.extra_headers.clone());
         let max_bytes = self.max_bytes;
         let text = self
@@ -3631,6 +3736,13 @@ pub fn host_auth_headers(url: &Url) -> Result<HeaderMap> {
     // files are a 404 without the token, so it is routed here too. `get_headers`
     // decides what each host actually gets.
     if crate::github::is_github_api_url(url) || crate::github::is_github_raw_content_url(url) {
+        // A host that a project tool's URL named in safe mode; see
+        // `untrusted_hosts`. No token is looked up for it, so one that cannot be
+        // sent cannot fail the request either. The media type headers stay, so
+        // what is public there still downloads.
+        if crate::untrusted_hosts::host_auth_denied(url) {
+            return Ok(crate::github::media_type_headers(url));
+        }
         return crate::github::get_headers(url.as_str(), crate::github::API_URL);
     }
 
@@ -3737,6 +3849,19 @@ impl ForwardRules {
         self.0.keys().any(|name| headers.contains_key(name))
     }
 
+    /// The rules whose header is still in `headers`. A rule speaks for the value the
+    /// caller set, so once that value is gone a header of the same name added later,
+    /// such as a netrc login for a replacement host, stays on the host it was added for.
+    fn scoped_to(&self, headers: &HeaderMap) -> Self {
+        Self(
+            self.0
+                .iter()
+                .filter(|(name, _)| headers.contains_key(*name))
+                .map(|(name, hosts)| (name.clone(), hosts.clone()))
+                .collect(),
+        )
+    }
+
     /// Cross-origin hop to `next`: drop every credential header that is not allowed to
     /// reach `next`. A header dropped here stays dropped for the rest of the chain.
     fn retain_for(&self, headers: &mut HeaderMap, previous: &Url, next: &Url) {
@@ -3828,9 +3953,14 @@ pub fn same_server(original_url: &Url, url: &Url) -> bool {
             || url.port_or_known_default() == original_url.port_or_known_default())
 }
 
-/// Drop the credentials scoped to the original server ([`same_server`])
+/// Drop the credential headers scoped to the original server ([`same_server`])
 /// before contacting a replacement one.
-pub fn clear_cross_host_credentials(headers: &mut HeaderMap, original_url: &Url, url: &mut Url) {
+///
+/// The userinfo of `url` is left alone. [`apply_url_replacements`] never carries
+/// a URL's own login to another server, so a login on a rewritten URL for
+/// another server is one the rule wrote, for the server it names, even when it
+/// is the same login the original URL had.
+pub fn clear_cross_host_credentials(headers: &mut HeaderMap, original_url: &Url, url: &Url) {
     if same_server(original_url, url) {
         return;
     }
@@ -3841,16 +3971,6 @@ pub fn clear_cross_host_credentials(headers: &mut HeaderMap, original_url: &Url,
         .collect::<Vec<_>>();
     for name in credential_headers {
         headers.remove(name);
-    }
-    let inherited_userinfo = (!original_url.username().is_empty()
-        || original_url.password().is_some())
-        && url.username() == original_url.username()
-        && url.password() == original_url.password();
-    if inherited_userinfo {
-        url.set_password(None)
-            .expect("HTTP URLs support clearing passwords");
-        url.set_username("")
-            .expect("HTTP URLs support clearing usernames");
     }
 }
 
@@ -3903,6 +4023,14 @@ fn apply_netrc_credentials(
     // Compare host only: netrc lookup and forge-token selection are both
     // host-scoped, so a path/query-only rewrite on the same host must not
     // let netrc clobber a still-valid forge token.
+    // A full login in the URL (the user's, or a replacement rule's) is the
+    // credential written for this request, and reqwest sends it as Authorization;
+    // a netrc header would replace it, which curl does not do either. A URL with
+    // only a user name still takes its password from netrc, as in curl, and
+    // [`netrc_authorization`] keeps that to the entry for the same user.
+    if url.password().is_some() {
+        return final_headers;
+    }
     let host_changed = url.host() != original_url.host();
     let has_auth = final_headers.contains_key(AUTHORIZATION);
     if netrc_should_apply(host_changed, has_auth) {
@@ -3943,21 +4071,67 @@ pub fn ensure_secure_url_replacement(
 
 /// Get HTTP Basic authentication headers from netrc file for the given URL
 pub fn netrc_headers(url: &Url) -> HeaderMap {
-    let mut headers = HeaderMap::new();
-    // A host that a project `version_list_url` named in safe mode; see
-    // `untrusted_hosts`.
+    // A request for a project tool in safe mode, or for a host a project URL
+    // option named; see `untrusted_hosts`.
     if crate::untrusted_hosts::netrc_denied(url) {
-        return headers;
+        return HeaderMap::new();
     }
+    netrc_credential_headers(url)
+}
+
+/// [`netrc_headers`] for a URL that a URL replacement moved to another host.
+pub fn replacement_netrc_headers(url: &Url) -> HeaderMap {
+    if crate::untrusted_hosts::netrc_denied_on_replacement_host(url) {
+        return HeaderMap::new();
+    }
+    netrc_credential_headers(url)
+}
+
+/// [`netrc_headers`] for a request to `request` that a client made for
+/// `named`, a URL the URL replacements may have moved before the request was
+/// sent. When an operator's replacement sends `named` to another host, that
+/// mirror keeps its login in safe mode, as on the default download path, and
+/// so do the redirects it sends to its own origin (which reqwest would follow
+/// with the login); every other host gets [`netrc_headers`].
+pub fn rewritten_request_netrc_headers(request: &Url, named: &Url) -> HeaderMap {
+    let mut mirror = named.clone();
+    apply_url_replacements(&mut mirror);
+    if mirror.host() != named.host() && request.origin() == mirror.origin() {
+        replacement_netrc_headers(request)
+    } else {
+        netrc_headers(request)
+    }
+}
+
+fn netrc_credential_headers(url: &Url) -> HeaderMap {
+    let mut headers = HeaderMap::new();
     if let Some(host) = url.host_str()
         && let Some((login, password)) = netrc::get_credentials(host)
+        && let Some(value) = netrc_authorization(url, &login, &password)
     {
-        let credentials = BASE64_STANDARD.encode(format!("{login}:{password}"));
-        if let Ok(value) = HeaderValue::from_str(&format!("Basic {credentials}")) {
-            headers.insert(reqwest::header::AUTHORIZATION, value);
-        }
+        headers.insert(reqwest::header::AUTHORIZATION, value);
     }
     headers
+}
+
+/// The Basic Authorization header for a netrc entry. A URL that names a user
+/// takes the entry only when its login is that user, as curl does; otherwise
+/// the URL's user would be sent with another user's password.
+fn netrc_authorization(url: &Url, login: &str, password: &str) -> Option<HeaderValue> {
+    // A URL with a user and a password carries the login written for this
+    // request, as on the default download path: netrc does not replace it.
+    if url.password().is_some() {
+        return None;
+    }
+    // Compare the decoded name, so `a%40b` and `%75ser` in the URL match the
+    // logins `a@b` and `user`. A name that does not decode takes no entry.
+    if !url.username().is_empty()
+        && urlencoding::decode(url.username()).ok().as_deref() != Some(login)
+    {
+        return None;
+    }
+    let credentials = BASE64_STANDARD.encode(format!("{login}:{password}"));
+    HeaderValue::from_str(&format!("Basic {credentials}")).ok()
 }
 
 /// Resolve the `rel="next"` target of a `Link` header against the URL it came from.
@@ -3993,25 +4167,230 @@ fn github_relay_socket(url: &Url) -> Option<std::ffi::OsString> {
     }
 }
 
+/// Splits a `url_replacements` replacement into the scheme it starts with, if
+/// it has one, the authority (`user:password@host:port`) after that, and the
+/// rest. A replacement need not be a whole URL: `mirror.example.com/github`
+/// starts with its authority. The URL parser reads the authority of an `http`,
+/// `https`, `ws`, `wss` or `ftp` URL after any run of `/` and `\` that follows
+/// the colon, so `https:////user:password@host/` and `https:\user:password@host/`
+/// both name `host`; other schemes need `//`. That holds only where the
+/// replacement starts the URL (`at_url_start`): written after the start, as a
+/// hostname rule's is, `https:secret@mirror.example` is a login and a host.
+fn split_replacement(replacement: &str, at_url_start: bool) -> (Option<&str>, &str, &str) {
+    const AUTHORITY_END: [char; 4] = ['/', '\\', '?', '#'];
+    let special = special_scheme(replacement).filter(|_| at_url_start);
+    let (scheme, rest) = match (special, replacement.split_once("//")) {
+        (Some((scheme, rest)), _) => (Some(scheme), rest.trim_start_matches(['/', '\\'])),
+        (None, Some((scheme, rest)))
+            if !scheme.contains(AUTHORITY_END) && !scheme.contains('@') =>
+        {
+            (scheme.strip_suffix(':').filter(|s| !s.is_empty()), rest)
+        }
+        _ => (None, replacement),
+    };
+    let (authority, rest) = rest.split_at(rest.find(AUTHORITY_END).unwrap_or(rest.len()));
+    (scheme, authority, rest)
+}
+
+/// The scheme and the rest of a replacement that starts with an `http`, `https`,
+/// `ws`, `wss` or `ftp` scheme, which the URL parser reads the authority of
+/// after any run of `/` and `\` that follows the colon, an empty one included:
+/// `https:user:password@host/` names `host`.
+fn special_scheme(replacement: &str) -> Option<(&str, &str)> {
+    replacement.split_once(':').filter(|(scheme, _)| {
+        matches!(
+            scheme.to_ascii_lowercase().as_str(),
+            "http" | "https" | "ws" | "wss" | "ftp"
+        )
+    })
+}
+
+/// Whether a replacement with an `@` that does not start with a special scheme
+/// ([`special_scheme`]) puts more than `//`, or a backslash, in front of where
+/// its authority would be: `///user:password@host/`, `\\user:password@host/`,
+/// `git:///user:password@host/`. There is no authority there, so mise cannot
+/// tell which server a login in it is for ([`replacement_credentials`]), and the
+/// text would land in whatever part of the URL the key matched, such as the
+/// query of a request to another host. Such a rule is refused. Only the text
+/// where a URL parser would look for that server, up to the next `/`, `\`, `?`
+/// or `#`, can hold such a login: `file:///opt/mirror/@scope/` has an `@` in
+/// its path and is a replacement like any other.
+fn ambiguous_replacement_authority(replacement: &str) -> bool {
+    let parsed = without_url_tabs(trim_url_start(replacement));
+    // Without an `@` there is no login to misplace, so `file:///opt/mirror/`
+    // and other paths are replacements like any other.
+    if special_scheme(&parsed).is_some() || !parsed.contains('@') {
+        return false;
+    }
+    let is_scheme = |scheme: &str| {
+        scheme.starts_with(|c: char| c.is_ascii_alphabetic())
+            && scheme
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'))
+    };
+    let rest = match parsed.split_once(':') {
+        Some((scheme, rest)) if is_scheme(scheme) => rest,
+        _ => &parsed,
+    };
+    let after_lead = rest.trim_start_matches(['/', '\\']);
+    let lead = &rest[..rest.len() - after_lead.len()];
+    let server = after_lead
+        .split(['/', '\\', '?', '#'])
+        .next()
+        .unwrap_or_default();
+    (lead.len() > 2 || lead.contains('\\')) && server.contains('@')
+}
+
+/// The front of a `url_replacements` replacement that carries credentials, up
+/// to the end of its authority: `https://user:password@mirror.example.com` of
+/// `https://user:password@mirror.example.com/github/`. The replacement is read
+/// as the URL parser reads it, which drops every tab and line break and the
+/// controls and spaces at the start, so `https:/<TAB>/user:password@host/` has
+/// credentials too. The front is returned as written, tabs and line breaks
+/// included, so a regex rule's `$1<TAB>.example.com` still ends its capture
+/// name where the rewrite does when it is expanded.
+fn replacement_credentials(replacement: &str) -> Option<&str> {
+    let replacement = trim_url_start(replacement);
+    let parsed = without_url_tabs(replacement);
+    // Read as the start of a URL, which finds a login in the most spellings: a
+    // replacement written further in still has one in its authority.
+    let (_, authority, rest) = split_replacement(&parsed, true);
+    if !authority
+        .rsplit_once('@')
+        .is_some_and(|(userinfo, _)| !userinfo.is_empty())
+    {
+        return None;
+    }
+    // The end of the front in `replacement`: after as many kept characters as
+    // the parsed front has, and before the tabs and line breaks that follow it.
+    let mut kept = parsed.len() - rest.len();
+    let end = replacement
+        .char_indices()
+        .find(|&(_, c)| {
+            if is_url_tab(c) {
+                return false;
+            }
+            if kept == 0 {
+                return true;
+            }
+            kept -= c.len_utf8();
+            false
+        })
+        .map_or(replacement.len(), |(i, _)| i);
+    Some(&replacement[..end])
+}
+
+/// The controls and spaces the URL parser drops from the start of a URL.
+fn trim_url_start(url: &str) -> &str {
+    url.trim_start_matches(|c: char| c <= ' ')
+}
+
+/// Tabs and line breaks, which the URL parser drops wherever they are.
+fn is_url_tab(c: char) -> bool {
+    matches!(c, '\t' | '\n' | '\r')
+}
+
+/// `url` as the URL parser reads it, without its tabs and line breaks.
+fn without_url_tabs(url: &str) -> String {
+    url.chars().filter(|&c| !is_url_tab(c)).collect()
+}
+
+/// Credentials written into a `url_replacements` rule are for the server that
+/// rule names. A key matches anywhere in the URL text, though: in the path or
+/// query of a URL on another host, or in front of the rest of a longer host
+/// name, and the rewrite would send them there. So a rule that carries
+/// credentials applies only when `url`, its result, has them as its own
+/// userinfo and is on the scheme, host and port that `server` names. `server`
+/// is the rule's [`replacement_credentials`] with any regex captures expanded;
+/// a capture that brought more than a piece of the scheme or authority has
+/// moved the credentials somewhere else. `at_url_start` is whether the rule
+/// matched at the start of the URL, so that the replacement starts the result
+/// and a leading `https:` is its scheme rather than a login.
+fn credentials_in_place(server: &str, url: &Url, at_url_start: bool) -> bool {
+    let server = without_url_tabs(trim_url_start(server));
+    let (scheme, authority, rest) = split_replacement(&server, at_url_start);
+    let scheme = scheme.unwrap_or(url.scheme());
+    rest.is_empty()
+        && Url::parse(&format!("{scheme}://{authority}/")).is_ok_and(|named| {
+            named.scheme() == url.scheme()
+                && named.username() == url.username()
+                && named.password() == url.password()
+                && named.host() == url.host()
+                && named.port_or_known_default() == url.port_or_known_default()
+        })
+}
+
+/// `url` without its userinfo.
+fn without_userinfo(url: &Url) -> Url {
+    let mut bare = url.clone();
+    // Clearing fails only for URLs that cannot have userinfo, which have none.
+    let _ = bare.set_password(None);
+    let _ = bare.set_username("");
+    bare
+}
+
+/// Gives `rewritten` the userinfo of `original` back when the rule kept the
+/// request on the same server ([`same_server`]) and wrote no userinfo of its
+/// own. A login is for its own server, so a rewrite to another one goes without
+/// it.
+fn restore_same_host_userinfo(original: &Url, rewritten: &mut Url) {
+    let has_userinfo = |url: &Url| !url.username().is_empty() || url.password().is_some();
+    if !has_userinfo(original) || has_userinfo(rewritten) || !same_server(original, rewritten) {
+        return;
+    }
+    // Both are on the same host, so both can hold userinfo.
+    let _ = rewritten.set_username(original.username());
+    let _ = rewritten.set_password(original.password());
+}
+
+/// Rewrites `url` with the first `url_replacements` rule that changes it.
+///
+/// Rules match the URL without its userinfo, so a capture cannot carry a
+/// login into the path of the rewritten URL, and a key such as
+/// `https://github.com/` matches a URL that has a login. The login stays only
+/// when the rewrite keeps the host ([`restore_same_host_userinfo`]); a rule
+/// that writes credentials of its own applies only where they end up as the
+/// userinfo of the server it names ([`credentials_in_place`]), and otherwise is
+/// skipped for this URL so later rules are tried. A rule whose replacement
+/// has a login but names no server for it is skipped for every URL
+/// ([`ambiguous_replacement_authority`]).
 pub fn apply_url_replacements(url: &mut Url) {
     let settings = Settings::get();
     if let Some(replacements) = &settings.url_replacements {
-        let url_string = url.to_string();
+        let original = url.clone();
+        let url_string = without_userinfo(url).to_string();
 
         for (pattern, replacement) in replacements {
+            if ambiguous_replacement_authority(replacement) {
+                warn_once!(
+                    "Ignoring URL replacement for '{pattern}': its replacement has a login after more \
+                     than '//' or after a backslash, so it names no server for it; write it as \
+                     'https://host/...' or 'host/...'"
+                );
+                continue;
+            }
             if let Some(pattern_without_prefix) = pattern.strip_prefix("regex:") {
                 // Regex replacement
                 if let Ok(regex) = Regex::new(pattern_without_prefix) {
                     let new_url_string = regex.replace(&url_string, replacement.as_str());
                     // Only proceed if the URL actually changed
                     if new_url_string != url_string
-                        && let Ok(new_url) = new_url_string.parse()
+                        && let Ok(new_url) = new_url_string.parse::<Url>()
+                        && replacement_credentials(replacement).is_none_or(|server| {
+                            regex.captures(&url_string).is_some_and(|captures| {
+                                let mut expanded = String::new();
+                                captures.expand(server, &mut expanded);
+                                let at_url_start = captures.get(0).is_some_and(|m| m.start() == 0);
+                                credentials_in_place(&expanded, &new_url, at_url_start)
+                            })
+                        })
                     {
                         *url = new_url;
+                        restore_same_host_userinfo(&original, url);
                         trace!(
                             "Replaced URL using regex '{}': {} -> {}",
                             pattern_without_prefix,
-                            redact_url_userinfo(&url_string),
+                            log_url(&original),
                             log_url(url)
                         );
                         return; // Apply only the first matching replacement
@@ -4025,16 +4404,28 @@ pub fn apply_url_replacements(url: &mut Url) {
             } else {
                 // Simple string replacement
                 if url_string.contains(pattern) {
-                    let new_url_string = url_string.replace(pattern, replacement);
+                    // A rule that writes a login replaces only the first match, the one
+                    // [`credentials_in_place`] checks is the server: replacing every
+                    // match would also put the login wherever else the pattern occurs,
+                    // such as a path or query naming the same host.
+                    let new_url_string = if replacement_credentials(replacement).is_some() {
+                        url_string.replacen(pattern, replacement, 1)
+                    } else {
+                        url_string.replace(pattern, replacement)
+                    };
                     // Only proceed if the URL actually changed
                     if new_url_string != url_string
-                        && let Ok(new_url) = new_url_string.parse()
+                        && let Ok(new_url) = new_url_string.parse::<Url>()
+                        && replacement_credentials(replacement).is_none_or(|server| {
+                            credentials_in_place(server, &new_url, url_string.starts_with(pattern))
+                        })
                     {
                         *url = new_url;
+                        restore_same_host_userinfo(&original, url);
                         trace!(
                             "Replaced URL using string replacement '{}': {} -> {}",
                             pattern,
-                            redact_url_userinfo(&url_string),
+                            log_url(&original),
                             log_url(url)
                         );
                         return; // Apply only the first matching replacement

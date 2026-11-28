@@ -101,14 +101,10 @@ fn routed_api_url(
     };
     let original = url.clone();
     crate::http::apply_url_replacements(&mut url);
-    // mise-sigstore builds the Authorization header itself, so the token is scoped here;
-    // `clear_cross_host_credentials` only has inherited userinfo left to strip.
-    let token = token.filter(|_| url.host() == original.host());
-    crate::http::clear_cross_host_credentials(
-        &mut reqwest::header::HeaderMap::new(),
-        &original,
-        &mut url,
-    );
+    // mise-sigstore builds the Authorization header itself, so the token is scoped here,
+    // as `clear_cross_host_credentials` scopes the headers of a mise request. The
+    // rewrite already left the URL's own login behind on another server.
+    let token = token.filter(|_| crate::http::same_server(&original, &url));
     crate::http::ensure_secure_url_replacement(&original, &url, token.is_some())
         .map_err(|err| AttestationError::Verification(err.to_string()))?;
     if url == original {
@@ -2515,6 +2511,19 @@ mod tests {
 
         assert!(err.to_string().contains("refusing to send credentials"));
         assert!(!is_api_failure(&err));
+    }
+
+    #[test]
+    fn test_routed_api_url_drops_token_on_another_port_of_the_host() {
+        let _settings = SettingsGuard::new(Some(indexmap::indexmap! {
+            "https://api.github.com".to_string() => "https://api.github.com:8443".to_string(),
+        }));
+
+        let (routed, token) =
+            routed_api_url(crate::github::API_URL, original_host_token()).unwrap();
+
+        assert_eq!(routed, "https://api.github.com:8443/");
+        assert_eq!(token, None);
     }
 
     #[test]

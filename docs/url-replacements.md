@@ -56,7 +56,13 @@ release downloads, keep only the first rule.
 A plain key matches anywhere in the URL, including the path and query, and every
 occurrence is replaced. `github.com` also matches `api.github.com` and
 `github.com.example.org`. Include the scheme and a trailing slash, such as
-`https://github.com/`, to match one host.
+`https://github.com/`, to match one host. Such a key still matches where that
+text appears in the path or query of a URL on another host; only a regex
+anchored with `^` matches at the start of the URL alone.
+
+Rules see the URL without any `user:password@` it carries, so a key such as
+`https://github.com/` also matches `https://user:token@github.com/...`, and a
+capture never picks up the login.
 
 A key that starts with `regex:` is a regular expression; see
 [Regex rules](#regex-rules).
@@ -150,6 +156,13 @@ port of the same host it adds none. A rule that keeps the host and port keeps
 the credentials, including one that only switches between HTTP and HTTPS on
 their default ports.
 
+A rule whose replacement contains `user:password@` is used only when the
+rewritten URL has that login as its own and is on the scheme, host, and port
+the replacement names. Where the key matches somewhere else, such as in the
+path or query of a URL on another host, mise skips the rule for that URL and
+tries the next one, so the login is not pasted into a request to a different
+server.
+
 An HTTPS-to-HTTP rewrite is refused only when the request would still carry
 one of those credentials over plain HTTP:
 
@@ -159,11 +172,12 @@ one of those credentials over plain HTTP:
 
 Any other downgrade goes ahead. A rule to another port of the original host is
 sent without those credentials, and one to another host with that host's netrc
-login, if it has one. These rules also cover Conda channels.
-For GitHub attestation requests, mise drops the GitHub token when the rule
-changes the host, and refuses an HTTPS-to-HTTP rewrite that keeps the host. For
-Sigstore TUF metadata, mise ignores such a rewrite and keeps the default HTTPS
-URL.
+login, if it has one: netrc is keyed by host, so its login goes to a plain HTTP
+URL of that host without a rewrite as well. These rules also cover Conda
+channels. For GitHub attestation requests, mise drops the GitHub token when the
+rule changes the host, and refuses an HTTPS-to-HTTP rewrite that keeps the
+host. For Sigstore TUF metadata, mise ignores such a rewrite and keeps the
+default HTTPS URL.
 
 ::: warning
 mise does not remove credentials from the query string on its own. A token in

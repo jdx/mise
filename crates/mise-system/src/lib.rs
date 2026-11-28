@@ -63,6 +63,7 @@ pub mod accounts;
 #[path = "accounts_non_linux.rs"]
 pub mod accounts;
 pub mod compose;
+mod created_dirs;
 pub mod defaults;
 pub mod deps;
 pub mod dotfile_groups;

@@ -252,9 +252,16 @@ async fn resolve(
     Ok(cell
         .get_or_init(|| async {
             let backend = tv.backend().ok();
+            let tool = ba.clone();
             let mut resolution = resolve_tool_lock_info(ba, tv, platform, backend).await;
+            // Fetched in the tool's safe mode scope, as its install fetches them: a
+            // project tool's artifact is wherever its release says it is.
             if let Ok(info) = &mut resolution.4
-                && let Err(error) = complete_artifact_checksums(info).await
+                && let Err(error) = crate::toolset::with_safe_mode_tool_scope(
+                    &tool,
+                    complete_artifact_checksums(info),
+                )
+                .await
             {
                 resolution.4 = Err(error.to_string());
             }
@@ -831,6 +838,7 @@ pub async fn generate(
         let semaphore = semaphore.clone();
         tasks.spawn(async move {
             let _permit = semaphore.acquire().await?;
+            let tool = ba.clone();
             let mut resolution = if let Some(info) = actual {
                 (
                     crate::toolset::install_state::state_short(&ba.short).into_owned(),
@@ -846,14 +854,23 @@ pub async fn generate(
                 resolve(ba, tv.clone(), platform).await?
             };
             if let Ok(info) = &mut resolution.4 {
-                let mut verified = Vec::new();
-                if let Some(old) = &previous_info {
-                    verified = upgrade_weak_pins_recorded_with_a_login(old, info).await?;
-                    keep_pins_recorded_with_a_login(old, info);
-                }
-                complete_artifact_checksums(info).await?;
+                // They all download the tool's artifacts, so they run in its
+                // safe mode scope, as its install does: a project tool's
+                // release chooses those hosts, and no netrc login goes to them.
+                let checksums = async {
+                    let mut verified = Vec::new();
+                    if let Some(old) = &previous_info {
+                        verified = upgrade_weak_pins_recorded_with_a_login(old, info).await?;
+                        keep_pins_recorded_with_a_login(old, info);
+                    }
+                    complete_artifact_checksums(info).await?;
+                    if let Some(old) = &previous_info {
+                        check_replaced_weak_pins(old, info, &verified).await?;
+                    }
+                    eyre::Ok(())
+                };
+                crate::toolset::with_safe_mode_tool_scope(&tool, checksums).await?;
                 if let Some(old) = previous_info {
-                    check_replaced_weak_pins(&old, info, &verified).await?;
                     preserve_legacy_metadata(&old, info);
                 }
             }

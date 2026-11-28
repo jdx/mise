@@ -33,6 +33,21 @@ pub fn in_tests() -> bool {
     cfg!(test) || active()
 }
 
+/// The directory under `base` for a test harness to use as this process's home
+/// directory.
+///
+/// nextest runs every test in its own process and gives each running test a
+/// slot number that no other running test holds. Each slot has its own
+/// directory, so tests that run at the same time do not share one. Without
+/// nextest there is one process, and it uses slot 0.
+pub fn slot_home(base: &Path) -> PathBuf {
+    let slot = std::env::var("NEXTEST_TEST_GLOBAL_SLOT")
+        .ok()
+        .filter(|slot| !slot.is_empty() && slot.bytes().all(|b| b.is_ascii_digit()))
+        .unwrap_or_else(|| "0".to_string());
+    base.join(slot)
+}
+
 /// The home directory the test harness chose, if it is running.
 pub fn home() -> Option<&'static Path> {
     HOME.get().map(PathBuf::as_path)

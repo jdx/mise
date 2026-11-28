@@ -791,10 +791,18 @@ mise recorded about earlier applies to decide what each entry owns:
 | `symlink`                               | The link, only while it still points to the configured source.                               |
 | `symlink-each`                          | Exact source-to-target links, including dangling ones for deleted sources. Other files stay. |
 | `copy` file, `template`, inline content | The file, only while its content still matches. A changed target needs `--force`.            |
-| `copy` directory                        | Matching files one by one. Unmanaged files stay, and directories go only when empty.         |
+| `copy` directory                        | Matching files one by one. Unmanaged files stay.                                             |
 | `permissions` only                      | Nothing.                                                                                     |
 | `absent`                                | Nothing. mise does not recreate the file it removed.                                         |
 | Block and line edits                    | Blocks with their markers. A plain line has no marker and needs `--force`. Merged keys stay. |
+
+When a `symlink-each` or `copy` directory entry removes its files, the
+directories under its target that mise created go too, once they are empty.
+A directory you made there stays, even when it is empty. A target that an
+older mise deployed is tracked from the first `mise dot apply` after the
+upgrade that applies an entry at that target, even one with nothing to change.
+Until then, any directory a removal empties goes, and from then on a directory
+that already held something mise deployed counts as mise's.
 
 When a `symlink`, `copy`, `template`, or inline `content` target is removed,
 the parent directories that mise created for it go too, once they are empty.

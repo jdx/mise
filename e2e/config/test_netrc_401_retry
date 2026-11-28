@@ -6,18 +6,18 @@
 cat >"$HOME/serve.py" <<'PY'
 import http.server, sys
 
-anonymous = 0
+# anonymous requests per path, so each tool's download gets its own 503
+anonymous = {}
 
 class H(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
-        global anonymous
         if self.headers.get("Authorization"):
             open(sys.argv[2], "a").write("auth\n")
             self.send_response(401)
             self.end_headers()
             return
-        anonymous += 1
-        if anonymous == 1:
+        anonymous[self.path] = anonymous.get(self.path, 0) + 1
+        if anonymous[self.path] == 1:
             # a transient failure after the anonymous retry
             self.send_response(503)
             self.end_headers()
@@ -61,4 +61,18 @@ assert_contains "mise install --verbose 2>&1" "retrying without netrc credential
 assert_contains "mise ls --installed" "http:netrc-retry"
 
 # The rejected login is sent once; later attempts after the 503 do not resend it.
+assert "wc -l <$HOME/auth-requests | tr -d ' '" "1"
+
+# The same holds on a public mirror a URL replacement points at: its netrc login
+# is a fallback too, so a rejected one is retried once without it, and not
+# resent after this path's own 503.
+rm "$HOME/auth-requests"
+export MISE_URL_REPLACEMENTS="{\"https://netrc-mirror.invalid/\": \"http://127.0.0.1:$port/\"}"
+cat >mise.toml <<TOML
+[tools]
+"http:netrc-mirror" = { version = "1.0.0", url = "https://netrc-mirror.invalid/netrc-mirror" }
+TOML
+
+assert_contains "mise install --verbose 2>&1" "retrying without netrc credentials after 401"
+assert_contains "mise ls --installed" "http:netrc-mirror"
 assert "wc -l <$HOME/auth-requests | tr -d ' '" "1"

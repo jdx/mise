@@ -716,3 +716,36 @@ async fn test_text_request_allow_html_returns_the_page() {
             .is_err()
     );
 }
+
+#[test]
+fn test_https_fallback_reads_the_credentials_a_retry_settled_on() {
+    let mut headers = HeaderMap::new();
+    headers.insert(AUTHORIZATION, HeaderValue::from_static("Bearer token"));
+    let retry_state = new_retry_state(&headers, false);
+    let mut request = headers.clone();
+    request.insert(RANGE, HeaderValue::from_static("bytes=10-"));
+
+    // Nothing changed: the https attempt is the http one.
+    let options = SendOnceOptions::new(Some(retry_state.clone()), true);
+    let (fallback, fallback_options) = https_fallback_attempt(&request, options.clone());
+    assert_eq!(fallback, request);
+    assert!(fallback_options.use_netrc);
+
+    // The http attempt's netrc login earned a 401 and its anonymous retry then
+    // timed out: the https attempt must not send that login again.
+    *retry_state.lock().unwrap() = RetryState {
+        headers: HeaderMap::new(),
+        use_netrc: false,
+        netrc_replacement_only: false,
+    };
+    let (fallback, fallback_options) = https_fallback_attempt(&request, options);
+    assert!(!fallback_options.use_netrc);
+    assert!(!fallback.contains_key(AUTHORIZATION));
+    assert_eq!(fallback.get(RANGE).unwrap(), "bytes=10-");
+
+    // Without a retry state the options are used as given.
+    let options = SendOnceOptions::new(None, true);
+    let (fallback, fallback_options) = https_fallback_attempt(&request, options);
+    assert_eq!(fallback, request);
+    assert!(fallback_options.use_netrc);
+}
