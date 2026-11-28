@@ -72,6 +72,12 @@ async fn test_pick_reachable_asset_url_falls_back_quickly_on_5xx() {
 /// API URL as a failed probe does, rather than failing the request.
 #[tokio::test]
 async fn test_pick_reachable_release_link_url_builds_probe_headers_for_the_browser_url() {
+    // A probe refuses to run offline, so a test switching offline mode on must not run
+    // in the middle of this one.
+    struct SettingsLock<'a>(#[allow(dead_code)] std::sync::MutexGuard<'a, ()>);
+    let _lock = SettingsLock(crate::testing::lock_ignoring_poison(
+        &crate::testing::SETTINGS_LOCK,
+    ));
     let mut server = mockito::Server::new_async().await;
     let mock = server
         .mock("HEAD", "/SHA256SUMS")
