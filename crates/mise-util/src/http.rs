@@ -578,10 +578,14 @@ impl InvocationScratch {
     }
 
     fn remove(self) {
-        remove_scratch_dir(&self.dir);
+        let removed = remove_scratch_dir(&self.dir);
         // Windows cannot delete a file another handle has open, so unlock first.
         drop(self.lock);
-        let _ = std::fs::remove_file(&self.lock_path);
+        // Keep the unlocked lock file if the folder is still there, so the next sweep
+        // retries it rather than waiting a day to treat it as lockless.
+        if removed {
+            let _ = std::fs::remove_file(&self.lock_path);
+        }
     }
 }
 
@@ -618,11 +622,15 @@ fn scratch_dir_for(lock_path: &Path) -> PathBuf {
     lock_path.with_extension("")
 }
 
-fn remove_scratch_dir(dir: &Path) {
-    if let Err(err) = std::fs::remove_dir_all(dir)
-        && err.kind() != std::io::ErrorKind::NotFound
-    {
-        debug!("failed to remove {}: {err}", display_path(dir));
+/// Returns whether the folder is gone.
+fn remove_scratch_dir(dir: &Path) -> bool {
+    match std::fs::remove_dir_all(dir) {
+        Ok(()) => true,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => true,
+        Err(err) => {
+            debug!("failed to remove {}: {err}", display_path(dir));
+            false
+        }
     }
 }
 
@@ -651,9 +659,11 @@ fn sweep_abandoned_scratch(root: &Path, own_lock: &Path, unlocked_max_age: Durat
                 "removing abandoned download staging {}",
                 display_path(&path)
             );
-            remove_scratch_dir(&scratch_dir_for(&path));
+            let removed = remove_scratch_dir(&scratch_dir_for(&path));
             drop(lock);
-            let _ = std::fs::remove_file(&path);
+            if removed {
+                let _ = std::fs::remove_file(&path);
+            }
         } else if entry.file_type().is_ok_and(|t| t.is_dir()) {
             let mut lock_name = entry.file_name();
             lock_name.push(".lock");
@@ -667,7 +677,7 @@ fn sweep_abandoned_scratch(root: &Path, own_lock: &Path, unlocked_max_age: Durat
                 .and_then(|modified| SystemTime::now().duration_since(modified).ok());
             if age.is_some_and(|age| age >= unlocked_max_age) {
                 debug!("removing stale download staging {}", display_path(&path));
-                remove_scratch_dir(&path);
+                let _ = remove_scratch_dir(&path);
             }
         }
     }
