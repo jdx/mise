@@ -56,6 +56,12 @@ position, `Invalid TOML in config file <path>:<line>:<column>:`, followed by
 Links inside the global and system config directories are the user's own and
 keep the excerpt.
 
+The excerpt is kept short. When the problem is a value that spans more than 20
+lines, the marker is under its first line only. When the marked lines and the
+lines next to them are longer than 4 KiB together, mise prints the same
+one-line form with the position and the parser's message. A parser's message
+longer than 4096 characters or 20 lines is cut.
+
 ### `Config files in <path> are not trusted` {#untrusted-config}
 
 mise found a project config file that needs trust before it can load: one with

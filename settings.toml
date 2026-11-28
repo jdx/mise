@@ -2460,6 +2460,11 @@ type = "Bool"
 
 [netrc_file]
 description = "Path of the netrc file to use instead of `~/.netrc` (`%USERPROFILE%\\_netrc` on Windows)."
+docs = """
+An absolute path, or one that starts with `~/` for the home directory. mise
+ignores a relative path with a warning and uses no netrc file, since it would
+name a file in whichever directory mise runs in.
+"""
 env = "MISE_NETRC_FILE"
 optional = true
 type = "Path"

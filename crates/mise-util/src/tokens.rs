@@ -78,6 +78,16 @@ pub fn read_tokens_toml(filename: &str, label: &str) -> Option<HashMap<String, S
 /// for the lifetime of the process — repeated calls for the same host
 /// reuse the cached value (positive or negative).
 pub fn get_credential_command_token(provider: &str, cmd: &str, host: &str) -> Option<String> {
+    // The host is often that of a URL chosen by a project's config or a
+    // server's response, and a URL host may contain `&`, `;`, `"`, `$`, `(`
+    // and more. The helper is a shell command line: `cmd` expands
+    // `%MISE_CREDENTIAL_HOST%` before it parses the line, and a helper that
+    // hands the host to another shell parses it again.
+    if !is_plain_host(host) {
+        debug!("{provider} credential_command skipped: {host:?} is not a plain host name");
+        return None;
+    }
+
     if credential_command_uses_legacy_host_arg(cmd) {
         deprecated_at!(
             "2026.11.0",
@@ -132,6 +142,16 @@ pub fn get_credential_command_token(provider: &str, cmd: &str, host: &str) -> Op
     result
 }
 
+/// Whether `host` is spelled like a DNS name or an IP address, optionally with
+/// a port: no character a shell reads as an operator, a quote or a
+/// substitution, and no leading `-` for a program to read as an option.
+fn is_plain_host(host: &str) -> bool {
+    host.starts_with(|c: char| c.is_ascii_alphanumeric() || c == '[')
+        && host
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b".-_:[]".contains(&b))
+}
+
 /// Build the process that runs a provider `credential_command` (or another
 /// user-supplied shell command) with the default inline shell, with the
 /// credential environment set. Returns `None` when no shell is configured.
@@ -140,7 +160,17 @@ pub(crate) fn credential_command_process(
     cmd: &str,
     host: &str,
 ) -> Option<std::process::Command> {
-    let path_without_shims = path_env_without_shims();
+    credential_command_process_with_path(provider, cmd, host, &path_env_without_shims())
+}
+
+/// [`credential_command_process`] with the `PATH` the command runs with, which
+/// also decides whether it can run without the shell.
+fn credential_command_process_with_path(
+    provider: &str,
+    cmd: &str,
+    host: &str,
+    path_without_shims: &std::ffi::OsStr,
+) -> Option<std::process::Command> {
     let (program, args) = match credential_command_shell(cmd, host) {
         Some(command) => command,
         None => {
@@ -161,10 +191,16 @@ pub(crate) fn credential_command_process(
         command = c;
     }
     command
-        .env("PATH", &path_without_shims)
+        .env("PATH", path_without_shims)
         .env("GIT_TERMINAL_PROMPT", "0")
         .env("MISE_CREDENTIAL_HOST", host)
         .env("MISE_CREDENTIAL_PROVIDER", provider);
+    // The command is the user's own, but the directory mise runs in may be a
+    // project they have not trusted, and programs load code and config from
+    // their working directory (`python3 -m`, git, `cmd` looking up `gh`). Run
+    // it from the home directory, as `git credential fill` is run below. This
+    // comes before `direct_command`, which copies the directory and environment.
+    crate::git::detach_git_command(&mut command);
     // The helper's $0/$1 belong to sh, not to a directly executed program.
     if let Some(direct) = crate::inline_command::direct_command(
         &command,
@@ -601,6 +637,159 @@ logins:
         assert_eq!(
             invocations, 2,
             "1 spawn per host: 1 for host-a, 1 for host-b"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_credential_command_runs_outside_the_current_directory() {
+        let cwd = std::env::current_dir().unwrap().canonicalize().unwrap();
+        let home = crate::env::HOME.canonicalize().unwrap();
+        // `pwd` is a shell builtin, so this runs through the shell.
+        let pwd = get_credential_command_token("test-cwd", "pwd -P", "cwd.example.com")
+            .expect("pwd prints the directory");
+        assert_ne!(std::path::PathBuf::from(&pwd), cwd);
+        assert_eq!(std::path::PathBuf::from(&pwd), home);
+        // `env` is run without the shell, which must keep the directory.
+        for cmd in ["pwd -P", "env"] {
+            let command = credential_command_process("test-cwd", cmd, "example.com").unwrap();
+            assert_eq!(
+                command
+                    .get_current_dir()
+                    .map(|dir| dir.canonicalize().unwrap()),
+                Some(home.clone()),
+                "{cmd} would run in the directory mise was called in"
+            );
+        }
+    }
+
+    /// Assumes the host has a POSIX shell, the default inline shell, on PATH.
+    /// The direct check also needs an `env` the helper can run without the
+    /// shell, and is skipped when there is none; other PATH layouts are not
+    /// this test's concern.
+    #[cfg(unix)]
+    #[test]
+    fn test_credential_command_does_not_inherit_git_dir() {
+        let inherited = "/inherited/git-dir";
+        let mut env = crate::testing::EnvVarGuard::new();
+        env.set("GIT_DIR", inherited)
+            .set("GIT_WORK_TREE", inherited);
+        // Shell startup variables and exported functions send even a plain
+        // command through the shell, so they are cleared for the direct case.
+        let functions: Vec<_> = std::env::vars_os()
+            .map(|(key, _)| key)
+            .filter(|key| key.to_string_lossy().starts_with("BASH_FUNC_"))
+            .collect();
+        for key in ["ENV", "BASH_ENV", "SHELLOPTS", "BASHOPTS"]
+            .map(std::ffi::OsString::from)
+            .into_iter()
+            .chain(functions)
+        {
+            env.remove(key);
+        }
+        // A relative entry in PATH sends even `env` through the shell, so the
+        // commands get the caller's PATH with each entry made absolute against
+        // the current directory, and nothing else changed.
+        let caller_path = std::env::var_os("PATH").unwrap_or_default();
+        let cwd = std::env::current_dir().unwrap();
+        let path =
+            std::env::join_paths(std::env::split_paths(&caller_path).map(|dir| cwd.join(dir)))
+                .unwrap();
+        let path = path.as_os_str();
+        // Whether the helper can run `env` itself, decided by its own lookup on
+        // the PATH it gets.
+        let has_env = crate::inline_command::direct_program("env", path).is_some();
+        // The first runs through the shell, the second without it. Only the
+        // second needs a runnable `env` on that PATH.
+        for (cmd, direct) in [
+            ("echo \"[$GIT_DIR][$GIT_WORK_TREE]\"", false),
+            ("env", true),
+        ] {
+            if direct && !has_env {
+                eprintln!("skipped the direct check: no PATH entry has an `env` to run directly");
+                continue;
+            }
+            let mut command =
+                credential_command_process_with_path("test-git-dir", cmd, "example.com", path)
+                    .unwrap();
+            assert_eq!(
+                std::path::Path::new(command.get_program()).file_name() == Some("env".as_ref()),
+                direct,
+                "{cmd} took an unexpected path"
+            );
+            let output = command.output().unwrap();
+            // `env` prints the whole environment, which can hold credentials,
+            // so a failure names variables and never shows their values.
+            assert!(output.status.success(), "{cmd} failed: {}", output.status);
+            let stdout = String::from_utf8(output.stdout).unwrap();
+            let inherited_in: Vec<&str> = stdout
+                .lines()
+                .filter(|line| line.contains(inherited))
+                .map(|line| line.split_once('=').map_or(line, |(name, _)| name))
+                .collect();
+            assert!(
+                inherited_in.is_empty(),
+                "{cmd} inherited it in {inherited_in:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_is_plain_host() {
+        for host in [
+            "github.com",
+            "acme.ghe.com",
+            "GHE.Example.com",
+            "xn--bcher-kva.example",
+            "my_host.internal",
+            "localhost:8080",
+            "127.0.0.1",
+            "[::1]",
+            "[2001:db8::1]:8443",
+        ] {
+            assert!(is_plain_host(host), "{host}");
+        }
+        for host in [
+            "",
+            "a&evil.bat&b.ghe.com",
+            "a;{touch,x};b.ghe.com",
+            "a\"b.ghe.com",
+            "$(id).ghe.com",
+            "`id`.ghe.com",
+            "a'b.ghe.com",
+            "a=b.ghe.com",
+            "a b.ghe.com",
+            "a%PATH%.ghe.com",
+            "a\nb.ghe.com",
+            "-h.ghe.com",
+            ".ghe.com",
+            "bücher.example",
+        ] {
+            assert!(!is_plain_host(host), "{host}");
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_get_credential_command_token_skips_a_host_a_shell_would_parse() {
+        // The helper stands in for `cmd /c "... %MISE_CREDENTIAL_HOST%"`: the
+        // host is substituted into text that a shell then parses.
+        let dir = tempfile::tempdir().unwrap();
+        let ran = dir.path().join("ran");
+        let cmd = format!(
+            "echo helper >> {} && sh -c \"echo token-for-$MISE_CREDENTIAL_HOST\"",
+            ran.display()
+        );
+        let provider = "test-shell-host";
+
+        assert_eq!(
+            get_credential_command_token(provider, &cmd, "a;echo${IFS}injected;b.ghe.com"),
+            None
+        );
+        assert!(!ran.exists(), "the helper must not run for such a host");
+        assert_eq!(
+            get_credential_command_token(provider, &cmd, "acme.ghe.com").as_deref(),
+            Some("token-for-acme.ghe.com")
         );
     }
 
