@@ -101,34 +101,52 @@ impl EnvDirectiveContext<'_> {
     }
 
     /// Renders a `_.file` or `_.source` path and splits it where the glob the entry writes
-    /// begins. Only glob syntax the entry itself writes makes a pattern: what a template or
-    /// `$VAR` puts into the path, before the pattern or inside it, is matched as written. With
-    /// `{{cwd}}` naming a directory `src*`, `{{cwd}}/.env.*` reads that directory and not
-    /// `srcfoo`, and with `PROFILE=*`, `env.d/$PROFILE.*.env` matches only a file named
-    /// `*.<x>.env`.
+    /// begins. Only a `*` the entry itself writes makes a pattern, and a template or `$VAR` can
+    /// only name the directory the pattern is matched in: `{{cwd}}/.env.*` and
+    /// `env.d/$PROFILE/*.env` are globs, and what the substitution renders is taken as a
+    /// directory name, glob characters included. A substitution in the path component that
+    /// holds the first written glob character, or after it, as in `env.d/$PROFILE*.env`, is an
+    /// error (see [`SubstitutionMarks::split_glob`]).
     ///
     /// The pattern is found in the rendered path, so the branch of a `{% if %}` that renders is
     /// the one whose glob counts: `{% if x %}a/*.env{% else %}b/*.env{% endif %}` is a glob
     /// either way, and `{% if x %}*.env{% else %}.env{% endif %}` names `.env` when `x` is false.
+    ///
+    /// The template renders first, with the substitutions marked, and `$VAR`s expand in the
+    /// directory once it is split off, so a `$` the entry writes before a template still forms
+    /// a variable with what the template renders, as without a glob: `${{ 'D' }}/*.env` reads
+    /// the directory `$D` names.
     fn parse_path_template(&mut self, origin: &str, input: &str) -> eyre::Result<EnvPath> {
-        if !writes_a_star(input) {
+        let shell_expand = Settings::get().env_shell_expand;
+        if !writes_a_star(input, shell_expand) {
             let path = self.parse_template(origin, input)?;
             return Ok(EnvPath::literal(path));
         }
-        let marks = SubstitutionMarks::new();
-        let rendered = self.parse_template(origin, &marks.wrap_substitutions(input))?;
+        let marks = SubstitutionMarks::new(shell_expand);
+        let rendered = self.render_template(&marks.wrap_substitutions(input))?;
         let glob = marks
             .split_glob(&rendered)
             .wrap_err_with(|| format!("in {origin} = {input:?}"))?;
+        let expand =
+            |text: String| EnvResults::shell_expand(self.tera_ctx, self.source, origin, text);
         Ok(match glob {
-            Some((dir, pattern)) => EnvPath {
-                path: format!("{dir}{pattern}").into(),
-                dir: Some((dir.into(), pattern)),
-            },
+            Some((dir, pattern)) => {
+                let (dir, pattern) = (expand(dir), expand(pattern));
+                EnvPath {
+                    path: format!("{dir}{pattern}").into(),
+                    dir: Some((dir.into(), pattern)),
+                }
+            }
             // the branch that rendered writes no `*`, or a template dropped a marker or
             // rendered a NUL
-            None => EnvPath::literal(marks.strip(&rendered)),
+            None => EnvPath::literal(expand(marks.strip(&rendered))),
         })
+    }
+
+    /// [`Self::parse_template`] without the `$VAR` expansion.
+    fn render_template(&mut self, input: &str) -> eyre::Result<String> {
+        self.results
+            .render_template(self.tera_ctx, self.tera, self.source, self.exec_env, input)
     }
 
     /// The files an [`EnvPath`] names: the path itself, or the files its pattern matches.
@@ -153,10 +171,9 @@ fn is_templated(input: &str) -> bool {
 /// [`is_templated`], with `env_shell_expand` passed in.
 fn is_templated_with(input: &str, shell_expand: bool) -> bool {
     contains_template_syntax(input)
-        || shell_expand
-            && template_pieces(input)
-                .iter()
-                .any(|(piece, _)| *piece != Piece::Written)
+        || template_pieces(input, shell_expand)
+            .iter()
+            .any(|(piece, _)| *piece != Piece::Written)
 }
 
 /// Starts each marker [`SubstitutionMarks`] puts around a substitution. No path holds a NUL.
@@ -202,8 +219,8 @@ enum Piece {
 ///   to the brace that closes it, nested fallbacks and template tags included, and `$NAME` to the
 ///   end of the name.
 ///   A `$` before anything else is written text, and so is a `$` before a template tag, which
-///   renders first.
-fn template_pieces(input: &str) -> Vec<(Piece, std::ops::Range<usize>)> {
+///   renders first. With `shell_expand` off (`env_shell_expand`), every `$` is written text.
+fn template_pieces(input: &str, shell_expand: bool) -> Vec<(Piece, std::ops::Range<usize>)> {
     let bytes = input.as_bytes();
     let mut pieces = Vec::new();
     let mut text_start = 0;
@@ -228,7 +245,7 @@ fn template_pieces(input: &str) -> Vec<(Piece, std::ops::Range<usize>)> {
                 }
                 Some((piece, start, end))
             }
-            b'$' => match bytes.get(i + 1) {
+            b'$' if shell_expand => match bytes.get(i + 1) {
                 Some(b'$') => {
                     i += 2;
                     continue;
@@ -328,8 +345,8 @@ fn braced_expr_end(input: &str, start: usize) -> Option<usize> {
 
 /// Whether the entry writes a `*`, which can make it a pattern. Template tags and `$VAR`s are
 /// skipped: what they render is data.
-fn writes_a_star(input: &str) -> bool {
-    template_pieces(input)
+fn writes_a_star(input: &str, shell_expand: bool) -> bool {
+    template_pieces(input, shell_expand)
         .into_iter()
         .any(|(piece, range)| piece == Piece::Written && input[range].contains('*'))
 }
@@ -340,21 +357,24 @@ fn writes_a_star(input: &str) -> bool {
 struct SubstitutionMarks {
     open: String,
     close: String,
+    /// Whether a `$VAR` is a substitution (`env_shell_expand`).
+    shell_expand: bool,
 }
 
 impl SubstitutionMarks {
-    fn new() -> Self {
+    fn new(shell_expand: bool) -> Self {
         let nonce = ::rand::random::<u64>();
         Self {
             open: format!("{PATTERN_MARK}{nonce}<"),
             close: format!("{PATTERN_MARK}{nonce}>"),
+            shell_expand,
         }
     }
 
     /// `pattern` with each substitution wrapped in the markers.
     fn wrap_substitutions(&self, pattern: &str) -> String {
         let mut out = String::with_capacity(pattern.len());
-        for (piece, range) in template_pieces(pattern) {
+        for (piece, range) in template_pieces(pattern, self.shell_expand) {
             match piece {
                 Piece::Substituted => {
                     out.push_str(&self.open);
@@ -391,22 +411,19 @@ impl SubstitutionMarks {
         Some(segments)
     }
 
-    /// The glob a rendered, marked pattern stands for: written text as it is, and substituted
-    /// text escaped so it matches only itself. `None` when the markers do not pair up or a NUL
-    /// is left over.
-    #[cfg(test)]
-    fn to_glob(&self, rendered: &str) -> Option<String> {
-        Some(glob_of(&self.segments(rendered)?).unwrap())
-    }
-
     /// The directory a rendered, marked path is globbed in, as a literal path, and the glob
-    /// below it, when the text the entry writes there holds a `*`. The directory ends at the
-    /// last separator ahead of the first glob metacharacter the entry writes, whether the
-    /// entry writes it or a substitution renders it: `{{ cwd ~ '/' }}.env.*` renders an
-    /// absolute directory, which must be where the glob is taken, not a part of the glob.
+    /// below it, when the text the entry writes holds a `*`.
+    ///
+    /// The glob starts at the path component that holds the first glob character the entry
+    /// writes (`*`, `?`, `[` or `{`, or a `\` escape outside Windows), and the directory is
+    /// everything ahead of it. Only a separator the entry writes ends a component, so where
+    /// the glob starts never depends on what a substitution renders. A substitution can name
+    /// the directory, and what it renders there is a name, glob characters and separators
+    /// included; a substitution in the glob, even one that renders nothing, is an error, so
+    /// the glob holds only text the entry writes.
+    ///
     /// `None` when the written text holds no `*`, or the markers do not pair up or a NUL is
-    /// left over. An error when a substitution inside a written `[...]` renders text that the
-    /// class would read as syntax.
+    /// left over.
     fn split_glob(&self, rendered: &str) -> eyre::Result<Option<(String, String)>> {
         let Some(segments) = self.segments(rendered) else {
             return Ok(None);
@@ -414,50 +431,51 @@ impl SubstitutionMarks {
         if !segments.iter().any(|(data, t)| !data && t.contains('*')) {
             return Ok(None);
         }
+        let glob_chars: &[char] = if cfg!(windows) {
+            &['*', '?', '[', '{']
+        } else {
+            &['*', '?', '[', '{', '\\']
+        };
         let is_sep = |c: char| c == '/' || (cfg!(windows) && c == '\\');
-        // The ends, in `segments`, of the last separator the entry writes and of the last one a
-        // substitution renders, ahead of the first written metacharacter.
-        let mut written_split = (0, 0);
-        let mut data_split = None;
+        // The segment, always a written one, and the offset in it where the glob starts: just
+        // past the last written separator ahead of the first written glob character.
+        let mut start = (0, 0);
         for (i, (data, text)) in segments.iter().enumerate() {
-            let meta = (!data).then(|| text.find(['*', '?', '[', '{'])).flatten();
-            let ahead = &text[..meta.unwrap_or(text.len())];
-            if let Some(at) = ahead.rfind(is_sep) {
-                if *data {
-                    data_split = Some((i, at + 1));
-                } else {
-                    written_split = (i, at + 1);
-                    data_split = None;
-                }
+            if *data {
+                continue;
             }
-            if meta.is_some() {
+            let glob_char = text.find(glob_chars);
+            if let Some(at) = text[..glob_char.unwrap_or(text.len())].rfind(is_sep) {
+                start = (i, at + 1);
+            }
+            if glob_char.is_some() {
                 break;
             }
         }
-        // Written text between the two is literal unless it holds a glob escape; then the
-        // directory ends where the entry's own does.
-        let (i, at) = match data_split {
-            Some((i, at))
-                if cfg!(windows)
-                    || !segments[written_split.0..i].iter().enumerate().any(
-                        |(n, (data, t))| {
-                            let t = if n == 0 { &t[written_split.1..] } else { t };
-                            !data && t.contains('\\')
-                        },
-                    ) =>
-            {
-                (i, at)
-            }
-            _ => written_split,
-        };
+        let (i, at) = start;
         let dir: String = segments[..i]
             .iter()
             .map(|(_, t)| *t)
             .chain([&segments[i].1[..at]])
             .collect();
-        let mut rest = segments[i + 1..].to_vec();
-        rest.insert(0, (segments[i].0, &segments[i].1[at..]));
-        Ok(Some((dir, glob_of(&rest)?)))
+        if segments[i..].iter().any(|(data, _)| *data) {
+            let start = if dir.is_empty() {
+                "at the start of the path".to_string()
+            } else {
+                format!("after {dir:?}")
+            };
+            eyre::bail!(
+                "a template or $VAR is part of the glob, which starts {start}. A substitution \
+                 can name the directory a glob is matched in, but not be part of the glob: move \
+                 it ahead of the last `/` before the first wildcard, as in \
+                 `env.d/{{{{ env.PROFILE }}}}/*.env`, or write the glob out in full"
+            );
+        }
+        let pattern: String = [&segments[i].1[at..]]
+            .into_iter()
+            .chain(segments[i + 1..].iter().map(|(_, t)| *t))
+            .collect();
+        Ok(Some((dir, pattern)))
     }
 
     /// `rendered` without the markers or a NUL.
@@ -467,125 +485,19 @@ impl SubstitutionMarks {
             .replace(&self.close, "")
             .replace(PATTERN_MARK, "")
     }
-}
 
-/// The glob [`SubstitutionMarks::segments`] stand for.
-///
-/// A substitution that renders nothing between two written runs of `*`s leaves one `*`: the
-/// entry writes no `**` component there, so the walk must not descend, as
-/// `env/*${SUFFIX:-}*/.env` or `env/**${SUFFIX:-}*/.env` would.
-///
-/// The escapes of [`escape_glob`] are classes, which do not nest, so text substituted inside a
-/// `[...]` the entry writes goes in as it is, and an error is returned when it holds a character
-/// that the class would read as syntax rather than match (a `-` would make a range, a leading
-/// `!` would negate it). A substitution just after a `\` the entry writes outside Windows has
-/// its first character escaped by that `\`.
-fn glob_of(segments: &[(bool, &str)]) -> eyre::Result<String> {
-    let escapes = !cfg!(windows);
-    let mut glob = String::new();
-    let mut after_data = false;
-    let mut escaping = false;
-    let mut class = None;
-    for (data, text) in segments {
-        if *data {
-            if let Some(at) = class {
-                let syntax = text
-                    .chars()
-                    .find(|c| "-[]\\/{},*?".contains(*c))
-                    .or_else(|| {
-                        let first = text.chars().next();
-                        first.filter(|c| at == ClassAt::Start && matches!(c, '!' | '^'))
-                    });
-                if let Some(c) = syntax {
-                    eyre::bail!(
-                        "a substitution inside a `[...]` class renders {c:?}, which the class \
-                         would read as glob syntax rather than match"
-                    );
-                }
-                glob.push_str(text);
-                if !text.is_empty() {
-                    class = Some(ClassAt::Body);
-                    escaping = false;
-                }
-            } else if let Some(first) = text.chars().next().filter(|_| escaping) {
-                // the entry's `\` escapes the first character the substitution renders
-                glob.push(first);
-                glob.push_str(&escape_glob(&text[first.len_utf8()..]));
-                escaping = false;
-            } else {
-                glob.push_str(&escape_glob(text));
-            }
-            after_data = true;
-            continue;
+    /// `text` without any markers, whatever their number.
+    fn strip_any(text: &str) -> String {
+        let mut out = String::with_capacity(text.len());
+        let mut rest = text;
+        while let Some(at) = rest.find(PATTERN_MARK) {
+            out.push_str(&rest[..at]);
+            let after = rest[at + 1..].trim_start_matches(|c: char| c.is_ascii_digit());
+            rest = after.strip_prefix(['<', '>']).unwrap_or(after);
         }
-        let mut text = *text;
-        if after_data && text.starts_with('*') && ends_with_wildcard_star(&glob) {
-            // the whole run, on both sides: `**`, an empty substitution and `*` must not
-            // leave a `**` either
-            text = text.trim_start_matches('*');
-            while ends_with_wildcard_star(&glob[..glob.len() - 1]) {
-                glob.pop();
-            }
-        }
-        glob.push_str(text);
-        for c in text.chars() {
-            if escaping {
-                escaping = false;
-                if class.is_some() {
-                    class = Some(ClassAt::Body);
-                }
-                continue;
-            }
-            match (class, c) {
-                (_, '\\') if escapes => escaping = true,
-                (None, '[') => class = Some(ClassAt::Start),
-                (None, _) => {}
-                (Some(ClassAt::Start), '!' | '^') => class = Some(ClassAt::Negated),
-                (Some(ClassAt::Body), ']') => class = None,
-                (Some(_), _) => class = Some(ClassAt::Body),
-            }
-        }
-        after_data = after_data && text.is_empty();
+        out.push_str(rest);
+        out
     }
-    Ok(glob)
-}
-
-/// Where a glob stands inside a `[...]` class the entry writes: just after the `[`, where `!`
-/// or `^` negates it and `]` is a member; just after that negation, where `]` is still a
-/// member; or past the first member, where `]` closes it.
-#[derive(Clone, Copy, PartialEq)]
-enum ClassAt {
-    Start,
-    Negated,
-    Body,
-}
-
-/// Whether `glob` ends with a `*` wildcard, not one escaped with a `\` outside Windows.
-fn ends_with_wildcard_star(glob: &str) -> bool {
-    let Some(rest) = glob.strip_suffix('*') else {
-        return false;
-    };
-    cfg!(windows) || (rest.len() - rest.trim_end_matches('\\').len()).is_multiple_of(2)
-}
-
-/// Glob syntax that matches `text` and nothing else. Each metacharacter goes in a character
-/// class of its own, which the brace expansion, the walker and the matcher all read the same
-/// way on every platform; a `\` outside Windows, where it is an escape, is escaped too. A path
-/// separator stays one.
-fn escape_glob(text: &str) -> String {
-    let mut glob = String::with_capacity(text.len());
-    for c in text.chars() {
-        match c {
-            '*' | '?' | '[' | ']' | '{' | '}' | ',' => {
-                glob.push('[');
-                glob.push(c);
-                glob.push(']');
-            }
-            '\\' if !cfg!(windows) => glob.push_str("\\\\"),
-            _ => glob.push(c),
-        }
-    }
-    glob
 }
 
 /// The files `pattern` matches below `dir`, in name order. As in a shell, `*` stays within one
@@ -1494,9 +1406,22 @@ impl EnvResults {
         origin: &str,
         input: &str,
     ) -> eyre::Result<String> {
-        let mut output = input.to_string();
-
         // Step 1: Tera template expansion
+        let output = self.render_template(ctx, tera, path, exec_env, input)?;
+        // Step 2: Shell-style $VAR expansion
+        Ok(Self::shell_expand(ctx, path, origin, output))
+    }
+
+    /// The Tera step of [`Self::parse_template`].
+    fn render_template(
+        &self,
+        ctx: &tera::Context,
+        tera: &mut Option<TeraEngine>,
+        path: &Path,
+        exec_env: &EnvMap,
+        input: &str,
+    ) -> eyre::Result<String> {
+        let mut output = input.to_string();
         if contains_template_syntax(input) {
             trust_check(path)?;
             let tera = tera.get_or_insert_with(|| {
@@ -1519,12 +1444,13 @@ impl EnvResults {
                 }
                 tera
             });
-            output = render_config_str(tera, input, ctx, path)
-                .wrap_err_with(|| eyre!("failed to parse template: '{input}'"))?;
+            output = render_config_str(tera, input, ctx, path).wrap_err_with(|| {
+                // a glob's substitutions are marked; show the template as written
+                let input = SubstitutionMarks::strip_any(input);
+                eyre!("failed to parse template: '{input}'")
+            })?;
         }
-
-        // Step 2: Shell-style $VAR expansion
-        Ok(Self::shell_expand(ctx, path, origin, output))
+        Ok(output)
     }
 
     /// The `$VAR` step of [`Self::parse_template`], for a value whose templates are rendered.
@@ -1948,7 +1874,7 @@ mod tests {
             // `?` alone is not a glob, as before
             "a?.env",
         ] {
-            assert!(!writes_a_star(input), "{input}");
+            assert!(!writes_a_star(input, true), "{input}");
         }
         for input in [
             ".env.*",
@@ -1958,164 +1884,184 @@ mod tests {
             "conf/*/{{name}}/x.env",
             "{% if x %}a/*.env{% else %}b/*.env{% endif %}",
         ] {
-            assert!(writes_a_star(input), "{input}");
+            assert!(writes_a_star(input, true), "{input}");
+        }
+        // with `env_shell_expand` off a `$` is written text, and so is what follows it
+        assert!(writes_a_star("${X:-*}/.env", false));
+    }
+
+    /// What `parse_path_template` makes of `input` when it writes a glob: the directory and the
+    /// glob below it. `$VAR`s expand from `env` in `ctx` when `shell_expand` is on.
+    fn split_path(
+        engine: &mut TeraEngine,
+        input: &str,
+        ctx: &tera::Context,
+        shell_expand: bool,
+    ) -> eyre::Result<Option<(String, String)>> {
+        let env: BTreeMap<String, String> = ctx
+            .get("env")
+            .and_then(|v| serde::Deserialize::deserialize(v.clone()).ok())
+            .unwrap_or_default();
+        let marks = SubstitutionMarks::new(shell_expand);
+        let rendered =
+            mise_util::tera::render_str_with_env(engine, &marks.wrap_substitutions(input), ctx)
+                .unwrap_or_else(|err| panic!("{input}: {err}"));
+        let expand = |text: String| {
+            if shell_expand {
+                shell_expand_env(&text, &env, &mut vec![])
+            } else {
+                text
+            }
+        };
+        Ok(marks
+            .split_glob(&rendered)?
+            .map(|(dir, glob)| (expand(dir), expand(glob))))
+    }
+
+    fn glob_context() -> tera::Context {
+        let env = BTreeMap::from([
+            ("P".to_string(), "dev".to_string()),
+            ("D".to_string(), "/abs/d*r".to_string()),
+            ("X".to_string(), "/a*".to_string()),
+        ]);
+        let mut ctx = tera::Context::new();
+        ctx.insert("env", &env);
+        ctx
+    }
+
+    /// A template or `$VAR` names the directory a glob is matched in, and what it renders is
+    /// taken there as a name. The directory ends at the last separator the entry writes ahead
+    /// of the first glob character it writes, and the template and `$` syntax render there as
+    /// they do in a path with no glob.
+    #[test]
+    fn test_substitutions_name_the_directory() {
+        let ctx = glob_context();
+        let owned = |a: &str, b: &str| Some((a.to_string(), b.to_string()));
+        for mut engine in [
+            TeraEngine::V2(Box::default()),
+            TeraEngine::V1(Box::default()),
+        ] {
+            let mut split = |input: &str| {
+                split_path(&mut engine, input, &ctx, true)
+                    .unwrap_or_else(|err| panic!("{input}: {err}"))
+            };
+            for (input, dir, glob) in [
+                ("{{ env.X }}/env.d/*.env", "/a*/env.d/", "*.env"),
+                ("a/b{{ env.X }}c/*.env", "a/b/a*c/", "*.env"),
+                ("conf/[ab]/*.env", "conf/", "[ab]/*.env"),
+                ("$D/*.env", "/abs/d*r/", "*.env"),
+                ("${P}/*.env", "dev/", "*.env"),
+                ("$$P/*.env", "$P/", "*.env"),
+                ("$$*.env", "", "$*.env"),
+                ("cost$*.env", "", "cost$*.env"),
+                ("${A:-${P}}/*", "dev/", "*"),
+                ("${A:-${B:-x}}-$P/*", "x-dev/", "*"),
+                ("${A:-{{ env.P }}}/*.env", "dev/", "*.env"),
+                // a `$` written before a template forms a variable with what it renders
+                ("${{ 'P' }}/*.env", "dev/", "*.env"),
+                ("${{ 'D' }}/*.env", "/abs/d*r/", "*.env"),
+                (".env. {{- env.P }}/*", ".env.dev/", "*"),
+                ("{{ env.P -}}  /.e*", "dev/", ".e*"),
+                ("a {%- if true %}{{ env.P }}{% endif -%} /*", "adev/", "*"),
+                // a tag in the glob renders no text
+                ("a/{# c #}*.env", "a/", "*.env"),
+                ("a/{% if true %}*{% endif %}.env", "a/", "*.env"),
+                // a separator a substitution renders is part of the directory
+                ("{{ env.X ~ '/b' }}/*.env", "/a*/b/", "*.env"),
+            ] {
+                assert_eq!(split(input), owned(dir, glob), "{input}");
+            }
+            // a written `*` the render drops leaves no glob
+            assert_eq!(split("{% if false %}*{% endif %}.env"), None);
+            assert_eq!(split("{{ env.X }}.env"), None);
+        }
+        // a written glob escape starts the glob outside Windows
+        if cfg!(unix) {
+            let mut engine = TeraEngine::V2(Box::default());
+            assert_eq!(
+                split_path(&mut engine, "{{ env.P }}/\\[1]*.env", &ctx, true).unwrap(),
+                owned("dev/", "\\[1]*.env")
+            );
         }
     }
 
-    /// In a pattern, what a substitution renders is matched as written, and the glob syntax the
-    /// entry writes stays syntax. `render` stands in for the template render.
+    /// A substitution in the glob, or after it, is an error, whatever it renders: where the
+    /// glob starts depends only on what the entry writes.
     #[test]
-    fn test_substitutions_in_a_pattern_match_themselves() {
-        let marks = SubstitutionMarks::new();
-        let glob = |pattern: &str, render: &dyn Fn(&str) -> String| {
-            marks.to_glob(&render(&marks.wrap_substitutions(pattern)))
-        };
-        let x = |value: &'static str| move |s: &str| s.replace("{{ x }}", value);
-        let var = |value: &'static str| move |s: &str| s.replace("$X", value);
-        for (pattern, rendered, expected) in [
+    fn test_a_substitution_in_the_glob_is_an_error() {
+        let ctx = glob_context();
+        let mut engine = TeraEngine::V2(Box::default());
+        for (input, starts) in [
+            ("env.d/{{ env.P }}*.env", "after \"env.d/\""),
+            ("env.d/$P*.env", "after \"env.d/\""),
+            ("env.d/${P:-}*.env", "after \"env.d/\""),
+            ("env.d/${{ 'P' }}*.env", "after \"env.d/\""),
             (
-                "{{ x }}*.env",
-                &x("*") as &dyn Fn(&str) -> String,
-                "[*]*.env",
+                "env.d/{{ env.A | default(value='') }}*.env",
+                "after \"env.d/\"",
             ),
-            ("{a,b}-{{ x }}.e*", &x("{c,d}"), "{a,b}-[{]c[,]d[}].e*"),
-            ("$X/*.env", &var("**"), "[*][*]/*.env"),
-            (
-                "[ab]{% if 1 %}*{% endif %}",
-                &x(""),
-                "[ab]{% if 1 %}*{% endif %}",
-            ),
-            ("{{ x }}/*", &x("a?[b]"), "a[?][[]b[]]/*"),
-            // an empty substitution does not join two written `*`s into a `**`
-            ("*{{ x }}*/.env", &x(""), "*/.env"),
-            (
-                "*$X{{ x }}*/.env",
-                &|s: &str| s.replace("$X", "").replace("{{ x }}", ""),
-                "*/.env",
-            ),
-            ("*{{ x }}**/.env", &x(""), "*/.env"),
-            ("**{{ x }}*/.env", &x(""), "*/.env"),
-            ("**{{ x }}**/.env", &x(""), "*/.env"),
-            ("a**{{ x }}*b/.env", &x(""), "a*b/.env"),
-            ("**{{ x }}/.env", &x(""), "**/.env"),
-            ("*{{ x }}*/.env", &x("a"), "*a*/.env"),
+            ("{{ env.X }}*.env", "at the start of the path"),
+            ("{{ env.X ~ '/' }}*.env", "at the start of the path"),
+            ("*/{{ env.P }}.env", "at the start of the path"),
+            ("{{ env.P }}/*/$P.env", "after \"dev/\""),
+            ("env/[{{ env.P }}]*.env", "after \"env/\""),
+        ] {
+            let err = split_path(&mut engine, input, &ctx, true)
+                .unwrap_err()
+                .to_string();
+            assert!(
+                err.contains(&format!("is part of the glob, which starts {starts}")),
+                "{input}: {err}"
+            );
+        }
+    }
+
+    /// With `env_shell_expand` off, a `$` is written text in the glob too.
+    #[test]
+    fn test_dollars_are_written_text_without_shell_expansion() {
+        let ctx = glob_context();
+        let mut engine = TeraEngine::V2(Box::default());
+        let owned = |a: &str, b: &str| Some((a.to_string(), b.to_string()));
+        for (input, dir, glob) in [
+            ("env.d/$P*.env", "env.d/", "$P*.env"),
+            ("$D/*.env", "$D/", "*.env"),
+            ("env/[${P}]*.env", "env/", "[${P}]*.env"),
         ] {
             assert_eq!(
-                glob(pattern, rendered).as_deref(),
-                Some(expected),
-                "{pattern}"
+                split_path(&mut engine, input, &ctx, false).unwrap(),
+                owned(dir, glob),
+                "{input}"
             );
-        }
-        // a `*` escaped before an empty substitution is a written star, and stays one
-        if cfg!(unix) {
-            assert_eq!(glob("\\*{{ x }}*.env", &x("")).as_deref(), Some("\\**.env"));
-        }
-        // data cannot end a substitution early
-        let forged = format!("*{PATTERN_MARK}0>*");
-        assert_eq!(
-            glob("{{ x }}*", &|s: &str| s.replace("{{ x }}", &forged)),
-            None
-        );
-        // a template that drops a substitution's closing marker leaves no pattern
-        assert_eq!(marks.to_glob(&format!("{}*", marks.open)), None);
-    }
-
-    /// Text substituted inside a `[...]` class the entry writes joins the class as members, and
-    /// text the class would read as syntax is refused rather than widening the match.
-    #[test]
-    fn test_substitutions_inside_a_class() {
-        let marks = SubstitutionMarks::new();
-        let glob = |pattern: &str, value: &str| {
-            let rendered = marks.wrap_substitutions(pattern).replace("{{ x }}", value);
-            glob_of(&marks.segments(&rendered).unwrap())
-        };
-        for (pattern, value, expected) in [
-            ("[a{{ x }}z]*.env", "bc", "[abcz]*.env"),
-            ("[{{ x }}]*.env", "a!", "[a!]*.env"),
-            ("[!{{ x }}]*.env", "!a", "[!!a]*.env"),
-            ("[]{{ x }}]*.env", "a", "[]a]*.env"),
-            ("[!]{{ x }}]*.env", "a", "[!]a]*.env"),
-            ("[ab]{{ x }}*.env", "-", "[ab]-*.env"),
-            ("[ab]]{{ x }}*.env", "-]", "[ab]]-[]]*.env"),
-        ] {
-            assert_eq!(glob(pattern, value).unwrap(), expected, "{pattern} {value}");
-        }
-        for (pattern, value) in [
-            ("[a{{ x }}z]*.env", "-"),
-            ("[a{{ x }}z]*.env", "b]"),
-            ("[{{ x }}]*.env", "!a"),
-            ("[{{ x }}]*.env", "^a"),
-            ("[a{{ x }}]*.env", "*"),
-            ("[]{{ x }}]*.env", "{a,b}"),
-        ] {
-            let err = glob(pattern, value).unwrap_err().to_string();
-            assert!(
-                err.contains("inside a `[...]` class"),
-                "{pattern} {value}: {err}"
-            );
-        }
-        // a `\` the entry writes escapes the first character a substitution renders
-        if cfg!(unix) {
-            assert_eq!(glob("\\{{ x }}*.env", "*a*").unwrap(), "\\*a[*]*.env");
-            assert_eq!(glob("[\\]{{ x }}]*.env", "a").unwrap(), "[\\]a]*.env");
-            assert_eq!(glob("[\\]]{{ x }}*.env", "-").unwrap(), "[\\]]-*.env");
         }
     }
 
-    /// A directory a substitution names ahead of the first written wildcard is where the glob
-    /// is taken, even when the separator after it is rendered too, and it stays literal there.
+    /// Data cannot forge a marker: a substitution that renders one leaves no glob.
     #[test]
-    fn test_substituted_directories_lead_the_glob() {
-        let marks = SubstitutionMarks::new();
-        let split = |pattern: &str, value: &str| {
-            let rendered = marks.wrap_substitutions(pattern).replace("{{ x }}", value);
-            marks.split_glob(&rendered).unwrap()
-        };
-        let owned = |a: &str, b: &str| Some((a.to_string(), b.to_string()));
+    fn test_substituted_markers_leave_no_glob() {
+        let marks = SubstitutionMarks::new(true);
+        let forged = format!("{}*", marks.close);
+        let rendered = marks
+            .wrap_substitutions("{{ x }}/*.env")
+            .replace("{{ x }}", &forged);
+        assert_eq!(marks.split_glob(&rendered).unwrap(), None);
+        // a template that drops a substitution's closing marker leaves no glob either
+        assert_eq!(marks.split_glob(&format!("{}*", marks.open)).unwrap(), None);
+        // and an error shows the template without its markers
         assert_eq!(
-            split("{{ x }}.env.*", "/abs/d*r/"),
-            owned("/abs/d*r/", ".env.*")
+            SubstitutionMarks::strip_any(&marks.wrap_substitutions("a/{{ x }}/$Y*")),
+            "a/{{ x }}/$Y*"
         );
-        assert_eq!(
-            split("{{ x }}.env.*", "/abs/a*"),
-            owned("/abs/", "a[*].env.*")
-        );
-        assert_eq!(split("a{{ x }}b*", "c/d"), owned("ac/", "db*"));
-        assert_eq!(split("{{ x }}*.env", "*"), owned("", "[*]*.env"));
-        // a separator after the first written wildcard belongs to the glob
-        assert_eq!(split("*/{{ x }}.env", "a/b"), owned("", "*/a/b.env"));
-        // the directory ends at the entry's last separator ahead of the pattern
-        assert_eq!(
-            split("{{ x }}/env.d/*.env", "/a*"),
-            owned("/a*/env.d/", "*.env")
-        );
-        assert_eq!(split("conf/[ab]/*.env", ""), owned("conf/", "[ab]/*.env"));
-        assert_eq!(split("a/b{{ x }}c*.env", "/d"), owned("a/b/", "dc*.env"));
-        assert_eq!(split("a/b{{ x }}c/*.env", "/d"), owned("a/b/dc/", "*.env"));
-        // a written `*` the render drops leaves no pattern
-        assert_eq!(split("{{ x }}.env", "*"), None);
-        // a written glob escape keeps the directory where the entry's own ends
-        if cfg!(unix) {
-            assert_eq!(split("a/\\b{{ x }}*", "c/d"), owned("a/", "\\bc/d*"));
-        }
     }
 
     /// The pattern is found in what renders, so each branch of a conditional can hold its own.
     #[test]
     fn test_the_rendered_branch_holds_the_pattern() {
-        let marks = SubstitutionMarks::new();
         let mut engine = TeraEngine::V2(Box::default());
         let mut split = |input: &str, x: bool| {
             let mut ctx = tera::Context::new();
             ctx.insert("x", &x);
             ctx.insert("name", "n*");
-            let rendered = mise_util::tera::render_str_with_env(
-                &mut engine,
-                &marks.wrap_substitutions(input),
-                &ctx,
-            )
-            .unwrap();
-            marks.split_glob(&rendered).unwrap()
+            split_path(&mut engine, input, &ctx, true).unwrap()
         };
         let owned = |a: &str, b: &str| Some((a.to_string(), b.to_string()));
         let input = "{% if x %}a/*.env{% else %}b/{{ name }}/*.env{% endif %}";
@@ -2129,73 +2075,21 @@ mod tests {
         assert_eq!(split(input, false), owned("b/", "*.env"));
     }
 
-    /// Marking the substitutions of a pattern leaves what the template render and the `$`
-    /// expansion make of it as it was: `$$` is still a `$`, a nested fallback still expands, and
-    /// a `-` still trims the whitespace next to its tag.
-    #[test]
-    fn test_marking_a_pattern_keeps_its_rendering() {
-        let env = BTreeMap::from([("P".to_string(), "dev".to_string())]);
-        let mut ctx = tera::Context::new();
-        ctx.insert("env", &env);
-        let marks = SubstitutionMarks::new();
-        for mut engine in [
-            TeraEngine::V2(Box::default()),
-            TeraEngine::V1(Box::default()),
-        ] {
-            let mut glob = |pattern: &str| {
-                let marked = marks.wrap_substitutions(pattern);
-                let rendered = mise_util::tera::render_str_with_env(&mut engine, &marked, &ctx)
-                    .unwrap_or_else(|err| panic!("{pattern}: {err}"));
-                marks.to_glob(&shell_expand_env(&rendered, &env, &mut vec![]))
-            };
-            for (pattern, expected) in [
-                ("$P*.env", "dev*.env"),
-                ("${P}*.env", "dev*.env"),
-                ("$$P*.env", "$P*.env"),
-                ("$$*.env", "$*.env"),
-                ("$*.env", "$*.env"),
-                ("${A:-${P}}*.env", "dev*.env"),
-                ("${P:-${A}}*.env", "dev*.env"),
-                ("${A:-${B:-x}}-$P*", "x-dev*"),
-                ("${{ env.P }}*", "$dev*"),
-                (".env. {{- env.P }}*", ".env.dev*"),
-                ("{{ env.P -}}  .e*", "dev.e*"),
-                ("{{ env.P -}} {{- env.P }}*", "devdev*"),
-                ("a {%- if true %}{{ env.P }}{% endif -%} *", "adev*"),
-                (" {#- c #}*", "*"),
-                ("${A:-{{ env.P }}}*.env", "dev*.env"),
-                ("${P:-{{ env.A | default(value='}') }}}*", "dev[}]*"),
-                ("{{ 'a}}*' }}.e*", "a[}][}][*].e*"),
-                ("{% if 'a%}*' %}{{ env.P }}{% endif %}*", "dev*"),
-            ] {
-                assert_eq!(glob(pattern).as_deref(), Some(expected), "{pattern}");
-            }
-        }
-    }
-
-    /// An escaped substitution matches the file it names, and not the files its `*` would.
+    /// A glob matches a symlink to a file, as a path that names the link does.
     #[test]
     #[cfg(unix)]
-    fn test_escaped_substitution_matches_only_its_file() {
+    fn test_glob_files_in_matches_symlinked_files() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
-        for file in [
-            "*.env",
-            "dev.env",
-            "a?b[1].env",
-            "axb1.env",
-            "{p,q}.env",
-            "p.env",
-        ] {
-            std::fs::write(root.join(file), "").unwrap();
-        }
-        for name in ["*", "a?b[1]", "{p,q}"] {
-            assert_eq!(
-                glob_files_in(root, &format!("{}.e*", escape_glob(name))),
-                vec![root.join(format!("{name}.env"))],
-                "{name}"
-            );
-        }
+        std::fs::create_dir(root.join("env")).unwrap();
+        std::fs::write(root.join("target.env"), "").unwrap();
+        std::fs::write(root.join("env/.env.a"), "").unwrap();
+        std::os::unix::fs::symlink(root.join("target.env"), root.join("env/.env.b")).unwrap();
+        std::os::unix::fs::symlink(root.join("missing.env"), root.join("env/.env.c")).unwrap();
+        assert_eq!(
+            glob_files_in(&root.join("env"), ".env.*"),
+            vec![root.join("env/.env.a"), root.join("env/.env.b")]
+        );
     }
 
     /// `ToolsFilter::ToolsOnlyVals` must select only `tools = true` `Val`

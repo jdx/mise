@@ -2227,12 +2227,12 @@ mod tests {
         )
         .unwrap();
         let opts = HttpOptions::new(&raw);
-        let target = |key: &str| PlatformTarget::new(crate::platform::Platform::parse(key).unwrap());
+        let target =
+            |key: &str| PlatformTarget::new(crate::platform::Platform::parse(key).unwrap());
         // a pinned platform never reads the manifest, so safe mode need not refuse it
         assert!(!opts.lock_evaluates_checksum_expr(&target("linux-x64")));
         assert!(opts.lock_evaluates_checksum_expr(&target("macos-arm64")));
-        let no_source: ToolVersionOptions =
-            toml::from_str(r#"checksum_expr = "body""#).unwrap();
+        let no_source: ToolVersionOptions = toml::from_str(r#"checksum_expr = "body""#).unwrap();
         assert!(!HttpOptions::new(&no_source).lock_evaluates_checksum_expr(&target("linux-x64")));
     }
 

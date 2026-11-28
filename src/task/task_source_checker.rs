@@ -49,6 +49,41 @@ pub(crate) fn is_glob_pattern(path: &str) -> bool {
 
 const MAX_BRACE_EXPANSIONS: usize = 1024;
 
+/// Where a scan of a glob stands with respect to a `[...]` character class, read as globset
+/// reads one: a `]` just after the `[`, or after a negating `!` or `^`, is a member, and the
+/// next `]` closes the class.
+#[derive(Clone, Copy, PartialEq)]
+enum GlobClass {
+    Outside,
+    /// Just after the `[`.
+    Opened,
+    /// Just after `[!` or `[^`.
+    Negated,
+    /// Past the first member.
+    Body,
+}
+
+impl GlobClass {
+    /// Moves past `ch` and returns whether it is part of a class, its brackets included.
+    fn step(&mut self, ch: char) -> bool {
+        *self = match (*self, ch) {
+            (GlobClass::Outside, '[') => GlobClass::Opened,
+            (GlobClass::Outside, _) => return false,
+            (GlobClass::Opened, '!' | '^') => GlobClass::Negated,
+            (GlobClass::Body, ']') => GlobClass::Outside,
+            _ => GlobClass::Body,
+        };
+        true
+    }
+
+    /// Moves past a character a `\` escapes, which inside a class is a member.
+    fn step_escaped(&mut self) {
+        if *self != GlobClass::Outside {
+            *self = GlobClass::Body;
+        }
+    }
+}
+
 /// Expand globset-style brace alternates before passing a pattern to `glob`.
 ///
 /// `Override`/globset understands patterns such as `{a,b}.txt`, but the `glob`
@@ -66,7 +101,7 @@ pub(crate) fn expand_glob_braces(pattern: &str) -> Result<Vec<String>> {
 
     fn find_group(pattern: &str) -> Result<Option<BraceGroup>> {
         let mut escaped = false;
-        let mut class_depth = 0;
+        let mut class = GlobClass::Outside;
         let mut group_start = None;
         let mut group_depth = 0;
         let mut branch_start = 0;
@@ -75,6 +110,7 @@ pub(crate) fn expand_glob_braces(pattern: &str) -> Result<Vec<String>> {
         for (idx, ch) in pattern.char_indices() {
             if escaped {
                 escaped = false;
+                class.step_escaped();
                 continue;
             }
             // On Windows, backslashes are path separators rather than glob
@@ -84,21 +120,22 @@ pub(crate) fn expand_glob_braces(pattern: &str) -> Result<Vec<String>> {
                 escaped = true;
                 continue;
             }
+            if class.step(ch) {
+                continue;
+            }
             match ch {
-                '[' if class_depth == 0 => class_depth = 1,
-                ']' if class_depth == 1 => class_depth = 0,
-                '{' if class_depth == 0 => {
+                '{' => {
                     if group_depth == 0 {
                         group_start = Some(idx);
                         branch_start = idx + ch.len_utf8();
                     }
                     group_depth += 1;
                 }
-                ',' if class_depth == 0 && group_depth == 1 => {
+                ',' if group_depth == 1 => {
                     branches.push((branch_start, idx));
                     branch_start = idx + ch.len_utf8();
                 }
-                '}' if class_depth == 0 => {
+                '}' => {
                     if group_depth == 0 {
                         bail!("unopened brace alternate in glob pattern {pattern:?}");
                     }
@@ -150,10 +187,11 @@ pub(crate) fn expand_glob_braces(pattern: &str) -> Result<Vec<String>> {
             }
             let mut literal = String::with_capacity(pattern.len());
             let mut escaped = false;
-            let mut class_depth = 0;
+            let mut class = GlobClass::Outside;
             for ch in pattern.chars() {
                 if escaped {
                     escaped = false;
+                    class.step_escaped();
                     literal.push(ch);
                     continue;
                 }
@@ -162,17 +200,13 @@ pub(crate) fn expand_glob_braces(pattern: &str) -> Result<Vec<String>> {
                     literal.push(ch);
                     continue;
                 }
+                if class.step(ch) {
+                    literal.push(ch);
+                    continue;
+                }
                 match ch {
-                    '[' if class_depth == 0 => {
-                        class_depth = 1;
-                        literal.push(ch);
-                    }
-                    ']' if class_depth == 1 => {
-                        class_depth = 0;
-                        literal.push(ch);
-                    }
-                    '{' if class_depth == 0 => literal.push_str("[{]"),
-                    '}' if class_depth == 0 => literal.push_str("[}]"),
+                    '{' => literal.push_str("[{]"),
+                    '}' => literal.push_str("[}]"),
                     _ => literal.push(ch),
                 }
             }
@@ -2740,6 +2774,33 @@ mod tests {
         assert_eq!(
             expand_glob_braces("{prefix-{a,b}}.txt").unwrap(),
             ["[{]prefix-a[}].txt", "[{]prefix-b[}].txt"]
+        );
+    }
+
+    /// A `]` just after a class opens, or after its negation, is a member, so braces after it
+    /// are still inside the class.
+    #[test]
+    fn glob_braces_stay_literal_in_a_class_that_starts_with_a_bracket() {
+        for pattern in [
+            "env/[]{a,b}]*.env",
+            "env/[!]{a,b}]*.env",
+            "env/[^]{a,b}]*.env",
+        ] {
+            assert_eq!(expand_glob_braces(pattern).unwrap(), [pattern]);
+        }
+        assert_eq!(
+            expand_glob_braces("env/[]a]{x,y}.env").unwrap(),
+            ["env/[]a]x.env", "env/[]a]y.env"]
+        );
+        assert_eq!(expand_glob_braces("[ab]{x,y}").unwrap(), ["[ab]x", "[ab]y"]);
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn glob_braces_escapes_inside_a_class() {
+        assert_eq!(
+            expand_glob_braces(r"[\]]{x,y}").unwrap(),
+            [r"[\]]x", r"[\]]y"]
         );
     }
 

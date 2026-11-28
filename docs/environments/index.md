@@ -271,9 +271,13 @@ _.file = ".env"
   loaded, in name order, including the files of each `{a,b}` alternative. As
   in a shell, `*` matches within one directory and `**` matches directories at
   any depth, so `.env.*` loads the files next to the config and `**/.env.*`
-  also those in every directory below it. Only a wildcard written in the entry
-  makes a pattern: a `*` that a template such as <span v-pre>`{{cwd}}`</span>
-  or a `$VAR` puts anywhere in the path matches only a `*` in a name.
+  also those in every directory below it. A path is a pattern only when it
+  writes a `*`, so `.env.{local,test}` names one file; list the files to load
+  each. A template such as <span v-pre>`{{cwd}}`</span> or a `$VAR` can name
+  the directory a pattern is matched in, as in <span v-pre>`{{cwd}}/.env.*`</span>
+  or `env.d/$PROFILE/*.env`, and what it renders is taken as a directory name,
+  even one that holds a `*`. It cannot be part of the pattern:
+  `env.d/$PROFILE*.env` is an error.
 - A path that matches no file is skipped without an error, so `_.file` can
   point at an optional, untracked `.env`.
 - Values from the file replace variables already in the environment.

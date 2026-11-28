@@ -53,19 +53,26 @@ assert_contains "mise env -s bash" "OWN=1"
 assert_not_contains "mise env -s bash" "SIBLING"
 cd .. || exit 1
 
-# a `*` that a template or `$VAR` renders inside the pattern matches only itself
-mkdir -p profiles
-echo "STAR_PROFILE=1" >'profiles/*.env'
-echo "DEV_PROFILE=1" >profiles/dev.env
-# shellcheck disable=SC2016 # mise expands $PROFILE, not the shell
-for entry in 'profiles/{{ env.PROFILE }}.e*' 'profiles/$PROFILE.e*'; do
+# a template or `$VAR` can name the directory a glob is matched in, a `$` written before a
+# template included, but cannot be part of the glob
+# shellcheck disable=SC2016 # mise expands $SUB, not the shell
+for entry in 'env.d/{{ env.SUB }}/*.env' 'env.d/$SUB/*.env' 'env.d/${{ "SUB" }}/*.env'; do
   cat <<EOS >.mise.toml
 [env]
 _.file = '$entry'
 EOS
-  assert_contains "PROFILE='*' mise env -s bash" "STAR_PROFILE=1"
-  assert_not_contains "PROFILE='*' mise env -s bash" "DEV_PROFILE"
-  assert_contains "PROFILE=dev mise env -s bash" "DEV_PROFILE=1"
+  assert_contains "SUB=nested mise env -s bash" "VAR3=3"
+  assert_not_contains "SUB=nested mise env -s bash" "VAR1"
+done
+mkdir -p profiles
+echo "DEV_PROFILE=1" >profiles/dev.env
+# shellcheck disable=SC2016 # mise expands $PROFILE, not the shell
+for entry in 'profiles/{{ env.PROFILE }}.e*' 'profiles/$PROFILE.e*' 'profiles/${{ "PROFILE" }}.e*'; do
+  cat <<EOS >.mise.toml
+[env]
+_.file = '$entry'
+EOS
+  assert_fail "PROFILE=dev mise env -s bash" 'a template or $VAR is part of the glob, which starts after "profiles/"'
 done
 
 # the branch of a conditional that renders holds the pattern
@@ -78,32 +85,16 @@ assert_not_contains "PROFILE=dev mise env -s bash" "DEV_PROFILE"
 assert_contains "PROFILE=prod mise env -s bash" "DEV_PROFILE=1"
 assert_not_contains "PROFILE=prod mise env -s bash" "VAR1"
 
-# text substituted inside a `[...]` class joins it as members, and a `-` that would make a range
-# is refused rather than widening the match
-mkdir -p classes
-echo "CLASS_B=1" >classes/b.env
-echo "CLASS_DASH=1" >classes/-.env
-cat <<'EOS' >.mise.toml
-[env]
-_.file = "classes/[a{{ env.CHARS }}z]*.env"
-EOS
-assert_contains "CHARS=b mise env -s bash" "CLASS_B=1"
-assert_not_contains "CHARS=b mise env -s bash" "CLASS_DASH"
-assert_fail "CHARS=- mise env -s bash" "inside a \`[...]\` class renders '-'"
-
-# an empty substitution does not join `*`s into a `**`, written ones or one a group supplies:
-# only a `**` the entry writes as a component descends
+# only a `**` the entry writes as a component descends, not a run of `*`s a group forms
 mkdir -p stars/a/b
 echo "STARS_ONE=1" >stars/a/.env
 echo "STARS_DEEP=1" >stars/a/b/.env
-for entry in 'stars/**{{ env.SUFFIX }}*/.env' 'stars/*{{ env.SUFFIX }}{*,dev}/.env'; do
-  cat <<EOS >.mise.toml
+cat <<'EOS' >.mise.toml
 [env]
-_.file = '$entry'
+_.file = "stars/*{*,dev}/.env"
 EOS
-  assert_contains "SUFFIX= mise env -s bash" "STARS_ONE=1"
-  assert_not_contains "SUFFIX= mise env -s bash" "STARS_DEEP"
-done
+assert_contains "mise env -s bash" "STARS_ONE=1"
+assert_not_contains "mise env -s bash" "STARS_DEEP"
 cat <<'EOS' >.mise.toml
 [env]
 _.file = "stars/{**,dev}/.env"
