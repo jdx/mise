@@ -201,7 +201,12 @@ pub fn ensure_edit_keeps_tool_request_count(
         } else if global {
             false
         } else {
-            loaded || root.starts_with(discovered_from(p, cf.as_ref()))
+            // a file above the current directory loads with everything found from here
+            loaded
+                || crate::dirs::CWD
+                    .as_ref()
+                    .is_some_and(|cwd| cwd.starts_with(&root))
+                || root.starts_with(discovered_from(p, cf.as_ref()))
         }
     };
     let mut files: Vec<&Arc<dyn ConfigFile>> = config_files
@@ -2101,6 +2106,17 @@ mod tests {
         std::fs::create_dir_all(dir.path().join("sub")).unwrap();
         let below = toml("sub/mise.toml", "[tools]\npython = \"3\"\n");
         assert!(ensure_edit_keeps_tool_request_count(&files, &below).is_err());
+        // a file above the current directory, as `mise use --path ../mise.toml` names, loads
+        // with everything found from here
+        let cwd = crate::dirs::CWD.clone().unwrap();
+        let above: Arc<dyn ConfigFile> = Arc::new(
+            MiseToml::from_str(
+                "[tools]\npython = \"3\"\n",
+                &cwd.parent().unwrap().join("mise.toml"),
+            )
+            .unwrap(),
+        );
+        assert!(ensure_edit_keeps_tool_request_count(&files, &above).is_err());
     }
 
     /// A conf.d folder fragment has its own config root but loads with the project that holds
