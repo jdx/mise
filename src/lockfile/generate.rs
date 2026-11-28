@@ -2203,29 +2203,38 @@ mod tests {
         generated.restore_missing_versions(&previous(), "fixture", &excluded);
         assert!(generated.tools_for("fixture").is_none());
 
-        // A legacy entry records no backend, so it is matched by tool and version: its
-        // excluded rows stay out too.
+        // A legacy entry records no backend, so it is matched on tool, version and options:
+        // its excluded rows stay out too, but a legacy pin of the version with other options,
+        // which a skipped task may make, keeps them.
         let mut legacy = Lockfile::default();
-        for platform in ["linux-x64", "macos-arm64"] {
-            legacy.set_platform_info(
-                "fixture",
-                "1.0",
-                None,
-                &BTreeMap::new(),
-                platform,
-                PlatformInfo {
-                    checksum: Some("sha256:legacy".into()),
-                    ..Default::default()
-                },
-            );
+        let other = BTreeMap::from([("bin".to_string(), "other".to_string())]);
+        for options in [BTreeMap::new(), other.clone()] {
+            for platform in ["linux-x64", "macos-arm64"] {
+                legacy.set_platform_info(
+                    "fixture",
+                    "1.0",
+                    None,
+                    &options,
+                    platform,
+                    PlatformInfo {
+                        checksum: Some("sha256:legacy".into()),
+                        ..Default::default()
+                    },
+                );
+            }
         }
-        assert!(legacy.tools_for("fixture").unwrap()[0].backend.is_none());
-        generated.restore_missing_versions(&legacy, "fixture", &excluded);
         assert!(
-            generated.tools_for("fixture").is_none(),
-            "{:?}",
-            generated.tools_for("fixture")
+            legacy
+                .tools_for("fixture")
+                .unwrap()
+                .iter()
+                .all(|entry| entry.backend.is_none())
         );
+        generated.restore_missing_versions(&legacy, "fixture", &excluded);
+        let entries = generated.tools_for("fixture").unwrap();
+        assert_eq!(entries.len(), 1, "{entries:?}");
+        assert_eq!(entries[0].options, other);
+        assert_eq!(entries[0].platforms.len(), 2, "{entries:?}");
     }
 
     /// A tool configured with URL credentials is selected under its
