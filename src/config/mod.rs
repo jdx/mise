@@ -3970,7 +3970,7 @@ pub(crate) fn is_project_link_to_global_config(path: &Path) -> bool {
 /// link to the global config directory itself (`~/cfg` or a project's `.mise`), one below the
 /// project directory, or one placed in a directory that does not hold global config, such as a
 /// checkout's `home` linked to the home directory, is a project's link to global config.
-pub(crate) fn write_reaches_global_config_through_link(path: &Path) -> bool {
+pub fn write_reaches_global_config_through_link(path: &Path) -> bool {
     let Some(global) = global_config_spelling(path) else {
         return false;
     };

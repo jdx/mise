@@ -1968,6 +1968,7 @@ fn script_link_check(script: &Path, root: &Path, follow_own_link: bool) -> Resul
                 .canonicalize()
                 .is_ok_and(|dir| target.starts_with(dir))
         })
+        || config::is_global_config_write(&target)
     {
         return refuse(
             "the link leads into global config, which loads without trust. Edit global config directly",
