@@ -361,6 +361,17 @@ impl Toolset {
     }
 
     pub async fn list_installed_versions(&self, _config: &Arc<Config>) -> Result<Vec<TVTuple>> {
+        self.installed_versions_of(self.list_backends_for_installed_version_listing())
+    }
+
+    /// The installed versions of tools that `enable_tools` or `disable_tools` excludes, which
+    /// [`Self::list_installed_versions`] leaves out. Only shim rebuilding wants them: the shims
+    /// directory is shared with every process, filtered or not.
+    pub(crate) fn list_installed_versions_excluded_by_tool_filters(&self) -> Result<Vec<TVTuple>> {
+        self.installed_versions_of(backend::list_installed_excluded_by_tool_filters())
+    }
+
+    fn installed_versions_of(&self, backends: backend::BackendList) -> Result<Vec<TVTuple>> {
         // Surface an unreadable installs dir as an error rather than as an empty
         // list. Shim rebuilding derives its desired set from this and deletes
         // every shim it cannot account for, so "scan failed" must not be
@@ -379,7 +390,7 @@ impl Toolset {
             .collect();
         let current_versions = Arc::new(current_versions);
         let mut versions = vec![];
-        for b in self.list_backends_for_installed_version_listing() {
+        for b in backends {
             for v in b.list_installed_versions() {
                 // A configured version stands for the listed one only when it is that
                 // very installation: with the identity layout the same version name can

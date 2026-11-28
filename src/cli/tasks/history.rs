@@ -140,7 +140,7 @@ fn local_time(started_at: &str) -> String {
     started_at
         .parse::<jiff::Timestamp>()
         .map(|ts| {
-            ts.to_zoned(jiff::tz::TimeZone::system())
+            ts.to_zoned_datetime(jiff::tz::TimeZone::system())
                 .strftime("%Y-%m-%d %H:%M:%S")
                 .to_string()
         })

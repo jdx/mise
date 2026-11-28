@@ -80,6 +80,15 @@ the affected version, how the issue arises in normal use, what an attacker must
 control, and the impact. We may close speculative, duplicate, or bulk reports
 that don’t establish an impact on mise.
 
+Resource exhaustion is in scope when untrusted or remote input causes it: project
+config you have not trusted, anything read in safe mode, remote metadata such as
+version lists and release APIs, and downloaded archives. If such input makes mise
+hang, crash, or use unbounded memory, disk or CPU, report it as a vulnerability.
+Trusted config and the tools and tasks it runs are out of scope, because trusted
+config can already run commands as you; report a trusted config that loops or
+allocates a lot as an ordinary bug. See the
+[threat model](https://mise.jdx.dev/security.html#threat-model).
+
 If you want, you may encrypt the message with GPG:
 
 <details>
