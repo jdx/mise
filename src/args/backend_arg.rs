@@ -482,6 +482,11 @@ impl BackendArg {
             bail!(
                 "'{self}' does not name a tool: write the tool after the backend, as in 'asdf:<tool>'"
             );
+        } else if let Some(full) = self.unresolved_explicit_full() {
+            // A lockfile entry or install manifest named this backend for a
+            // short that may well be in the registry, so the registry is not
+            // what failed.
+            bail!("{self} is set to backend '{full}', which mise could not resolve");
         } else if let Some((plugin_name, tool_name)) = self.short.split_once(':') {
             // Check if the plugin exists first
             if let Some(plugin_type) = install_state::get_plugin_type(plugin_name) {
@@ -545,6 +550,20 @@ impl BackendArg {
         }
     }
 
+    /// The backend identifier, without options, that an explicit selection
+    /// under a plain short (`node` → `bogus:owner/repo`) names. A short that
+    /// spells the backend itself is reported by the plugin checks instead.
+    fn unresolved_explicit_full(&self) -> Option<String> {
+        if !self.has_explicit_backend() || self.short.contains(':') {
+            return None;
+        }
+        let full = self.full();
+        let name = split_bracketed_opts(&full).map_or(full.as_str(), |(name, _)| name);
+        // The identifier goes into an error message, so drop URL credentials.
+        name.contains(':')
+            .then(|| install_state::state_short(name).into_owned())
+    }
+
     pub fn backend_type(&self) -> BackendType {
         // Check if this is a valid backend:tool format first
         if let Some((backend_prefix, _tool_name)) = self.short.split_once(':')
@@ -576,6 +595,13 @@ impl BackendArg {
         // revive the backend recorded by another installed version, nor
         // resolve a core plugin by name outside the registry's bounds.
         if self.has_registry_version() {
+            return BackendType::Unknown;
+        }
+
+        // An explicit identifier whose backend prefix did not resolve must not
+        // take the backend recorded or configured for its short name: that is
+        // a different backend than the one selected.
+        if self.has_explicit_backend() && full.contains(':') {
             return BackendType::Unknown;
         }
 
