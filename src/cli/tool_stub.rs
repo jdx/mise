@@ -487,7 +487,7 @@ impl ToolStub {
             }
         }; // Drop the lock before await
 
-        let content = file::read_to_string(&self.file)?;
+        let content = stub_content(&self.file)?;
         let cache_key = BinPathCache::cache_key(&self.file, content.as_bytes())?;
         let stub = ToolStubFile::from_content(&self.file, content)?;
 
@@ -518,6 +518,30 @@ fn track_stub_use(file: &Path) {
     }
 }
 
+/// The stub the fast path read and found no cache entry for, kept so `ToolStub::run` parses
+/// the text the fast path hashed instead of reading the file a second time.
+static READ_BY_FAST_PATH: std::sync::Mutex<Option<(PathBuf, String)>> = std::sync::Mutex::new(None);
+
+/// The text of the stub at `path`: what the fast path read, when it read this stub, or the file.
+fn stub_content(path: &Path) -> Result<String> {
+    let read = READ_BY_FAST_PATH
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .take();
+    match read {
+        Some((read_path, content)) if read_path == path => Ok(content),
+        _ => file::read_to_string(path),
+    }
+}
+
+/// Reads a stub for the fast path, or `None` to skip the cache: the opened file must be a
+/// regular file no larger than a config file, judged on the handle, so a pipe swapped in
+/// after `is_cacheable` cannot hang startup and a huge file is not loaded before the cache
+/// is even checked. The normal path reports what is wrong with such a file.
+fn read_stub_for_cache(path: &Path) -> Option<String> {
+    file::read_config_to_string(path).ok()
+}
+
 pub(crate) async fn short_circuit_stub(args: &[String]) -> Result<()> {
     // Early return if no args or not enough args for a stub
     if args.is_empty() {
@@ -535,8 +559,10 @@ pub(crate) async fn short_circuit_stub(args: &[String]) -> Result<()> {
     if !BinPathCache::is_cacheable(potential_stub_path) {
         return Ok(());
     }
-    let content = file::read(potential_stub_path)?;
-    let Some(cache_key) = BinPathCache::cache_key(potential_stub_path, &content)? else {
+    let Some(content) = read_stub_for_cache(potential_stub_path) else {
+        return Ok(());
+    };
+    let Some(cache_key) = BinPathCache::cache_key(potential_stub_path, content.as_bytes())? else {
         return Ok(());
     };
 
@@ -558,7 +584,11 @@ pub(crate) async fn short_circuit_stub(args: &[String]) -> Result<()> {
         .await;
     }
 
-    // No cache hit, return Ok(()) to continue with normal processing
+    // No cache hit: continue with normal processing, which parses the text read here.
+    *READ_BY_FAST_PATH
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner()) =
+        Some((potential_stub_path.to_path_buf(), content));
     Ok(())
 }
 
@@ -581,6 +611,39 @@ mod tests {
 
     fn key_on_disk(path: &Path) -> Result<Option<String>> {
         BinPathCache::cache_key(path, &std::fs::read(path)?)
+    }
+
+    #[test]
+    fn the_fast_path_skips_a_stub_larger_than_a_config_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let stub = tmp.path().join("bin/scan");
+        write_stub(&stub, "1.0.0");
+        assert!(read_stub_for_cache(&stub).is_some());
+        // sparse, so the test writes nothing
+        std::fs::File::options()
+            .write(true)
+            .open(&stub)
+            .unwrap()
+            .set_len(file::CONFIG_FILE_LIMIT + 1)
+            .unwrap();
+        assert!(read_stub_for_cache(&stub).is_none());
+    }
+
+    #[test]
+    fn a_run_parses_the_text_the_fast_path_read() {
+        let tmp = tempfile::tempdir().unwrap();
+        let stub = tmp.path().join("bin/scan");
+        let other = tmp.path().join("bin/other");
+        write_stub(&stub, "2.0.0");
+        write_stub(&other, "3.0.0");
+        let read = "tool = \"dummy\"\nversion = \"1.0.0\"\n".to_string();
+        *READ_BY_FAST_PATH.lock().unwrap() = Some((stub.clone(), read.clone()));
+        // another stub reads its own file
+        assert!(stub_content(&other).unwrap().contains("3.0.0"));
+        *READ_BY_FAST_PATH.lock().unwrap() = Some((stub.clone(), read.clone()));
+        assert_eq!(stub_content(&stub).unwrap(), read);
+        // taken once: a later read is of the file
+        assert!(stub_content(&stub).unwrap().contains("2.0.0"));
     }
 
     #[test]
