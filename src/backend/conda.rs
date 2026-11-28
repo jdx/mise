@@ -394,21 +394,16 @@ impl CondaBackend {
         package: &CondaPackageInfo,
         main_url: &str,
     ) -> Result<()> {
-        let redact = crate::install_layout::resolver::redact_credentials;
-        let main_channel = Self::channel_root(main_url);
-        if Self::channel_root(&package.url) != main_channel {
+        if Self::channel_root(&package.url) != Self::channel_root(main_url) {
             eyre::bail!(
-                "refusing the conda package {key} in mise.lock: its url {} is not in the channel {} of the tool, which all its dependencies come from. Run `mise lock` to resolve the tool again",
-                redact(&package.url),
-                redact(main_channel),
+                "refusing the conda package {key} in mise.lock: its url is not in the channel of the tool, which all its dependencies come from. Run `mise lock` to resolve the tool again"
             );
         }
         match key.rsplit_once('@') {
             Some((_, tag)) => {
                 if tag != Self::channel_tag(&package.url) {
                     eyre::bail!(
-                        "refusing the conda package {key} in mise.lock: its key names another channel than its url {}. Run `mise lock` to resolve the tool again",
-                        redact(&package.url)
+                        "refusing the conda package {key} in mise.lock: its key names another channel than its url. Run `mise lock` to resolve the tool again"
                     );
                 }
             }
@@ -876,9 +871,8 @@ impl CondaBackend {
                 }
                 None if require_checksum => {
                     return Some(eyre::eyre!(
-                        "No lockfile checksum found for conda package {key} of {tool} on platform {platform_key} ({}) (--locked mode)\n\
-                        hint: Run `mise lock` to record checksums, or set locked_require_checksum = false",
-                        crate::install_layout::resolver::redact_credentials(&package.url)
+                        "No lockfile checksum found for conda package {key} of {tool} on platform {platform_key} (--locked mode)\n\
+                        hint: Run `mise lock` to record checksums, or set locked_require_checksum = false"
                     ));
                 }
                 _ => {}
@@ -1389,16 +1383,31 @@ impl CondaBackend {
                 continue;
             }
             let basename = Self::record_basename(record);
+            let checksum = match Self::format_checksum(record) {
+                Some(checksum) => checksum,
+                None => Self::download_checksum(record.url.as_str()).await?,
+            };
             result.insert(
                 basename,
                 CondaPackageInfo {
                     url: record.url.to_string(),
-                    checksum: Self::format_checksum(record),
+                    checksum: Some(checksum),
                 },
             );
         }
 
         Ok(result)
+    }
+
+    /// The sha256 of the package at `url`, for a package whose channel publishes no
+    /// checksum, so that `mise.lock` still pins it and `--locked` installs can check it.
+    /// The archive is downloaded afresh rather than read from the archive store, which
+    /// holds what an earlier unchecked download wrote.
+    async fn download_checksum(url: &str) -> Result<String> {
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("archive");
+        Self::download_to(url, &path, None).await?;
+        Ok(format!("sha256:{}", hash::file_hash_sha256(&path, None)?))
     }
 }
 
@@ -2480,6 +2489,25 @@ mod tests {
         assert_eq!(info.short_version, (3, 12));
     }
 
+    /// A package whose channel publishes no checksum is pinned by the sha256 of a fresh
+    /// download, not by what the archive store holds.
+    #[tokio::test]
+    async fn download_checksum_hashes_a_fresh_download() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/conda-forge/noarch/zlib-1.3.1-h_2.conda")
+            .with_body("package")
+            .create_async()
+            .await;
+        let url = format!("{}/conda-forge/noarch/zlib-1.3.1-h_2.conda", server.url());
+        let checksum = CondaBackend::download_checksum(&url).await.unwrap();
+        mock.assert_async().await;
+        assert_eq!(
+            checksum,
+            format!("sha256:{}", crate::hash::hash_sha256_to_str("package"))
+        );
+    }
+
     /// A locked dependency comes from the tool's own channel, whatever its key, and a
     /// key that names a channel names the one its url points into.
     #[test]
@@ -2509,7 +2537,15 @@ mod tests {
         let err = check(&key(forge_noarch), forge).unwrap_err();
         assert!(err.contains("names another channel"), "{err}");
 
-        // the messages leave out credentials in either url
+        // the messages leave out credentials in either url, a token in the path too
+        let path_token =
+            "https://conda.example.com/t/secret-token/team/noarch/zlib-1.3.1-h_2.conda";
+        for (dep, tool) in [(path_token, main), (forge, path_token)] {
+            let err = CondaBackend::check_locked_dependency(&key(forge), &package(dep), tool)
+                .unwrap_err()
+                .to_string();
+            assert!(!err.contains("secret-token"), "{err}");
+        }
         let private = "https://user:token@conda.example.com/team/linux-64/tool-1.0-h_0.conda";
         let private_dep = "https://user:token@conda.example.com/team/noarch/zlib-1.3.1-h_2.conda";
         let err =
