@@ -8,6 +8,19 @@ source "$SCRIPT_DIR/style.sh"
 # shellcheck source-path=SCRIPTDIR
 source "$SCRIPT_DIR/helpers.sh"
 
+# Settings (environment variables):
+#   E2E_JOBS                 how many tests run at once
+#   E2E_MAX_ATTEMPTS         how often a failing test is run (default 1)
+#   MISE_E2E_DOCKER=1        run each test in Docker. Every running test then has a
+#                            slot (0 to E2E_JOBS-1) that no other running test has,
+#                            and the slot's container, started by its first test, is
+#                            used by the slot's tests one after the other, with its
+#                            processes killed and its writable directories emptied
+#                            in between. A test that fails gets the container
+#                            removed, so its retry and the next test start fresh.
+#   MISE_E2E_DOCKER_REUSE=0  start a container per test instead. A test with an
+#                            "# e2e:writable-rootfs" marker always gets one.
+#
 # Tests named as arguments (paths relative to e2e/) run in the given order,
 # including slow ones; `mise run test:e2e` passes them when E2E_JOBS is set.
 # Without arguments, every test is discovered.
@@ -157,11 +170,49 @@ pass_line() {
   grep -E 'not marked as slow|Slow test not marked' "$log" >&2 || true
 }
 
+case "${MISE_E2E_DOCKER_REUSE:-1}" in
+  0 | 1) ;;
+  *)
+    err "MISE_E2E_DOCKER_REUSE must be 0 or 1"
+    exit 1
+    ;;
+esac
+
 LOG_DIR="$(mktemp -d "${TMPDIR:-/tmp}/mise-e2e-logs.XXXXXX")"
+
+# Docker slots: see docker_slot_container_name in helpers.sh. Killing a
+# `docker exec` client does not stop what it runs, so removing the containers is
+# what stops the tests of an interrupted run.
+DOCKER_REUSE=0
+DOCKER_SLOT_ROOT=
+if [[ ${MISE_E2E_DOCKER:-0} == 1 && ${MISE_E2E_DOCKER_REUSE:-1} == 1 ]] && ((${#RUN_FILES[@]} > 0)); then
+  DOCKER_REUSE=1
+  MISE_E2E_DOCKER_RUN_ID="$$"
+  DOCKER_SLOT_ROOT="$(mktemp -d "${MISE_E2E_HOST_TMP:-${RUNNER_TEMP:-${TMPDIR:-/tmp}}}/mise-e2e-slots.XXXXXX")"
+fi
+# The slot a started test holds, by test index, and whether each slot is held.
+TEST_SLOTS=()
+SLOT_HELD=()
+
+# Prints the lowest slot that no running test holds.
+free_slot() {
+  local slot
+  for ((slot = 0; slot < E2E_JOBS; slot++)); do
+    if [[ ${SLOT_HELD[$slot]:-0} == 0 ]]; then
+      echo "$slot"
+      return
+    fi
+  done
+  return 1
+}
+
 # shellcheck disable=SC2329
 cleanup() {
   if ((${#PIDS[@]} > 0)); then
     kill "${PIDS[@]}" 2>/dev/null || true
+  fi
+  if [[ $DOCKER_REUSE == 1 ]]; then
+    docker_slots_teardown "$DOCKER_SLOT_ROOT"
   fi
   rm -rf "$LOG_DIR"
 }
@@ -185,7 +236,19 @@ start_test() {
   SUMMARY_FILES[index]="$summary_file"
   STATUS_FILES[index]="$status_file"
 
+  local slot=
+  if [[ $DOCKER_REUSE == 1 ]]; then
+    slot="$(free_slot)"
+    TEST_SLOTS[index]="$slot"
+    SLOT_HELD[slot]=1
+  fi
+
   (
+    if [[ -n $slot ]]; then
+      export MISE_E2E_DOCKER_SLOT="$slot" MISE_E2E_DOCKER_SLOT_ROOT="$DOCKER_SLOT_ROOT" MISE_E2E_DOCKER_RUN_ID
+    else
+      unset MISE_E2E_DOCKER_SLOT MISE_E2E_DOCKER_SLOT_ROOT MISE_E2E_DOCKER_RUN_ID
+    fi
     if [[ -n $ORIGINAL_GITHUB_STEP_SUMMARY ]]; then
       export GITHUB_STEP_SUMMARY="$summary_file"
     else
@@ -242,6 +305,7 @@ while [[ $completed -lt $total ]]; do
     if [[ ${FINISHED[$index]:-0} == 0 && -n $status_file ]]; then
       if [[ -f $status_file ]]; then
         FINISHED[index]=1
+        [[ -z ${TEST_SLOTS[$index]:-} ]] || SLOT_HELD[${TEST_SLOTS[$index]}]=0
         active=$((active - 1))
         completed=$((completed + 1))
       elif ! kill -0 "${PIDS[$index]}" 2>/dev/null; then
@@ -250,6 +314,7 @@ while [[ $completed -lt $total ]]; do
           echo "1" >"$status_file.tmp" && mv "$status_file.tmp" "$status_file"
         fi
         FINISHED[index]=1
+        [[ -z ${TEST_SLOTS[$index]:-} ]] || SLOT_HELD[${TEST_SLOTS[$index]}]=0
         active=$((active - 1))
         completed=$((completed + 1))
       fi

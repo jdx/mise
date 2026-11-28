@@ -307,7 +307,11 @@ set `MISE_E2E_BIN` to its path; the file must be named `mise`.
 The host still has to provide the shells, compilers, and services a test uses.
 `MISE_E2E_DOCKER=1` runs each test inside
 `ghcr.io/jdx/mise:e2e`, the image CI runs the E2E tests in, which has those
-packages; it needs a Linux build of mise. Set `MISE_GITHUB_TOKEN` or
+packages; it needs a Linux build of mise. Tests that run one after the other
+share a container: the harness kills what the last test left running and
+empties `/tmp`, `/root` and `/home` before the next one, and removes the
+container when a test fails. `MISE_E2E_DOCKER_REUSE=0` gives every test a
+container of its own. Set `MISE_GITHUB_TOKEN` or
 `GITHUB_TOKEN` for tests that call the GitHub API; the harness passes them
 through. When a test fails, the harness keeps its directory and prints the
 path.

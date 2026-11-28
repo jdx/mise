@@ -395,51 +395,11 @@ os() {
   esac
 }
 
-run_in_docker() {
-  local image="${MISE_E2E_DOCKER_IMAGE:-ghcr.io/jdx/mise:e2e}"
-  local mise_bin
-  mise_bin="$(resolve_mise_bin)"
-
-  if ! file "$mise_bin" | grep -q "ELF"; then
-    err "The mise binary at '$mise_bin' is not a Linux ELF. On macOS, set MISE_E2E_BIN to a Linux-compiled mise binary."
-    return 1
-  fi
-
-  # Bind-mount disk-backed host dirs for /tmp and /root instead of using
-  # `--tmpfs` (which is RAM-backed and capped at ~half of RAM). Multi-GB tool
-  # installs (e.g. swift) do not fit in tmpfs and fail with ENOSPC. On
-  # namespace/GHA runners RUNNER_TEMP lives on the workspace disk.
-  local host_tmp_root="${MISE_E2E_HOST_TMP:-${RUNNER_TEMP:-${TMPDIR:-/tmp}}}"
-  local host_tmp host_root host_home
-  host_tmp="$(mktemp -d "$host_tmp_root/mise-e2e-tmp.XXXXXX")"
-  host_root="$(mktemp -d "$host_tmp_root/mise-e2e-root.XXXXXX")"
-  host_home="$(mktemp -d "$host_tmp_root/mise-e2e-home.XXXXXX")"
-  # Writable by every user (tests run as `nobody` too) with the sticky bit,
-  # as a real /tmp is: mise refuses to work as root below a directory any
-  # user can rename entries in. The host user still owns these directories,
-  # so the cleanup below can remove what the container created in them.
-  chmod 1777 "$host_tmp" "$host_root" "$host_home"
-
-  local docker_args=(
-    docker run --rm
-  )
-  # PostgreSQL refuses to initialize or run as root.
-  if grep -q '^# e2e:non-root' "$TEST_SCRIPT"; then
-    docker_args+=(--user nobody)
-  fi
-  # tests that install real system packages (e.g. apt) must write to /var and
-  # /usr and declare that with an "# e2e:writable-rootfs" marker; the container
-  # is still ephemeral and the host mounts below stay read-only
-  if ! grep -q '^# e2e:writable-rootfs' "$TEST_SCRIPT"; then
-    docker_args+=(--read-only)
-  fi
-  docker_args+=(
-    -v "$host_root:/root"
-    -v "$host_tmp:/tmp"
-    # writable /home so tests can create /home/linuxbrew (rootfs is read-only)
-    -v "$host_home:/home"
-    -v "$ROOT:/mise-src:ro"
-    -v "$mise_bin:/usr/local/lib/mise/debug/mise:ro"
+# The options every Docker run of a test shares: its environment, and the mounts
+# that are the same for every test.
+docker_test_args() {
+  local mise_bin="$1"
+  DOCKER_ENV_ARGS=(
     -e ROOT=/mise-src
     -e CI="${CI:-}"
     -e GITHUB_ACTION="${GITHUB_ACTION:-}"
@@ -454,25 +414,195 @@ run_in_docker() {
     -e E2E_SLOW_TEST_TIMEOUT_SECONDS="$E2E_SLOW_TEST_TIMEOUT_SECONDS"
   )
   # Same rule as the non-docker path: an empty token var is not an absent one.
-  [[ -n ${MISE_GITHUB_TOKEN:-} ]] && docker_args+=(-e MISE_GITHUB_TOKEN="$MISE_GITHUB_TOKEN")
-  [[ -n ${GITHUB_TOKEN:-} ]] && docker_args+=(-e GITHUB_TOKEN="$GITHUB_TOKEN")
+  [[ -n ${MISE_GITHUB_TOKEN:-} ]] && DOCKER_ENV_ARGS+=(-e MISE_GITHUB_TOKEN="$MISE_GITHUB_TOKEN")
+  [[ -n ${GITHUB_TOKEN:-} ]] && DOCKER_ENV_ARGS+=(-e GITHUB_TOKEN="$GITHUB_TOKEN")
+  DOCKER_MOUNT_ARGS=(
+    -v "$ROOT:/mise-src:ro"
+    -v "$mise_bin:/usr/local/lib/mise/debug/mise:ro"
+  )
   # An external binary a test opts into (a pitchfork build) lives on the host, so
-  # it has to be mounted at the same path for the variable to mean anything
-  # inside the container. Without this the test would see an unset variable and
-  # skip.
+  # it has to be mounted for the variable to mean anything inside the container.
+  # Without this the test would see an unset variable and skip. It is not
+  # mounted at its host path, which is usually below /home or /tmp: the reset
+  # between two tests empties those, and a mounted file cannot be removed.
   if [[ -n ${MISE_TEST_PITCHFORK:-} && -f $MISE_TEST_PITCHFORK ]]; then
-    docker_args+=(-v "$MISE_TEST_PITCHFORK:$MISE_TEST_PITCHFORK:ro" -e MISE_TEST_PITCHFORK="$MISE_TEST_PITCHFORK")
+    local pitchfork=/usr/local/lib/mise-pitchfork/pitchfork
+    DOCKER_MOUNT_ARGS+=(-v "$MISE_TEST_PITCHFORK:$pitchfork:ro")
+    DOCKER_ENV_ARGS+=(-e MISE_TEST_PITCHFORK="$pitchfork")
   fi
+  return 0
+}
+
+# Creates the three host directories that back /tmp, /root and /home and sets
+# host_tmp, host_root and host_home to them. They are disk-backed host dirs
+# instead of `--tmpfs` (which is RAM-backed and capped at ~half of RAM).
+# Multi-GB tool installs (e.g. swift) do not fit in tmpfs and fail with ENOSPC.
+# On namespace/GHA runners RUNNER_TEMP lives on the workspace disk. With a
+# directory argument they are made inside it.
+docker_make_host_dirs() {
+  local parent="${1:-}"
+  if [[ -z $parent ]]; then
+    local host_tmp_root="${MISE_E2E_HOST_TMP:-${RUNNER_TEMP:-${TMPDIR:-/tmp}}}"
+    host_tmp="$(mktemp -d "$host_tmp_root/mise-e2e-tmp.XXXXXX")"
+    host_root="$(mktemp -d "$host_tmp_root/mise-e2e-root.XXXXXX")"
+    host_home="$(mktemp -d "$host_tmp_root/mise-e2e-home.XXXXXX")"
+  else
+    host_tmp="$parent/tmp"
+    host_root="$parent/root"
+    host_home="$parent/home"
+    mkdir -p "$host_tmp" "$host_root" "$host_home"
+  fi
+  # Writable by every user (tests run as `nobody` too) with the sticky bit,
+  # as a real /tmp is: mise refuses to work as root below a directory any
+  # user can rename entries in. The host user still owns these directories,
+  # so the cleanup can remove what the container created in them.
+  chmod 1777 "$host_tmp" "$host_root" "$host_home"
+}
+
+# Whether the test can run in a container other tests use too: run_all_tests
+# gave it a slot, and it does not need a writable root filesystem, which the
+# next test must not inherit.
+docker_test_can_share_container() {
+  [[ -n ${MISE_E2E_DOCKER_SLOT:-} && -n ${MISE_E2E_DOCKER_SLOT_ROOT:-} ]] || return 1
+  ! grep -q '^# e2e:writable-rootfs' "$TEST_SCRIPT"
+}
+
+# Runs the test in a container of its own that is removed afterwards.
+run_in_docker_container() {
+  local image="$1" mise_bin="$2"
+  local host_tmp host_root host_home own_dir=
+  local docker_args=(
+    docker run --rm
+  )
+  # Killing the `docker run` client does not stop the container. In a run that
+  # reuses containers, this one carries the run's label and its directories are
+  # below the run's own, so that run_all_tests removes both when it is
+  # interrupted, as it does for the containers of its slots.
+  if [[ -n ${MISE_E2E_DOCKER_RUN_ID:-} && -n ${MISE_E2E_DOCKER_SLOT_ROOT:-} ]]; then
+    own_dir="$(mktemp -d "$MISE_E2E_DOCKER_SLOT_ROOT/own.XXXXXX")"
+    docker_make_host_dirs "$own_dir"
+    docker_args+=(--label mise-e2e=1 --label "mise-e2e-run=$MISE_E2E_DOCKER_RUN_ID")
+  else
+    docker_make_host_dirs
+  fi
+  # PostgreSQL refuses to initialize or run as root.
+  if grep -q '^# e2e:non-root' "$TEST_SCRIPT"; then
+    docker_args+=(--user nobody)
+  fi
+  # tests that install real system packages (e.g. apt) must write to /var and
+  # /usr and declare that with an "# e2e:writable-rootfs" marker; the container
+  # is still ephemeral and the host mounts below stay read-only
+  if ! grep -q '^# e2e:writable-rootfs' "$TEST_SCRIPT"; then
+    docker_args+=(--read-only)
+  fi
+  docker_test_args "$mise_bin"
+  docker_args+=(
+    -v "$host_root:/root"
+    -v "$host_tmp:/tmp"
+    # writable /home so tests can create /home/linuxbrew (rootfs is read-only)
+    -v "$host_home:/home"
+    "${DOCKER_MOUNT_ARGS[@]}"
+    "${DOCKER_ENV_ARGS[@]}"
+  )
 
   local rc=0
   "${docker_args[@]}" "$image" bash /mise-src/e2e/run_test "$TEST" || rc=$?
-  rm -rf "$host_tmp" "$host_root" "$host_home" 2>/dev/null || true
+  rm -rf "$host_tmp" "$host_root" "$host_home" ${own_dir:+"$own_dir"} 2>/dev/null || true
   return "$rc"
+}
+
+# Runs the test in the container of this scheduler slot, started on first use
+# and kept for the slot's next test. The container has the same read-only root
+# filesystem and the same mounts as one of its own; the test's environment is
+# given to `docker exec`, not to the container. A container whose test failed
+# is thrown away, and so is one that could not be reset.
+run_in_slot_container() {
+  local image="$1" mise_bin="$2"
+  local container slot_dir
+  container="$(docker_slot_container_name "$MISE_E2E_DOCKER_SLOT")"
+  slot_dir="$MISE_E2E_DOCKER_SLOT_ROOT/$MISE_E2E_DOCKER_SLOT"
+  docker_test_args "$mise_bin"
+
+  if [[ ! -f $slot_dir/container ]]; then
+    local host_tmp host_root host_home mounts
+    # New directories for every container, not the slot's last ones: when a
+    # container dies, what its test left in them cannot be removed from inside,
+    # and the host user cannot remove root's files.
+    mkdir -p "$slot_dir"
+    mounts="$(mktemp -d "$slot_dir/mounts.XXXXXX")"
+    docker_make_host_dirs "$mounts"
+    if ! docker run -d --init --read-only \
+      --name "$container" \
+      --label mise-e2e=1 \
+      --label "mise-e2e-run=$MISE_E2E_DOCKER_RUN_ID" \
+      -v "$host_root:/root" \
+      -v "$host_tmp:/tmp" \
+      -v "$host_home:/home" \
+      "${DOCKER_MOUNT_ARGS[@]}" \
+      "$image" bash -c "$(docker_slot_keeper_command)" >/dev/null; then
+      docker_slot_discard "$container" "$slot_dir"
+      err "could not start the e2e container $container"
+      return 1
+    fi
+    # What the reset puts back after each test: the owners of the mount points
+    # and the entries /dev starts with.
+    if ! docker exec "$container" stat -c %u:%g /tmp /home /root >"$slot_dir/owners" ||
+      ! docker exec "$container" ls -A /dev | tr '\n' ' ' >"$slot_dir/dev"; then
+      docker_slot_discard "$container" "$slot_dir"
+      err "could not inspect the e2e container $container"
+      return 1
+    fi
+    : >"$slot_dir/container"
+  fi
+
+  local exec_args=(docker exec)
+  if grep -q '^# e2e:non-root' "$TEST_SCRIPT"; then
+    exec_args+=(--user nobody)
+  fi
+  local rc=0
+  "${exec_args[@]}" "${DOCKER_ENV_ARGS[@]}" -e MISE_E2E_SHARED_CONTAINER=1 \
+    "$container" bash /mise-src/e2e/run_test "$TEST" || rc=$?
+  if [[ $rc != 0 ]]; then
+    docker_slot_discard "$container" "$slot_dir"
+  elif ! docker_slot_reset "$container" "$slot_dir"; then
+    echo "note: could not reset $container; discarding it" >&2
+    docker_slot_discard "$container" "$slot_dir"
+  fi
+  return "$rc"
+}
+
+run_in_docker() {
+  local image mise_bin
+  image="$(docker_e2e_image)"
+  mise_bin="$(resolve_mise_bin)"
+
+  if ! file "$mise_bin" | grep -q "ELF"; then
+    err "The mise binary at '$mise_bin' is not a Linux ELF. On macOS, set MISE_E2E_BIN to a Linux-compiled mise binary."
+    return 1
+  fi
+
+  if docker_test_can_share_container; then
+    run_in_slot_container "$image" "$mise_bin"
+  else
+    run_in_docker_container "$image" "$mise_bin"
+  fi
 }
 
 if [[ ${MISE_E2E_DOCKER:-0} == 1 ]]; then
   as_group "E2E $TEST" run_in_docker
 elif [[ ${MISE_E2E_INSIDE_DOCKER:-0} == 1 ]]; then
+  # In a container the next test uses too, what the test left running is killed
+  # before this script ends. `docker exec` returns when nothing holds the
+  # output of what it ran, or two seconds after that has ended, so a process
+  # that kept the test's output open would cost every such test two seconds;
+  # the reset kills them all anyway. The check for /.dockerenv, which Docker
+  # puts in every container, is there because on a host this would kill every
+  # process the user has.
+  stop_leftover_processes() {
+    [[ ${MISE_E2E_SHARED_CONTAINER:-0} == 1 && -e /.dockerenv ]] || return 0
+    bash -c "$DOCKER_SLOT_KILL_SCRIPT" kill $$ >/dev/null 2>&1 || true
+  }
+  trap stop_leftover_processes EXIT
   # /tmp, /home and /root are host directories that the host user created (see
   # run_in_docker), so in the container they belong to that uid. As root, mise
   # refuses a Homebrew prefix below a directory another user owns, which is
@@ -493,7 +623,7 @@ elif [[ ${MISE_E2E_INSIDE_DOCKER:-0} == 1 ]]; then
         chown "${mount_owners[$i]}" "${mount_dirs[$i]}" 2>/dev/null || true
       done
     }
-    trap restore_mount_owners EXIT
+    trap 'stop_leftover_processes; restore_mount_owners' EXIT
     if ! chown 0:0 "${mount_dirs[@]}" 2>/dev/null; then
       echo "note: cannot give ${mount_dirs[*]} to root; running with their owners as they are" >&2
     fi
