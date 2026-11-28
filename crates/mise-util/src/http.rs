@@ -1182,11 +1182,7 @@ impl Client {
                         .to_string(),
                 ));
             }
-            // Scheme and port count as a different origin, as they do for reqwest.
-            if next.host() != url.host()
-                || next.port_or_known_default() != url.port_or_known_default()
-                || next.scheme() != url.scheme()
-            {
+            if !same_origin(&next, &url) {
                 forward.retain_for(&mut headers, &url, &next);
                 // Userinfo carried over from the previous URL is a credential too.
                 let _ = next.set_username("");
@@ -2606,9 +2602,9 @@ impl Client {
         // netrc) without clobbering forge tokens on un-redirected requests.
         let mut final_headers = headers.clone();
         clear_cross_host_credentials(&mut final_headers, &original_url, &mut url);
-        // Refuse the downgrade for credentials that survive host scoping: a same-host
-        // rewrite keeps the original Authorization, and userinfo written into the rule
-        // itself is sent as-is. This runs before netrc because netrc credentials are
+        // Refuse the downgrade for credentials that survive origin scoping: a rewrite
+        // to another scheme, host or port drops the original credentials, but userinfo
+        // written into the rule itself is sent as-is. This runs before netrc because netrc credentials are
         // scoped to the *replacement* host by the user, who already gets them sent to a
         // plain `http://` URL with no rewrite involved — a rewrite must not be stricter
         // than the direct request, or an http mirror fronting an https origin (#7164)
@@ -3541,9 +3537,19 @@ fn is_credential_header(name: &HeaderName, value: &HeaderValue) -> bool {
         || name.contains("credential")
 }
 
-/// Drop credentials scoped to the original host before contacting a replacement host.
+/// Whether `a` and `b` are one origin: scheme, host and port (the scheme's
+/// default when none is written), as reqwest scopes credentials on a
+/// redirect. A server on another port of the same host is another server.
+fn same_origin(a: &Url, b: &Url) -> bool {
+    a.scheme() == b.scheme()
+        && a.host() == b.host()
+        && a.port_or_known_default() == b.port_or_known_default()
+}
+
+/// Drop credentials scoped to the original URL before contacting a
+/// replacement at another origin ([`same_origin`]), as a redirect does.
 pub fn clear_cross_host_credentials(headers: &mut HeaderMap, original_url: &Url, url: &mut Url) {
-    if url.host() == original_url.host() {
+    if same_origin(url, original_url) {
         return;
     }
     let credential_headers = headers

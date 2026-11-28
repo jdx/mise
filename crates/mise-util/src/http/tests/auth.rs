@@ -448,6 +448,44 @@ fn test_cross_host_replacement_clears_credentials_without_netrc() {
     assert!(redirected.password().is_none());
 }
 
+/// A replacement on the same host but another port or scheme is another
+/// server, so it gets none of the original URL's credentials, as a redirect
+/// there would not.
+#[test]
+fn test_same_host_replacement_on_another_port_or_scheme_clears_credentials() {
+    let original: Url = "http://user:password@mirror.example.com/file"
+        .parse()
+        .unwrap();
+    for replacement in [
+        "http://user:password@mirror.example.com:8080/file",
+        "https://user:password@mirror.example.com/file",
+    ] {
+        let mut replaced: Url = replacement.parse().unwrap();
+        let mut headers = HeaderMap::new();
+        headers.insert(AUTHORIZATION, HeaderValue::from_static("Bearer stale"));
+        headers.insert("x-mirror-token", HeaderValue::from_static("secret"));
+        headers.insert("x-request-id", HeaderValue::from_static("keep-me"));
+
+        clear_cross_host_credentials(&mut headers, &original, &mut replaced);
+
+        assert!(!headers.contains_key(AUTHORIZATION), "{replacement}");
+        assert!(!headers.contains_key("x-mirror-token"), "{replacement}");
+        assert_eq!(headers["x-request-id"], "keep-me");
+        assert!(replaced.username().is_empty(), "{replacement}");
+        assert!(replaced.password().is_none(), "{replacement}");
+    }
+
+    // the default port written out is the same origin
+    let mut same: Url = "http://user:password@mirror.example.com:80/other"
+        .parse()
+        .unwrap();
+    let mut headers = HeaderMap::new();
+    headers.insert(AUTHORIZATION, HeaderValue::from_static("Bearer kept"));
+    clear_cross_host_credentials(&mut headers, &original, &mut same);
+    assert_eq!(headers[AUTHORIZATION], "Bearer kept");
+    assert_eq!(same.username(), "user");
+}
+
 #[test]
 fn test_apply_netrc_keeps_forge_token_on_same_host_path_rewrite() {
     // A URL replacement that only rewrites the path/query on the SAME host

@@ -1576,7 +1576,7 @@ mod tests {
     }
 
     #[test]
-    fn request_url_rewrite_rejects_credential_downgrade() {
+    fn request_url_rewrite_drops_credentials_on_a_downgrade() {
         let original = Url::parse("https://upstream.invalid/channel/noarch/repodata.json").unwrap();
         let mut request = reqwest::Request::new(reqwest::Method::GET, original);
         request.headers_mut().insert(
@@ -1584,14 +1584,20 @@ mod tests {
             reqwest::header::HeaderValue::from_static("Bearer channel-token"),
         );
 
-        let err = rewrite_request_url(&mut request, |url| {
+        rewrite_request_url(&mut request, |url| {
             *url = Url::parse("http://upstream.invalid/conda/noarch/repodata.json").unwrap();
         })
-        .unwrap_err();
+        .unwrap();
 
+        assert_eq!(
+            request.url().as_str(),
+            "http://upstream.invalid/conda/noarch/repodata.json"
+        );
         assert!(
-            err.to_string()
-                .contains("refusing to send credentials over an HTTPS-to-HTTP URL replacement")
+            request
+                .headers()
+                .get(reqwest::header::AUTHORIZATION)
+                .is_none()
         );
     }
 

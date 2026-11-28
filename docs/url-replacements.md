@@ -140,18 +140,21 @@ make an untrusted server trustworthy.
 
 ## Credentials
 
-When a rule sends a request to a different host, mise drops the credentials
-meant for the original host: the `Authorization` header, cookies, API key
-headers, and any `user:password` in the URL. It then adds
-[netrc](#netrc) credentials for the new host, if there are any. A rule that
-keeps the host keeps the credentials.
+When a rule sends a request to another origin (a different scheme, host or
+port), mise drops the credentials meant for the original URL, as it does when a
+server redirects: the `Authorization` header, cookies, API key headers, and any
+`user:password` in the URL. It then adds [netrc](#netrc) credentials for the
+new URL's host, if there are any. A rule that keeps the scheme, host and port
+keeps the credentials. Changing the scheme counts, so an HTTP-to-HTTPS rule
+drops them too.
 
-mise refuses to send credentials over plain HTTP after an HTTPS-to-HTTP rewrite,
-whether they came from the original request or are written into the rule. A
-downgrade without credentials is allowed, and so is one whose credentials come
-from a netrc entry for the new host. These rules also cover GitHub attestation
-requests and Conda channels. For Sigstore TUF metadata, mise ignores such a
-rewrite and keeps the default HTTPS URL.
+Credentials written into the rule itself are kept, so mise refuses to send them
+over plain HTTP after an HTTPS-to-HTTP rewrite. A downgrade without credentials
+is allowed, and so is one whose credentials come from a netrc entry for the new
+host. These rules also cover Conda channels. For GitHub attestation requests,
+mise drops the GitHub token when the rule changes the host, and refuses an
+HTTPS-to-HTTP rewrite that keeps the host. For Sigstore TUF metadata, mise
+ignores such a rewrite and keeps the default HTTPS URL.
 
 Avoid writing credentials into replacement URLs, where they can appear in logs.
 Only route requests to servers you trust with both the artifacts and the
@@ -173,7 +176,8 @@ machine mirror.example.com
 On Unix, restrict the file's permissions with `chmod 600 ~/.netrc`.
 
 netrc credentials are a fallback: an existing `Authorization` header wins. When
-a rule changes the host, netrc credentials for the new host replace that header.
+a rule changes the scheme, host or port, that header is dropped and netrc
+credentials for the new host take its place.
 A rule that changes only the path or query keeps the existing `Authorization`.
 See [GitHub, GitLab, and Forgejo tokens](/dev-tools/github-tokens.html) for
 where upstream tokens come from.
