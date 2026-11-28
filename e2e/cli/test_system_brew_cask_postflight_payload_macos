@@ -69,9 +69,12 @@ class Handler(BaseHTTPRequestHandler):
                 artifacts.append({"postflight": None})
             elif token == "wrapper":
                 version = "1.5.17,4823843970351104"
-                artifacts = [{"command_wrapper": [token, {
-                    "executable": f"{prefix}/Caskroom/{token}/{version}/payload/bin/tool",
-                }]}]
+                artifacts = [
+                    {"command_wrapper": [token, {
+                        "executable": f"$HOMEBREW_PREFIX/Caskroom/{token}/{version}/payload/bin/tool",
+                    }]},
+                    {"zap": [{"trash": "~/Library/Caches/wrapper"}]},
+                ]
             else:
                 artifacts.append({"postflight_steps": [{"steps": [{
                     "type": "run",

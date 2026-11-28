@@ -1203,7 +1203,7 @@ fn rejects_command_wrapper_invalid_environment_name() {
 }
 
 #[test]
-#[cfg(unix)]
+#[cfg(target_os = "macos")]
 fn missing_wrapper_executable_does_not_reinstall_self_updating_app() -> Result<()> {
     let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;

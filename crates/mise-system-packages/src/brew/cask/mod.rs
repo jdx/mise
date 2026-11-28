@@ -4598,12 +4598,22 @@ fn staged_command_wrapper_executable(
 
 fn command_wrapper_needs_repair(cask: &Cask, artifacts: &CaskArtifacts) -> Result<bool> {
     // Repair reruns the whole install. Only do this automatically for
-    // wrapper-only casks, where there is no app or installer to rerun.
+    // wrapper-only casks. Informational and uninstall stanzas do not run
+    // during installation.
     if artifacts.command_wrappers.is_empty()
-        || cask
-            .artifacts
-            .iter()
-            .any(|artifact| artifact.get("command_wrapper").is_none())
+        || cask.artifacts.iter().any(|artifact| {
+            !matches!(
+                artifact_type(artifact).as_str(),
+                "command_wrapper"
+                    | "caveats"
+                    | "uninstall"
+                    | "uninstall_preflight"
+                    | "uninstall_preflight_steps"
+                    | "uninstall_postflight"
+                    | "uninstall_postflight_steps"
+                    | "zap"
+            )
+        })
     {
         return Ok(false);
     }
