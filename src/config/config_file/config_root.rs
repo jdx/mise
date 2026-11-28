@@ -111,9 +111,9 @@ pub(crate) fn linked_project(path: &Path) -> Option<PathBuf> {
         .then_some(project)
 }
 
-/// Whether `path` is a link: a symlink, or on Windows a directory junction too, which
-/// `Path::is_symlink` does not report, which needs no administrator rights to make, and which
-/// `canonicalize` follows like a symlink.
+/// Whether `path` is a link: a symlink, or on Windows a directory junction too. A junction needs
+/// no administrator rights to make, `canonicalize` follows it like a symlink, and only some Rust
+/// releases' `Path::is_symlink` reports it.
 pub(crate) fn is_link(path: &Path) -> bool {
     path.is_symlink() || is_junction(path)
 }
@@ -713,8 +713,9 @@ mod tests {
 mod windows_tests {
     use super::*;
 
-    /// A junction is not a symlink to `Path::is_symlink`, but `canonicalize` follows it, so a
-    /// junction in a project counts as a link the way a symlink does.
+    /// `canonicalize` follows a junction, so a junction in a project counts as a link the way a
+    /// symlink does, whether or not `Path::is_symlink` reports it, which varies between Rust
+    /// releases.
     #[test]
     fn a_junction_is_a_link_and_a_directory_is_not() {
         let temp = tempfile::tempdir().unwrap();
@@ -730,7 +731,6 @@ mod windows_tests {
             .status()
             .unwrap();
         assert!(status.success(), "mklink /J failed");
-        assert!(!junction.is_symlink());
         assert!(is_link(&junction));
         assert!(!is_link(&dir));
 

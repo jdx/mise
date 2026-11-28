@@ -3,7 +3,8 @@
 # A mise command typed on a terminal in an untrusted project trusts it without
 # the "Trust them?" prompt and says so. Anything that does not look like a person
 # typing it there keeps the prompt: stdout captured by a command substitution,
-# paranoid mode, an ignored directory, the shell's command-not-found handler.
+# paranoid mode, an ignored directory, the shell's command-not-found handler,
+# a tool stub.
 
 require_cmd script
 
@@ -98,6 +99,24 @@ for cmd in 'mise hook-env -s bash' 'mise -q hook-env -s bash'; do
 done
 ok "[trust] the prompt hook does not trust the project"
 
+# A tool stub's shebang runs `mise tool-stub` when the user runs the tool, from
+# whatever directory they are in: they typed the tool's name, not a mise command.
+# The stub's tool cannot install offline, but config loads before that.
+mkdir ../stubs
+cat <<'EOF' >../stubs/widget
+#!/usr/bin/env -S mise tool-stub
+tool = "http:widget"
+version = "1.0.0"
+url = "file:///nonexistent/widget.tar.gz"
+EOF
+chmod +x ../stubs/widget
+output="$(on_pty "MISE_OFFLINE=1 $PWD/../stubs/widget --version")" || true
+assert_contains_text "$output" "Trust them?"
+assert_not_contains_text "$output" "$notice"
+assert_untrusted
+forget_trust
+ok "[trust] running a tool stub does not trust the project"
+
 # Without a terminal nothing is trusted either.
 assert_fail "MISE_YES=0 mise env </dev/null" "not trusted"
 assert_untrusted
@@ -139,6 +158,28 @@ if [ "$(id -u)" != 0 ]; then
   rm -r .mise
   forget_trust
   ok "[trust] another account's linked conf.d fragment still asks"
+
+  # A link to the user's own file in a directory any account may write: another
+  # account could put its own file there after the trust is recorded.
+  mkdir ../shared
+  cp mise.toml ../shared/mise.toml
+  chmod 644 ../shared/mise.toml
+  chmod 777 ../shared
+  mv mise.toml mise.toml.orig
+  ln -s ../shared/mise.toml mise.toml
+  output="$(on_pty 'mise env')" || true
+  assert_contains_text "$output" "Trust them?"
+  assert_not_contains_text "$output" "$notice"
+  assert_untrusted
+  forget_trust
+  chmod 755 ../shared
+  output="$(on_pty 'mise env')"
+  assert_contains_text "$output" "$notice"
+  assert_not_contains_text "$output" "Trust them?"
+  rm mise.toml
+  mv mise.toml.orig mise.toml
+  forget_trust
+  ok "[trust] a link into a directory another account may write still asks"
 fi
 
 # Typed on a terminal: trusted, with a notice, and the config applies. The

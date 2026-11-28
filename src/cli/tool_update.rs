@@ -381,8 +381,8 @@ fn global_scope_command<S: AsRef<std::ffi::OsStr>>(args: &[S]) -> Command {
         // `MISE_CD`, like `--cd`, would put it back in the directory it left.
         .env_remove("MISE_CD")
         .env(GLOBAL_SCOPE_ENV, "1")
-        .env("MISE_ENV", env::mise_env().join(","))
         .current_dir(dirs::HOME.ancestors().last().unwrap_or(*dirs::HOME));
+    command.envs(env::mise_env_for_child());
     // `--no-hooks` on the command applies to the one it starts too.
     if Settings::no_hooks() || Settings::get().no_hooks.unwrap_or(false) {
         command.env("MISE_NO_HOOKS", "1");

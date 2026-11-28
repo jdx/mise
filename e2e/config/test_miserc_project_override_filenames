@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+
+# A project .miserc.toml loads without trust, and mise looks its override
+# filenames up in every directory above the project, so a project cannot name
+# a file of the user's. The working directory is below the home directory here.
+echo '//registry.npmjs.org/:_authToken=npm_secret_token' >"$HOME/.npmrc"
+printf 'machine example.com\nlogin octo\npassword hunter2\n' >"$HOME/.netrc"
+
+echo 'override_config_filenames = [".npmrc"]' >.miserc.toml
+assert_not_contains "MISE_SAFE=1 mise ls 2>&1" "npm_secret_token"
+assert_contains "mise ls 2>&1" 'ignoring override filename ".npmrc": a name in a project .miserc.toml must end in'
+
+echo 'override_tool_versions_filenames = [".netrc"]' >.miserc.toml
+assert_not_contains "mise env 2>&1" "hunter2"
+assert_contains "mise env 2>&1" 'ignoring override filename ".netrc"'
+
+# A committed link named after a file of the user's.
+ln -s "$HOME/.netrc" netrc-tool-versions
+echo 'override_tool_versions_filenames = ["netrc-tool-versions"]' >.miserc.toml
+assert_not_contains "mise env 2>&1" "hunter2"
+rm netrc-tool-versions
+
+# Names with a directory reach any path from / or from the home directory.
+echo 'override_config_filenames = ["workdir/other.toml"]' >.miserc.toml
+assert_contains "mise ls 2>&1" "must be a file name, without a directory"
+echo 'override_tool_versions_filenames = ["mise.toml", "config.toml"]' >.miserc.toml
+assert_contains "mise ls 2>&1" 'ignoring override filenames "mise.toml", "config.toml"'
+
+# A project still renames its own files.
+echo 'env.FROM_CUSTOM = "1"' >custom.toml
+echo 'override_config_filenames = ["custom.toml"]' >.miserc.toml
+assert_contains "mise env" "FROM_CUSTOM=1"
+assert_not_contains "mise env 2>&1" "ignoring override filename"
+echo 'tiny 1.0.0' >.my-tool-versions
+echo 'override_tool_versions_filenames = [".my-tool-versions"]' >.miserc.toml
+assert_contains "mise config ls" ".my-tool-versions"
+rm .miserc.toml
+
+# The user's own miserc.toml is not limited.
+echo '[env]
+FROM_CONF = "1"' >project.conf
+echo 'override_config_filenames = ["project.conf"]' >"$MISE_CONFIG_DIR/miserc.toml"
+assert_contains "mise env" "FROM_CONF=1"

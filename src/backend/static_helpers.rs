@@ -1351,7 +1351,7 @@ pub(crate) fn rename_executable_in_dir(
                 if *file_name == *tool_name {
                     let target_path_with_extension =
                         keep_required_extensions(dir, &file_name, new_name, target_path);
-                    file::rename(&path, &target_path_with_extension)?;
+                    move_executable(&path, &target_path_with_extension)?;
                     debug!(
                         "Renamed {} to {}",
                         path.display(),
@@ -1369,7 +1369,7 @@ pub(crate) fn rename_executable_in_dir(
             } else {
                 let target_path_with_extension =
                     keep_required_extensions(dir, &file_name, new_name, target_path);
-                file::rename(&path, &target_path_with_extension)?;
+                move_executable(&path, &target_path_with_extension)?;
                 debug!(
                     "Renamed {} to {}",
                     path.display(),
@@ -1385,7 +1385,7 @@ pub(crate) fn rename_executable_in_dir(
         let file_name = path.file_name().unwrap().to_string_lossy();
         let target_path_with_extension =
             keep_required_extensions(dir, &file_name, new_name, target_path.clone());
-        file::rename(&path, &target_path_with_extension)?;
+        move_executable(&path, &target_path_with_extension)?;
         debug!(
             "Renamed {} to {} (fallback)",
             path.display(),
@@ -1411,7 +1411,7 @@ pub(crate) fn rename_executable_in_dir(
                         keep_required_extensions(dir, &file_name, new_name, target_path);
 
                     file::make_executable(&path)?;
-                    file::rename(&path, &target_path_with_extension)?;
+                    move_executable(&path, &target_path_with_extension)?;
                     debug!(
                         "Found and renamed {} to {} (added exec permissions)",
                         path.display(),
@@ -1649,6 +1649,24 @@ fn finish_rename(dir: &Path, path: &Path, file_name: &str, target: &str) -> eyre
     Ok(())
 }
 
+/// Renames the executable `path` to `target_path` for the `bin` and string
+/// `rename_exe` options. A symlink is only renamed within its own directory:
+/// the archive's links were checked where the archive put them, and from
+/// another directory (out of a `.app` bundle, or into the one a nested `bin`
+/// names) the same relative target names another path, which can be outside the
+/// install directory. Later install steps write and chmod through that path.
+fn move_executable(path: &Path, target_path: &Path) -> eyre::Result<()> {
+    if path.parent() != target_path.parent() && path.is_symlink() {
+        bail!(
+            "cannot move the symlink {} to {}: from there its target would name a different path. \
+             Point `bin` or `rename_exe` at the file the link names instead.",
+            path.display(),
+            target_path.display()
+        );
+    }
+    file::rename(path, target_path)
+}
+
 /// Helper function to rename executable inside a macOS .app bundle
 fn rename_executable_in_app_bundle(
     macos_dir: &Path,
@@ -1662,7 +1680,7 @@ fn rename_executable_in_app_bundle(
             if should_skip_file(&file_name, false) {
                 continue;
             }
-            file::rename(&path, target_path)?;
+            move_executable(&path, target_path)?;
             debug!(
                 "Renamed .app bundle executable {} to {}",
                 path.display(),
@@ -1682,7 +1700,7 @@ fn rename_executable_in_app_bundle(
                 }
                 if file_name.to_lowercase().contains(&tool_name.to_lowercase()) {
                     file::make_executable(&path)?;
-                    file::rename(&path, target_path)?;
+                    move_executable(&path, target_path)?;
                     debug!(
                         "Found and renamed .app bundle file {} to {} (added exec permissions)",
                         path.display(),
@@ -3696,6 +3714,53 @@ bin = "tool.exe"
 
         assert!(tmp.path().join("gdscript-formatter").is_file());
         assert!(!extracted.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_rename_executable_in_dir_does_not_move_a_symlink_to_another_directory() {
+        use std::os::unix::fs::symlink;
+
+        // The archive's links are checked where the archive put them. Moved out
+        // of a `.app` bundle, or into the directory a nested `bin` names, the
+        // same relative target names another path, which can be outside the
+        // install directory.
+        let tmp = tempfile::tempdir().unwrap();
+        let payload = tmp.path().join("payload");
+        std::fs::write(&payload, b"x").unwrap();
+        file::make_executable(&payload).unwrap();
+
+        let bundle = tmp.path().join("bundle");
+        let macos = bundle.join("Tool.app").join("Contents").join("MacOS");
+        std::fs::create_dir_all(&macos).unwrap();
+        symlink("../../../../payload", macos.join("tool")).unwrap();
+        let err = rename_executable_in_dir(&bundle, "mytool", Some("tool")).unwrap_err();
+        assert!(err.to_string().contains("symlink"), "{err}");
+        assert!(macos.join("tool").is_symlink());
+        assert!(bundle.join("mytool").symlink_metadata().is_err());
+
+        let nested = tmp.path().join("nested");
+        std::fs::create_dir_all(nested.join("bin")).unwrap();
+        symlink("../payload", nested.join("tool")).unwrap();
+        let err = rename_executable_in_dir(&nested, "bin/tool", Some("tool")).unwrap_err();
+        assert!(err.to_string().contains("symlink"), "{err}");
+        assert!(nested.join("bin").join("tool").symlink_metadata().is_err());
+
+        // Renamed within its directory, the link still names the same file.
+        rename_executable_in_dir(&nested, "mytool", Some("tool")).unwrap();
+        assert_eq!(
+            std::fs::read_link(nested.join("mytool")).unwrap(),
+            Path::new("../payload")
+        );
+
+        // A bundle that ships its executable as a file is renamed as before.
+        let app = tmp.path().join("app");
+        let macos = app.join("Tool.app").join("Contents").join("MacOS");
+        std::fs::create_dir_all(&macos).unwrap();
+        std::fs::write(macos.join("tool"), b"x").unwrap();
+        file::make_executable(macos.join("tool")).unwrap();
+        rename_executable_in_dir(&app, "mytool", Some("tool")).unwrap();
+        assert!(app.join("mytool").is_file());
     }
 
     #[test]

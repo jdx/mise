@@ -36,7 +36,7 @@ use crate::{
     registry::REGISTRY,
 };
 use eyre::{Result, eyre};
-use globset::{GlobBuilder, GlobMatcher};
+use globset::{GlobBuilder, GlobSet, GlobSetBuilder};
 use idiomatic_version::IdiomaticVersionFile;
 use indexmap::{IndexMap, IndexSet};
 use path_absolutize::Absolutize;
@@ -847,12 +847,21 @@ fn granted_by_this_command(config_root: &Path) {
 }
 
 /// Whether this process trusted `config_root`, rather than finding it trusted when it started.
+/// A root below a monorepo root that this process trusted counts too: the monorepo root's
+/// marker trusts it, so it needs no record of its own, and its trust came from this command
+/// just the same. Such a root counts even when it was also trusted on its own before, as the
+/// monorepo root's trust would hide that.
 fn trusted_by_this_command(config_root: &Path) -> bool {
-    GRANTED_BY_THIS_COMMAND
-        .lock()
-        .unwrap()
-        .as_ref()
-        .is_some_and(|roots| roots.contains(&resolved_root(config_root)))
+    let granted = GRANTED_BY_THIS_COMMAND.lock().unwrap();
+    let Some(roots) = granted.as_ref() else {
+        return false;
+    };
+    let root = resolved_root(config_root);
+    roots.contains(&root)
+        || root
+            .ancestors()
+            .skip(1)
+            .any(|dir| roots.contains(dir) && has_monorepo_marker(dir))
 }
 
 /// Whether a command that implies trust may record it for `path`. An ignore always wins: the user
@@ -1229,11 +1238,17 @@ fn is_trusted_without_config_paths(
 /// project trusted as one, and its grandparent when it is a file, which lies in its root.
 fn trusted_monorepo_ancestor(canonical: &Path) -> bool {
     let own_levels = if canonical.is_dir() { 1 } else { 2 };
-    canonical.ancestors().skip(own_levels).any(|dir| {
-        let record = dirs::TRUSTED_CONFIGS.join(record_name(dir));
-        (with_appended_extension(&record, "monorepo").exists() || has_legacy_monorepo_marker(dir))
-            && is_trusted_with(dir, false)
-    })
+    canonical
+        .ancestors()
+        .skip(own_levels)
+        .any(|dir| has_monorepo_marker(dir) && is_trusted_with(dir, false))
+}
+
+/// Whether `dir`, resolved, is marked as a monorepo root, under the current record name or an
+/// older one.
+fn has_monorepo_marker(dir: &Path) -> bool {
+    let record = dirs::TRUSTED_CONFIGS.join(record_name(dir));
+    with_appended_extension(&record, "monorepo").exists() || has_legacy_monorepo_marker(dir)
 }
 
 remove_by!("2027.11.0", "legacy-trust-record-names");
@@ -1333,10 +1348,39 @@ fn path_is_under_any(path: &Path, ignored: &[PathBuf]) -> bool {
         .any(|p| canonical.starts_with(p))
 }
 
+/// The longest glob [`compile_path_glob`] accepts, in bytes: what a path can be
+/// on Linux. The regex globset generates takes memory in proportion to the
+/// pattern before the size limit of the compiled regex can reject it.
+const GLOB_MAX_LEN: usize = 4096;
+/// The most `{` it accepts. globset recurses once per nested `{…}` while it
+/// builds a glob, so a deeply nested pattern overflows the stack. Every `{` is
+/// counted rather than the nesting itself: a `}` that is escaped or inside a
+/// character class closes nothing, and a depth counter that missed one would
+/// let the nesting through.
+const GLOB_MAX_BRACES: usize = 64;
+
+/// Compiles a path glob that can come from a file read without trust: a
+/// project `.miserc.toml` sets `ignored_config_paths` and the override
+/// filenames, which become the config filename patterns.
+///
+/// `Glob::compile_matcher` panics when the regex it generates is rejected, for
+/// nesting too deep or growing too large. `GlobSetBuilder::build` returns that
+/// as an error instead.
+pub(crate) fn compile_path_glob(pattern: &str) -> Result<GlobSet> {
+    if pattern.len() > GLOB_MAX_LEN {
+        return Err(eyre!("the pattern is longer than {GLOB_MAX_LEN} bytes"));
+    }
+    if pattern.matches('{').count() > GLOB_MAX_BRACES {
+        return Err(eyre!("more than {GLOB_MAX_BRACES} `{{` in the pattern"));
+    }
+    let glob = GlobBuilder::new(pattern).literal_separator(true).build()?;
+    Ok(GlobSetBuilder::new().add(glob).build()?)
+}
+
 #[derive(Default)]
 struct IgnoredConfigPathMatcher {
     literals: Vec<PathBuf>,
-    globs: Vec<GlobMatcher>,
+    globs: Vec<GlobSet>,
 }
 
 impl IgnoredConfigPathMatcher {
@@ -1348,8 +1392,8 @@ impl IgnoredConfigPathMatcher {
                 matcher.literals.push(path.clone());
                 continue;
             }
-            match GlobBuilder::new(&pattern).literal_separator(true).build() {
-                Ok(glob) => matcher.globs.push(glob.compile_matcher()),
+            match compile_path_glob(&pattern) {
+                Ok(glob) => matcher.globs.push(glob),
                 Err(err) => {
                     warn!("invalid ignored_config_paths glob {pattern}: {err}");
                     matcher.literals.push(path.clone());
@@ -1753,7 +1797,16 @@ pub fn script_check_before_remove(script: &Path, root: &Path) -> Result<PathBuf>
 /// [`script_check_before_remove`]. Returns the path the change goes to.
 fn script_link_check(script: &Path, root: &Path, follow_own_link: bool) -> Result<PathBuf> {
     let script = script.absolutize()?;
-    let root = root.absolutize()?;
+    let mut root = root.absolutize()?.into_owned();
+    // A conf.d folder is a config root of its own, but it sits in a project's config directory,
+    // and a link there is the project's. When the folder or a directory above it links out, the
+    // project is the boundary, as it is for the folder's trust and lockfile.
+    let folder_config = root.join("mise.toml");
+    if config::is_conf_d_folder_file(&folder_config)
+        && let Some(project) = config_root::linked_project(&folder_config)
+    {
+        root = project;
+    }
     let (Some(dir), Some(name)) = (script.parent(), script.file_name()) else {
         return Ok(script.into_owned());
     };
@@ -2496,6 +2549,50 @@ mod ignored_config_path_tests {
     }
 
     #[test]
+    fn brace_glob_matches_each_alternative() {
+        let root = tempfile::tempdir().unwrap();
+        let pattern = root.path().join("{vendor,third_party}/**/mise.toml");
+        let matcher = IgnoredConfigPathMatcher::new(&[pattern]);
+
+        assert!(matcher.is_match(&root.path().join("vendor/jj/mise.toml")));
+        assert!(matcher.is_match(&root.path().join("third_party/jj/mise.toml")));
+        assert!(!matcher.is_match(&root.path().join("src/jj/mise.toml")));
+    }
+
+    /// A project `.miserc.toml` supplies these patterns without trust, so one
+    /// that globset cannot compile is kept as a literal path instead of taking
+    /// the process down.
+    #[test]
+    fn glob_that_cannot_be_compiled_is_kept_as_a_literal() {
+        let nested = |depth: usize| format!("/x/{}b{}", "{a,".repeat(depth), "}".repeat(depth));
+        for pattern in [
+            // past the regex parser's nesting limit
+            nested(125),
+            // deep enough to overflow the stack in globset's glob-to-regex pass
+            nested(100_000),
+            // 1000 levels again, each `{` followed by a `}` that closes nothing
+            format!("/x/{}b{}", r"{\}".repeat(1000), "}".repeat(1000)),
+            format!("/x/{}b{}", "{[}]".repeat(1000), "}".repeat(1000)),
+            // past the size limit of the compiled regex
+            format!("/x/{}", "?".repeat(2_000_000)),
+        ] {
+            let path = PathBuf::from(pattern);
+            let matcher = IgnoredConfigPathMatcher::new(std::slice::from_ref(&path));
+            assert!(matcher.globs.is_empty());
+            assert_eq!(matcher.literals, [path]);
+        }
+    }
+
+    #[test]
+    fn path_glob_at_the_limits_still_compiles() {
+        let nested = |depth: usize| format!("{}b{}", "{a,".repeat(depth), "}".repeat(depth));
+        assert!(compile_path_glob(&nested(GLOB_MAX_BRACES)).is_ok());
+        assert!(compile_path_glob(&nested(GLOB_MAX_BRACES + 1)).is_err());
+        assert!(compile_path_glob(&"?".repeat(GLOB_MAX_LEN)).is_ok());
+        assert!(compile_path_glob(&"?".repeat(GLOB_MAX_LEN + 1)).is_err());
+    }
+
+    #[test]
     fn literal_entries_keep_directory_prefix_behavior() {
         let root = tempfile::tempdir().unwrap();
         let ignored = root.path().join("vendor");
@@ -2541,6 +2638,25 @@ mod tests {
             detect_config_file_with_settings(Path::new("/foo/bar/mise.toml"), &settings).await,
             ConfigFileDetection::Recognized(ConfigFileType::MiseToml)
         ));
+    }
+
+    #[test]
+    fn a_root_trusted_through_a_monorepo_root_this_command_trusted_is_trusted_by_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let mono = dir.path().canonicalize().unwrap().join("mono");
+        let child = mono.join("packages/app");
+        std::fs::create_dir_all(&child).unwrap();
+        granted_by_this_command(&mono);
+        assert!(trusted_by_this_command(&mono));
+        // Without the marker the monorepo root does not trust the child, so neither does this
+        // command.
+        assert!(!trusted_by_this_command(&child));
+        let record = dirs::TRUSTED_CONFIGS.join(record_name(&mono));
+        let marker = with_appended_extension(&record, "monorepo");
+        file::create_dir_all(marker.parent().unwrap()).unwrap();
+        std::fs::write(&marker, "").unwrap();
+        assert!(trusted_by_this_command(&child));
+        std::fs::remove_file(&marker).unwrap();
     }
 
     #[cfg(unix)]

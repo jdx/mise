@@ -509,9 +509,7 @@ impl Trust {
             cmd.arg("trust").current_dir(&dir);
             // `-E`/`--env` is not inherited by a child process, but `MISE_ENV` is, and the
             // environment-specific configs it selects can name env files too.
-            if !env::MISE_ENV.is_empty() {
-                cmd.env("MISE_ENV", env::MISE_ENV.join(","));
-            }
+            cmd.envs(env::mise_env_for_child());
             let status = cmd.status()?;
             if !status.success() {
                 warn!(
