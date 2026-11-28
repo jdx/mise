@@ -250,17 +250,38 @@ impl CondaBackend {
         opts: CondaOptions<'_>,
         before: Option<jiff::Timestamp>,
     ) -> Result<Vec<RepoDataRecord>> {
+        let records = Self::fetch_records(&specs, platform, opts).await?;
+        Self::solve_records(records, specs, platform, before)
+    }
+
+    /// Fetch the channel's repodata for `specs` and their dependencies on
+    /// `platform` and noarch: the records [`Self::solve_records`] chooses from.
+    async fn fetch_records(
+        specs: &[MatchSpec],
+        platform: CondaPlatform,
+        opts: CondaOptions<'_>,
+    ) -> Result<Vec<RepoDataRecord>> {
         let channel = opts.channel()?;
         let gateway = Self::create_gateway()?;
 
         let repodata: Vec<RepoData> = gateway
-            .query([channel], [platform, CondaPlatform::NoArch], specs.clone())
+            .query([channel], [platform, CondaPlatform::NoArch], specs.to_vec())
             .recursive(true)
             .await
             .map_err(|e| eyre::eyre!("failed to fetch repodata: {}", e))?
             .to_vec();
+        Ok(Self::flatten_repodata(&repodata))
+    }
 
-        let flat_records = Self::released_before(Self::flatten_repodata(&repodata), before);
+    /// Solve the conda environment for `specs` on `platform` from `records`,
+    /// choosing only from packages released by `before`.
+    fn solve_records(
+        records: Vec<RepoDataRecord>,
+        specs: Vec<MatchSpec>,
+        platform: CondaPlatform,
+        before: Option<jiff::Timestamp>,
+    ) -> Result<Vec<RepoDataRecord>> {
+        let flat_records = Self::released_before(records, before);
         let virtual_packages = Self::detect_virtual_packages(platform)?;
 
         let task = SolverTask {
@@ -1362,6 +1383,17 @@ impl CondaBackend {
     }
 }
 
+/// The message `mise lock` shows when solving `tool_name` for `target` fails:
+/// it names the `minimum_release_age` cutoff the solver chose under, if any.
+fn lock_solve_failure(tool_name: &str, target: &str, before: Option<jiff::Timestamp>) -> String {
+    match before {
+        Some(before) => format!(
+            "failed to solve {tool_name} for {target} with packages released before {before} (minimum_release_age)"
+        ),
+        None => format!("failed to solve {tool_name} for {target}"),
+    }
+}
+
 /// Builds one `VersionInfo` per distinct version from repodata records.
 ///
 /// A version has many builds and platform records, each with its own upload
@@ -1539,19 +1571,21 @@ impl Backend for CondaBackend {
 
         let raw_opts = tv.request.options();
         let opts = CondaOptions::new(&raw_opts);
-        let records = self
-            .solve_packages(vec![match_spec], platform, opts, tv.before_date)
+        // `mise lock` shows only these errors' own messages, so they say which
+        // step failed and, for the solve, name the `minimum_release_age` cutoff
+        // themselves. The fetch's and the solver's errors stay out of them: they
+        // can quote a channel URL with a token in its path or query.
+        let specs = vec![match_spec];
+        let fetched = Self::fetch_records(&specs, platform, opts)
             .await
-            // `mise lock` shows only this error's own message, so it names the
-            // `minimum_release_age` cutoff itself. The solver's error stays out of
-            // it: it can quote a channel URL with a token in its path or query.
-            .wrap_err_with(|| match tv.before_date {
-                Some(before) => format!(
-                    "failed to solve {tool_name} for {} with packages released before {before} (minimum_release_age)",
+            .wrap_err_with(|| {
+                format!(
+                    "failed to fetch conda repodata for {tool_name} for {}",
                     target.to_key()
-                ),
-                None => format!("failed to solve {tool_name} for {}", target.to_key()),
+                )
             })?;
+        let records = Self::solve_records(fetched, specs, platform, tv.before_date)
+            .wrap_err_with(|| lock_solve_failure(&tool_name, &target.to_key(), tv.before_date))?;
 
         let tool_name_norm = tool_name.to_lowercase();
         let mut main_record = None;
@@ -1781,6 +1815,47 @@ mod tests {
         let kept = crate::backend::VersionInfo::filter_by_date(infos, cutoff);
         assert_eq!(kept.len(), 1);
         assert_eq!(kept[0].version, "9.1.0");
+    }
+
+    #[test]
+    fn a_lock_solve_names_the_cutoff_it_solved_under() {
+        use super::{CondaPlatform, exact_match_spec, lock_solve_failure};
+        use eyre::WrapErr;
+        use rattler_conda_types::utils::TimestampMs;
+        let mut new = make_record(
+            "vim",
+            "9.2.0",
+            "a_0",
+            "https://conda.anaconda.org/conda-forge/noarch/a.conda",
+        );
+        new.package_record.timestamp = Some(TimestampMs::from_timestamp_millis(
+            "2024-06-10T00:00:00Z".parse().unwrap(),
+        ));
+        new.package_record.subdir = "noarch".to_string();
+        let cutoff: jiff::Timestamp = "2024-06-01T00:00:00Z".parse().unwrap();
+        let spec = || vec![exact_match_spec("vim", "9.2.0").unwrap()];
+
+        // The solver chose under the cutoff, so the failure names it.
+        let err = CondaBackend::solve_records(
+            vec![new.clone()],
+            spec(),
+            CondaPlatform::NoArch,
+            Some(cutoff),
+        )
+        .wrap_err_with(|| lock_solve_failure("vim", "linux-x64", Some(cutoff)))
+        .unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "failed to solve vim for linux-x64 with packages released before 2024-06-01T00:00:00Z (minimum_release_age)"
+        );
+        assert_eq!(
+            lock_solve_failure("vim", "linux-x64", None),
+            "failed to solve vim for linux-x64"
+        );
+        // Without the cutoff the same records solve.
+        let solved =
+            CondaBackend::solve_records(vec![new], spec(), CondaPlatform::NoArch, None).unwrap();
+        assert_eq!(solved.len(), 1);
     }
 
     #[test]
