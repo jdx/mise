@@ -219,5 +219,10 @@ mise trust env-root/mise.toml
 mise trust env-root-target
 (cd env-root && mise install --yes)
 assert "cd env-root && mise exec -- printenv HOOK_ROOT" "root:$PWD/env-root-target"
+# and from the env cache, which serves the hook's output on a hit
+env_root_cache="MISE_ENV_CACHE=1 __MISE_ENV_CACHE_KEY=dGVzdGtleXRlc3RrZXl0ZXN0a2V5dGVzdGtleXRlc3Q="
+assert "cd env-root && $env_root_cache mise exec -- printenv HOOK_ROOT" "root:$PWD/env-root-target"
+assert_contains "cd env-root && MISE_TRACE=1 $env_root_cache mise exec -- true 2>&1" "env_cache: using cached environment"
 mise trust --untrust env-root-target
 assert "cd env-root && mise exec -- printenv HOOK_ROOT" "root:"
+assert "cd env-root && $env_root_cache mise exec -- printenv HOOK_ROOT" "root:"
