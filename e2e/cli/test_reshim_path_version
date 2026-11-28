@@ -53,7 +53,8 @@ EOF2
 assert "$shimdir/globalbin" "global bin"
 (cd "$PWD/proj" && assert "$shimdir/childbin" "child bin")
 
-# A tool excluded by disable_tools must not get shims from another project's config.
+# disable_tools narrows one command's view, but the shims directory is shared, so a tool it
+# excludes keeps the shims another project's config gives it (#16069).
 mkdir -p "$PWD/disabledtool/bin" "$PWD/proj2" "$PWD/proj3"
 cat >"$PWD/disabledtool/bin/disabledbin" <<'SH'
 #!/usr/bin/env bash
@@ -67,7 +68,7 @@ EOF2
 (cd "$PWD/proj2" && mise reshim)
 assert "readlink $shimdir/disabledbin" "$(which mise)"
 (cd "$PWD/proj3" && MISE_DISABLE_TOOLS=github:jdx/disabledtool mise reshim --force)
-assert_fail "test -e $shimdir/disabledbin"
+assert "readlink $shimdir/disabledbin" "$(which mise)"
 
 # An alias standing for a `path:` version keeps its shims when reshimming elsewhere.
 mkdir -p "$PWD/aliastool/bin" "$PWD/proj4"

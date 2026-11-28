@@ -960,47 +960,70 @@ fn virtual_store_entry_links_dependencies(entry: &Path) -> bool {
 /// re-enters mise, and runs `npm view` again for every `latest` npm tool (#14068). Skip
 /// any candidate that is this mise binary. When that was the only npm, fail instead of
 /// spawning it; when there is no npm at all, keep the bare name and today's error.
+///
+/// Skipping that `npm` is not enough. npm is usually a `#!/usr/bin/env node` script, so the
+/// child looks `node` up on the same PATH and finds the `node` shim next to the skipped
+/// `npm` (#16066). So this also removes from the child PATH in `env` every directory whose
+/// `node` is this mise binary. A directory whose only mise entry is `npm` stays: a real
+/// `node` beside it may be the one npm needs, and we never run npm by bare name.
 #[cfg(unix)]
-fn npm_view_program(env: &BTreeMap<String, String>) -> eyre::Result<OsString> {
+fn npm_view_program(env: &mut BTreeMap<String, String>) -> eyre::Result<OsString> {
     npm_view_program_in(env, &std::env::current_dir()?)
 }
 
 /// `npm_view_program` with an explicit directory for relative and empty PATH entries.
 #[cfg(unix)]
-fn npm_view_program_in(env: &BTreeMap<String, String>, cwd: &Path) -> eyre::Result<OsString> {
+fn npm_view_program_in(env: &mut BTreeMap<String, String>, cwd: &Path) -> eyre::Result<OsString> {
     let Some(path) = env.get(&*crate::env::PATH_KEY) else {
         return Ok(OsString::from("npm"));
     };
+    let mut kept = Vec::new();
+    let mut removed_any = false;
+    let mut program = None;
     let mut skipped_mise_shim = None;
-    for dir in std::env::split_paths(path) {
-        if crate::file::is_mise_dispatch_dir(&dir) {
+    for entry in std::env::split_paths(path) {
+        if crate::file::is_mise_dispatch_dir(&entry) {
+            removed_any = true;
             continue;
         }
         // An empty PATH entry means the current directory. Returning a relative candidate
         // would make the child search PATH again and find the shim skipped here.
-        let dir = if dir.as_os_str().is_empty() {
+        let dir = if entry.as_os_str().is_empty() {
             cwd.to_path_buf()
-        } else if dir.is_relative() {
-            cwd.join(dir)
+        } else if entry.is_relative() {
+            cwd.join(&entry)
         } else {
-            dir
+            entry.clone()
         };
         let candidate = dir.join("npm");
-        if !candidate.is_file() || !crate::file::is_spawnable(&candidate) {
+        let has_npm = candidate.is_file() && crate::file::is_spawnable(&candidate);
+        let npm_is_mise = has_npm && super::is_mise_binary(&candidate);
+        if npm_is_mise {
+            skipped_mise_shim.get_or_insert(candidate.clone());
+        }
+        if super::is_mise_binary(&dir.join("node")) {
+            removed_any = true;
             continue;
         }
-        if super::is_mise_binary(&candidate) {
-            skipped_mise_shim.get_or_insert(candidate);
-            continue;
+        if has_npm && !npm_is_mise && program.is_none() {
+            program = Some(candidate);
         }
-        return Ok(candidate.into_os_string());
+        kept.push(entry);
     }
-    match skipped_mise_shim {
-        Some(shim) => Err(eyre::eyre!(
+    if removed_any {
+        let joined = std::env::join_paths(&kept)?;
+        env.insert(
+            crate::env::PATH_KEY.to_string(),
+            joined.to_string_lossy().into_owned(),
+        );
+    }
+    match (program, skipped_mise_shim) {
+        (Some(npm), _) => Ok(npm.into_os_string()),
+        (None, Some(shim)) => Err(eyre::eyre!(
             "npm.shell_out needs npm, but the only npm on PATH is a mise shim ({}); running it would re-enter mise. Install node first (`mise install node`) or disable npm.shell_out.",
             shim.display()
         )),
-        None => Ok(OsString::from("npm")),
+        (None, None) => Ok(OsString::from("npm")),
     }
 }
 
@@ -1492,21 +1515,39 @@ impl Backend for NPMBackend {
 
         let cache = self.latest_version_cache().lock().await;
         let this = self;
+        // Like the version list, a dist-tag read from a cached packument of
+        // unknown age is used but not saved (see `remote_versions_may_be_stale`).
+        let may_be_stale = self.remote_versions_may_be_stale();
+        let fetched = std::sync::atomic::AtomicBool::new(false);
         timeout::run_with_timeout_async(
             async || {
                 cache
-                    .get_or_try_init_async(async || {
-                        if Settings::get().npm.shell_out {
-                            return this.latest_dist_tag_npm_view(config).await;
-                        }
-                        npm_registry::latest_dist_tag(&this.tool_name()).await
-                    })
+                    .get_or_try_init_async_if(
+                        async || {
+                            fetched.store(true, std::sync::atomic::Ordering::Relaxed);
+                            if Settings::get().npm.shell_out {
+                                return this.latest_dist_tag_npm_view(config).await;
+                            }
+                            npm_registry::latest_dist_tag(&this.tool_name()).await
+                        },
+                        |_| !may_be_stale || !fetched.load(std::sync::atomic::Ordering::Relaxed),
+                    )
                     .await
             },
             Settings::get().fetch_remote_versions_timeout(),
         )
         .await
-        .cloned()
+    }
+
+    /// In the offline modes the packument comes from aube-registry's cache
+    /// however old it is, so lists and dist-tags built from it are not saved.
+    /// `npm view` and git or tarball sources ask their source instead.
+    fn remote_versions_may_be_stale(&self) -> bool {
+        let name = self.tool_name();
+        !Settings::get().npm.shell_out
+            && !is_git_spec(&name)
+            && !is_tarball_spec(&name)
+            && npm_registry::serves_unrevalidated_packuments()
     }
 
     async fn resolve_exact_version(
@@ -2421,11 +2462,26 @@ impl NPMBackend {
                 return false;
             }
         };
-        let output = match self
-            .npm_command(config, None, |cmd| {
-                cmd.arg("--version").env_clear().envs(env)
-            })
-            .await
+        // Same foreign-shim hazard as `npm view` (#16066): pick npm and clean the child
+        // PATH the same way.
+        #[cfg(windows)]
+        let npm = self.spawn_program(config, None, "npm").await;
+        #[cfg(not(windows))]
+        let (npm, env) = {
+            let mut env = env;
+            match npm_view_program(&mut env) {
+                Ok(npm) => (npm, env),
+                Err(e) => {
+                    debug!("npm version detection for {flag}: {e:#}");
+                    return false;
+                }
+            }
+        };
+        let output = match CmdLineRunner::new(npm)
+            .arg("--version")
+            .env_clear()
+            .envs(env)
+            .env("NPM_CONFIG_UPDATE_NOTIFIER", "false")
             .read()
             .await
         {
@@ -2474,7 +2530,10 @@ impl NPMBackend {
         #[cfg(windows)]
         let npm = self.spawn_program(config, None, "npm").await;
         #[cfg(not(windows))]
-        let npm = npm_view_program(&env)?;
+        let (npm, env) = {
+            let mut env = env;
+            (npm_view_program(&mut env)?, env)
+        };
         CmdLineRunner::new(npm)
             .arg("view")
             .arg(format!("--json={json}"))
@@ -4005,8 +4064,8 @@ mod tests {
         let node_bin = tempfile::tempdir().unwrap();
         fake_mise_shim(shims.path());
         let npm = real_npm(node_bin.path());
-        let env = npm_view_env(&[shims.path(), node_bin.path()]);
-        assert_eq!(npm_view_program(&env).unwrap(), npm.into_os_string());
+        let mut env = npm_view_env(&[shims.path(), node_bin.path()]);
+        assert_eq!(npm_view_program(&mut env).unwrap(), npm.into_os_string());
     }
 
     #[cfg(unix)]
@@ -4014,8 +4073,8 @@ mod tests {
     fn npm_view_program_refuses_when_only_a_mise_shim_provides_npm() {
         let shims = tempfile::tempdir().unwrap();
         fake_mise_shim(shims.path());
-        let env = npm_view_env(&[shims.path()]);
-        let err = npm_view_program(&env).unwrap_err().to_string();
+        let mut env = npm_view_env(&[shims.path()]);
+        let err = npm_view_program(&mut env).unwrap_err().to_string();
         assert!(err.contains("only npm on PATH is a mise shim"), "{err}");
     }
 
@@ -4026,8 +4085,8 @@ mod tests {
         let node_bin = tempfile::tempdir().unwrap();
         std::fs::create_dir(first.path().join("npm")).unwrap();
         let npm = real_npm(node_bin.path());
-        let env = npm_view_env(&[first.path(), node_bin.path()]);
-        assert_eq!(npm_view_program(&env).unwrap(), npm.into_os_string());
+        let mut env = npm_view_env(&[first.path(), node_bin.path()]);
+        assert_eq!(npm_view_program(&mut env).unwrap(), npm.into_os_string());
     }
 
     #[cfg(unix)]
@@ -4037,8 +4096,8 @@ mod tests {
         let cwd = tempfile::tempdir().unwrap();
         fake_mise_shim(shims.path());
         let npm = real_npm(cwd.path());
-        let env = npm_view_env(&[shims.path(), Path::new("")]);
-        let program = npm_view_program_in(&env, cwd.path()).unwrap();
+        let mut env = npm_view_env(&[shims.path(), Path::new("")]);
+        let program = npm_view_program_in(&mut env, cwd.path()).unwrap();
         assert_eq!(program, npm.into_os_string());
         assert!(Path::new(&program).is_absolute());
     }
@@ -4047,8 +4106,73 @@ mod tests {
     #[test]
     fn npm_view_program_keeps_bare_name_when_npm_is_missing() {
         let empty = tempfile::tempdir().unwrap();
-        let env = npm_view_env(&[empty.path()]);
-        assert_eq!(npm_view_program(&env).unwrap(), OsString::from("npm"));
+        let mut env = npm_view_env(&[empty.path()]);
+        assert_eq!(npm_view_program(&mut env).unwrap(), OsString::from("npm"));
+    }
+
+    #[cfg(unix)]
+    fn child_path(env: &BTreeMap<String, String>) -> Vec<PathBuf> {
+        std::env::split_paths(&env[&*crate::env::PATH_KEY]).collect()
+    }
+
+    /// The system npm is a `#!/usr/bin/env node` script, so the child resolves `node` on
+    /// the PATH it is given: the foreign shims dir must not be on it (#16066).
+    #[cfg(unix)]
+    #[test]
+    fn npm_view_program_drops_the_foreign_shims_dir_from_the_child_path() {
+        let shims = tempfile::tempdir().unwrap();
+        let sys_bin = tempfile::tempdir().unwrap();
+        fake_mise_shim(shims.path());
+        std::os::unix::fs::symlink(&*crate::env::MISE_BIN, shims.path().join("node")).unwrap();
+        let npm = sys_bin.path().join("npm");
+        std::fs::write(&npm, "#!/usr/bin/env node\n").unwrap();
+        crate::file::make_executable(&npm).unwrap();
+        let mut env = npm_view_env(&[shims.path(), sys_bin.path()]);
+        assert_eq!(npm_view_program(&mut env).unwrap(), npm.into_os_string());
+        assert_eq!(child_path(&env), vec![sys_bin.path().to_path_buf()]);
+    }
+
+    /// A shims dir with a `node` shim but no `npm` would still catch the shebang lookup.
+    #[cfg(unix)]
+    #[test]
+    fn npm_view_program_drops_a_dir_whose_node_is_mise() {
+        let shims = tempfile::tempdir().unwrap();
+        let node_bin = tempfile::tempdir().unwrap();
+        std::os::unix::fs::symlink(&*crate::env::MISE_BIN, shims.path().join("node")).unwrap();
+        let npm = real_npm(node_bin.path());
+        let mut env = npm_view_env(&[shims.path(), node_bin.path()]);
+        assert_eq!(npm_view_program(&mut env).unwrap(), npm.into_os_string());
+        assert_eq!(child_path(&env), vec![node_bin.path().to_path_buf()]);
+    }
+
+    /// A shared bin dir (`/usr/local/bin`) can hold a mise `npm` shim beside a real `node`.
+    /// The shim is skipped, but the dir stays so the chosen npm can still find that node.
+    #[cfg(unix)]
+    #[test]
+    fn npm_view_program_keeps_a_dir_whose_only_mise_entry_is_npm() {
+        let shared = tempfile::tempdir().unwrap();
+        let sys_bin = tempfile::tempdir().unwrap();
+        fake_mise_shim(shared.path());
+        let node = shared.path().join("node");
+        std::fs::write(&node, "#!/bin/sh\n").unwrap();
+        crate::file::make_executable(&node).unwrap();
+        let npm = real_npm(sys_bin.path());
+        let mut env = npm_view_env(&[shared.path(), sys_bin.path()]);
+        let before = env.clone();
+        assert_eq!(npm_view_program(&mut env).unwrap(), npm.into_os_string());
+        assert_eq!(env, before);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn npm_view_program_leaves_a_path_without_shims_untouched() {
+        let node_bin = tempfile::tempdir().unwrap();
+        let other = tempfile::tempdir().unwrap();
+        real_npm(node_bin.path());
+        let mut env = npm_view_env(&[node_bin.path(), other.path()]);
+        let before = env.clone();
+        npm_view_program(&mut env).unwrap();
+        assert_eq!(env, before);
     }
 
     const GIT_SOURCE_WITH_CREDENTIALS: &str = "git+https://user%40example.test:password%2Fvalue@git.example.test/org/repo.git?access_token=query-token#main";

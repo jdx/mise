@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2016
+
+# The environment names a project .miserc.toml selects become the mise_env
+# template variable of every config, global config included. The file loads
+# without trust, so its names cannot carry shell syntax into a trusted command
+# built from mise_env.
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[env]
+GLOBAL_ENVS = "{{ exec(command='echo envs=' ~ mise_env | default(value=[]) | join(sep=',')) }}"
+TOML
+echo 'env.FROM_STAGING = "1"' >mise.staging.toml
+
+echo 'env = ["staging$(touch injected)"]' >.miserc.toml
+assert_contains "mise env 2>&1" 'ignoring environment "staging$(touch injected)"'
+assert_contains "mise env" "GLOBAL_ENVS=envs="
+[[ ! -e injected ]] || fail "a project env name ran a command"
+
+printf 'env = ["team"]\n[env_sets]\nteam = ["staging`touch injected`", "staging"]\n' >.miserc.toml
+assert_contains "mise env 2>&1" "in env_sets"
+assert_contains "mise env" "GLOBAL_ENVS=envs=staging"
+[[ ! -e injected ]] || fail "a project env_sets member ran a command"
+
+# Plain names still select their files.
+echo 'env = ["staging", "ci.local", "linux-x64", "my_env"]' >.miserc.toml
+assert_contains "mise env" "GLOBAL_ENVS=envs=staging,ci.local,linux-x64,my_env"
+assert_contains "mise env" "FROM_STAGING=1"
+assert_not_contains "mise env 2>&1" "ignoring environment"
+rm .miserc.toml
+
+# The user's own choice is not limited.
+echo 'env = ["staging two"]' >"$MISE_CONFIG_DIR/miserc.toml"
+assert_contains "mise env" "GLOBAL_ENVS='envs=staging two'"
