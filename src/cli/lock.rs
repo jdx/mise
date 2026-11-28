@@ -1705,9 +1705,20 @@ impl Lock {
         ))
         .await?;
         if !generate || self.bump || format_changed {
+            // A package whose pins disagree got no entry for a new version, so it
+            // keeps its previous entries, graphs included, as in generate mode.
+            let aube_tools = graph_tools
+                .iter()
+                .filter(|(ba, _)| {
+                    !lockfile
+                        .tools_for(&ba.short)
+                        .is_some_and(|entries| lockfile::package_pins_disagree(entries))
+                })
+                .cloned()
+                .collect::<Vec<_>>();
             Box::pin(lockfile::generate::populate_aube_locks(
                 &mut lockfile,
-                &graph_tools,
+                &aube_tools,
                 None,
                 self.bump,
             ))
