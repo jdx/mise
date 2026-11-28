@@ -4,14 +4,15 @@
 # https://github.com/jdx/mise/discussions/6582
 #
 # bazelbuild/buildtools ships buildifier, buildozer and unused_deps as separate
-# assets, and autodetection alone picks buildozer, so buildifier is only on PATH
-# when the install used the `matching` and `rename_exe` options.
+# assets. `matching` picks buildifier over buildozer, and `rename_exe` gives it a
+# name the default naming cannot produce, so the task only finds
+# task-buildifier when the install kept both options.
 cat <<EOF2 >mise.toml
 [tools]
-"github:bazelbuild/buildtools" = { version = "7.1.2", matching = "buildifier", rename_exe = "buildifier" }
+"github:bazelbuild/buildtools" = { version = "7.1.2", matching = "buildifier", rename_exe = "task-buildifier" }
 
 [tasks.test]
-run = "buildifier --version"
+run = "task-buildifier --version"
 EOF2
 
 assert_contains "mise run test" "buildifier version: 7.1.2"

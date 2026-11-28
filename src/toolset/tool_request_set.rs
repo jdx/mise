@@ -196,7 +196,7 @@ impl ToolRequestSetBuilder {
                     .get(&ba)
                     .is_some_and(|requests| self.should_report_unknown_tool(&ba, requests))
                 {
-                    if let Some(msg) = crate::backend::removed_backend_error(&ba.short) {
+                    if let Some(msg) = ba.removed_backend_error() {
                         warn_once!("{msg}");
                     }
                     trs.unknown_tools.push(ba.clone());

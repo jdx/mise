@@ -12,3 +12,14 @@ EOF2
 assert_fail "mise install" "Use github:cli/cli (gitlab:cli/cli for a GitLab project) instead."
 # Commands that skip tools they cannot install still say why.
 assert_contains "mise ls 2>&1" "the ubi backend was removed from mise"
+
+# An alias that points at a ubi: tool names the replacement too.
+cat <<EOF2 >mise.toml
+[tool_alias]
+legacytool = "ubi:cli/cli"
+
+[tools]
+legacytool = "2.0.0"
+EOF2
+assert_fail "mise install" "legacytool: ubi:cli/cli: the ubi backend was removed from mise"
+assert_contains "mise ls 2>&1" "legacytool: ubi:cli/cli: the ubi backend was removed from mise"

@@ -476,14 +476,16 @@ impl BackendArg {
         //     }
         // })?;
         // Ok(backend.clone())
-        if let Some(backend) = backend::get(self) {
+        if let Some(msg) = backend::removed_backend_error(&self.short) {
+            bail!("{msg}");
+        } else if let Some(backend) = backend::get(self) {
             Ok(backend)
+        } else if let Some(msg) = self.removed_backend_error() {
+            bail!("{msg}");
         } else if self.tool_name.trim().is_empty() {
             bail!(
                 "'{self}' does not name a tool: write the tool after the backend, as in 'asdf:<tool>'"
             );
-        } else if let Some(msg) = backend::removed_backend_error(&self.short) {
-            bail!("{msg}");
         } else if let Some((plugin_name, tool_name)) = self.short.split_once(':') {
             // Check if the plugin exists first
             if let Some(plugin_type) = install_state::get_plugin_type(plugin_name) {
@@ -547,6 +549,15 @@ impl BackendArg {
         }
     }
 
+    /// The error for a tool whose name or resolved identifier (through an alias)
+    /// names a backend mise has removed.
+    pub(crate) fn removed_backend_error(&self) -> Option<String> {
+        backend::removed_backend_error(&self.short).or_else(|| {
+            let full = self.full();
+            backend::removed_backend_error(&full).map(|msg| format!("{}: {msg}", self.short))
+        })
+    }
+
     pub fn backend_type(&self) -> BackendType {
         // A removed backend's `owner/repo` would otherwise resolve as a git
         // plugin URL below; leave it unknown so `backend()` names the replacement.
@@ -570,6 +581,9 @@ impl BackendArg {
         // `tool_name()`. For non-explicit tools, `full()` may intentionally
         // prefer the current registry backend over stale install metadata.
         let full = self.full();
+        if backend::removed_backend_error(&full).is_some() {
+            return BackendType::Unknown;
+        }
         if let Some((backend, _)) = full.split_once(':')
             && let Ok(backend_type) = backend.parse()
         {

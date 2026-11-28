@@ -932,7 +932,11 @@ pub fn removed_backend_error(short: &str) -> Option<String> {
     }
     let tool = crate::args::split_bracketed_opts(tool).map_or(tool, |(name, _)| name);
     let replacement = if tool.contains("://") {
-        format!("http:{tool}")
+        // The http backend downloads its `url` option, not the tool name.
+        format!(
+            "an http: tool that sets url and a version, such as \
+             \"http:<name>\" = {{ version = \"1.0.0\", url = \"{tool}\" }},"
+        )
     } else {
         format!("github:{tool} (gitlab:{tool} for a GitLab project)")
     };
@@ -1530,9 +1534,10 @@ mod tests {
         assert!(msg.contains("/dev-tools/backends/ubi.html"), "{msg}");
         let msg = removed_backend_error("ubi:https://example.com/tool.tar.gz").unwrap();
         assert!(
-            msg.contains("Use http:https://example.com/tool.tar.gz instead"),
+            msg.contains(r#"url = "https://example.com/tool.tar.gz""#),
             "{msg}"
         );
+        assert!(!msg.contains("http:https:"), "{msg}");
         assert!(!msg.contains("gitlab:"), "{msg}");
         assert_eq!(removed_backend_error("github:BurntSushi/ripgrep"), None);
         assert_eq!(removed_backend_error("ripgrep"), None);
