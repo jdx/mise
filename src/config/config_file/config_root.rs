@@ -99,7 +99,7 @@ fn outer_project(path: &Path) -> PathBuf {
 /// Such a link is content of the project, so it decides nothing about trust: a config reached
 /// through it is trusted only when the project is, whatever the link leads to. Global and system
 /// config are exempt, since the user placed them and any link in them.
-pub(crate) fn linked_project(path: &Path) -> Option<PathBuf> {
+pub fn linked_project(path: &Path) -> Option<PathBuf> {
     if is_global_config(path) {
         return None;
     }

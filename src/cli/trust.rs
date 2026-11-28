@@ -91,8 +91,13 @@ pub(crate) struct Trust {
 impl Trust {
     pub(crate) async fn run(mut self) -> Result<()> {
         // Only a command that looks for config itself needs the filenames, and
-        // finding them loads the tool backends.
-        if self.show || self.all || self.config_file.is_none() {
+        // finding them loads the tool backends. Untrusting or ignoring a directory looks for
+        // the project's configs, in paranoid mode its idiomatic version files among them.
+        if self.show
+            || self.all
+            || self.config_file.is_none()
+            || ((self.untrust || self.ignore) && !self.named_file())
+        {
             self.config_filenames = config::trust_config_filenames().await;
         }
         if self.show {
@@ -227,16 +232,27 @@ fn nearest_local_config_file(filenames: &[String]) -> Option<PathBuf> {
 ///
 /// In paranoid mode, where each config is its own trust root, the project stands for each of
 /// its configs on disk instead: those in its nested roots, those for any environment, and the
-/// files in `filenames` there, such as idiomatic version files.
+/// files in `filenames` there, such as idiomatic version files. A config reached through a link
+/// inside the project is left out, even the one picked: paranoid mode refuses it whatever its
+/// target's record says, and that record is the target's, so acting on it would revoke or ignore
+/// the config in the checkout the link points to. The list is empty when nothing else is left.
+///
+/// A picked file that is global config, which a project's link to it can be, stands only for
+/// itself: its root is the home directory, and a sweep from there would reach the configs of
+/// another project.
 fn refused_roots(path: &Path, cfr: &Path, named_file: bool, filenames: &[String]) -> Vec<PathBuf> {
-    if named_file {
+    if named_file || is_global_config(path) {
         return vec![cfr.to_path_buf()];
     }
     if Settings::get().paranoid.config() {
         let project = config_file::config_project(path);
         return std::iter::once(cfr.to_path_buf())
             .chain(config::project_config_files(&project, filenames))
-            .filter(|file| !is_global_config(file) && config_file::config_project(file) == project)
+            .filter(|file| {
+                !is_global_config(file)
+                    && config_file::config_root::linked_project(file).is_none()
+                    && config_file::config_project(file) == project
+            })
             .unique()
             .collect();
     }
@@ -347,7 +363,7 @@ pub(super) fn untrust_config_file(
     };
     let cfr = cli_trust_root(&path, named_file);
     let mut roots = refused_roots(&path, &cfr, named_file, filenames);
-    if !named_file {
+    if !named_file && !is_global_config(&path) {
         // An approval of a config the checkout lacks, such as one only another branch has, goes
         // with the project's, so it asks again when that branch brings the config back.
         let recorded = if Settings::get().paranoid.config() {
@@ -365,6 +381,11 @@ pub(super) fn untrust_config_file(
         };
         roots.extend(recorded);
     }
+    // In paranoid mode a project whose only configs are reached through links has none to revoke.
+    if roots.is_empty() {
+        warn!("No trusted config files found.");
+        return Ok(());
+    }
     for root in &roots {
         config_file::untrust(root)?;
     }
@@ -381,10 +402,12 @@ pub(super) fn untrust_config_file(
         let root = root.canonicalize().unwrap_or_else(|_| root.clone());
         info!("untrusted {}", display_path_escaped(&root));
     }
-    let cfr = roots[0].canonicalize()?;
     warn_trusted_via_settings(&roots);
 
+    // Outside paranoid mode the project's root comes first and is on disk. In paranoid mode the
+    // first entry can be the record of a config the checkout lacks, which does not resolve.
     if !Settings::get().paranoid.config()
+        && let Ok(cfr) = roots[0].canonicalize()
         && let Some(main_path) = crate::git::main_checkout_equivalent(&cfr)
         && config_file::is_trusted(&main_path)
     {
@@ -454,6 +477,14 @@ impl Trust {
         }
         let cfr = cli_trust_root(&path, self.named_file());
         let roots = refused_roots(&path, &cfr, self.named_file(), &self.config_filenames);
+        if roots.is_empty() {
+            warn!(
+                "{} has no config of its own to ignore: paranoid mode refuses a config reached \
+                 through a link in it whatever the link leads to.",
+                display_path_escaped(&config_file::config_project(&path))
+            );
+            return Ok(());
+        }
         // The project's ignore covers every root nested in it, also one that arrives later
         // (`project_is_ignored`), so the nested roots get no ignore of their own. That keeps the
         // project's ignore apart from one the user gave a nested root by naming its file:
