@@ -2341,7 +2341,8 @@ impl Task {
         extra_vars: Option<IndexMap<String, String>>,
         run_shell: Option<String>,
     ) -> Result<Vec<(String, Vec<String>)>> {
-        let render = self.render_run_scripts_with_args_unscoped(config, cwd, args, env, extra_vars);
+        let render = self
+            .render_run_scripts_with_args_unscoped(config, cwd, args, env, extra_vars, run_shell);
         in_task_template_scope(self.is_operators(), render).await
     }
 
@@ -2352,6 +2353,7 @@ impl Task {
         args: &[String],
         env: &EnvMap,
         extra_vars: Option<IndexMap<String, String>>,
+        run_shell: Option<String>,
     ) -> Result<Vec<(String, Vec<String>)>> {
         let parsed = self
             .parse_usage_spec_with_vars(config, cwd.clone(), env, extra_vars.clone())
