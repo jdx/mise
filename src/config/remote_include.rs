@@ -231,28 +231,36 @@ enum Pin {
 }
 
 fn classify(reference: &str) -> Result<Pin> {
-    if let Some(oci) = reference.strip_prefix(OCI_INCLUDE_PREFIX) {
-        let is_digest = oci
-            .rsplit_once("@sha256:")
-            .is_some_and(|(_, digest)| is_hex(digest, &[64]));
-        return Ok(if is_digest {
-            Pin::Immutable
-        } else {
-            Pin::Mutable
-        });
-    }
-    if reference.starts_with(ZIP_INCLUDE_PREFIX) {
-        // a URL names no content, so a zip can only be pinned by what serves it
-        return Ok(Pin::Mutable);
+    let pin = if is_pinned(reference) {
+        Pin::Immutable
+    } else {
+        Pin::Mutable
+    };
+    if reference.starts_with(OCI_INCLUDE_PREFIX) || reference.starts_with(ZIP_INCLUDE_PREFIX) {
+        return Ok(pin);
     }
     if let Some(git) = RemoteSource::parse_git(reference) {
         if !git.path.ends_with(".toml") {
             bail!("a git:: config include must point at a .toml file: {reference}");
         }
-        let is_sha = git.git_ref.as_deref().is_some_and(|r| is_hex(r, &[40, 64]));
-        return Ok(if is_sha { Pin::Immutable } else { Pin::Mutable });
+        return Ok(pin);
     }
     bail!("a config include must be a git:: URL, an oci:: reference or a zip:: URL: {reference}")
+}
+
+/// Whether a remote reference names content that never changes: a `git::` URL with a full
+/// commit sha or an `oci::` reference with a digest. Paranoid mode holds config includes and
+/// the remote task files and task includes of project config to this one rule.
+pub(crate) fn is_pinned(reference: &str) -> bool {
+    if let Some(oci) = reference.strip_prefix(OCI_INCLUDE_PREFIX) {
+        return oci
+            .rsplit_once("@sha256:")
+            .is_some_and(|(_, digest)| is_hex(digest, &[64]));
+    }
+    // any other URL, a zip:: one included, names no content: only what serves it pins it
+    RemoteSource::parse_git(reference)
+        .and_then(|git| git.git_ref)
+        .is_some_and(|r| is_hex(&r, &[40, 64]))
 }
 
 fn is_hex(s: &str, lens: &[usize]) -> bool {
@@ -291,6 +299,24 @@ mod tests {
             "oci::ghcr.io/org/base@sha256:abc".to_string(),
         ] {
             assert_eq!(classify(&reference).unwrap(), Pin::Mutable, "{reference}");
+        }
+    }
+
+    #[test]
+    fn a_task_source_is_pinned_by_a_sha_or_digest_only() {
+        // unlike a config include, a task source need not be a .toml file
+        let git = format!("git::https://github.com/org/repo.git//tasks?ref={SHA}");
+        assert!(is_pinned(&git));
+        let oci = format!("oci::ghcr.io/org/tasks@sha256:{DIGEST}");
+        assert!(is_pinned(&oci));
+        for source in [
+            "git::https://github.com/org/repo.git//tasks?ref=main",
+            "git::https://github.com/org/repo.git//tasks",
+            "oci::ghcr.io/org/tasks:1.0",
+            "zip::https://example.com/tasks.zip",
+            "https://example.com/build.sh",
+        ] {
+            assert!(!is_pinned(source), "{source}");
         }
     }
 

@@ -267,6 +267,24 @@ worktree by hand, run `git worktree repair`. A path in the main checkout that is
 a symlink, or sits below one, shares nothing either; trust the worktree's config
 directly instead.
 
+To trust a config in every checkout of a repository, run `mise trust --worktrees`
+in any of them. This is how worktrees of a bare repository, which have no main
+checkout, share trust. It covers the same path in the main checkout and in every
+linked worktree, including worktrees created later, and nothing else: a config at
+another path in a worktree still needs its own trust.
+
+```sh
+git -C ~/src/app.git worktree add ~/work/feature-x
+cd ~/work/feature-x
+mise trust --worktrees
+```
+
+The grant is kept in mise's trust store, keyed by the repository's git directory,
+not in the repository, so a copy of the repository does not carry it.
+`mise trust --untrust --worktrees` removes it, and `mise trust --ignore` in one
+worktree still stops the config loading there. Paranoid mode refuses
+`--worktrees`.
+
 ## Safe mode
 
 Set `MISE_SAFE=1` when automation has to read config it does not control, such
@@ -336,6 +354,11 @@ These are skipped without an error, so resolution commands keep working:
 - Project `[shell_alias]`.
 - The commands in a project task's usage spec that shell completion would run.
 - Project `[wrappers]` and the `rust` tool's `mr_boxington` option.
+- The options of a vfox tool that project config declares, in the plugin's
+  environment hooks, and the current directory: those hooks run their commands
+  in your home directory, so the `pipenv` and `poetry` plugins activate no
+  virtualenv. Outside safe mode the same holds in a directory you have not
+  trusted. See [the hook environment](/plugin-lua-modules.html#hook-environment).
 - Your credentials, for hosts project config chooses: a project `api_url` gets
   no GitHub, GitLab or Forgejo token (unless global config names the same host),
   and a tool that project config declares gets no `~/.netrc` credentials for
@@ -483,6 +506,13 @@ Versions without a release date are not filtered. When mise installs one it
 warns that the cutoff could not be checked, so you know that version was not held
 back. Switch to a backend that reports dates, or exclude the tool to silence the
 warning.
+
+A version that comes from a git tag rather than a release, such as an `aqua:`
+package with the `github_tag` version source, is dated by the committer date of
+the tagged commit. Whoever pushes the tag sets that date, so a new tag on a
+backdated commit passes the cutoff at once. To avoid picking up a new tag
+automatically, review a version first, then pin it exactly or record it in
+[`mise.lock`](/dev-tools/mise-lock.html).
 
 Backends other than `conda:`, `npm:` and `pypi:` can hold back the tool's own
 version, but not the dependencies its installer or compiler fetches. See the

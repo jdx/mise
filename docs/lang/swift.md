@@ -56,7 +56,8 @@ build instead.
 ## How mise installs Swift
 
 mise downloads the toolchain from `download.swift.org`. On Linux it verifies
-the archive's OpenPGP signature ([`swift.gpg_verify`](/lang/swift.html#swift.gpg_verify)) and
+the archive's OpenPGP signature ([`swift.gpg_verify`](/lang/swift.html#swift.gpg_verify)),
+checks that the signed archive is the release and build that was requested, and
 extracts it. On macOS it expands swift.org's installer package with `pkgutil`
 into mise's install directory; this toolchain is separate from the Swift that
 ships with Xcode. mise then links the `swift*` and `sourcekit*` executables into

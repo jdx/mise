@@ -22,3 +22,35 @@ if command -v nu >/dev/null 2>&1; then
   assert_contains "run_nu \"nu-complete mise 'mise inst' | get value | str join ' '\"" "install-into"
   assert_contains "run_nu \"nu-complete mise 'mise install' | get description | first\"" "Install"
 fi
+
+# A task name is inserted on the command line as a single Nushell word, whatever it holds.
+cat >mise.toml <<'TOML'
+[tasks."b1;^touch marker1"]
+run = "true"
+[tasks."b2(^touch marker2)"]
+run = "true"
+[tasks."b3'q\"d"]
+run = "true"
+[tasks."b4 $env.HOME"]
+run = "true"
+TOML
+answer="$(mise __complete_word__ --shell nu --line 'mise tasks info b')"
+assert_contains_text "$answer" "'b1;^touch marker1'"
+assert_contains_text "$answer" "'b2(^touch marker2)'"
+assert_contains_text "$answer" "\"b3'q\\\"d\""
+assert_contains_text "$answer" "'b4 \$env.HOME'"
+if command -v nu >/dev/null 2>&1; then
+  while IFS= read -r line; do
+    value="${line%%$'\t'*}"
+    nu -n -c "def f [...r] { \$r | to json -r }; f $value" >>nu-read.json
+  done <<<"$answer"
+  cat >nu-expected.json <<'JSON'
+["b1;^touch marker1"]
+["b2(^touch marker2)"]
+["b3'q\"d"]
+["b4 $env.HOME"]
+JSON
+  assert "cat nu-read.json" "$(cat nu-expected.json)"
+  assert_fail "ls marker1"
+  assert_fail "ls marker2"
+fi

@@ -23,6 +23,11 @@ use std::sync::{Arc, Mutex, Weak};
 /// manifest format so stores and transports can evolve without changing keys.
 pub(crate) const TASK_CACHE_STORE_VERSION: u8 = 1;
 
+/// The permission bits a remote cache node carries between machines: read, write and execute
+/// for user, group and other. Owners are not restored, so a setuid, setgid or sticky bit would
+/// attach to whoever restores the entry; those bits are neither published nor restored.
+const PORTABLE_MODE_MASK: u32 = 0o777;
+
 pub(crate) struct RemoteTaskCacheConfig {
     pub(crate) remote: RemoteCacheConfig,
     pub(crate) staging_dir: PathBuf,
@@ -579,7 +584,7 @@ fn archive_to_cas(path: &Path, staging_dir: &Path) -> Result<(CacheDigest, Vec<B
         let mut entry = entry?;
         let entry_path = entry.path()?.into_owned();
         validate_cache_path(&entry_path)?;
-        let mode = entry.header().mode() & 0o7777;
+        let mode = entry.header().mode() & PORTABLE_MODE_MASK;
         let entry_type = entry.entry_type();
         let node = if entry_type == EntryType::Directory {
             ArchiveNode::Directory { mode }
@@ -816,7 +821,8 @@ async fn materialize_remote_tree(
             RestoredNode::Symlink { mode, .. } => (EntryType::Symlink, *mode),
         };
         let mut header = Header::new_gnu(entry_type);
-        header.set_mode(mode);
+        // the mode comes from the remote, and the restore unpacks it as the header records it
+        header.set_mode(mode & PORTABLE_MODE_MASK);
         header.set_mtime(0);
         match node {
             RestoredNode::Directory { .. } => {
@@ -1148,13 +1154,14 @@ mod tests {
         let encoder = zstd::Encoder::new(File::create(&archive_path).unwrap(), 0).unwrap();
         let mut archive = Builder::new(encoder);
         let mut directory_header = Header::new_gnu(EntryType::Directory);
-        directory_header.set_mode(0o040755);
+        // setgid on the directory and setuid on the file are not portable, so neither is recorded
+        directory_header.set_mode(0o042755);
         directory_header.set_size(0);
         archive
             .append_data(&mut directory_header, "dist", std::io::empty())
             .unwrap();
         let mut file_header = Header::new_gnu(EntryType::File);
-        file_header.set_mode(0o100755);
+        file_header.set_mode(0o104755);
         file_header.set_size(5);
         archive
             .append_data(&mut file_header, "dist/app", b"hello".as_slice())
@@ -1387,6 +1394,100 @@ mod tests {
 
         assert!(err.to_string().contains("failed digest verification"));
         blob_get.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn http_store_drops_special_mode_bits_from_remote_tree() {
+        let mut server = mockito::Server::new_async().await;
+        let content = b"hello";
+        let file_digest = CacheDigest::blake3(content);
+        let dist = canonical_json(
+            &serde_json::to_value(RemoteDirectory {
+                directories: vec![],
+                files: vec![RemoteFileNode {
+                    digest: file_digest.clone(),
+                    executable: true,
+                    mode: 0o6777,
+                    name: "app".into(),
+                }],
+                symlinks: vec![],
+                version: 1,
+            })
+            .unwrap(),
+        )
+        .unwrap();
+        let dist_digest = CacheDigest::blake3(&dist);
+        let root_bytes = canonical_json(
+            &serde_json::to_value(RemoteDirectory {
+                directories: vec![RemoteDirectoryNode {
+                    digest: dist_digest.clone(),
+                    mode: 0o3777,
+                    name: "dist".into(),
+                }],
+                files: vec![],
+                symlinks: vec![],
+                version: 1,
+            })
+            .unwrap(),
+        )
+        .unwrap();
+        let root = CacheDigest::blake3(&root_bytes);
+        let mut mocks = Vec::new();
+        for (digest, body) in [
+            (&root, root_bytes.as_slice()),
+            (&dist_digest, dist.as_slice()),
+            (&file_digest, content.as_slice()),
+        ] {
+            let path = format!("/v1/blobs/blake3/{}/{}", digest.hash, digest.size);
+            mocks.push(
+                server
+                    .mock("GET", path.as_str())
+                    .with_status(200)
+                    .with_body(body)
+                    .expect(1)
+                    .create_async()
+                    .await,
+            );
+        }
+        let staging = tempfile::tempdir().unwrap();
+        let store = HttpTaskCacheStore {
+            client: RemoteCacheClient::new(RemoteCacheConfig {
+                base_url: server.url().parse().unwrap(),
+                namespace: "test-namespace".into(),
+                token: None,
+                token_file: None,
+                oidc_audience: None,
+                connect_timeout: Duration::from_secs(1),
+                read_timeout: Duration::from_secs(1),
+                download_timeout: Duration::from_secs(1),
+                retries: 0,
+            })
+            .unwrap(),
+            staging_dir: staging.path().to_path_buf(),
+        };
+
+        let archive_file = materialize_remote_tree(&store, &root).await.unwrap();
+
+        let decoder = zstd::Decoder::new(File::open(archive_file.path()).unwrap()).unwrap();
+        let mut archive = Archive::new(decoder);
+        let modes = archive
+            .entries()
+            .unwrap()
+            .map(|entry| {
+                let entry = entry.unwrap();
+                (entry.path().unwrap().into_owned(), entry.header().mode())
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            modes,
+            [
+                (PathBuf::from("dist"), 0o777),
+                (PathBuf::from("dist/app"), 0o777),
+            ]
+        );
+        for mock in mocks {
+            mock.assert_async().await;
+        }
     }
 
     #[tokio::test]

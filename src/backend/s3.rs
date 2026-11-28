@@ -49,17 +49,24 @@ use crate::file;
 use crate::hash;
 use crate::install_context::InstallContext;
 use crate::lockfile::PlatformInfo;
+use crate::timeout;
 use crate::toolset::{ToolVersion, ToolVersionOptions};
 use crate::ui::progress_report::SingleReport;
 use async_trait::async_trait;
 use aws_config::BehaviorVersion;
 use aws_sdk_s3::Client as S3Client;
+use aws_sdk_s3::primitives::ByteStream;
 use eyre::{Result, bail, eyre};
 use regex::Regex;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use tokio::io::AsyncWriteExt;
 use tokio::sync::OnceCell;
 use url::Url;
+
+/// The most pages (up to 1000 keys each) a `version_prefix` listing may span before it fails,
+/// so an endpoint that never answers with a last page cannot keep mise listing forever.
+const MAX_LISTING_PAGES: usize = 100;
 
 /// Parsed S3 URL components
 #[derive(Debug, Clone)]
@@ -230,11 +237,15 @@ impl S3Backend {
     }
 
     /// Download an S3 object to a local file
+    ///
+    /// The body goes to disk as it arrives, so memory use does not grow with the object.
+    /// `max_bytes` refuses a larger object, for a caller that reads the file back into memory.
     async fn download_object(
         &self,
         client: &S3Client,
         s3_url: &S3Url,
         dest: &Path,
+        max_bytes: Option<u64>,
         pr: Option<&dyn SingleReport>,
     ) -> Result<()> {
         debug!(
@@ -254,28 +265,20 @@ impl S3Backend {
 
         // Get content length for progress reporting
         let content_length = resp.content_length().unwrap_or(0) as u64;
+        if let Some(max) = max_bytes
+            && content_length > max
+        {
+            return Err(too_large(s3_url, max));
+        }
         if let Some(pr) = pr {
             pr.set_length(content_length);
         }
 
-        // Stream the body to the file
-        let body = resp
-            .body
-            .collect()
-            .await
-            .map_err(|e| eyre!("Failed to read S3 response body: {e}"))?;
-        let bytes = body.into_bytes();
-
-        // Write to temp file then rename for atomic operation
-        let tmp_path = dest.with_extension("tmp");
-        file::write(&tmp_path, &bytes)?;
-        std::fs::rename(&tmp_path, dest)?;
-
-        if let Some(pr) = pr {
-            pr.set_position(content_length);
-        }
-
-        Ok(())
+        // Stream the body to a staged file then rename for atomic operation.
+        // The staging directory is deleted when it is dropped before the rename.
+        let staged = stage_download(dest)?;
+        write_body(resp.body, s3_url, &staged.file, max_bytes, pr).await?;
+        persist_download(staged, dest)
     }
 
     /// Fetch versions from a manifest file URL
@@ -290,7 +293,10 @@ impl S3Backend {
         // Download manifest to temp location
         let tmp_dir = tempfile::tempdir()?;
         let tmp_path = tmp_dir.path().join("versions_manifest");
-        self.download_object(client, &s3_url, &tmp_path, None)
+        // The manifest is parsed in memory, so it gets the limit the HTTP client puts on a
+        // version list it parses.
+        let max_bytes = crate::http::MAX_BODY_BYTES as u64;
+        self.download_object(client, &s3_url, &tmp_path, Some(max_bytes), None)
             .await?;
 
         // Read and parse the manifest
@@ -319,7 +325,9 @@ impl S3Backend {
             Regex::new(version_regex).map_err(|e| eyre!("Invalid version_regex pattern: {e}"))?;
 
         let mut versions = Vec::new();
+        let mut seen = std::collections::HashSet::new();
         let mut continuation_token: Option<String> = None;
+        let mut pages = 0;
 
         loop {
             let mut request = client.list_objects_v2().bucket(bucket).prefix(prefix);
@@ -343,7 +351,7 @@ impl S3Backend {
                                 .or_else(|| captures.get(0))
                                 .map(|m| m.as_str().to_string());
                             if let Some(v) = version
-                                && !versions.contains(&v)
+                                && seen.insert(v.clone())
                             {
                                 versions.push(v);
                             }
@@ -353,6 +361,16 @@ impl S3Backend {
             }
 
             if response.is_truncated == Some(true) {
+                pages += 1;
+                // Without a token the next request would ask for the first page again.
+                if response.next_continuation_token.is_none() {
+                    bail!("S3 listing of s3://{bucket}/{prefix} is truncated without a token");
+                }
+                if pages >= MAX_LISTING_PAGES {
+                    bail!(
+                        "S3 listing of s3://{bucket}/{prefix} did not finish after {pages} pages"
+                    );
+                }
                 continuation_token = response.next_continuation_token;
             } else {
                 break;
@@ -482,6 +500,109 @@ async fn create_s3_client(region: Option<&str>, endpoint: Option<&str>) -> Resul
     Ok(S3Client::from_conf(s3_config.build()))
 }
 
+/// Where an S3 object is downloaded before it is renamed to its destination:
+/// `file`, in a new directory beside the destination that is deleted, with
+/// whatever is in it, when this is dropped.
+struct StagedDownload {
+    dir: tempfile::TempDir,
+    file: PathBuf,
+}
+
+/// A new, uniquely named directory beside `dest` to download into, so that no
+/// name `dest` can have (one ending in `.tmp` included) makes it `dest` itself.
+///
+/// The directory is the private part: on unix it is created reachable by its
+/// owner only, so the partial download is private while the file in it is
+/// created like any other, with the mode `dest` has always had. The
+/// name is short and fixed rather than built from `dest`'s, which may already
+/// be close to the filesystem's limit on a name. Its first character differs
+/// from `dest`'s, so the two can never be the same name.
+fn stage_download(dest: &Path) -> Result<StagedDownload> {
+    let parent = match dest.parent() {
+        Some(dir) if !dir.as_os_str().is_empty() => dir,
+        _ => Path::new("."),
+    };
+    let dest_is_dotted = dest
+        .file_name()
+        .is_some_and(|name| name.as_encoded_bytes().starts_with(b"."));
+    let prefix = if dest_is_dotted {
+        "_mise-s3-"
+    } else {
+        ".mise-s3-"
+    };
+    let mut builder = tempfile::Builder::new();
+    builder.prefix(prefix).suffix(".tmp");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        builder.permissions(std::fs::Permissions::from_mode(0o700));
+    }
+    let dir = builder.tempdir_in(parent)?;
+    let file = dir.path().join("download");
+    Ok(StagedDownload { dir, file })
+}
+
+/// Move a finished download to `dest`. If that fails, `staged` is dropped,
+/// which removes it.
+///
+/// `std::fs::rename` rather than tempfile's `persist`: only std turns a path
+/// past `MAX_PATH` into the extended-length form Windows needs without
+/// long-path support, and tempfile's call would fail on one only once the
+/// whole object has been downloaded.
+fn persist_download(staged: StagedDownload, dest: &Path) -> Result<()> {
+    std::fs::rename(&staged.file, dest).map_err(|err| {
+        eyre!(
+            "failed to move {} to {}: {err}",
+            file::display_path(&staged.file),
+            file::display_path(dest)
+        )
+    })?;
+    // Only the empty directory is left, which this removes.
+    drop(staged.dir);
+    Ok(())
+}
+
+/// Write an S3 object body to `path` chunk by chunk, failing once it passes `max_bytes`.
+/// Counted as the bytes arrive, because a response need not announce its length.
+async fn write_body(
+    mut body: ByteStream,
+    s3_url: &S3Url,
+    path: &Path,
+    max_bytes: Option<u64>,
+    pr: Option<&dyn SingleReport>,
+) -> Result<()> {
+    let mut file = tokio::fs::File::create(path).await?;
+    let mut written = 0u64;
+    while let Some(chunk) = body
+        .try_next()
+        .await
+        .map_err(|e| eyre!("Failed to read S3 response body: {e}"))?
+    {
+        written += chunk.len() as u64;
+        if let Some(max) = max_bytes
+            && written > max
+        {
+            return Err(too_large(s3_url, max));
+        }
+        file.write_all(&chunk).await?;
+        if let Some(pr) = pr {
+            pr.inc(chunk.len() as u64);
+        }
+    }
+    // `tokio::fs::File` buffers writes and dropping one does not flush
+    file.flush().await?;
+    Ok(())
+}
+
+fn too_large(s3_url: &S3Url, max_bytes: u64) -> eyre::Report {
+    eyre!(
+        "s3://{}/{} is larger than {}",
+        s3_url.bucket,
+        s3_url.key,
+        bytesize::ByteSize::b(max_bytes).display().iec()
+    )
+}
+
 /// Convert S3 SDK errors to user-friendly error messages
 fn handle_s3_error<E: std::fmt::Debug>(err: E, bucket: &str, key: &str) -> eyre::Report {
     let err_str = format!("{err:?}");
@@ -598,7 +719,14 @@ impl Backend for S3Backend {
     }
 
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
-        let versions = self.fetch_versions(config).await?;
+        // These requests go through the AWS SDK, not mise's HTTP client, so the lookup budget
+        // that client enforces has to be applied here. It also ends a listing or a manifest
+        // download from an endpoint that stops answering.
+        let versions = timeout::run_with_timeout_async(
+            async || self.fetch_versions(config).await,
+            Settings::get().fetch_remote_versions_timeout(),
+        )
+        .await?;
         Ok(versions
             .into_iter()
             .map(|v| VersionInfo {
@@ -658,7 +786,7 @@ impl Backend for S3Backend {
         // Download from S3
         ctx.pr.set_message(format!("download {filename}"));
         file::create_dir_all(tv.download_path())?;
-        self.download_object(client, &s3_url, &file_path, Some(ctx.pr.as_ref()))
+        self.download_object(client, &s3_url, &file_path, None, Some(ctx.pr.as_ref()))
             .await?;
 
         // Verify artifact (checksum/size from options)
@@ -937,6 +1065,213 @@ checksum = "sha256:abc123"
         assert!(result.is_err());
     }
 
+    #[tokio::test]
+    async fn test_write_body_stops_at_max_bytes() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("versions_manifest");
+        let s3_url = S3Url::parse("s3://bucket/tools/versions.txt").unwrap();
+        let body = || ByteStream::from_static(b"1.0.0\n1.1.0\n");
+
+        // at the limit, and with none
+        for max_bytes in [Some(12), None] {
+            write_body(body(), &s3_url, &path, max_bytes, None)
+                .await
+                .unwrap();
+            assert_eq!(std::fs::read(&path).unwrap(), b"1.0.0\n1.1.0\n");
+        }
+
+        let err = write_body(body(), &s3_url, &path, Some(11), None)
+            .await
+            .unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "s3://bucket/tools/versions.txt is larger than 11 B"
+        );
+    }
+
+    /// A client for a local S3-compatible endpoint, with fixed credentials so no
+    /// credential provider runs.
+    fn s3_test_client(endpoint: &str) -> S3Client {
+        let config = aws_sdk_s3::Config::builder()
+            .behavior_version(BehaviorVersion::latest())
+            .region(aws_sdk_s3::config::Region::new("us-east-1"))
+            .credentials_provider(aws_sdk_s3::config::Credentials::new(
+                "test", "test", None, None, "test",
+            ))
+            .retry_config(aws_sdk_s3::config::retry::RetryConfig::disabled())
+            .endpoint_url(endpoint)
+            .force_path_style(true)
+            .build();
+        S3Client::from_conf(config)
+    }
+
+    /// A `ListObjectsV2` page that says more follow, after `next_token` if it names one.
+    fn s3_test_truncated_page(next_token: Option<&str>) -> String {
+        let next_token = next_token
+            .map(|token| format!("<NextContinuationToken>{token}</NextContinuationToken>"))
+            .unwrap_or_default();
+        format!(
+            "<ListBucketResult><Contents><Key>tools/xtool-1.0.0</Key></Contents>\
+             <IsTruncated>true</IsTruncated>{next_token}</ListBucketResult>"
+        )
+    }
+
+    // An endpoint that answers every page with `IsTruncated` and a token is followed for at
+    // most MAX_LISTING_PAGES pages.
+    #[tokio::test]
+    async fn test_fetch_versions_from_listing_is_bounded() {
+        let mut server = mockito::Server::new_async().await;
+        let pages = server
+            .mock("GET", "/bucket/")
+            .match_query(mockito::Matcher::Any)
+            .with_status(200)
+            .with_header("content-type", "application/xml")
+            .with_body(s3_test_truncated_page(Some("next")))
+            .expect(MAX_LISTING_PAGES)
+            .create_async()
+            .await;
+
+        let err = s3_test_backend()
+            .fetch_versions_from_listing(
+                &s3_test_client(&server.url()),
+                "bucket",
+                "tools/xtool-",
+                "xtool-([0-9.]+)",
+            )
+            .await
+            .unwrap_err()
+            .to_string();
+        pages.assert_async().await;
+        assert!(
+            err.contains(&format!("did not finish after {MAX_LISTING_PAGES} pages")),
+            "{err}"
+        );
+    }
+
+    // A truncated page with no token would restart the listing from its first page.
+    #[tokio::test]
+    async fn test_fetch_versions_from_listing_rejects_truncated_page_without_token() {
+        let mut server = mockito::Server::new_async().await;
+        let page = server
+            .mock("GET", "/bucket/")
+            .match_query(mockito::Matcher::Any)
+            .with_status(200)
+            .with_header("content-type", "application/xml")
+            .with_body(s3_test_truncated_page(None))
+            .expect(1)
+            .create_async()
+            .await;
+
+        let err = s3_test_backend()
+            .fetch_versions_from_listing(
+                &s3_test_client(&server.url()),
+                "bucket",
+                "tools/xtool-",
+                "xtool-([0-9.]+)",
+            )
+            .await
+            .unwrap_err()
+            .to_string();
+        page.assert_async().await;
+        assert!(err.contains("is truncated without a token"), "{err}");
+    }
+
+    // A listing that ends is read across its pages, each version once.
+    #[tokio::test]
+    async fn test_fetch_versions_from_listing_follows_pages() {
+        let mut server = mockito::Server::new_async().await;
+        // mockito answers with the first mock that matches, so the second page goes first.
+        let last = server
+            .mock("GET", "/bucket/")
+            .match_query(mockito::Matcher::UrlEncoded(
+                "continuation-token".into(),
+                "p2".into(),
+            ))
+            .with_status(200)
+            .with_header("content-type", "application/xml")
+            .with_body(
+                "<ListBucketResult><Contents><Key>tools/xtool-1.0.0</Key></Contents>\
+                 <Contents><Key>tools/xtool-1.1.0</Key></Contents>\
+                 <IsTruncated>false</IsTruncated></ListBucketResult>",
+            )
+            .expect(1)
+            .create_async()
+            .await;
+        let first = server
+            .mock("GET", "/bucket/")
+            .match_query(mockito::Matcher::Any)
+            .with_status(200)
+            .with_header("content-type", "application/xml")
+            .with_body(s3_test_truncated_page(Some("p2")))
+            .expect(1)
+            .create_async()
+            .await;
+
+        let versions = s3_test_backend()
+            .fetch_versions_from_listing(
+                &s3_test_client(&server.url()),
+                "bucket",
+                "tools/xtool-",
+                "xtool-([0-9.]+)",
+            )
+            .await
+            .unwrap();
+        assert_eq!(versions, ["1.0.0", "1.1.0"]);
+        first.assert_async().await;
+        last.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_download_object_refuses_an_object_over_max_bytes() {
+        let body = "1.0.0\n1.1.0\n";
+        let mut server = mockito::Server::new_async().await;
+        // One reply announces its length, the other is chunked and does not.
+        let sized = server
+            .mock("GET", "/bucket/sized.txt")
+            .match_query(mockito::Matcher::Any)
+            .with_status(200)
+            .with_body(body)
+            .expect(3)
+            .create_async()
+            .await;
+        let chunked = server
+            .mock("GET", "/bucket/chunked.txt")
+            .match_query(mockito::Matcher::Any)
+            .with_status(200)
+            .with_chunked_body(move |w| w.write_all(body.as_bytes()))
+            .expect(3)
+            .create_async()
+            .await;
+        let client = s3_test_client(&server.url());
+        let backend = s3_test_backend();
+        let tmp = tempfile::tempdir().unwrap();
+
+        for key in ["sized.txt", "chunked.txt"] {
+            let s3_url = S3Url::parse(&format!("s3://bucket/{key}")).unwrap();
+            let dest = tmp.path().join(key);
+            for max_bytes in [Some(12), None] {
+                backend
+                    .download_object(&client, &s3_url, &dest, max_bytes, None)
+                    .await
+                    .unwrap();
+                assert_eq!(std::fs::read_to_string(&dest).unwrap(), body);
+            }
+            std::fs::remove_file(&dest).unwrap();
+            let err = backend
+                .download_object(&client, &s3_url, &dest, Some(11), None)
+                .await
+                .unwrap_err();
+            assert_eq!(
+                err.to_string(),
+                format!("s3://bucket/{key} is larger than 11 B")
+            );
+            assert!(!dest.exists());
+            assert!(!dest.with_extension("tmp").exists());
+        }
+        sized.assert_async().await;
+        chunked.assert_async().await;
+    }
+
     // The message `--dry-run` now produces before claiming it would install. Built by
     // `missing_url_error` so the dry-run check and the install itself cannot drift apart; this
     // asserts both of its branches, which are two different mistakes with two different fixes.
@@ -958,5 +1293,86 @@ checksum = "sha256:abc123"
             backend.missing_url_error(&none).to_string(),
             "S3 backend requires 'url' option"
         );
+    }
+
+    #[test]
+    fn test_stage_download_is_never_the_destination() {
+        let dir = tempfile::tempdir().unwrap();
+        for name in [
+            "tool.tar.gz",
+            "tool.tmp",
+            "tool",
+            ".tool.tmp",
+            ".mise-s3-x.tmp",
+        ] {
+            let dest = dir.path().join(name);
+            let staged = stage_download(&dest).unwrap();
+            let staging_dir = staged.dir.path().to_path_buf();
+            assert_ne!(staging_dir, dest);
+            assert_eq!(staging_dir.parent(), dest.parent());
+            assert!(staging_dir.is_dir());
+            assert_eq!(staged.file.parent(), Some(staging_dir.as_path()));
+            // A download that fails drops the staging directory, which removes
+            // it with the partial file and leaves nothing under the
+            // destination's name.
+            std::fs::write(&staged.file, "partial").unwrap();
+            drop(staged);
+            assert!(!staging_dir.exists());
+            assert!(!dest.exists());
+        }
+        let dest = dir.path().join("tool.tmp");
+        let staged = stage_download(&dest).unwrap();
+        let staging_dir = staged.dir.path().to_path_buf();
+        std::fs::write(&staged.file, "done").unwrap();
+        persist_download(staged, &dest).unwrap();
+        assert_eq!(std::fs::read_to_string(&dest).unwrap(), "done");
+        assert!(!staging_dir.exists());
+    }
+
+    #[test]
+    fn test_persist_download_removes_the_staged_file_when_the_rename_fails() {
+        let dir = tempfile::tempdir().unwrap();
+        // A directory with an entry in it cannot be replaced by a file.
+        let dest = dir.path().join("tool.tar.gz");
+        std::fs::create_dir_all(dest.join("inside")).unwrap();
+        let staged = stage_download(&dest).unwrap();
+        let staging_dir = staged.dir.path().to_path_buf();
+        std::fs::write(&staged.file, "done").unwrap();
+        assert!(persist_download(staged, &dest).is_err());
+        assert!(!staging_dir.exists());
+        assert!(dest.join("inside").is_dir());
+    }
+
+    #[test]
+    fn test_stage_download_fits_beside_a_long_name() {
+        // 255 bytes is the longest name common filesystems allow; a staging
+        // name built from it would not fit.
+        let dir = tempfile::tempdir().unwrap();
+        let dest = dir.path().join(format!("{}.tar.gz", "a".repeat(248)));
+        assert_eq!(dest.file_name().unwrap().len(), 255);
+        let staged = stage_download(&dest).unwrap();
+        assert!(staged.dir.path().file_name().unwrap().len() < 32);
+        std::fs::write(&staged.file, "done").unwrap();
+        persist_download(staged, &dest).unwrap();
+        assert_eq!(std::fs::read_to_string(&dest).unwrap(), "done");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_staged_download_is_private_until_it_is_in_place() {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = |path: &Path| std::fs::metadata(path).unwrap().permissions().mode() & 0o777;
+        let dir = tempfile::tempdir().unwrap();
+        let dest = dir.path().join("tool.tar.gz");
+        let staged = stage_download(&dest).unwrap();
+        // Other users cannot reach the partial download.
+        assert_eq!(mode(staged.dir.path()), 0o700);
+        // `write_body` creates the file the way it always has, so once it is
+        // in place it has the mode any new file beside it gets.
+        tokio::fs::File::create(&staged.file).await.unwrap();
+        persist_download(staged, &dest).unwrap();
+        let reference = dir.path().join("reference");
+        std::fs::write(&reference, "").unwrap();
+        assert_eq!(mode(&dest), mode(&reference));
     }
 }

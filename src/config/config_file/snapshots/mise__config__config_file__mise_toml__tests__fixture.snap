@@ -14,6 +14,7 @@ expression: cf.env_entries().unwrap()
             expand: false,
             find_up: false,
             prompt: None,
+            rendered: No,
         },
     ),
 ]

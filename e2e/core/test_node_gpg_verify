@@ -58,6 +58,17 @@ assert_contains "mise lock --platform linux-x64 2>&1" "SHASUMS256.txt.sig not fo
 assert_not_contains "cat mise.lock" "checksum"
 mv "$MIRROR/v18.20.8/SHASUMS256.txt.sig.bak" "$MIRROR/v18.20.8/SHASUMS256.txt.sig"
 
+# The default lockfile_mode = "generate" hashes the download of an entry that has
+# no checksum, which would pin the archive the signature check refused, so there
+# mise lock fails the platform instead
+rm -f mise.lock
+assert_fail "MISE_LOCKFILE_MODE=generate mise lock --platform linux-x64" "signature does not match any trusted public key"
+assert_fail "test -f mise.lock"
+mv "$MIRROR/v18.20.8/SHASUMS256.txt.sig" "$MIRROR/v18.20.8/SHASUMS256.txt.sig.bak"
+assert_fail "MISE_LOCKFILE_MODE=generate mise lock --platform linux-x64" "SHASUMS256.txt.sig not found"
+assert_fail "test -f mise.lock"
+mv "$MIRROR/v18.20.8/SHASUMS256.txt.sig.bak" "$MIRROR/v18.20.8/SHASUMS256.txt.sig"
+
 rm -f mise.lock
 MISE_NODE_GPG_VERIFY=false mise lock --platform linux-x64
 assert_contains "cat mise.lock" 'checksum = "sha256:0000'
@@ -97,8 +108,27 @@ cat <<EOF_TOML >mise.toml
 node = "20.11.0"
 EOF_TOML
 rm -f mise.lock
-mise lock --platform linux-x64
+MISE_LOCKFILE_MODE=generate mise lock --platform linux-x64
 assert_contains "cat mise.lock" "checksum = \"sha256:$(awk '$2 == "node-v20.11.0-linux-x64.tar.gz" {print $1}' "$MIRROR/v20.11.0/SHASUMS256.txt")\""
+
+# A correctly signed SHASUMS256.txt of another release names neither the binary
+# nor the source archive of this one, so generate mode must not hash them either
+mkdir -p "$MIRROR/v20.11.1"
+echo '[{"version":"v20.11.1","files":[]}]' >"$MIRROR/index.json"
+cp "$MIRROR/v20.11.0/SHASUMS256.txt" "$MIRROR/v20.11.0/SHASUMS256.txt.sig" "$MIRROR/v20.11.1/"
+echo "placeholder source" >"$MIRROR/v20.11.1/node-v20.11.1.tar.gz"
+cat <<EOF_TOML >mise.toml
+[tools]
+node = "20.11.1"
+EOF_TOML
+rm -f mise.lock
+assert_fail "MISE_LOCKFILE_MODE=generate mise lock --platform linux-x64" "node-v20.11.1.tar.gz not found in"
+assert_fail "test -f mise.lock"
+cat <<EOF_TOML >mise.toml
+[tools]
+node = "20.11.0"
+EOF_TOML
+echo '[{"version":"v20.11.0","files":[]}]' >"$MIRROR/index.json"
 
 # unofficial-builds serves the musl archives and signs none of its checksum
 # files, so mise lock records their checksums without warning on every lock

@@ -14,7 +14,7 @@ use std::path::Path;
 
 use eyre::bail;
 
-use super::Replacement;
+use super::{Replacement, replace_text};
 use eyre::Result;
 
 const MH_MAGIC_64_LE: u32 = 0xfeedfacf;
@@ -46,19 +46,6 @@ fn has_path_string(cmd: u32) -> bool {
             | LC_LOAD_UPWARD_DYLIB
             | LC_RPATH
     )
-}
-
-fn replace_all(s: &[u8], replacements: &[Replacement]) -> Vec<u8> {
-    let mut out = s.to_vec();
-    for r in replacements {
-        while let Some(pos) = out
-            .windows(r.placeholder.len())
-            .position(|w| w == r.placeholder)
-        {
-            out.splice(pos..pos + r.placeholder.len(), r.value.iter().cloned());
-        }
-    }
-    out
 }
 
 /// Patch one 64-bit LE Mach-O slice in place. Returns whether it changed.
@@ -128,7 +115,7 @@ fn patch_slice(slice: &mut [u8], replacements: &[Replacement], path: &Path) -> R
                     .map(|p| str_off + p)
                     .unwrap_or(bytes.len());
                 let old = &bytes[str_off..str_end];
-                let new = replace_all(old, replacements);
+                let new = replace_text(old, replacements);
                 if new != old {
                     // rebuild the command at the (possibly larger) aligned size
                     let new_cmdsize = (str_off + new.len() + 1).div_ceil(8) * 8;
@@ -193,6 +180,14 @@ pub(super) fn patch(content: &mut [u8], replacements: &[Replacement], path: &Pat
                 bail!("malformed fat arch in {}", path.display());
             }
             ranges.push(offset..offset + size);
+        }
+        // each architecture is its own bytes, so each is patched once
+        ranges.sort_by_key(|r| r.start);
+        if ranges.windows(2).any(|w| w[1].start < w[0].end) {
+            bail!(
+                "malformed fat header in {}: its architectures overlap",
+                path.display()
+            );
         }
         for range in ranges {
             changed |= patch_slice(&mut content[range], replacements, path)?;
@@ -286,6 +281,64 @@ mod tests {
         let mut buf = fake_macho(name, 0, tight.div_ceil(8) as u32 * 8);
         let res = patch(&mut buf, &test_replacements(), Path::new("t"));
         assert!(res.is_err());
+    }
+
+    #[test]
+    fn test_patch_replaces_many_placeholders_in_one_pass() {
+        // each placeholder is replaced once, in one scan of the path, so the
+        // bytes a replacement inserts are not searched for that placeholder
+        let name = b"@@HOMEBREW_PREFIX@@/".repeat(2_000);
+        let mut buf = fake_macho(&name, 0, 512 * 1024);
+        assert!(patch(&mut buf, &test_replacements(), Path::new("t")).unwrap());
+        assert_eq!(find_dylib_name(&buf), b"/opt/homebrew/".repeat(2_000));
+
+        let replacements = [Replacement {
+            placeholder: b"@@HOMEBREW_PREFIX@@",
+            value: b"@@HOMEBREW_".to_vec(),
+        }];
+        let mut buf = fake_macho(b"@@HOMEBREW_PREFIX@@PREFIX@@", 0, 4096);
+        assert!(patch(&mut buf, &replacements, Path::new("t")).unwrap());
+        assert_eq!(find_dylib_name(&buf), b"@@HOMEBREW_PREFIX@@");
+    }
+
+    /// a fat file whose architectures are the given (offset, size) ranges of
+    /// one thin Mach-O placed at 4096
+    fn fake_fat(archs: &[(u32, u32)]) -> Vec<u8> {
+        let thin = fake_macho(b"@@HOMEBREW_PREFIX@@/lib/libx.dylib", 0, 4096);
+        let mut out = vec![];
+        out.extend_from_slice(&FAT_MAGIC_BE.to_be_bytes());
+        out.extend_from_slice(&(archs.len() as u32).to_be_bytes());
+        for (offset, size) in archs {
+            out.extend_from_slice(&[0u8; 8]); // cputype, cpusubtype
+            out.extend_from_slice(&offset.to_be_bytes());
+            out.extend_from_slice(&size.to_be_bytes());
+            out.extend_from_slice(&12u32.to_be_bytes()); // align
+        }
+        out.resize(4096, 0);
+        out.extend_from_slice(&thin);
+        out
+    }
+
+    #[test]
+    fn test_patch_fat_patches_each_architecture() {
+        let len = fake_macho(b"@@HOMEBREW_PREFIX@@/lib/libx.dylib", 0, 4096).len() as u32;
+        let mut buf = fake_fat(&[(4096, len)]);
+        assert!(patch(&mut buf, &test_replacements(), Path::new("t")).unwrap());
+        assert_eq!(
+            find_dylib_name(&buf[4096..]),
+            b"/opt/homebrew/lib/libx.dylib"
+        );
+    }
+
+    #[test]
+    fn test_patch_fat_rejects_overlapping_architectures() {
+        // two entries naming the same bytes would patch them twice
+        let len = fake_macho(b"@@HOMEBREW_PREFIX@@/lib/libx.dylib", 0, 4096).len() as u32;
+        let mut buf = fake_fat(&[(4096, len), (4096, len)]);
+        let before = buf.clone();
+        let err = patch(&mut buf, &test_replacements(), Path::new("t")).unwrap_err();
+        assert!(err.to_string().contains("overlap"), "{err}");
+        assert_eq!(buf, before);
     }
 
     #[test]

@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+
+# A task's `dir` is rendered once, when the task loads. Text that the template
+# substitutes, such as a directory name through `{{cwd}}` or exec() output, is
+# data and is not rendered again when the task's directory is resolved, which
+# completing `mise run` and listing tasks do for every task.
+
+mkdir -p "$MISE_CONFIG_DIR/tasks"
+cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
+[task_config]
+dir = "{{cwd}}"
+
+[tasks.own]
+dir = "{{cwd}}"
+run = "pwd"
+
+[tasks.inherited]
+run = "pwd"
+EOF
+printf '#!/usr/bin/env bash\n#MISE dir="{{cwd}}"\npwd\n' >"$MISE_CONFIG_DIR/tasks/header"
+printf '#!/usr/bin/env bash\npwd\n' >"$MISE_CONFIG_DIR/tasks/file"
+chmod +x "$MISE_CONFIG_DIR/tasks/header" "$MISE_CONFIG_DIR/tasks/file"
+
+# A directory name cannot hold a "/", so the marker is written through a bare "cd".
+dir='{{exec(command="cd; touch rendered-twice")}}'
+mkdir "$dir"
+cd "$dir" || exit 1
+
+assert_succeed "mise tasks --usage"
+assert_succeed "mise tasks validate"
+for task in own inherited header file; do
+  assert "mise tasks ls --json | jq -r '.[] | select(.name == \"$task\") | .dir'" "$PWD"
+  assert "mise run $task" "$PWD"
+done
+assert_fail "test -e $HOME/rendered-twice"
+
+# exec() output substituted into `dir` is not rendered again either.
+cd .. || exit 1
+mkdir '{{ 1 + 1 }}'
+cat >mise.toml <<'EOF'
+[tasks.exec]
+dir = "{{ exec(command='echo \"{{ 1 + 1 }}\"') }}"
+run = "pwd"
+EOF
+assert "mise run exec" "$PWD/{{ 1 + 1 }}"
+
+# A `dir` template written in the config still renders.
+cat >mise.toml <<'EOF'
+[tasks.parent]
+dir = "{{cwd}}/.."
+run = "pwd"
+EOF
+mkdir sub
+cd sub || exit 1
+assert "mise run parent" "$(dirname "$PWD")"

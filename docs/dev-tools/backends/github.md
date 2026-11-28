@@ -579,6 +579,13 @@ otherwise the install fails, because the lockfile requires a check the tool has
 turned off. The [`github.github_attestations`](/configuration/settings.html#github.github_attestations)
 setting turns the check off for every tool. This option is GitHub only.
 
+An attestation that names a tag must name the tag of the release being
+installed: the release attestation GitHub makes for an immutable release always
+names one, and so does build provenance from a workflow run that a tag started.
+Without that check, an older release's asset and its attestation would pass for
+a newer version. Build provenance from a run on a branch names no tag and still
+counts.
+
 #### `slsa_signer_identity` and `slsa_signer_issuer` {#slsa-signer-identity-and-slsa-signer-issuer}
 
 To verify SLSA provenance published with a release, set the certificate

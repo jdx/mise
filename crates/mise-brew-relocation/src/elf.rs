@@ -23,8 +23,10 @@ use log::debug;
 
 use eyre::Result;
 
-const PLACEHOLDER_PREFIX: &str = "@@HOMEBREW_PREFIX@@";
-const PLACEHOLDER_CELLAR: &str = "@@HOMEBREW_CELLAR@@";
+use super::{Replacement, memmem, replace_text};
+
+const PLACEHOLDER_PREFIX: &[u8] = b"@@HOMEBREW_PREFIX@@";
+const PLACEHOLDER_CELLAR: &[u8] = b"@@HOMEBREW_CELLAR@@";
 
 const EHDR_SIZE: usize = 64;
 const PHDR_SIZE: usize = 56;
@@ -35,6 +37,11 @@ const PT_DYNAMIC: u32 = 2;
 const PT_INTERP: u32 = 3;
 const PT_PHDR: u32 = 6;
 const PF_R: u32 = 4;
+
+/// Alignment of the segment `patch` appends: covers 4K, 16K and 64K runtime
+/// page sizes. The padding up to it is written out, so it is a constant
+/// rather than the existing PT_LOADs' p_align, which is whatever the file says.
+const NEW_SEGMENT_ALIGN: u64 = 0x10000;
 
 const DT_NULL: i64 = 0;
 const DT_STRTAB: i64 = 5;
@@ -65,28 +72,30 @@ impl LinkageOpts {
     }
 }
 
+/// The `N` bytes at `off`, or an error when they are not all in the file.
+fn rd_bytes<const N: usize>(b: &[u8], off: usize) -> Result<[u8; N]> {
+    let s = off
+        .checked_add(N)
+        .and_then(|end| b.get(off..end))
+        .ok_or_else(|| eyre::eyre!("truncated ELF"))?;
+    Ok(s.try_into()?)
+}
+
 fn rd_u16(b: &[u8], off: usize) -> Result<u16> {
-    let s: [u8; 2] = b
-        .get(off..off + 2)
-        .ok_or_else(|| eyre::eyre!("truncated ELF"))?
-        .try_into()?;
-    Ok(u16::from_le_bytes(s))
+    Ok(u16::from_le_bytes(rd_bytes(b, off)?))
 }
 
 fn rd_u32(b: &[u8], off: usize) -> Result<u32> {
-    let s: [u8; 4] = b
-        .get(off..off + 4)
-        .ok_or_else(|| eyre::eyre!("truncated ELF"))?
-        .try_into()?;
-    Ok(u32::from_le_bytes(s))
+    Ok(u32::from_le_bytes(rd_bytes(b, off)?))
 }
 
 fn rd_u64(b: &[u8], off: usize) -> Result<u64> {
-    let s: [u8; 8] = b
-        .get(off..off + 8)
-        .ok_or_else(|| eyre::eyre!("truncated ELF"))?
-        .try_into()?;
-    Ok(u64::from_le_bytes(s))
+    Ok(u64::from_le_bytes(rd_bytes(b, off)?))
+}
+
+/// `base + i * size` as a file offset, or None when it overflows.
+fn table_entry(base: usize, i: usize, size: usize) -> Option<usize> {
+    i.checked_mul(size)?.checked_add(base)
 }
 
 fn wr_u16(b: &mut [u8], off: usize, v: u16) {
@@ -104,7 +113,6 @@ struct Phdr {
     p_vaddr: u64,
     p_filesz: u64,
     p_memsz: u64,
-    p_align: u64,
 }
 
 fn read_phdrs(content: &[u8]) -> Result<Vec<Phdr>> {
@@ -119,27 +127,35 @@ fn read_phdrs(content: &[u8]) -> Result<Vec<Phdr>> {
     }
     let mut phdrs = Vec::with_capacity(e_phnum);
     for i in 0..e_phnum {
-        let off = e_phoff + i * PHDR_SIZE;
+        // the whole entry, p_align included: growing the file copies the
+        // table, and bytes past the end would be the new zero padding
+        let off = table_entry(e_phoff, i, PHDR_SIZE)
+            .filter(|off| {
+                off.checked_add(PHDR_SIZE)
+                    .is_some_and(|end| end <= content.len())
+            })
+            .ok_or_else(|| eyre::eyre!("truncated ELF program header"))?;
         phdrs.push(Phdr {
             p_type: rd_u32(content, off)?,
             p_offset: rd_u64(content, off + 8)?,
             p_vaddr: rd_u64(content, off + 16)?,
             p_filesz: rd_u64(content, off + 32)?,
             p_memsz: rd_u64(content, off + 40)?,
-            p_align: rd_u64(content, off + 48)?,
         });
     }
     Ok(phdrs)
 }
 
 fn vaddr_to_offset(phdrs: &[Phdr], vaddr: u64) -> Option<usize> {
-    phdrs
+    let p = phdrs
         .iter()
-        .find(|p| p.p_type == PT_LOAD && p.p_vaddr <= vaddr && vaddr < p.p_vaddr + p.p_filesz)
-        .map(|p| (vaddr - p.p_vaddr + p.p_offset) as usize)
+        .find(|p| p.p_type == PT_LOAD && p.p_vaddr <= vaddr && vaddr - p.p_vaddr < p.p_filesz)?;
+    usize::try_from(p.p_offset.checked_add(vaddr - p.p_vaddr)?).ok()
 }
 
-fn read_cstr(content: &[u8], off: usize) -> Result<String> {
+/// ELF strings are byte strings, not necessarily UTF-8. They stay bytes, so a
+/// string's length is the size of its slot in the file.
+fn read_cstr(content: &[u8], off: usize) -> Result<Vec<u8>> {
     let bytes = content
         .get(off..)
         .ok_or_else(|| eyre::eyre!("string offset out of bounds"))?;
@@ -147,40 +163,65 @@ fn read_cstr(content: &[u8], off: usize) -> Result<String> {
         .iter()
         .position(|&b| b == 0)
         .ok_or_else(|| eyre::eyre!("unterminated string in ELF"))?;
-    Ok(String::from_utf8_lossy(&bytes[..end]).to_string())
+    Ok(bytes[..end].to_vec())
 }
 
-fn replace_placeholders(s: &str, opts: &LinkageOpts) -> String {
-    s.replace(PLACEHOLDER_CELLAR, &opts.cellar)
-        .replace(PLACEHOLDER_PREFIX, &opts.prefix)
+/// The NUL-terminated string at the start of `p`, read from the part of the
+/// segment that lies in the file.
+fn read_interp(content: &[u8], p: &Phdr) -> Result<Vec<u8>> {
+    let start =
+        usize::try_from(p.p_offset).map_err(|_| eyre::eyre!("string offset out of bounds"))?;
+    let end = usize::try_from(p.p_filesz)
+        .ok()
+        .and_then(|sz| start.checked_add(sz))
+        .map_or(content.len(), |end| end.min(content.len()));
+    read_cstr(&content[..end], start)
+}
+
+fn replace_placeholders(s: &[u8], opts: &LinkageOpts) -> Vec<u8> {
+    replace_text(
+        s,
+        &[
+            Replacement {
+                placeholder: PLACEHOLDER_CELLAR,
+                value: opts.cellar.as_bytes().to_vec(),
+            },
+            Replacement {
+                placeholder: PLACEHOLDER_PREFIX,
+                value: opts.prefix.as_bytes().to_vec(),
+            },
+        ],
+    )
 }
 
 /// brew's rpath rewrite (extend/os/linux/keg_relocate.rb#change_rpath!):
 /// substitute the placeholder per component, rewrite versioned gcc lib dirs
 /// to `current`, drop components outside the prefix (and not $ORIGIN-based),
 /// and make sure `<prefix>/lib` is present.
-fn new_rpath(old: &str, opts: &LinkageOpts) -> String {
-    let lib_path = format!("{}/lib", opts.prefix);
-    let mut components: Vec<String> = old
-        .split(':')
+fn new_rpath(old: &[u8], opts: &LinkageOpts) -> Vec<u8> {
+    const GCC_LIB: &[u8] = b"/lib/gcc/";
+    let lib_path = format!("{}/lib", opts.prefix).into_bytes();
+    let mut components: Vec<Vec<u8>> = old
+        .split(|&b| b == b':')
         .map(|c| replace_placeholders(c, opts))
-        .map(|c| {
+        .map(|mut c| {
             if opts.gcc_current
-                && let Some(pos) = c.rfind("/lib/gcc/")
-                && !c[pos + 9..].is_empty()
-                && c[pos + 9..].bytes().all(|b| b.is_ascii_digit())
+                && let Some(pos) = c.windows(GCC_LIB.len()).rposition(|w| w == GCC_LIB)
+                && let version = &c[pos + GCC_LIB.len()..]
+                && !version.is_empty()
+                && version.iter().all(u8::is_ascii_digit)
             {
-                format!("{}current", &c[..pos + 9])
-            } else {
-                c
+                c.truncate(pos + GCC_LIB.len());
+                c.extend_from_slice(b"current");
             }
+            c
         })
-        .filter(|c| c.starts_with(&opts.prefix) || c.starts_with("$ORIGIN"))
+        .filter(|c| c.starts_with(opts.prefix.as_bytes()) || c.starts_with(b"$ORIGIN"))
         .collect();
     if !components.contains(&lib_path) {
         components.push(lib_path);
     }
-    components.join(":")
+    components.join(&b':')
 }
 
 fn round_up(v: u64, align: u64) -> u64 {
@@ -202,14 +243,23 @@ pub(super) fn patch(content: &mut Vec<u8>, opts: &LinkageOpts, path: &Path) -> R
 
     // current interpreter
     let interp = phdrs.iter().find(|p| p.p_type == PT_INTERP).copied();
+    // the string and its NUL lie inside PT_INTERP, so bytes after the
+    // segment never decide whether, or how, it is rewritten
     let old_interp = match &interp {
-        Some(p) => Some(read_cstr(content, p.p_offset as usize)?),
+        Some(p) => Some(read_interp(content, p).map_err(|e| {
+            eyre::eyre!(
+                "cannot relocate {}: its interpreter does not lie inside PT_INTERP ({e})",
+                path.display()
+            )
+        })?),
         None => None,
     };
     // brew sets the interpreter to <prefix>/lib/ld.so (which
     // prefix::setup_linux_runtime points at a real loader)
     let new_interp = match &old_interp {
-        Some(s) if s.contains(PLACEHOLDER_PREFIX) => Some(format!("{}/lib/ld.so", opts.prefix)),
+        Some(s) if memmem(s, PLACEHOLDER_PREFIX).is_some() => {
+            Some(format!("{}/lib/ld.so", opts.prefix))
+        }
         _ => None,
     };
 
@@ -224,9 +274,11 @@ pub(super) fn patch(content: &mut Vec<u8>, opts: &LinkageOpts, path: &Path) -> R
     let mut rpath_strtab_off = None;
     if let Some(dyn_seg) = &dynamic {
         let start = dyn_seg.p_offset as usize;
-        let end = start + dyn_seg.p_filesz as usize;
+        let end = start
+            .saturating_add(dyn_seg.p_filesz as usize)
+            .min(content.len());
         let mut off = start;
-        while off + 16 <= end.min(content.len()) {
+        while off < end && end - off >= 16 {
             let d_tag = rd_u64(content, off)? as i64;
             let d_val = rd_u64(content, off + 8)?;
             match d_tag {
@@ -249,12 +301,40 @@ pub(super) fn patch(content: &mut Vec<u8>, opts: &LinkageOpts, path: &Path) -> R
         }
     }
     let strtab_off = strtab_vaddr.and_then(|v| vaddr_to_offset(&phdrs, v));
-    let old_rpath = match (strtab_off, rpath_strtab_off) {
-        (Some(st), Some(rp)) => Some(read_cstr(content, st + rp as usize)?),
+    // file offset of the current rpath string
+    let rpath_off = match (strtab_off, rpath_strtab_off) {
+        (Some(st), Some(rp)) => Some(
+            usize::try_from(rp)
+                .ok()
+                .and_then(|rp| st.checked_add(rp))
+                .ok_or_else(|| eyre::eyre!("string offset out of bounds"))?,
+        ),
         _ => None,
     };
+    // with DT_STRSZ, the rpath and its NUL lie inside the string table, so the
+    // in-place rewrite below never touches bytes past the table
+    let table_end = match (strtab_off, strsz) {
+        (Some(st), Some(sz)) => usize::try_from(sz)
+            .ok()
+            .and_then(|sz| st.checked_add(sz))
+            .map_or(content.len(), |end| end.min(content.len())),
+        _ => content.len(),
+    };
+    let old_rpath = match rpath_off {
+        Some(off) => Some(read_cstr(&content[..table_end], off).map_err(|e| {
+            eyre::eyre!(
+                "cannot relocate {}: its rpath does not lie inside the dynamic string table \
+                 ({e})",
+                path.display()
+            )
+        })?),
+        None => None,
+    };
     let new_rpath_str = match &old_rpath {
-        Some(s) if s.contains(PLACEHOLDER_PREFIX) || s.contains(PLACEHOLDER_CELLAR) => {
+        Some(s)
+            if memmem(s, PLACEHOLDER_PREFIX).is_some()
+                || memmem(s, PLACEHOLDER_CELLAR).is_some() =>
+        {
             Some(new_rpath(s, opts))
         }
         _ => None,
@@ -262,6 +342,19 @@ pub(super) fn patch(content: &mut Vec<u8>, opts: &LinkageOpts, path: &Path) -> R
 
     if new_interp.is_none() && new_rpath_str.is_none() {
         return Ok(false);
+    }
+
+    // PT_INTERP's p_filesz is the slot rewritten in place, so it has to lie
+    // within the file
+    if let (Some(p), Some(_)) = (&interp, &new_interp)
+        && p.p_offset
+            .checked_add(p.p_filesz)
+            .is_none_or(|end| end > content.len() as u64)
+    {
+        bail!(
+            "cannot relocate {}: PT_INTERP runs past the end of the file",
+            path.display()
+        );
     }
 
     // in-place when the new string fits in the old one's slot
@@ -285,10 +378,9 @@ pub(super) fn patch(content: &mut Vec<u8>, opts: &LinkageOpts, path: &Path) -> R
     }
     if rpath_in_place
         && let (Some(old), Some(new)) = (&old_rpath, &new_rpath_str)
-        && let (Some(st), Some(rp)) = (strtab_off, rpath_strtab_off)
+        && let Some(start) = rpath_off
     {
-        let start = st + rp as usize;
-        content[start..start + new.len()].copy_from_slice(new.as_bytes());
+        content[start..start + new.len()].copy_from_slice(new);
         for b in &mut content[start + new.len()..start + old.len()] {
             *b = 0;
         }
@@ -308,24 +400,37 @@ pub(super) fn patch(content: &mut Vec<u8>, opts: &LinkageOpts, path: &Path) -> R
             path.display()
         );
     }
+    // the whole table is copied into the new segment, so DT_STRSZ sizes the
+    // output: it has to describe bytes that are in the file
+    if move_dynstr
+        && let (Some(st), Some(sz)) = (strtab_off, strsz)
+        && (st as u64)
+            .checked_add(sz)
+            .is_none_or(|end| end > content.len() as u64)
+    {
+        bail!(
+            "cannot relocate {}: its dynamic string table (DT_STRSZ {sz}) runs past the end \
+             of the file",
+            path.display()
+        );
+    }
 
-    let align = phdrs
-        .iter()
-        .filter(|p| p.p_type == PT_LOAD)
-        .map(|p| p.p_align)
-        .max()
-        .unwrap_or(0x1000)
-        .max(0x10000); // covers 4K/16K/64K runtime page sizes
+    let align = NEW_SEGMENT_ALIGN;
     let new_off = round_up(content.len() as u64, align);
     let max_vaddr_end = phdrs
         .iter()
         .filter(|p| p.p_type == PT_LOAD)
-        .map(|p| p.p_vaddr + p.p_memsz)
+        .map(|p| p.p_vaddr.saturating_add(p.p_memsz))
         .max()
         .unwrap_or(0);
-    let new_vaddr = round_up(max_vaddr_end, align);
 
     let e_phnum = rd_u16(content, 56)? as usize;
+    if e_phnum + 1 >= 0xffff {
+        bail!(
+            "cannot relocate {}: no room for another program header",
+            path.display()
+        );
+    }
     let table_len = (e_phnum + 1) * PHDR_SIZE;
     let rel_interp = round_up(table_len as u64, 8) as usize;
     let interp_len = match (&new_interp, move_interp) {
@@ -341,7 +446,17 @@ pub(super) fn patch(content: &mut Vec<u8>, opts: &LinkageOpts, path: &Path) -> R
         (0, 0, 0)
     };
     let seg_len = rel_dynstr + new_strsz;
+    let Some(new_vaddr) = max_vaddr_end
+        .checked_next_multiple_of(align)
+        .filter(|v| v.checked_add(seg_len as u64).is_some())
+    else {
+        bail!(
+            "cannot relocate {}: no address space left for a new segment",
+            path.display()
+        );
+    };
 
+    let orig_len = content.len();
     content.resize(new_off as usize + seg_len, 0);
 
     // relocated program header table: copy entries, then fix up the moved ones
@@ -401,7 +516,7 @@ pub(super) fn patch(content: &mut Vec<u8>, opts: &LinkageOpts, path: &Path) -> R
         content[start..start + old_strsz].copy_from_slice(&dynstr);
         let new = new_rpath_str.as_ref().unwrap();
         let rp_start = start + rpath_off_in_dynstr;
-        content[rp_start..rp_start + new.len()].copy_from_slice(new.as_bytes());
+        content[rp_start..rp_start + new.len()].copy_from_slice(new);
         content[rp_start + new.len()] = 0;
     }
 
@@ -425,12 +540,12 @@ pub(super) fn patch(content: &mut Vec<u8>, opts: &LinkageOpts, path: &Path) -> R
     // keep section headers consistent for readelf/strip (runtime ignores them)
     let e_shoff = rd_u64(content, 40)? as usize;
     let e_shnum = rd_u16(content, 60)? as usize;
-    if e_shoff != 0 && rd_u16(content, 58)? as usize == SHDR_SIZE {
+    // a table that does not lie wholly inside the original file is left alone,
+    // with none of its entries changed
+    let table_fits = table_entry(e_shoff, e_shnum, SHDR_SIZE).is_some_and(|end| end <= orig_len);
+    if e_shoff != 0 && table_fits && rd_u16(content, 58)? as usize == SHDR_SIZE {
         for i in 0..e_shnum {
             let off = e_shoff + i * SHDR_SIZE;
-            if off + SHDR_SIZE > content.len() {
-                break;
-            }
             let sh_offset = rd_u64(content, off + 24)?;
             if move_interp
                 && let Some(p) = &interp

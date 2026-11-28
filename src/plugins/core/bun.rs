@@ -4,22 +4,18 @@ use std::{
 };
 
 use async_trait::async_trait;
-use eyre::Result;
+use eyre::{Result, WrapErr, eyre};
 use itertools::Itertools;
 use versions::Versioning;
 
 use crate::args::BackendArg;
-use crate::backend::static_helpers::lock_checksum;
+use crate::backend::static_helpers::{fetch_checksum_from_shasums, is_not_found, lock_checksum};
 use crate::cmd::CmdLineRunner;
-use crate::http::HTTP;
+use crate::http::{DownloadOptions, HTTP};
 use crate::install_context::InstallContext;
 use crate::lockfile::PlatformInfo;
+use crate::platform::detect_libc;
 use crate::toolset::ToolVersion;
-use crate::ui::progress_report::SingleReport;
-use crate::{
-    backend::static_helpers::{fetch_checksum_from_shasums, fetch_published_checksum_from_shasums},
-    platform::detect_libc,
-};
 use crate::{
     backend::{
         Backend, GitHubReleaseInfo, VersionInfo, normalize_idiomatic_contents,
@@ -64,6 +60,32 @@ impl BunPlugin {
         format!("{}/SHASUMS256.txt", Self::release_url(version))
     }
 
+    async fn published_checksum(shasums_url: &str, filename: &str) -> Result<Option<String>> {
+        let result = HTTP
+            .get_text_request(shasums_url)
+            .max_retries(github::BROWSER_ASSET_MAX_RETRIES)
+            .send()
+            .await;
+        let content = match result {
+            Ok(text) => text,
+            Err(err) => match github::release_asset_api_url(shasums_url, false).await {
+                Some(api_url) => HTTP
+                    .get_text(api_url)
+                    .await
+                    .wrap_err_with(|| format!("failed to fetch checksum from {shasums_url}"))?,
+                None if is_not_found(&err) => return Ok(None),
+                None => {
+                    return Err(err)
+                        .wrap_err_with(|| format!("failed to fetch checksum from {shasums_url}"));
+                }
+            },
+        };
+        crate::hash::parse_shasums(&content)
+            .get(filename)
+            .map(|hash| Some(format!("sha256:{hash}")))
+            .ok_or_else(|| eyre!("{shasums_url} does not list a checksum for this archive"))
+    }
+
     fn bun_bin(&self, tv: &ToolVersion) -> PathBuf {
         tv.install_path().join("bin").join(bun_bin_name())
     }
@@ -77,7 +99,8 @@ impl BunPlugin {
             .execute()
     }
 
-    async fn download(&self, tv: &mut ToolVersion, pr: &dyn SingleReport) -> Result<PathBuf> {
+    async fn download(&self, ctx: &InstallContext, tv: &mut ToolVersion) -> Result<PathBuf> {
+        let pr = ctx.pr.as_ref();
         let url = format!(
             "{}/bun-{}-{}.zip",
             Self::release_url(&tv.version),
@@ -87,35 +110,65 @@ impl BunPlugin {
         let filename = url.split('/').next_back().unwrap();
         let tarball_path = tv.download_path().join(filename);
 
+        let platform_key = self.get_platform_key();
+        let locked_info = tv.lock_platforms.get(&platform_key);
+        let mut api_url = locked_info
+            .filter(|info| info.url.as_deref() == Some(&url))
+            .and_then(|info| info.url_api.clone())
+            .filter(|api_url| {
+                api_url
+                    .strip_prefix("https://api.github.com/repos/oven-sh/bun/releases/assets/")
+                    .is_some_and(|id| {
+                        !id.is_empty() && id.bytes().all(|byte| byte.is_ascii_digit())
+                    })
+            });
+        let pin = lock_checksum(tv, &platform_key, &url);
         pr.set_message(format!("download {filename}"));
-        HTTP.download_file_stored(
-            &url,
-            &tarball_path,
-            lock_checksum(tv, &self.get_platform_key(), &url).as_deref(),
-            Some(pr),
-        )
-        .await?;
+        let result = HTTP
+            .download_file_linked_with_options(
+                &url,
+                &tarball_path,
+                &Default::default(),
+                pin.as_deref(),
+                Some(pr),
+                DownloadOptions {
+                    max_retries: Some(github::BROWSER_ASSET_MAX_RETRIES),
+                    ..Default::default()
+                },
+            )
+            .await;
+        if let Err(err) = result {
+            if let Some(locked) = &api_url
+                && github::checked_api_asset_url(&url, locked).await == url
+            {
+                api_url = None;
+            }
+            if api_url.is_none() {
+                api_url = github::release_asset_api_url(&url, false).await;
+            }
+            let Some(api_url) = &api_url else {
+                return Err(err);
+            };
+            HTTP.download_file_stored(api_url, &tarball_path, pin.as_deref(), Some(pr))
+                .await?;
+        } else if api_url.is_none()
+            && (ctx.config.lockfile_creation_enabled() || locked_info.is_some())
+        {
+            api_url = github::release_asset_api_url(&url, false).await;
+        }
 
-        // Without a checksum in the lockfile, take the one Bun publishes in
-        // SHASUMS256.txt so verify_checksum compares the zip against it instead
-        // of only recording what was downloaded.
+        // Without a checksum in the lockfile, verify against the one Bun publishes.
         let shasums_url = Self::shasums_url(&tv.version);
-        let platform_info = tv
-            .lock_platforms
-            .entry(self.get_platform_key())
-            .or_default();
+        let platform_info = tv.lock_platforms.entry(platform_key).or_default();
         if platform_info.checksum.is_none() {
-            match fetch_published_checksum_from_shasums(&shasums_url, filename).await? {
-                Some(checksum) => {
-                    platform_info.url = Some(url.clone());
-                    platform_info.checksum = Some(checksum);
-                }
-                // A release that never published SHASUMS256.txt. It would come from the
-                // same host as the zip and is unsigned, so failing here would protect
-                // nothing that host could not also forge.
+            match Self::published_checksum(&shasums_url, filename).await? {
+                Some(checksum) => platform_info.checksum = Some(checksum),
+                // Older Bun releases did not publish SHASUMS256.txt.
                 None => warn!("bun: {shasums_url} not found, skipping checksum verification"),
             }
         }
+        platform_info.url = Some(url);
+        platform_info.url_api = api_url;
 
         Ok(tarball_path)
     }
@@ -262,7 +315,7 @@ impl Backend for BunPlugin {
         ctx: &InstallContext,
         mut tv: ToolVersion,
     ) -> Result<ToolVersion> {
-        let tarball_path = self.download(&mut tv, ctx.pr.as_ref()).await?;
+        let tarball_path = self.download(ctx, &mut tv).await?;
         ctx.pr.next_operation();
         self.verify_checksum(ctx, &mut tv, &tarball_path)?;
         ctx.pr.next_operation();
@@ -305,15 +358,20 @@ impl Backend for BunPlugin {
         let release_url = Self::release_url(version);
         let url = format!("{release_url}/{filename}");
 
-        // Fetch SHASUMS256.txt to get checksum without downloading the zip
+        // Fetch SHASUMS256.txt to get checksum without downloading the zip.
         let shasums_url = Self::shasums_url(version);
+        let url_api = github::release_asset_api_url(&url, false).await;
+        let shasums_url = match github::release_asset_api_url(&shasums_url, false).await {
+            Some(api_url) => github::pick_reachable_asset_url(&shasums_url, &api_url).await,
+            None => shasums_url,
+        };
         let checksum = fetch_checksum_from_shasums(&shasums_url, &filename).await;
 
         Ok(PlatformInfo {
             url: Some(url),
             checksum,
             size: None,
-            url_api: None,
+            url_api,
             conda_deps: None,
             ..Default::default()
         })

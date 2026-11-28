@@ -546,7 +546,7 @@ pub fn hard_link_or_copy<P: AsRef<Path>, Q: AsRef<Path>>(from: P, to: Q) -> Resu
 }
 
 pub fn copy_dir_all_preserve_symlinks(from: &Path, to: &Path) -> Result<()> {
-    copy_dir_all_preserve_symlinks_skipping(from, to, &[])
+    copy_dir_all_preserve_symlinks_skipping(from, to, &[], false)
 }
 
 /// Copies `from` into `to` like [`copy_dir_all_preserve_symlinks`], without
@@ -555,6 +555,7 @@ fn copy_dir_all_preserve_symlinks_skipping(
     from: &Path,
     to: &Path,
     skip_top_level: &[&str],
+    #[cfg_attr(not(target_os = "macos"), allow(unused_variables))] preserve_directory_xattrs: bool,
 ) -> Result<()> {
     trace!("cp -a {} {}", from.display(), to.display());
     let permissions = fs::metadata(from)?.permissions();
@@ -577,6 +578,15 @@ fn copy_dir_all_preserve_symlinks_skipping(
         let dest = to.join(relative);
         if entry.file_type().is_dir() {
             create_dir_all(&dest)?;
+            #[cfg(target_os = "macos")]
+            if preserve_directory_xattrs {
+                copy_directory_xattrs(entry.path(), &dest).wrap_err_with(|| {
+                    format!(
+                        "failed to copy extended attributes for {}",
+                        display_path(entry.path())
+                    )
+                })?;
+            }
             directory_permissions.push((dest, entry.metadata()?.permissions()));
         } else if entry.file_type().is_symlink() {
             create_dir_all(dest.parent().unwrap())?;
@@ -865,14 +875,30 @@ fn read_failed(path: &Path) -> String {
 }
 
 fn read_config_body(path: &Path, file: File) -> Result<String> {
-    let mut body = String::new();
-    file.take(CONFIG_FILE_LIMIT + 1)
-        .read_to_string(&mut body)
+    read_config_from(path, file)
+}
+
+/// The text of the config file at `path` that `reader` yields, refused when it is
+/// longer than [`CONFIG_FILE_LIMIT`]. The limit is judged on the bytes before they
+/// are decoded, so a cutoff that splits a character reports the size, not invalid
+/// UTF-8.
+pub fn read_config_from<R: Read>(path: &Path, reader: R) -> Result<String> {
+    let mut body = Vec::new();
+    reader
+        .take(CONFIG_FILE_LIMIT + 1)
+        .read_to_end(&mut body)
         .wrap_err_with(|| read_failed(path))?;
     if body.len() as u64 > CONFIG_FILE_LIMIT {
         return Err(config_file_too_large(path));
     }
-    Ok(body)
+    String::from_utf8(body)
+        .map_err(|_| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "stream did not contain valid UTF-8",
+            )
+        })
+        .wrap_err_with(|| read_failed(path))
 }
 
 /// Fails when `path` is a config file larger than [`CONFIG_FILE_LIMIT`], for
@@ -2475,10 +2501,10 @@ const EXTRACT_MIN_LIMIT: u64 = if cfg!(test) {
 };
 
 /// The most bytes unpacking `input` may produce: `extract_max_ratio` times its
-/// size, and at least [`EXTRACT_MIN_LIMIT`]. Release archives rarely unpack to
+/// size, and at least `EXTRACT_MIN_LIMIT`. Release archives rarely unpack to
 /// more than 10 times their size, while 1 GiB of zeroes is under 1 KiB of
 /// bzip2, so without a bound a small download could fill the disk.
-fn extract_limit(input: &Path) -> Result<u64> {
+pub fn extract_limit(input: &Path) -> Result<u64> {
     Ok(extract_limit_for_size(input.metadata()?.len()))
 }
 
@@ -2520,7 +2546,7 @@ impl ExtractBudget {
     }
 }
 
-fn extract_limit_error(limit: u64) -> std::io::Error {
+pub fn extract_limit_error(limit: u64) -> std::io::Error {
     std::io::Error::other(format!(
         "unpacked size exceeds {limit} bytes, the limit set by the extract_max_ratio setting"
     ))
@@ -3100,7 +3126,24 @@ const DMG_VOLUME_METADATA: &[&str] = &[
 ];
 
 fn copy_dmg_volume(volume: &Path, dest: &Path) -> Result<()> {
-    copy_dir_all_preserve_symlinks_skipping(volume, dest, DMG_VOLUME_METADATA)
+    // App bundles are directories and cask preflight can rely on their xattrs.
+    copy_dir_all_preserve_symlinks_skipping(volume, dest, DMG_VOLUME_METADATA, true)
+}
+
+#[cfg(target_os = "macos")]
+fn copy_directory_xattrs(from: &Path, to: &Path) -> Result<()> {
+    use std::ffi::CString;
+
+    let from = CString::new(from.as_os_str().as_bytes())?;
+    let to = CString::new(to.as_os_str().as_bytes())?;
+    let flags = nix::libc::COPYFILE_XATTR | nix::libc::COPYFILE_NOFOLLOW;
+    // SAFETY: both paths are NUL-terminated and outlive the call, and a null state is allowed.
+    let result =
+        unsafe { nix::libc::copyfile(from.as_ptr(), to.as_ptr(), std::ptr::null_mut(), flags) };
+    if result != 0 {
+        return Err(std::io::Error::last_os_error().into());
+    }
+    Ok(())
 }
 
 /// Whole-disk devices that `hdiutil info` reports as still attached from `archive`.
@@ -4016,6 +4059,25 @@ pub fn clone_dir(from: &PathBuf, to: &PathBuf) -> Result<()> {
 fn skip_curdir_components(path: &Path) -> impl Iterator<Item = std::path::Component<'_>> {
     path.components()
         .skip_while(|c| matches!(c, std::path::Component::CurDir))
+}
+
+/// The top-level directory or file that the first entry of a tar archive unpacks to, skipping
+/// leading `.` components. Reads only as far as that entry, so a large archive is not
+/// decompressed in full. `None` for an archive with no such entry.
+pub fn first_tar_entry_top_level(
+    archive: &Path,
+    format: ExtractionFormat,
+) -> Result<Option<String>> {
+    let tar = open_tar(format, archive)?;
+    let mut archive = Archive::new(tar);
+    for entry in archive.entries()? {
+        let entry = entry?;
+        let path = entry.path()?;
+        if let Some(first) = skip_curdir_components(&path).next() {
+            return Ok(Some(first.as_os_str().to_string_lossy().to_string()));
+        }
+    }
+    Ok(None)
 }
 
 /// Inspects the top-level contents of a tar archive without extracting it.

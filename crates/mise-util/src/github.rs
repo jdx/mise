@@ -551,6 +551,11 @@ fn tags_cache_key(api_url: &str, repo: &str) -> String {
     )
 }
 
+fn api_tags_cache_key(repo: &str, list_all: bool) -> String {
+    let key = tags_cache_key(API_URL, repo);
+    if list_all { format!("{key}-all") } else { key }
+}
+
 /// `repo`'s whole release or tag list from mise-versions, one request for
 /// any number of entries. `None` sends the caller to the paged mirror
 /// endpoints, not straight to GitHub: they decide what a 404 means (a private
@@ -1047,14 +1052,12 @@ pub async fn attested_by_repository(owner: &str, repo: &str, attested: &[String]
     false
 }
 
-pub async fn list_tags(repo: &str) -> Result<Vec<String>> {
-    let key = tags_cache_key(API_URL, repo);
+pub async fn list_tags(repo: &str, list_all: bool) -> Result<Vec<String>> {
+    let list_all = list_all || *env::MISE_LIST_ALL_VERSIONS;
+    let key = api_tags_cache_key(repo, list_all);
     let cache = get_tags_cache(&key).await;
     let cache = cache.get(&key).unwrap();
-    cached_or_stale(cache, async || {
-        list_tags_(API_URL, repo, *env::MISE_LIST_ALL_VERSIONS).await
-    })
-    .await
+    cached_or_stale(cache, || list_tags_(API_URL, repo, list_all)).await
 }
 
 pub async fn list_tags_from_url(api_url: &str, repo: &str) -> Result<Vec<String>> {
@@ -1121,12 +1124,16 @@ async fn list_tags_from_api(api_url: &str, repo: &str, list_all: bool) -> Result
 /// mise-versions has no date for, and every tag when mise-versions is not the
 /// source, comes back with `date: None`; date those one at a time with
 /// [`tag_commit_date`], for the few versions a release-age cutoff decides on.
-pub async fn list_tags_with_known_dates(repo: &str) -> Result<Vec<GithubTagWithDate>> {
-    let key = tags_cache_key(API_URL, repo);
+pub async fn list_tags_with_known_dates(
+    repo: &str,
+    list_all: bool,
+) -> Result<Vec<GithubTagWithDate>> {
+    let list_all = list_all || *env::MISE_LIST_ALL_VERSIONS;
+    let key = api_tags_cache_key(repo, list_all);
     let cache = get_dated_tags_cache(&key).await;
     let cache = cache.get(&key).unwrap();
-    cached_or_stale(cache, async || {
-        list_tags_with_known_dates_(API_URL, repo, *env::MISE_LIST_ALL_VERSIONS).await
+    cached_or_stale(cache, || {
+        list_tags_with_known_dates_(API_URL, repo, list_all)
     })
     .await
 }
@@ -1907,8 +1914,8 @@ fn may_send_token_with(url: &url::Url, api_url: &str, enterprise_hosts: &[String
     }
 }
 
-/// Retries the reachability probe gets before the API asset endpoint is used.
-const PROBE_RETRIES: i64 = 1;
+/// Max retries a browser asset request gets before switching to the API endpoint.
+pub const BROWSER_ASSET_MAX_RETRIES: i64 = 1;
 
 /// Pick which URL to use for a GitHub download.
 ///
@@ -1928,7 +1935,7 @@ pub async fn pick_reachable_asset_url(browser_url: &str, api_url: &str) -> Strin
     // for a URL, it tends to keep doing so while the API endpoint still serves
     // the file.
     match crate::http::HTTP
-        .head_without_netrc(browser_url, PROBE_RETRIES)
+        .head_without_netrc(browser_url, BROWSER_ASSET_MAX_RETRIES)
         .await
     {
         Ok(resp) => {

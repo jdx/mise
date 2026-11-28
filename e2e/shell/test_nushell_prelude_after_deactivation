@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+
+# A saved activation module loaded in a shell that inherits an activation first undoes that
+# activation and then applies its own setup, so the PATH it restores does not take back the
+# directory of the mise executable the module adds.
+if ! command -v nu >/dev/null 2>&1; then
+  exit 0
+fi
+
+mise_bin="$(command -v mise)"
+mkdir -p mod
+# Generated where the mise executable is not on PATH, so the module prepends its directory.
+env PATH=/usr/bin:/bin "$mise_bin" activate nu >mod/real.nu
+exe_dir="$(sed -n "s/^.*| prepend r#'\(.*\)'#)\$/\1/p" mod/real.nu | head -n1)"
+assert_contains "echo dir=$exe_dir" "dir=/"
+
+cat >stub-deactivate <<'SH'
+#!/bin/sh
+echo "set,PATH,/restored"
+SH
+chmod u+x stub-deactivate
+sed "s|\^\"[^\"]*\" deactivate|^\"$PWD/stub-deactivate\" deactivate|" mod/real.nu >mod/mise.nu
+
+cat >config.nu <<'NU'
+use mod/mise.nu
+print $"PATH=($env.PATH | str join '|')"
+NU
+
+assert_contains "__MISE_DIFF=1 nu -n config.nu" "PATH=$exe_dir|"

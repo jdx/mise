@@ -148,6 +148,10 @@ impl Shell for Fish {
     }
 
     fn set_env(&self, key: &str, v: &str) -> String {
+        if !is_fish_name(key) {
+            debug!("not exporting {key:?}: it is not a fish variable name");
+            return String::new();
+        }
         if cfg!(windows) && key == "__MISE_ORIG_PATH" {
             // An opaque native snapshot, not a Fish path list. MSYS must not
             // reinterpret it before mise reads it back.
@@ -190,6 +194,10 @@ impl Shell for Fish {
     }
 
     fn prepend_env(&self, key: &str, value: &str) -> String {
+        if !is_fish_name(key) {
+            debug!("not exporting {key:?}: it is not a fish variable name");
+            return String::new();
+        }
         let k = escape(key.into());
 
         match key {
@@ -241,6 +249,9 @@ impl Shell for Fish {
     }
 
     fn unset_env(&self, k: &str) -> String {
+        if !is_fish_name(k) {
+            return String::new();
+        }
         format!("set -e {k}\n", k = escape(k.into()))
     }
 
@@ -260,6 +271,14 @@ impl Display for Fish {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "fish")
     }
+}
+
+/// Whether fish can hold `name` as a variable: one or more letters, digits and `_`, in any
+/// order. fish refuses any other name with an error at every prompt, and reads `x[1]` as an
+/// element of `x`. Names come from env files and `[env]` tables, which take any string, so one
+/// fish could not hold is left out of the script.
+fn is_fish_name(name: &str) -> bool {
+    !name.is_empty() && name.chars().all(|c| c == '_' || c.is_alphanumeric())
 }
 
 /// Quote `input` for fish, leaving it bare when it needs no quoting.
@@ -431,6 +450,33 @@ mod tests {
     #[test]
     fn test_unset_env() {
         assert_snapshot!(Fish::default().unset_env("FOO"));
+    }
+
+    #[test]
+    fn a_name_that_is_not_a_fish_variable_is_left_out() {
+        let sh = Fish::default();
+        for name in [
+            "DIRSTACK[$(touch marker)]",
+            "x[1]",
+            "a.b",
+            "a-b",
+            "A:B",
+            "a b",
+            "a\u{0301}",
+            "a\u{200d}",
+            "",
+        ] {
+            assert_eq!(sh.set_env(name, "1"), "", "{name:?}");
+            assert_eq!(sh.prepend_env(name, "/dir"), "", "{name:?}");
+            assert_eq!(sh.unset_env(name), "", "{name:?}");
+        }
+        for name in [
+            "FOO_1", "_a", "1abc", "9", "é", "Ωmega", "\u{b2}", "a\u{663}",
+        ] {
+            let k = escape(name.into());
+            assert_eq!(sh.set_env(name, "1"), format!("set -gx {k} 1\n"));
+            assert_eq!(sh.unset_env(name), format!("set -e {k}\n"));
+        }
     }
 
     #[test]

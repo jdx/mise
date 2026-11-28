@@ -19,11 +19,12 @@
 
 use async_trait::async_trait;
 use eyre::{WrapErr, bail};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 
 use super::{InstallOpts, PackageRequest, PackageState, PackageStatus, SystemPackageManager};
+use crate::options::ManagerPackageOptions;
 use eyre::Result;
 use mise_settings::Settings;
 use mise_ui::multi_progress_report::MultiProgressReport;
@@ -85,10 +86,14 @@ pub fn package_root(name: &str) -> Result<PathBuf> {
         .wrap_err_with(|| format!("failed to locate installed brew:{name}"))
 }
 
-/// Require one normal path component so a formula name stays within its expected rack.
+/// Require one normal path component so a formula name or version stays
+/// within its expected rack. Separators are refused outright: `Path` would
+/// drop a trailing `/` or an inner `.` and accept the rest.
 fn is_normal_formula_component(name: &str) -> bool {
     let mut components = Path::new(name).components();
-    matches!(components.next(), Some(Component::Normal(_))) && components.next().is_none()
+    !name.contains(['/', '\\', '\0'])
+        && matches!(components.next(), Some(Component::Normal(_)))
+        && components.next().is_none()
 }
 
 /// The formulae of a resolved closure that have no keg yet. A malformed
@@ -160,7 +165,12 @@ impl BrewManager {
     }
 
     /// Prefetch bottles concurrently, then install the closure in dependency order.
-    async fn install_via_pour(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
+    async fn install_via_pour(
+        &self,
+        pkgs: &[PackageRequest],
+        opts: &InstallOpts,
+        tap_urls: &BTreeMap<String, String>,
+    ) -> Result<()> {
         // bottles only exist for a formula's current version — versioning is
         // expressed in the formula name itself (postgresql@17); the CLI
         // filters pinned requests out before calling
@@ -171,7 +181,7 @@ impl BrewManager {
             );
         }
         let roots: Vec<String> = pkgs.iter().map(|p| p.name.clone()).collect();
-        let closure = resolve::resolve_closure_with_taps(pkgs, !opts.dry_run).await?;
+        let closure = resolve::resolve_closure_with_taps(pkgs, tap_urls, !opts.dry_run).await?;
         for rf in &closure {
             if rf.on_request
                 && !roots.contains(&rf.formula.name)
@@ -489,6 +499,18 @@ impl SystemPackageManager for BrewManager {
     }
 
     async fn install(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
+        self.install_with_options(pkgs, opts, &ManagerPackageOptions::None)
+            .await
+    }
+
+    async fn install_with_options(
+        &self,
+        pkgs: &[PackageRequest],
+        opts: &InstallOpts,
+        manager_options: &ManagerPackageOptions,
+    ) -> Result<()> {
+        let defaults = BTreeMap::new();
+        let tap_urls = manager_options.brew_taps().unwrap_or(&defaults);
         let repaired = self.repair_records(pkgs, opts)?;
         let remaining = pkgs
             .iter()
@@ -501,16 +523,28 @@ impl SystemPackageManager for BrewManager {
                 .into_iter()
                 .map(normalize_core_request)
                 .collect::<Vec<_>>();
-            self.install_via_pour(&core, opts).await?;
+            self.install_via_pour(&core, opts, tap_urls).await?;
         }
         if !tapped.is_empty() {
             let tapped = tapped.into_iter().cloned().collect::<Vec<_>>();
-            self.install_via_pour(&tapped, opts).await?;
+            self.install_via_pour(&tapped, opts, tap_urls).await?;
         }
         Ok(())
     }
 
     async fn upgrade(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
+        self.upgrade_with_options(pkgs, opts, &ManagerPackageOptions::None)
+            .await
+    }
+
+    async fn upgrade_with_options(
+        &self,
+        pkgs: &[PackageRequest],
+        opts: &InstallOpts,
+        manager_options: &ManagerPackageOptions,
+    ) -> Result<()> {
+        let defaults = BTreeMap::new();
+        let tap_urls = manager_options.brew_taps().unwrap_or(&defaults);
         let repaired = self.repair_records(pkgs, opts)?;
         let remaining = pkgs
             .iter()
@@ -523,11 +557,11 @@ impl SystemPackageManager for BrewManager {
                 .into_iter()
                 .map(normalize_core_request)
                 .collect::<Vec<_>>();
-            self.install_via_pour(&core, opts).await?;
+            self.install_via_pour(&core, opts, tap_urls).await?;
         }
         if !tapped.is_empty() {
             let tapped = tapped.into_iter().cloned().collect::<Vec<_>>();
-            self.install_via_pour(&tapped, opts).await?;
+            self.install_via_pour(&tapped, opts, tap_urls).await?;
         }
         Ok(())
     }
@@ -608,6 +642,7 @@ mod tests {
             }))
             .unwrap(),
             tap_raw_base: None,
+            tap_inferred: false,
             on_request: true,
         }
     }

@@ -20,6 +20,8 @@ pub enum ManagerPackageOptions {
         repos: Vec<super::dnf_repos::DnfRepo>,
     },
     #[cfg(unix)]
+    Brew { taps: BTreeMap<String, String> },
+    #[cfg(unix)]
     BrewCask {
         adopt: BTreeSet<String>,
         appdirs: BTreeMap<String, PathBuf>,
@@ -27,11 +29,12 @@ pub enum ManagerPackageOptions {
         /// `brew upgrade` owns the casks.
         homebrew_metadata: bool,
     },
-    /// Inline app declarations, keyed by package name. `macos-app` resolves no
-    /// metadata of its own, so the declaration reaches the installer here.
+    /// App declarations, keyed by package name. `macos-app` has no token
+    /// namespace of its own to look a name up in, so the declaration (a
+    /// download, or the cask to read one from) reaches the installer here.
     #[cfg(unix)]
     MacosApp {
-        specs: BTreeMap<String, AppSpec>,
+        specs: BTreeMap<String, AppDeclaration>,
         adopt: BTreeSet<String>,
     },
     /// `channel` and `classic`, keyed by snap name. Snaps without either are
@@ -46,7 +49,15 @@ impl ManagerPackageOptions {
     pub fn brew_cask_adopt(&self, name: &str) -> bool {
         match self {
             Self::BrewCask { adopt, .. } | Self::MacosApp { adopt, .. } => adopt.contains(name),
-            Self::None | Self::Apt { .. } | Self::Dnf { .. } | Self::Snap { .. } => false,
+            _ => false,
+        }
+    }
+
+    #[cfg(unix)]
+    pub fn brew_taps(&self) -> Option<&BTreeMap<String, String>> {
+        match self {
+            Self::Brew { taps } => Some(taps),
+            _ => None,
         }
     }
 
@@ -70,12 +81,72 @@ impl ManagerPackageOptions {
     }
 
     #[cfg(unix)]
-    pub fn macos_app_spec(&self, name: &str) -> Option<&AppSpec> {
+    pub fn macos_app_declaration(&self, name: &str) -> Option<&AppDeclaration> {
         match self {
             Self::MacosApp { specs, .. } => specs.get(name),
             _ => None,
         }
     }
+
+    /// The inline download declared for a `macos-app` entry, if it has one.
+    #[cfg(unix)]
+    pub fn macos_app_spec(&self, name: &str) -> Option<&AppSpec> {
+        match self.macos_app_declaration(name)? {
+            AppDeclaration::Download(spec) => Some(spec),
+            AppDeclaration::Cask(_) => None,
+        }
+    }
+
+    /// The Homebrew cask a `macos-app` entry reads its download from, if any.
+    #[cfg(unix)]
+    pub fn macos_app_cask(&self, name: &str) -> Option<&str> {
+        match self.macos_app_declaration(name)? {
+            AppDeclaration::Cask(token) => Some(token),
+            AppDeclaration::Download(_) => None,
+        }
+    }
+}
+
+/// Where a `macos-app` entry gets its download from.
+#[cfg(unix)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AppDeclaration {
+    /// `url`, `sha256`, `artifact` and `version` written in the config.
+    Download(AppSpec),
+    /// An official Homebrew cask, read for its current version, download,
+    /// checksum and app. The install is still recorded under mise's state
+    /// directory, so the Homebrew prefix is never written.
+    Cask(String),
+}
+
+/// Validate the `cask` of a `macos-app` entry.
+///
+/// Only official casks are accepted: a tap cask can need Ruby to evaluate,
+/// and mise would have to trust the tap's code to read it. The version stays
+/// "latest" because Homebrew publishes only a cask's current version, so a pin
+/// could never be installed.
+///
+/// Platform-independent for the same reason as [`validate_app_declaration`].
+pub fn validate_app_cask(name: &str, cask: &str, version: &str) -> eyre::Result<()> {
+    let valid_token = !cask.is_empty()
+        && cask.chars().all(|c| {
+            c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '-' | '_' | '.' | '@' | '+')
+        })
+        && !cask.starts_with('.');
+    if cask.contains('/') {
+        eyre::bail!(
+            "macos-app:{name}: 'cask' must be an official Homebrew cask token, not a tap cask; got '{cask}'"
+        );
+    }
+    if !valid_token {
+        eyre::bail!("macos-app:{name}: 'cask' must be a Homebrew cask token; got '{cask}'");
+    }
+    if version != "latest" {
+        eyre::bail!(
+            "macos-app:{name}: 'version' cannot be set with 'cask'; mise installs the cask's current version"
+        );
+    }
+    Ok(())
 }
 
 /// An app bundle declared inline in `[bootstrap.packages]`, standing in for the

@@ -1653,7 +1653,7 @@ impl Upgrade {
                     match result {
                         Err(e) => warn!(
                             "Failed to uninstall old version of {}: {}",
-                            old_tv.ba().short,
+                            crate::toolset::install_state::state_short(&old_tv.ba().short),
                             e
                         ),
                     Ok(()) => {
@@ -2071,14 +2071,19 @@ fn effective_persistable_request<'a>(
 
 fn print_explicit_config_bumps(bumps: &[ExplicitConfigBump]) -> Result<()> {
     for bump in bumps {
-        miseprintln!(
-            "Would bump {}@{} in {}",
-            bump.request.ba().short,
-            bump.persisted_request.version(),
-            display_path(&bump.path)
-        );
+        miseprintln!("{}", explicit_config_bump_line(bump));
     }
     Ok(())
+}
+
+/// The `--dry-run` line for `bump`. Printed, so it leaves out the credentials of a URL.
+fn explicit_config_bump_line(bump: &ExplicitConfigBump) -> String {
+    format!(
+        "Would bump {}@{} in {}",
+        crate::toolset::install_state::state_short(&bump.request.ba().short),
+        bump.persisted_request.version(),
+        display_path(&bump.path)
+    )
 }
 
 async fn apply_explicit_config_bumps(bumps: &[ExplicitConfigBump]) -> Result<()> {
@@ -2100,7 +2105,7 @@ async fn warn_hidden_release_ignored_by_minimum_release_age(
     let (released, age) = hidden_release_details(config, tv, hidden_version, age).await;
     warn!(
         "newer {} release {hidden_version}{released} ignored by minimum_release_age{age}; {suffix}",
-        tv.ba().short
+        crate::toolset::install_state::state_short(&tv.ba().short)
     );
 }
 
@@ -2191,8 +2196,8 @@ async fn configured_installed_version(
 #[cfg(test)]
 mod tests {
     use super::{
-        backend_args_match, current_version_satisfies_hidden_release,
-        explicit_bump_matches_successful,
+        ExplicitConfigBump, backend_args_match, current_version_satisfies_hidden_release,
+        explicit_bump_matches_successful, explicit_config_bump_line,
     };
     use crate::args::BackendArg;
     use crate::toolset::outdated_info::OutdatedInfo;
@@ -2240,5 +2245,25 @@ mod tests {
             &outdated,
             &[ToolVersion::new(own, "3.1.0".to_string())],
         ));
+    }
+
+    #[test]
+    fn a_dry_run_bump_leaves_out_url_credentials() {
+        let backend = Arc::new(BackendArg::from(
+            "cargo:https://user:secrettoken@example.com/repo",
+        ));
+        let request = ToolRequest::new(backend.clone(), "1", ToolSource::Argument).unwrap();
+        let persisted = ToolRequest::new(backend, "2.0.0", ToolSource::Argument).unwrap();
+        let line = explicit_config_bump_line(&ExplicitConfigBump {
+            path: "/tmp/mise.toml".into(),
+            request: request.clone(),
+            persisted_request: persisted,
+            configured: request,
+        });
+        assert!(!line.contains("secrettoken"), "{line}");
+        assert!(
+            line.contains("cargo:https://example.com/repo@2.0.0"),
+            "{line}"
+        );
     }
 }

@@ -5,6 +5,7 @@ use dashmap::DashMap;
 use eyre::{Result, WrapErr};
 use std::sync::LazyLock as Lazy;
 
+use crate::backend::retain_path_entries;
 use crate::config::Config;
 use crate::config::env_directive::EnvResults;
 use crate::toolset::Toolset;
@@ -30,7 +31,7 @@ impl Toolset {
 
         let mut paths = Vec::new();
         for (backend, dependency) in installed {
-            let new_paths = backend
+            let mut new_paths = backend
                 .list_bin_paths(config, &dependency)
                 .await
                 .wrap_err_with(|| {
@@ -39,6 +40,7 @@ impl Toolset {
                         dependency.request, dependent
                     )
                 })?;
+            retain_path_entries(&dependency, &mut new_paths);
             paths.extend(new_paths);
         }
         Ok(paths
@@ -84,11 +86,12 @@ impl Toolset {
         let mut had_error = false;
         for (p, tv) in installed {
             let start = std::time::Instant::now();
-            let new_paths = p.list_bin_paths(config, &tv).await.unwrap_or_else(|e| {
+            let mut new_paths = p.list_bin_paths(config, &tv).await.unwrap_or_else(|e| {
                 warn!("Error listing bin paths for {tv}: {e:#}");
                 had_error = true;
                 Vec::new()
             });
+            retain_path_entries(&tv, &mut new_paths);
             trace!(
                 "toolset.list_paths {}@{} list_bin_paths took {}ms",
                 p.id(),

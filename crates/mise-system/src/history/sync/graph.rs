@@ -76,7 +76,37 @@ impl Heads {
                 {
                     remote.clone()
                 } else {
-                    repo.commit_tree(tree, vec![local, remote], "merge origin dotfiles")?
+                    let incoming = crate::history::checkpoint::describe_trees(
+                        repo,
+                        &repo.output_tree_of(local)?,
+                        tree,
+                    )?;
+                    let mut message = match incoming {
+                        Some(incoming) => format!("merge origin dotfiles: {incoming}"),
+                        None => "merge origin dotfiles".to_string(),
+                    };
+                    // both sides captured with one matcher and nothing left
+                    // out: the merge was too, so a pull that then writes
+                    // nothing can reuse it. A side that skipped or could not
+                    // read a path keeps the merge without a matcher, because
+                    // the merge does not carry those records and rollback
+                    // would otherwise treat the skipped files as untracked.
+                    let local_coverage = repo.read_meta(local)?.tree.coverage;
+                    let remote_coverage = repo.read_meta(remote)?.tree.coverage;
+                    let complete = |coverage: &crate::history::store::Coverage| {
+                        coverage.omitted.is_empty()
+                            && coverage.incomplete.is_empty()
+                            && coverage.nested.is_empty()
+                    };
+                    if let Some(matcher) = local_coverage.matcher
+                        && remote_coverage.matcher == Some(matcher)
+                        && complete(&local_coverage)
+                        && complete(&remote_coverage)
+                    {
+                        message.push('\n');
+                        message.push_str(&HistoryRepo::matcher_trailer(matcher));
+                    }
+                    repo.commit_tree(tree, vec![local, remote], &message)?
                 }
             }
         };
@@ -233,6 +263,14 @@ mod tests {
         assert_eq!(history.len(), 4);
         assert!(history.contains(&local) && history.contains(&remote) && history.contains(&base));
         assert_eq!(repo.output_tree_of(&candidate.commit).unwrap(), merged);
+        assert_eq!(
+            repo.history_messages()
+                .unwrap()
+                .iter()
+                .find(|(commit, _)| *commit == candidate.commit)
+                .and_then(|(_, message)| message.lines().next()),
+            Some("merge origin dotfiles: edited ~/.zshrc")
+        );
     }
 
     #[test]

@@ -21,7 +21,8 @@ mise bootstrap packages apply --manager brew-cask --dry-run
 mise bootstrap packages apply --manager brew-cask
 ```
 
-For a vendor download that has no cask, use
+For a vendor download that has no cask, or an app cask to install when the
+Homebrew prefix belongs to another user, use
 [`macos-app`](/bootstrap/packages/macos-app.html). For command-line formulae,
 use [`brew`](/bootstrap/packages/brew.html).
 
@@ -283,13 +284,18 @@ launch agent, stays in place. `--force` never removes a cask Homebrew installed,
 a cask with no mise receipt, an interrupted install, or files shared with
 another cask.
 
-Deleting a `brew-cask:` entry does not uninstall the cask until you prune.
+Deleting a `brew-cask:` entry leaves the cask installed. Run prune to remove
+eligible casks.
+
+Prune keeps casks installed from a `.pkg`, including with `--force`. Follow
+the vendor's uninstall instructions to remove the installed software.
 
 ## Troubleshooting
 
-| Symptom                                                | What to do                                                                                                       |
-| ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
-| `already exists and is not owned`                      | Remove the existing app and run `apply` again, set `adopt = true` if it is identical, or manage it outside mise. |
-| `cannot adopt ...: existing artifact is not identical` | The installed app is a different build. Remove it to install the cask's build, or drop the entry.                |
-| `unsupported artifact type`                            | mise cannot install this cask. Install it with Homebrew, or remove the entry.                                    |
-| An app lost its permissions after an upgrade           | Grant them again in System Settings under Privacy & Security.                                                    |
+| Symptom                                                | What to do                                                                                                                 |
+| ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
+| `already exists and is not owned`                      | Remove the existing app and run `apply` again, set `adopt = true` if it is identical, or manage it outside mise.           |
+| `cannot adopt ...: existing artifact is not identical` | The installed app is a different build. Remove it to install the cask's build, or drop the entry.                          |
+| `unsupported artifact type`                            | mise cannot install this cask. Install it with Homebrew, or remove the entry.                                              |
+| An app lost its permissions after an upgrade           | Grant them again in System Settings under Privacy & Security.                                                              |
+| `owned by ... mise will not change the ownership`      | The Homebrew prefix belongs to another user. Declare an app-only cask as `macos-app` with `cask`, or use that user's brew. |

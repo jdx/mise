@@ -29,10 +29,13 @@ fn xonsh_escape_sq(input: &str) -> Cow<'_, str> {
 
 fn xonsh_escape_char(ch: char) -> Option<&'static str> {
     match ch {
-        // escape ' \ ␤ (docs.python.org/3/reference/lexical_analysis.html#strings)
+        // escape ' \ ␤ (docs.python.org/3/reference/lexical_analysis.html#strings). A bare
+        // carriage return ends a line for Python too, and Python source cannot hold a NUL.
         '\'' => Some("\\'"),
         '\\' => Some("\\\\"),
         '\n' => Some("\\n"),
+        '\r' => Some("\\r"),
+        '\0' => Some("\\x00"),
         _ => None,
     }
 }
@@ -112,7 +115,7 @@ impl Shell for Xonsh {
             from xonsh.built_ins import XSH
             XSH.env['{k}'] = '{v}'
         "#,
-            k = shell_escape::unix::escape(k.into()), // todo: drop illegal chars, not escape?
+            k = xonsh_escape_sq(k),
             v = xonsh_escape_sq(v)
         )
     }
@@ -123,7 +126,7 @@ impl Shell for Xonsh {
             from xonsh.built_ins import XSH
             XSH.env['{k}'].add('{v}', front=True)
         "#,
-            k = shell_escape::unix::escape(k.into()),
+            k = xonsh_escape_sq(k),
             v = xonsh_escape_sq(v)
         )
     }
@@ -134,7 +137,7 @@ impl Shell for Xonsh {
             from xonsh.built_ins import XSH
             XSH.env.pop('{k}',None)
         "#,
-            k = shell_escape::unix::escape(k.into()) // todo: drop illegal chars, not escape?
+            k = xonsh_escape_sq(k)
         )
     }
 }
@@ -190,6 +193,32 @@ mod tests {
         assert_eq!(xonsh_escape_sq("foo'bar"), "foo\\'bar");
         assert_eq!(xonsh_escape_sq("foo\\bar"), "foo\\\\bar");
         assert_eq!(xonsh_escape_sq("foo\nbar"), "foo\\nbar");
+        assert_eq!(xonsh_escape_sq("foo\rbar"), "foo\\rbar");
+        assert_eq!(xonsh_escape_sq("foo\0bar"), "foo\\x00bar");
+    }
+
+    #[test]
+    fn a_name_is_escaped_as_a_python_string() {
+        let sh = Xonsh::default();
+        let name = r#"'+__import__("os").system("touch marker")+'\"#;
+        let k = r#"\'+__import__("os").system("touch marker")+\'\\"#;
+        let import = "from xonsh.built_ins import XSH\n";
+        assert_eq!(
+            sh.set_env(name, "1"),
+            format!("{import}XSH.env['{k}'] = '1'\n")
+        );
+        assert_eq!(
+            sh.prepend_env(name, "/dir"),
+            format!("{import}XSH.env['{k}'].add('/dir', front=True)\n")
+        );
+        assert_eq!(
+            sh.unset_env(name),
+            format!("{import}XSH.env.pop('{k}',None)\n")
+        );
+        assert_eq!(
+            sh.set_env("FOO_BAR", "1"),
+            format!("{import}XSH.env['FOO_BAR'] = '1'\n")
+        );
     }
 
     #[test]
