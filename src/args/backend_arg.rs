@@ -559,7 +559,9 @@ impl BackendArg {
         }
         let full = self.full();
         let name = split_bracketed_opts(&full).map_or(full.as_str(), |(name, _)| name);
-        name.contains(':').then(|| name.to_string())
+        // The identifier goes into an error message, so drop URL credentials.
+        name.contains(':')
+            .then(|| install_state::state_short(name).into_owned())
     }
 
     pub fn backend_type(&self) -> BackendType {

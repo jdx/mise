@@ -1737,6 +1737,17 @@ mod tests {
             err.to_string(),
             "node is set to backend 'bogus:owner/repo', which mise could not resolve"
         );
+        // The message must not repeat URL credentials.
+        let ba = BackendArg::new(
+            "node".to_string(),
+            Some("bogus:https://user:hunter2@example.com/tool".to_string()),
+        );
+        let Err(err) = ba.backend() else {
+            panic!("an unresolved backend has no backend");
+        };
+        let msg = err.to_string();
+        assert!(msg.contains("example.com/tool"), "{msg}");
+        assert!(!msg.contains("hunter2"), "{msg}");
     }
 
     fn create_test_backend_arg(tool: &str) -> Arc<BackendArg> {
