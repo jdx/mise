@@ -44,6 +44,16 @@ chmod +x mise-tasks/guarded
 assert_fail "mise run guarded" "failed to parse deny_net field in task header"
 rm mise-tasks/guarded
 
+# An allow list implies its deny, so a bad one is an error too.
+cat <<'EOF' >mise-tasks/guarded_allow
+#!/usr/bin/env bash
+#MISE allow_read="."
+echo "ran guarded_allow"
+EOF
+chmod +x mise-tasks/guarded_allow
+assert_fail "mise run guarded_allow" "failed to parse allow_read field in task header"
+rm mise-tasks/guarded_allow
+
 # cache.sandbox is a sandbox too, so a bad value in cache is an error as well.
 cat <<'EOF' >mise-tasks/guarded_cache
 #!/usr/bin/env bash
