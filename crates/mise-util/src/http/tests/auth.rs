@@ -474,7 +474,7 @@ fn credentials_stay_only_on_the_host_and_port_they_were_written_for() {
         ),
     ] {
         let original: Url = original.parse().unwrap();
-        let mut url: Url = rewritten.parse().unwrap();
+        let url: Url = rewritten.parse().unwrap();
         let mut headers = HeaderMap::new();
         headers.insert(
             AUTHORIZATION,
@@ -482,7 +482,7 @@ fn credentials_stay_only_on_the_host_and_port_they_were_written_for() {
         );
         headers.insert("x-api-key", HeaderValue::from_static("secret"));
 
-        clear_cross_host_credentials(&mut headers, &original, &mut url);
+        clear_cross_host_credentials(&mut headers, &original, &url);
 
         assert_eq!(
             headers.contains_key(AUTHORIZATION),
@@ -494,20 +494,18 @@ fn credentials_stay_only_on_the_host_and_port_they_were_written_for() {
             kept,
             "{original} -> {rewritten}"
         );
-        assert_eq!(
-            url.password().is_some(),
-            kept && original.password().is_some(),
-            "{original} -> {rewritten}"
-        );
     }
 }
 
+/// The login on a URL rewritten for another server is the one the rule wrote,
+/// since `apply_url_replacements` leaves the URL's own login behind, so it stays
+/// even when it equals the original URL's login.
 #[test]
-fn test_cross_host_replacement_clears_credentials_without_netrc() {
+fn test_cross_host_replacement_clears_headers_and_keeps_the_rule_login() {
     let original: Url = "https://user:password@public.example.com/file"
         .parse()
         .unwrap();
-    let mut redirected: Url = "https://user:password@mirror.internal/file"
+    let redirected: Url = "https://user:password@mirror.internal/file"
         .parse()
         .unwrap();
     let mut headers = HeaderMap::new();
@@ -515,13 +513,11 @@ fn test_cross_host_replacement_clears_credentials_without_netrc() {
     headers.insert("x-api-key", HeaderValue::from_static("secret"));
     headers.insert("x-request-id", HeaderValue::from_static("keep-me"));
 
-    clear_cross_host_credentials(&mut headers, &original, &mut redirected);
+    clear_cross_host_credentials(&mut headers, &original, &redirected);
 
     assert!(!headers.contains_key(AUTHORIZATION));
     assert!(!headers.contains_key("x-api-key"));
     assert_eq!(headers["x-request-id"], "keep-me");
-    assert!(redirected.username().is_empty());
-    assert!(redirected.password().is_none());
 }
 
 #[test]
@@ -729,10 +725,10 @@ fn forward_rules_keep_only_listed_headers_on_listed_https_hosts() {
 /// to `sent_to` and then redirected to the host a forward rule names.
 fn redirected_headers(headers: &HeaderMap, sent_to: &str) -> HeaderMap {
     let original = Url::parse("https://api.example.com/release").unwrap();
-    let mut url = Url::parse(sent_to).unwrap();
+    let url = Url::parse(sent_to).unwrap();
     let (headers, forward_rules) = split_forward_rules(headers);
     let mut final_headers = headers.clone();
-    clear_cross_host_credentials(&mut final_headers, &original, &mut url);
+    clear_cross_host_credentials(&mut final_headers, &original, &url);
     let redirect_rules = forward_rules.scoped_to(&final_headers);
     let mut final_headers =
         apply_netrc_credentials(final_headers, &original, &url, basic_netrc_headers());

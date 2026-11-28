@@ -365,6 +365,88 @@ fn test_replacement_credentials_are_found_in_every_spelling_of_the_server() {
     }
 }
 
+/// Without a special scheme, only `//` introduces an authority, so a replacement
+/// with more slashes or a backslash there names no server for its login, and
+/// would put it in the query or path of whatever URL the key matched. Such a
+/// rule is refused for every URL; other rules still apply.
+#[test]
+fn test_replacements_that_name_no_server_are_refused() {
+    for replacement in [
+        "///user:secret@mirror.example.com/",
+        "////user:secret@mirror.example.com/",
+        r"\\user:secret@mirror.example.com/",
+        r"/\user:secret@mirror.example.com/",
+        r"\user:secret@mirror.example.com/",
+        "/\t//user:secret@mirror.example.com/",
+        "git:///user:secret@mirror.example.com/",
+    ] {
+        let mut rules = IndexMap::new();
+        rules.insert("github.com".to_string(), replacement.to_string());
+        rules.insert("other.example".to_string(), "kept.example".to_string());
+        for url in [
+            "https://evil.example/?u=github.com",
+            "https://github.com/owner/repo",
+        ] {
+            assert_eq!(rewritten(&rules, url), url, "{replacement:?}");
+        }
+        assert_eq!(
+            rewritten(&rules, "https://other.example/?u=github.com"),
+            "https://kept.example/?u=github.com",
+            "{replacement:?}"
+        );
+    }
+
+    // A path, a `//host` and a host with a port are still replacements.
+    for (key, replacement, url, expected) in [
+        (
+            "/old/",
+            "/new/",
+            "https://files.example.com/old/a",
+            "https://files.example.com/new/a",
+        ),
+        (
+            "//github.com/",
+            "//mirror.example.com/",
+            "https://github.com/a",
+            "https://mirror.example.com/a",
+        ),
+        (
+            "github.com",
+            "mirror.example.com:8443",
+            "https://github.com/a",
+            "https://mirror.example.com:8443/a",
+        ),
+    ] {
+        let mut rules = IndexMap::new();
+        rules.insert(key.to_string(), replacement.to_string());
+        assert_eq!(rewritten(&rules, url), expected, "{replacement}");
+    }
+}
+
+/// A rule that writes a login for its mirror keeps it, even when the URL had
+/// the same login for its own server.
+#[test]
+fn test_a_rule_login_survives_credential_scoping() {
+    let mut rules = IndexMap::new();
+    rules.insert(
+        "https://github.com/".to_string(),
+        "https://user:pw@mirror.example.com/".to_string(),
+    );
+    with_test_settings(rules, || {
+        let original = Url::parse("https://user:pw@github.com/file").unwrap();
+        let mut url = original.clone();
+        apply_url_replacements(&mut url);
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            reqwest::header::AUTHORIZATION,
+            reqwest::header::HeaderValue::from_static("Bearer github-token"),
+        );
+        clear_cross_host_credentials(&mut headers, &original, &url);
+        assert_eq!(url.as_str(), "https://user:pw@mirror.example.com/file");
+        assert!(headers.is_empty());
+    });
+}
+
 #[test]
 fn test_rules_never_move_a_url_login_into_the_rewritten_url() {
     // The documented subdomain-to-path rule: `[^./]+` would also match

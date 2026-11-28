@@ -101,14 +101,10 @@ fn routed_api_url(
     };
     let original = url.clone();
     crate::http::apply_url_replacements(&mut url);
-    // mise-sigstore builds the Authorization header itself, so the token is scoped here;
-    // `clear_cross_host_credentials` only has inherited userinfo left to strip.
+    // mise-sigstore builds the Authorization header itself, so the token is scoped here,
+    // as `clear_cross_host_credentials` scopes the headers of a mise request. The
+    // rewrite already left the URL's own login behind on another server.
     let token = token.filter(|_| crate::http::same_server(&original, &url));
-    crate::http::clear_cross_host_credentials(
-        &mut reqwest::header::HeaderMap::new(),
-        &original,
-        &mut url,
-    );
     crate::http::ensure_secure_url_replacement(&original, &url, token.is_some())
         .map_err(|err| AttestationError::Verification(err.to_string()))?;
     if url == original {

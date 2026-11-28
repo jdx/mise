@@ -507,6 +507,24 @@ fn prune_shared_downloads(
     });
 }
 
+/// The [`INVOCATION_DOWNLOADS`] entry for a download through `client`. The tool
+/// scope is part of it: a download made for a tool from global config may have
+/// carried netrc credentials that the work of a project tool does not get
+/// ([`crate::untrusted_hosts::netrc_denied`]), so that work must not be handed
+/// its result.
+fn invocation_download_key(
+    client: &Client,
+    url: &Url,
+    headers: &HeaderMap,
+    max_bytes: Option<u64>,
+) -> String {
+    format!(
+        "{client:p}:{}:{max_bytes:?}:{:?}",
+        download_request_hash(url, headers),
+        crate::untrusted_hosts::current_tool_scope()
+    )
+}
+
 /// Own temporary shared artifacts for this command, including cancellation paths.
 pub struct InvocationDownloads;
 
@@ -1614,11 +1632,7 @@ impl Client {
     ) -> Result<DownloadFileMetadata> {
         let url = url.into_url()?;
         if Settings::get().generate_lockfiles() {
-            let key = format!(
-                "{:p}:{}:{max_bytes:?}",
-                self,
-                download_request_hash(&url, headers)
-            );
+            let key = invocation_download_key(self, &url, headers, max_bytes);
             let shared = INVOCATION_DOWNLOADS
                 .lock()
                 .unwrap()
@@ -2553,7 +2567,7 @@ impl Client {
         // (replace a public URL with a private mirror authenticated via
         // netrc) without clobbering forge tokens on un-redirected requests.
         let mut final_headers = headers.clone();
-        clear_cross_host_credentials(&mut final_headers, &original_url, &mut url);
+        clear_cross_host_credentials(&mut final_headers, &original_url, &url);
         // A redirect follows only the rules whose header survived host scoping, so a
         // netrc login added below for a replacement host never inherits a rule written
         // for the original host's header. Retries re-attach the full rules because they
@@ -3493,9 +3507,14 @@ pub fn same_server(original_url: &Url, url: &Url) -> bool {
     url.host() == original_url.host() && url.port() == original_url.port()
 }
 
-/// Drop credentials scoped to the original server ([`same_server`]) before
-/// contacting a replacement one.
-pub fn clear_cross_host_credentials(headers: &mut HeaderMap, original_url: &Url, url: &mut Url) {
+/// Drop the credential headers scoped to the original server ([`same_server`])
+/// before contacting a replacement one.
+///
+/// The userinfo of `url` is left alone. [`apply_url_replacements`] never carries
+/// a URL's own login to another server, so a login on a rewritten URL for
+/// another server is one the rule wrote, for the server it names, even when it
+/// is the same login the original URL had.
+pub fn clear_cross_host_credentials(headers: &mut HeaderMap, original_url: &Url, url: &Url) {
     if same_server(original_url, url) {
         return;
     }
@@ -3506,16 +3525,6 @@ pub fn clear_cross_host_credentials(headers: &mut HeaderMap, original_url: &Url,
         .collect::<Vec<_>>();
     for name in credential_headers {
         headers.remove(name);
-    }
-    let inherited_userinfo = (!original_url.username().is_empty()
-        || original_url.password().is_some())
-        && url.username() == original_url.username()
-        && url.password() == original_url.password();
-    if inherited_userinfo {
-        url.set_password(None)
-            .expect("HTTP URLs support clearing passwords");
-        url.set_username("")
-            .expect("HTTP URLs support clearing usernames");
     }
 }
 
@@ -3646,13 +3655,7 @@ fn github_relay_socket(url: &Url) -> Option<std::ffi::OsString> {
 /// both name `host`; other schemes need `//`.
 fn split_replacement(replacement: &str) -> (Option<&str>, &str, &str) {
     const AUTHORITY_END: [char; 4] = ['/', '\\', '?', '#'];
-    let special = replacement.split_once(':').filter(|(scheme, rest)| {
-        matches!(
-            scheme.to_ascii_lowercase().as_str(),
-            "http" | "https" | "ws" | "wss" | "ftp"
-        ) && rest.starts_with(['/', '\\'])
-    });
-    let (scheme, rest) = match (special, replacement.split_once("//")) {
+    let (scheme, rest) = match (special_scheme(replacement), replacement.split_once("//")) {
         (Some((scheme, rest)), _) => (Some(scheme), rest.trim_start_matches(['/', '\\'])),
         (None, Some((scheme, rest)))
             if !scheme.contains(AUTHORITY_END) && !scheme.contains('@') =>
@@ -3663,6 +3666,44 @@ fn split_replacement(replacement: &str) -> (Option<&str>, &str, &str) {
     };
     let (authority, rest) = rest.split_at(rest.find(AUTHORITY_END).unwrap_or(rest.len()));
     (scheme, authority, rest)
+}
+
+/// The scheme and the rest of a replacement that starts with an `http`, `https`,
+/// `ws`, `wss` or `ftp` scheme followed by `/` or `\`, which the URL parser reads
+/// the authority of after any run of those.
+fn special_scheme(replacement: &str) -> Option<(&str, &str)> {
+    replacement.split_once(':').filter(|(scheme, rest)| {
+        matches!(
+            scheme.to_ascii_lowercase().as_str(),
+            "http" | "https" | "ws" | "wss" | "ftp"
+        ) && rest.starts_with(['/', '\\'])
+    })
+}
+
+/// Whether a replacement that does not start with a special scheme
+/// ([`special_scheme`]) puts more than `//`, or a backslash, in front of where
+/// its authority would be: `///user:password@host/`, `\\user:password@host/`,
+/// `git:///user:password@host/`. There is no authority there, so mise cannot
+/// tell which server a login in it is for ([`replacement_credentials`]), and the
+/// text would land in whatever part of the URL the key matched, such as the
+/// query of a request to another host. Such a rule is refused.
+fn ambiguous_replacement_authority(replacement: &str) -> bool {
+    let parsed = without_url_tabs(trim_url_start(replacement));
+    if special_scheme(&parsed).is_some() {
+        return false;
+    }
+    let is_scheme = |scheme: &str| {
+        scheme.starts_with(|c: char| c.is_ascii_alphabetic())
+            && scheme
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'))
+    };
+    let rest = match parsed.split_once(':') {
+        Some((scheme, rest)) if is_scheme(scheme) => rest,
+        _ => &parsed,
+    };
+    let lead = &rest[..rest.len() - rest.trim_start_matches(['/', '\\']).len()];
+    lead.len() > 2 || lead.contains('\\')
 }
 
 /// The front of a `url_replacements` replacement that carries credentials, up
@@ -3771,7 +3812,9 @@ fn restore_same_host_userinfo(original: &Url, rewritten: &mut Url) {
 /// when the rewrite keeps the host ([`restore_same_host_userinfo`]); a rule
 /// that writes credentials of its own applies only where they end up as the
 /// userinfo of the server it names ([`credentials_in_place`]), and otherwise is
-/// skipped for this URL so later rules are tried.
+/// skipped for this URL so later rules are tried. A rule whose replacement
+/// names no server where its authority would be is skipped for every URL
+/// ([`ambiguous_replacement_authority`]).
 pub fn apply_url_replacements(url: &mut Url) {
     let settings = Settings::get();
     if let Some(replacements) = &settings.url_replacements {
@@ -3779,6 +3822,14 @@ pub fn apply_url_replacements(url: &mut Url) {
         let url_string = without_userinfo(url).to_string();
 
         for (pattern, replacement) in replacements {
+            if ambiguous_replacement_authority(replacement) {
+                warn_once!(
+                    "Ignoring URL replacement for '{pattern}': its replacement starts with more \
+                     than '//' or with a backslash, so it names no server; write it as \
+                     'https://host/...' or 'host/...'"
+                );
+                continue;
+            }
             if let Some(pattern_without_prefix) = pattern.strip_prefix("regex:") {
                 // Regex replacement
                 if let Ok(regex) = Regex::new(pattern_without_prefix) {

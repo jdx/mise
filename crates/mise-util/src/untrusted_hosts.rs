@@ -227,6 +227,14 @@ pub fn inherit_trusted_scope<F: Future>(future: F) -> impl Future<Output = F::Ou
     }
 }
 
+/// The tool scope this task runs in: `Some(true)` for a tool from global or
+/// system config, `Some(false)` for one from project config, `None` outside any
+/// tool's work. Which credentials a request carries depends on it, so a result
+/// shared between requests (a download cached for the invocation) is keyed on it.
+pub fn current_tool_scope() -> Option<bool> {
+    TRUSTED_TOOL.try_with(|trusted| *trusted).ok()
+}
+
 /// Whether netrc credentials must not be sent with a request for `url`. The
 /// work for a tool that global or system config declares keeps them. The work
 /// for a tool that project config declares gets none, whatever the host, since

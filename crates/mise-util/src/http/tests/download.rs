@@ -566,3 +566,22 @@ async fn test_download_retries_under_prefer_offline() {
     assert_eq!(std::fs::read(&destination).unwrap(), b"helloworld");
     assert_eq!(count.load(Ordering::SeqCst), 2);
 }
+
+/// A download made for one tool scope is not handed to the work of another: a
+/// global tool's request may carry netrc credentials that a project tool's does not.
+#[tokio::test(flavor = "current_thread")]
+async fn test_invocation_downloads_are_kept_apart_by_tool_scope() {
+    let client = Client::new(Duration::from_secs(2), ClientKind::Http).unwrap();
+    let url = Url::parse("https://files.example.com/tool.tar.gz").unwrap();
+    let key = || invocation_download_key(&client, &url, &HeaderMap::new(), None);
+    let outside = key();
+    let trusted = crate::untrusted_hosts::with_tool_scope(true, async { key() }).await;
+    let untrusted = crate::untrusted_hosts::with_tool_scope(false, async { key() }).await;
+    assert_ne!(trusted, untrusted);
+    assert_ne!(outside, untrusted);
+    assert_ne!(outside, trusted);
+    assert_eq!(
+        untrusted,
+        crate::untrusted_hosts::with_tool_scope(false, async { key() }).await
+    );
+}
