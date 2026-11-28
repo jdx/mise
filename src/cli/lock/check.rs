@@ -551,6 +551,14 @@ impl Lock {
                         backend
                             .locked_entry_error(&tv, &key, locked_platform)
                             .or_else(|| {
+                                backend.locked_dependencies_error(
+                                    config,
+                                    &tv,
+                                    &key,
+                                    locked_platform,
+                                )
+                            })
+                            .or_else(|| {
                                 backend.locked_artifacts_error(&tv, &target, locked_platform)
                             })
                     })

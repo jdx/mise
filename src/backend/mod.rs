@@ -3939,6 +3939,22 @@ pub trait Backend: Debug + Send + Sync {
         None
     }
 
+    /// Why `--locked` would refuse the dependency packages the lockfile records
+    /// beside `locked_platform`, the entry of `tv` on `platform_key`, after
+    /// [`Self::locked_entry_error`] accepted its own artifact. Only a backend
+    /// that downloads its dependencies as separately locked packages has
+    /// anything to say. `mise install --locked` refuses with this error before
+    /// downloading anything, and `mise lock --check` reports it.
+    fn locked_dependencies_error(
+        &self,
+        _config: &Config,
+        _tv: &ToolVersion,
+        _platform_key: &str,
+        _locked_platform: Option<&PlatformInfo>,
+    ) -> Option<eyre::Report> {
+        None
+    }
+
     /// Why `--locked` would refuse the dependency graph the lockfile records,
     /// or should record, for `tv`. By default that is a sidecar that is
     /// missing, unreadable or edited since its digest was recorded. A backend
@@ -6090,8 +6106,12 @@ pub trait Backend: Debug + Send + Sync {
                 );
             }
             let platform_key = self.get_platform_key_for(&tv);
-            if let Some(err) =
-                self.locked_entry_error(&tv, &platform_key, tv.lock_platforms.get(&platform_key))
+            let locked_platform = tv.lock_platforms.get(&platform_key);
+            if let Some(err) = self
+                .locked_entry_error(&tv, &platform_key, locked_platform)
+                .or_else(|| {
+                    self.locked_dependencies_error(&ctx.config, &tv, &platform_key, locked_platform)
+                })
             {
                 return Err(err);
             }

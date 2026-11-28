@@ -420,6 +420,40 @@ fn can_reuse(info: &PlatformInfo, version: &str) -> bool {
         && !Settings::get().force_provenance_verify()
 }
 
+/// A conda entry is reused only while its own checksum is a full digest and every
+/// `[conda-packages]` entry it names is in the lockfile under a key that names its
+/// channel, has a checksum that can be verified and may be installed with it; otherwise the tool is resolved again, which rewrites its
+/// dependencies under keys that name their channel, with the checksums their channel
+/// declares.
+fn conda_deps_reusable(previous: &Lockfile, platform: &str, info: &PlatformInfo) -> bool {
+    let Some(deps) = &info.conda_deps else {
+        return true;
+    };
+    let Some(main_url) = info.url.as_deref() else {
+        return false;
+    };
+    // The tool's own package is verified against its whole digest when installed.
+    if !info
+        .checksum
+        .as_deref()
+        .is_some_and(crate::hash::is_well_formed_checksum)
+    {
+        return false;
+    }
+    deps.iter().all(|key| {
+        key.contains('@')
+            && previous
+                .get_conda_package(platform, key)
+                .is_some_and(|package| {
+                    package
+                        .checksum
+                        .as_deref()
+                        .is_some_and(crate::hash::is_well_formed_checksum)
+                        && CondaBackend::check_locked_dependency(key, package, main_url).is_ok()
+                })
+    })
+}
+
 /// How the target platforms were chosen. Platforms the user named are replaced
 /// individually and warn when a tool has no build for one of them.
 pub enum PlatformSelection {
@@ -541,11 +575,22 @@ pub async fn generate(
             })
             .and_then(|actual| {
                 let backend = actual.backend().ok()?;
-                (platform.to_key() == backend.get_platform_key())
-                    .then(|| actual.lock_platforms.get(&platform.to_key()).cloned())
-                    .flatten()
+                let key = platform.to_key();
+                if key != backend.get_platform_key() {
+                    return None;
+                }
+                let info = actual.lock_platforms.get(&key)?.clone();
+                // The dependency packages the install verified, so the entry's
+                // `conda_deps` names rows this lockfile holds.
+                let conda = actual
+                    .conda_packages
+                    .iter()
+                    .filter(|((package_platform, _), _)| *package_platform == key)
+                    .map(|((_, basename), package)| (basename.clone(), package.clone()))
+                    .collect::<BTreeMap<_, _>>();
+                Some((info, conda))
             })
-            .filter(|info| {
+            .filter(|(info, _)| {
                 info.url.is_some() || info.install.is_some() || info.conda_deps.is_some()
             });
         let previous_info = previous.tools_for(&ba.short).and_then(|entries| {
@@ -567,9 +612,9 @@ pub async fn generate(
         }
         // Complete cached artifacts need neither I/O nor a spawned task. Keep them
         // in the same ordered result stream so all downgrade checks still run.
-        let reusable = previous_info
-            .as_ref()
-            .filter(|info| can_reuse(info, &tv.version));
+        let reusable = previous_info.as_ref().filter(|info| {
+            can_reuse(info, &tv.version) && conda_deps_reusable(previous, &platform.to_key(), info)
+        });
         if actual.is_none()
             && let Some(info) = reusable
         {
@@ -593,7 +638,7 @@ pub async fn generate(
         tasks.spawn(async move {
             let _permit = semaphore.acquire().await?;
             let tool = ba.clone();
-            let mut resolution = if let Some(info) = actual {
+            let mut resolution = if let Some((info, conda)) = actual {
                 (
                     crate::toolset::install_state::state_short(&ba.short).into_owned(),
                     tv.version.clone(),
@@ -601,7 +646,7 @@ pub async fn generate(
                     platform,
                     Ok(info),
                     options,
-                    BTreeMap::new(),
+                    conda,
                     LockResolutionStatus::Optional,
                 )
             } else {
@@ -650,7 +695,7 @@ pub async fn generate(
     resolved.sort_by_key(|(ordinal, _, _)| *ordinal);
     let mut unsupported = crate::lockfile::UnsupportedPlatforms::new(platform_selection.named());
     for (_, specifier, resolution) in resolved {
-        let (short, version, backend, platform, info, options, conda, status) = resolution;
+        let (short, version, backend, platform, info, options, mut conda, status) = resolution;
         if status == LockResolutionStatus::Unsupported {
             unsupported.record(&short, &version, &platform.to_key());
             candidate.set_unsupported_platform(
@@ -689,6 +734,11 @@ pub async fn generate(
                 })?;
                 carry_forge_ids(old, &mut info);
             }
+        }
+        keep_stronger_conda_pins(&candidate, &platform.to_key(), &mut conda);
+        if let Some(error) = conda_pin_conflict(&candidate, &platform.to_key(), &conda) {
+            report.abandon();
+            bail!("{error} ({short}@{version} on {})", platform.to_key());
         }
         if let Some(error) = check_single_tool_provenance(
             previous.tools_for(&short).map(Vec::as_slice),
@@ -1066,6 +1116,77 @@ fn slsa_signer_hint(old: &PlatformInfo, new: &PlatformInfo, backend: &str) -> &'
          provenance can be verified and recorded again"
     } else {
         ""
+    }
+}
+
+/// Why the conda dependency rows `conda`, from resolving one tool on `platform`, cannot
+/// go into the shared `conda-packages` section: a row there, from the previous lockfile
+/// or from another tool resolved in this run, pins a different checksum. Rows are keyed
+/// by file name and channel, and a channel's file does not change, so the channel now
+/// serves other bytes under the same name. Replacing the row would change what every
+/// other tool that names it installs, whichever order the tools are written in.
+fn conda_pin_conflict(
+    candidate: &Lockfile,
+    platform: &str,
+    conda: &BTreeMap<String, crate::backend::conda::CondaPackageInfo>,
+) -> Option<String> {
+    for (key, package) in conda {
+        let Some(existing) = candidate.get_conda_package(platform, key) else {
+            continue;
+        };
+        let (Some(old), Some(new)) = (&existing.checksum, &package.checksum) else {
+            continue;
+        };
+        let algorithm = |checksum: &str| {
+            checksum
+                .split_once(':')
+                .map(|(algorithm, _)| algorithm.to_ascii_lowercase())
+        };
+        // A malformed checksum pins nothing: it is what `mise lock` repairs.
+        if !crate::hash::is_well_formed_checksum(old)
+            || old.eq_ignore_ascii_case(new)
+            || algorithm(old) != algorithm(new)
+        {
+            continue;
+        }
+        return Some(format!(
+            "the conda package {key} has a different checksum than mise.lock pins for it: {new} instead of {old}. Its channel serves other bytes under the same name; remove its row from mise.lock to accept them"
+        ));
+    }
+    None
+}
+
+/// Keep a shared row's SHA-256 pin when the channel now publishes only a weaker
+/// checksum (MD5) for the same file: replacing it would let every tool that names
+/// the row accept bytes the old pin refuses. The file's name and channel are the
+/// same, so the bytes the SHA-256 pins are still the ones to install, and an install
+/// checks them against it.
+fn keep_stronger_conda_pins(
+    candidate: &Lockfile,
+    platform: &str,
+    conda: &mut BTreeMap<String, crate::backend::conda::CondaPackageInfo>,
+) {
+    let is_sha256 = |checksum: &str| {
+        checksum
+            .split_once(':')
+            .is_some_and(|(algorithm, _)| algorithm.eq_ignore_ascii_case("sha256"))
+    };
+    for (key, package) in conda.iter_mut() {
+        let Some(old) = candidate
+            .get_conda_package(platform, key)
+            .and_then(|existing| existing.checksum.as_deref())
+        else {
+            continue;
+        };
+        if is_sha256(old)
+            && crate::hash::is_well_formed_checksum(old)
+            && package
+                .checksum
+                .as_deref()
+                .is_none_or(|new| !is_sha256(new))
+        {
+            package.checksum = Some(old.to_string());
+        }
     }
 }
 
@@ -1502,6 +1623,77 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn installed_conda_tool_records_its_dependency_packages() {
+        crate::backend::load_tools().await.unwrap();
+        let ba = BackendArg::new("conda:fixture".into(), None);
+        let request = ToolRequest::new(Arc::new(ba.clone()), "1.0", ToolSource::Argument).unwrap();
+        let mut actual = ToolVersion::new(request, "1.0".into());
+        let platform = Platform::current();
+        let key = platform.to_key();
+        let dep = "zlib-1.3.1-h_2@0123456789abcdef0123456789abcdef".to_string();
+        actual.lock_platforms.insert(
+            key.clone(),
+            PlatformInfo {
+                url: Some("https://example.invalid/fixture-1.0-0.conda".into()),
+                checksum: Some(format!("sha256:{}", "a".repeat(64))),
+                conda_deps: Some(vec![dep.clone()]),
+                ..Default::default()
+            },
+        );
+        let row = crate::backend::conda::CondaPackageInfo {
+            url: "https://example.invalid/zlib-1.3.1-h_2.conda".into(),
+            checksum: Some(format!("sha256:{}", "b".repeat(64))),
+        };
+        actual
+            .conda_packages
+            .insert((key.clone(), dep.clone()), row.clone());
+        let generated = generate(
+            &Lockfile::default(),
+            &[(ba, actual.clone())],
+            std::slice::from_ref(&platform),
+            false,
+            PlatformSelection::Default,
+            1,
+            &[actual],
+        )
+        .await
+        .unwrap();
+        let recorded = generated.get_conda_package(&key, &dep).unwrap();
+        assert_eq!(recorded.url, row.url);
+        assert_eq!(recorded.checksum, row.checksum);
+    }
+
+    #[test]
+    fn conda_pin_conflict_refuses_a_new_checksum_for_a_pinned_row() {
+        let platform = "linux-x64";
+        let dep = "zlib-1.3.1-h_2@0123456789abcdef0123456789abcdef".to_string();
+        let row = |checksum: String| crate::backend::conda::CondaPackageInfo {
+            url: "https://conda.example/forge/linux-64/zlib-1.3.1-h_2.conda".into(),
+            checksum: Some(checksum),
+        };
+        let sha = |hex: &str| format!("sha256:{}", hex.repeat(64));
+        let mut candidate = Lockfile::default();
+        let incoming = BTreeMap::from([(dep.clone(), row(sha("b")))]);
+        assert!(conda_pin_conflict(&candidate, platform, &incoming).is_none());
+        candidate.set_conda_package(platform, &dep, row(sha("a")));
+        let error = conda_pin_conflict(&candidate, platform, &incoming).unwrap();
+        assert!(error.contains(&dep), "{error}");
+        assert!(!error.contains("conda.example"), "{error}");
+        // The same pin, in either case, or one in another algorithm, is no conflict.
+        for checksum in [sha("a"), sha("A"), format!("md5:{}", "c".repeat(32))] {
+            let same = BTreeMap::from([(dep.clone(), row(checksum))]);
+            assert!(conda_pin_conflict(&candidate, platform, &same).is_none());
+        }
+        // A weaker checksum for a SHA-256 row keeps the SHA-256 pin.
+        let mut weaker = BTreeMap::from([(dep.clone(), row(format!("md5:{}", "c".repeat(32))))]);
+        keep_stronger_conda_pins(&candidate, platform, &mut weaker);
+        assert_eq!(weaker[&dep].checksum.as_deref(), Some(sha("a").as_str()));
+        // A malformed pin is repaired, not defended.
+        candidate.set_conda_package(platform, &dep, row("sha256:abc".into()));
+        assert!(conda_pin_conflict(&candidate, platform, &incoming).is_none());
+    }
+
+    #[tokio::test]
     async fn unsupported_target_is_recorded_without_an_empty_entry() {
         crate::backend::load_tools().await.unwrap();
         let generated = generate(
@@ -1744,6 +1936,60 @@ mod tests {
             });
         assert!(can_reuse(&info, "2.1.17"));
         assert!(!can_reuse(&info, "2.2.2"));
+    }
+
+    /// A conda entry whose dependency is missing, comes from another channel, has a
+    /// checksum that cannot be verified or a key without its channel is resolved again
+    /// rather than reused.
+    #[test]
+    fn conda_entry_with_a_dependency_from_another_channel_is_not_reusable() {
+        let forge = "https://conda.anaconda.org/conda-forge/linux-64";
+        let dep_url = format!("{forge}/zlib-1.3.1-h_2.conda");
+        let tagged = format!("zlib-1.3.1-h_2@{}", CondaBackend::channel_tag(&dep_url));
+        let bare = "zlib-1.3.1-h_2";
+        let info_with = |key: &str| PlatformInfo {
+            url: Some(format!("{forge}/tool-1.0-h_0.conda")),
+            checksum: Some(format!("sha256:{}", "a".repeat(64))),
+            conda_deps: Some(vec![key.to_string()]),
+            ..Default::default()
+        };
+        let sha256 = format!("sha256:{}", "b".repeat(64));
+        let lockfile_with = |key: &str, url: &str, checksum: Option<&str>| {
+            let mut lockfile = Lockfile::default();
+            let package = crate::lockfile::CondaPackageInfo {
+                url: url.to_string(),
+                checksum: checksum.map(str::to_string),
+            };
+            lockfile.set_conda_package("linux-x64", key, package);
+            lockfile
+        };
+        let platform = "linux-x64";
+        let info = info_with(&tagged);
+        let same = lockfile_with(&tagged, &dep_url, Some(&sha256));
+        assert!(conda_deps_reusable(&same, platform, &info));
+        for checksum in [None, Some("crc32:00"), Some("sha256:"), Some("sha256:00")] {
+            let unverified = lockfile_with(&tagged, &dep_url, checksum);
+            assert!(
+                !conda_deps_reusable(&unverified, platform, &info),
+                "{checksum:?}"
+            );
+        }
+        let evil = "https://conda.example.com/evil/linux-64/zlib-1.3.1-h_2.conda";
+        let other = lockfile_with(&tagged, evil, Some(&sha256));
+        assert!(!conda_deps_reusable(&other, platform, &info));
+        assert!(!conda_deps_reusable(&Lockfile::default(), platform, &info));
+        let untagged = lockfile_with(bare, &dep_url, Some(&sha256));
+        assert!(!conda_deps_reusable(&untagged, platform, &info_with(bare)));
+        for main_checksum in [None, Some("sha256:"), Some("sha256:00"), Some("md5:zz")] {
+            let info = PlatformInfo {
+                checksum: main_checksum.map(str::to_string),
+                ..info_with(&tagged)
+            };
+            assert!(
+                !conda_deps_reusable(&same, platform, &info),
+                "{main_checksum:?}"
+            );
+        }
     }
 
     #[test]

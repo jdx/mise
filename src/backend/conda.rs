@@ -16,6 +16,9 @@ use eyre::{Result, WrapErr};
 use http::Extensions;
 use itertools::Itertools;
 use rattler::install::{InstallDriver, InstallOptions, PythonInfo, link_package};
+use rattler_conda_types::package::{
+    IndexJson, LinkJson, NoArchLinks, PackageFile, PathType, PathsJson, PythonEntryPoints,
+};
 use rattler_conda_types::{
     Channel, ChannelConfig, GenericVirtualPackage, MatchSpec, PackageRecord, ParseStrictness,
     RepoDataRecord, Subdir as CondaPlatform, prefix::Prefix, prefix_record::PathsEntry,
@@ -27,6 +30,7 @@ use rattler_solve::{
 use rattler_virtual_packages::{VirtualPackageOverrides, VirtualPackages};
 use reqwest_middleware::{ClientBuilder as MiddlewareClientBuilder, Middleware, Next};
 use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fmt::Debug;
 use std::path::{Path, PathBuf};
@@ -34,12 +38,25 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use versions::Versioning;
 
+/// Where rattler links the files of a package whose path an earlier package already owns,
+/// as `__clobbers__/<package name>/<path>` (its `CLOBBERS_DIR_NAME`, which is not exported).
+const CLOBBERS_DIR: &str = "__clobbers__";
+
 /// Conda package info stored in the shared conda-packages section of lockfiles
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CondaPackageInfo {
     pub url: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub checksum: Option<String>,
+}
+
+/// A downloaded package archive and the checksum it was verified against, or, for a
+/// package its channel publishes none for, the sha256 of this copy. An archive with no
+/// published checksum lives in a directory of its own, removed when this is dropped.
+struct DownloadedArchive {
+    path: PathBuf,
+    checksum: Option<String>,
+    _private_dir: Option<tempfile::TempDir>,
 }
 
 #[derive(Debug)]
@@ -201,10 +218,54 @@ impl CondaBackend {
         Self::dedup_records_by_identifier(repodata.iter().flat_map(|rd| rd.iter()))
     }
 
-    /// Fetch repodata and solve the conda environment for the given specs and platform.
+    /// When the channel released `record`: when it first listed it, or else the
+    /// build start the builder recorded. A record with neither, or with a
+    /// non-positive one, has no release date.
+    fn record_released_at(record: &PackageRecord) -> Option<jiff::Timestamp> {
+        record
+            .indexed_timestamp
+            .or(record.timestamp)
+            // rattler hands back a jiff 0.2 timestamp; both versions span the same range.
+            .and_then(|t| jiff::Timestamp::from_nanosecond(t.jiff_timestamp().as_nanosecond()).ok())
+            .filter(|t| t.as_second() > 0)
+    }
+
+    /// The records the solver may choose from under the `minimum_release_age`
+    /// cutoff `before`: none released after it, whether a build of the tool or of
+    /// a dependency. A record with no release date is kept, as it is when versions
+    /// are listed.
+    fn released_before(
+        records: Vec<RepoDataRecord>,
+        before: Option<jiff::Timestamp>,
+    ) -> Vec<RepoDataRecord> {
+        let Some(before) = before else {
+            return records;
+        };
+        records
+            .into_iter()
+            .filter(|record| {
+                Self::record_released_at(&record.package_record).is_none_or(|t| t <= before)
+            })
+            .collect()
+    }
+
+    /// Fetch repodata and solve the conda environment for the given specs and platform,
+    /// choosing only from packages released by `before` (the `minimum_release_age` cutoff).
     async fn solve_packages(
         &self,
         specs: Vec<MatchSpec>,
+        platform: CondaPlatform,
+        opts: CondaOptions<'_>,
+        before: Option<jiff::Timestamp>,
+    ) -> Result<Vec<RepoDataRecord>> {
+        let records = Self::fetch_records(&specs, platform, opts).await?;
+        Self::solve_records(records, specs, platform, before)
+    }
+
+    /// Fetch the channel's repodata for `specs` and their dependencies on
+    /// `platform` and noarch: the records [`Self::solve_records`] chooses from.
+    async fn fetch_records(
+        specs: &[MatchSpec],
         platform: CondaPlatform,
         opts: CondaOptions<'_>,
     ) -> Result<Vec<RepoDataRecord>> {
@@ -212,13 +273,42 @@ impl CondaBackend {
         let gateway = Self::create_gateway()?;
 
         let repodata: Vec<RepoData> = gateway
-            .query([channel], [platform, CondaPlatform::NoArch], specs.clone())
+            .query([channel], [platform, CondaPlatform::NoArch], specs.to_vec())
             .recursive(true)
             .await
             .map_err(|e| eyre::eyre!("failed to fetch repodata: {}", e))?
             .to_vec();
+        Ok(Self::flatten_repodata(&repodata))
+    }
 
-        let flat_records = Self::flatten_repodata(&repodata);
+    /// The records `mise lock` locks: those `fetch` returns, solved for `specs` on
+    /// `platform` under the `before` cutoff. Each failure says which step failed. The
+    /// fetch's and the solver's own errors can quote a channel URL with a token in it,
+    /// so they are dropped, chain and all, rather than masked.
+    async fn lock_records(
+        fetch: impl std::future::Future<Output = Result<Vec<RepoDataRecord>>>,
+        specs: Vec<MatchSpec>,
+        platform: CondaPlatform,
+        tool_name: &str,
+        target: &str,
+        before: Option<jiff::Timestamp>,
+    ) -> Result<Vec<RepoDataRecord>> {
+        let fetched = fetch.await.map_err(|_| {
+            eyre::eyre!("failed to fetch conda repodata for {tool_name} for {target}")
+        })?;
+        Self::solve_records(fetched, specs, platform, before)
+            .map_err(|_| eyre::eyre!("{}", lock_solve_failure(tool_name, target, before)))
+    }
+
+    /// Solve the conda environment for `specs` on `platform` from `records`,
+    /// choosing only from packages released by `before`.
+    fn solve_records(
+        records: Vec<RepoDataRecord>,
+        specs: Vec<MatchSpec>,
+        platform: CondaPlatform,
+        before: Option<jiff::Timestamp>,
+    ) -> Result<Vec<RepoDataRecord>> {
+        let flat_records = Self::released_before(records, before);
         let virtual_packages = Self::detect_virtual_packages(platform)?;
 
         let task = SolverTask {
@@ -239,9 +329,12 @@ impl CondaBackend {
         };
 
         let mut solver = ResolvoSolver;
-        let result = solver
-            .solve(task)
-            .map_err(|e| eyre::eyre!("conda solve failed: {}", e))?;
+        let result = solver.solve(task).map_err(|e| match before {
+            Some(before) => eyre::eyre!(
+                "conda solve failed with only packages released before {before} (minimum_release_age): {e}"
+            ),
+            None => eyre::eyre!("conda solve failed: {}", e),
+        })?;
 
         Ok(result.records)
     }
@@ -259,37 +352,113 @@ impl CondaBackend {
             .to_string()
     }
 
-    /// Strip .conda or .tar.bz2 extension to get the basename key
-    fn record_basename(record: &RepoDataRecord) -> String {
-        let filename = Self::url_filename(&record.url);
-        filename
-            .strip_suffix(".conda")
-            .or_else(|| filename.strip_suffix(".tar.bz2"))
-            .unwrap_or(&filename)
-            .to_string()
+    /// The channel subdir a package URL points into: the URL without its file name.
+    fn channel_subdir(url: &str) -> &str {
+        url.rsplit_once('/').map_or(url, |(dir, _)| dir)
     }
 
-    /// Format sha256 as "sha256:<hex>" if present
-    fn format_sha256(record: &RepoDataRecord) -> Option<String> {
-        record
-            .package_record
+    /// The channel a package URL points into: the URL without its subdir and file name.
+    /// A tool solves against one channel, so its own package and all its dependencies,
+    /// whether platform-specific or noarch, share this.
+    fn channel_root(url: &str) -> &str {
+        let subdir = Self::channel_subdir(url);
+        subdir.rsplit_once('/').map_or(subdir, |(root, _)| root)
+    }
+
+    /// Hash of the channel subdir a package URL points into.
+    ///
+    /// A conda file name (`<name>-<version>-<build>`) identifies a package only within
+    /// one channel subdir, while tools from different channels share the lockfile's
+    /// `conda-packages` section and the archive store. Both are qualified with this, so
+    /// that one channel's package cannot replace the package another channel has under
+    /// the same name. A channel's owner chooses its URL, so the tag is 128 bits of a
+    /// sha256: too long to search for a URL whose tag equals another channel's.
+    pub(crate) fn channel_tag(url: &str) -> String {
+        hash::hash_sha256_to_str(Self::channel_subdir(url))[..32].to_string()
+    }
+
+    /// Directory of the shared archive store that holds the archive downloaded from `url`.
+    fn archive_dir(url: &str) -> PathBuf {
+        Self::conda_data_dir().join(Self::channel_tag(url))
+    }
+
+    /// Key of a package in the lockfile's shared `conda-packages` section: the file name
+    /// without its .conda or .tar.bz2 extension, then `@` and the [`Self::channel_tag`].
+    fn record_basename(record: &RepoDataRecord) -> String {
+        let filename = Self::url_filename(&record.url);
+        let basename = filename
+            .strip_suffix(".conda")
+            .or_else(|| filename.strip_suffix(".tar.bz2"))
+            .unwrap_or(&filename);
+        format!("{basename}@{}", Self::channel_tag(record.url.as_str()))
+    }
+
+    /// Checks that the `[conda-packages]` entry `key` may be installed as a dependency of
+    /// the tool package at `main_url`: it comes from the tool's channel, and a key that
+    /// names a channel names the one its URL points into. A key without a channel was
+    /// written before keys named one, and is accepted only from the tool's channel.
+    pub(crate) fn check_locked_dependency(
+        key: &str,
+        package: &CondaPackageInfo,
+        main_url: &str,
+    ) -> Result<()> {
+        if Self::channel_root(&package.url) != Self::channel_root(main_url) {
+            eyre::bail!(
+                "refusing the conda package {key} in mise.lock: its url is not in the channel of the tool, which all its dependencies come from. Run `mise lock` to resolve the tool again"
+            );
+        }
+        match key.rsplit_once('@') {
+            Some((_, tag)) => {
+                if tag != Self::channel_tag(&package.url) {
+                    eyre::bail!(
+                        "refusing the conda package {key} in mise.lock: its key names another channel than its url. Run `mise lock` to resolve the tool again"
+                    );
+                }
+            }
+            None => {
+                remove_by!("2027.11.0", "conda-package-keys-without-channel");
+            }
+        }
+        Ok(())
+    }
+
+    /// The checksum the channel declares for `record`, as "<algorithm>:<hex>":
+    /// its sha256, or its md5 when the channel lists no sha256. Downloads and
+    /// lockfile entries are verified against it, so a package with either is
+    /// never installed unverified.
+    fn format_checksum(record: &RepoDataRecord) -> Option<String> {
+        let package = &record.package_record;
+        package
             .sha256
             .as_ref()
             .map(|h| format!("sha256:{}", hex::encode(h)))
+            .or_else(|| {
+                package
+                    .md5
+                    .as_ref()
+                    .map(|h| format!("md5:{}", hex::encode(h)))
+            })
     }
 
-    /// Verify a file's sha256 against an expected "sha256:<hex>" checksum.
-    /// Returns Ok(true) if matches, Ok(false) if mismatches, or Ok(true)
-    /// if no expected checksum is provided (skip verification).
+    /// Verify a file against an expected "<algorithm>:<hex>" checksum.
+    /// Returns Ok(true) if it matches, Ok(false) if it does not, and Ok(true)
+    /// if no checksum is expected. A checksum without an algorithm, or with one
+    /// that cannot be computed, is an error, never a match.
     fn verify_checksum(path: &std::path::Path, expected: Option<&str>) -> Result<bool> {
         let Some(expected) = expected else {
             return Ok(true);
         };
-        let Some(expected_hex) = expected.strip_prefix("sha256:") else {
-            return Ok(true);
+        let Some((algo, expected_hex)) = expected.split_once(':') else {
+            eyre::bail!(
+                "invalid checksum {expected:?} for {}: expected <algorithm>:<hex>",
+                path.display()
+            );
         };
-        let actual_hex = hash::file_hash_sha256(path, None)?;
-        Ok(actual_hex == expected_hex)
+        match hash::ensure_checksum(path, expected_hex, None, algo) {
+            Ok(()) => Ok(true),
+            Err(err) if err.is::<hash::ChecksumMismatch>() => Ok(false),
+            Err(err) => Err(err),
+        }
     }
 
     /// Download a file to dest with optional checksum verification.
@@ -300,18 +469,23 @@ impl CondaBackend {
             return Ok(());
         }
 
-        file::create_dir_all(Self::conda_data_dir())?;
+        if let Some(dir) = dest.parent() {
+            file::create_dir_all(dir)?;
+        }
         let temp = Self::temp_download_path(dest);
         HTTP.download_file_pinned(url, &temp, checksum, None)
             .await?;
 
-        if !Self::verify_checksum(&temp, checksum)? {
+        let verified = Self::verify_checksum(&temp, checksum);
+        if !matches!(verified, Ok(true)) {
             let _ = file::remove_all(&temp);
+            verified?;
             let display_checksum = checksum.unwrap_or("unknown");
+            // The file name, not the URL: a channel can carry its token in the path.
+            let path = url.split(['?', '#']).next().unwrap_or(url);
+            let filename = path.rsplit('/').next().unwrap_or(path);
             return Err(eyre::eyre!(
-                "checksum mismatch for {}: expected {}",
-                url,
-                display_checksum,
+                "checksum mismatch for {filename}: expected {display_checksum}"
             ));
         }
 
@@ -334,26 +508,51 @@ impl CondaBackend {
         Ok(())
     }
 
-    /// Download a single package archive to the shared conda data dir.
-    async fn download_record(record: RepoDataRecord) -> Result<PathBuf> {
-        let url_str = record.url.to_string();
-        let filename = Self::url_filename(&record.url);
-        let dest = Self::conda_data_dir().join(&filename);
-        let checksum = Self::format_sha256(&record);
-
-        Self::download_to(&url_str, &dest, checksum.as_deref()).await?;
-        Ok(dest)
+    /// Download a single package archive, verified against the checksum its channel
+    /// publishes.
+    async fn download_record(record: RepoDataRecord) -> Result<DownloadedArchive> {
+        let checksum = Self::format_checksum(&record);
+        Self::download_archive((record.url.to_string(), checksum)).await
     }
 
     /// Download a package by URL with optional checksum (for locked installs).
     async fn download_url_with_checksum(
         (url_str, checksum): (String, Option<String>),
-    ) -> Result<PathBuf> {
-        let filename = url_str.rsplit('/').next().unwrap_or("package").to_string();
-        let dest = Self::conda_data_dir().join(&filename);
+    ) -> Result<DownloadedArchive> {
+        Self::download_archive((url_str, checksum)).await
+    }
 
-        Self::download_to(&url_str, &dest, checksum.as_deref()).await?;
-        Ok(dest)
+    /// Download the archive at `url`. One with a checksum goes to the shared archive
+    /// store, where every copy is verified before it is renamed into place. One without
+    /// goes to a directory of its own and is pinned by the sha256 of that copy, which is
+    /// also the copy that is installed: the store copy could be replaced between hashing
+    /// it and extracting it, by a concurrent install that has nothing to verify it with.
+    async fn download_archive(
+        (url_str, checksum): (String, Option<String>),
+    ) -> Result<DownloadedArchive> {
+        let filename = url_str.rsplit('/').next().unwrap_or("package").to_string();
+        let store = Self::archive_dir(&url_str);
+        if checksum.is_some() {
+            let path = store.join(&filename);
+            Self::download_to(&url_str, &path, checksum.as_deref()).await?;
+            return Ok(DownloadedArchive {
+                path,
+                checksum,
+                _private_dir: None,
+            });
+        }
+        file::create_dir_all(&store)?;
+        let dir = tempfile::Builder::new()
+            .prefix(".unverified.")
+            .tempdir_in(&store)?;
+        let path = dir.path().join(&filename);
+        Self::download_to(&url_str, &path, None).await?;
+        let checksum = format!("sha256:{}", hash::file_hash_sha256(&path, None)?);
+        Ok(DownloadedArchive {
+            path,
+            checksum: Some(checksum),
+            _private_dir: Some(dir),
+        })
     }
 
     /// Extract a downloaded conda package archive into dest using rattler.
@@ -364,26 +563,149 @@ impl CondaBackend {
         Ok(())
     }
 
+    /// Reads the index and the paths of an extracted package, which say what rattler
+    /// links and where.
+    ///
+    /// rattler joins the paths onto the prefix as they are, and tells by their spelling
+    /// alone whether an earlier package owns a path or a directory above it. If one does,
+    /// the file is not linked through what is there, such as a symlink of that package,
+    /// but to `__clobbers__/<package name>/<path>`. That holds only while every path is
+    /// spelled one way and nothing else is in that directory, so a package is refused if
+    /// it names a path otherwise, ships `__clobbers__`, or has a name that leads out of
+    /// there or under which an earlier package has files there.
+    fn read_package_paths(
+        archive: &Path,
+        package_dir: &Path,
+        prefix: &Prefix,
+        python_info: Option<&PythonInfo>,
+    ) -> Result<(IndexJson, PathsJson)> {
+        let index_json = IndexJson::from_package_directory(package_dir)
+            .wrap_err_with(|| format!("failed to read the index of {}", archive.display()))?;
+        let paths_json = PathsJson::from_package_directory_with_deprecated_fallback(package_dir)
+            .wrap_err_with(|| format!("failed to read the paths of {}", archive.display()))?;
+        for entry in &paths_json.paths {
+            // where rattler links the entry (its `compute_paths`)
+            let path = match python_info {
+                Some(python_info) if index_json.noarch.is_python() => {
+                    python_info.get_python_noarch_target_path(&entry.relative_path)
+                }
+                _ => Cow::Borrowed(entry.relative_path.as_path()),
+            };
+            // rattler keeps clobbered files in `__clobbers__`, which a case-insensitive
+            // file system also opens under any other case
+            let in_clobbers = path.components().next().is_some_and(|first| {
+                first
+                    .as_os_str()
+                    .to_str()
+                    .is_some_and(|first| first.eq_ignore_ascii_case(CLOBBERS_DIR))
+            });
+            if !path.to_str().is_some_and(file::is_safe_relative_path) || in_clobbers {
+                eyre::bail!(
+                    "refusing to install conda package {}: it has the unsafe path {}, which is not a plain path inside the environment",
+                    archive.display(),
+                    path.display()
+                );
+            }
+        }
+        let name = index_json.name.as_normalized();
+        let clobbers = prefix.path().join(CLOBBERS_DIR).join(name);
+        if !file::is_plain_file_name(name) || clobbers.symlink_metadata().is_ok() {
+            eyre::bail!(
+                "refusing to install conda package {}: it cannot be linked under the name {name:?}, which is not a plain file name or is already used by another package in the environment",
+                archive.display()
+            );
+        }
+        Ok((index_json, paths_json))
+    }
+
     /// Extract a package to a temp dir and link it into the prefix using rattler.
     ///
     /// This handles text and binary prefix replacement (replacing conda build
     /// placeholders with the actual install path), file permissions, and macOS
     /// code signing — all via rattler's link_package.
+    ///
+    /// rattler links a package's symlinks whatever their target and opens every
+    /// destination by name, so a link that leaves the prefix redirects what is written
+    /// after it. A link that stays inside its own package can still leave the prefix
+    /// through the links of the packages before it. The symlinks of a package are
+    /// therefore linked first and the whole prefix is checked before any of its files
+    /// are written, and no package is linked after a check fails.
     async fn install_package(
-        archive: &std::path::Path,
+        archive: &Path,
         prefix: &Prefix,
         driver: &InstallDriver,
         python_info: Option<PythonInfo>,
     ) -> Result<Vec<PathsEntry>> {
         let temp_dir = tempfile::tempdir()?;
-        Self::extract_package(archive, temp_dir.path()).await?;
+        let package_dir = temp_dir.path();
+        Self::extract_package(archive, package_dir).await?;
+        file::ensure_symlinks_stay_within(package_dir).wrap_err_with(|| {
+            format!(
+                "refusing to install conda package {}: it has a symlink that leads outside the package",
+                archive.display()
+            )
+        })?;
+        let (index_json, paths_json) =
+            Self::read_package_paths(archive, package_dir, prefix, python_info.as_ref())?;
+        let paths_version = paths_json.paths_version;
+        let (links, files): (Vec<_>, Vec<_>) = paths_json
+            .paths
+            .into_iter()
+            .partition(|entry| package_dir.join(&entry.relative_path).is_symlink());
+
+        let mut paths = Vec::new();
+        if !links.is_empty() {
+            // A symlink is linked as one whatever paths.json calls it. As a file that is
+            // to be copied, rattler would write what it points to, following a link that
+            // another entry has just put at the same destination.
+            let links = links
+                .into_iter()
+                .map(|mut entry| {
+                    entry.path_type = PathType::SoftLink;
+                    entry.no_link = false;
+                    entry.prefix_placeholder = None;
+                    entry
+                })
+                .collect();
+            let install_options = InstallOptions {
+                python_info: python_info.clone(),
+                index_json: Some(index_json.clone()),
+                paths_json: Some(PathsJson {
+                    paths: links,
+                    paths_version,
+                }),
+                // the entry points of a noarch python package are written with its files
+                link_json: Some(Some(LinkJson {
+                    noarch: NoArchLinks::Python(PythonEntryPoints {
+                        entry_points: vec![],
+                    }),
+                    package_metadata_version: 1,
+                })),
+                ..InstallOptions::default()
+            };
+            paths = link_package(package_dir, prefix, driver, install_options)
+                .await
+                .map_err(|e| eyre::eyre!("failed to link {}: {}", archive.display(), e))?;
+            file::ensure_symlinks_stay_within(prefix.path()).wrap_err_with(|| {
+                format!(
+                    "refusing to install conda package {}: together with the packages linked before it, it has a symlink that leads outside the environment",
+                    archive.display()
+                )
+            })?;
+        }
         let install_options = InstallOptions {
             python_info,
+            index_json: Some(index_json),
+            paths_json: Some(PathsJson {
+                paths: files,
+                paths_version,
+            }),
             ..InstallOptions::default()
         };
-        let paths = link_package(temp_dir.path(), prefix, driver, install_options)
+        let files = link_package(package_dir, prefix, driver, install_options)
             .await
             .map_err(|e| eyre::eyre!("failed to link {}: {}", archive.display(), e))?;
+        paths.extend(files);
         Ok(paths)
     }
 
@@ -447,8 +769,16 @@ impl CondaBackend {
         ctx.pr.set_message("fetching repodata".to_string());
         let raw_opts = tv.request.options();
         let opts = CondaOptions::new(&raw_opts);
+        // The tool's cutoff, not `ctx.before_date`, which an exact pin clears: an exact
+        // version names no build, so its builds are held back like any other package,
+        // and the install solves the same packages as `mise lock`.
         let records = self
-            .solve_packages(vec![match_spec], Self::current_conda_platform()?, opts)
+            .solve_packages(
+                vec![match_spec],
+                Self::current_conda_platform()?,
+                opts,
+                tv.before_date,
+            )
             .await?;
 
         // Separate main package from deps
@@ -489,7 +819,7 @@ impl CondaBackend {
             let is_main = name == tool_name_norm;
             ctx.pr.set_message(format!("installing {name}"));
             let paths =
-                Self::install_package(archive, &prefix, &driver, python_info.clone()).await?;
+                Self::install_package(&archive.path, &prefix, &driver, python_info.clone()).await?;
             if is_main {
                 main_paths = paths;
             }
@@ -510,22 +840,81 @@ impl CondaBackend {
             .entry(platform_key.to_string())
             .or_default();
         platform_info.url = Some(main_record.url.to_string());
-        platform_info.checksum = Self::format_sha256(&main_record);
+        platform_info.checksum = Self::format_checksum(&main_record);
         platform_info.conda_deps = Some(dep_basenames.clone());
 
-        // Store dep package info in tv.conda_packages for lockfile update
-        for record in &all_records[..n_deps] {
+        // Store dep package info in tv.conda_packages for lockfile update. A package
+        // whose channel publishes no checksum is pinned by the sha256 of the archive
+        // just installed, so that `--locked` installs can check it.
+        for (record, archive) in all_records[..n_deps].iter().zip(&downloaded) {
             let basename = Self::record_basename(record);
             tv.conda_packages.insert(
                 (platform_key.to_string(), basename),
                 CondaPackageInfo {
                     url: record.url.to_string(),
-                    checksum: Self::format_sha256(record),
+                    checksum: archive.checksum.clone(),
                 },
             );
         }
 
         Ok(())
+    }
+
+    /// Why `--locked` refuses the checksum the lockfile entry of `tool` on
+    /// `platform_key` records for the tool's own package: the download is verified
+    /// against the whole digest, so one that is not a full digest of its algorithm
+    /// would fail only after downloading.
+    fn locked_main_checksum_problem(
+        tool: &str,
+        platform_key: &str,
+        checksum: Option<&str>,
+    ) -> Option<eyre::Report> {
+        let checksum = checksum.filter(|c| !hash::is_well_formed_checksum(c))?;
+        Some(eyre::eyre!(
+            "Invalid lockfile checksum {checksum:?} for {tool} on platform {platform_key} (--locked mode)\n\
+            hint: Run `mise lock` to record checksums"
+        ))
+    }
+
+    /// Why `--locked` refuses the dependency packages `deps` that the lockfile entry of
+    /// `tool` on `platform_key`, whose own package is at `main_url`, names in
+    /// `[conda-packages]`: one is missing, comes from another channel, has a checksum
+    /// that cannot be verified, or, when `require_checksum`, has none.
+    fn locked_dependencies_problem(
+        lockfile: &Lockfile,
+        tool: &str,
+        platform_key: &str,
+        main_url: &str,
+        deps: &[String],
+        require_checksum: bool,
+    ) -> Option<eyre::Report> {
+        for key in deps {
+            let Some(package) = lockfile.get_conda_package(platform_key, key) else {
+                return Some(eyre::eyre!(
+                    "conda package {key} of {tool} is not in the [conda-packages] section of mise.lock for platform {platform_key} (--locked mode)\n\
+                    hint: Run `mise lock` to record it"
+                ));
+            };
+            if let Err(err) = Self::check_locked_dependency(key, package, main_url) {
+                return Some(err);
+            }
+            match package.checksum.as_deref() {
+                Some(checksum) if !hash::is_well_formed_checksum(checksum) => {
+                    return Some(eyre::eyre!(
+                        "Invalid lockfile checksum {checksum:?} for conda package {key} of {tool} on platform {platform_key} (--locked mode)\n\
+                        hint: Run `mise lock` to record checksums"
+                    ));
+                }
+                None if require_checksum => {
+                    return Some(eyre::eyre!(
+                        "No lockfile checksum found for conda package {key} of {tool} on platform {platform_key} (--locked mode)\n\
+                        hint: Run `mise lock` to record checksums, or set locked_require_checksum = false"
+                    ));
+                }
+                _ => {}
+            }
+        }
+        None
     }
 
     /// Install using URLs stored in the lockfile (deterministic/reproducible path).
@@ -560,6 +949,7 @@ impl CondaBackend {
         let mut downloads: Vec<(String, Option<String>)> = vec![];
         for basename in &dep_basenames {
             if let Some(pkg_info) = lockfile.get_conda_package(platform_key, basename) {
+                Self::check_locked_dependency(basename, pkg_info, &main_url)?;
                 downloads.push((pkg_info.url.clone(), pkg_info.checksum.clone()));
             } else {
                 return Err(eyre::eyre!(
@@ -584,11 +974,15 @@ impl CondaBackend {
 
         let mut main_paths = Vec::new();
         for archive in &downloaded {
-            let filename = archive.file_name().and_then(|n| n.to_str()).unwrap_or("?");
+            let filename = archive
+                .path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("?");
             ctx.pr.set_message(format!("installing {filename}"));
             // main package is always last, so main_paths ends up with its entries
             main_paths =
-                Self::install_package(archive, &prefix, &driver, python_info.clone()).await?;
+                Self::install_package(&archive.path, &prefix, &driver, python_info.clone()).await?;
         }
 
         Self::make_bins_executable(&install_path)?;
@@ -1018,9 +1412,18 @@ impl CondaBackend {
 
         let raw_opts = tv.request.options();
         let opts = CondaOptions::new(&raw_opts);
-        let records = self
-            .solve_packages(vec![match_spec], platform, opts)
-            .await?;
+        // As in `resolve_lock_info`, the errors leave out the fetch's and the solver's
+        // own, which can quote a channel URL with a token in it.
+        let specs = vec![match_spec];
+        let records = Self::lock_records(
+            Self::fetch_records(&specs, platform, opts),
+            specs.clone(),
+            platform,
+            &tool_name,
+            &target.to_key(),
+            tv.before_date,
+        )
+        .await?;
 
         let tool_name_norm = tool_name.to_lowercase();
         let mut result = BTreeMap::new();
@@ -1029,16 +1432,46 @@ impl CondaBackend {
                 continue;
             }
             let basename = Self::record_basename(record);
+            let checksum = match Self::format_checksum(record) {
+                Some(checksum) => checksum,
+                None => Self::download_checksum(record.url.as_str())
+                    .await
+                    .wrap_err_with(|| {
+                        format!("failed to download conda package {basename} to hash it")
+                    })?,
+            };
             result.insert(
                 basename,
                 CondaPackageInfo {
                     url: record.url.to_string(),
-                    checksum: Self::format_sha256(record),
+                    checksum: Some(checksum),
                 },
             );
         }
 
         Ok(result)
+    }
+
+    /// The sha256 of the package at `url`, for a package whose channel publishes no
+    /// checksum, so that `mise.lock` still pins it and `--locked` installs can check it.
+    /// The archive is downloaded afresh rather than read from the archive store, which
+    /// holds what an earlier unchecked download wrote.
+    async fn download_checksum(url: &str) -> Result<String> {
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("archive");
+        Self::download_to(url, &path, None).await?;
+        Ok(format!("sha256:{}", hash::file_hash_sha256(&path, None)?))
+    }
+}
+
+/// The message `mise lock` shows when solving `tool_name` for `target` fails:
+/// it names the `minimum_release_age` cutoff the solver chose under, if any.
+fn lock_solve_failure(tool_name: &str, target: &str, before: Option<jiff::Timestamp>) -> String {
+    match before {
+        Some(before) => format!(
+            "failed to solve {tool_name} for {target} with packages released before {before} (minimum_release_age)"
+        ),
+        None => format!("failed to solve {tool_name} for {target}"),
     }
 }
 
@@ -1055,12 +1488,7 @@ fn collect_version_infos<'a>(
 ) -> Vec<VersionInfo> {
     let mut by_version: BTreeMap<String, Option<jiff::Timestamp>> = BTreeMap::new();
     for record in records {
-        let ts = record
-            .indexed_timestamp
-            .or(record.timestamp)
-            // rattler hands back a jiff 0.2 timestamp; both versions span the same range.
-            .and_then(|t| jiff::Timestamp::from_nanosecond(t.jiff_timestamp().as_nanosecond()).ok())
-            .filter(|t| t.as_second() > 0);
+        let ts = CondaBackend::record_released_at(record);
         let earliest = by_version.entry(record.version.to_string()).or_insert(None);
         *earliest = match (*earliest, ts) {
             (Some(a), Some(b)) => Some(a.min(b)),
@@ -1090,6 +1518,44 @@ impl Backend for CondaBackend {
 
     fn ba(&self) -> &Arc<BackendArg> {
         &self.ba
+    }
+
+    fn locked_dependencies_error(
+        &self,
+        config: &Config,
+        tv: &ToolVersion,
+        platform_key: &str,
+        locked_platform: Option<&PlatformInfo>,
+    ) -> Option<eyre::Report> {
+        let locked_platform = locked_platform?;
+        if let Some(err) = Self::locked_main_checksum_problem(
+            &tv.style(),
+            platform_key,
+            locked_platform.checksum.as_deref(),
+        ) {
+            return Some(err);
+        }
+        let deps = locked_platform.conda_deps.as_deref()?;
+        let main_url = locked_platform.url.as_deref()?;
+        if deps.is_empty() {
+            return None;
+        }
+        let lockfile = match tv.request.read_lockfile(config) {
+            Ok(lockfile) => lockfile,
+            Err(err) => return Some(err),
+        };
+        let settings = Settings::get();
+        let require_checksum = settings
+            .locked_require_checksum
+            .unwrap_or(settings.generate_lockfiles());
+        Self::locked_dependencies_problem(
+            &lockfile,
+            &tv.style(),
+            platform_key,
+            main_url,
+            deps,
+            require_checksum,
+        )
     }
 
     fn remote_version_listing_tool_option_keys(&self) -> &'static [&'static str] {
@@ -1186,10 +1652,20 @@ impl Backend for CondaBackend {
 
         let raw_opts = tv.request.options();
         let opts = CondaOptions::new(&raw_opts);
-        let records = self
-            .solve_packages(vec![match_spec], platform, opts)
-            .await
-            .wrap_err_with(|| format!("failed to solve {tool_name} for {}", target.to_key()))?;
+        // `mise lock` shows only these errors' own messages, so they say which
+        // step failed and, for the solve, name the `minimum_release_age` cutoff
+        // themselves. The fetch's and the solver's errors stay out of them: they
+        // can quote a channel URL with a token in its path or query.
+        let specs = vec![match_spec];
+        let records = Self::lock_records(
+            Self::fetch_records(&specs, platform, opts),
+            specs.clone(),
+            platform,
+            &tool_name,
+            &target.to_key(),
+            tv.before_date,
+        )
+        .await?;
 
         let tool_name_norm = tool_name.to_lowercase();
         let mut main_record = None;
@@ -1211,7 +1687,7 @@ impl Backend for CondaBackend {
         })?;
         Ok(PlatformInfo {
             url: Some(main.url.to_string()),
-            checksum: Self::format_sha256(&main),
+            checksum: Self::format_checksum(&main),
             size: None,
             url_api: None,
             conda_deps: Some(dep_basenames),
@@ -1419,6 +1895,87 @@ mod tests {
         let kept = crate::backend::VersionInfo::filter_by_date(infos, cutoff);
         assert_eq!(kept.len(), 1);
         assert_eq!(kept[0].version, "9.1.0");
+    }
+
+    #[tokio::test]
+    async fn a_lock_solve_names_the_cutoff_it_solved_under() {
+        use super::{CondaPlatform, exact_match_spec};
+        use rattler_conda_types::utils::TimestampMs;
+        let mut new = make_record(
+            "vim",
+            "9.2.0",
+            "a_0",
+            "https://conda.anaconda.org/conda-forge/noarch/a.conda",
+        );
+        new.package_record.timestamp = Some(TimestampMs::from_timestamp_millis(
+            "2024-06-10T00:00:00Z".parse().unwrap(),
+        ));
+        new.package_record.subdir = "noarch".to_string();
+        let cutoff: jiff::Timestamp = "2024-06-01T00:00:00Z".parse().unwrap();
+        let spec = || vec![exact_match_spec("vim", "9.2.0").unwrap()];
+        let lock = |fetched: eyre::Result<Vec<_>>, before| {
+            CondaBackend::lock_records(
+                async { fetched },
+                spec(),
+                CondaPlatform::NoArch,
+                "vim",
+                "linux-x64",
+                before,
+            )
+        };
+
+        // The solver chose under the cutoff, so the failure names it.
+        let err = lock(Ok(vec![new.clone()]), Some(cutoff)).await.unwrap_err();
+        assert_eq!(
+            format!("{err:#}"),
+            "failed to solve vim for linux-x64 with packages released before 2024-06-01T00:00:00Z (minimum_release_age)"
+        );
+        // A fetch failure says so, with nothing of the fetch's own error, chain
+        // included, left to print a channel token.
+        let err = lock(
+            Err(eyre::eyre!("https://example.invalid/conda?token=secret")),
+            Some(cutoff),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(
+            format!("{err:#}"),
+            "failed to fetch conda repodata for vim for linux-x64"
+        );
+        // Without the cutoff the same records solve.
+        let solved = lock(Ok(vec![new]), None).await.unwrap();
+        assert_eq!(solved.len(), 1);
+    }
+
+    #[test]
+    fn minimum_release_age_holds_back_too_new_builds_of_a_version() {
+        use rattler_conda_types::utils::TimestampMs;
+        let at = |s: &str| Some(TimestampMs::from_timestamp_millis(s.parse().unwrap()));
+        let channel = "https://conda.anaconda.org/conda-forge/linux-64";
+        let mut old_build = make_record("vim", "9.1.0", "a_0", &format!("{channel}/a.conda"));
+        old_build.package_record.timestamp = at("2024-01-01T00:00:00Z");
+        let mut new_build = make_record("vim", "9.1.0", "b_1", &format!("{channel}/b.conda"));
+        new_build.package_record.timestamp = at("2024-06-10T00:00:00Z");
+        let mut new_dep = make_record("zlib", "1.3.1", "h_2", &format!("{channel}/z.conda"));
+        new_dep.package_record.timestamp = at("2020-01-01T00:00:00Z");
+        new_dep.package_record.indexed_timestamp = at("2024-06-10T00:00:00Z");
+        let undated = make_record("ncurses", "6.5", "h_0", &format!("{channel}/n.conda"));
+        let records = vec![old_build, new_build, new_dep, undated];
+
+        let cutoff: jiff::Timestamp = "2024-06-01T00:00:00Z".parse().unwrap();
+        let builds = |kept: Vec<RepoDataRecord>| {
+            kept.iter()
+                .map(|r| r.package_record.build.to_string())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            builds(CondaBackend::released_before(records.clone(), Some(cutoff))),
+            ["a_0", "h_0"]
+        );
+        assert_eq!(
+            builds(CondaBackend::released_before(records, None)).len(),
+            4
+        );
     }
 
     #[test]
@@ -1858,5 +2415,438 @@ mod tests {
 
         let deduped = CondaBackend::dedup_records_by_identifier(records.iter());
         assert_eq!(deduped.len(), 2);
+    }
+
+    /// Writes a `.tar.bz2` conda package with the given files and symlinks (path, target).
+    /// A file whose name is not a plain relative path is only listed in paths.json.
+    #[cfg(unix)]
+    fn write_conda_package(
+        dir: &Path,
+        name: &str,
+        files: &[&str],
+        links: &[(&str, &str)],
+    ) -> std::path::PathBuf {
+        use rattler_conda_types::compression_level::CompressionLevel;
+
+        let root = dir.join("package");
+        file::remove_all(&root).unwrap();
+        let mut members = vec![];
+        let mut write = |path: &str, content: String| {
+            let member = root.join(path);
+            file::create_dir_all(member.parent().unwrap()).unwrap();
+            file::write(&member, content).unwrap();
+            members.push(member);
+        };
+        let entries: Vec<_> = links
+            .iter()
+            .map(|(path, _)| (*path, "softlink"))
+            .chain(files.iter().map(|path| (*path, "hardlink")))
+            .map(|(path, kind)| serde_json::json!({"_path": path, "path_type": kind}))
+            .collect();
+        write(
+            "info/index.json",
+            serde_json::json!({"name": name, "version": "1.0", "build": "0", "build_number": 0})
+                .to_string(),
+        );
+        write(
+            "info/paths.json",
+            serde_json::json!({"paths": entries, "paths_version": 1}).to_string(),
+        );
+        for path in files
+            .iter()
+            .filter(|path| file::is_safe_relative_path(path))
+        {
+            write(path, format!("{path} of {name}"));
+        }
+        for (path, target) in links {
+            let member = root.join(path);
+            file::create_dir_all(member.parent().unwrap()).unwrap();
+            std::os::unix::fs::symlink(target, &member).unwrap();
+            members.push(member);
+        }
+
+        let archive = dir.join(format!("{name}-1.0-0.tar.bz2"));
+        rattler_package_streaming::write::write_tar_bz2_package(
+            std::fs::File::create(&archive).unwrap(),
+            &root,
+            &members,
+            CompressionLevel::Lowest,
+            None,
+            None,
+        )
+        .unwrap();
+        archive
+    }
+
+    /// Links the packages into a fresh prefix in the given order, as an install does.
+    #[cfg(unix)]
+    async fn link_packages(dir: &Path, archives: &[&Path]) -> eyre::Result<()> {
+        use rattler::install::InstallDriver;
+        use rattler_conda_types::prefix::Prefix;
+
+        let prefix = dir.join("prefix");
+        file::remove_all(&prefix)?;
+        let prefix = Prefix::create(prefix)?;
+        let driver = InstallDriver::default();
+        for archive in archives {
+            CondaBackend::install_package(archive, &prefix, &driver, None).await?;
+        }
+        Ok(())
+    }
+
+    /// Tools from different channels share the lockfile's `conda-packages` section, so a
+    /// file name that two channels have must not be one key: the entry written last
+    /// would be what both tools install.
+    #[test]
+    fn record_basename_tells_channels_apart() {
+        let key = |dir: &str| {
+            let url = format!("{dir}/zlib-1.3.1-hb9d3cd8_2.conda");
+            CondaBackend::record_basename(&make_record("zlib", "1.3.1", "hb9d3cd8_2", &url))
+        };
+        let team = key("https://conda.example.com/team/linux-64");
+        assert_eq!(team, key("https://conda.example.com/team/linux-64"));
+        assert_ne!(team, key("https://conda.example.com/other/linux-64"));
+        assert_ne!(team, key("https://conda.example.com/team/noarch"));
+        assert_ne!(team, key("https://conda.anaconda.org/conda-forge/linux-64"));
+        let (basename, tag) = team.split_once('@').unwrap();
+        assert_eq!(basename, "zlib-1.3.1-hb9d3cd8_2");
+        assert_eq!(tag.len(), 32);
+    }
+
+    /// An archive in the store is reused when it matches its checksum, and a package
+    /// may have none, so two channels must not write the same path.
+    #[test]
+    fn archive_dir_tells_channels_apart() {
+        let dir = CondaBackend::archive_dir;
+        let store = CondaBackend::conda_data_dir();
+        let team = dir("https://conda.example.com/team/linux-64/zlib-1.3.1-h_2.conda");
+        assert_eq!(team.parent(), Some(store.as_path()));
+        assert_eq!(
+            team,
+            dir("https://conda.example.com/team/linux-64/xz-5.2.6-h_0.conda")
+        );
+        assert_ne!(
+            team,
+            dir("https://conda.example.com/other/linux-64/zlib-1.3.1-h_2.conda")
+        );
+    }
+
+    /// A locked install reads the python version out of the `conda_deps` key.
+    #[test]
+    fn python_info_is_read_from_a_key_that_names_its_channel() {
+        let url = "https://conda.example.com/team/linux-64/python-3.12.3-hab00c5b_0_cpython.conda";
+        let record = make_record("python", "3.12.3", "hab00c5b_0_cpython", url);
+        let key = CondaBackend::record_basename(&record);
+        assert!(key.contains('@'));
+        let platform = rattler_conda_types::Subdir::Linux64;
+        let info = CondaBackend::python_info_from_basenames(&[key], platform).unwrap();
+        assert_eq!(info.short_version, (3, 12));
+    }
+
+    #[tokio::test]
+    async fn an_archive_without_a_checksum_is_installed_from_its_own_copy() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/conda-forge/noarch/zstd-1.5.6-h_0.conda")
+            .with_body("package")
+            .create_async()
+            .await;
+        let url = format!("{}/conda-forge/noarch/zstd-1.5.6-h_0.conda", server.url());
+        let archive = CondaBackend::download_archive((url.clone(), None))
+            .await
+            .unwrap();
+        mock.assert_async().await;
+        assert_eq!(
+            archive.checksum,
+            Some(format!(
+                "sha256:{}",
+                crate::hash::hash_sha256_to_str("package")
+            ))
+        );
+        let store_copy = CondaBackend::archive_dir(&url).join("zstd-1.5.6-h_0.conda");
+        assert_ne!(archive.path, store_copy);
+        assert!(!store_copy.exists());
+        assert_eq!(std::fs::read(&archive.path).unwrap(), b"package");
+        let dir = archive.path.parent().unwrap().to_path_buf();
+        drop(archive);
+        assert!(!dir.exists());
+    }
+
+    /// A package whose channel publishes no checksum is pinned by the sha256 of a fresh
+    /// download, not by what the archive store holds.
+    #[tokio::test]
+    async fn download_checksum_hashes_a_fresh_download() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/conda-forge/noarch/zlib-1.3.1-h_2.conda")
+            .with_body("package")
+            .create_async()
+            .await;
+        let url = format!("{}/conda-forge/noarch/zlib-1.3.1-h_2.conda", server.url());
+        let checksum = CondaBackend::download_checksum(&url).await.unwrap();
+        mock.assert_async().await;
+        assert_eq!(
+            checksum,
+            format!("sha256:{}", crate::hash::hash_sha256_to_str("package"))
+        );
+    }
+
+    /// A locked dependency comes from the tool's own channel, whatever its key, and a
+    /// key that names a channel names the one its url points into.
+    #[test]
+    fn locked_dependencies_come_from_the_tool_channel() {
+        let main = "https://conda.anaconda.org/conda-forge/linux-64/tool-1.0-h_0.conda";
+        let package = |url: &str| super::CondaPackageInfo {
+            url: url.to_string(),
+            checksum: None,
+        };
+        let check = |key: &str, url: &str| {
+            CondaBackend::check_locked_dependency(key, &package(url), main)
+                .map_err(|e| e.to_string())
+        };
+        let forge = "https://conda.anaconda.org/conda-forge/linux-64/zlib-1.3.1-h_2.conda";
+        let forge_noarch = "https://conda.anaconda.org/conda-forge/noarch/tzdata-2024a-h_0.conda";
+        let evil = "https://conda.example.com/evil/linux-64/zlib-1.3.1-h_2.conda";
+        let key =
+            |url: &str| CondaBackend::record_basename(&make_record("zlib", "1.3.1", "h_2", url));
+
+        check(&key(forge), forge).unwrap();
+        check(&key(forge_noarch), forge_noarch).unwrap();
+        check("zlib-1.3.1-h_2", forge).unwrap();
+        let err = check("zlib-1.3.1-h_2", evil).unwrap_err();
+        assert!(err.contains("not in the channel"), "{err}");
+        let err = check(&key(evil), evil).unwrap_err();
+        assert!(err.contains("not in the channel"), "{err}");
+        let err = check(&key(forge_noarch), forge).unwrap_err();
+        assert!(err.contains("names another channel"), "{err}");
+
+        // the messages leave out credentials in either url, a token in the path too
+        let path_token =
+            "https://conda.example.com/t/secret-token/team/noarch/zlib-1.3.1-h_2.conda";
+        for (dep, tool) in [(path_token, main), (forge, path_token)] {
+            let err = CondaBackend::check_locked_dependency(&key(forge), &package(dep), tool)
+                .unwrap_err()
+                .to_string();
+            assert!(!err.contains("secret-token"), "{err}");
+        }
+        let private = "https://user:token@conda.example.com/team/linux-64/tool-1.0-h_0.conda";
+        let private_dep = "https://user:token@conda.example.com/team/noarch/zlib-1.3.1-h_2.conda";
+        let err =
+            CondaBackend::check_locked_dependency("zlib-1.3.1-h_2", &package(private_dep), main)
+                .unwrap_err()
+                .to_string();
+        assert!(
+            err.contains("not in the channel") && !err.contains("token"),
+            "{err}"
+        );
+        let err = CondaBackend::check_locked_dependency("zlib-1.3.1-h_2", &package(forge), private)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("not in the channel") && !err.contains("token"),
+            "{err}"
+        );
+        let err =
+            CondaBackend::check_locked_dependency(&key(forge), &package(private_dep), private)
+                .unwrap_err()
+                .to_string();
+        assert!(
+            err.contains("names another channel") && !err.contains("token"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn format_checksum_falls_back_to_md5() {
+        let url = "https://conda.anaconda.org/conda-forge/linux-64/zlib-1.3.1-h_2.conda";
+        let mut record = make_record("zlib", "1.3.1", "h_2", url);
+        assert_eq!(CondaBackend::format_checksum(&record), None);
+
+        record.package_record.md5 = Some(Default::default());
+        assert_eq!(
+            CondaBackend::format_checksum(&record).as_deref(),
+            Some("md5:00000000000000000000000000000000")
+        );
+
+        record.package_record.sha256 = Some(Default::default());
+        let checksum = CondaBackend::format_checksum(&record).unwrap();
+        assert_eq!(checksum, format!("sha256:{}", "0".repeat(64)));
+    }
+
+    #[test]
+    fn verify_checksum_compares_every_algorithm_and_rejects_unknown_ones() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("pkg.conda");
+        std::fs::write(&path, b"abc").unwrap();
+        let sha256 = "sha256:ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+        let md5 = "md5:900150983cd24fb0d6963f7d28e17f72";
+        let verify = |checksum: &str| CondaBackend::verify_checksum(&path, Some(checksum));
+        assert!(verify(sha256).unwrap());
+        assert!(verify(md5).unwrap());
+        assert!(CondaBackend::verify_checksum(&path, None).unwrap());
+
+        std::fs::write(&path, b"replaced").unwrap();
+        assert!(!verify(sha256).unwrap());
+        assert!(!verify(md5).unwrap());
+        assert!(verify("crc32:352441c2").is_err());
+        assert!(verify("900150983cd24fb0d6963f7d28e17f72").is_err());
+    }
+
+    #[test]
+    fn locked_mode_refuses_a_main_checksum_that_is_not_a_full_digest() {
+        let problem = |checksum: Option<&str>| {
+            CondaBackend::locked_main_checksum_problem("conda:tool", "linux-x64", checksum)
+                .map(|e| e.to_string())
+        };
+        let sha256 = "sha256:ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+        assert_eq!(problem(None), None);
+        assert_eq!(problem(Some(sha256)), None);
+        assert_eq!(problem(Some("md5:900150983cd24fb0d6963f7d28e17f72")), None);
+        for malformed in ["md5:", "sha256:", "sha256:00", "md5:zz", "crc32:00"] {
+            let err = problem(Some(malformed)).unwrap();
+            assert!(
+                err.contains("Invalid lockfile checksum") && err.contains("conda:tool"),
+                "{malformed}: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn locked_mode_refuses_dependencies_it_cannot_verify() {
+        let platform = "linux-x64";
+        let main = "https://conda.anaconda.org/conda-forge/linux-64/tool-1.0-h_0.conda";
+        let dep_url = "https://conda.anaconda.org/conda-forge/linux-64/zlib-1.3.1-h_2.conda";
+        let key = CondaBackend::record_basename(&make_record("zlib", "1.3.1", "h_2", dep_url));
+        let lockfile_with = |checksum: Option<&str>| {
+            let mut lockfile = super::Lockfile::default();
+            lockfile.set_conda_package(
+                platform,
+                &key,
+                super::CondaPackageInfo {
+                    url: dep_url.to_string(),
+                    checksum: checksum.map(str::to_string),
+                },
+            );
+            lockfile
+        };
+        let problem = |lockfile: &super::Lockfile, deps: &[String], require: bool| {
+            CondaBackend::locked_dependencies_problem(
+                lockfile,
+                "conda:tool",
+                platform,
+                main,
+                deps,
+                require,
+            )
+            .map(|e| e.to_string())
+        };
+        let deps = vec![key.clone()];
+        let sha256 = "sha256:ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+
+        assert_eq!(problem(&lockfile_with(Some(sha256)), &deps, true), None);
+        assert_eq!(problem(&lockfile_with(None), &deps, false), None);
+        let err = problem(&lockfile_with(None), &deps, true).unwrap();
+        assert!(err.contains("No lockfile checksum found"), "{err}");
+        for malformed in [
+            "crc32:00",
+            "sha256:",
+            "sha256:00",
+            "md5:zz",
+            sha256.trim_end_matches('d'),
+        ] {
+            let err = problem(&lockfile_with(Some(malformed)), &deps, false).unwrap();
+            assert!(
+                err.contains("Invalid lockfile checksum"),
+                "{malformed}: {err}"
+            );
+        }
+        let err = problem(&super::Lockfile::default(), &deps, false).unwrap();
+        assert!(
+            err.contains("is not in the [conda-packages] section"),
+            "{err}"
+        );
+    }
+
+    /// rattler writes what a package names by name, through the links that are in the
+    /// prefix by then, so no link may lead out of the prefix when a file is written.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn install_package_keeps_packages_inside_the_prefix() {
+        const README: &[&str] = &["share/README"];
+        let temp = tempfile::tempdir().unwrap();
+        let dir = temp.path();
+        let prefix = dir.join("prefix");
+        let error = |result: eyre::Result<()>| format!("{:#}", result.unwrap_err());
+
+        // links that stay inside are linked, and so is a file that two packages have
+        let links = [("lib/libfoo.so", "libfoo.so.1"), ("doc", "share")];
+        let inside = write_conda_package(dir, "inside", README, &links);
+        let other = write_conda_package(dir, "other", &["share/README", "bin/tool"], &[]);
+        let (inside, other) = (inside.as_path(), other.as_path());
+        link_packages(dir, &[inside, other]).await.unwrap();
+        assert_eq!(
+            file::read_to_string(prefix.join("doc/README")).unwrap(),
+            "share/README of inside"
+        );
+        assert!(prefix.join("lib/libfoo.so").is_symlink());
+        assert!(prefix.join("bin/tool").exists());
+        assert!(prefix.join("__clobbers__/other/share/README").exists());
+
+        for target in ["../..", "/"] {
+            let outside = write_conda_package(dir, "outside", README, &[("lib/out", target)]);
+            let err = error(link_packages(dir, &[outside.as_path()]).await);
+            assert!(err.contains("points outside of"), "{err}");
+            assert!(prefix.join("lib").symlink_metadata().is_err());
+        }
+
+        // Each of these stays inside on its own: `d/y` is not in the first package, and
+        // in the second it is the prefix itself. The package that completes the way out
+        // is refused before any of its files are written.
+        let first = write_conda_package(dir, "first", &["bin/first"], &[("d/x", "y/../..")]);
+        let second = write_conda_package(dir, "second", &["bin/second"], &[("d/y", "..")]);
+        let (first, second) = (first.as_path(), second.as_path());
+        link_packages(dir, &[first]).await.unwrap();
+        link_packages(dir, &[second]).await.unwrap();
+        for (order, unwritten) in [([first, second], "second"), ([second, first], "first")] {
+            let err = error(link_packages(dir, &order).await);
+            assert!(err.contains("points outside of"), "{err}");
+            assert!(!prefix.join("bin").join(unwritten).exists());
+        }
+
+        // A file below a link of an earlier package is linked to
+        // `__clobbers__/<name>/<path>` instead of through the link, so no package may
+        // bring that directory, lead out of it with its name, or share the name.
+        // A case-insensitive file system opens the directory under any case.
+        for dir_name in ["__clobbers__", "__CLOBBERS__"] {
+            let link = format!("{dir_name}/other/share");
+            let links = [(link.as_str(), "../../lib")];
+            let clobber = write_conda_package(dir, "clobber", README, &links);
+            let err = error(link_packages(dir, &[clobber.as_path()]).await);
+            assert!(err.contains("unsafe path"), "{dir_name}: {err}");
+            assert!(prefix.join(dir_name).symlink_metadata().is_err());
+        }
+
+        // named `..`, the second package would have `d/s/link` and `t/victim` linked
+        // through the links `d/s` and `t` of the first, onto the file next to the prefix
+        file::write(dir.join("victim"), "untouched").unwrap();
+        let links = [("d/s", ".."), ("t", "link")];
+        let earlier = write_conda_package(dir, "earlier", README, &links);
+        let parent = write_conda_package(dir, "..", &["t/victim"], &[("d/s/link", "..")]);
+        let err = error(link_packages(dir, &[earlier.as_path(), parent.as_path()]).await);
+        assert!(err.contains("\"..\""), "{err}");
+        assert_eq!(
+            file::read_to_string(dir.join("victim")).unwrap(),
+            "untouched"
+        );
+        let err = error(link_packages(dir, &[inside, inside, inside]).await);
+        assert!(err.contains("\"inside\""), "{err}");
+
+        // the names in paths.json are joined onto the prefix as they are
+        for path in ["doc/../../out", "../out", "/out", "./share/README"] {
+            let named = write_conda_package(dir, "named", &[path], &[("doc", "share")]);
+            let err = error(link_packages(dir, &[named.as_path()]).await);
+            assert!(err.contains("unsafe path"), "{err}");
+            assert!(prefix.join("doc").symlink_metadata().is_err());
+        }
     }
 }

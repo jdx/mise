@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+
+# An exact conda version names no build: a build the channel listed within
+# minimum_release_age is held back, and install and lock pick the same build.
+
+CHANNEL_ROOT="$TMPDIR/conda-channel"
+mkdir -p "$CHANNEL_ROOT/channel/noarch"
+
+start_http_server --dir "$CHANNEL_ROOT" --handler - <<'PY'
+import hashlib
+import io
+import json
+import tarfile
+import time
+from pathlib import Path
+
+subdir = Path("channel") / "noarch"
+name = "release-age-fixture"
+version = "1.0.0"
+now_ms = int(time.time() * 1000)
+builds = {
+    # listed a year ago
+    0: (now_ms - 365 * 24 * 3600 * 1000, "old-build"),
+    # listed just now
+    1: (now_ms, "new-build"),
+}
+
+packages = {}
+for build_number, (timestamp, output) in builds.items():
+    archive_name = f"{name}-{version}-{build_number}.tar.bz2"
+    files = {f"bin/{name}": f"#!/bin/sh\nprintf '{output}\\n'\n".encode()}
+    index = {
+        "name": name,
+        "version": version,
+        "build": str(build_number),
+        "build_number": build_number,
+        "depends": [],
+        "subdir": "noarch",
+        "timestamp": timestamp,
+    }
+    paths = [{
+        "_path": path,
+        "path_type": "hardlink",
+        "sha256": hashlib.sha256(content).hexdigest(),
+        "size_in_bytes": len(content),
+    } for path, content in files.items()]
+    metadata = {
+        "info/index.json": json.dumps(index).encode(),
+        "info/paths.json": json.dumps({"paths_version": 1, "paths": paths}).encode(),
+        "info/files": ("\n".join(files) + "\n").encode(),
+    }
+    archive_path = subdir / archive_name
+    with tarfile.open(archive_path, "w:bz2") as archive:
+        for path, content in {**files, **metadata}.items():
+            info = tarfile.TarInfo(path)
+            info.size = len(content)
+            info.mode = 0o755 if path.startswith("bin/") else 0o644
+            archive.addfile(info, io.BytesIO(content))
+    archive_data = archive_path.read_bytes()
+    packages[archive_name] = {
+        **index,
+        "sha256": hashlib.sha256(archive_data).hexdigest(),
+        "size": len(archive_data),
+    }
+
+(subdir / "repodata.json").write_text(json.dumps({
+    "info": {"subdir": "noarch"},
+    "packages": packages,
+    "packages.conda": {},
+    "removed": [],
+    "repodata_version": 1,
+}))
+
+
+class Handler(TestHandler):
+    pass
+PY
+CHANNEL="http://127.0.0.1:$HTTP_PORT/channel"
+
+cat >mise.toml <<EOF
+[settings]
+lockfile = true
+minimum_release_age = "7d"
+
+[tools]
+"conda:release-age-fixture" = { version = "1.0.0", channel = "$CHANNEL" }
+EOF
+
+mise install
+assert "mise exec -- release-age-fixture" "old-build"
+assert_succeed "grep -q 'release-age-fixture-1.0.0-0.tar.bz2' mise.lock"
+assert_fail "grep -q 'release-age-fixture-1.0.0-1.tar.bz2' mise.lock"
+
+rm mise.lock
+mise lock --platform linux-x64
+assert_succeed "grep -q 'release-age-fixture-1.0.0-0.tar.bz2' mise.lock"
+assert_fail "grep -q 'release-age-fixture-1.0.0-1.tar.bz2' mise.lock"
+
+# Without a cutoff the newest build is chosen.
+mise uninstall -a conda:release-age-fixture
+rm mise.lock
+sed -i 's|minimum_release_age = "7d"|minimum_release_age = "0s"|' mise.toml
+mise install
+assert "mise exec -- release-age-fixture" "new-build"

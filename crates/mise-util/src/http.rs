@@ -4297,14 +4297,42 @@ pub fn apply_url_replacements(url: &mut Url) {
 /// `url` for a log line or error message, without the credentials it may embed:
 /// its userinfo, and the values of its query parameters (see [`redact_query`]).
 fn log_url(url: &Url) -> std::borrow::Cow<'_, str> {
-    match url.query() {
-        Some(query) if redact_query(query) != query => {
-            let mut url = url.clone();
-            url.set_query(Some(&redact_query(query)));
-            redact_url_userinfo(url.as_str()).into_owned().into()
+    let mut redacted = url.clone();
+    let mut changed = redact_path_token(&mut redacted);
+    if let Some(query) = url.query() {
+        let query_redacted = redact_query(query);
+        if query_redacted != query {
+            redacted.set_query(Some(&query_redacted));
+            changed = true;
         }
-        _ => redact_url_userinfo(url.as_str()),
     }
+    if changed {
+        redact_url_userinfo(redacted.as_str()).into_owned().into()
+    } else {
+        redact_url_userinfo(url.as_str())
+    }
+}
+
+/// Hides the token in a `/t/<token>/` path, where anaconda.org and conda channel
+/// servers built like it take a channel token, in the path rather than the query.
+/// Returns whether the URL changed.
+fn redact_path_token(url: &mut Url) -> bool {
+    let Some(segments) = url.path_segments() else {
+        return false;
+    };
+    let mut segments: Vec<&str> = segments.collect();
+    let mut changed = false;
+    for i in 1..segments.len() {
+        if segments[i - 1] == "t" && !segments[i].is_empty() && segments[i] != "[redacted]" {
+            segments[i] = "[redacted]";
+            changed = true;
+        }
+    }
+    if changed {
+        let path = format!("/{}", segments.join("/"));
+        url.set_path(&path);
+    }
+    changed
 }
 
 /// A query string with the value of each parameter replaced by `[redacted]`.
@@ -4347,6 +4375,7 @@ pub fn redact_error_url(mut err: reqwest::Error) -> reqwest::Error {
         if let Some(query) = url.query().map(redact_query) {
             url.set_query(Some(&query));
         }
+        redact_path_token(url);
     }
     err
 }
