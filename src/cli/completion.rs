@@ -34,10 +34,13 @@ pub(crate) fn completion_request(argv: &[OsString]) -> Option<String> {
         .words
         .get(request.split.cword)
         .map_or("", String::as_str);
-    tell_task_mounts_the_word(&mut spec.cmd, word);
-    if let Some(exe) = exe_word(&crate::env::MISE_BIN) {
-        run_mise_by_path(&mut spec, &exe);
+    // Rewrite the fixed scripts before the typed word goes into one, so a `mise` the user typed
+    // is left as typed.
+    let exe = exe_word(&crate::env::MISE_BIN);
+    if let Some(exe) = &exe {
+        run_mise_by_path(&mut spec, exe);
     }
+    tell_task_mounts_the_word(&mut spec.cmd, word, exe.as_deref().unwrap_or("mise"));
     complete_spec(&spec, request).ok().or_else(compiled)
 }
 
@@ -129,17 +132,15 @@ fn windows_exe_word(exe: &str) -> Option<String> {
 /// A mount's command is fixed text, so without this `mise tasks --usage` cannot tell `mise run
 /// <TAB>` from `mise run //<TAB>` and offers every spelling of every task. With the word it
 /// offers the one that fits, and keeps the others as hidden aliases.
-fn tell_task_mounts_the_word(cmd: &mut usage::SpecCommand, word: &str) {
+fn tell_task_mounts_the_word(cmd: &mut usage::SpecCommand, word: &str, program: &str) {
+    let task_mount = format!("{program} tasks --usage");
     for mount in &mut cmd.mounts {
-        if mount.run == "mise tasks --usage" {
-            mount.run = format!(
-                "mise tasks --usage --complete-word={}",
-                shell_words::quote(word)
-            );
+        if mount.run == task_mount {
+            mount.run = format!("{task_mount} --complete-word={}", shell_words::quote(word));
         }
     }
     for sub in cmd.subcommands.values_mut() {
-        tell_task_mounts_the_word(sub, word);
+        tell_task_mounts_the_word(sub, word, program);
     }
 }
 
@@ -765,6 +766,28 @@ mod shell_name_tests {
         .collect();
         let answer = usage_spec_request(&argv).unwrap().unwrap();
         assert!(answer.contains("--from-spec"), "{answer}");
+    }
+
+    #[test]
+    fn a_typed_mise_reaches_the_task_mount_as_typed() {
+        let exe = "'/opt/my mise/mise'";
+        let word = "a|mise b";
+        let mut spec = super::super::usage::completion_spec();
+        run_mise_by_path(&mut spec, exe);
+        tell_task_mounts_the_word(&mut spec.cmd, word, exe);
+        fn mounts(cmd: &usage::SpecCommand, out: &mut Vec<String>) {
+            out.extend(cmd.mounts.iter().map(|m| m.run.clone()));
+            for sub in cmd.subcommands.values() {
+                mounts(sub, out);
+            }
+        }
+        let mut found = vec![];
+        mounts(&spec.cmd, &mut found);
+        let expected = format!(
+            "{exe} tasks --usage --complete-word={}",
+            shell_words::quote(word)
+        );
+        assert!(found.contains(&expected), "{found:?}");
     }
 
     #[test]
