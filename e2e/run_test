@@ -414,7 +414,11 @@ run_in_docker() {
   host_tmp="$(mktemp -d "$host_tmp_root/mise-e2e-tmp.XXXXXX")"
   host_root="$(mktemp -d "$host_tmp_root/mise-e2e-root.XXXXXX")"
   host_home="$(mktemp -d "$host_tmp_root/mise-e2e-home.XXXXXX")"
-  chmod 777 "$host_tmp" "$host_root" "$host_home"
+  # Writable by every user (tests run as `nobody` too) with the sticky bit,
+  # as a real /tmp is: mise refuses to work as root below a directory any
+  # user can rename entries in. The host user still owns these directories,
+  # so the cleanup below can remove what the container created in them.
+  chmod 1777 "$host_tmp" "$host_root" "$host_home"
 
   local docker_args=(
     docker run --rm
