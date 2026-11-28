@@ -571,6 +571,9 @@ fn lock_url_api(url_api: &str) -> Option<String> {
 /// now, downloaded as the install downloads it: from [`asset_download_url`],
 /// with the headers `headers_for` gives that URL, and checked against the weak
 /// checksum. The recorded URLs, without the login, would be refused later.
+/// This happens in either `lockfile_mode`: a merge-mode lock would otherwise
+/// hash the recorded URLs, and nothing else keeps a login that only `url_api`
+/// or an additional artifact holds.
 async fn lock_urls_of(
     asset: &ReleaseAsset,
     headers_for: impl Fn(&str) -> Result<reqwest::header::HeaderMap>,
@@ -579,7 +582,6 @@ async fn lock_urls_of(
     let mut checksum = asset.digest.clone();
     if checksum.as_deref().is_none_or(is_weak_checksum)
         && (has_login(&asset.url) || has_login(&asset.url_api))
-        && Settings::get().generate_lockfiles()
     {
         let url = asset_download_url(asset).await;
         let headers = headers_for(&url)?;
@@ -4226,6 +4228,16 @@ mod tests {
     #[test]
     fn test_lock_hashes_a_login_asset_with_the_install_headers() {
         let _guard = crate::test::SettingsGuard::lock();
+        for mode in ["generate", "merge"] {
+            let mut settings =
+                <crate::config::settings::SettingsPartial as confique::Layer>::empty();
+            settings.lockfile_mode = Some(mode.to_string());
+            Settings::reset(Some(settings));
+            lock_hashes_a_login_asset_with_the_install_headers();
+        }
+    }
+
+    fn lock_hashes_a_login_asset_with_the_install_headers() {
         tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
