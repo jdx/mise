@@ -138,7 +138,7 @@ app was being staged; it was left untouched
 A dry run warns about an existing app it does not own, but cannot tell whether
 adoption succeeds, because it has not downloaded the archive to compare.
 
-## Update a declared download
+## Update a declared download {#update-a-declared-app}
 
 For each new release, change `version` and `sha256`, and change `url` if it
 does not use <code v-pre>{{version}}</code> or the vendor changed its URL
