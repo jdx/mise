@@ -1642,7 +1642,9 @@ pub(crate) async fn download_with_plugin_headers(
     let url = Url::parse(url)?;
     let mut vfox = vfox::Vfox::new();
     vfox.set_url_rewriter(crate::http::apply_url_replacements);
-    vfox.set_http_headers_resolver(crate::http::netrc_headers);
+    // A mirror an operator's URL replacement chose keeps its netrc login in
+    // safe mode, as on the default download path and in the plugin's client.
+    vfox.set_http_headers_resolver(crate::http::rewritten_request_netrc_headers);
     // The vfox client bounds connecting and each read by `http_timeout`; bound
     // the whole download by `http_download_timeout`, as the default download
     // path does.

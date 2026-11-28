@@ -1926,6 +1926,46 @@ pub const BROWSER_ASSET_MAX_RETRIES: i64 = 1;
 /// required by release assets or repository content. Shared by GitHub-backed installers so they
 /// resolve private downloads consistently.
 pub async fn pick_reachable_asset_url(browser_url: &str, api_url: &str) -> String {
+    pick_reachable_url(browser_url, api_url, async {
+        crate::http::HTTP
+            .head_without_netrc(browser_url, BROWSER_ASSET_MAX_RETRIES)
+            .await
+    })
+    .await
+}
+
+/// [`pick_reachable_asset_url`] for a file a release links to, which a third
+/// party chose: the probe carries `headers(browser_url)`, the forge credentials
+/// the request for the file is meant to carry, and none of the credentials the
+/// HTTP client adds by host alone, as the request itself does. They are built
+/// only for a probe, and a browser URL they cannot be built for, such as an
+/// empty or malformed one, falls back to the API URL as a failed probe does.
+/// Offline, they are not built at all: finding a token can refresh it over the
+/// network, and the probe would be refused anyway.
+pub async fn pick_reachable_release_link_url(
+    browser_url: &str,
+    api_url: &str,
+    headers: impl FnOnce(&str) -> Result<HeaderMap>,
+) -> String {
+    pick_reachable_url(browser_url, api_url, async {
+        eyre::ensure!(
+            !crate::network::offline(&Settings::get()),
+            "offline mode is enabled"
+        );
+        let headers = headers(browser_url)?;
+        crate::http::HTTP
+            .head_without_netrc_or_host_auth(browser_url, &headers, BROWSER_ASSET_MAX_RETRIES)
+            .await
+    })
+    .await
+}
+
+/// Runs `probe`, a HEAD of `browser_url`, unless the two URLs are the same.
+async fn pick_reachable_url(
+    browser_url: &str,
+    api_url: &str,
+    probe: impl Future<Output = Result<reqwest::Response>>,
+) -> String {
     if browser_url == api_url {
         return browser_url.to_string();
     }
@@ -1934,10 +1974,7 @@ pub async fn pick_reachable_asset_url(browser_url: &str, api_url: &str) -> Strin
     // settings) is for the download itself. When github.com's edge answers 5xx
     // for a URL, it tends to keep doing so while the API endpoint still serves
     // the file.
-    match crate::http::HTTP
-        .head_without_netrc(browser_url, BROWSER_ASSET_MAX_RETRIES)
-        .await
-    {
+    match probe.await {
         Ok(resp) => {
             let is_html = resp
                 .headers()
@@ -2284,23 +2321,33 @@ pub fn token_source_for_token(host: &str, token: &str) -> Option<TokenSource> {
 /// 6. gh CLI token (from `hosts.yml`)
 /// 7. `git credential fill` (if enabled)
 pub fn resolve_token(host: &str) -> Option<(String, TokenSource)> {
-    resolve_token_inner(host, true)
+    resolve_token_inner(host, true, None)
 }
 
 /// Git already runs its configured helpers; do not recursively invoke them.
 pub fn resolve_token_for_git(host: &str) -> Option<(String, TokenSource)> {
-    resolve_token_inner(host, false)
+    resolve_token_inner(host, false, None)
 }
 
-fn resolve_token_inner(host: &str, use_git_credentials: bool) -> Option<(String, TokenSource)> {
+/// `url` is the request the token is for, when the caller has one; safe mode then
+/// withholds the token by that request's origin rather than by `host` alone.
+fn resolve_token_inner(
+    host: &str,
+    use_git_credentials: bool,
+    url: Option<&url::Url>,
+) -> Option<(String, TokenSource)> {
     let settings = Settings::get();
 
     if is_github_release_asset_host(host) {
         return None;
     }
 
-    // A host that project config named in safe mode; see `untrusted_hosts`.
-    if crate::untrusted_hosts::forge_token_denied(host) {
+    // An origin that project config named in safe mode; see `untrusted_hosts`.
+    let forge = crate::untrusted_hosts::Forge::GitHub;
+    if match url {
+        Some(url) => crate::untrusted_hosts::forge_token_denied_at(forge, url),
+        None => crate::untrusted_hosts::forge_token_denied(forge, host),
+    } {
         return None;
     }
 
@@ -2375,7 +2422,7 @@ fn resolve_token_inner(host: &str, use_git_credentials: bool) -> Option<(String,
     // 7. git credential fill
     if use_git_credentials && settings.github.use_git_credentials {
         for lookup_host in &lookup_hosts {
-            if let Some(token) = tokens::get_git_credential_token("github", lookup_host) {
+            if let Some(token) = tokens::get_git_credential_token("github", lookup_host, url) {
                 return Some((token, TokenSource::GitCredential));
             }
         }
@@ -2392,7 +2439,7 @@ pub fn resolve_token_for_api_url(api_url: &str) -> Option<String> {
         .as_ref()
         .and_then(|u| u.host_str())
         .unwrap_or("api.github.com");
-    resolve_token(host).map(|(t, _)| t)
+    resolve_token_inner(host, true, parsed.as_ref()).map(|(t, _)| t)
 }
 
 /// Headers for a GitHub request to `url`. `api_url` is the API base URL the
@@ -2406,7 +2453,7 @@ pub fn get_headers<U: IntoUrl>(url: U, api_url: &str) -> Result<HeaderMap> {
 
     if may_send_token(&url, api_url) {
         let host = url.host_str().unwrap_or("github.com");
-        if let Some((token, source)) = resolve_token(host) {
+        if let Some((token, source)) = resolve_token_inner(host, true, Some(&url)) {
             remember_token_source(host, &token, source);
             headers.insert(
                 reqwest::header::AUTHORIZATION,
@@ -2422,10 +2469,12 @@ pub fn get_headers<U: IntoUrl>(url: U, api_url: &str) -> Result<HeaderMap> {
     }
 
     // Not an API URL, so the block above skipped it, but a private repository's
-    // raw file still needs the token.
+    // raw file still needs the token. The lookup is by GitHub's own host, and
+    // the request's scheme and port go to the credential helpers.
     if !is_github_api_url(&url)
         && is_github_raw_content_url(&url)
-        && let Some((token, source)) = resolve_token("raw.githubusercontent.com")
+        && let Some((token, source)) =
+            resolve_token_inner("raw.githubusercontent.com", true, Some(&url))
     {
         remember_token_source("raw.githubusercontent.com", &token, source);
         headers.insert(
@@ -2434,20 +2483,27 @@ pub fn get_headers<U: IntoUrl>(url: U, api_url: &str) -> Result<HeaderMap> {
         );
     }
 
-    if is_github_api_url(&url) && url.path().contains("/releases/assets/") {
+    headers.extend(media_type_headers(&url));
+    Ok(headers)
+}
+
+/// The headers [`get_headers`] sends that carry no credential: the media type a
+/// release asset or a file's contents is asked for in.
+pub fn media_type_headers(url: &url::Url) -> HeaderMap {
+    let mut headers = HeaderMap::new();
+    if is_github_api_url(url) && url.path().contains("/releases/assets/") {
         headers.insert(
             "accept",
             HeaderValue::from_static("application/octet-stream"),
         );
-    } else if is_github_api_url(&url) && url.path().contains("/contents/") {
+    } else if is_github_api_url(url) && url.path().contains("/contents/") {
         // https://docs.github.com/en/rest/repos/contents#custom-media-types-for-repository-contents
         headers.insert(
             "accept",
             HeaderValue::from_static("application/vnd.github.raw"),
         );
     }
-
-    Ok(headers)
+    headers
 }
 
 // ── github_tokens.toml ──────────────────────────────────────────────
@@ -2589,7 +2645,7 @@ pub fn gh_token_in_keyring(host: &str) -> bool {
     // Hosts `resolve_token` never looks a token up for: a hint could not change the result.
     if !Settings::get().github.gh_cli_tokens
         || is_github_release_asset_host(host)
-        || crate::untrusted_hosts::forge_token_denied(host)
+        || crate::untrusted_hosts::forge_token_denied(crate::untrusted_hosts::Forge::GitHub, host)
     {
         return false;
     }

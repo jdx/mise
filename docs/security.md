@@ -369,12 +369,25 @@ These are skipped without an error, so resolution commands keep working:
   virtualenv. Outside safe mode the same holds in a directory you have not
   trusted. See [the hook environment](/plugin-lua-modules.html#hook-environment).
 - Your credentials, for hosts project config chooses: a project `api_url` gets
-  no GitHub, GitLab or Forgejo token (unless global config names the same host),
-  and a tool that project config declares gets no `~/.netrc` credentials for
-  the hosts its `url`, `checksum_url`, `version_list_url`, `version_date_url`
-  or `api_url` names. Tools from global and system config keep theirs. A
-  project that points at a private forge or file server therefore cannot list
-  or download versions there.
+  no GitHub, GitLab or Forgejo token, unless global config names the same
+  scheme, host and port, or it is that forge's own public API over https
+  (`github.com` and `api.github.com` for GitHub, `gitlab.com` for GitLab, `codeberg.org` for
+  Forgejo). A tool that project config declares gets no `~/.netrc` credentials:
+  not for the hosts its `url`, `checksum_url`, `version_list_url`,
+  `version_date_url` or `api_url` names, and not for the hosts their answers
+  send it on to, such as the asset link of a release. Tools from global and
+  system config keep theirs. A project that points at a private forge or file
+  server therefore cannot list or download versions there. A request that one
+  of your [URL replacements](/url-replacements.html) sends to another host is
+  the exception: you chose that host, so a project tool keeps the `~/.netrc`
+  login for your mirror, unless the project names the mirror's host itself.
+  The GitHub token that mise otherwise adds to any request for a GitHub API or
+  `raw.githubusercontent.com` URL is withheld from the hosts a project tool's
+  URL options name too, so a project URL cannot read a private repository's
+  files with it.
+  The `headers` of an `http:` tool in a global `[tool_alias]` go with the
+  options written beside them: a project entry for that tool which sets an
+  option of its own, such as `version_list_url`, gets none of them.
 - A project `[tool_alias]` for a tool that global config declares, so a
   repository cannot point your tool at another backend, options or versions.
 - Project [lazy tools](/dev-tools/shims.html#lazy-tools): mise writes no shims

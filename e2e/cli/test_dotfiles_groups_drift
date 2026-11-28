@@ -1,0 +1,320 @@
+#!/usr/bin/env bash
+
+# A symlink-each group records what it deployed, and anything else on the
+# machine can change the target or the source between two applies. This test
+# makes random changes of that kind, with a fixed seed so a failure can be
+# replayed, and after every `mise dot apply --prune` checks that:
+#
+# - a file, link, or directory mise did not create in the target is left as is
+# - the source tree is never changed
+# - every link into the source points at the source file of the same path, and
+#   no such link dangles
+# - the target holds nothing else mise wrote
+# - a source file with nothing of the user's in its way is deployed
+# - a second apply changes nothing
+#
+# and finally that `mise dot unapply --group` removes every link into the
+# source and nothing of the user's.
+#
+# This runs a few seeds; test_dotfiles_groups_drift_slow sources it with many
+# more. To replay a failure, put the seed it printed on the DRIFT_SEEDS line
+# of test_dotfiles_groups_drift_slow (the e2e runner does not pass the
+# variable through from the environment).
+
+DOTS="$HOME/.dotfiles"
+SRC="$DOTS/pkg"
+T="$HOME/t"
+ELSEWHERE="$HOME/elsewhere"
+SEEDS="${DRIFT_SEEDS:-1 2 3}"
+ROUNDS="${DRIFT_ROUNDS:-6}"
+
+cat <<EOF >mise.toml
+[dotfile_groups.pkg]
+target = "~/t"
+EOF
+
+# A small set of paths makes collisions likely: a file where a directory was,
+# a directory where a file was, a file of the user's next to a link.
+PATHS=(a b d1 d1/a d1/b d1/d2 d1/d2/a d1/d2/c d3/x d3/y)
+
+# What the user put in the target, by path: "f:<content>" for a file,
+# "l:<destination>" for a link, "d:" for a directory.
+declare -A FOREIGN
+LOG=()
+LAST_OUT=""
+SEED=""
+ROUND=""
+
+# Sets PICK rather than printing it: a subshell would reseed $RANDOM.
+pick() { PICK="${PATHS[RANDOM % ${#PATHS[@]}]}"; }
+
+# Forget the records at or below a path the user just removed or replaced.
+forget() {
+  local rel="$1" k
+  for k in "${!FOREIGN[@]}"; do
+    if [[ $k == "$rel" || $k == "$rel"/* ]]; then
+      unset "FOREIGN[$k]"
+    fi
+  done
+}
+
+# Make room for a new object at $T/$1 the way a user would: create the parent
+# directories, and give up if a file is in the way of one.
+make_parent() {
+  mkdir -p "$(dirname "$1")" 2>/dev/null
+}
+
+mutate() {
+  local rel kind n
+  pick
+  rel="$PICK"
+  n=$RANDOM
+  kind=$((RANDOM % 11))
+  case $kind in
+    0 | 1) # the user adds or edits a source file
+      if [[ -d "$SRC/$rel" ]]; then return 0; fi
+      make_parent "$SRC/$rel" || return 0
+      echo "src:$rel:$n" >"$SRC/$rel"
+      LOG+=("src-write $rel")
+      ;;
+    2) # the user deletes a source file or directory
+      [[ -e "$SRC/$rel" ]] || return 0
+      rm -rf "${SRC:?}/$rel"
+      LOG+=("src-rm $rel")
+      ;;
+    3) # an application writes a file into the target
+      if [[ -d "$T/$rel" && ! -L "$T/$rel" ]]; then return 0; fi
+      local created
+      created="$(missing_parents "$rel")"
+      make_parent "$T/$rel" || return 0
+      forget "$rel"
+      for d in $created; do FOREIGN[$d]="d:"; done
+      rm -f "$T/$rel"
+      echo "foreign:$rel:$n" >"$T/$rel"
+      FOREIGN[$rel]="f:foreign:$rel:$n"
+      LOG+=("tgt-file $rel")
+      ;;
+    4) # the user points a target path at a file of their own
+      if [[ -d "$T/$rel" && ! -L "$T/$rel" ]]; then return 0; fi
+      local created
+      created="$(missing_parents "$rel")"
+      make_parent "$T/$rel" || return 0
+      forget "$rel"
+      for d in $created; do FOREIGN[$d]="d:"; done
+      mkdir -p "$ELSEWHERE"
+      echo "elsewhere:$n" >"$ELSEWHERE/$n"
+      rm -f "$T/$rel"
+      ln -s "$ELSEWHERE/$n" "$T/$rel"
+      FOREIGN[$rel]="l:$ELSEWHERE/$n"
+      LOG+=("tgt-link $rel")
+      ;;
+    5 | 6) # the user deletes a deployed link
+      [[ -L "$T/$rel" ]] || return 0
+      rm -f "$T/$rel"
+      forget "$rel"
+      LOG+=("tgt-rm-link $rel")
+      ;;
+    7) # the user deletes a whole target directory
+      [[ -d "$T/$rel" && ! -L "$T/$rel" ]] || return 0
+      rm -rf "${T:?}/$rel"
+      forget "$rel"
+      LOG+=("tgt-rm-dir $rel")
+      ;;
+    8 | 10) # the user cleans up something of theirs
+      local keys=("${!FOREIGN[@]}")
+      ((${#keys[@]})) || return 0
+      rel="${keys[RANDOM % ${#keys[@]}]}"
+      rm -rf "${T:?}/$rel"
+      forget "$rel"
+      LOG+=("tgt-cleanup $rel")
+      ;;
+    9) # the user replaces a target directory with a file
+      [[ -d "$T/$rel" && ! -L "$T/$rel" ]] || return 0
+      rm -rf "${T:?}/$rel"
+      forget "$rel"
+      echo "foreign:$rel:$n" >"$T/$rel"
+      FOREIGN[$rel]="f:foreign:$rel:$n"
+      LOG+=("tgt-dir-to-file $rel")
+      ;;
+  esac
+}
+
+# The directories on the way to a path that do not exist yet.
+missing_parents() {
+  local dir out=""
+  dir="$(dirname "$1")"
+  while [[ $dir != "." ]]; do
+    if [[ ! -e "$T/$dir" && ! -L "$T/$dir" ]]; then
+      out="$dir $out"
+    fi
+    dir="$(dirname "$dir")"
+  done
+  echo "$out"
+}
+
+snap_src() {
+  (cd "$SRC" 2>/dev/null && find . -mindepth 1 \( -type f -printf '%p f ' -exec cat {} \; \) -o \( -type d -printf '%p d\n' \) -o \( -type l -printf '%p l %l\n' \) | sort)
+}
+
+snap_tgt() {
+  (cd "$T" 2>/dev/null && find . -mindepth 1 \( -type f -printf '%p f ' -exec cat {} \; \) -o \( -type d -printf '%p d\n' \) -o \( -type l -printf '%p l %l\n' \) | sort)
+}
+
+dump() {
+  echo "seed=$SEED round=$ROUND"
+  printf '  %s\n' "${LOG[@]}"
+  echo "--- source"
+  snap_src
+  echo "--- target"
+  snap_tgt
+  echo "--- user's paths"
+  local k
+  for k in "${!FOREIGN[@]}"; do echo "$k ${FOREIGN[$k]}"; done | sort
+  echo "--- last mise output"
+  echo "$LAST_OUT"
+}
+
+drift_fail() {
+  dump
+  fail "$*"
+}
+
+# Is something of the user's in the way of deploying a source file? A file
+# at the path or a directory on the way to it, or anything of the user's
+# where a directory is needed, or inside a directory where a file is needed.
+# A link of the user's at the path itself is not in the way: apply repoints
+# it, as docs/dotfiles/managed.md#conflicts says.
+blocked() {
+  local rel="$1" k
+  for k in "${!FOREIGN[@]}"; do
+    case ${FOREIGN[$k]} in
+      d:*) [[ $rel == "$k" ]] && return 0 ;;
+      l:*) [[ $rel == "$k"/* || $k == "$rel"/* ]] && return 0 ;;
+      *) [[ $rel == "$k" || $rel == "$k"/* || $k == "$rel"/* ]] && return 0 ;;
+    esac
+  done
+  return 1
+}
+
+# Is anything of the user's in the way of any source file?
+any_blocked() {
+  local p
+  while IFS= read -r p; do
+    blocked "${p#./}" && return 0
+  done < <(cd "$SRC" 2>/dev/null && find . -mindepth 1 -type f)
+  return 1
+}
+
+# A link of the user's where a source file deploys is repointed at it; it is
+# mise's from then on.
+forget_repointed() {
+  local k
+  for k in "${!FOREIGN[@]}"; do
+    if [[ ${FOREIGN[$k]} == l:* && -L "$T/$k" && "$(readlink "$T/$k")" == "$SRC/$k" ]]; then
+      unset "FOREIGN[$k]"
+    fi
+  done
+}
+
+check_foreign() {
+  local k want
+  for k in "${!FOREIGN[@]}"; do
+    want="${FOREIGN[$k]}"
+    case $want in
+      f:*)
+        [[ -f "$T/$k" && ! -L "$T/$k" ]] || drift_fail "$1: the user's file $k is gone"
+        [[ "$(cat "$T/$k")" == "${want#f:}" ]] || drift_fail "$1: the user's file $k was changed"
+        ;;
+      l:*)
+        [[ -L "$T/$k" ]] || drift_fail "$1: the user's link $k is gone"
+        [[ "$(readlink "$T/$k")" == "${want#l:}" ]] || drift_fail "$1: the user's link $k was repointed"
+        ;;
+      d:*)
+        [[ -d "$T/$k" && ! -L "$T/$k" ]] && continue
+        drift_fail "$1: the user's directory $k is gone"
+        ;;
+    esac
+  done
+}
+
+# Everything in the target that is not the user's is a link into the source,
+# to the file of the same path, which exists.
+check_links() {
+  local p rel dest
+  while IFS= read -r p; do
+    rel="${p#./}"
+    [[ -n ${FOREIGN[$rel]+x} ]] && continue
+    if [[ -L "$T/$rel" ]]; then
+      dest="$(readlink "$T/$rel")"
+      [[ $dest == "$SRC/$rel" ]] || drift_fail "$1: $rel links to $dest, not $SRC/$rel"
+      [[ -f $dest ]] || drift_fail "$1: $rel links to $dest, which is not a file"
+    elif [[ ! -d "$T/$rel" ]]; then
+      drift_fail "$1: $rel is a file nobody put there"
+    fi
+  done < <(cd "$T" 2>/dev/null && find . -mindepth 1)
+}
+
+check_deployed() {
+  local p rel
+  while IFS= read -r p; do
+    rel="${p#./}"
+    blocked "$rel" && continue
+    [[ -L "$T/$rel" && "$(readlink "$T/$rel")" == "$SRC/$rel" ]] ||
+      drift_fail "$1: $rel is not deployed though nothing of the user's is in its way"
+  done < <(cd "$SRC" 2>/dev/null && find . -mindepth 1 -type f)
+}
+
+run_mise() {
+  STATUS=0
+  LAST_OUT="$(mise "$@" 2>&1)" || STATUS=$?
+}
+
+for SEED in $SEEDS; do
+  RANDOM=$SEED
+  rm -rf "${SRC:?}" "${T:?}" "${ELSEWHERE:?}"
+  FOREIGN=()
+  LOG=()
+  mkdir -p "$SRC/d1/d2" "$T"
+  echo "src:a" >"$SRC/a"
+  echo "src:d1/a" >"$SRC/d1/a"
+  echo "src:d1/d2/c" >"$SRC/d1/d2/c"
+  ROUND=0
+  REFUSED=0
+  run_mise dot apply --yes --prune
+  check_deployed "first apply"
+
+  for ROUND in $(seq 1 "$ROUNDS"); do
+    for _ in 1 2 3; do mutate; done
+    LOG+=("-- apply $ROUND")
+    before="$(snap_src)"
+    tgt_before="$(snap_tgt)"
+    run_mise dot apply --yes --prune
+    [[ "$(snap_src)" == "$before" ]] || drift_fail "apply changed the source"
+    if ((STATUS)); then
+      # a conflict stops the apply before it writes anything
+      any_blocked || drift_fail "apply failed with nothing of the user's in the way"
+      [[ $LAST_OUT == *"refusing to overwrite"* ]] || drift_fail "apply failed for another reason"
+      [[ "$(snap_tgt)" == "$tgt_before" ]] || drift_fail "a refused apply changed the target"
+      check_foreign "refused apply"
+      REFUSED=$((REFUSED + 1))
+      continue
+    fi
+    forget_repointed
+    check_foreign "apply"
+    check_links "apply"
+    check_deployed "apply"
+
+    after="$(snap_tgt)"
+    run_mise dot apply --yes --prune
+    [[ "$(snap_tgt)" == "$after" ]] || drift_fail "a second apply changed the target"
+  done
+
+  before="$(snap_src)"
+  run_mise dot unapply --group pkg --yes
+  [[ "$(snap_src)" == "$before" ]] || drift_fail "unapply changed the source"
+  check_foreign "unapply"
+  if [[ -d $T ]] && find "$T" -type l -lname "$SRC/*" | grep -q .; then
+    drift_fail "unapply left links into the source"
+  fi
+  ok "seed $SEED: $ROUNDS rounds, $REFUSED refused for the user's files"
+done

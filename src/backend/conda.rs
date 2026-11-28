@@ -74,11 +74,10 @@ fn rewrite_request_url(
 ) -> Result<()> {
     let original = request.url().clone();
     rewriter(request.url_mut());
-    // `headers_mut` and `url_mut` cannot be borrowed at once, so scope the URL through a copy.
-    let mut url = request.url().clone();
-    crate::http::clear_cross_host_credentials(request.headers_mut(), &original, &mut url);
+    // `headers_mut` and `url` cannot be borrowed at once, so scope the headers through a copy.
+    let url = request.url().clone();
+    crate::http::clear_cross_host_credentials(request.headers_mut(), &original, &url);
     crate::http::ensure_secure_replacement_credentials(&original, &url, request.headers())?;
-    *request.url_mut() = url;
     Ok(())
 }
 
@@ -1516,9 +1515,9 @@ mod tests {
             reqwest::header::HeaderValue::from_static("preserved"),
         );
 
+        // As `apply_url_replacements` does, the rewrite leaves the URL's login behind.
         rewrite_request_url(&mut request, |url| {
-            url.set_host(Some("mirror.invalid")).unwrap();
-            url.set_scheme("http").unwrap();
+            *url = Url::parse("http://mirror.invalid/channel/noarch/repodata.json").unwrap();
         })
         .unwrap();
 
