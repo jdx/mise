@@ -99,6 +99,12 @@ assert_not_contains "cd project/ignored/deep && mise env" "/deep/.venv"
 assert_contains "cd project/ignored && mise env" "$(dirname "$PIPENV")"
 assert_contains "cd project/ignored/deep && mise env" "$(dirname "$PIPENV")"
 assert_contains "cd project/sub && mise env" "VIRTUAL_ENV=$PWD/project/sub/.venv"
+# the env cache does not keep a virtualenv on PATH once its directory is ignored
+make_repo project/cached Pipfile
+cached_exec="cd project/cached && MISE_ENV_CACHE=1 __MISE_ENV_CACHE_KEY=dGVzdGtleXRlc3RrZXl0ZXN0a2V5dGVzdGtleXRlc3Q= mise exec -- printenv PATH"
+assert_contains "$cached_exec" "/project/cached/.venv/bin"
+mise trust --ignore project/cached
+assert_not_contains "$cached_exec" "/project/cached/.venv/bin"
 # a trusted_config_paths entry for the config overrides a `mise trust --ignore`
 # of its root, for the root and the directories below it alike
 mkdir -p settings-trusted/.git

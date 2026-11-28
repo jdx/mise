@@ -256,7 +256,7 @@ fn is_tool_option_env_key(key: &str) -> bool {
 /// `ignored_config_paths` names, and lets a `trusted_config_paths` entry for the
 /// config override a `mise trust --ignore` of the root. Global config does not
 /// vouch for a directory, and safe mode trusts none.
-fn dir_is_trusted(config: &Config, dir: &Path) -> bool {
+pub(crate) fn dir_is_trusted(config: &Config, dir: &Path) -> bool {
     use crate::config::config_file::{
         is_ignored, is_ignored_via_setting, is_path_trusted, is_trusted,
     };

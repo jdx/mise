@@ -6954,6 +6954,9 @@ pub trait Backend: Debug + Send + Sync {
     ) -> eyre::Result<BTreeMap<String, String>> {
         let dependencies = ctx.dependency_context(&tv.request).await?;
         let mut env = dependencies.base_env_for_install(&ctx.config).await?;
+        // Install hooks also start in the home directory, so a relative
+        // `MISE_DATA_DIR` needs the same fix as `dependency_env`.
+        absolutize_path_entries(&mut env, &dependencies.paths, std::path::absolute)?;
         self.remove_dependency_shims(&mut env)?;
         Ok(env)
     }

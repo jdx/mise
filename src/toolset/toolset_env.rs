@@ -507,8 +507,20 @@ impl Toolset {
                 is_project_dir_trusted(config, root).to_string(),
             )
         });
-        let tool_versions: Vec<(String, String)> =
-            tool_versions.into_iter().chain(project_trust).collect();
+        // A vfox env hook looks in the current directory only when that directory is
+        // trusted, and `mise trust --ignore` of a directory below the project root
+        // changes none of the files above either.
+        let cwd_trust = dirs::CWD.as_deref().map(|cwd| {
+            (
+                "cwd trust".to_string(),
+                crate::backend::vfox::dir_is_trusted(config, cwd).to_string(),
+            )
+        });
+        let tool_versions: Vec<(String, String)> = tool_versions
+            .into_iter()
+            .chain(project_trust)
+            .chain(cwd_trust)
+            .collect();
 
         // Get settings hash
         let settings_hash = compute_settings_hash();

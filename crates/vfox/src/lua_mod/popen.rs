@@ -403,6 +403,8 @@ impl UserData for PopenFile {
             this.read(lua, formats)
         });
         methods.add_function("lines", |lua, file: AnyUserData| {
+            // Stock Lua rejects a closed file here, not on the first call.
+            file.borrow_mut::<PopenFile>()?.open()?;
             lua.create_function_mut(move |lua, ()| {
                 let mut this = file.borrow_mut::<PopenFile>()?;
                 this.read_line(false)?
@@ -581,6 +583,10 @@ mod tests {
             local c = io.popen("exit 5")
             note(io.close(c), io.type(c))
             note(closed_error(function() return io.close(c) end))
+            -- lines() on a closed handle fails at once, not on the first call
+            local l = io.popen("true")
+            l:close()
+            note(closed_error(function() return l:lines() end))
             note(io.type("not a file"), io.type(io.stdout))
             -- a handle dropped without close is reaped by the collector
             io.popen("exit 4")
