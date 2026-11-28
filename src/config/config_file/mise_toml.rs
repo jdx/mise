@@ -1805,9 +1805,18 @@ impl Deferred {
         format!("{}{}__", self.mark, self.exprs.len() - 1)
     }
 
+    /// Put the deferred code back in `rendered`, the escaped output of the config-load render. A
+    /// `{` just before a placeholder is escaped too: substituted text that ends in `{` would
+    /// otherwise join the `{{` of the code put back after it into `{{{`.
     fn restore(&self, mut rendered: String) -> String {
         for (i, expr) in self.exprs.iter().enumerate() {
-            rendered = rendered.replace(&format!("{}{i}__", self.mark), expr);
+            let placeholder = format!("{}{i}__", self.mark);
+            rendered = rendered
+                .replace(
+                    &format!("{{{placeholder}"),
+                    &format!("{{{{ \"{{\" }}}}{placeholder}"),
+                )
+                .replace(&placeholder, expr);
         }
         rendered
     }
@@ -4533,6 +4542,45 @@ mod tests {
         let input = r#"{{ "\"" }}{% raw %}{{ version }}{% endraw %}"#;
         let (_, deferred) = shield_raw_blocks(input);
         assert_eq!(deferred.exprs, vec!["{{ version }}"]);
+    }
+
+    /// A substituted value that ends in `{` stays data next to the deferred code put back after
+    /// it, instead of joining that code's `{{` into an opener.
+    #[test]
+    fn test_trailing_brace_stays_apart_from_deferred_code() {
+        use crate::tera::{TeraEngine, render_str};
+        let mut ctx = tera::Context::new();
+        ctx.insert("x", "a{");
+        let mut backend_ctx = tera::Context::new();
+        backend_ctx.insert("version", "1.2.3");
+        type Shield = fn(&str) -> (String, Deferred);
+        for (input, shield, expected) in [
+            (
+                "{{ x }}{{ version | replace(from='.', to='_') }}",
+                shield_version_expressions as Shield,
+                "a{1_2_3",
+            ),
+            (
+                "{{ x }}{% raw %}{{ version }}{% endraw %}",
+                shield_raw_blocks,
+                "a{1.2.3",
+            ),
+        ] {
+            for mut tera in [
+                TeraEngine::V1(Box::default()),
+                TeraEngine::V2(Box::default()),
+            ] {
+                let option = render_option_for_backend(shield(input), |s| {
+                    Ok(render_str(&mut tera, s, &ctx)?)
+                })
+                .unwrap();
+                assert_eq!(
+                    render_str(&mut tera, &option, &backend_ctx).unwrap(),
+                    expected,
+                    "{option}"
+                );
+            }
+        }
     }
 
     /// Each tag is read once, whatever follows it: a block after many ordinary tags is still
