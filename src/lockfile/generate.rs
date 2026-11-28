@@ -506,12 +506,13 @@ fn keep_pins_recorded_with_a_login(old: &PlatformInfo, new: &mut PlatformInfo) {
 /// from `new`'s URL, which leaves the login out, and a server that needs the
 /// login would refuse it.
 ///
-/// Returns the URLs in `new` whose artifact it checked against the old pin, so
-/// [`check_replaced_weak_pins`] does not download them again without the login.
+/// Returns the artifacts of `new` it checked, each with the old pin it checked
+/// it against, so [`check_replaced_weak_pins`] does not download them again
+/// without the login.
 async fn upgrade_weak_pins_recorded_with_a_login(
     old: &PlatformInfo,
     new: &mut PlatformInfo,
-) -> Result<Vec<String>> {
+) -> Result<Vec<CheckedPin>> {
     let mut verified = Vec::new();
     use crate::backend::static_helpers::is_lock_url;
     let weak = |checksum: Option<&str>| checksum.filter(|c| is_weak_checksum(c)).map(str::to_owned);
@@ -532,9 +533,12 @@ async fn upgrade_weak_pins_recorded_with_a_login(
             .await?,
         );
         new.checksum_source = None;
-        verified.extend(new.url.clone());
+        verified.push(CheckedPin {
+            artifact: None,
+            pin,
+        });
     }
-    for artifact in &mut new.additional_artifacts {
+    for (index, artifact) in new.additional_artifacts.iter_mut().enumerate() {
         let Some((old, pin)) = old.additional_artifacts.iter().find_map(|old| {
             let login = has_login(&old.url) || old.url_api.as_deref().is_some_and(has_login);
             (login && is_lock_url(Some(old.url.as_str()), &artifact.url))
@@ -555,9 +559,20 @@ async fn upgrade_weak_pins_recorded_with_a_login(
             .await?,
         );
         artifact.checksum_source = None;
-        verified.push(artifact.url.clone());
+        verified.push(CheckedPin {
+            artifact: Some(index),
+            pin,
+        });
     }
     Ok(verified)
+}
+
+/// An artifact of an entry, checked against the old pin `pin`: the main
+/// artifact when `artifact` is `None`, else that additional artifact.
+#[derive(Debug, PartialEq, Eq)]
+struct CheckedPin {
+    artifact: Option<usize>,
+    pin: String,
 }
 
 /// The checksum of `old`, a conda package recorded with the channel's login,
@@ -1398,7 +1413,7 @@ impl Drop for ProgressGuard<'_> {
 /// download is confirmed, so it loses any [`ChecksumSource`](crate::lockfile::ChecksumSource) mark.
 async fn complete_artifact_checksums(info: &mut PlatformInfo) -> Result<()> {
     if info.checksum.as_deref().is_none_or(is_weak_checksum)
-        && let Some(url) = &info.url
+        && let Some(url) = download_url(info)
     {
         let expected = info.checksum.as_deref().map(|c| (c, RELEASE_CHECKSUM));
         info.checksum = Some(
@@ -1430,29 +1445,45 @@ async fn complete_artifact_checksums(info: &mut PlatformInfo) -> Result<()> {
     Ok(())
 }
 
+/// The URL the main artifact of `info` is downloaded from: the configured one,
+/// which may hold a login the entry leaves out.
+fn download_url(info: &PlatformInfo) -> Option<&str> {
+    info.download_url
+        .as_ref()
+        .map(crate::lockfile::LoginUrl::as_str)
+        .or(info.url.as_deref())
+}
+
 const RELEASE_CHECKSUM: &str = "the checksum its release lists";
 const LOCKED_CHECKSUM: &str = "the checksum mise.lock pinned it by";
 
 /// A refreshed entry replaces the md5 or sha1 checksum `old` pinned an
 /// artifact by. When the artifact is still at the same URL, it is downloaded
 /// and checked against that pin as well as the new checksum, so the refresh
-/// cannot move the pin to other bytes the URL now serves. The URLs in
-/// `verified` were already checked against the old pin, through the login the
-/// old entry recorded, and are not downloaded again.
+/// cannot move the pin to other bytes the URL now serves. The main artifact is
+/// downloaded through the login of its configured URL, which the entry leaves
+/// out. The artifacts in `verified` were already checked against that same old
+/// pin, through the login the old entry recorded, and are not downloaded again.
 async fn check_replaced_weak_pins(
     old: &PlatformInfo,
     new: &PlatformInfo,
-    verified: &[String],
+    verified: &[CheckedPin],
 ) -> Result<()> {
+    let checked = |artifact: Option<usize>, pin: &str| {
+        verified
+            .iter()
+            .any(|checked| checked.artifact == artifact && checked.pin == pin)
+    };
     let replaced = |old: &Option<String>, new: &Option<String>| {
         old.as_deref()
             .filter(|old| is_weak_checksum(old) && Some(*old) != new.as_deref())
             .map(str::to_owned)
     };
-    if let Some(url) = &new.url
-        && !verified.contains(url)
+    if let Some(url) = download_url(new)
+        && new.url.is_some()
         && old.url == new.url
         && let Some(pin) = replaced(&old.checksum, &new.checksum)
+        && !checked(None, &pin)
     {
         let mut expected = vec![(pin.as_str(), LOCKED_CHECKSUM)];
         expected.extend(new.checksum.as_deref().map(|c| (c, RELEASE_CHECKSUM)));
@@ -1464,15 +1495,13 @@ async fn check_replaced_weak_pins(
         )
         .await?;
     }
-    for artifact in &new.additional_artifacts {
-        if verified.contains(&artifact.url) {
-            continue;
-        }
+    for (index, artifact) in new.additional_artifacts.iter().enumerate() {
         let Some(pin) = old
             .additional_artifacts
             .iter()
             .find(|old| old.url == artifact.url)
             .and_then(|old| replaced(&old.checksum, &artifact.checksum))
+            .filter(|pin| !checked(Some(index), pin))
         else {
             continue;
         };
@@ -1500,8 +1529,10 @@ async fn artifact_checksum(
     let check = |path: &std::path::Path| -> Result<()> {
         for (checksum, what) in expected {
             if let Some((algorithm, hash)) = checksum.split_once(':') {
-                crate::hash::ensure_checksum(path, hash, None, algorithm)
-                    .wrap_err_with(|| format!("{url} does not match {what}"))?;
+                crate::hash::ensure_checksum(path, hash, None, algorithm).wrap_err_with(|| {
+                    let url = crate::backend::static_helpers::lock_url(url);
+                    format!("{url} does not match {what}")
+                })?;
             }
         }
         Ok(())
@@ -1541,9 +1572,10 @@ async fn artifact_checksum(
 /// download matched is replaced by the download's sha256.
 pub(crate) async fn download_for_strong_checksum(
     url: &str,
+    headers: Option<&reqwest::header::HeaderMap>,
     checksum: &mut Option<String>,
 ) -> Result<()> {
-    let directory = download_for_verification(url, checksum).await?;
+    let directory = download_with_headers_for_verification(url, headers, checksum).await?;
     if checksum.as_deref().is_some_and(is_weak_checksum) {
         *checksum = Some(format!(
             "sha256:{}",
@@ -1557,11 +1589,23 @@ pub(crate) async fn download_for_verification(
     url: &str,
     checksum: &mut Option<String>,
 ) -> Result<tempfile::TempDir> {
+    download_with_headers_for_verification(url, None, checksum).await
+}
+
+/// [`download_for_verification`], sending `headers` with the request.
+async fn download_with_headers_for_verification(
+    url: &str,
+    headers: Option<&reqwest::header::HeaderMap>,
+    checksum: &mut Option<String>,
+) -> Result<tempfile::TempDir> {
     let directory = tempfile::tempdir()?;
     let path = directory.path().join("artifact");
-    match crate::backend::http::local_artifact_path(url)? {
-        Some(local) => crate::file::copy(&local, &path)?,
-        None => crate::http::HTTP.download_file(url, &path, None).await?,
+    match (crate::backend::http::local_artifact_path(url)?, headers) {
+        (Some(local), _) => crate::file::copy(&local, &path)?,
+        (None, Some(headers)) if !headers.is_empty() => {
+            crate::backend::vfox::download_with_plugin_headers(url, &path, headers).await?
+        }
+        (None, _) => crate::http::HTTP.download_file(url, &path, None).await?,
     }
     if let Some((algorithm, expected)) = checksum.as_deref().and_then(|value| value.split_once(':'))
     {
@@ -2244,6 +2288,34 @@ mod tests {
         check_replaced_weak_pins(&entry(&url, &blake3), &refreshed, &[])
             .await
             .unwrap();
+
+        // A pin checked through the login covers only that artifact and that
+        // pin: the additional artifact at the same URL, pinned to other
+        // bytes, is still checked.
+        let good = "md5:8e5b948a454515dbabfc7eb718daa52f";
+        let mut old = entry(&url, good);
+        old.additional_artifacts[0].checksum = Some(other.into());
+        let checked = |artifact, pin: &str| CheckedPin {
+            artifact,
+            pin: pin.into(),
+        };
+        assert!(
+            check_replaced_weak_pins(&old, &refreshed, &[checked(None, good)])
+                .await
+                .is_err()
+        );
+        assert!(
+            check_replaced_weak_pins(&old, &refreshed, &[checked(Some(0), good)])
+                .await
+                .is_err()
+        );
+        check_replaced_weak_pins(
+            &old,
+            &refreshed,
+            &[checked(None, good), checked(Some(0), other)],
+        )
+        .await
+        .unwrap();
     }
 
     #[tokio::test]
@@ -2771,7 +2843,13 @@ mod tests {
         let verified = upgrade_weak_pins_recorded_with_a_login(&old, &mut new)
             .await
             .unwrap();
-        assert_eq!(verified, vec![url.clone()]);
+        assert_eq!(
+            verified,
+            vec![CheckedPin {
+                artifact: None,
+                pin: format!("md5:{ARTIFACT_MD5}"),
+            }]
+        );
         let sha256 = format!("sha256:{ARTIFACT_SHA256}");
         assert_eq!(new.checksum.as_deref(), Some(sha256.as_str()));
         complete_artifact_checksums(&mut new).await.unwrap();
@@ -2801,18 +2879,92 @@ mod tests {
         let url = format!("{}/weak-checksum-login.tar.gz", server.url())
             .replace("http://", "http://ci:token@");
         let mut checksum = Some(format!("md5:{ARTIFACT_MD5}"));
-        download_for_strong_checksum(&url, &mut checksum)
+        download_for_strong_checksum(&url, None, &mut checksum)
             .await
             .unwrap();
         assert_eq!(checksum, Some(format!("sha256:{ARTIFACT_SHA256}")));
 
         let mut checksum = Some("md5:00000000000000000000000000000000".to_string());
         assert!(
-            download_for_strong_checksum(&url, &mut checksum)
+            download_for_strong_checksum(&url, None, &mut checksum)
                 .await
                 .is_err()
         );
         mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn weak_checksum_download_sends_the_configured_headers() {
+        let mut server = mockito::Server::new_async().await;
+        let with_headers = server
+            .mock("GET", "/weak-checksum-headers.tar.gz")
+            .match_header("authorization", "Basic Y2k6dG9rZW4=")
+            .match_header("x-mirror-token", "s3cret")
+            .with_body("artifact")
+            .expect(1)
+            .create_async()
+            .await;
+        let url = format!("{}/weak-checksum-headers.tar.gz", server.url())
+            .replace("http://", "http://ci:token@");
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert("x-mirror-token", "s3cret".parse().unwrap());
+        let mut checksum = Some(format!("md5:{ARTIFACT_MD5}"));
+        download_for_strong_checksum(&url, Some(&headers), &mut checksum)
+            .await
+            .unwrap();
+        assert_eq!(checksum, Some(format!("sha256:{ARTIFACT_SHA256}")));
+        with_headers.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn a_replaced_weak_pin_is_checked_through_the_login_of_the_configured_url() {
+        let mut server = mockito::Server::new_async().await;
+        let with_login = server
+            .mock("GET", "/replaced-pin-login.tar.gz")
+            .match_header("authorization", "Basic Y2k6dG9rZW4=")
+            .with_body("artifact")
+            .expect_at_least(1)
+            .create_async()
+            .await;
+        let without_login = server
+            .mock("GET", "/replaced-pin-login.tar.gz")
+            .match_header("authorization", mockito::Matcher::Missing)
+            .with_status(401)
+            .expect(0)
+            .create_async()
+            .await;
+        // A path no other test serves: downloads are cached per invocation.
+        let url = format!("{}/replaced-pin-login.tar.gz", server.url());
+        let login_url = url.replace("http://", "http://ci:token@");
+        let entry = |checksum: &str| PlatformInfo {
+            url: Some(url.clone()),
+            checksum: Some(checksum.into()),
+            ..Default::default()
+        };
+        let refreshed = PlatformInfo {
+            download_url: crate::lockfile::LoginUrl::of(&login_url),
+            ..entry(&format!("sha256:{ARTIFACT_SHA256}"))
+        };
+        assert!(!format!("{refreshed:?}").contains("token"), "{refreshed:?}");
+
+        check_replaced_weak_pins(&entry(&format!("md5:{ARTIFACT_MD5}")), &refreshed, &[])
+            .await
+            .unwrap();
+        let err = check_replaced_weak_pins(
+            &entry("md5:00000000000000000000000000000000"),
+            &refreshed,
+            &[],
+        )
+        .await
+        .unwrap_err();
+        let err = format!("{err:#}");
+        assert!(
+            err.contains("does not match the checksum mise.lock pinned it by"),
+            "{err}"
+        );
+        assert!(!err.contains("token"), "{err}");
+        with_login.assert_async().await;
+        without_login.assert_async().await;
     }
 
     /// An additional artifact sends the headers its backend resolved it with,

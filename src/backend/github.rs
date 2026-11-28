@@ -1622,6 +1622,7 @@ impl Backend for UnifiedGitBackend {
                 let (url, url_api, checksum) =
                     lock_urls_of(&asset, |url| self.forge_headers(url, &opts.api_url())).await?;
                 Ok(PlatformInfo {
+                    download_url: crate::lockfile::LoginUrl::of(&asset.url),
                     download_headers,
                     checksum_source,
                     url: Some(url),

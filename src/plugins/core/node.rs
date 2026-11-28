@@ -997,7 +997,7 @@ impl Backend for NodePlugin {
             }
         };
 
-        let url = resolve_lock_url(url.as_str(), &mut checksum).await?;
+        let url = resolve_lock_url(url.as_str(), None, &mut checksum).await?;
         Ok(PlatformInfo {
             url: Some(url),
             checksum,
@@ -1028,7 +1028,7 @@ impl NodePlugin {
             }
         };
 
-        let url = resolve_lock_url(url.as_str(), &mut checksum).await?;
+        let url = resolve_lock_url(url.as_str(), None, &mut checksum).await?;
         Ok(PlatformInfo {
             install: Some("source".to_string()),
             checksum,

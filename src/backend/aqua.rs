@@ -1163,11 +1163,13 @@ impl Backend for AquaBackend {
         // The URLs are recorded without the login of the package's `url`, which
         // an install puts back ([`locked_download_url`]). An artifact with no
         // checksum yet is hashed from the URL with the login.
+        let download_url = url.as_deref().and_then(crate::lockfile::LoginUrl::of);
         let url = match url {
-            Some(url) => Some(resolve_lock_url(&url, &mut checksum).await?),
+            Some(url) => Some(resolve_lock_url(&url, None, &mut checksum).await?),
             None => None,
         };
         Ok(PlatformInfo {
+            download_url,
             checksum_source: mirror_digest.then_some(ChecksumSource::VersionsHost),
             url,
             url_api: url_api.as_deref().map(lock_url),

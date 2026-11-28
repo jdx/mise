@@ -417,7 +417,7 @@ impl Backend for GoPlugin {
         } else {
             None
         };
-        let url = resolve_lock_url(&url, &mut checksum).await?;
+        let url = resolve_lock_url(&url, None, &mut checksum).await?;
 
         Ok(PlatformInfo {
             url: Some(url),

@@ -1243,13 +1243,20 @@ pub(crate) fn with_login_of(mut url: url::Url, base: &url::Url) -> url::Url {
 /// artifact is hashed through `url` itself, checked against the weak checksum
 /// and pinned by its sha256: the recorded URL, without its login, would only
 /// answer with an authentication error when `mise lock` hashed it.
-pub(crate) async fn resolve_lock_url(url: &str, checksum: &mut Option<String>) -> Result<String> {
+///
+/// `headers` are sent with that download, as the install sends them; they
+/// are not recorded.
+pub(crate) async fn resolve_lock_url(
+    url: &str,
+    headers: Option<&reqwest::header::HeaderMap>,
+    checksum: &mut Option<String>,
+) -> Result<String> {
     let lock_url = lock_url(url);
     if checksum.as_deref().is_none_or(is_weak_checksum)
         && lock_url != url
         && crate::config::Settings::get().generate_lockfiles()
     {
-        crate::lockfile::generate::download_for_strong_checksum(url, checksum).await?;
+        crate::lockfile::generate::download_for_strong_checksum(url, headers, checksum).await?;
     }
     Ok(lock_url)
 }

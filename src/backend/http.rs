@@ -1578,10 +1578,14 @@ impl Backend for HttpBackend {
         // credentials that fetch it. Installs take the URL from config.
         // `generate` would otherwise hash what the recorded URL serves, which
         // without the credentials is an authentication error, so a missing or
-        // md5/sha1 checksum is settled here from the URL with its login.
-        let lock_url = resolve_lock_url(&url, &mut checksum).await?;
+        // md5/sha1 checksum is settled here from the URL with its login and
+        // the configured `headers`, which are sent but not recorded either.
+        let headers = opts.headers_for_target(Some(tv.version.as_str()), target)?;
+        let lock_url = resolve_lock_url(&url, Some(&headers), &mut checksum).await?;
 
         Ok(PlatformInfo {
+            download_url: crate::lockfile::LoginUrl::of(&url),
+            download_headers: (!headers.is_empty()).then_some(headers),
             url: Some(lock_url),
             checksum,
             ..Default::default()

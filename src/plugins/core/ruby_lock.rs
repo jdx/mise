@@ -535,7 +535,7 @@ impl RubyPlugin {
                 }
             }
             // A `ruby.precompiled_url` template can carry a login.
-            let url = resolve_lock_url(&url, &mut checksum).await?;
+            let url = resolve_lock_url(&url, None, &mut checksum).await?;
             return Ok(PlatformInfo {
                 url: Some(url),
                 checksum,

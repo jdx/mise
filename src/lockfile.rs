@@ -542,6 +542,7 @@ impl From<&PlatformInfo> for CachedPlatform {
             url_api,
             // Set by a plugin that resolves a URL, never by a lockfile.
             download_headers: _,
+            download_url: _,
             conda_deps,
             provenance,
             provenance_verified,
@@ -599,6 +600,7 @@ impl From<CachedPlatform> for PlatformInfo {
             url,
             url_api,
             download_headers: None,
+            download_url: None,
             conda_deps,
             provenance: provenance.map(Into::into),
             provenance_verified,
@@ -1515,6 +1517,30 @@ fn merge_additional_artifacts(
     merged
 }
 
+/// A URL that holds a login `mise.lock` leaves out. Its `Debug` output
+/// leaves the login out too.
+#[derive(Clone, PartialEq, Eq)]
+pub struct LoginUrl(String);
+
+impl LoginUrl {
+    /// `url`, when it holds a login.
+    pub(crate) fn of(url: &str) -> Option<Self> {
+        (crate::backend::static_helpers::lock_url(url) != url).then(|| Self(url.to_string()))
+    }
+
+    pub(crate) fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Debug for LoginUrl {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("LoginUrl")
+            .field(&crate::backend::static_helpers::lock_url(&self.0))
+            .finish()
+    }
+}
+
 #[derive(Debug, Default, Clone, Serialize, PartialEq, Eq)]
 pub struct PlatformInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1535,6 +1561,11 @@ pub struct PlatformInfo {
     /// only to download the artifact for its checksum; never written.
     #[serde(skip)]
     pub download_headers: Option<reqwest::header::HeaderMap>,
+    /// `url` with the login it is recorded without, from the config that
+    /// resolved it. Used only to download the artifact for its checksum;
+    /// never written.
+    #[serde(skip)]
+    pub download_url: Option<LoginUrl>,
     /// References to conda packages in the shared conda-packages section (by basename)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub conda_deps: Option<Vec<String>>,
@@ -1604,12 +1635,14 @@ impl PlatformInfo {
     }
 
     /// Whether both describe the same persisted data. Ignores `size`, which is
-    /// read from existing lockfiles but never written, and `download_headers`.
+    /// read from existing lockfiles but never written, `download_headers` and
+    /// `download_url`.
     pub fn same_persisted_data(&self, other: &PlatformInfo) -> bool {
         fn persisted(info: &PlatformInfo) -> PlatformInfo {
             let mut info = info.clone();
             info.size = None;
             info.download_headers = None;
+            info.download_url = None;
             for artifact in &mut info.additional_artifacts {
                 artifact.size = None;
                 artifact.download_headers = None;
@@ -1633,6 +1666,7 @@ impl PlatformInfo {
             url: None,
             url_api: None,
             download_headers: None,
+            download_url: None,
             provenance: None,
             provenance_verified: None,
             github_attestations: None,
@@ -1755,6 +1789,7 @@ impl PlatformInfo {
         };
         PlatformInfo {
             download_headers: None,
+            download_url: None,
             install: self.install.clone().or_else(|| {
                 if self.url.is_some() {
                     None
@@ -1982,6 +2017,7 @@ impl TryFrom<toml::Value> for PlatformInfo {
                 };
                 Ok(PlatformInfo {
                     download_headers: None,
+                    download_url: None,
                     install,
                     checksum,
                     checksum_source,
@@ -3057,6 +3093,7 @@ impl Lockfile {
                 };
                 PlatformInfo {
                     download_headers: None,
+                    download_url: None,
                     install: platform_info.install.or_else(|| {
                         if platform_info.url.is_some() {
                             None
