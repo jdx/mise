@@ -99,6 +99,16 @@ assert_not_contains "cd project/ignored/deep && mise env" "/deep/.venv"
 assert_contains "cd project/ignored && mise env" "$(dirname "$PIPENV")"
 assert_contains "cd project/ignored/deep && mise env" "$(dirname "$PIPENV")"
 assert_contains "cd project/sub && mise env" "VIRTUAL_ENV=$PWD/project/sub/.venv"
+# a trusted_config_paths entry for the config overrides a `mise trust --ignore`
+# of its root, for the root and the directories below it alike
+mkdir -p settings-trusted/.git
+printf '[env]\nFOO = "bar"\n[tools]\npipenv = "2024.4.1"\n' >settings-trusted/mise.toml
+make_repo settings-trusted Pipfile
+make_repo settings-trusted/sub Pipfile
+mise trust --ignore settings-trusted
+assert_not_contains "cd settings-trusted/sub && mise env" "/settings-trusted/sub/.venv"
+assert_contains "cd settings-trusted && MISE_TRUSTED_CONFIG_PATHS=$PWD/settings-trusted/mise.toml mise env" "VIRTUAL_ENV=$PWD/settings-trusted/.venv"
+assert_contains "cd settings-trusted/sub && MISE_TRUSTED_CONFIG_PATHS=$PWD/settings-trusted/mise.toml mise env" "VIRTUAL_ENV=$PWD/settings-trusted/sub/.venv"
 
 # once trusted, the virtualenv is activated as before, except in safe mode
 mise trust pipenv-repo
