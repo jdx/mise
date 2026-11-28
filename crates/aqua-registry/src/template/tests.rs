@@ -280,3 +280,125 @@ fn test_lex_empty_string() {
     let tokens = lex(r#""""#).unwrap();
     assert_eq!(tokens, vec![Token::String("")]);
 }
+
+#[test]
+fn test_lex_multibyte_identifier_and_whitespace() {
+    // Token ends are byte offsets, so multibyte letters and spaces lex instead of panicking
+    assert_eq!(
+        lex("日本 \u{3000}.Version").unwrap(),
+        vec![
+            Token::Func("日本"),
+            Token::Whitespace(" \u{3000}"),
+            Token::Key("Version"),
+        ]
+    );
+
+    // a Unicode space alone separates a function from its argument too
+    assert_eq!(
+        lex("日本\u{3000}.Version").unwrap(),
+        vec![
+            Token::Func("日本"),
+            Token::Whitespace("\u{3000}"),
+            Token::Key("Version"),
+        ]
+    );
+
+    let err = render("{{日 .Version}}", &hashmap(vec![("Version", "1.0.0")])).unwrap_err();
+    assert_eq!(err.to_string(), "unknown function: 日");
+}
+
+#[test]
+fn test_render_rejects_oversized_expressions() {
+    let ctx = hashmap(vec![("Version", "v1.0.0")]);
+    let too_long = format!("template expression has more than {MAX_TAG_TOKENS} tokens");
+
+    // A pipe of the longest allowed size renders; one more stage is refused
+    let pipe = |stages: usize| format!(".Version {}", "|trimV".repeat(stages));
+    assert_eq!(lex(&pipe(127)).unwrap().len(), MAX_TAG_TOKENS);
+    assert_eq!(
+        render(&format!("{{{{{}}}}}", pipe(127)), &ctx).unwrap(),
+        "1.0.0"
+    );
+    let err = render(&format!("{{{{{}}}}}", pipe(128)), &ctx).unwrap_err();
+    assert_eq!(err.to_string(), too_long);
+
+    // The lexer itself stops at the limit instead of storing every token first
+    assert_eq!(lex(&pipe(128)).unwrap_err().to_string(), too_long);
+
+    // So does a chain of fields, whose tokens are added inside one step of the lexer. `.A`
+    // repeated n times is 2n - 1 tokens.
+    let fields = |n: usize| ".A".repeat(n);
+    assert_eq!(lex(&fields(128)).unwrap().len(), MAX_TAG_TOKENS - 1);
+    assert_eq!(lex(&fields(129)).unwrap_err().to_string(), too_long);
+    assert_eq!(lex(&fields(200_001)).unwrap_err().to_string(), too_long);
+    // A tag of exactly the limit that ends in a chain is still accepted: `x(y)` is 4 tokens and
+    // each field after `)` adds 2
+    assert_eq!(
+        lex(&format!("x(y){}", fields(126))).unwrap().len(),
+        MAX_TAG_TOKENS
+    );
+    assert_eq!(
+        lex(&format!("x(y){}", fields(127)))
+            .unwrap_err()
+            .to_string(),
+        too_long
+    );
+
+    // Every way of nesting deeply is refused before it is parsed
+    let n = 200_000;
+    for tag in [
+        format!("{}.Version{}", "(".repeat(n), ")".repeat(n)),
+        format!("{}.Version", "trimV (".repeat(n)),
+        pipe(n),
+        format!("(semver .Version){}", ".Major".repeat(n)),
+    ] {
+        let err = render(&format!("{{{{{tag}}}}}"), &ctx).unwrap_err();
+        assert_eq!(err.to_string(), too_long);
+    }
+}
+
+#[test]
+fn test_render_limits_output_size() {
+    let ctx = hashmap(vec![("FileName", "tool")]);
+    let a32 = "a".repeat(32);
+
+    // Each stage multiplies the length by 33; eight of them would ask for terabytes
+    let chain = |stages: usize| {
+        let replace = format!(r#" | replace "" "{a32}""#);
+        format!("{{{{.FileName{}}}}}", replace.repeat(stages))
+    };
+    assert_eq!(render(&chain(1), &ctx).unwrap().len(), 5 * 33 - 1);
+    let err = render(&chain(8), &ctx).unwrap_err();
+    assert_eq!(err.to_string(), "replace produces more than 65536 bytes");
+
+    // A result of exactly the limit is kept
+    let ctx = hashmap(vec![("V", "o")]);
+    let exact = format!(
+        r#"{{{{replace "o" "{}" .V}}}}"#,
+        "o".repeat(MAX_RENDERED_LEN)
+    );
+    assert_eq!(render(&exact, &ctx).unwrap().len(), MAX_RENDERED_LEN);
+
+    // Many tags that are each short enough still add up
+    let long = "v".repeat(1024);
+    let ctx = hashmap(vec![("V", long.as_str())]);
+    let err = render(&"{{.V}}".repeat(65), &ctx).unwrap_err();
+    assert_eq!(err.to_string(), "template renders to more than 65536 bytes");
+    assert_eq!(
+        render(&"{{.V}}".repeat(64), &ctx).unwrap().len(),
+        MAX_RENDERED_LEN
+    );
+
+    // Literal text counts toward the limit: after a tag, and in a template with no tag
+    let ctx = hashmap(vec![("V", "x")]);
+    let suffix = format!("{{{{.V}}}}{}", "l".repeat(MAX_RENDERED_LEN));
+    let err = render(&suffix, &ctx).unwrap_err();
+    assert_eq!(err.to_string(), "template renders to more than 65536 bytes");
+    let suffix = format!("{{{{.V}}}}{}", "l".repeat(MAX_RENDERED_LEN - 1));
+    assert_eq!(render(&suffix, &ctx).unwrap().len(), MAX_RENDERED_LEN);
+    let literal = "l".repeat(MAX_RENDERED_LEN + 1);
+    let err = render(&literal, &ctx).unwrap_err();
+    assert_eq!(err.to_string(), "template renders to more than 65536 bytes");
+    let literal = "l".repeat(MAX_RENDERED_LEN);
+    assert_eq!(render(&literal, &ctx).unwrap().len(), MAX_RENDERED_LEN);
+}

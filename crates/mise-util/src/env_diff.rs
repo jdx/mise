@@ -357,7 +357,19 @@ impl EnvDiff {
 fn parse_export_p(out: &str, opts: &EnvDiffOptions) -> EnvMap {
     let mut additions = EnvMap::new();
     let mut cur_key = None;
+    // Whether the current value's double quotes are still open. bash before 5.2 prints a
+    // newline in a value raw, so until they close, a following line is part of that value,
+    // also when it reads `declare -x ...` (as a directory name in `OLDPWD` can), and also
+    // when the value belongs to a key that is skipped.
+    let mut in_quotes = false;
     for line in out.lines() {
+        if in_quotes {
+            in_quotes = !closes_double_quotes(line);
+            if let Some(k) = &cur_key {
+                additions.get_mut(k).unwrap().push_str(&format!("\n{line}"));
+            }
+            continue;
+        }
         match line.strip_prefix("declare -x ") {
             Some(line) => {
                 // A new declaration always ends any multi-line continuation;
@@ -368,6 +380,9 @@ fn parse_export_p(out: &str, opts: &EnvDiffOptions) -> EnvMap {
                 let Some((k, v)) = line.split_once('=') else {
                     continue;
                 };
+                in_quotes = v
+                    .strip_prefix('"')
+                    .is_some_and(|rest| !closes_double_quotes(rest));
                 // bash always reports the PATH variable as `PATH`, but the
                 // Windows host key is usually `Path`. Normalize to the host
                 // casing so ignore_keys, EnvDiff::new, and callers comparing
@@ -392,6 +407,21 @@ fn parse_export_p(out: &str, opts: &EnvDiffOptions) -> EnvMap {
         }
     }
     additions
+}
+
+/// Whether `s`, read inside double quotes, holds the unescaped `"` that closes them.
+fn closes_double_quotes(s: &str) -> bool {
+    let mut chars = s.chars();
+    while let Some(c) = chars.next() {
+        match c {
+            '\\' => {
+                chars.next();
+            }
+            '"' => return true,
+            _ => {}
+        }
+    }
+    false
 }
 
 /// Recover only what a sourced script *prepended* to PATH: strip the
@@ -495,13 +525,13 @@ impl Debug for EnvDiff {
 }
 
 fn normalize_escape_sequences(input: &str) -> String {
-    let input = if input.starts_with('"') && input.ends_with('"') {
-        input[1..input.len() - 1].to_string()
-    } else if input.starts_with("$'") && input.ends_with('\'') {
-        input[2..input.len() - 1].to_string()
-    } else {
-        input.to_string()
-    };
+    // The closing quote is looked for in what the opening one left, so a lone `"` or `$'` is
+    // never taken for both.
+    let input = input
+        .strip_prefix('"')
+        .and_then(|s| s.strip_suffix('"'))
+        .or_else(|| input.strip_prefix("$'").and_then(|s| s.strip_suffix('\'')))
+        .unwrap_or(input);
 
     let mut result = String::with_capacity(input.len());
     let mut chars = input.chars();
@@ -569,6 +599,43 @@ mod tests {
         // just warns
         assert_str_eq!(output, r"\g");
     }
+
+    #[test]
+    fn a_lone_quote_is_not_both_quotes() {
+        assert_str_eq!(normalize_escape_sequences("\""), "\"");
+        assert_str_eq!(normalize_escape_sequences("$'"), "$'");
+        assert_str_eq!(normalize_escape_sequences("\"\""), "");
+        assert_str_eq!(normalize_escape_sequences("$''"), "");
+    }
+
+    #[test]
+    fn a_declaration_inside_a_multi_line_value_is_part_of_it() {
+        // bash before 5.2 prints a newline in a value raw, inside the double quotes, so a
+        // directory name in OLDPWD (a skipped key) or in a kept key can hold lines that read
+        // as declarations.
+        let out = indoc::indoc! {r#"
+            declare -x OLDPWD="/src/clone/docs
+            declare -x Z="
+            declare -x KEPT="/src/clone/a
+            declare -x PROMPT_COMMAND=touch marker
+            declare -x Q=\"x"
+            declare -x AFTER="after"
+            declare -x Y
+        "#};
+        let parsed = parse_export_p(out, &EnvDiffOptions::default());
+        let keys: Vec<_> = parsed.keys().map(String::as_str).collect();
+        assert_eq!(keys, ["AFTER", "KEPT"], "{parsed:?}");
+        assert_eq!(
+            parsed["KEPT"],
+            "\"/src/clone/a\ndeclare -x PROMPT_COMMAND=touch marker\ndeclare -x Q=\\\"x\""
+        );
+        let kept = normalize_escape_sequences(&parsed["KEPT"]);
+        assert_str_eq!(
+            kept,
+            "/src/clone/a\ndeclare -x PROMPT_COMMAND=touch marker\ndeclare -x Q=\"x"
+        );
+    }
+
     #[test]
     fn test_parse_export_p_skipped_declaration_does_not_pollute_previous_key() {
         // A skipped declaration with a multi-line value (e.g. an exported bash

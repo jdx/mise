@@ -57,7 +57,7 @@ PY
 export MISE_USE_VERSIONS_HOST=0
 API_URL="http://127.0.0.1:$HTTP_PORT/api/v4"
 
-for backend in gitlab ubi spm; do
+for backend in gitlab spm; do
   for project in honest backdated; do
     TOOL="${backend}:acme/${project}[provider=gitlab,api_url=${API_URL}]"
 

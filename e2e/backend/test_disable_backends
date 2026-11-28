@@ -3,8 +3,8 @@ export MISE_EXPERIMENTAL=1
 
 detect_platform
 
-assert_fail "MISE_DISABLE_BACKENDS=ubi mise install ubi:example/example@1.0.0" "backend ubi is disabled by disable_backends"
-assert_fail "MISE_DISABLE_BACKENDS=ubi mise use -g ubi:example/example@1.0.0" "backend ubi is disabled by disable_backends"
+assert_fail "MISE_DISABLE_BACKENDS=github mise install github:example/example@1.0.0" "backend github is disabled by disable_backends"
+assert_fail "MISE_DISABLE_BACKENDS=github mise use -g github:example/example@1.0.0" "backend github is disabled by disable_backends"
 assert_fail "MISE_DISABLE_BACKENDS=asdf mise install asdf:dummy@1.0.0" "backend asdf is disabled by disable_backends"
 
 assert "mise registry age" "aqua:FiloSottile/age asdf:threkk/asdf-age"

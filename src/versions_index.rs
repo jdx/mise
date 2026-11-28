@@ -455,7 +455,6 @@ mod tests {
     use super::*;
     use crate::args::BackendArg;
     use crate::backend::aqua::aqua_fuzzy_match;
-    use crate::backend::ubi::ubi_fuzzy_match;
     use crate::backend::{
         Backend, fuzzy_match_versions, fuzzy_match_versions_pep440, resolve_in_versions_index,
     };
@@ -669,7 +668,6 @@ mod tests {
         Shared,
         Pep440,
         Aqua,
-        Ubi,
     }
 
     #[async_trait]
@@ -692,7 +690,6 @@ mod tests {
                 Matcher::Shared => fuzzy_match_versions(versions, query, filter_prereleases),
                 Matcher::Pep440 => fuzzy_match_versions_pep440(versions, query, filter_prereleases),
                 Matcher::Aqua => aqua_fuzzy_match(versions, query, filter_prereleases),
-                Matcher::Ubi => ubi_fuzzy_match(versions, query, filter_prereleases),
             }
         }
 
@@ -870,12 +867,6 @@ mod tests {
     #[test]
     fn test_index_answers_agree_with_the_full_list_aqua_matcher() {
         assert_index_agrees(Matcher::Aqua, &[], &cutoffs());
-    }
-
-    /// A sample: ubi compiles a regex for every match.
-    #[test]
-    fn test_index_answers_agree_with_the_full_list_ubi_matcher() {
-        assert_index_agrees(Matcher::Ubi, &["zig", "neovim"], &[cutoffs()[2]]);
     }
 
     /// [`full_list_answers`] is what mise's resolution path gives, read

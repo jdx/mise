@@ -336,8 +336,12 @@ tools in a format version 2 or newer lockfile also need their
 
 Each of those URLs also needs a checksum, or mise fails before downloading,
 naming the tool, platform and URL. `mise lock` records the missing checksums,
-downloading and hashing an artifact when its release publishes none. A
-hand-written entry, or one from
+downloading and hashing an artifact when its release publishes none. When the
+release declares a checksum file, such as one an `aqua:` recipe names, and that
+file cannot be downloaded or does not list the artifact, `mise lock` in generate
+mode fails for that platform instead of hashing the download, as `mise install`
+would refuse it, unless mise verified a signature or attestation for the
+artifact. Merge mode carries on without adding a checksum. A hand-written entry, or one from
 [`lockfile_mode = "merge"`](/configuration/settings.html#lockfile_mode), can
 lack one; merge mode does not require it. Set
 [`locked_require_checksum`](/configuration/settings.html#locked_require_checksum)
@@ -542,7 +546,7 @@ for the tool and platform you care about.
 | spm                                                                                                | The version, and the bundle's URL and checksum when installed from an artifact bundle                       |
 
 Locked mode does not require a URL for `asdf`, `cargo`, `dotnet`, `gem`, `go`,
-`npm`, `pypi` (`pipx`), `spinel`, `spm`, `ubi`, `core:dotnet`, `core:rust`,
+`npm`, `pypi` (`pipx`), `spinel`, `spm`, `core:dotnet`, `core:rust`,
 `core:swift` and vfox backend plugins. Most of them do not record one; `spm`
 (for an artifact bundle install) and `core:swift` record a URL and checksum,
 and a recorded checksum is still verified. The exemption covers artifact URLs

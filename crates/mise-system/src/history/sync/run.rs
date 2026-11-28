@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use super::SyncMode;
 use super::format::{self, RepoState};
 use super::layout::{Located, Roots, is_configuration};
-use super::network::{PushOutcome, Remote, UPSTREAM_REF};
+use super::network::{PUSHING_REF, PushOutcome, Remote, UPSTREAM_REF};
 use super::reconcile::{self, Conflict, Object, PathPlan};
 use super::{publish, share, state};
 use crate::history::checkpoint::Store;
@@ -313,6 +313,8 @@ pub(crate) fn sync_locked(
                 repo.delete_ref(UPSTREAM_REF)?;
             }
             status.last_fetch = Some(hstore::now_rfc3339());
+            // what an interrupted push left origin holding is fetched now
+            repo.delete_ref(PUSHING_REF)?;
         }
         let mut upstream_commit = repo.ref_oid(UPSTREAM_REF)?;
         outcome.fetched_upstream = upstream_commit.clone();
@@ -409,11 +411,14 @@ pub(crate) fn sync_locked(
             // push must retry from it, without treating it as another
             // writer's change or dropping either parent history.
             shared.checkpoint = Some(commit.clone());
+            // origin may accept this before we can record that it did
+            repo.update_ref(PUSHING_REF, &commit, repo.ref_oid(PUSHING_REF)?.as_deref())?;
             match publish::push(&remote, &origin.branch, &commit, upstream_commit.as_deref())? {
                 PushOutcome::Done => {
                     outcome.published = Some(commit.clone());
                     status.last_publish = Some(hstore::now_rfc3339());
                     repo.update_ref(UPSTREAM_REF, &commit, upstream_commit.as_deref())?;
+                    repo.delete_ref(PUSHING_REF)?;
                     upstream_commit = Some(commit);
                     // the published plans are acknowledged now
                     let mut next_state = sync_state.clone();
@@ -446,12 +451,15 @@ pub(crate) fn sync_locked(
                     )?;
                     break;
                 }
+                // origin answered: the commit is not there
                 PushOutcome::Rejected(reason) if attempts < PUSH_RETRIES => {
+                    repo.delete_ref(PUSHING_REF)?;
                     debug!("history sync: publication rejected, fetching again: {reason}");
                     remote.fetch(&origin.branch)?;
                     upstream_commit = repo.ref_oid(UPSTREAM_REF)?;
                 }
                 PushOutcome::Rejected(reason) => {
+                    repo.delete_ref(PUSHING_REF)?;
                     bail!("publication kept being rejected after {attempts} attempts: {reason}")
                 }
             }

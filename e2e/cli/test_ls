@@ -52,32 +52,32 @@ assert_contains "mise ls --prunable" "cargo:usage-cli"
 # what made a second install look like it had vanished.
 # See https://github.com/jdx/mise/discussions/4491
 mise use jq@1.7.1
-mise use "ubi:jqlang/jq@jq-1.8.1"
-assert_contains "mise ls jq" "ubi:jqlang/jq"
+mise use "github:jqlang/jq@jq-1.8.1"
+assert_contains "mise ls jq" "github:jqlang/jq"
 assert_contains "mise ls jq" "jq-1.8.1"
 assert_contains "mise ls jq" "1.7.1"
 # Spelling a backend out is a narrowing request, so it must not pull the other one in.
-assert_contains "mise ls ubi:jqlang/jq" "jq-1.8.1"
-assert_not_contains "mise ls ubi:jqlang/jq" "1.7.1"
+assert_contains "mise ls github:jqlang/jq" "jq-1.8.1"
+assert_not_contains "mise ls github:jqlang/jq" "1.7.1"
 
 # --backend filters on the backend a tool resolves to, so the registry `jq` counts as aqua.
 # See https://github.com/jdx/mise/issues/4442
-assert_contains "mise ls --backend ubi" "ubi:jqlang/jq"
-assert_not_contains "mise ls --backend ubi" "1.7.1"
-assert_not_contains "mise ls --backend ubi" "tiny"
+assert_contains "mise ls --backend github" "github:jqlang/jq"
+assert_not_contains "mise ls --backend github" "1.7.1"
+assert_not_contains "mise ls --backend github" "tiny"
 assert_contains "mise ls --backend aqua" "1.7.1"
-assert_not_contains "mise ls --backend aqua" "ubi:jqlang/jq"
-assert_contains "mise ls --backend cargo --backend ubi" "cargo:usage-cli"
-assert_contains "mise ls --backend cargo --backend ubi" "ubi:jqlang/jq"
-assert_not_contains "mise ls --backend cargo --backend ubi" "1.7.1"
-assert "mise ls --backend ubi --json | jq -r 'keys[]'" "ubi:jqlang/jq"
+assert_not_contains "mise ls --backend aqua" "github:jqlang/jq"
+assert_contains "mise ls --backend cargo --backend github" "cargo:usage-cli"
+assert_contains "mise ls --backend cargo --backend github" "github:jqlang/jq"
+assert_not_contains "mise ls --backend cargo --backend github" "1.7.1"
+assert "mise ls --backend github --json | jq -r 'keys[]'" "github:jqlang/jq"
 assert_fail "mise ls --backend nope"
 
 # --grouped prints one section per backend, headed by its name.
 mise ls --grouped >grouped
 assert "grep -x aqua grouped"
 assert "grep -x cargo grouped"
-assert "grep -x ubi grouped"
-assert "sed -n '/^ubi$/,/^$/p' grouped | grep -c jq-1.8.1" "1"
-assert_not_contains "sed -n '/^ubi$/,/^$/p' grouped" "1.7.1"
+assert "grep -x github grouped"
+assert "sed -n '/^github$/,/^$/p' grouped | grep -c jq-1.8.1" "1"
+assert_not_contains "sed -n '/^github$/,/^$/p' grouped" "1.7.1"
 assert_fail "mise ls --grouped --json"

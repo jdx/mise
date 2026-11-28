@@ -537,6 +537,14 @@ mise schedules each tracked file on its own:
    fraction of that interval, at most five minutes.
 4. After a quiet period of four intervals, and at least five minutes, the file
    returns to the base interval.
+5. Files at the base interval wait for each other: when several change
+   together, mise saves them in one checkpoint once the last of them is quiet,
+   at most 30 seconds after the first changed.
+6. An automatic save that changes only files the newest checkpoint changed
+   replaces that checkpoint instead of following it, when that checkpoint is
+   also an automatic save, is less than five minutes old, and has not been
+   synced. The replacement keeps its number and its start time. A change to
+   what is tracked, an explicit save, or a sync starts a new checkpoint.
 
 The longer interval affects only that file. Other files save normally, and
 explicit saves and the checkpoints before bootstrap, rollback, or undo still

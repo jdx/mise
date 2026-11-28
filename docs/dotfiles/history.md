@@ -159,7 +159,11 @@ The watcher saves an ordinary edit once the file has been quiet for
 [`history.watch.debounce`](/configuration/settings.html#history.watch.debounce).
 A file that keeps changing is saved less often, so it can have unsaved edits
 while other files are already saved; `mise dot paths --noisy` lists those
-files. Explicit `save` commands still save immediately. The
+files. Files changed together, such as several files one command rewrote,
+are saved in one checkpoint. While the newest checkpoint is an automatic save
+that has not been synced yet and is less than five minutes old, another save of
+only the files it changed replaces it, so a run of edits to one file leaves one
+checkpoint. Explicit `save` commands still save immediately. The
 [watcher reference](/dotfiles/reference.html#adaptive-scheduling) describes the
 schedule.
 

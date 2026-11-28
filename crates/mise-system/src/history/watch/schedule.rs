@@ -9,6 +9,11 @@
 //! sustained quiet period resets the interval so a brief pause does not
 //! restart aggressive saving.
 //!
+//! Ordinary paths changed together are saved together: each waits for the
+//! others pending with it, so a tool that rewrites several files leaves one
+//! checkpoint rather than one per file, up to `BATCH_MAX` after the first
+//! of them changed. Throttled paths keep their own schedule.
+//!
 //! Every threshold is a named constant here; the schedule is pure and
 //! clock-injected so each rule is tested without a filesystem.
 
@@ -35,6 +40,9 @@ pub(crate) const SETTLE_DIVISOR: u32 = 8;
 pub(crate) const SETTLE_MAX: Duration = Duration::from_secs(5 * 60);
 /// A path whose interval reached this is reported as heavily throttled.
 pub(crate) const HEAVY_INTERVAL: Duration = Duration::from_secs(60 * 60);
+/// The longest an ordinary change waits for others arriving after it, so a
+/// steady trickle of edits to different files still saves.
+pub(crate) const BATCH_MAX: Duration = Duration::from_secs(30);
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Limits {
@@ -278,19 +286,58 @@ impl Schedule {
         schedule.last_change = Some(now);
     }
 
+    /// When the pending ordinary paths are due together: once every one of
+    /// them has been quiet for its settle time, but no later than
+    /// `BATCH_MAX` after the first one changed. A lone pending path keeps
+    /// its own deadline, periodic saves included, so churn is still seen.
+    fn batch_due(&self) -> Option<Instant> {
+        let mut members = 0;
+        let mut last_quiet: Option<Instant> = None;
+        let mut first_change: Option<Instant> = None;
+        for schedule in self.paths.values() {
+            if schedule.interval > self.limits.base {
+                continue;
+            }
+            let Some(last) = schedule.last_change else {
+                continue;
+            };
+            members += 1;
+            last_quiet = last_quiet.max(Some(last + schedule.settle(&self.limits)));
+            let began = schedule.pending_since.unwrap_or(last);
+            first_change = Some(first_change.map_or(began, |first| first.min(began)));
+        }
+        if members < 2 {
+            return None;
+        }
+        let cap = first_change? + BATCH_MAX.max(self.limits.base);
+        Some(last_quiet?.min(cap))
+    }
+
+    /// When `schedule`'s pending change is due, ordinary paths together.
+    fn due_of(&self, schedule: &PathSchedule, batch: Option<Instant>) -> Option<Instant> {
+        let due = schedule.due(&self.limits)?;
+        if schedule.interval > self.limits.base {
+            Some(due)
+        } else {
+            Some(batch.unwrap_or(due))
+        }
+    }
+
     /// The next moment any pending path is due.
     pub(crate) fn deadline(&self) -> Option<Instant> {
+        let batch = self.batch_due();
         self.paths
             .values()
-            .filter_map(|schedule| schedule.due(&self.limits))
+            .filter_map(|schedule| self.due_of(schedule, batch))
             .min()
     }
 
     /// The pending paths that are due now.
     pub(crate) fn due_paths(&self, now: Instant) -> Vec<PathBuf> {
+        let batch = self.batch_due();
         self.paths
             .iter()
-            .filter(|(_, schedule)| schedule.due(&self.limits).is_some_and(|due| due <= now))
+            .filter(|(_, schedule)| self.due_of(schedule, batch).is_some_and(|due| due <= now))
             .map(|(path, _)| path.clone())
             .collect()
     }
@@ -299,9 +346,10 @@ impl Schedule {
     /// back from captures other paths trigger, so a capture for another
     /// path cannot defeat this path's throttling.
     pub(crate) fn held_paths(&self, now: Instant) -> Vec<PathBuf> {
+        let batch = self.batch_due();
         self.paths
             .iter()
-            .filter(|(_, schedule)| schedule.due(&self.limits).is_some_and(|due| due > now))
+            .filter(|(_, schedule)| self.due_of(schedule, batch).is_some_and(|due| due > now))
             .map(|(path, _)| path.clone())
             .collect()
     }
@@ -446,6 +494,74 @@ mod tests {
             Adjustment::Unchanged
         );
         assert_eq!(schedule.get(Path::new("a")).unwrap().interval, secs(2));
+    }
+
+    #[test]
+    fn files_changed_together_save_together() {
+        let start = Instant::now();
+        let mut schedule = Schedule::new(limits());
+        schedule.note("a".into(), start);
+        schedule.note("b".into(), start + secs(1));
+        // a is quiet long enough, but waits for b
+        assert_eq!(schedule.deadline(), Some(start + secs(3)));
+        assert!(schedule.due_paths(start + secs(2)).is_empty());
+        assert_eq!(
+            schedule.held_paths(start + secs(2)),
+            vec![PathBuf::from("a"), PathBuf::from("b")]
+        );
+        assert_eq!(
+            schedule.due_paths(start + secs(3)),
+            vec![PathBuf::from("a"), PathBuf::from("b")]
+        );
+    }
+
+    #[test]
+    fn a_batch_waits_for_a_member_that_keeps_changing() {
+        let start = Instant::now();
+        let mut schedule = Schedule::new(limits());
+        schedule.note("a".into(), start);
+        schedule.note("b".into(), start + secs(1));
+        schedule.note("b".into(), start + Duration::from_millis(2500));
+        // b's first change would make it periodically due at 3s, but it
+        // has not been quiet yet: the batch waits for it
+        assert!(schedule.due_paths(start + secs(3)).is_empty());
+        assert_eq!(
+            schedule.deadline(),
+            Some(start + Duration::from_millis(4500))
+        );
+        assert_eq!(
+            schedule.due_paths(start + Duration::from_millis(4500)),
+            vec![PathBuf::from("a"), PathBuf::from("b")]
+        );
+    }
+
+    #[test]
+    fn a_trickle_of_other_files_still_saves() {
+        let start = Instant::now();
+        let mut schedule = Schedule::new(limits());
+        // a different file every second never lets the batch settle
+        for tick in 0..60u64 {
+            let now = start + secs(tick);
+            schedule.note(PathBuf::from(format!("f{tick}")), now);
+            if !schedule.due_paths(now).is_empty() {
+                assert_eq!(now, start + BATCH_MAX);
+                return;
+            }
+        }
+        panic!("the batch never came due");
+    }
+
+    #[test]
+    fn a_throttled_path_does_not_join_the_batch() {
+        let start = Instant::now();
+        let mut schedule = Schedule::new(limits());
+        schedule.note("busy".into(), start);
+        schedule.paths.get_mut(Path::new("busy")).unwrap().interval = secs(64);
+        schedule.note("a".into(), start + secs(1));
+        assert_eq!(
+            schedule.due_paths(start + secs(3)),
+            vec![PathBuf::from("a")]
+        );
     }
 
     #[test]

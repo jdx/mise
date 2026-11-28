@@ -3011,7 +3011,7 @@ where
 
 /// [`cmd_read_async_inherited_env`] for a `program` command the caller has
 /// already given its environment and working directory.
-pub(crate) async fn cmd_read_async_command(
+pub async fn cmd_read_async_command(
     mut cmd: tokio::process::Command,
     program: &str,
     args: &[&str],

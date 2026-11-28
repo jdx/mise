@@ -166,23 +166,23 @@ impl Shell for Zsh {
     }
 
     fn set_env(&self, k: &str, v: &str) -> String {
-        Bash::default().set_env(k, v)
+        Bash::for_zsh().set_env(k, v)
     }
 
     fn prepend_env(&self, k: &str, v: &str) -> String {
-        Bash::default().prepend_env(k, v)
+        Bash::for_zsh().prepend_env(k, v)
     }
 
     fn unset_env(&self, k: &str) -> String {
-        Bash::default().unset_env(k)
+        Bash::for_zsh().unset_env(k)
     }
 
     fn set_alias(&self, name: &str, cmd: &str) -> String {
-        Bash::default().set_alias(name, cmd)
+        Bash::for_zsh().set_alias(name, cmd)
     }
 
     fn unset_alias(&self, name: &str) -> String {
-        Bash::default().unset_alias(name)
+        Bash::for_zsh().unset_alias(name)
     }
 }
 

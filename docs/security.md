@@ -521,6 +521,13 @@ warns that the cutoff could not be checked, so you know that version was not hel
 back. Switch to a backend that reports dates, or exclude the tool to silence the
 warning.
 
+A version that comes from a git tag rather than a release, such as an `aqua:`
+package with the `github_tag` version source, is dated by the committer date of
+the tagged commit. Whoever pushes the tag sets that date, so a new tag on a
+backdated commit passes the cutoff at once. To avoid picking up a new tag
+automatically, review a version first, then pin it exactly or record it in
+[`mise.lock`](/dev-tools/mise-lock.html).
+
 Backends other than `npm:` and `pypi:` can hold back the tool's own version, but
 not the dependencies its installer or compiler fetches. See the
 [npm](/dev-tools/backends/npm.html) and [PyPI](/dev-tools/backends/pypi.html)

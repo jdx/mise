@@ -154,12 +154,10 @@ impl ConfigSet {
         if !file.exists() && !may_create {
             bail!("config file not found: {}", display_path(&file));
         }
-        let raw = match std::fs::read_to_string(&file) {
-            Ok(raw) => raw,
-            Err(error) if may_create && error.kind() == std::io::ErrorKind::NotFound => {
-                String::new()
-            }
-            Err(error) => return Err(error.into()),
+        let raw = match crate::file::read_config_to_string_if_exists(&file)? {
+            Some(raw) => raw,
+            None if may_create => String::new(),
+            None => bail!("config file not found: {}", display_path(&file)),
         };
         let mut config: toml_edit::DocumentMut = raw.parse()?;
         let parts = super::keys::rejoin(super::keys::split_keys(&full_key), |path| {
@@ -287,6 +285,7 @@ impl ConfigSet {
         }
 
         let raw = config.to_string();
+        ensure_within_limit(&file, &raw)?;
         MiseToml::from_str(&raw, &file)?;
         if let Some(parent) = file.parent() {
             std::fs::create_dir_all(parent)?;
@@ -294,6 +293,19 @@ impl ConfigSet {
         std::fs::write(&file, raw)?;
         Ok(())
     }
+}
+
+/// Refuse an edit that would leave `file` larger than mise reads from a config file, which
+/// would fail every later command that loads it, `mise config set` included.
+fn ensure_within_limit(file: &std::path::Path, raw: &str) -> eyre::Result<()> {
+    if raw.len() as u64 > crate::file::CONFIG_FILE_LIMIT {
+        bail!(
+            "not writing {}: it would be larger than {} MiB, the most mise reads from a config file",
+            display_path(file),
+            crate::file::CONFIG_FILE_LIMIT / 1024 / 1024
+        );
+    }
+    Ok(())
 }
 
 /// Infer the type of a key that is not a setting, such as `env.PORT` or a task's env.
@@ -404,7 +416,17 @@ fn remove_value(
 
 #[cfg(test)]
 mod tests {
-    use super::{TomlValueTypes, infer_unknown_key, parse_bool};
+    use super::{TomlValueTypes, ensure_within_limit, infer_unknown_key, parse_bool};
+    use crate::file::CONFIG_FILE_LIMIT;
+
+    #[test]
+    fn edits_that_outgrow_the_config_file_limit_are_refused() {
+        let file = std::path::Path::new("mise.toml");
+        let at_limit = "a".repeat(CONFIG_FILE_LIMIT as usize);
+        ensure_within_limit(file, &at_limit).unwrap();
+        let err = ensure_within_limit(file, &format!("{at_limit}a")).unwrap_err();
+        assert!(err.to_string().contains("larger than 16 MiB"), "{err}");
+    }
 
     #[test]
     fn parse_bool_accepts_the_spellings_settings_accept() {

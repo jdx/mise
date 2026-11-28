@@ -397,18 +397,18 @@ mod tests {
         );
         t("node@path:///tmp/node", "node", Some("path:///tmp/node"));
         t(
-            "ubi:BurntSushi/ripgrep[exe=rg]",
-            "ubi:BurntSushi/ripgrep[exe=rg]",
+            "github:BurntSushi/ripgrep[bin=rg]",
+            "github:BurntSushi/ripgrep[bin=rg]",
             None,
         );
         t(
-            "ubi:BurntSushi/ripgrep[exe=rg,match=musl]",
-            "ubi:BurntSushi/ripgrep[exe=rg,match=musl]",
+            "github:BurntSushi/ripgrep[bin=rg,match=musl]",
+            "github:BurntSushi/ripgrep[bin=rg,match=musl]",
             None,
         );
         t(
-            "ubi:BurntSushi/ripgrep[exe=rg,match=musl]@1.0.0",
-            "ubi:BurntSushi/ripgrep[exe=rg,match=musl]",
+            "github:BurntSushi/ripgrep[bin=rg,match=musl]@1.0.0",
+            "github:BurntSushi/ripgrep[bin=rg,match=musl]",
             Some("1.0.0"),
         );
         // Scoped package names without backend prefix

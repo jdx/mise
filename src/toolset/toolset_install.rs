@@ -294,7 +294,7 @@ impl Toolset {
     }
 
     /// sets the options on incoming requests to install to whatever is already in the toolset
-    /// this handles the use-case where you run `mise use ubi:cilium/cilium-cli` (without CLi options)
+    /// this handles the use-case where you run `mise use github:cilium/cilium-cli` (without CLi options)
     /// but this tool has options inside mise.toml
     pub(super) fn init_request_options(&self, requests: &mut Vec<ToolRequest>) {
         for tr in requests {

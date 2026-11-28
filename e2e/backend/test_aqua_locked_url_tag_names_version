@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+
+# With locked_verify_provenance, an install from mise.lock repeats the checks the registry declares
+# for the locked version. The release tag in a locked URL selects the registry's version override,
+# so a tag that names another release must not select that release's checks: here `v0` would pick
+# the old override, which checks nothing, for version 2.0.0, which has a signed checksum file.
+
+export MISE_AQUA_BAKED_REGISTRY=0
+export MISE_USE_VERSIONS_HOST=0
+export MISE_LOCKED_VERIFY_PROVENANCE=1
+unset GITHUB_TOKEN GH_TOKEN MISE_GITHUB_TOKEN GITHUB_API_TOKEN
+
+detect_platform
+
+D=server/gh/acme/tool/releases/download
+mkdir -p "$D/2.0.0" "$D/v0"
+printf '#!/bin/sh\necho acme-tool\n' >"$D/2.0.0/tool"
+printf '#!/bin/sh\necho acme-tool-server\n' >"$D/v0/tool"
+printf '%s  tool\n%s  tool-server\n' \
+  4838d8b189adf3013f13db548864e8b5a8804cb41081c5ec78b55022557a5b5c \
+  5f767731c41132ea671c98976bc7fa9b3ac02c990eab2ef3bcb5518f737706f7 >"$D/2.0.0/checksums.txt"
+cat <<'SIG' >"$D/2.0.0/checksums.txt.minisig"
+untrusted comment: signature from minisign secret key
+RUTDdBlCBmdz0Hn6YzOSioEtDyuI1RFtX/xr2km3IQfVHGgKV5wtRB2JN5TBqHPhTVTM6yk5jlDRVVOUT7ZrhyzeMEeA009FJAY=
+trusted comment: timestamp:1795478649	file:checksums.txt	hashed
+c5n3kaqLbix4OrBtoAV444krrrkJxY3onCGjJ2RHETvhaqwa9HtHws4gE95pE7epOz/jNX7wpnrBOVUzmbahDw==
+SIG
+
+dl="https://github.com/acme/tool/releases/download/2.0.0"
+cat <<JSON >server/release.json
+{"tag_name": "2.0.0", "draft": false, "prerelease": false, "created_at": "2026-01-02T00:00:00Z",
+ "assets": [
+  {"name": "tool", "browser_download_url": "$dl/tool", "url": "https://api.github.com/repos/acme/tool/releases/assets/1"},
+  {"name": "checksums.txt", "browser_download_url": "$dl/checksums.txt", "url": "https://api.github.com/repos/acme/tool/releases/assets/3"},
+  {"name": "checksums.txt.minisig", "browser_download_url": "$dl/checksums.txt.minisig", "url": "https://api.github.com/repos/acme/tool/releases/assets/4"}
+ ]}
+JSON
+printf '[%s]\n' "$(cat server/release.json)" >server/releases.json
+
+start_http_server --dir server --handler - <<'PY'
+class Handler(TestHandler):
+    def do_GET(self):
+        path = self.path.split("?")[0]
+        if path == "/api/repos/acme/tool/releases":
+            self.path = "/releases.json"
+        elif path == "/api/repos/acme/tool/releases/tags/2.0.0":
+            self.path = "/release.json"
+        super().do_GET()
+PY
+export MISE_URL_REPLACEMENTS="{\"https://api.github.com\":\"http://127.0.0.1:$HTTP_PORT/api\",\"https://github.com\":\"http://127.0.0.1:$HTTP_PORT/gh\"}"
+
+REGISTRY_DIR="$PWD/aqua-registry-local"
+mkdir -p "$REGISTRY_DIR"
+cat <<'YAML' >"$REGISTRY_DIR/registry.yaml"
+packages:
+  - type: github_release
+    repo_owner: acme
+    repo_name: tool
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.41.0")
+        asset: tool
+        format: raw
+      - version_constraint: "true"
+        asset: tool
+        format: raw
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+          minisign:
+            type: github_release
+            asset: checksums.txt.minisig
+            public_key: RWTDdBlCBmdz0E3pL1SzxsLf2iSQtJqVNe5TzRsUmi97h09J0hNMqJcb
+YAML
+export MISE_AQUA_REGISTRY_URL="file://$REGISTRY_DIR"
+
+cat <<'TOML' >mise.toml
+[tools]
+"aqua:acme/tool" = "2.0.0"
+TOML
+
+# lock_entry TAG SHA256 writes the lock entry for 2.0.0 with the URL of `tool` in release TAG
+lock_entry() {
+  cat <<TOML >mise.lock
+[[tools."aqua:acme/tool"]]
+version = "2.0.0"
+backend = "aqua:acme/tool"
+
+[tools."aqua:acme/tool"."platforms.$MISE_PLATFORM"]
+checksum = "sha256:$2"
+url = "https://github.com/acme/tool/releases/download/$1/tool"
+TOML
+}
+
+# The entry for 2.0.0 names the file of release v0; 2.0.0's signed checksum file does not list it
+lock_entry v0 5f767731c41132ea671c98976bc7fa9b3ac02c990eab2ef3bcb5518f737706f7
+assert_fail_contains "mise install" "verified checksum file digest does not match existing checksum for tool"
+assert_fail "mise x -- tool"
+
+# The honest entry installs and passes 2.0.0's checks
+lock_entry 2.0.0 4838d8b189adf3013f13db548864e8b5a8804cb41081c5ec78b55022557a5b5c
+assert "mise install"
+assert "mise x -- tool" "acme-tool"
