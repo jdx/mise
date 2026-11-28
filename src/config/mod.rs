@@ -4049,21 +4049,27 @@ fn global_config_spelling(path: &Path) -> Option<PathBuf> {
     if let Some(global) = discovered_global_config(path) {
         return Some(global);
     }
-    let dir = path.parent()?.canonicalize().ok()?;
-    let name = path.file_name()?;
+    // A file that does not exist yet can still be a link, as `~/mise.toml` linked to a missing
+    // `~/.config/mise/config.toml` is: the write creates the file the link leads to, so that is
+    // the one compared with the global config directories.
+    let real = resolve_for_write(path)?;
+    let dir = real.parent()?;
+    let name = real.file_name()?;
     [*dirs::CONFIG, *dirs::SYSTEM_CONFIG]
         .into_iter()
         .flat_map(|config| [config.to_path_buf(), config.join("conf.d")])
         .find(|candidate| candidate.canonicalize().is_ok_and(|c| c == dir))
         .map(|candidate| candidate.join(name))
-        .or_else(|| global_folder_fragment(path))
+        .or_else(|| global_folder_fragment(&real))
 }
 
-/// `path` with every link resolved, for a file that may not exist yet.
+/// `path` with every link resolved, for a file that may not exist yet: its own link, if it is a
+/// dangling one, and then its directory.
 fn resolve_for_write(path: &Path) -> Option<PathBuf> {
     path.canonicalize().ok().or_else(|| {
-        let dir = path.parent()?.canonicalize().ok()?;
-        Some(dir.join(path.file_name()?))
+        let target = crate::file::atomic_write_target(path).ok()?;
+        let dir = target.parent()?.canonicalize().ok()?;
+        Some(dir.join(target.file_name()?))
     })
 }
 

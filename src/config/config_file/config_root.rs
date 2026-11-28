@@ -58,7 +58,11 @@ pub(crate) fn config_source(path: &Path) -> String {
 /// A fragment's project comes from the directories the fragment is in. The `mise.toml` beside
 /// its `conf.d` can be a link to global config, whose root is not the project.
 fn enclosing_project(path: &Path) -> PathBuf {
-    let root = config_root(path);
+    project_of_root(path, config_root(path))
+}
+
+/// [`enclosing_project`] for the config at `path` whose config root is `root`.
+fn project_of_root(path: &Path, root: PathBuf) -> PathBuf {
     if is_conf_d_folder_file(path)
         && let Some(conf_d) = root.parent()
     {
@@ -84,7 +88,11 @@ pub fn nested_root_project(path: &Path) -> Option<PathBuf> {
 /// The project directory a config belongs to: [`enclosing_project`], with `.config/mise` taken
 /// back to the directory that holds `.config`.
 fn outer_project(path: &Path) -> PathBuf {
-    let project = enclosing_project(path);
+    outside_config_dir(enclosing_project(path))
+}
+
+/// `project`, with `.config/mise` taken back to the directory that holds `.config`.
+fn outside_config_dir(project: PathBuf) -> PathBuf {
     if project.ends_with(".config/mise")
         && let Some(outer) = project.parent().and_then(Path::parent)
     {
@@ -95,25 +103,32 @@ fn outer_project(path: &Path) -> PathBuf {
 
 /// The project whose directory holds `path` when `path` is global config only through a link,
 /// such as a project's `mise.toml` linked to the global config: the project its components name,
-/// as they would for any other file there. `None` for global config at its own path and for a
-/// file that is not global config.
+/// as they would for any other file there. `None` for global config at its own path, for a real
+/// file the global config dir links to (a dotfiles checkout, which is global config because the
+/// user made it so), and for a file that is not global config.
 ///
 /// [`config_root`] gives such a link the global root, the home directory, since global config is
 /// trusted for what it resolves to. The project that holds the link is still the one a command
 /// given that directory means.
 pub fn linked_global_project(path: &Path) -> Option<PathBuf> {
     let path = path.absolutize().ok()?.to_path_buf();
-    let global = discovered_global_config(&path)?;
-    if global == path {
-        return None;
-    }
-    let root = spelled_config_root(&path);
-    if root.ends_with(".config/mise")
-        && let Some(outer) = root.parent().and_then(Path::parent)
-    {
-        return Some(outer.to_path_buf());
-    }
-    Some(root)
+    crate::config::is_project_link_to_global_config(&path).then(|| project_by_name(&path))
+}
+
+/// The project directory the absolute `path` names: [`outer_project`] from its components alone,
+/// whatever file is there now.
+///
+/// A trust record holds its path as it was resolved when the record was written. The project
+/// that owns the record is decided from that path: a link that has since replaced the file, to
+/// global config or another checkout, does not move the record out of its project.
+pub fn project_by_name(path: &Path) -> PathBuf {
+    let root = if is_conf_d_folder_file(path) {
+        path.parent()
+            .map_or_else(|| path.to_path_buf(), Path::to_path_buf)
+    } else {
+        spelled_config_root(path)
+    };
+    outside_config_dir(project_of_root(path, root))
 }
 
 /// The project a config was found in, when a symlink lies between that project's directory and

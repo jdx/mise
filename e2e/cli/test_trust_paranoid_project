@@ -158,3 +158,45 @@ assert_contains "mise trust --ignore globalsib 2>&1" "ignored ~/workdir/globalsi
 assert_not_contains "mise -C globalsib env 2>&1" "=top"
 assert_not_contains "mise -C globalsib env 2>&1" "=nested"
 assert_contains "mise -C ~ env" "HOME_VAR=home"
+
+# A trusted config replaced by a link to global config since still loses its record with the
+# project's, so it asks again when the file comes back.
+mkdir relinked
+printf '[env]\nTOP = "top"\n' >relinked/mise.toml
+printf '[env]\nSTAGED = "staged"\n' >relinked/mise.staging.toml
+mise trust relinked/mise.toml
+MISE_ENV=staging mise trust relinked/mise.staging.toml
+assert_contains "MISE_ENV=staging mise -C relinked env" "STAGED=staged"
+rm relinked/mise.staging.toml
+ln -s "$MISE_CONFIG_DIR/config.toml" relinked/mise.staging.toml
+assert_contains "mise untrust relinked 2>&1" "untrusted ~/workdir/relinked/mise.staging.toml"
+rm relinked/mise.staging.toml
+printf '[env]\nSTAGED = "staged"\n' >relinked/mise.staging.toml
+mise trust relinked/mise.toml
+assert_fail_contains "MISE_ENV=staging mise -C relinked env 2>&1" "not trusted"
+assert_contains "mise -C ~ env" "GLOBAL=global"
+
+# A dotfiles checkout that the global config dir links to holds the global config itself, not a
+# project's link to it: the checkout is not swept as a project, and it cannot be ignored.
+mkdir -p dotfiles/.config/mise
+printf '[env]\nDOTFILES = "dotfiles"\n' >dotfiles/.config/mise/config.toml
+rm -rf "$MISE_CONFIG_DIR"
+ln -s "$PWD/dotfiles/.config/mise" "$MISE_CONFIG_DIR"
+assert_contains "mise -C ~ env" "DOTFILES=dotfiles"
+assert_fail_contains "mise trust --ignore dotfiles 2>&1" "is global config, which cannot be ignored"
+assert_not_contains "mise untrust dotfiles 2>&1" "No trusted config files found"
+assert_contains "mise -C ~ env" "DOTFILES=dotfiles"
+assert_contains "mise -C dotfiles env" "DOTFILES=dotfiles"
+
+# The checkout's own configs still belong to it: naming the checkout revokes or ignores them
+# whichever file is picked for it, and the global config is left alone.
+printf '[env]\nSTAGED = "staged"\n' >dotfiles/mise.staging.toml
+MISE_ENV=staging mise trust dotfiles/mise.staging.toml
+assert_contains "MISE_ENV=staging mise -C dotfiles env" "STAGED=staged"
+assert_contains "mise untrust dotfiles 2>&1" "untrusted ~/workdir/dotfiles/mise.staging.toml"
+assert_fail_contains "MISE_ENV=staging mise -C dotfiles env 2>&1" "not trusted"
+MISE_ENV=staging mise trust dotfiles/mise.staging.toml
+assert_contains "mise trust --ignore dotfiles 2>&1" "ignored ~/workdir/dotfiles/mise.staging.toml"
+assert_not_contains "MISE_ENV=staging mise -C dotfiles env 2>&1" "=staged"
+assert_contains "MISE_ENV=staging mise -C dotfiles env" "DOTFILES=dotfiles"
+assert_contains "mise -C ~ env" "DOTFILES=dotfiles"

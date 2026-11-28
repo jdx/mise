@@ -145,7 +145,20 @@ rm .mise
 ln -s .config/mise/conf.d/folder .mise
 assert_fail_contains "mise set --file .mise/mise.toml FRAGLINK=1 2>&1" "Write global config with"
 assert_fail "test -e $HOME/.config/mise/conf.d/folder/mise.toml"
+# nor is a file link to a global config file that does not exist yet, which the home directory's
+# project root would otherwise hold
+ln -s .config/mise/config.local.toml mise.toml
+assert_fail_contains "mise set --file mise.toml FILELINK=1 2>&1" "Write global config with"
+assert_fail "test -e $HOME/.config/mise/config.local.toml"
+rm mise.toml
+# nor is a task script's link to global config, which stays in the home directory's project root
 rm .mise
+mkdir -p mise-tasks
+ln -s ../.config/mise/config.toml mise-tasks/gcfg
+assert_fail_contains "mise tasks add --file --force gcfg -- echo replaced 2>&1" "leads into global config"
+assert_fail_contains "MISE_SAFE=1 mise tasks add --file --force gcfg -- echo replaced 2>&1" "leads into global config"
+assert_contains "cat $HOME/.config/mise/config.toml" 'FOO = "bar"'
+rm -r mise-tasks
 ln -s .config/mise .mise
 cd "$back" || exit 1
 
@@ -331,3 +344,42 @@ assert "cat ../outside/deep/mise.toml" "[env]"
 mkdir sub
 assert "mise edit --force sub/../mise.toml"
 assert_contains "cat mise.toml" "mise config files are hierarchical"
+
+echo "=== a task include that goes up out of a link with .. is refused ==="
+# Discovery reads linked/../tasks beside where the link leads, so the script it found is not the
+# one the change would reach in the project's own tasks directory.
+mkdir -p ../task-dotdot ../outside/tdeep/dir ../outside/tdeep/tasks
+printf '#!/usr/bin/env bash\necho outside\n' >../outside/tdeep/tasks/dd
+chmod +x ../outside/tdeep/tasks/dd
+cd ../task-dotdot || exit 1
+mkdir tasks
+printf '#!/usr/bin/env bash\necho inside\n' >tasks/dd
+chmod +x tasks/dd
+ln -s ../outside/tdeep/dir linked
+cat <<'TOML' >mise.toml
+[task_config]
+includes = ["linked/../tasks"]
+TOML
+mise trust mise.toml
+assert_contains "mise run dd" "outside"
+assert_fail_contains "MISE_YES=1 mise tasks rm dd 2>&1" "goes up from"
+assert_contains "cat tasks/dd" "inside"
+assert_contains "cat ../outside/tdeep/tasks/dd" "outside"
+assert_fail_contains "mise tasks add --file --force dd -- echo replaced 2>&1" "goes up from"
+assert_contains "cat tasks/dd" "inside"
+assert_contains "cat ../outside/tdeep/tasks/dd" "outside"
+
+echo "=== mise tasks edit checks an existing script that links out of the project ==="
+# The editor writes through the script's link, so it is refused like a write by mise, and once
+# the project was trusted before the command, the editor opens the file the check approved.
+mkdir -p ../edit-link/mise-tasks ../outside/edit
+printf '#!/usr/bin/env bash\necho edited\n' >../outside/edit/ed
+chmod +x ../outside/edit/ed
+cd ../edit-link || exit 1
+echo "[tools]" >mise.toml
+ln -s ../../outside/edit/ed mise-tasks/ed
+assert_fail_contains "EDITOR=echo mise tasks edit ed 2>&1" "refusing to write"
+assert "mise trust ."
+assert "EDITOR=echo mise tasks edit ed" "$(cd ../outside/edit && pwd -P)/ed"
+# --path only prints the path, so it writes nothing and checks nothing
+assert "mise tasks edit --path ed" "$PWD/mise-tasks/ed"
