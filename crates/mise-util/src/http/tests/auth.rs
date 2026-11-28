@@ -889,6 +889,13 @@ async fn text_request_without_host_auth_sends_no_forge_token() {
             && !without_host_auth.contains("authorization: bearer"),
         "{without_host_auth}"
     );
+    // the Contents API media type stays, so the file comes back as text, not JSON
+    for request in [&with_host_auth, &without_host_auth] {
+        assert!(
+            request.contains("accept: application/vnd.github.raw"),
+            "{request}"
+        );
+    }
 }
 
 /// On a host a project tool's URL named, no GitHub token is looked up, so a

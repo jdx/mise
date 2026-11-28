@@ -3154,10 +3154,12 @@ impl TextRequest<'_> {
         );
         let mut url = self.url.clone().map_err(|e| eyre!(e))?;
         // Merge GitHub headers with any extra headers provided
+        // Without host auth no token is looked up, but a GitHub API URL still
+        // gets the media type, or the Contents API answers with JSON.
         let mut headers = if self.host_auth {
             host_auth_headers(&url)?
         } else {
-            HeaderMap::new()
+            crate::github::media_type_headers(&url)
         };
         headers.extend(self.extra_headers.clone());
         let max_bytes = self.max_bytes;
