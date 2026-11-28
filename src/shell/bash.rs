@@ -9,9 +9,24 @@ use crate::env;
 use crate::shell::{self, ActivateOptions, Shell};
 
 #[derive(Default)]
-pub(super) struct Bash {}
+pub(super) struct Bash {
+    /// Accept letters outside ASCII in variable names, as zsh does in a UTF-8 locale. bash
+    /// takes ASCII letters only and errors on the others at every prompt.
+    unicode_names: bool,
+}
 
-impl Bash {}
+impl Bash {
+    /// The statements zsh writes through this file, which take zsh's variable names.
+    pub(super) fn for_zsh() -> Self {
+        Self {
+            unicode_names: true,
+        }
+    }
+
+    fn is_shell_name(&self, name: &str) -> bool {
+        is_shell_name(name, self.unicode_names)
+    }
+}
 
 fn render_template(template: &str, replacements: &[(&str, &str)]) -> String {
     let mut out = template.to_owned();
@@ -39,12 +54,19 @@ fn render_flags_array(value: &str) -> String {
 /// bash. Names come from env files and `[env]` tables, which take any string, so one the shell
 /// could not hold as a variable is left out of the script.
 ///
-/// Letters are not limited to ASCII: zsh accepts the others in a UTF-8 locale, and a shell that
-/// does not refuses them without evaluating anything.
-fn is_shell_name(name: &str) -> bool {
+/// With `unicode`, letters are not limited to ASCII: zsh accepts the others in a UTF-8 locale,
+/// and a zsh that does not refuses them without evaluating anything. bash takes ASCII only.
+fn is_shell_name(name: &str, unicode: bool) -> bool {
+    let letter = |c: char| {
+        if unicode {
+            c.is_alphanumeric()
+        } else {
+            c.is_ascii_alphanumeric()
+        }
+    };
     !name.is_empty()
         && !name.starts_with(|c: char| c.is_ascii_digit())
-        && name.chars().all(|c| c == '_' || c.is_alphanumeric())
+        && name.chars().all(|c| c == '_' || letter(c))
 }
 
 /// The value of an `export k=v` or `alias k=v` statement, quoted for bash and zsh.
@@ -124,7 +146,7 @@ impl Shell for Bash {
             v.into()
         };
         let k = if is_path { "PATH" } else { k };
-        if !is_shell_name(k) {
+        if !self.is_shell_name(k) {
             debug!("not exporting {k:?}: it is not a shell variable name");
             return String::new();
         }
@@ -141,7 +163,7 @@ impl Shell for Bash {
             v.into()
         };
         let k = if is_path { "PATH" } else { k };
-        if !is_shell_name(k) {
+        if !self.is_shell_name(k) {
             debug!("not exporting {k:?}: it is not a shell variable name");
             return String::new();
         }
@@ -154,7 +176,7 @@ impl Shell for Bash {
     }
 
     fn unset_env(&self, k: &str) -> String {
-        if !is_shell_name(k) {
+        if !self.is_shell_name(k) {
             return String::new();
         }
         format!("unset {k}\n", k = shell_escape::unix::escape(k.into()))
@@ -244,7 +266,11 @@ mod tests {
         }
         assert_eq!(bash.set_env("_a1", "x"), "export _a1=x\n");
         assert_eq!(bash.unset_env("_a1"), "unset _a1\n");
-        assert_eq!(bash.set_env("ÉTÉ", "x"), "export 'ÉTÉ'=x\n");
+        assert_eq!(bash.set_env("ÉTÉ", "x"), "");
+        assert_eq!(bash.unset_env("ÉTÉ"), "");
+        let zsh = Bash::for_zsh();
+        assert_eq!(zsh.set_env("ÉTÉ", "x"), "export 'ÉTÉ'=x\n");
+        assert_eq!(zsh.set_env("x[1]", "x"), "");
     }
 
     #[test]
