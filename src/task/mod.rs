@@ -198,31 +198,36 @@ impl TaskToolValueExt for TaskToolValue {
     fn render_templates(&mut self, tera: &mut TeraEngine, context: &tera::Context) -> Result<()> {
         use crate::config::config_file::mise_toml::{render_option_for_backend, shield_raw_blocks};
 
+        /// `for_backend`: the option is rendered again by the backend.
         fn render_value(
             value: &mut toml::Value,
             tera: &mut TeraEngine,
             context: &tera::Context,
+            for_backend: bool,
         ) -> Result<()> {
             match value {
                 // Backends render tool options again at install time: a raw block's body is
                 // code for that render, and what this render substituted (an env var, a
                 // command's output) stays data there, as for `[tools]` options.
-                toml::Value::String(value) if contains_template_syntax(value) => {
+                toml::Value::String(value) if contains_template_syntax(value) && for_backend => {
                     *value = render_option_for_backend(shield_raw_blocks(value), |shielded| {
                         Ok(render_str(tera, shielded, context)?)
                     })?;
                 }
+                toml::Value::String(value) if contains_template_syntax(value) => {
+                    *value = render_str(tera, value, context)?;
+                }
                 toml::Value::Array(values) => {
                     for value in values {
                         if task_tool_value_has_template(value) {
-                            render_value(value, tera, context)?;
+                            render_value(value, tera, context, for_backend)?;
                         }
                     }
                 }
                 toml::Value::Table(values) => {
                     for (_, value) in values.iter_mut() {
                         if task_tool_value_has_template(value) {
-                            render_value(value, tera, context)?;
+                            render_value(value, tera, context, for_backend)?;
                         }
                     }
                 }
@@ -241,9 +246,11 @@ impl TaskToolValueExt for TaskToolValue {
                 if contains_template_syntax(&map.version) {
                     map.version = render_str(tera, &map.version, context)?;
                 }
-                for value in map.opts.values_mut() {
+                for (key, value) in map.opts.iter_mut() {
                     if task_tool_value_has_template(value) {
-                        render_value(value, tera, context)?;
+                        // `install_env` goes to the installer as this render leaves it, as it
+                        // does for `[tools]`: nothing renders it again to undo an escape.
+                        render_value(value, tera, context, key != "install_env")?;
                     }
                 }
             }
@@ -7915,6 +7922,38 @@ echo "test"
         assert_eq!(
             render_str(&mut tera, url, &context).unwrap(),
             format!("https://e/{branch}")
+        );
+    }
+
+    /// `install_env` reaches the installer as the task render leaves it, so a substituted value
+    /// arrives as it is, not escaped for a backend render that never happens.
+    #[test]
+    fn test_task_tool_install_env_gets_the_substituted_value() {
+        use indexmap::IndexMap;
+
+        use super::{TaskToolValue, TaskToolValueExt, TaskToolValueMap};
+        use crate::config::env_directive::EnvValue;
+        use crate::tera::TeraEngine;
+
+        let mut install_env = toml::map::Map::new();
+        install_env.insert(
+            "FOO".to_string(),
+            toml::Value::String("{{ branch }}".to_string()),
+        );
+        let opts = IndexMap::from([("install_env".to_string(), toml::Value::Table(install_env))]);
+        let mut tool = TaskToolValue::Map(TaskToolValueMap {
+            version: "1.0.0".to_string(),
+            opts,
+        });
+        let mut context = tera::Context::new();
+        context.insert("branch", "{{ literal }}");
+        let mut tera = TeraEngine::V2(Box::default());
+        tool.render_templates(&mut tera, &context).unwrap();
+        let arg = tool.to_tool_arg("node").unwrap();
+        let options = arg.tvr.unwrap().options();
+        assert_eq!(
+            options.install_env.get("FOO"),
+            Some(&EnvValue::String("{{ literal }}".to_string()))
         );
     }
 
