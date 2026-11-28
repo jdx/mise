@@ -1746,6 +1746,39 @@ mod tests {
     /// exactly those two — never against `display_path`'s spelling, which
     /// keeps the host separator and leaves `$HOME` expanded off unix.
     #[test]
+    fn the_trailer_names_a_shared_cache_but_not_a_local_only_one() {
+        let home = mise_util::dirs::HOME.join(".cache-trailer");
+        let mut checkpoint = test_checkpoint("caches", None);
+        let mut tracked = TrackedSet {
+            local: vec![home.join("private")],
+            ..Default::default()
+        };
+        tracked.push(TrackedEntry::new(
+            home.clone(),
+            "track",
+            crate::files::FilePolicy::for_mode(crate::files::FileMode::Track),
+        ));
+        tracked.keep_local_out();
+        let cache = |name: &str| store::PathReason {
+            path: mise_util::file::display_path(&home.join(name)),
+            reason: crate::history::tracked::CACHE_DIRECTORY_REASON.into(),
+        };
+        let walk = crate::history::tracked::Walk {
+            entries: tracked.entries.clone(),
+            caches: vec![cache("target"), cache("private")],
+            ..Default::default()
+        };
+        checkpoint.tree.coverage = tracked.coverage(&walk);
+        let rebuilt: Vec<String> = checkpoint
+            .for_commit()
+            .omitted
+            .iter()
+            .map(|path| tree_path_to_display(path))
+            .collect();
+        assert_eq!(rebuilt, vec!["~/.cache-trailer/target".to_string()]);
+    }
+
+    #[test]
     fn a_skip_is_matched_on_the_spelling_the_rebuilt_record_holds() {
         let home = mise_util::dirs::HOME.join(".native");
         let plugin = home.join("plugin");
