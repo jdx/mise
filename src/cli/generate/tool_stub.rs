@@ -187,6 +187,7 @@ impl ToolStub {
         // Before the stub is written, so a failed lockfile write leaves the
         // stub unchanged.
         if let Some(sidecar) = &sidecar {
+            ensure_unchanged(&sidecar.stub_path, &sidecar.checked_content)?;
             sidecar.write()?;
         }
 
@@ -900,9 +901,11 @@ exec "$MISE_BIN" tool-stub "$0" "$@"
         // Lock data only lives in mise.lock.
         doc.remove("lock");
         let toml_content = doc.to_string();
+        let checked_content = content;
         let content = format!("#!/usr/bin/env -S mise tool-stub\n\n{toml_content}");
         let sidecar = SidecarLock {
             stub_path: real_stub,
+            checked_content,
             lockfile_path,
             tv,
             targets: lock_targets,
@@ -998,12 +1001,29 @@ struct SidecarLock {
     /// one rewritten and recorded, so a link that changes during the run cannot swap in
     /// another project's file.
     stub_path: PathBuf,
+    /// The text of `stub_path` that was trust-checked and read, and that the rewrite is
+    /// made from.
+    checked_content: String,
     lockfile_path: PathBuf,
     tv: ToolVersion,
     /// Every platform variant locked, including the current host and those
     /// the backend returned no URL for.
     targets: Vec<PlatformTarget>,
     platforms: BTreeMap<String, PlatformInfo>,
+}
+
+/// Fails when the stub at `path` no longer holds `checked`, the text `--lock` read before it
+/// resolved the version and platforms. Writing then would silently drop an edit saved during
+/// that wait, and would record lock data for text that was never checked.
+fn ensure_unchanged(path: &Path, checked: &str) -> Result<()> {
+    if file::read_to_string(path)? != checked {
+        bail!(
+            "tool stub {} changed while it was being locked; nothing was written\n\
+            hint: run the command again",
+            display_path(path)
+        );
+    }
+    Ok(())
 }
 
 impl SidecarLock {
@@ -1140,7 +1160,22 @@ fn wants_windows_launcher(stub_content: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::ChecksumAlgorithm;
+    use super::{ChecksumAlgorithm, ensure_unchanged};
+
+    #[test]
+    fn a_stub_edited_while_it_is_locked_is_not_rewritten() {
+        let dir = tempfile::tempdir().unwrap();
+        let stub = dir.path().join("t");
+        std::fs::write(&stub, "version = \"1\"\n").unwrap();
+        ensure_unchanged(&stub, "version = \"1\"\n").unwrap();
+
+        std::fs::write(&stub, "version = \"2\"\n").unwrap();
+        let err = ensure_unchanged(&stub, "version = \"1\"\n").unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("changed while it was being locked")
+        );
+    }
 
     #[test]
     fn checksum_algorithm_formats_blake3() {
