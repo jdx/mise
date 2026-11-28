@@ -85,8 +85,10 @@ pub mod managed_files;
 mod package_config;
 pub use mise_system_packages as packages;
 #[cfg(unix)]
-pub use packages::options::AppSpec;
-pub use packages::options::{ManagerPackageOptions, brew_tap_name, validate_app_declaration};
+pub use packages::options::{AppDeclaration, AppSpec};
+pub use packages::options::{
+    ManagerPackageOptions, brew_tap_name, validate_app_cask, validate_app_declaration,
+};
 // Deleted with the cleanup it guards, which lives in `packages::apt_sources`.
 pub mod remote;
 pub mod remote_repository;
@@ -745,7 +747,7 @@ fn merge_manager_packages(
                 .options
                 .brew_cask_appdir(&request.name)
                 .map(PathBuf::from);
-            let app_spec = mp.options.macos_app_spec(&request.name).cloned();
+            let app_spec = mp.options.macos_app_declaration(&request.name).cloned();
             let snap = match &mp.options {
                 ManagerPackageOptions::Snap { packages } => packages.get(&request.name).cloned(),
                 _ => None,
@@ -890,7 +892,7 @@ fn package_requests_collecting(
     #[cfg(unix)]
     let mut cask_appdirs = BTreeMap::new();
     #[cfg(unix)]
-    let mut app_specs: BTreeMap<String, AppSpec> = BTreeMap::new();
+    let mut app_specs: BTreeMap<String, AppDeclaration> = BTreeMap::new();
     #[cfg(unix)]
     let mut app_adopt = BTreeSet::new();
     let mut snap_options = BTreeMap::new();
@@ -1017,15 +1019,43 @@ fn package_requests_collecting(
                 // machines should report a misplaced or incomplete declaration
                 // wherever it is read, not only where macos-app can run.
                 let app_declaration = package.app_fields();
-                if app_declaration.is_some() && mgr != "macos-app" {
+                let app_cask = package.app_cask();
+                if mgr != "macos-app" {
+                    if app_declaration.is_some() {
+                        warn!(
+                            "[bootstrap.packages]: url/sha256/artifact are only supported for macos-app entries; ignoring them for '{spec}'"
+                        );
+                    }
+                    if app_cask.is_some() {
+                        warn!(
+                            "[bootstrap.packages]: cask is only supported for macos-app entries; ignoring it for '{spec}'"
+                        );
+                    }
+                } else if app_cask.is_some() && package.has_app_download_fields() {
                     warn!(
-                        "[bootstrap.packages]: url/sha256/artifact are only supported for macos-app entries; ignoring them for '{spec}'"
-                    );
-                } else if app_declaration.is_none() && mgr == "macos-app" {
-                    warn!(
-                        "[bootstrap.packages]: macos-app entry '{spec}' needs 'url', 'sha256', 'artifact', and 'version'"
+                        "[bootstrap.packages]: macos-app entry '{spec}' sets both 'cask' and url/sha256/artifact; use one or the other"
                     );
                     continue;
+                } else if app_declaration.is_none() && app_cask.is_none() {
+                    warn!(
+                        "[bootstrap.packages]: macos-app entry '{spec}' needs 'cask', or 'url', 'sha256', 'artifact', and 'version'"
+                    );
+                    continue;
+                }
+                if mgr == "macos-app"
+                    && let Some((cask, declared_version)) = app_cask
+                {
+                    if let Err(err) = validate_app_cask(&name, cask, declared_version) {
+                        warn!("[bootstrap.packages]: {err}");
+                        continue;
+                    }
+                    #[cfg(unix)]
+                    {
+                        app_specs.insert(name.clone(), AppDeclaration::Cask(cask.to_string()));
+                        if adopt_requested.unwrap_or(false) {
+                            app_adopt.insert(name.clone());
+                        }
+                    }
                 }
                 if mgr == "macos-app"
                     && let Some((url, sha256, artifact, declared_version)) = app_declaration
@@ -1043,7 +1073,7 @@ fn package_requests_collecting(
                     #[cfg(unix)]
                     match AppSpec::parse(&name, url, sha256, artifact, declared_version) {
                         Ok(spec) => {
-                            app_specs.insert(name.clone(), spec);
+                            app_specs.insert(name.clone(), AppDeclaration::Download(spec));
                             if adopt_requested.unwrap_or(false) {
                                 app_adopt.insert(name.clone());
                             }
@@ -2315,7 +2345,7 @@ fn packages_from_specs_with_config_files(
         }
     }
     #[cfg(unix)]
-    let mut app_specs: BTreeMap<String, AppSpec> = BTreeMap::new();
+    let mut app_specs: BTreeMap<String, AppDeclaration> = BTreeMap::new();
     #[cfg(unix)]
     let mut app_adopt = BTreeSet::new();
     let mut by_mgr: IndexMap<String, Vec<PackageRequest>> = IndexMap::new();
@@ -2342,18 +2372,29 @@ fn packages_from_specs_with_config_files(
                 .get(&format!("{mgr}:{name}"))
                 .ok_or_else(|| {
                     eyre::eyre!(
-                        "macos-app:{name} is not declared in [bootstrap.packages]; it needs url, sha256, artifact, and an explicit version"
+                        "macos-app:{name} is not declared in [bootstrap.packages]; it needs a cask, or url, sha256, artifact, and an explicit version"
                     )
                 })?;
-            let (url, sha256, artifact, version) =
-                configured.app_fields().ok_or_else(|| {
-                    eyre::eyre!(
-                        "macos-app:{name} is missing 'url'; macos-app entries need url, sha256, artifact, and an explicit version"
-                    )
-                })?;
-            let parsed = AppSpec::parse(&name, url, sha256, artifact, version)?;
-            app_version = Some(parsed.version.clone());
-            app_specs.insert(name.clone(), parsed);
+            if let Some((cask, version)) = configured.app_cask() {
+                if configured.has_app_download_fields() {
+                    eyre::bail!(
+                        "macos-app:{name} sets both 'cask' and url/sha256/artifact; use one or the other"
+                    );
+                }
+                validate_app_cask(&name, cask, version)?;
+                // No version: the cask's current one is what gets installed.
+                app_specs.insert(name.clone(), AppDeclaration::Cask(cask.to_string()));
+            } else {
+                let (url, sha256, artifact, version) =
+                    configured.app_fields().ok_or_else(|| {
+                        eyre::eyre!(
+                            "macos-app:{name} is missing 'url'; macos-app entries need a cask, or url, sha256, artifact, and an explicit version"
+                        )
+                    })?;
+                let parsed = AppSpec::parse(&name, url, sha256, artifact, version)?;
+                app_version = Some(parsed.version.clone());
+                app_specs.insert(name.clone(), AppDeclaration::Download(parsed));
+            }
             if configured.adopt().unwrap_or(false) {
                 app_adopt.insert(name.clone());
             }
@@ -3322,6 +3363,67 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
+    fn macos_app_cask_reaches_manager_options() -> Result<()> {
+        let (_dir, config_files) = config_map_from_toml(&[(
+            "mise.toml",
+            r#"
+                [bootstrap.packages]
+                "macos-app:figma" = { cask = "figma", adopt = true }
+            "#,
+        )])?;
+
+        let packages = packages_from_config_files(&config_files)?;
+        let apps = packages
+            .into_iter()
+            .find(|packages| packages.manager.name() == "macos-app")
+            .unwrap();
+        // The cask's current version is installed, so the request pins none.
+        assert_eq!(apps.requests.len(), 1);
+        assert_eq!(apps.requests[0].version, None);
+        assert_eq!(apps.options.macos_app_cask("figma"), Some("figma"));
+        assert!(apps.options.macos_app_spec("figma").is_none());
+        assert!(apps.options.brew_cask_adopt("figma"));
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn macos_app_cask_rejects_a_pin_a_tap_and_download_fields() -> Result<()> {
+        let (_dir, config_files) = config_map_from_toml(&[(
+            "mise.toml",
+            r#"
+                [bootstrap.packages]
+                # schema: invalid
+                "macos-app:pinned" = { cask = "figma", version = "126.11.11" }
+                "macos-app:tapped" = { cask = "someone/tap/figma" }
+                # schema: invalid
+                "macos-app:both" = { cask = "figma", url = "https://example.com/F.zip", sha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", artifact = "Figma.app", version = "1.0.0" }
+            "#,
+        )])?;
+
+        let packages = packages_from_config_files(&config_files)?;
+        assert!(
+            packages
+                .iter()
+                .all(|packages| packages.manager.name() != "macos-app"),
+            "every macos-app entry should have been skipped"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn macos_app_cask_is_validated_on_every_platform() {
+        assert!(validate_app_cask("figma", "figma", "latest").is_ok());
+        assert!(validate_app_cask("java", "temurin@21", "latest").is_ok());
+        assert!(validate_app_cask("figma", "figma", "126.11.11").is_err());
+        assert!(validate_app_cask("figma", "someone/tap/figma", "latest").is_err());
+        assert!(validate_app_cask("figma", "../figma", "latest").is_err());
+        assert!(validate_app_cask("figma", "Figma", "latest").is_err());
+        assert!(validate_app_cask("figma", "", "latest").is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn tracked_macos_app_adoption_keeps_its_declaration() -> Result<()> {
         let (_current_dir, current) = config_map_from_toml(&[])?;
         let (_tracked_dir, tracked) = config_map_from_toml(&[(
@@ -4085,6 +4187,7 @@ mod tests {
             url: None,
             sha256: None,
             artifact: None,
+            cask: None,
             channel: None,
             classic: None,
             names: Default::default(),

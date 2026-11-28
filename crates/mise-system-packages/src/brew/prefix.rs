@@ -422,10 +422,18 @@ pub(super) fn bootstrap(dry_run: bool) -> Result<()> {
         // existing prefix owned by another real user (e.g. a dedicated
         // `linuxbrew` user behind a proxy) is that user's boundary — never
         // mkdir/chown over it
+        // A cask that only installs an app can go through `macos-app`, which
+        // keeps its records outside the prefix, so point there on macOS.
+        let app_hint = if cfg!(target_os = "macos") {
+            ". A cask that installs only an app can be declared as \
+             \"macos-app:<name>\" = { cask = \"<name>\" }, which does not write to the prefix"
+        } else {
+            ""
+        };
         bail!(
             "{} is owned by {owner} and not writable by {}; mise will not change the \
-             ownership of another user's Homebrew prefix. Install the missing formulae with \
-             that prefix's own brew, or remove them from [bootstrap.packages]",
+             ownership of another user's Homebrew prefix. Install the missing packages with \
+             that prefix's own brew, or remove them from [bootstrap.packages]{app_hint}",
             prefix.display(),
             prefix_owner().unwrap_or_else(|| "the current user".to_string()),
         );
