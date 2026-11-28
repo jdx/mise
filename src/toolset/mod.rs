@@ -1486,11 +1486,13 @@ pub async fn prunable_tools_with_sources(
                 .any(|key| needed.contains_key(key))
     });
 
-    // Safe mode left out a task file outside its project, so the tools its tasks name
-    // are missing from `needed`, and any candidate may be one of them.
-    if crate::config::safe_mode_skipped_task_file() && !to_delete.is_empty() {
+    // Safe mode left out a task file, so the tools its tasks name are missing from
+    // `needed`, and any candidate may be one of them.
+    if let Some(skipped) = crate::config::safe_mode_skipped_task_source()
+        && !to_delete.is_empty()
+    {
         warn!(
-            "not pruning: safe mode (MISE_SAFE=1) skipped a task file outside its project, so the tools it needs are unknown"
+            "not pruning: safe mode (MISE_SAFE=1) skipped {skipped}, so the tools its tasks need are unknown"
         );
         to_delete.clear();
     }
