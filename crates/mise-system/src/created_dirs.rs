@@ -51,7 +51,7 @@ fn record_path() -> PathBuf {
 }
 
 /// What tells the directory at `dir` from another made later at the same path: its device, inode
-/// and birth time. `None` when `dir` is not a directory, or when the platform cannot tell its birth
+/// (on Windows, volume and file index) and birth time. `None` when `dir` is not a directory, or when the platform cannot tell its birth
 /// time: an inode alone can be reused by a directory the user makes later, so such a directory is
 /// never recorded, and mise leaves it behind rather than risk removing the user's.
 fn identity(dir: &Path) -> Option<String> {
@@ -70,8 +70,43 @@ fn identity(dir: &Path) -> Option<String> {
         use std::os::unix::fs::MetadataExt;
         Some(format!("{}:{}:{born}", meta.dev(), meta.ino()))
     }
-    #[cfg(not(unix))]
+    #[cfg(windows)]
+    {
+        // NTFS hands a name deleted and made again within seconds its old creation time
+        // ("tunneling"), so the birth time alone would take the user's new directory for mise's
+        let (volume, index) = windows_file_id(dir)?;
+        Some(format!("{volume}:{index}:{born}"))
+    }
+    #[cfg(not(any(unix, windows)))]
     Some(born.to_string())
+}
+
+/// The volume serial number and file index of `dir`, without following a reparse point. NTFS puts
+/// a sequence number in the index that changes when the entry is reused.
+#[cfg(windows)]
+fn windows_file_id(dir: &Path) -> Option<(u32, u64)> {
+    use std::os::windows::fs::OpenOptionsExt;
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Storage::FileSystem::{
+        BY_HANDLE_FILE_INFORMATION, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT,
+        GetFileInformationByHandle,
+    };
+    let handle = std::fs::OpenOptions::new()
+        .access_mode(0)
+        .custom_flags(FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT)
+        .open(dir)
+        .ok()?;
+    let mut info = std::mem::MaybeUninit::<BY_HANDLE_FILE_INFORMATION>::uninit();
+    // SAFETY: the handle is open for as long as `handle` lives, and `info` is written in full when
+    // the call succeeds
+    if unsafe { GetFileInformationByHandle(handle.as_raw_handle(), info.as_mut_ptr()) } == 0 {
+        return None;
+    }
+    let info = unsafe { info.assume_init() };
+    Some((
+        info.dwVolumeSerialNumber,
+        (u64::from(info.nFileIndexHigh) << 32) | u64::from(info.nFileIndexLow),
+    ))
 }
 
 impl CreatedDirs {
