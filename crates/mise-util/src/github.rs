@@ -1506,6 +1506,7 @@ pub async fn get_release_with_versions_host(
         )
         .await
         .or_else(|err| stale_on_temporary_failure(cache, err))?;
+    ensure_release_tag(&release, repo, tag)?;
     remember_mirrored_assets([&release]);
     Ok(release)
 }
@@ -1534,6 +1535,7 @@ pub async fn get_release_for_url_with_versions_host(
         )
         .await
         .or_else(|err| stale_on_temporary_failure(cache, err))?;
+    ensure_release_tag(&release, repo, tag)?;
     remember_mirrored_assets([&release]);
     Ok(release)
 }
@@ -1712,9 +1714,28 @@ async fn get_release_from_api(api_url: &str, repo: &str, tag: &str) -> Result<Gi
         )
     };
     let headers = get_headers(&url, api_url)?;
-    crate::http::HTTP_FETCH
+    let release: GithubRelease = crate::http::HTTP_FETCH
         .json_with_headers(url, &headers)
-        .await
+        .await?;
+    ensure_release_tag(&release, repo, tag)?;
+    Ok(release)
+}
+
+/// The version installed, and what is verified for it (the registry's
+/// `attestations_since`, the SLSA source tag), follow the release's tag. The
+/// host answering can be a `url_replacements` mirror, so an answer for another
+/// tag is refused before anything caches it, as mise-versions' answers are in
+/// `versions_host::github_release`, and again when it is read from the cache,
+/// which a release written before this check may be in.
+fn ensure_release_tag(release: &GithubRelease, repo: &str, tag: &str) -> Result<()> {
+    if !crate::versions_host::valid_github_release_tag(release, tag) {
+        bail!(
+            "refusing GitHub release {}: the API was asked for {repo}@{tag}; \
+             check the host `url_replacements` sends api.github.com to",
+            release.tag_name
+        );
+    }
+    Ok(())
 }
 
 fn is_public_github_api_base(api_url: &str) -> bool {

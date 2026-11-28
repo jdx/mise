@@ -135,6 +135,16 @@ EOF
 assert_succeed "MISE_SAFE=1 mise -C repo/sub lock --platform linux-x64"
 assert_contains "cat repo/sub/mise.lock" "3.10.0"
 assert_contains "cat repo/sub/mise.lock" "3.9.0"
+
+echo "=== and in generate mode, with the platforms the lockfile already has ==="
+cat <<'EOF' >repo/sub/mise.lock
+[[tools."github:mvdan/sh"]]
+version = "3.9.0"
+backend = "github:mvdan/sh"
+EOF
+assert_succeed "MISE_LOCKFILE_MODE=generate MISE_LOCKFILE_AUTO_PRUNE=1 MISE_SAFE=1 mise -C repo/sub lock"
+assert_contains "cat repo/sub/mise.lock" "3.10.0"
+assert_contains "cat repo/sub/mise.lock" "3.9.0"
 rm -r repo outside
 
 echo "=== mise lock keeps the entries of a remote task include it skipped ==="
@@ -151,6 +161,19 @@ EOF
 MISE_EXPERIMENTAL=1 MISE_SAFE=1 mise -C repo/sub lock >/dev/null 2>&1 || true
 assert_contains "cat repo/sub/mise.lock" "1.0.0"
 rm -r repo
+
+echo "=== mise prune keeps every version when a tracked project's remote include is skipped ==="
+mkdir -p remote-proj other
+cat <<'EOF' >remote-proj/mise.toml
+[task_config]
+includes = ["git::https://example.invalid/tasks.git//tasks.toml?ref=v1"]
+EOF
+assert "mise trust remote-proj/mise.toml"
+assert "mise install dummy@1.0.0"
+assert "mise ls -C remote-proj"
+assert_contains "MISE_SAFE=1 mise -C other prune --dry-run 2>&1" "not pruning: safe mode (MISE_SAFE=1) skipped the remote task include \`git::https://example.invalid"
+assert_not_contains "MISE_SAFE=1 mise -C other prune --dry-run 2>&1" "dummy@1.0.0"
+rm -r remote-proj other
 
 echo "=== and task files a monorepo's projects share ==="
 mkdir -p shared packages/foo
@@ -185,3 +208,35 @@ cat <<EOF >"$MISE_CONFIG_DIR/config.toml"
 includes = ["$MISE_TMP_DIR/tasks"]
 EOF
 assert_contains "MISE_SAFE=1 mise tasks ls" "from-global-include"
+
+echo "=== a project config beside global config does not share its exemption ==="
+# ~/mise.toml has the same config root as ~/.config/mise/config.toml, but the
+# includes it declares are a project's. When no task is found, `mise tasks ls`
+# looks through the includes for files that are not executable, and must not
+# walk one outside the project.
+outside_home="$(dirname "$HOME")/outside-home"
+mkdir -p "$outside_home/scripts"
+echo "echo private" >"$outside_home/scripts/private-script"
+cat <<EOF >"$HOME/mise.toml"
+[task_config]
+includes = ["$outside_home/scripts"]
+EOF
+assert_contains "MISE_SAFE=1 mise -C $HOME tasks ls 2>&1" "resolves outside the project"
+assert_not_contains "MISE_SAFE=1 mise -C $HOME tasks ls 2>&1" "private-script"
+rm "$HOME/mise.toml"
+
+echo "=== a home directory reached through a link is not the project's checkout ==="
+# A checkout that is the home directory holds the user's own files, also when
+# HOME names it through a link.
+realhome="$(dirname "$HOME")/realhome"
+linkedhome="$(dirname "$HOME")/linkedhome"
+mkdir -p "$realhome/.git" "$realhome/private" "$realhome/proj"
+ln -s "$realhome" "$linkedhome"
+echo 'oauth_token = "h0met0k3n"' >"$realhome/private/hosts.toml"
+cat <<'EOF' >"$realhome/proj/mise.toml"
+[task_config]
+includes = ["../private/hosts.toml"]
+EOF
+# control: when it is not the home directory, the checkout bounds the includes
+assert_contains "MISE_SAFE=1 mise -C $linkedhome/proj tasks ls --json 2>&1" "h0met0k3n"
+assert_not_contains "HOME=$linkedhome MISE_SAFE=1 mise -C $linkedhome/proj tasks ls --json 2>&1" "h0met0k3n"

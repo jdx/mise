@@ -383,6 +383,10 @@ is still verified, and mise records the choice in the lockfile options.
 "packslip:github.com/jdx/hk" = { version = "latest", trust = "vendor" }
 ```
 
+In [safe mode](/security.html#safe-mode) the option counts only where a
+`[tools]` entry of global or system config sets it for the tool, since project
+config is not trusted there.
+
 ### `allow_unlogged` {#allow-unlogged}
 
 Set to `true` only when your policy accepts key-signed bundles without

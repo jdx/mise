@@ -2,7 +2,8 @@ use crate::request_exit;
 
 use eyre::Result;
 
-use crate::config::{Config, Settings};
+use crate::config::config_file::is_path_trusted;
+use crate::config::{Config, ConfigMap, Settings, is_global_config};
 use crate::registry::{REGISTRY, tool_enabled};
 use crate::shell::ShellType;
 use crate::toolset::ToolsetBuilder;
@@ -31,9 +32,21 @@ impl HookNotFound {
         let mut config = Config::get().await?;
         let settings = Settings::try_get()?;
         if settings.not_found_auto_install {
-            let mut ts = ToolsetBuilder::new().build(&config).await?;
+            // A plain tool list loads without trust, but it is no consent to install, so only
+            // trusted config decides which version is asked for. Merged in, an untrusted file's
+            // request would take the place of global config's and leave nothing to install.
+            let trusted: ConfigMap = config
+                .config_files
+                .iter()
+                .filter(|(path, _)| is_global_config(path) || is_path_trusted(path))
+                .map(|(path, cf)| (path.clone(), cf.clone()))
+                .collect();
+            let mut ts = ToolsetBuilder::new()
+                .with_config_files(trusted)
+                .build(&config)
+                .await?;
             if ts
-                .install_missing_bin(&mut config, &self.bin)
+                .install_missing_bin(&mut config, &self.bin, false)
                 .await?
                 .is_some()
             {

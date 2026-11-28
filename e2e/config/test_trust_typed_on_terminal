@@ -71,14 +71,32 @@ forget_trust
 ok "[trust] an ignored directory is not trusted"
 
 # The shell's command-not-found handler runs mise on the terminal after a
-# mistyped command; nobody typed a mise command.
-output="$(on_pty 'mise hook-not-found -s bash -- nosuchbin')" || true
-# The handler leaves untrusted config out without asking.
-assert_not_contains_text "$output" "Trust them?"
-assert_not_contains_text "$output" "$notice"
-assert_untrusted
-forget_trust
+# mistyped command; nobody typed a mise command. A global option before the
+# command does not hide it.
+for cmd in 'mise hook-not-found -s bash -- nosuchbin' 'mise -q hook-not-found -s bash -- nosuchbin'; do
+  output="$(on_pty "$cmd")" || true
+  # The handler leaves untrusted config out without asking.
+  assert_not_contains_text "$output" "Trust them?"
+  assert_not_contains_text "$output" "$notice"
+  assert_untrusted
+  forget_trust
+done
 ok "[trust] the command-not-found handler does not trust the project"
+
+# The prompt hook runs before every prompt on the terminal: it neither asks nor
+# trusts, with or without a global option before the command.
+for cmd in 'mise hook-env -s bash' 'mise -q hook-env -s bash'; do
+  # script -e exits with the status of the command it ran.
+  output="$(on_pty "$cmd")" || fail "$cmd failed: $output"
+  # The warning shows the hook reached the untrusted config and did not trust it.
+  # shellcheck disable=SC2016
+  assert_contains_text "$output" 'mise.toml is not trusted, run `mise trust` to enable it'
+  assert_not_contains_text "$output" "Trust them?"
+  assert_not_contains_text "$output" "$notice"
+  assert_untrusted
+  forget_trust
+done
+ok "[trust] the prompt hook does not trust the project"
 
 # Without a terminal nothing is trusted either.
 assert_fail "MISE_YES=0 mise env </dev/null" "not trusted"
@@ -97,10 +115,35 @@ if [ "$(id -u)" != 0 ]; then
   rm -r .config
   forget_trust
   ok "[trust] another account's config file in the directory still asks"
+
+  # The record also admits config for an environment this command did not
+  # select, which would load as soon as that environment is.
+  ln -s /etc/passwd mise.prod.toml
+  output="$(on_pty 'mise env')" || true
+  assert_contains_text "$output" "Trust them?"
+  assert_not_contains_text "$output" "$notice"
+  assert_untrusted
+  rm mise.prod.toml
+  forget_trust
+  ok "[trust] another account's config for another environment still asks"
+
+  # A conf.d fragment reached through a link in the project belongs to the
+  # project, whose record admits it, so another account's file behind that
+  # link keeps the prompt too.
+  mkdir -p .mise/conf.d/git
+  ln -s /etc/passwd .mise/conf.d/git/mise.prod.toml
+  output="$(on_pty 'mise env')" || true
+  assert_contains_text "$output" "Trust them?"
+  assert_not_contains_text "$output" "$notice"
+  assert_untrusted
+  rm -r .mise
+  forget_trust
+  ok "[trust] another account's linked conf.d fragment still asks"
 fi
 
-# Typed on a terminal: trusted, with a notice, and the config applies.
-output="$(on_pty 'mise env')"
+# Typed on a terminal: trusted, with a notice, and the config applies. The
+# undo hint is quoted for the shell `mise activate` named.
+output="$(on_pty 'MISE_SHELL=bash mise env')"
 assert_contains_text "$output" "$notice"
 assert_contains_text "$output" "Undo with \`mise untrust $shown/mise.toml\`"
 assert_contains_text "$output" "TYPED_TRUST_TEST"
@@ -111,6 +154,7 @@ ok "[trust] a command typed on a terminal trusts the project"
 
 # One command can trust a parent project too. Each notice names the file whose
 # directory it trusted, so running every hint it printed undoes all of them.
+# With no shell named, the hint gives the full path.
 mkdir sub
 cat <<'EOF' >sub/mise.toml
 [env]
@@ -118,23 +162,75 @@ TYPED_TRUST_SUB = "1"
 EOF
 output="$(cd sub && on_pty 'mise env')"
 assert_contains_text "$output" "TYPED_TRUST_SUB"
-assert_contains_text "$output" "mise untrust $shown/mise.toml"
-assert_contains_text "$output" "mise untrust $shown/sub/mise.toml"
+assert_contains_text "$output" "mise untrust $PWD/mise.toml"
+assert_contains_text "$output" "mise untrust $PWD/sub/mise.toml"
 (cd sub && mise untrust "$PWD/../mise.toml" && mise untrust "$PWD/mise.toml")
 assert_untrusted
 assert_contains "cd sub && mise trust --show" "sub: untrusted"
 forget_trust
 ok "[trust] the notice for each trusted directory says how to undo it"
 
-# The notice is printed once the trust is saved, so a project whose settings
-# then fail to load still says it was trusted.
+# A project whose settings fail to load once trusted keeps no record: every
+# command, `mise untrust` too, would fail on that setting. The parent is
+# trusted first, so the only config this command could trust is `sub`'s.
+mise trust mise.toml
 cat <<'EOF' >sub/mise.toml
 [settings]
 versions_host_exclude = ["["]
 EOF
 output="$(cd sub && on_pty 'mise env')" || true
-assert_contains_text "$output" "mise untrust $shown/sub/mise.toml"
-# Every command now fails on that setting, `mise trust --show` too, so look for
-# the record itself.
-assert_contains "ls $MISE_STATE_DIR/trusted-configs" "sub-"
-ok "[trust] the notice is printed when the project's settings fail to load"
+assert_contains_text "$output" "versions_host_exclude"
+# No undo hint in any path form: nothing was left trusted to undo.
+assert_not_contains_text "$output" "mise untrust"
+assert_not_contains "ls $MISE_STATE_DIR/trusted-configs 2>/dev/null || true" "sub-"
+forget_trust
+ok "[trust] a project whose settings fail to load is not left trusted"
+
+# Trusting only a subproject leaves its monorepo root untrusted, but a command
+# typed in the subproject trusts the root like any other untrusted parent, and
+# says so. Ignoring the root keeps it out.
+rm -r sub mise.toml
+mkdir -p mono/app
+cat <<'EOF' >mono/mise.toml
+monorepo_root = true
+[env]
+TYPED_TRUST_ROOT = "1"
+EOF
+cat <<'EOF' >mono/app/mise.toml
+[env]
+TYPED_TRUST_APP = "1"
+EOF
+(cd mono/app && mise trust mise.toml)
+assert_contains "cd mono && mise trust --show" "mono: untrusted"
+output="$(cd mono/app && on_pty 'MISE_EXPERIMENTAL=1 mise env')"
+assert_contains_text "$output" "$notice"
+assert_contains_text "$output" "mise untrust $PWD/mono/mise.toml"
+assert_contains_text "$output" "TYPED_TRUST_ROOT"
+assert_not_contains_text "$output" "Trust them?"
+assert_contains "cd mono && mise trust --show" "mono: trusted"
+forget_trust
+ok "[trust] a command typed in a trusted subproject trusts its untrusted root"
+
+(cd mono && mise trust --ignore mise.toml)
+(cd mono/app && mise trust mise.toml)
+output="$(cd mono/app && on_pty 'MISE_EXPERIMENTAL=1 mise env')"
+assert_contains_text "$output" "TYPED_TRUST_APP"
+assert_not_contains_text "$output" "TYPED_TRUST_ROOT"
+assert_not_contains_text "$output" "$notice"
+assert_not_contains_text "$output" "Trust them?"
+ok "[trust] an ignored monorepo root stays out when a subproject is trusted"
+forget_trust
+
+# With only paranoid `env_files` on, `mise untrust .node-version` would take the
+# file for an env file of its own, so the hint names the directory that was
+# trusted, and running it leaves the directory untrusted.
+mkdir -p nv/local/bin
+echo "path:./local" >nv/.node-version
+nv_env="MISE_PARANOID=env_files MISE_IDIOMATIC_VERSION_FILE_ENABLE_TOOLS=node"
+output="$(cd nv && on_pty "$nv_env mise env")"
+assert_contains_text "$output" "$notice"
+assert_contains_text "$output" "Undo with \`mise untrust $PWD/nv\`"
+(cd nv && env MISE_PARANOID=env_files MISE_IDIOMATIC_VERSION_FILE_ENABLE_TOOLS=node mise untrust "$PWD")
+assert_fail_contains "cd nv && $nv_env MISE_YES=0 mise env 2>&1" "not trusted"
+forget_trust
+ok "[trust] the hint for a version file names the trusted directory"

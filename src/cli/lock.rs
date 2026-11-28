@@ -1467,6 +1467,14 @@ impl Lock {
         for short in withheld {
             lockfile.restore_missing_versions(previous, short);
         }
+        // Safe mode left out a task file, so `tools` lacks what its tasks request, and a
+        // version only they pin was dropped above. Keep every locked version, as
+        // `prune_stale_versions` does outside generate mode.
+        if crate::config::safe_mode_skipped_task_file() {
+            for short in previous.tools().keys() {
+                lockfile.restore_missing_versions(previous, short);
+            }
+        }
         Ok((Vec::new(), Vec::new()))
     }
 
@@ -2288,13 +2296,12 @@ impl Lock {
     /// Note: This must be called AFTER process_tools() so that provenance checks
     /// can compare against the old version entries before they are removed.
     fn prune_stale_versions(&self, lockfile: &mut Lockfile, tools: &[LockTool]) -> Result<()> {
-        // The versions pinned by a task file safe mode did not read are unknown, so
-        // every locked version of a tool stays.
-        let current_versions = if crate::config::safe_mode_skipped_task_file() {
-            BTreeMap::new()
-        } else {
-            self.current_tool_versions(tools)
-        };
+        // The versions, and the options, that a task file safe mode did not read pins are
+        // unknown, so every locked entry stays, dependency graphs included.
+        if crate::config::safe_mode_skipped_task_file() {
+            return Ok(());
+        }
+        let current_versions = self.current_tool_versions(tools);
         for (short, versions) in &current_versions {
             lockfile.retain_tool_versions(short, versions);
         }
@@ -2574,9 +2581,9 @@ impl Lock {
         effective_config_files: &ConfigMap,
     ) -> Option<ToolSelectors> {
         // The tools of a task file safe mode did not read are unknown, so no entry is stale.
-        if crate::config::safe_mode_skipped_task_file() {
+        if let Some(skipped) = crate::config::safe_mode_skipped_task_source() {
             debug!(
-                "skipping stale-tool pruning for {}: safe mode skipped a task file outside the project",
+                "skipping stale-tool pruning for {}: safe mode skipped {skipped}",
                 display_path(target_lockfile_path)
             );
             return None;

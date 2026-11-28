@@ -90,3 +90,27 @@ assert_empty "ls $ran"
 assert "mise trust"
 assert_contains "mise tasks info build --json" "$(dirname "$PWD")/lib/**"
 assert "ls $ran" "sourced"
+
+echo "=== a cascaded group reference that needs an untrusted task's vars is left out ==="
+cd .. || exit 1
+cat <<'EOF' >mise.toml
+[task_config]
+cascade = true
+global_inputs = ["@group:{{ vars.group }}"]
+
+[task_config.input_groups]
+src = ["lib/**"]
+EOF
+mise trust >/dev/null
+mkdir child2
+cat <<'EOF' >child2/mise.toml
+[tasks.build]
+run = "true"
+vars = { group = "src" }
+EOF
+cd child2 || exit 1
+assert_contains "mise trust --show" "child2: untrusted"
+assert_contains "mise tasks ls" "build"
+assert_not_contains "mise tasks info build --json" "lib/**"
+assert "mise trust"
+assert_contains "mise tasks info build --json" "$(dirname "$PWD")/lib/**"

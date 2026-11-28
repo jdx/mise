@@ -61,7 +61,9 @@ A `mise.toml` loads without trust when it has no template syntax
   name that is the URL of a host other than github.com or gitlab.com, which
   mise would send your forge token to, and no
   [`path:`](/dev-tools/versions.html) version, which puts a directory on `PATH`
-  without an install
+  without an install, and no `ref:` or `rev:` version, which can name any
+  commit the forge serves, such as a pull request from a fork (`tag:` and
+  `branch:` versions load without trust)
 - `[tasks]`, as long as no task lists `secrets`
 
 Anything else needs trust, including tool option tables, `[env]`, `[hooks]`,
@@ -71,13 +73,15 @@ commands or other settings before you trust it. Other files follow the same
 idea:
 
 - `.tool-versions` needs trust only when it contains template syntax, inline
-  tool options such as `node[postinstall=...] 24`, or a `path:` version.
+  tool options such as `node[postinstall=...] 24`, or a `path:`, `ref:` or
+  `rev:` version.
 - Idiomatic version files such as `.nvmrc` need trust only when they contain a
-  `path:` version.
+  `path:`, `ref:` or `rev:` version.
 - A project's [`mise.lock`](/dev-tools/mise-lock.html) is read with its config.
   Until that config is trusted, the lockfile only pins versions and checksums:
   mise ignores an entry that locks a tool to a backend other than the one its
-  tool key or the registry selects, or that adds options, and downloads from
+  tool key or the registry selects, that adds options, or that locks a `ref:` or
+  `rev:` version, and downloads from
   where the backend normally would instead of the lockfile's URLs and
   dependency graphs.
 - Task files, including TOML files from
@@ -201,10 +205,12 @@ when all of these hold:
   completion, or for the shell's command-not-found handler after you mistype a
   command.
 - On Unix systems such as Linux and macOS, you own the config file and its
-  directory, every other config file the command loads from that directory,
-  and the target of each one that is a symlink. A config file another account
-  left in a shared directory, such as a `.config/mise.toml` beside your own
-  `mise.toml`, still asks. Windows does not check ownership.
+  directory, every other config file the trust would cover in that directory,
+  including ones for another `MISE_ENV` such as `mise.prod.toml`, each
+  directory between that directory and those files, and the target of each one
+  that is a symlink. A config file another account left in a shared directory,
+  such as a `.config/mise.toml` beside your own `mise.toml`, still asks.
+  Windows does not check ownership.
 
 mise cannot tell a command you typed from one a program started on the same
 terminal, so a mise command run from a script or a Makefile target you start
@@ -215,8 +221,12 @@ mise trusts the config's directory as `mise trust` would and prints
 ``mise trusted <dir> because you ran a mise command there. Undo with `mise untrust <file>`.``<!-- cli: skip -->
 once per directory, which `--quiet` hides. `<file>` is the config file whose
 directory was trusted; `mise untrust` without it acts on the nearest config
-only. The notice is printed as soon as the trust is recorded, so it appears even
-when the project's settings then fail to load. A directory on the ignore list or
+only. mise quotes `<file>` for the shell `mise activate` set up. Without
+activation it cannot tell which shell you typed in, so it shows `<file>` only
+when the path needs no quoting, and otherwise prints the path and asks you to
+quote it for your shell. When the project's settings then fail to load, mise removes the record
+again and fails with the settings error, since every later command, `mise untrust`
+too, would fail on that setting. A directory on the ignore list or
 under `ignored_config_paths` stays ignored, and shell activation still skips
 untrusted config. Only paranoid mode turns this off.
 
@@ -306,6 +316,24 @@ covered it is gone, they need trust of their own again. See
 its config or list its tasks, and a command that trusts the root does not
 remove the ignore. In paranoid mode, trusting the root trusts only that file.
 
+A command [typed in a terminal](#typed-in-a-terminal) in an untrusted monorepo
+root, or in a subproject below it, trusts the root the same way, so the trust
+covers every subproject config below it, including ones added later. The
+ownership check looks only at the root's own config files, not at the
+subprojects'. On a shared checkout, this means anyone who can write to the tree
+can add a subproject config that the root's trust covers, and it loads without
+asking.
+
+Leaving the root untrusted does not prevent this. Even after `mise trust` in a
+subproject, the next command you type there trusts the untrusted root above it
+and prints the notice. To keep the root out, run `mise trust --ignore` on the
+root's config, then run `mise trust` with the path to each subproject config
+you want to approve, such as `mise trust app/mise.toml`. Without a path,
+`mise trust` picks the nearest untrusted config, which can be the ignored root
+once the subproject is trusted. Alternatively,
+enable paranoid mode's `config` category. Typed commands then ask again, and
+trusting the root trusts only that file.
+
 ### Git worktrees
 
 A config in a linked git worktree is trusted when the same path in the main
@@ -353,7 +381,9 @@ These fail with `<operation> is disabled in safe mode (MISE_SAFE=1)`:
   config.
 - Running tasks.
 - The tool options `postinstall` and `install_env`, and the `spm:` backend's
-  `install_command`.
+  `install_command`. `mise lock` does not run uv for a `pypi:` tool that sets
+  `install_env`, so it warns and locks that tool's version without a
+  [dependency graph](/dev-tools/mise-lock.html#dependency-graphs).
 - asdf plugin scripts, so tools from the `asdf:` backend cannot list or install
   versions.
 - Requests to S3, which are signed with your AWS credentials, so tools from the
@@ -388,8 +418,8 @@ These are skipped without an error, so resolution commands keep working:
   working directory or a parent, and the files a global `_.file` entry with
   `find_up = true` or a glob finds. This includes files outside a repository,
   such as `~/.env`, and files you trusted. An absolute `env_file` entry or a
-  global `_.file` entry that names one file still loads, and paranoid mode still
-  needs it approved.
+  global `_.file` entry that names one file still loads. With paranoid mode's
+  `env_files` category on, only the absolute `env_file` entry needs approval.
 - Project `[shell_alias]`.
 - The commands in a project task's usage spec that shell completion would run,
   and its `choices env=`, which completion would read from your environment.
@@ -411,6 +441,12 @@ These are skipped without an error, so resolution commands keep working:
   for their commands and does not install them on first use.
 - Project `[settings]`, so a repository cannot turn off verification or redirect
   a backend.
+- The `packslip:` backend's
+  [`trust = "vendor"`](/dev-tools/backends/packslip.html#trust) option, unless a
+  `[tools]` entry of global or system config sets it for the same tool, so a
+  repository cannot exempt a release from the
+  [`packslip.stampers`](/configuration/settings.html#packslip.stampers) you
+  require. This applies to a tool named on the command line too.
 - Remote `include` entries in project config, which mise does not fetch.
 - Remote task files (`file = "https://…"` or `git::…`) in project config. Their
   tasks are listed from their TOML alone.
@@ -567,6 +603,11 @@ The cutoff applies when mise has to choose a version, for a prefix such as
 - An installed version that matches the request. The cutoff limits which new
   versions mise downloads; it does not deactivate one you have. `mise lock` with
   a configured cutoff, rather than the default, re-checks installed matches.
+
+Two release tags can spell one version, such as `2.0.0` and `v2.0.0`. For
+`github:`, `gitlab:` and `forgejo:` tools, a version the cutoff chose is
+installed from a release of it that is older than the cutoff. If the only
+release mise finds for it is newer, the install fails instead.
 
 For `packslip:` tools, mise compares the cutoff with the release's verified
 transparency-log time; see

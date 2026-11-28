@@ -14,7 +14,7 @@ you need:
 | `config`     | Approval of every project config file, bound to its content. No automatic trust, including in CI. |
 | `env_files`  | Approval of the files that `env._.file`, `env._.source` and the `env_file` setting load.          |
 | `plugins`    | Refuses to install an unregistered community plugin by short name.                                |
-| `provenance` | Re-verifies provenance on every install and confirms a mise-versions "no attestations" answer.    |
+| `provenance` | Re-verifies provenance on every install and confirms mise-versions' "none" answers with GitHub.   |
 
 Paranoid mode does not sandbox the commands you approve; see
 [Sandboxing](/sandboxing.html).
@@ -168,8 +168,16 @@ without a glob, which you chose.
 Approval is bound to the file's content whether or not `config` is on. It
 approves the file as an env file only: if the same path is later loaded as a
 config, through a symlink, a directory that replaced the file or a filename
-setting, it needs trust as a config like any other. To load
-a file without approving each change, put it under
+setting, it needs trust as a config like any other.
+
+mise 2026.11.14 and earlier recorded an env file approval and a config trusted
+with `config` on in the same way, so after an upgrade mise cannot tell them
+apart and counts such a record as an env file approval only. A config you
+trusted with `config` on is asked about once more; answering the prompt or
+running `mise trust` records it as config again. Configs trusted with `config`
+off are not affected.
+
+To load a file without approving each change, put it under
 [`trusted_config_paths`](/configuration/settings.html#trusted_config_paths).
 Like the other settings that stay trusted by path, it is global-only, so a
 project cannot opt its own files out.
@@ -228,10 +236,25 @@ Neither mode accepts "none" for a release the mise registry says must have
 attestations: a `github:` backend, or an `aqua:` backend whose recipe declares
 them, at or after the backend's
 [`attestations_since`](/contributing/registry.html#required-attestations)
-version. There a missing attestation fails the install and `mise lock`.
+version. There a missing attestation fails the install and `mise lock`. A
+release named by numbers alone (`v0.72`) is compared by those numbers; a channel
+or ref such as `nightly` is not compared and stays unaffected.
 
 In either mode, when mise-versions fails to answer (a timeout, a lost
 connection, or a `429` or `5xx` response), mise asks GitHub's attestation API
 instead and verifies what GitHub returns the same way.
 [`provenance_api_failures_fatal`](/configuration/settings.html#provenance_api_failures_fatal)
 then decides what happens if GitHub fails too.
+
+## Release lists from mise-versions
+
+A [packslip](/dev-tools/packslip-verification.html) project on GitHub can
+withdraw releases in a signed release list, which mise asks mise-versions for
+first. mise verifies any list it returns, but nothing signs the answer that a
+repository has none, and a project with no list withdraws nothing. Normal mode
+accepts that answer.
+
+The `provenance` category asks GitHub for the list instead, and GitHub's answer
+counts: a list there is verified and applied, and a `404` confirms there is
+none. When GitHub cannot be read, the command fails. This costs one request to
+`raw.githubusercontent.com` per project and command.

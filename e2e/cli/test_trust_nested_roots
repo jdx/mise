@@ -76,3 +76,13 @@ assert_fail_contains "MISE_ENV=staging mise -C staged env 2>&1" "not trusted"
 make_clone all .mise/conf.d/x
 assert_contains "cd all && timeout 20 mise trust --all 2>&1" "trusted ~/workdir/all"
 assert_contains "mise -C all env" "FROM_CLONE=loaded"
+
+# A nested root that the checkout lacks, such as one only another branch has, loses its
+# approval with the project's, so it asks again when that branch brings it back.
+make_clone branchy .config/mise
+mise trust branchy/mise.toml
+mise trust branchy/.config/mise/mise.local.toml
+mv branchy/.config other-branch-config
+assert_contains "mise untrust branchy 2>&1" "untrusted ~/workdir/branchy/.config/mise"
+mv other-branch-config branchy/.config
+assert_not_contains "mise -C branchy trust --show 2>&1" ": trusted"

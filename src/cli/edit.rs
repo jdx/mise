@@ -90,12 +90,16 @@ fn offerable_version(version: String) -> Option<String> {
 }
 
 /// Keeps a version read from a file such as `.nvmrc` only if it holds no template syntax or
-/// control characters. The file belongs to the project in the working directory, which may be
-/// one nobody reviewed, and the editor can save the version into global config, where it would
-/// render on every load. A range such as `>=20` is legitimate here, so this is looser than
-/// [`offerable_version`].
+/// control characters and is not a selector that needs trust, such as `path:`. The file belongs
+/// to the project in the working directory, which may be one nobody reviewed, and the editor
+/// can save the version into global config, where it would render on every load, or put a
+/// directory of the project's choosing on PATH. A range such as `>=20` is legitimate here, so
+/// this is looser than [`offerable_version`].
 fn detected_version(version: String) -> Option<String> {
-    if crate::tera::contains_template_syntax(&version) || version.chars().any(char::is_control) {
+    if crate::tera::contains_template_syntax(&version)
+        || version.chars().any(char::is_control)
+        || config_file::version_requires_trust(&version)
+    {
         return None;
     }
     Some(version)
@@ -598,7 +602,12 @@ mod tests {
         for v in ["20", ">=3.11", "^1.2 || ^2", "lts/iron"] {
             assert_eq!(detected_version(v.to_string()).as_deref(), Some(v));
         }
-        for v in ["20{{exec(command='id')}}", "20{# x #}", "20\x1b[2K"] {
+        for v in [
+            "20{{exec(command='id')}}",
+            "20{# x #}",
+            "20\x1b[2K",
+            "path:./bin",
+        ] {
             assert_eq!(detected_version(v.to_string()), None, "{v:?}");
         }
     }

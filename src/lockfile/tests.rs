@@ -245,10 +245,12 @@ fn test_lockfile_version_at_matches_a_full_read() {
     );
 }
 
-/// Every kind of value TOML has, since the cache has to return each one as
-/// the parser produced it.
-const EVERY_TOML_VALUE: &str = r#"
+/// A lockfile that sets every field an entry can hold, and every kind of
+/// value TOML has in the keys that are kept as a table, since the cache has
+/// to return each one as the parser produced it.
+const EVERY_ENTRY_FIELD: &str = r#"
 lockfile_version = 4
+tool-stubs = ["bin/stub"]
 negative = -7
 big = 9007199254740993
 float = 1.5
@@ -266,37 +268,101 @@ mixed = [1, "two", 3.0, { four = 4 }]
 [[tools.node]]
 version = "24.1.0"
 backend = "core:node"
+specifiers = ["24", "lts"]
+unsupported_platforms = ["linux-riscv64"]
+provenance = { repository = "github.com/nodejs/node" }
+"platforms.macos-arm64" = "sha256:inline"
+
+[tools.node.options]
+flavor = "glibc-217"
 
 [tools.node.platforms.linux-x64]
+install = "source"
 checksum = "sha256:abc"
+checksum_source = "mise-versions"
 size = 123
+url = "https://example.com/node.tar.gz"
+url_api = "https://api.example.com/assets/1"
+conda_deps = ["ncurses-6.4-h7ea286d_0"]
+provenance_verified = true
+signer = "github:nodejs/node/.github/workflows/release.yml"
+attested_by = "repackager"
+repository_ids = { repository = "922514152", owner = "216188" }
+
+[tools.node.platforms.linux-x64.provenance.slsa]
+url = "https://example.com/node.intoto.jsonl"
+
+[[tools.node.platforms.linux-x64.additional_artifacts]]
+checksum = "sha256:def"
+checksum_source = "mise-versions"
+size = 456
+url = "https://example.com/extra.tar.gz"
+url_api = "https://api.example.com/assets/2"
+provenance = "cosign"
+provenance_verified = false
+
+[tools.node.platforms.linux-arm64]
+url = "https://example.com/node-arm64.tar.gz"
+github_attestations = "unavailable"
+
+[tools.node.platforms.macos-x64]
+provenance = "slsa"
+provenance_url = "https://example.com/legacy.intoto.jsonl"
 
 [[tools.node]]
 version = 2026-11-23
+
+[[tools."npm:prettier"]]
+version = "3.6.2"
+backend = "npm:prettier"
+aube = { path = "mise.lock.d/npm-prettier", digest = "sha256:0000000000000000000000000000000000000000000000000000000000000000" }
+
+[[tools.plain]]
+version = "1.0.0"
+
+[conda-packages.linux-64."ncurses-6.4-h7ea286d_0"]
+url = "https://example.com/ncurses.conda"
+checksum = "sha256:123"
 "#;
 
-#[test]
-fn parse_lockfile_toml_returns_what_the_parser_did_from_its_cache() {
-    let temp = tempfile::tempdir().unwrap();
-    let cache_file = temp.path().join("lockfile.msgpack.z");
-    let parsed: toml::Table = toml::from_str(EVERY_TOML_VALUE).unwrap();
+/// `content`'s entries from `cache_file`, written out in full. Two entries
+/// are compared this way because `ProvenanceType`'s equality ignores the URL
+/// an SLSA provenance carries.
+fn entries_in(cache_file: &Path, content: &str) -> Result<String> {
+    LockfileEntries::of_in(cache_file, content, Report::from).map(|entries| format!("{entries:?}"))
+}
 
-    assert_eq!(
-        parse_lockfile_toml_in(&cache_file, EVERY_TOML_VALUE).unwrap(),
-        parsed
-    );
-    // Text that does not parse proves the second answer is the stored one.
-    let cached = parse_lockfile_toml_in(&cache_file, "not = [toml").unwrap();
-    assert_eq!(cached, parsed);
-    // The order of keys is part of what the parser returned.
-    assert_eq!(
-        cached.keys().collect::<Vec<_>>(),
-        parsed.keys().collect::<Vec<_>>()
-    );
+fn entries_parsed(content: &str) -> String {
+    let (entries, _) = LockfileEntries::parse(content, Report::from, false).unwrap();
+    format!("{entries:?}")
 }
 
 #[test]
-fn parse_lockfile_toml_parses_again_when_its_cache_is_damaged() {
+fn lockfile_entries_come_back_from_the_cache_as_they_were_parsed() {
+    let temp = tempfile::tempdir().unwrap();
+    let cache_file = temp.path().join("lockfile.msgpack.z");
+    let parsed = entries_parsed(EVERY_ENTRY_FIELD);
+    // The fixture sets what the lockfile's own serialization leaves out.
+    for field in [
+        "size: Some(123)",
+        "size: Some(456)",
+        "https://example.com/node.intoto.jsonl",
+        "https://example.com/legacy.intoto.jsonl",
+        "VersionsHost",
+        "Unavailable",
+        "Sidecar",
+        "\"2026-11-23\"",
+    ] {
+        assert!(parsed.contains(field), "{field} is not in {parsed}");
+    }
+
+    assert_eq!(entries_in(&cache_file, EVERY_ENTRY_FIELD).unwrap(), parsed);
+    // Text that does not parse proves the second answer is the stored one.
+    assert_eq!(entries_in(&cache_file, "not = [toml").unwrap(), parsed);
+}
+
+#[test]
+fn lockfile_entries_are_parsed_again_when_their_cache_is_damaged() {
     let temp = tempfile::tempdir().unwrap();
     let cache_file = temp.path().join("lockfile.msgpack.z");
     let cache_files = || -> Vec<PathBuf> {
@@ -305,52 +371,118 @@ fn parse_lockfile_toml_parses_again_when_its_cache_is_damaged() {
             .map(|entry| entry.unwrap().path())
             .collect()
     };
-    let parsed: toml::Table = toml::from_str(EVERY_TOML_VALUE).unwrap();
+    let parsed = entries_parsed(EVERY_ENTRY_FIELD);
 
-    // Text that does not parse reports its error and stores nothing.
-    assert!(parse_lockfile_toml_in(&cache_file, "not = [toml").is_err());
+    // Text that does not parse reports its error and stores nothing, and so
+    // does text that parses to an entry mise refuses.
+    assert!(entries_in(&cache_file, "not = [toml").is_err());
+    let refused =
+        "[[tools.node]]\nversion = \"1\"\n[tools.node.platforms.linux-x64]\ninstall = \"other\"\n";
+    let err = entries_in(&cache_file, refused).unwrap_err();
+    assert!(
+        format!("{err:#}").contains("unrecognized install"),
+        "{err:#}"
+    );
     assert!(cache_files().is_empty());
 
-    parse_lockfile_toml_in(&cache_file, EVERY_TOML_VALUE).unwrap();
+    entries_in(&cache_file, EVERY_ENTRY_FIELD).unwrap();
     let [stored] = &cache_files()[..] else {
         panic!("expected one cache file, found {:?}", cache_files());
     };
     std::fs::write(stored, b"damaged").unwrap();
-    assert_eq!(
-        parse_lockfile_toml_in(&cache_file, EVERY_TOML_VALUE).unwrap(),
-        parsed
-    );
+    assert_eq!(entries_in(&cache_file, EVERY_ENTRY_FIELD).unwrap(), parsed);
     // And the damaged file was replaced by one that reads.
-    assert_eq!(
-        parse_lockfile_toml_in(&cache_file, "not = [toml").unwrap(),
-        parsed
-    );
+    assert_eq!(entries_in(&cache_file, "not = [toml").unwrap(), parsed);
 }
 
 #[test]
-fn parse_lockfile_toml_names_its_cache_by_the_content() {
+fn lockfile_entries_name_their_cache_by_the_content() {
     let temp = tempfile::tempdir().unwrap();
     let cache_files = || std::fs::read_dir(temp.path()).unwrap().count();
     let version = |content: &str| {
-        parse_lockfile_toml_under(temp.path(), content).unwrap()["lockfile_version"].as_integer()
+        LockfileEntries::of_under(temp.path(), content, Report::from)
+            .unwrap()
+            .lockfile_version
     };
     // Long enough to be cached, and differing by one byte.
-    let padding = "# padding\n".repeat(PARSED_TOML_CACHE_MIN_LEN / 10 + 1);
+    let padding = "# padding\n".repeat(LOCKFILE_ENTRIES_CACHE_MIN_LEN / 10 + 1);
     let first = format!("{padding}lockfile_version = 3\n");
     let second = format!("{padding}lockfile_version = 4\n");
 
-    assert_eq!(version(&first), Some(3));
+    assert_eq!(version(&first), 3);
     assert_eq!(cache_files(), 1);
-    assert_eq!(version(&second), Some(4));
+    assert_eq!(version(&second), 4);
     assert_eq!(cache_files(), 2);
     // Each reads its own entry back, and writes no other.
-    assert_eq!(version(&first), Some(3));
-    assert_eq!(version(&second), Some(4));
+    assert_eq!(version(&first), 3);
+    assert_eq!(version(&second), 4);
     assert_eq!(cache_files(), 2);
 
     // A short lockfile is parsed without an entry.
-    assert_eq!(version("lockfile_version = 5\n"), Some(5));
+    assert_eq!(version("lockfile_version = 2\n"), 2);
     assert_eq!(cache_files(), 2);
+}
+
+#[test]
+fn lockfiles_with_the_same_text_share_cached_entries_but_keep_their_own_sidecars() {
+    let temp = tempfile::tempdir().unwrap();
+    // A comment unique to this run names a cache entry no earlier run wrote.
+    let nonce = temp.path().file_name().unwrap().to_string_lossy();
+    let padding = "# padding\n".repeat(LOCKFILE_ENTRIES_CACHE_MIN_LEN / 10 + 1);
+    let content = format!(
+        "# {nonce}\n{padding}lockfile_version = 4\n\n[[tools.\"npm:prettier\"]]\nversion = \"3.6.2\"\nbackend = \"npm:prettier\"\naube = {{ path = \"mise.lock.d/npm-prettier\", digest = \"sha256:{}\" }}\n",
+        "0".repeat(64)
+    );
+    // The cache names its file by the content's hash and then this build.
+    let hash = blake3::hash(content.as_bytes()).to_hex().to_string();
+    let cache_file = || -> PathBuf {
+        let stored = std::fs::read_dir(crate::dirs::CACHE.join("lockfiles"))
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .filter(|path| {
+                path.file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .starts_with(&hash)
+            })
+            .collect::<Vec<_>>();
+        let [stored] = &stored[..] else {
+            panic!("expected one cache file for {hash}, found {stored:?}");
+        };
+        stored.clone()
+    };
+    let sidecar_of = |dir: &Path| -> PathBuf {
+        std::fs::create_dir_all(dir).unwrap();
+        let path = dir.join("mise.lock");
+        std::fs::write(&path, &content).unwrap();
+        let lockfile = Lockfile::read(&path).unwrap();
+        let [entry] = lockfile.tools()["npm:prettier"].as_slice() else {
+            panic!("expected one entry: {:?}", lockfile.tools());
+        };
+        let Some(GraphRef::Sidecar { dir, .. }) = &entry.aube else {
+            panic!("expected a sidecar graph: {:?}", entry.aube);
+        };
+        dir.clone()
+    };
+
+    let first = temp.path().join("first");
+    assert_eq!(
+        sidecar_of(&first),
+        graph::absolute(&first).join("mise.lock.d/npm-prettier")
+    );
+    let cache_file = cache_file();
+    let stored = std::fs::read(&cache_file).unwrap();
+
+    // The second read is answered from the first one's entry, which it leaves
+    // as it was, and still finds the sidecar beside its own lockfile.
+    let second = temp.path().join("second");
+    assert_eq!(
+        sidecar_of(&second),
+        graph::absolute(&second).join("mise.lock.d/npm-prettier")
+    );
+    assert_eq!(std::fs::read(&cache_file).unwrap(), stored);
+    // The test cache is shared and not pruned, and this run's entry is unique.
+    std::fs::remove_file(&cache_file).unwrap();
 }
 
 #[test]
@@ -734,38 +866,73 @@ fn basic_tool(version: &str, backend: &str) -> LockfileTool {
 #[test]
 fn untrusted_lockfile_may_confirm_a_backend_but_not_choose_one() {
     // the registry's backend for a shorthand, or the backend the tool key names
-    assert!(!locked_backend_needs_trust("shfmt", "aqua:mvdan/sh"));
-    assert!(!locked_backend_needs_trust("node", "core:node"));
+    assert!(!locked_backend_needs_trust(
+        "shfmt",
+        "aqua:mvdan/sh",
+        "3.10.0"
+    ));
+    assert!(!locked_backend_needs_trust("node", "core:node", "24.0.0"));
     assert!(!locked_backend_needs_trust(
         "github:acme/tool",
-        "github:acme/tool"
+        "github:acme/tool",
+        "1.0.0"
     ));
     // inline options need trust in a tool key, so they do in a lock entry
     assert!(locked_backend_needs_trust(
         "github:acme/tool",
-        "github:acme/tool[api_url=http://example.com/api/v3]"
+        "github:acme/tool[api_url=http://example.com/api/v3]",
+        "1.0.0"
     ));
     assert!(locked_backend_needs_trust(
         "shfmt",
-        "http:shfmt[url=http://example.com/shfmt.tar.gz,postinstall=id]"
+        "http:shfmt[url=http://example.com/shfmt.tar.gz,postinstall=id]",
+        "3.10.0"
     ));
     // a backend the registry never installs the tool from
     assert!(locked_backend_needs_trust(
         "shellcheck",
-        "cargo:https://example.com/shellcheck.git"
+        "cargo:https://example.com/shellcheck.git",
+        "0.10.0"
     ));
     assert!(locked_backend_needs_trust(
         "gron",
-        "ubi:http://example.com/gron.tar.gz"
+        "ubi:http://example.com/gron.tar.gz",
+        "0.7.1"
     ));
     assert!(locked_backend_needs_trust(
         "github:acme/tool",
-        "github:acme/other"
+        "github:acme/other",
+        "1.0.0"
+    ));
+    // a backend the registry lists for the tool behind the one it selects
+    assert!(locked_backend_needs_trust(
+        "shfmt",
+        "asdf:luizm/asdf-shfmt",
+        "3.10.0"
+    ));
+    assert!(locked_backend_needs_trust(
+        "shfmt",
+        "go:mvdan.cc/sh/v3/cmd/shfmt",
+        "3.10.0"
     ));
     // names that designate no tool
-    assert!(locked_backend_needs_trust("shfmt", ""));
-    assert!(locked_backend_needs_trust("shfmt", "asdf:"));
-    assert!(locked_backend_needs_trust("", "core:node"));
+    assert!(locked_backend_needs_trust("shfmt", "", "3.10.0"));
+    assert!(locked_backend_needs_trust("shfmt", "asdf:", "3.10.0"));
+    assert!(locked_backend_needs_trust("", "core:node", "24.0.0"));
+}
+
+/// With backends split by version, the one that serves the locked version is
+/// the registry's; the one it selects for other versions is not.
+#[test]
+fn untrusted_lockfile_confirms_the_backend_for_its_version() {
+    let hk = crate::registry::REGISTRY.get("hk").unwrap();
+    let selected = |version: &str| hk.backends_for_version(Some(version))[0];
+    let (old, new) = (selected("1.57.0"), selected("1.58.1"));
+    assert_ne!(old, new);
+    assert!(!locked_backend_needs_trust("hk", old, "1.57.0"));
+    assert!(locked_backend_needs_trust("hk", new, "1.57.0"));
+    assert!(!locked_backend_needs_trust("hk", new, "1.58.1"));
+    assert!(locked_backend_needs_trust("hk", old, "1.58.1"));
 }
 
 #[test]
@@ -803,6 +970,24 @@ backend = "asdf:"
     assert_eq!(lockfile.tools.keys().collect::<Vec<_>>(), vec!["shfmt"]);
     assert_eq!(lockfile.tools["shfmt"].len(), 1);
     assert_eq!(lockfile.tools["shfmt"][0].version, "3.11.0");
+}
+
+#[test]
+fn untrusted_lockfile_may_not_pin_a_version_that_needs_trust() {
+    let mut lockfile = Lockfile::default();
+    lockfile.tools.insert(
+        "cargo:https://github.com/o/r".to_string(),
+        vec![basic_tool(
+            "rev:refs/pull/1/head",
+            "cargo:https://github.com/o/r",
+        )],
+    );
+    lockfile.tools.insert(
+        "cargo:o/s".to_string(),
+        vec![basic_tool("tag:v1.0.0", "cargo:o/s")],
+    );
+    lockfile.drop_what_needs_trust(Path::new("mise.lock"));
+    assert_eq!(lockfile.tools.keys().collect::<Vec<_>>(), vec!["cargo:o/s"]);
 }
 
 #[test]
@@ -858,6 +1043,50 @@ fn untrusted_lockfile_keeps_pins_but_not_download_locations() {
     assert_eq!(extra.checksum.as_deref(), Some("sha256:def"));
     assert!(extra.url.is_empty());
     assert!(extra.url_api.is_none());
+}
+
+#[test]
+fn untrusted_lockfile_pins_a_download_without_vouching_for_it() {
+    let mut pinned = basic_tool("3.10.0", "aqua:mvdan/sh");
+    pinned.platforms.insert(
+        "linux-x64".to_string(),
+        PlatformInfo {
+            checksum: Some("sha256:abc".to_string()),
+            url: Some("http://example.com/shfmt".to_string()),
+            provenance: Some(ProvenanceType::Minisign),
+            additional_artifacts: vec![ArtifactInfo {
+                checksum: Some("sha256:def".to_string()),
+                url: "http://example.com/shfmt-extra.tar.gz".to_string(),
+                provenance: Some(ProvenanceType::GithubAttestations),
+                ..Default::default()
+            }],
+            ..Default::default()
+        },
+    );
+    let mut lockfile = Lockfile::default();
+    lockfile.tools.insert("shfmt".to_string(), vec![pinned]);
+
+    // As its trusted config reads it, the entry stands for a verified download.
+    let info = &lockfile.tools["shfmt"][0].platforms["linux-x64"];
+    assert!(info.has_vouched_checksum());
+    assert!(info.has_checksum_and_provenance());
+    assert!(info.additional_artifacts[0].has_vouched_checksum());
+    assert!(info.additional_artifacts[0].has_checksum_and_provenance());
+
+    lockfile.drop_what_needs_trust(Path::new("mise.lock"));
+
+    // Without trust it still pins the bytes, and says nothing of who checked them.
+    let info = &lockfile.tools["shfmt"][0].platforms["linux-x64"];
+    assert_eq!(info.checksum.as_deref(), Some("sha256:abc"));
+    assert!(info.is_pinned_without_url());
+    assert!(info.provenance.is_none());
+    assert!(!info.has_vouched_checksum());
+    assert!(!info.has_checksum_and_provenance());
+    let extra = &info.additional_artifacts[0];
+    assert_eq!(extra.checksum.as_deref(), Some("sha256:def"));
+    assert!(extra.provenance.is_none());
+    assert!(!extra.has_vouched_checksum());
+    assert!(!extra.has_checksum_and_provenance());
 }
 
 #[test]
@@ -6030,6 +6259,35 @@ fn untrusted_lockfile_keeps_a_registry_only_aube_graph() {
 }
 
 #[test]
+fn restore_missing_versions_brings_back_a_variant_with_other_options() {
+    // Two tasks lock `http:widget` 1.0.0 with different options. Generation kept the one the
+    // visible task requests; the one only a skipped task requests must come back as well.
+    let plain = basic_tool("1.0.0", "http:widget");
+    let mut variant = basic_tool("1.0.0", "http:widget");
+    variant.options.insert(
+        "url".to_string(),
+        "https://example.com/other.tar.gz".to_string(),
+    );
+    let mut previous = Lockfile::default();
+    previous.tools.insert(
+        "http:widget".to_string(),
+        vec![plain.clone(), variant.clone()],
+    );
+    let mut current = Lockfile::default();
+    current
+        .tools
+        .insert("http:widget".to_string(), vec![plain.clone()]);
+
+    current.restore_missing_versions(&previous, "http:widget");
+    current.restore_missing_versions(&previous, "http:widget");
+
+    let entries = &current.tools["http:widget"];
+    assert_eq!(entries.len(), 2, "{entries:?}");
+    assert!(entries.iter().any(|e| e.options == plain.options));
+    assert!(entries.iter().any(|e| e.options == variant.options));
+}
+
+#[test]
 fn restore_missing_versions_brings_back_conda_package_records() {
     let path = std::env::temp_dir().join("test_restore_conda_records.lock");
     std::fs::write(
@@ -6056,4 +6314,32 @@ backend = "conda:jq"
             .get_conda_package("macos-arm64", "ncurses-6.4-h7ea286d_0")
             .is_some()
     );
+}
+
+/// The global lockfile is matched where it sits: a project directory linked to the global
+/// config directory resolves to it, but is not it.
+#[cfg(unix)]
+#[test]
+fn the_global_lockfile_is_matched_as_written() {
+    let temp = tempfile::tempdir().unwrap();
+    let global = temp.path().join("global");
+    let project = temp.path().join("project");
+    std::fs::create_dir_all(&global).unwrap();
+    std::fs::create_dir_all(&project).unwrap();
+    std::os::unix::fs::symlink(&global, project.join(".config")).unwrap();
+
+    let lockfile = global.join("mise.lock");
+    assert!(same_path_as_written(&lockfile, &lockfile));
+    assert!(same_path_as_written(
+        &lockfile,
+        &temp.path().join("project/../global/mise.lock")
+    ));
+    assert!(same_file_path(
+        &lockfile,
+        &project.join(".config/mise.lock")
+    ));
+    assert!(!same_path_as_written(
+        &lockfile,
+        &project.join(".config/mise.lock")
+    ));
 }

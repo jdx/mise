@@ -2719,24 +2719,16 @@ const LOCAL_CONFIG_FILENAMES: [&str; 10] = [
     ".mise.local.toml",
 ];
 
-/// Whether `path` is found under one of mise's own config filenames, or under a name that the
-/// `MISE_OVERRIDE_*_FILENAMES` and `MISE_DEFAULT_*_FILENAME` environment variables set. A name
-/// that only a `.miserc.toml` adds does not count: a project's `.miserc.toml` loads before
-/// anything is trusted, so it must not decide what an approval of a file covers.
-pub(crate) fn has_own_config_filename(path: &Path) -> bool {
-    let escape = |s: &str| glob::Pattern::escape(s);
-    let mut names: Vec<String> = [".tool-versions"]
-        .into_iter()
-        .chain(MISE_CONFIG_FILENAMES)
-        .chain(LOCAL_CONFIG_FILENAMES)
-        .map(String::from)
-        .collect();
+/// The config filenames that the `MISE_OVERRIDE_*_FILENAMES` and `MISE_DEFAULT_*_FILENAME`
+/// environment variables set, without the ones a `.miserc.toml` adds.
+fn user_config_filenames() -> Vec<String> {
+    let mut names = vec![];
     for var in [
         "MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES",
         "MISE_OVERRIDE_CONFIG_FILENAMES",
     ] {
         if let Ok(value) = std::env::var(var) {
-            names.extend(value.split(':').filter(|s| !s.is_empty()).map(escape));
+            names.extend(value.split(':').filter(|s| !s.is_empty()).map(String::from));
         }
     }
     for var in [
@@ -2744,9 +2736,34 @@ pub(crate) fn has_own_config_filename(path: &Path) -> bool {
         "MISE_DEFAULT_CONFIG_FILENAME",
     ] {
         if let Ok(value) = std::env::var(var) {
-            names.push(escape(&value));
+            names.push(value);
         }
     }
+    names
+}
+
+/// Whether `path` is found under one of mise's own config filenames, or under a name that the
+/// `MISE_OVERRIDE_*_FILENAMES` and `MISE_DEFAULT_*_FILENAME` environment variables set. A name
+/// that only a `.miserc.toml` adds does not count: a project's `.miserc.toml` loads before
+/// anything is trusted, so it must not decide what an approval of a file covers.
+pub(crate) fn has_own_config_filename(path: &Path) -> bool {
+    let user_names = user_config_filenames();
+    // A name the user set counts wherever the file is: the search below only looks in the
+    // working directory and the ones above it, and would miss `child/project.toml`.
+    if path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| user_names.iter().any(|user| user == name))
+    {
+        return true;
+    }
+    let mut names: Vec<String> = [".tool-versions"]
+        .into_iter()
+        .chain(MISE_CONFIG_FILENAMES)
+        .chain(LOCAL_CONFIG_FILENAMES)
+        .map(String::from)
+        .collect();
+    names.extend(user_names.iter().map(|name| glob::Pattern::escape(name)));
     let Ok(path) = path.absolutize() else {
         return false;
     };
@@ -3783,6 +3800,110 @@ pub(crate) fn is_project_link_to_global_config(path: &Path) -> bool {
         .is_some_and(|global| global != path && !path.canonicalize().is_ok_and(|real| real == path))
 }
 
+/// Whether writing `path` would reach global or system config through a link a project placed:
+/// a project file linked to a global config file, or a project's `.mise` or `.config` linked to
+/// the global config directory, where the file need not exist yet.
+///
+/// What decides is where each link on the way to the file is placed and what it stands for, not
+/// where the file finally lands: two spellings of global config resolve to the same file whoever
+/// placed the link between them, and the user's global config directory may itself link into a
+/// dotfiles checkout anywhere. A link that global config's own spelling also passes through is
+/// the user's layout (a linked `~/.config`). Any other link is the user's own only when it is
+/// another name for a directory above the global config directory, placed in such a directory
+/// itself, and not below the directory the path spells as its project: a linked `/home`, or a
+/// link to the home directory placed beside it (see [`is_alias_above_global_config_dir`]). A
+/// link to the global config directory itself (`~/cfg` or a project's `.mise`), one below the
+/// project directory, or one placed in a directory that does not hold global config, such as a
+/// checkout's `home` linked to the home directory, is a project's link to global config.
+pub(crate) fn write_reaches_global_config_through_link(path: &Path) -> bool {
+    let Some(global) = global_config_spelling(path) else {
+        return false;
+    };
+    if global == path || resolve_for_write(path).is_none_or(|real| real == path) {
+        return false;
+    }
+    let users_links = link_placements(&global)
+        .map(|(_, placement)| placement)
+        .collect::<Vec<_>>();
+    let project = config_file::config_root::spelled_project(path);
+    link_placements(path).any(|(spelled, placement)| {
+        let below_project = spelled.starts_with(&project) && spelled != project;
+        !users_links.contains(&placement)
+            && (below_project
+                || !is_alias_above_global_config_dir(spelled, &placement.0, path, &global))
+    })
+}
+
+/// Whether `link`, a symlink on `path` placed in `link_dir` (resolved), is another name for a
+/// directory above the directory of `global`, the spelling of the global config file `path`
+/// reaches, and is placed in such a directory too: `/usr/home` for `/home`, or `~/../linkhome`
+/// for `~`. The rest of `path` below the link must spell the global config file as `global`
+/// does below that directory, so the link stands above the global config directory, which is
+/// compared as spelled, before any link the two paths share is followed.
+fn is_alias_above_global_config_dir(
+    link: &Path,
+    link_dir: &Path,
+    path: &Path,
+    global: &Path,
+) -> bool {
+    let (Ok(rest), Ok(target)) = (path.strip_prefix(link), link.canonicalize()) else {
+        return false;
+    };
+    let Some(config_dir) = global.parent().map(|dir| match dir.parent() {
+        Some(owner) if dir.ends_with("conf.d") => owner,
+        _ => dir,
+    }) else {
+        return false;
+    };
+    let (mut placed_above, mut stands_above) = (false, false);
+    for holder in config_dir.ancestors().skip(1) {
+        let Ok(resolved) = holder.canonicalize() else {
+            continue;
+        };
+        placed_above |= resolved == link_dir;
+        stands_above |= resolved == target && global.strip_prefix(holder).is_ok_and(|r| r == rest);
+    }
+    placed_above && stands_above
+}
+
+/// The links (symlinks, and junctions on Windows) `path` passes through on the way to its file,
+/// the file itself included: each as spelled in `path`, with where it is placed, the directory
+/// that holds it (resolved) and its name there.
+fn link_placements(
+    path: &Path,
+) -> impl Iterator<Item = (&Path, (PathBuf, std::ffi::OsString))> + '_ {
+    path.ancestors()
+        .filter(|p| config_file::config_root::is_link(p))
+        .filter_map(|p| {
+            let dir = p.parent()?.canonicalize().ok()?;
+            Some((p, (dir, p.file_name()?.to_os_string())))
+        })
+}
+
+/// Where global or system config is spelled for a file `path` resolves to: where discovery
+/// found it, or for a file that does not exist yet, the global or system config directory (or
+/// its `conf.d`) that `path`'s directory resolves to.
+fn global_config_spelling(path: &Path) -> Option<PathBuf> {
+    if let Some(global) = discovered_global_config(path) {
+        return Some(global);
+    }
+    let dir = path.parent()?.canonicalize().ok()?;
+    let name = path.file_name()?;
+    [*dirs::CONFIG, *dirs::SYSTEM_CONFIG]
+        .into_iter()
+        .flat_map(|config| [config.to_path_buf(), config.join("conf.d")])
+        .find(|candidate| candidate.canonicalize().is_ok_and(|c| c == dir))
+        .map(|candidate| candidate.join(name))
+}
+
+/// `path` with every link resolved, for a file that may not exist yet.
+fn resolve_for_write(path: &Path) -> Option<PathBuf> {
+    path.canonicalize().ok().or_else(|| {
+        let dir = path.parent()?.canonicalize().ok()?;
+        Some(dir.join(path.file_name()?))
+    })
+}
+
 /// The path global or system config discovery found `path` at, if `path` is
 /// global config. The two differ when `path` only resolves to that file, which
 /// also holds for a symlink to it from a directory the user does not control,
@@ -4730,7 +4851,7 @@ fn load_aliases(config_files: &ConfigMap) -> Result<AliasMap> {
                 alias.backend = Some(full);
             }
             for (from, to) in plugin_aliases.versions {
-                if ignore_path_versions && config_file::version_requires_trust(&to) {
+                if ignore_path_versions && config_file::is_path_version(&to) {
                     debug!(
                         "ignoring tool alias version {from} = {to} in {}: safe mode (MISE_SAFE=1)",
                         display_path(config_file.get_path())
@@ -5559,7 +5680,9 @@ fn expand_task_inputs(
 }
 
 /// Renders the templated `entries` a config declared. With `keep_failed`, an entry that does
-/// not render stays as written instead of failing the load.
+/// not render stays as written instead of failing the load, except a `@group:` reference: no
+/// group is named after the template, so it is left out rather than fail the task's load when
+/// its groups are expanded.
 fn render_task_input_entries(
     entries: &[String],
     config_root: &Path,
@@ -5571,14 +5694,20 @@ fn render_task_input_entries(
     let mut tera = crate::tera::get_tera(Some(config_root));
     entries
         .iter()
-        .map(|entry| {
+        .filter_map(|entry| {
             if !contains_template_syntax(entry) {
-                return Ok(entry.clone());
+                return Some(Ok(entry.clone()));
             }
             match render_str(&mut tera, entry, &tera_ctx) {
-                Ok(rendered) => Ok(rendered),
-                Err(_) if keep_failed => Ok(entry.clone()),
-                Err(err) => Err(err.into()),
+                Ok(rendered) => Some(Ok(rendered)),
+                Err(_) if keep_failed && entry.starts_with(TASK_INPUT_GROUP_PREFIX) => {
+                    debug!(
+                        "leaving out input group reference {entry:?}: it needs the context of a task that is not trusted"
+                    );
+                    None
+                }
+                Err(_) if keep_failed => Some(Ok(entry.clone())),
+                Err(err) => Some(Err(err.into())),
             }
         })
         .collect()
@@ -7777,14 +7906,43 @@ fn expand_task_include(dir: &Path, pattern: &str) -> Vec<PathBuf> {
     }
 }
 
-static SAFE_MODE_SKIPPED_TASK_FILE: AtomicBool = AtomicBool::new(false);
+/// The first task source safe mode kept this process from reading, described for a message.
+static SAFE_MODE_SKIPPED_TASK_FILE: Mutex<Option<String>> = Mutex::new(None);
+
+fn record_safe_mode_skip(what: impl FnOnce() -> String) {
+    let mut skipped = SAFE_MODE_SKIPPED_TASK_FILE
+        .lock()
+        .unwrap_or_else(|err| err.into_inner());
+    if skipped.is_none() {
+        *skipped = Some(what());
+    }
+}
 
 /// Whether safe mode has kept this process from reading a task file a config includes:
 /// one outside its project (see [`skip_task_file_outside`]) or a remote one. The tasks
 /// of that file, and the tools and versions they name, are then missing from what this
 /// process saw.
 pub fn safe_mode_skipped_task_file() -> bool {
-    SAFE_MODE_SKIPPED_TASK_FILE.load(Ordering::Relaxed)
+    safe_mode_skipped_task_source().is_some()
+}
+
+/// What [`safe_mode_skipped_task_file`] skipped first, as a phrase for a message: "the
+/// task file X, which resolves outside its project" or "the remote task include `URL`".
+pub fn safe_mode_skipped_task_source() -> Option<String> {
+    SAFE_MODE_SKIPPED_TASK_FILE
+        .lock()
+        .unwrap_or_else(|err| err.into_inner())
+        .clone()
+}
+
+/// Records that safe mode skips `include`, a remote task include, when `bounds` says the
+/// config that declared it is limited (see [`safe_mode_task_include_bounds`]). Code that
+/// lists only local task files drops remote includes without fetching them, and must
+/// still note that their tasks are unknown.
+fn note_remote_include_skipped(include: &str, bounds: Option<&[PathBuf]>) {
+    if bounds.is_some() {
+        record_safe_mode_skip(|| format!("the remote task include `{include}`"));
+    }
 }
 
 /// The directories that, in safe mode, the task files reached through the task includes
@@ -7803,7 +7961,7 @@ fn safe_mode_task_include_bounds(
     let dir = file::desymlink_path(dir);
     let mut bounds = vec![dir.clone()];
     if let Some(checkout) = dir.ancestors().find(|d| d.join(".git").exists())
-        && !dirs::HOME.starts_with(checkout)
+        && !file::desymlink_path(&dirs::HOME).starts_with(checkout)
     {
         bounds.push(checkout.to_path_buf());
     }
@@ -7836,7 +7994,12 @@ fn skip_task_file_outside(path: &Path, bounds: Option<&[PathBuf]>) -> bool {
     if bounds.iter().any(|bound| resolved.starts_with(bound)) {
         return false;
     }
-    SAFE_MODE_SKIPPED_TASK_FILE.store(true, Ordering::Relaxed);
+    record_safe_mode_skip(|| {
+        format!(
+            "the task file {}, which resolves outside its project",
+            display_path(path)
+        )
+    });
     warn_once!(
         "ignoring task file {}: it resolves outside the project and safe mode (MISE_SAFE=1) is on; move it into the project to use it in safe mode",
         display_path(path)
@@ -7864,13 +8027,15 @@ fn resolve_task_excludes(dir: &Path, patterns: &[String]) -> Vec<PathBuf> {
 }
 
 /// The task include patterns of `dir`, the directory they resolve against, whether they
-/// are the defaults, and whether global config sits at `dir`.
+/// are the defaults, and whether they are global config's: global config declared them,
+/// or they are the defaults where global config sits at `dir`. A project config that
+/// shares `dir` with global config (`~/mise.toml`) declares project includes.
 fn task_include_patterns_for_dir(
     dir: &Path,
     config_files: &ConfigMap,
 ) -> Result<(Vec<String>, PathBuf, bool, bool)> {
     let configs = configs_at_root(dir, config_files);
-    let is_global = configs.iter().any(|cf| is_global_config(cf.get_path()));
+    let global_at_root = configs.iter().any(|cf| is_global_config(cf.get_path()));
     let cascaded_task_config =
         if configs.iter().find_map(|cf| cf.task_config().cascade) == Some(false) {
             None
@@ -7885,7 +8050,12 @@ fn task_include_patterns_for_dir(
         .find_map(|cf| match cf.task_config_includes() {
             Ok(Some(includes)) => Some(Ok({
                 // Resolve relative paths from the config root, not the config file's directory
-                (includes, cf.config_root(), false, is_global)
+                (
+                    includes,
+                    cf.config_root(),
+                    false,
+                    is_global_config(cf.get_path()),
+                )
             })),
             Ok(None) => None,
             Err(err) => Some(Err(err)),
@@ -7895,12 +8065,17 @@ fn task_include_patterns_for_dir(
             cascaded_task_config.and_then(|tc| {
                 tc.task_config
                     .includes
-                    .map(|includes| (includes, tc.includes_root, false, is_global))
+                    .map(|includes| (includes, tc.includes_root, false, false))
             })
         })
         .unwrap_or_else(|| {
             // Default includes should be resolved relative to the search directory
-            (default_task_includes(), dir.to_path_buf(), true, is_global)
+            (
+                default_task_includes(),
+                dir.to_path_buf(),
+                true,
+                global_at_root,
+            )
         }))
 }
 
@@ -7916,17 +8091,24 @@ fn task_includes_and_bounds_for_dir(
 ) -> Result<(Vec<PathBuf>, Option<Vec<PathBuf>>)> {
     let (includes, resolve_dir, _, is_global) = task_include_patterns_for_dir(dir, config_files)?;
     let bounds = safe_mode_task_include_bounds(&resolve_dir, is_global, config_files);
+    // An excluded include is dropped before anything walks it, and safe mode did not skip it:
+    // it contributes no tasks either way, so it must not stop `mise prune` or `mise lock`. A
+    // broken `excludes` is reported where the tasks load.
+    let excludes = task_excludes_for_dir(dir, config_files).unwrap_or_default();
 
     let includes = includes
         .into_iter()
         .flat_map(|p| {
             // Git URLs are handled by load_file_tasks, not here
             if is_remote_task_include(&p) {
+                note_remote_include_skipped(&p, bounds.as_deref());
                 return vec![];
             }
             expand_task_include(&resolve_dir, &p)
         })
-        .filter(|p| !skip_task_file_outside(p, bounds.as_deref()))
+        .filter(|p| {
+            !is_task_path_excluded(p, &excludes) && !skip_task_file_outside(p, bounds.as_deref())
+        })
         .unique()
         .collect::<Vec<_>>();
     Ok((includes, bounds))
@@ -8450,21 +8632,23 @@ async fn load_task_sources_from_configs(
         } else {
             cascaded_task_config
         };
-    let is_global = configs.iter().any(|cf| is_global_config(cf.get_path()));
+    let global_at_root = configs.iter().any(|cf| is_global_config(cf.get_path()));
     // a config can only vouch for task include files when it was actually
     // trusted — safe configs load without trust and cannot vouch for anything
     let require_task_include_trust = !configs.iter().any(|cf| is_path_trusted(cf.get_path()));
-    // Paranoid mode binds a project config's trust to its own content, which
-    // covers the remote includes it pins but not task files on disk that change
-    // without it, so each of those needs trust of its own there. Global config
-    // is trusted by path, and so are the task files it includes.
-    let require_local_task_include_trust = require_task_include_trust
-        || (!is_global && Settings::try_get().is_ok_and(|settings| settings.paranoid.config()));
-    let (includes, resolve_dir, include_config_precedence) = configs
+    // `is_global` is whether the includes are global config's: the config that declared
+    // them, not any config at this root, which a project config can share with global
+    // config (`~/mise.toml`). Includes that cascade from an ancestor are a project's.
+    let (includes, resolve_dir, include_config_precedence, is_global) = configs
         .iter()
         .enumerate()
         .find_map(|(precedence, cf)| match cf.task_config_includes() {
-            Ok(Some(includes)) => Some(Ok((includes, cf.config_root(), precedence))),
+            Ok(Some(includes)) => Some(Ok((
+                includes,
+                cf.config_root(),
+                precedence,
+                is_global_config(cf.get_path()),
+            ))),
             Ok(None) => None,
             Err(err) => Some(Err(err)),
         })
@@ -8474,7 +8658,7 @@ async fn load_task_sources_from_configs(
                 tc.task_config
                     .includes
                     .clone()
-                    .map(|includes| (includes, tc.includes_root.clone(), configs.len()))
+                    .map(|includes| (includes, tc.includes_root.clone(), configs.len(), false))
             })
         })
         .unwrap_or_else(|| {
@@ -8482,16 +8666,20 @@ async fn load_task_sources_from_configs(
                 default_includes.unwrap_or_else(default_task_includes),
                 dir.to_path_buf(),
                 configs.len(),
+                global_at_root,
             )
         });
+    // Paranoid mode binds a project config's trust to its own content, which
+    // covers the remote includes it pins but not task files on disk that change
+    // without it, so each of those needs trust of its own there. Global config
+    // is trusted by path, and so are the task files it includes.
+    let require_local_task_include_trust = require_task_include_trust
+        || (!is_global && Settings::try_get().is_ok_and(|settings| settings.paranoid.config()));
     // Safe mode loads untrusted project config without a trust prompt, and
     // fetching a URL is not something such a config gets to do, as for a remote
     // `include` and a remote task file. Only a list that a global config set is
-    // fetched there: one that cascades from an ancestor is a project's.
-    let skip_remote_includes = Settings::safe_mode()
-        && !configs
-            .get(include_config_precedence)
-            .is_some_and(|cf| is_global_config(cf.get_path()));
+    // fetched there.
+    let skip_remote_includes = Settings::safe_mode() && !is_global;
     let (excludes, excludes_root) = configs
         .iter()
         .find_map(|cf| match cf.task_config_excludes() {
@@ -8576,7 +8764,7 @@ async fn load_task_sources_from_configs(
             continue;
         }
         if skip_remote_includes && is_remote_task_include(include) {
-            SAFE_MODE_SKIPPED_TASK_FILE.store(true, Ordering::Relaxed);
+            record_safe_mode_skip(|| format!("the remote task include `{include}`"));
             debug!("ignoring task include `{include}`: safe mode (MISE_SAFE=1)");
             continue;
         }
@@ -8633,6 +8821,11 @@ async fn load_task_sources_from_configs(
                 },
             )
             .await?;
+            // Before the input groups render: a task that is the user's own renders them
+            // with its `vars` (see `apply_task_config_inputs`).
+            if is_global || is_global_task_include_path(&p) {
+                mark_tasks_as_global(&mut loaded);
+            }
             for task in &mut loaded {
                 task.remote_include = remote.clone();
                 // Both task kinds are reachable only because some config's
@@ -8643,9 +8836,6 @@ async fn load_task_sources_from_configs(
                 apply_task_config_cache_default(task, &task_config.cache);
                 apply_task_config_rust_cache_default(task, &task_config.rust_cache);
                 task_config.environment.apply(task)?;
-            }
-            if is_global || is_global_task_include_path(&p) {
-                mark_tasks_as_global(&mut loaded);
             }
             file_tasks.extend(loaded);
         }
@@ -9456,9 +9646,19 @@ fn included_task_definitions(
                 safe_mode_task_include_bounds(&root, is_global_config(cf.get_path()), config_files);
             let own = own
                 .iter()
-                .filter(|p| !is_remote_task_include(p))
+                .filter(|p| {
+                    let remote = is_remote_task_include(p);
+                    if remote {
+                        note_remote_include_skipped(p, bounds.as_deref());
+                    }
+                    !remote
+                })
                 .flat_map(|p| expand_task_include(&root, p))
-                .filter(|p| !skip_task_file_outside(p, bounds.as_deref()))
+                // An excluded include is dropped, and safe mode did not skip it.
+                .filter(|p| {
+                    !is_task_path_excluded(p, &own_excludes)
+                        && !skip_task_file_outside(p, bounds.as_deref())
+                })
                 .collect::<Vec<_>>();
             groups.push((own, own_excludes, bounds));
         }

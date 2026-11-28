@@ -1,0 +1,130 @@
+#!/usr/bin/env bash
+
+# A virtualenv inside a project puts that project's own files first on PATH,
+# so they run in place of commands such as git. mise activates one only when
+# the project directory is trusted, and never in safe mode. This covers the
+# python `virtualenv` tool option and `python.uv_venv_auto`.
+
+export MISE_TRUSTED_CONFIG_PATHS=""
+export MISE_YES=0
+unset CI GITHUB_ACTIONS GITHUB_ACTION 2>/dev/null || true
+
+# any python will do, and linking one needs no download
+mkdir -p python/bin
+printf '#!/bin/sh\necho Python 3.13.5\n' >python/bin/python3
+chmod +x python/bin/python3
+mise link python@3.13.5 "$PWD/python"
+
+echo "=== a project's virtualenv option is ignored in safe mode ==="
+mkdir -p proj/.venv/bin
+cat >proj/mise.toml <<'EOF'
+[tools]
+python = { version = "3.13.5", virtualenv = ".venv" }
+EOF
+mise trust proj
+assert_contains "cd proj && mise env 2>/dev/null" "VIRTUAL_ENV=$PWD/proj/.venv"
+assert_not_contains "cd proj && MISE_SAFE=1 mise env 2>/dev/null" "/proj/.venv"
+cat >proj/mise.toml <<EOF
+[tools]
+python = { version = "3.13.5", virtualenv = "$PWD/proj/.venv" }
+EOF
+assert_contains "cd proj && mise env 2>/dev/null" "VIRTUAL_ENV=$PWD/proj/.venv"
+assert_not_contains "cd proj && MISE_SAFE=1 mise env 2>/dev/null" "/proj/.venv"
+assert_not_contains "cd proj && MISE_SAFE=1 mise x python@3.13.5 -- sh -c 'echo \$PATH' 2>/dev/null" "/proj/.venv"
+cat >proj/.tool-versions <<'EOF'
+python[virtualenv=.venv] 3.13.5
+EOF
+rm proj/mise.toml
+assert_not_contains "cd proj && MISE_SAFE=1 mise env 2>/dev/null" "/proj/.venv"
+rm proj/.tool-versions
+
+echo "=== an absolute virtualenv in global config applies in safe mode ==="
+mkdir -p global-venv/bin elsewhere
+cat >"$MISE_CONFIG_DIR/config.toml" <<EOF
+[tools]
+python = { version = "3.13.5", virtualenv = "$PWD/global-venv" }
+EOF
+assert_contains "cd elsewhere && MISE_SAFE=1 mise env 2>/dev/null" "VIRTUAL_ENV=$PWD/global-venv"
+
+echo "=== a relative virtualenv in global config needs a trusted project ==="
+cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
+[tools]
+python = { version = "3.13.5", virtualenv = ".venv" }
+EOF
+mkdir -p clone/.venv/bin bare/.venv/bin
+# loads without trust, and makes clone the project root
+touch clone/.tool-versions
+assert_not_contains "cd clone && mise env 2>/dev/null" "/clone/.venv"
+assert_not_contains "cd clone && mise hook-env -s bash 2>/dev/null" "/clone/.venv"
+assert_contains "cd clone && mise env 2>&1" ".venv not activated: ~/workdir/clone is not trusted, run"
+# without a project the path is not left relative to the working directory
+assert_not_contains "cd bare && mise env 2>/dev/null" ".venv"
+mise trust clone
+assert_contains "cd clone && mise env 2>/dev/null" "VIRTUAL_ENV=$PWD/clone/.venv"
+assert_not_contains "cd clone && MISE_SAFE=1 mise env 2>/dev/null" "/clone/.venv"
+rm "$MISE_CONFIG_DIR/config.toml"
+
+echo "=== the env cache follows trust that is granted and revoked ==="
+cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
+[tools]
+python = { version = "3.13.5", virtualenv = ".venv" }
+EOF
+mkdir -p cached/.venv/bin
+touch cached/.tool-versions
+export MISE_ENV_CACHE=1
+export __MISE_ENV_CACHE_KEY="dGVzdGtleXRlc3RrZXl0ZXN0a2V5dGVzdGtleXRlc3Q="
+# mise exec trusts the config it runs in, so this asks mise env
+assert_not_contains "cd cached && mise env 2>/dev/null" "/cached/.venv"
+assert_directory_exists "$MISE_STATE_DIR/env-cache"
+mise trust cached
+assert_contains "cd cached && mise env 2>/dev/null" "VIRTUAL_ENV=$PWD/cached/.venv"
+mise trust --untrust cached
+assert_not_contains "cd cached && mise env 2>/dev/null" "/cached/.venv"
+unset MISE_ENV_CACHE __MISE_ENV_CACHE_KEY
+rm "$MISE_CONFIG_DIR/config.toml"
+
+echo "=== a trusted parent project does not vouch for a project below it ==="
+mkdir -p work/.venv/bin work/sub work/clone/.venv/bin
+cat >work/mise.toml <<'EOF'
+[tools]
+python = { version = "3.13.5", virtualenv = ".venv" }
+EOF
+mise trust work
+touch work/clone/.tool-versions
+assert_contains "cd work/sub && mise env 2>/dev/null" "VIRTUAL_ENV=$PWD/work/.venv"
+assert_not_contains "cd work/clone && mise env 2>/dev/null" "/work/clone/.venv"
+# trusted_config_paths trusts every config file below the directory it names
+assert_contains "cd work/clone && MISE_TRUSTED_CONFIG_PATHS=$PWD/work mise env 2>/dev/null" "VIRTUAL_ENV=$PWD/work/clone/.venv"
+
+echo "=== python.uv_venv_auto needs the uv project to be trusted ==="
+cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
+[settings]
+python.uv_venv_auto = "source"
+EOF
+mkdir -p uvproj/.venv/bin uvproj/sub
+: >uvproj/uv.lock
+for dir in uvproj uvproj/sub; do
+  assert_not_contains "cd $dir && mise env 2>/dev/null" "/uvproj/.venv"
+  assert_not_contains "cd $dir && mise hook-env -s bash 2>/dev/null" "/uvproj/.venv"
+done
+assert_contains "cd uvproj && mise env 2>&1" "uv project ~/workdir/uvproj is not trusted"
+# a virtualenv the user chose outside the project holds nothing the project wrote
+mkdir -p outside-venv/bin
+assert_contains "cd uvproj && UV_PROJECT_ENVIRONMENT=$PWD/outside-venv mise env 2>/dev/null" "VIRTUAL_ENV=$PWD/outside-venv"
+mise trust uvproj
+assert_contains "cd uvproj/sub && mise env 2>/dev/null" "VIRTUAL_ENV=$PWD/uvproj/.venv"
+assert_not_contains "cd uvproj && MISE_SAFE=1 mise env 2>/dev/null" "/uvproj/.venv"
+
+echo "=== in paranoid mode a trusted mise config in the uv project covers it ==="
+mkdir -p uvpara/.venv/bin
+: >uvpara/uv.lock
+# mise trust on the directory is not enough there
+mise trust uvpara
+assert_not_contains "cd uvpara && MISE_PARANOID=1 mise env 2>/dev/null" "/uvpara/.venv"
+assert_contains "cd uvpara && MISE_PARANOID=1 mise env 2>&1" "trust a mise config file in ~/workdir/uvpara"
+cat >uvpara/mise.toml <<'EOF'
+[env]
+UVPARA = "1"
+EOF
+MISE_PARANOID=1 mise trust uvpara/mise.toml
+assert_contains "cd uvpara && MISE_PARANOID=1 mise env 2>/dev/null" "VIRTUAL_ENV=$PWD/uvpara/.venv"

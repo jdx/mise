@@ -418,7 +418,7 @@ const SINGLE_QUOTES: [char; 5] = ['\'', '\u{2018}', '\u{2019}', '\u{201a}', '\u{
 /// that is only true inside `"..."` — so emitting `` `' `` left the quote closing the literal,
 /// and the line failed to parse rather than carrying an apostrophe. Allocates only when there is
 /// a quote to double, the way `xonsh_escape_sq` in the xonsh backend does for Python's rules.
-fn escape_sq(input: &str) -> Cow<'_, str> {
+pub(crate) fn escape_sq(input: &str) -> Cow<'_, str> {
     if !input.contains(SINGLE_QUOTES) {
         return Cow::Borrowed(input);
     }

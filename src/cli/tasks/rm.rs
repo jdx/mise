@@ -68,11 +68,17 @@ impl TasksRm {
             }
             definitions.push((task.as_str(), definition));
         }
-        // Every config file must be writable before any task is removed from one.
+        // Every config file must be writable, and every script removable, before any task is
+        // removed. A script's own link is removed rather than followed, so only the
+        // directories that lead to it are checked.
         if !self.dry_run {
             for (_, definition) in &definitions {
-                if let Definition::Toml(path) = definition {
-                    config_file::symlink_check_before_write(path)?;
+                match definition {
+                    Definition::Toml(path) => config_file::symlink_check_before_write(path)?,
+                    Definition::File(path) => {
+                        write::script_check_before_remove(path).await?;
+                    }
+                    Definition::Other(_) => {}
                 }
             }
         }
@@ -92,7 +98,10 @@ impl TasksRm {
                 Definition::Toml(path) => self.remove_toml_task(task, &path)?,
                 Definition::File(path) => {
                     if !self.dry_run {
-                        file::remove_file(&path)?;
+                        // The directories may have changed while the prompt waited, so check
+                        // again and remove the script from the directory that passed.
+                        let resolved = write::script_check_before_remove(&path).await?;
+                        file::remove_file(&resolved)?;
                     }
                     Report::new(task, Action::Removed, Kind::File, &path)
                 }
