@@ -76,6 +76,8 @@ pub(crate) async fn run(
     check_trust(&worktree.path, &subdir, rev)?;
     if submodules_allowed(&worktree.path, &subdir) {
         init_submodules(&toplevel, &worktree)?;
+    } else if worktree.path.join(".gitmodules").is_file() && Settings::get().paranoid.config() {
+        warn!("mise run --at: the submodules at {rev} are not initialized in paranoid mode");
     } else if worktree.path.join(".gitmodules").is_file() {
         warn!(
             "mise run --at: the submodules at {rev} are not initialized because {} is not \
@@ -195,28 +197,33 @@ fn check_inside(
     Ok(())
 }
 
-/// Whether REV's submodules may be fetched: the config of the tasks' directory, or of a
-/// directory above it in the worktree, would be trusted, whether or not REV has one there. The
-/// tasks can come from any of those configs, and [`check_trust`] has refused any of them that
-/// REV has and that is not trusted. It passes a revision with no config, or with only file
-/// tasks, so it cannot decide this alone; the tasks of such a revision are refused later by the
-/// child. Only the directories that exist before the submodules do are asked, and
-/// [`check_inside`] has kept them inside the worktree. A `mise.toml` that is a link to global
-/// or system config would be trusted as that config, whose trust is not REV's, so for such a
-/// link only the directory's own trust counts, as it would with no `mise.toml` there.
+/// Whether REV's submodules may be fetched: the tasks' directory, or a directory above it in
+/// the worktree, is trusted, or a config REV has in one of them is, such as a `conf.d` folder,
+/// which is trusted on its own. The tasks can come from any of those configs, and
+/// [`check_trust`] has refused any of them that REV has and that is not trusted. It passes a
+/// revision with no config, or with only file tasks, so it cannot decide this alone; the tasks
+/// of such a revision are refused later by the child. Only the directories that exist before
+/// the submodules do are asked, and [`check_inside`] has kept them inside the worktree. A
+/// config that is a link to global or system config would be trusted as that config, whose
+/// trust is not REV's, so it does not count, as [`check_trust`] skips it.
+///
+/// Never in paranoid mode, which ties trust to a config's path and contents: only
+/// `trusted_config_paths` can trust config in the worktree, a new path on every run, and it
+/// trusts by path what REV chose to put there.
 fn submodules_allowed(worktree: &Path, subdir: &Path) -> bool {
+    if Settings::get().paranoid.config() {
+        return false;
+    }
     subdir
         .ancestors()
         .map(|sub| worktree.join(sub))
         .filter(|dir| dir.is_dir())
         .any(|dir| {
-            let config = dir.join("mise.toml");
-            if crate::config::is_project_link_to_global_config(&config) {
-                // Paranoid mode trusts files by their contents, and no directory that way.
-                !Settings::get().paranoid.config() && config_file::is_trusted(&dir)
-            } else {
-                config_file::is_path_trusted(&config)
-            }
+            config_file::is_trusted(&dir)
+                || crate::config::config_paths_in_dir(&dir)
+                    .iter()
+                    .filter(|file| !crate::config::is_project_link_to_global_config(file))
+                    .any(|file| config_file::is_path_trusted(file))
         })
 }
 

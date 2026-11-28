@@ -191,8 +191,9 @@ pub(crate) struct Run {
     ///
     /// REV's submodules are initialized only when the directory mise runs
     /// from, or one above it in the repository, is trusted in the main
-    /// checkout, since their URLs are REV's to choose. In paranoid mode they
-    /// are not initialized.
+    /// checkout, or a config REV has there is, such as a `conf.d` folder,
+    /// since their URLs are REV's to choose. In paranoid mode they are not
+    /// initialized, not even for config trusted by `trusted_config_paths`.
     ///
     /// The config at REV is trusted only if the repository's main checkout
     /// is; it is never trusted on its own, by a prompt, or by `--yes`.
