@@ -1824,11 +1824,13 @@ fn keep_bound_node(tv: &ToolVersion, source: &Path, needed: &mut NeededVersions)
     // launchers name the Node it was bound to, so keep the Node of every copy.
     let install_path = tv.install_path();
     let mut copies = vec![install_path.clone()];
-    if let Some(dir_name) = install_path.file_name() {
-        let system_copy = system_installs.join(tv.ba().tool_dir_name()).join(dir_name);
-        if system_copy != install_path {
-            copies.push(system_copy);
-        }
+    // System installs use `<tool>/<version>` even when the user copy has an identity
+    // directory, so name the system copy the way `system_copy_of` does.
+    let system_copy = system_installs
+        .join(tv.ba().tool_dir_name())
+        .join(tv.tv_pathname());
+    if system_copy != install_path {
+        copies.push(system_copy);
     }
     for copy in copies {
         // Launchers name the bound Node directly, so prune must not guess when the record
