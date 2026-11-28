@@ -258,6 +258,11 @@ impl PopenFile {
     /// failure is that of flushing what is still buffered, reported only when
     /// the child exits with status 0 (otherwise `pclose` returns that status,
     /// which Lua 5.1 reads as success), or of reaping the child.
+    ///
+    /// The flush failure is reported on every platform, so a plugin does not
+    /// lose a failed write without a word depending on the build target. Stock
+    /// Lua on musl, macOS and the BSDs ignores it, as their `pclose` does, and
+    /// returns `true`.
     fn close(&mut self) -> Option<IoFailure> {
         self.closed = true;
         let flushed = self.stdin.as_mut().map_or(Ok(()), |stdin| stdin.flush());
@@ -710,6 +715,7 @@ mod tests {
             note(short:flush())
             note(short:close())
             // with no flush, close reports it, unless the child exits non-zero
+            // (stock Lua reports it on glibc only)
             local unflushed = closed_child("unflushed", 0)
             note(unflushed:write("x"))
             note(unflushed:close())
@@ -735,17 +741,27 @@ mod tests {
         let expected = io_results(&Lua::new(), &stock_dir.path().join("out"));
         let dir = tempfile::tempdir().unwrap();
         let seen = io_results(&detached_lua(dir.path()), &dir.path().join("out"));
-        assert_eq!(seen, expected);
-        assert_eq!(expected[0], "true");
-        assert_eq!(expected[3], "nil,Bad file descriptor,9");
-        assert_eq!(expected[5], "nil,Bad file descriptor,9");
-        assert_eq!(expected[8], "nil,Broken pipe,32");
-        assert_eq!(expected[10], "true");
-        assert_eq!(expected[11], "nil,Broken pipe,32");
-        assert_eq!(expected[12], "true");
-        assert_eq!(expected[14], "nil,Broken pipe,32");
-        assert_eq!(expected[16], "true");
-        assert_eq!(expected[18], "nil,Broken pipe,32");
+        // A close that finds the last bytes undelivered, with the child exiting 0, fails on
+        // every platform. Stock Lua reports it only on glibc; musl, macOS and the BSDs return
+        // `true` from `pclose` there.
+        const UNDELIVERED_ON_CLOSE: [usize; 2] = [14, 18];
+        for i in UNDELIVERED_ON_CLOSE {
+            assert_eq!(seen[i], "nil,Broken pipe,32", "{i}");
+        }
+        let stock_agrees =
+            |i: &usize| cfg!(target_env = "gnu") || !UNDELIVERED_ON_CLOSE.contains(i);
+        assert_eq!(seen.len(), expected.len());
+        for i in (0..seen.len()).filter(stock_agrees) {
+            assert_eq!(seen[i], expected[i], "{i}");
+        }
+        assert_eq!(seen[0], "true");
+        assert_eq!(seen[3], "nil,Bad file descriptor,9");
+        assert_eq!(seen[5], "nil,Bad file descriptor,9");
+        assert_eq!(seen[8], "nil,Broken pipe,32");
+        assert_eq!(seen[10], "true");
+        assert_eq!(seen[11], "nil,Broken pipe,32");
+        assert_eq!(seen[12], "true");
+        assert_eq!(seen[16], "true");
         assert_eq!(
             std::fs::read_to_string(dir.path().join("out")).unwrap(),
             std::fs::read_to_string(stock_dir.path().join("out")).unwrap()
