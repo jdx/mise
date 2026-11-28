@@ -1240,3 +1240,22 @@ fn a_claim_survives_its_folder_or_lock_file_being_pruned() {
     held.remove();
     other.remove();
 }
+
+// Unix only: Windows does not let anything delete the lock file this process holds open.
+#[cfg(unix)]
+#[test]
+fn a_new_folder_is_claimed_after_the_staging_root_is_cleared() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("invocation-downloads");
+    let mut slot = None;
+    let first = scratch_in(&mut slot, &root).unwrap();
+    assert_eq!(scratch_in(&mut slot, &root).unwrap(), first);
+
+    // What `mise cache clear` does while this process is still running.
+    std::fs::remove_dir_all(&root).unwrap();
+    let second = scratch_in(&mut slot, &root).unwrap();
+    assert!(second.is_dir());
+    tempfile::tempdir_in(&second).unwrap();
+
+    slot.take().unwrap().remove();
+}

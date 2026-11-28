@@ -628,26 +628,32 @@ const UNLOCKED_SCRATCH_MAX_AGE: Duration = Duration::from_secs(24 * 60 * 60);
 /// also deletes what dead processes left, so the sweep costs nothing for commands that
 /// download nothing.
 fn invocation_scratch() -> Result<PathBuf> {
-    let mut scratch = INVOCATION_SCRATCH.lock().unwrap();
     // Not TEMP: a download under a deep TEMP passes MAX_PATH on Windows,
     // and a lockfile must not depend on where TEMP points.
     let root = crate::dirs::CACHE.join("invocation-downloads");
-    if let Some(held) = scratch.as_mut() {
-        if held.still_held(&root)? {
+    scratch_in(&mut INVOCATION_SCRATCH.lock().unwrap(), &root)
+}
+
+/// The staging folder `slot` holds under `root`, claimed again if something removed it.
+fn scratch_in(slot: &mut Option<InvocationScratch>, root: &Path) -> Result<PathBuf> {
+    // First, so a root that `mise cache clear` deleted is back before `.claims` in it
+    // is opened.
+    file::create_dir_all(root)?;
+    if let Some(held) = slot.as_mut() {
+        if held.still_held(root)? {
             return Ok(held.dir.clone());
         }
         debug!(
             "download staging {} was removed, claiming a new folder",
             display_path(&held.dir)
         );
-        if let Some(lost) = scratch.take() {
+        if let Some(lost) = slot.take() {
             lost.remove();
         }
     }
-    file::create_dir_all(&root)?;
-    let claimed = InvocationScratch::claim(&root, UNLOCKED_SCRATCH_MAX_AGE)?;
+    let claimed = InvocationScratch::claim(root, UNLOCKED_SCRATCH_MAX_AGE)?;
     let dir = claimed.dir.clone();
-    *scratch = Some(claimed);
+    *slot = Some(claimed);
     Ok(dir)
 }
 
