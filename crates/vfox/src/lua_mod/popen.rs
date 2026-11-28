@@ -16,7 +16,7 @@
 //! mise withholds from the hook, and with the variables mise adds for it.
 
 use mlua::prelude::*;
-use mlua::{AnyUserData, Function, Table, UserData, UserDataMethods, Variadic};
+use mlua::{AnyUserData, Function, IntoLuaMulti, Table, UserData, UserDataMethods, Variadic};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::process::{Child, ChildStdin, ChildStdout, Stdio};
 
@@ -133,8 +133,9 @@ fn popen(
 ///
 /// It answers as a Lua 5.1 popen file does, the version mlua is built with: `close`
 /// returns `true` once the child is reaped, whatever its exit status (5.1's
-/// `pclose` reports no status), and any use of a closed handle, a second `close`
-/// included, raises "attempt to use a closed file".
+/// `pclose` reports no status), `write` returns `true`, a failed read, write or
+/// flush returns `nil, message, errno` (see [`IoFailure`]), and any use of a
+/// closed handle, a second `close` included, raises "attempt to use a closed file".
 struct PopenFile {
     stdin: Option<ChildStdin>,
     stdout: Option<Box<dyn BufRead + Send + Sync>>,
@@ -245,7 +246,7 @@ impl PopenFile {
         self.open()?
             .stdout
             .as_mut()
-            .ok_or_else(|| LuaError::RuntimeError("file is not readable".to_string()))
+            .ok_or_else(|| LuaError::external(IoFailure::bad_descriptor()))
     }
 
     fn close(&mut self) {
@@ -391,6 +392,71 @@ impl PopenFile {
     }
 }
 
+/// How a Lua 5.1 file method reports a failed read, write or flush: it returns
+/// `nil`, the system's message and the error number, and does not raise. Bad
+/// arguments and a closed file still raise.
+#[derive(Debug)]
+struct IoFailure {
+    message: String,
+    errno: i32,
+}
+
+impl IoFailure {
+    /// What reading a pipe opened for writing, or writing one opened for
+    /// reading, fails with: `EBADF`, 9 on Linux, macOS and Windows.
+    fn bad_descriptor() -> Self {
+        Self {
+            message: "Bad file descriptor".to_string(),
+            errno: 9,
+        }
+    }
+
+    /// The failure `err` carries, when it is an I/O error and not a Lua one.
+    fn of(err: &LuaError) -> Option<Self> {
+        if let Some(failure) = err.downcast_ref::<IoFailure>() {
+            return Some(Self {
+                message: failure.message.clone(),
+                errno: failure.errno,
+            });
+        }
+        err.downcast_ref::<std::io::Error>().map(Self::from)
+    }
+}
+
+impl From<&std::io::Error> for IoFailure {
+    fn from(err: &std::io::Error) -> Self {
+        // Windows reports a pipe whose reader is gone as ERROR_BROKEN_PIPE;
+        // its C runtime, and with it stock Lua, as EPIPE.
+        if err.kind() == std::io::ErrorKind::BrokenPipe {
+            return Self {
+                message: "Broken pipe".to_string(),
+                errno: 32,
+            };
+        }
+        let errno = err.raw_os_error().unwrap_or(0);
+        let message = err.to_string();
+        let message = message
+            .strip_suffix(&format!(" (os error {errno})"))
+            .unwrap_or(&message)
+            .to_string();
+        Self { message, errno }
+    }
+}
+
+impl std::fmt::Display for IoFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for IoFailure {}
+
+impl IntoLuaMulti for IoFailure {
+    fn into_lua_multi(self, lua: &Lua) -> LuaResult<LuaMultiValue> {
+        (LuaNil, self.message, self.errno).into_lua_multi(lua)
+    }
+}
+
 impl Drop for PopenFile {
     fn drop(&mut self) {
         self.close();
@@ -400,7 +466,13 @@ impl Drop for PopenFile {
 impl UserData for PopenFile {
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
         methods.add_method_mut("read", |lua, this, formats: LuaMultiValue| {
-            this.read(lua, formats)
+            match this.read(lua, formats) {
+                Err(err) => match IoFailure::of(&err) {
+                    Some(failure) => failure.into_lua_multi(lua),
+                    None => Err(err),
+                },
+                result => result,
+            }
         });
         methods.add_function("lines", |lua, file: AnyUserData| {
             // Stock Lua rejects a closed file here, not on the first call.
@@ -412,43 +484,54 @@ impl UserData for PopenFile {
                     .transpose()
             })
         });
-        methods.add_function(
-            "write",
-            |_, (file, values): (AnyUserData, Variadic<LuaValue>)| {
-                {
-                    let mut this = file.borrow_mut::<PopenFile>()?;
-                    let this = this.open()?;
-                    let text_writes = this.text_writes;
-                    let stdin = this.stdin.as_mut().ok_or_else(|| {
-                        LuaError::RuntimeError("file is not writable".to_string())
-                    })?;
-                    for value in values {
-                        let bytes = match value {
-                            LuaValue::String(s) => s.as_bytes().to_vec(),
-                            LuaValue::Integer(n) => n.to_string().into_bytes(),
-                            LuaValue::Number(n) => n.to_string().into_bytes(),
-                            other => {
-                                return Err(LuaError::RuntimeError(format!(
-                                    "bad argument to 'write' (string expected, got {})",
-                                    other.type_name()
-                                )));
-                            }
-                        };
-                        if text_writes {
-                            stdin.write_all(&lf_as_crlf(&bytes))?;
-                        } else {
-                            stdin.write_all(&bytes)?;
-                        }
+        methods.add_method_mut("write", |lua, this, values: Variadic<LuaValue>| {
+            let this = this.open()?;
+            // As Lua 5.1's `g_write`: every argument is checked, the writes stop
+            // at the first that fails, and the result is `true` (not the file,
+            // as in 5.2) or the failure.
+            let mut failure = None;
+            for value in values {
+                let bytes = match value {
+                    LuaValue::String(s) => s.as_bytes().to_vec(),
+                    // Formatted as Lua formats a number, with `%.14g`.
+                    LuaValue::Integer(_) | LuaValue::Number(_) => lua
+                        .coerce_string(value)?
+                        .map(|s| s.as_bytes().to_vec())
+                        .unwrap_or_default(),
+                    other => {
+                        return Err(LuaError::RuntimeError(format!(
+                            "bad argument to 'write' (string expected, got {})",
+                            other.type_name()
+                        )));
                     }
+                };
+                if failure.is_some() {
+                    continue;
                 }
-                Ok(file)
-            },
-        );
-        methods.add_method_mut("flush", |_, this, ()| {
-            if let Some(stdin) = this.open()?.stdin.as_mut() {
-                stdin.flush()?;
+                let Some(stdin) = this.stdin.as_mut() else {
+                    failure = Some(IoFailure::bad_descriptor());
+                    continue;
+                };
+                let written = if this.text_writes {
+                    stdin.write_all(&lf_as_crlf(&bytes))
+                } else {
+                    stdin.write_all(&bytes)
+                };
+                if let Err(err) = written {
+                    failure = Some(IoFailure::from(&err));
+                }
             }
-            Ok(true)
+            match failure {
+                Some(failure) => failure.into_lua_multi(lua),
+                None => true.into_lua_multi(lua),
+            }
+        });
+        methods.add_method_mut("flush", |lua, this, ()| {
+            let stdin = this.open()?.stdin.as_mut();
+            match stdin.map(|stdin| stdin.flush()) {
+                Some(Err(err)) => IoFailure::from(&err).into_lua_multi(lua),
+                _ => true.into_lua_multi(lua),
+            }
         });
         methods.add_method_mut("close", |_, this, ()| {
             this.open()?.close();
@@ -522,7 +605,8 @@ mod tests {
         lua.load(
             r#"
             local h = io.popen("cat > written", "w")
-            h:write("hello ", 1, "\n"):write("world\n")
+            assert(h:write("hello ", 1, "\n") == true)
+            assert(h:write("world\n") == true)
             assert(h:close() == true)
             "#,
         )
@@ -531,6 +615,61 @@ mod tests {
         assert_eq!(
             std::fs::read_to_string(dir.path().join("written")).unwrap(),
             "hello 1\nworld\n"
+        );
+    }
+
+    /// What writes, flushes and reads return on handles opened with `lua`'s
+    /// `io.popen`, the first writing into `out`.
+    fn io_results(lua: &Lua, out: &Path) -> Vec<String> {
+        let out = out.to_string_lossy().to_string();
+        lua.load(mlua::chunk! {
+            local seen = {}
+            local function note(...)
+                local parts = {}
+                for i = 1, select("#", ...) do
+                    parts[#parts + 1] = tostring((select(i, ...)))
+                end
+                seen[#seen + 1] = table.concat(parts, ",")
+            end
+            local w = io.popen("cat > '" .. $out .. "'", "w")
+            note(w:write("a", 1, 1 / 3, "\n"))
+            note(w:write())
+            note(w:flush())
+            // a pipe opened for writing does not read, and the other way round
+            note(w:read("*l"))
+            note(w:close())
+            local r = io.popen("printf x")
+            note(r:write("x"))
+            note(r:read("*a"))
+            note(r:close())
+            // a child that stopped reading: the write fails, and does not raise
+            local gone = io.popen("exec 0<&-", "w")
+            note(gone:write(string.rep("x", 1048576)))
+            note(gone:close())
+            // a bad argument still raises
+            local b = io.popen("cat >/dev/null", "w")
+            note((pcall(b.write, b, {})))
+            b:close()
+            return seen
+        })
+        .eval()
+        .unwrap()
+    }
+
+    #[test]
+    fn popen_reads_and_writes_answer_like_stock_ones() {
+        let stock_dir = tempfile::tempdir().unwrap();
+        let expected = io_results(&Lua::new(), &stock_dir.path().join("out"));
+        let dir = tempfile::tempdir().unwrap();
+        let seen = io_results(&detached_lua(dir.path()), &dir.path().join("out"));
+        assert_eq!(seen, expected);
+        assert_eq!(expected[0], "true");
+        assert_eq!(expected[3], "nil,Bad file descriptor,9");
+        assert_eq!(expected[5], "nil,Bad file descriptor,9");
+        assert_eq!(expected[8], "nil,Broken pipe,32");
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("out")).unwrap(),
+            std::fs::read_to_string(stock_dir.path().join("out")).unwrap()
         );
     }
 
