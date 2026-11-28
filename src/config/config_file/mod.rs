@@ -1634,14 +1634,13 @@ pub fn trust_after_write(path: &Path, trusted_before: bool) -> Result<()> {
 /// write. It has to be asked then: in paranoid mode the record is the file's own and bound to its
 /// content, so once the write changes the file it no longer counts. The file's trust in paranoid
 /// mode is also the trust loading goes by, a linked project's `trusted_config_paths` included.
-/// Otherwise the record is the config root's, and only the root's trust says it is there already.
+/// Otherwise the record is the config root's, so the root's own trust has to be there already
+/// too: a file record does not make the root's new record trust from before. Either way the file
+/// has to load as trusted, so a nested root of an ignored project, which its directory's trust
+/// does not cover, counts as newly trusted.
 pub fn trusted_before_write(path: &Path) -> bool {
     let config_root = config_trust_root(path);
-    if config_root == path {
-        is_path_trusted(path)
-    } else {
-        is_trusted(&config_root)
-    }
+    is_path_trusted(path) && (config_root == path || is_trusted(&config_root))
 }
 
 /// Asks for the trust that [`trust_after_write`] is about to record, before the write.
