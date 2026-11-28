@@ -541,7 +541,17 @@ impl Backend for JavaPlugin {
     fn list_installed_versions_matching(&self, query: &str) -> Vec<String> {
         let versions = self.list_installed_versions();
         if let Some(query) = SdkmanQuery::parse(query) {
-            return sdkman_installed_match(versions, &query, self.ba().installs_path());
+            // A build in a shared install dir is listed too, so read its
+            // `release` file from where it is, as `ToolVersion::install_path` does.
+            let installs_path = self.ba().installs_path();
+            let tool_dir_name = self.ba().tool_dir_name();
+            return sdkman_installed_match(versions, &query, |version| {
+                crate::env::find_in_shared_installs(
+                    installs_path.join(version),
+                    &tool_dir_name,
+                    version,
+                )
+            });
         }
         // Java doesn't support the `prerelease` opt-in; always filter.
         self.fuzzy_match_filter(versions, query, true)
@@ -1040,7 +1050,7 @@ fn sdkman_catalog_match(
 fn sdkman_installed_match(
     installed: Vec<String>,
     query: &SdkmanQuery,
-    installs_path: &Path,
+    install_path: impl Fn(&str) -> PathBuf,
 ) -> Vec<String> {
     installed
         .into_iter()
@@ -1049,7 +1059,7 @@ fn sdkman_installed_match(
                 return false;
             };
             query.matches(prefix, version, || {
-                release_java_version(&installs_path.join(installed))
+                release_java_version(&install_path(installed))
             })
         })
         .collect()
@@ -1639,7 +1649,7 @@ mod tests {
         let find = |query: &str| {
             let query = SdkmanQuery::parse(query).unwrap();
             let versions = installed.iter().map(|(v, _)| v.to_string()).collect();
-            sdkman_installed_match(versions, &query, dir.path())
+            sdkman_installed_match(versions, &query, |v| dir.path().join(v))
         };
         assert_eq!(find("zulu-javafx-8.0.512"), ["zulu-javafx-8.98.0.111"]);
         assert!(find("zulu-8.0.512").is_empty());
