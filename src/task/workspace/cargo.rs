@@ -5,6 +5,8 @@ use eyre::{Context, Result, bail};
 use glob::{MatchOptions, Pattern};
 use serde::Deserialize;
 
+use crate::config::config_file::diagnostic::hide_linked_source_below;
+
 use super::{
     ProjectId, WorkspaceDiscoveryContext, WorkspaceProject, WorkspaceProvenance, WorkspaceProvider,
 };
@@ -79,7 +81,7 @@ impl WorkspaceProvider for CargoWorkspaceProvider {
         if !context.is_file(&root_manifest_path) {
             return Ok(Vec::new());
         }
-        let root_manifest = read_manifest(context, &root_manifest_path)?;
+        let root_manifest = read_manifest(context, &root_manifest_path, workspace_root)?;
         let Some(workspace) = root_manifest.workspace.as_ref() else {
             return Ok(Vec::new());
         };
@@ -122,7 +124,7 @@ impl WorkspaceProvider for CargoWorkspaceProvider {
             let manifest = if package_root == canonical_root {
                 root_manifest.clone()
             } else {
-                read_manifest(context, &manifest_path)?
+                read_manifest(context, &manifest_path, &canonical_root)?
             };
             let package = manifest.package.as_ref().ok_or_else(|| {
                 eyre::eyre!(
@@ -225,11 +227,18 @@ impl WorkspaceProvider for CargoWorkspaceProvider {
     }
 }
 
-fn read_manifest(context: &WorkspaceDiscoveryContext, path: &Path) -> Result<CargoManifest> {
+/// Reads the Cargo manifest at `path`, found under `root`: a parse error hides the file's
+/// text when `path` or a directory between `root` and it is a link.
+fn read_manifest(
+    context: &WorkspaceDiscoveryContext,
+    path: &Path,
+    root: &Path,
+) -> Result<CargoManifest> {
     let contents = context
         .read_to_string(path)
         .wrap_err_with(|| format!("failed to read Cargo manifest {}", path.display()))?;
     toml::from_str(&contents)
+        .map_err(|err| hide_linked_source_below(err, &contents, path, root))
         .wrap_err_with(|| format!("failed to parse Cargo manifest {}", path.display()))
 }
 
@@ -469,5 +478,31 @@ mod tests {
 
         let error = CargoWorkspaceProvider.discover(temp.path()).unwrap_err();
         assert!(error.to_string().contains("must be relative"));
+    }
+
+    /// A project can ship the manifest as a link to a file of the user's, and
+    /// a TOML error quotes the failing line.
+    #[test]
+    #[cfg(unix)]
+    fn does_not_quote_a_linked_manifest() {
+        let temp = tempdir().unwrap();
+        // resolved, as the working directory mise starts from is
+        let temp = temp.path().canonicalize().unwrap();
+        let (home, root) = (temp.join("home"), temp.join("project"));
+        write(&home.join("netrc"), "password s3cr3t\n");
+        let report = |root: &Path| {
+            let error = CargoWorkspaceProvider.discover(root).unwrap_err();
+            format!("{error:#}")
+        };
+
+        // the project's own file is quoted
+        write(&root.join(CARGO_TOML), "password s3cr3t\n");
+        assert!(report(&root).contains("s3cr3t"));
+
+        fs::remove_file(root.join(CARGO_TOML)).unwrap();
+        std::os::unix::fs::symlink(home.join("netrc"), root.join(CARGO_TOML)).unwrap();
+        let linked = report(&root);
+        assert!(!linked.contains("s3cr3t"), "{linked}");
+        assert!(linked.contains("line 1, column 10: "), "{linked}");
     }
 }

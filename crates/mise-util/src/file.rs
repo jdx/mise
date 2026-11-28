@@ -2279,10 +2279,18 @@ pub fn canonicalize_cached(path: &Path) -> Option<PathBuf> {
         return Some(path);
     }
     let canonicalized = path.canonicalize().ok()?;
-    CACHE
-        .lock()
-        .unwrap()
-        .insert(path.to_path_buf(), canonicalized.clone());
+    let mut cache = CACHE.lock().unwrap();
+    // No component of a resolved path is a symlink, so each of its ancestors is
+    // its own canonical form. Remembering them means a walk up from the cwd
+    // (config discovery asks about every ancestor) resolves one path, not one
+    // per level with a link lookup per component.
+    for ancestor in canonicalized.ancestors().skip(1) {
+        if cache.contains_key(ancestor) {
+            break;
+        }
+        cache.insert(ancestor.to_path_buf(), ancestor.to_path_buf());
+    }
+    cache.insert(path.to_path_buf(), canonicalized.clone());
     Some(canonicalized)
 }
 
@@ -3922,10 +3930,26 @@ pub fn same_file(a: &Path, b: &Path) -> bool {
     a == b || desymlink_path(a) == desymlink_path(b)
 }
 
+/// Whether `path`, as written, is `dir` or a path below it. `Path::starts_with`
+/// alone compares components, so it also accepts `dir/../elsewhere`: a `..`
+/// behind the prefix can lead anywhere, and such a path is not within `dir`.
+pub fn path_stays_within(path: &Path, dir: &Path) -> bool {
+    path.strip_prefix(dir).is_ok_and(|rest| {
+        !rest
+            .components()
+            .any(|c| c == std::path::Component::ParentDir)
+    })
+}
+
 /// Returns whether `path` starts with `prefix` either lexically or after
-/// resolving symlinks and the existing path prefix.
+/// resolving symlinks and the existing path prefix. A path with a `..` behind
+/// the prefix is only compared resolved, see [`path_stays_within`]. Resolving
+/// stops at the first component that does not exist and keeps the rest as
+/// written, so a `..` left there is not within `prefix` either: Windows, for
+/// one, resolves `missing\..` without looking for `missing`.
 pub fn path_starts_with_resolved(path: &Path, prefix: &Path) -> bool {
-    path.starts_with(prefix) || desymlink_path(path).starts_with(desymlink_path(prefix))
+    path_stays_within(path, prefix)
+        || path_stays_within(&desymlink_path(path), &desymlink_path(prefix))
 }
 
 fn resolve_path_with_existing_prefix(path: &Path) -> PathBuf {

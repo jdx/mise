@@ -823,6 +823,66 @@ fn test_ensure_symlinks_stay_within_rebases_chained_absolute_links() {
 
 #[cfg(unix)]
 #[test]
+fn path_starts_with_resolved_does_not_take_a_parent_dir_behind_the_prefix_as_written() {
+    let root = tempfile::tempdir().unwrap();
+    let root = root.path().canonicalize().unwrap();
+    let (inside, outside) = (root.join("config/tasks"), root.join("project"));
+    fs::create_dir_all(&inside).unwrap();
+    fs::create_dir_all(&outside).unwrap();
+    fs::write(inside.join("own.toml"), "").unwrap();
+    fs::write(outside.join("theirs.toml"), "").unwrap();
+
+    assert!(path_stays_within(&inside, &inside));
+    assert!(path_stays_within(&inside.join("own.toml"), &inside));
+    assert!(path_starts_with_resolved(&inside.join("own.toml"), &inside));
+
+    let leaving = inside.join("../../project/theirs.toml");
+    assert!(leaving.starts_with(&inside) && leaving.exists());
+    assert!(!path_stays_within(&leaving, &inside));
+    assert!(!path_starts_with_resolved(&leaving, &inside));
+
+    // A `..` that comes back is inside once resolved.
+    let returning = inside.join("../tasks/own.toml");
+    assert!(!path_stays_within(&returning, &inside));
+    assert!(path_starts_with_resolved(&returning, &inside));
+
+    // Resolving stops at a missing component, so a `..` behind it stays as
+    // written and is not inside either.
+    let past_missing = inside.join("missing/../../../project/theirs.toml");
+    assert!(desymlink_path(&past_missing).starts_with(&inside));
+    assert!(!path_starts_with_resolved(&past_missing, &inside));
+}
+
+/// Resolving a path also resolves its ancestors: they are the ancestors of the
+/// resolved path, which are canonical, not those of the path given, which may
+/// pass through a link. A walk up from a deep directory then resolves one path.
+#[cfg(unix)]
+#[test]
+fn canonicalize_cached_remembers_the_ancestors_of_a_resolved_path() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().canonicalize().unwrap();
+    let target = root.join("target");
+    fs::create_dir_all(target.join("a/b")).unwrap();
+    let link = root.join("link");
+    std::os::unix::fs::symlink(&target, &link).unwrap();
+
+    assert_eq!(
+        canonicalize_cached(&link.join("a/b")),
+        Some(target.join("a/b"))
+    );
+    // Gone from disk, still answered: the first call remembered them.
+    fs::remove_dir_all(&target).unwrap();
+    assert_eq!(
+        canonicalize_cached(&target.join("a")),
+        Some(target.join("a"))
+    );
+    assert_eq!(canonicalize_cached(&target), Some(target.clone()));
+    // The link itself was never resolved on its own.
+    assert_eq!(canonicalize_cached(&link), None);
+}
+
+#[cfg(unix)]
+#[test]
 fn test_ensure_symlinks_stay_within_refuses_a_chain_of_more_than_40_links() {
     use std::os::unix::fs::symlink;
 

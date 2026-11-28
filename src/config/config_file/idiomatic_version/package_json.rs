@@ -2,7 +2,8 @@ use crate::file;
 use crate::toolset::ToolVersionOptions;
 use eyre::Result;
 use serde::Deserialize;
-use serde::de::Deserializer;
+use serde::de::value::MapAccessDeserializer;
+use serde::de::{Deserializer, IgnoredAny, MapAccess, SeqAccess, Visitor};
 use std::path::Path;
 
 #[derive(Debug, Deserialize)]
@@ -34,24 +35,52 @@ pub fn is_package_json(path: &Path) -> bool {
 
 /// Deserialize a field that may be a single object or an array (take the first element).
 /// The npm devEngines spec allows both forms.
+///
+/// Written by hand rather than with `#[serde(untagged)]`, which buffers the whole value before
+/// trying its variants: package.json is read without trust, and a large array cost many times the
+/// file's size in memory only to have its first element taken. This reads the one object that is
+/// used and skips the rest without storing it.
 fn deserialize_one_or_first<'de, D>(
     deserializer: D,
 ) -> std::result::Result<Option<DevEngine>, D::Error>
 where
     D: Deserializer<'de>,
 {
-    #[derive(Deserialize)]
-    #[serde(untagged)]
-    enum OneOrMany {
-        One(DevEngine),
-        Many(Vec<DevEngine>),
+    struct OneOrFirst;
+
+    impl<'de> Visitor<'de> for OneOrFirst {
+        type Value = Option<DevEngine>;
+
+        fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+            f.write_str("an object, an array of objects or null")
+        }
+
+        fn visit_unit<E>(self) -> std::result::Result<Self::Value, E> {
+            Ok(None)
+        }
+
+        fn visit_none<E>(self) -> std::result::Result<Self::Value, E> {
+            Ok(None)
+        }
+
+        fn visit_map<A: MapAccess<'de>>(
+            self,
+            map: A,
+        ) -> std::result::Result<Self::Value, A::Error> {
+            DevEngine::deserialize(MapAccessDeserializer::new(map)).map(Some)
+        }
+
+        fn visit_seq<A: SeqAccess<'de>>(
+            self,
+            mut seq: A,
+        ) -> std::result::Result<Self::Value, A::Error> {
+            let first = seq.next_element()?;
+            while seq.next_element::<IgnoredAny>()?.is_some() {}
+            Ok(first)
+        }
     }
 
-    match Option::<OneOrMany>::deserialize(deserializer)? {
-        None => Ok(None),
-        Some(OneOrMany::One(engine)) => Ok(Some(engine)),
-        Some(OneOrMany::Many(engines)) => Ok(engines.into_iter().next()),
-    }
+    deserializer.deserialize_any(OneOrFirst)
 }
 
 impl PackageJsonData {
@@ -587,6 +616,73 @@ mod tests {
                     "runtime": [
                         { "name": "node", "version": ">=22.0.0" },
                         { "name": "bun", "version": ">=1.0.0" }
+                    ]
+                }
+            }"#,
+        )
+        .unwrap();
+        assert_eq!(pkg.runtime_version("node"), Some(">=22.0.0".to_string()));
+    }
+
+    #[test]
+    fn test_package_manager_version_array_form() {
+        let pkg: PackageJsonData = serde_json::from_str(
+            r#"{
+                "devEngines": {
+                    "packageManager": [
+                        { "name": "pnpm", "version": "9.1.0", "onFail": "warn" },
+                        { "name": "yarn", "version": "4.1.0" }
+                    ]
+                }
+            }"#,
+        )
+        .unwrap();
+        assert_eq!(
+            pkg.package_manager_version("pnpm"),
+            Some("9.1.0".to_string())
+        );
+        assert_eq!(pkg.package_manager_version("yarn"), None);
+    }
+
+    #[test]
+    fn test_dev_engines_null_and_empty_array() {
+        let pkg: PackageJsonData = serde_json::from_str(
+            r#"{
+                "devEngines": {
+                    "runtime": null,
+                    "packageManager": []
+                }
+            }"#,
+        )
+        .unwrap();
+        assert_eq!(pkg.runtime_version("node"), None);
+        assert_eq!(pkg.package_manager_version("pnpm"), None);
+    }
+
+    #[test]
+    fn test_dev_engines_rejects_other_types() {
+        for runtime in [r#""node""#, "20", "true", r#"["node"]"#, "[[[0]]]"] {
+            let json = format!(r#"{{"devEngines": {{"runtime": {runtime}}}}}"#);
+            assert!(
+                serde_json::from_str::<PackageJsonData>(&json).is_err(),
+                "{json}"
+            );
+        }
+    }
+
+    /// package.json is read without trust. Only the first element is used, so the rest must not be
+    /// held in memory: an untagged enum buffered the whole array, at many times its size in the
+    /// file.
+    #[test]
+    fn test_dev_engines_array_reads_only_first_element() {
+        let pkg: PackageJsonData = serde_json::from_str(
+            r#"{
+                "devEngines": {
+                    "runtime": [
+                        { "name": "node", "version": ">=22.0.0" },
+                        [[[0]]],
+                        "bun",
+                        null
                     ]
                 }
             }"#,

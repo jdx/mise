@@ -11,7 +11,9 @@ use itertools::Itertools;
 use tera::Context;
 
 use crate::args::BackendArg;
-use crate::config::config_file::{ConfigFile, ensure_versions_are_not_templates, trust_check};
+use crate::config::config_file::{
+    ConfigFile, ensure_tool_request_count, ensure_versions_are_not_templates, trust_check,
+};
 use crate::file;
 use crate::file::display_path;
 use crate::tera::{BASE_CONTEXT, contains_template_syntax, get_tera, render_config_str};
@@ -173,14 +175,28 @@ impl ToolVersions {
     }
 
     fn populate_toolset(&self) -> eyre::Result<()> {
+        let plugins = self.plugins.lock().unwrap();
+        let count = plugins.values().map(|tvp| tvp.versions.len()).sum();
+        ensure_tool_request_count(&self.path, count)?;
+        *self.tools.lock().unwrap() = self.tool_requests(&plugins)?;
+        Ok(())
+    }
+
+    /// The requests `plugins` make, which an edit sets again so that
+    /// [`ConfigFile::to_tool_request_set`] lists the file as it will be saved.
+    fn tool_requests(
+        &self,
+        plugins: &IndexMap<BackendArg, ToolVersionPlugin>,
+    ) -> eyre::Result<ToolRequestSet> {
         let source = ToolSource::ToolVersions(self.path.clone());
-        for (ba, tvp) in &*self.plugins.lock().unwrap() {
+        let mut tools = ToolRequestSet::new();
+        for (ba, tvp) in plugins {
             for version in &tvp.versions {
                 let tvr = ToolRequest::new(Arc::new(ba.clone()), version, source.clone())?;
-                self.tools.lock().unwrap().add_version(tvr, &source)
+                tools.add_version(tvr, &source)
             }
         }
-        Ok(())
+        Ok(tools)
     }
 }
 
@@ -228,6 +244,7 @@ impl ConfigFile for ToolVersions {
             Some(prev) => plugins[prev].post.push_str(&templates),
             None => self.pre.lock().unwrap().push_str(&templates),
         }
+        *self.tools.lock().unwrap() = self.tool_requests(&plugins)?;
         Ok(())
     }
 
@@ -292,6 +309,7 @@ impl ConfigFile for ToolVersions {
             plugin.versions.push(version);
         }
         plugin.raw = templated.then(|| words.join(" "));
+        *self.tools.lock().unwrap() = self.tool_requests(&plugins)?;
         Ok(())
     }
 
@@ -308,6 +326,15 @@ impl ConfigFile for ToolVersions {
                 display_path(&self.path)
             );
         }
+        // never write a file that would then fail to load
+        let count: usize = self
+            .plugins
+            .lock()
+            .unwrap()
+            .values()
+            .map(|tvp| tvp.versions.len())
+            .sum();
+        ensure_tool_request_count(&self.path, count)?;
         let s = self.dump()?;
         file::write_atomic(&self.path, s)
     }
@@ -799,6 +826,44 @@ mod tests {
         );
         assert_eq!(comment_start("node {{ \"}}#\" }} # c"), Some(17));
         assert_eq!(comment_start("node 20 # {{ open"), Some(8));
+    }
+
+    /// The file loads without trust and every version is resolved on each prompt, so the
+    /// number of them is bounded, whether they name one tool or many.
+    #[test]
+    fn too_many_versions_are_refused() {
+        let path = PathBuf::from("/tmp/.tool-versions");
+        let limit = super::super::MAX_TOOL_REQUESTS;
+        let one_tool = |n: usize| format!("node{}\n", " 1".repeat(n));
+        let many_tools = |n: usize| (0..n).map(|i| format!("tool{i} 1\n")).collect::<String>();
+
+        let tv = ToolVersions::parse_str(&one_tool(limit), path.clone()).unwrap();
+        let requests = tv.to_tool_request_set().unwrap();
+        assert_eq!(requests.tools.values().map(Vec::len).sum::<usize>(), limit);
+        ToolVersions::parse_str(&many_tools(limit), path.clone()).unwrap();
+
+        for body in [one_tool(limit + 1), many_tools(limit + 1)] {
+            let err = ToolVersions::parse_str(&body, path.clone()).unwrap_err();
+            assert!(err.to_string().contains("tool versions"), "{err}");
+        }
+    }
+
+    /// An edit that takes the file over the bound is refused before anything is written, so the
+    /// file stays one that loads.
+    #[test]
+    fn save_refuses_a_file_that_would_not_load() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(".tool-versions");
+        let body = format!("node{}\n", " 1".repeat(super::super::MAX_TOOL_REQUESTS));
+        file::write(&path, &body).unwrap();
+        let tv = ToolVersions::parse_str(&body, path.clone()).unwrap();
+        let python: Arc<BackendArg> = Arc::new("python".into());
+        let request = ToolRequest::new_version_for_test(python.clone(), "3", ToolSource::Unknown);
+        tv.replace_versions(&python, vec![request]).unwrap();
+
+        let err = tv.save().unwrap_err();
+        assert!(err.to_string().contains("1001 tool versions"), "{err}");
+        assert_eq!(file::read_to_string(&path).unwrap(), body);
     }
 
     /// `dump` relies on `post` to terminate each line, and `trim_end` only ever

@@ -6,6 +6,8 @@ use eyre::{Context, Result};
 use mise_util::yaml::{self, Value};
 use serde::Deserialize;
 
+use crate::config::config_file::diagnostic;
+
 use super::{
     ProjectId, WorkspaceDiscoveryContext, WorkspaceProject, WorkspaceProjectGraph,
     WorkspaceProvenance, WorkspaceProvider, WorkspaceTask, WorkspaceTaskSuggestions,
@@ -92,8 +94,14 @@ impl WorkspaceProvider for NodeWorkspaceProvider {
             WorkspaceDiscoveryOptions::confined_to_root(),
         )
         .map_err(|error| {
+            let details = error.to_string();
+            let details = match linked_root_file_to_hide(workspace_root, &canonical_root, &details)
+            {
+                Some(path) => format!("{}: {}", path.display(), diagnostic::LINKED_DETAILS_HIDDEN),
+                None => details,
+            };
             eyre::eyre!(
-                "failed to discover Node workspace packages under {}: {error}",
+                "failed to discover Node workspace packages under {}: {details}",
                 workspace_root.display()
             )
         })?
@@ -144,10 +152,10 @@ impl WorkspaceProvider for NodeWorkspaceProvider {
                 let manifest = if root == Path::new(".") {
                     match root_manifest.clone() {
                         Some(manifest) => manifest,
-                        None => read_package_json(context, &manifest_path)?,
+                        None => read_package_json(context, &manifest_path, workspace_root)?,
                     }
                 } else {
-                    read_package_json(context, &manifest_path)?
+                    read_package_json(context, &manifest_path, workspace_root)?
                 };
                 let name = manifest.name.clone().ok_or_else(|| {
                     eyre::eyre!(
@@ -614,10 +622,49 @@ fn read_turbo_json(
     match mise_util::structured_merge::from_jsonc_str(&contents) {
         Ok(turbo) => Ok(Some(turbo)),
         Err(error) => {
-            warn!("failed to parse optional {}: {error}", path.display());
+            warn!(
+                "failed to parse optional {}: {}",
+                path.display(),
+                diagnostic::hide_linked_details_below(error, &path, workspace_root)
+            );
             Ok(None)
         }
     }
+}
+
+/// The root file whose name must stand in for aube's discovery error, when that error may
+/// quote a file reached through a link.
+///
+/// aube reads the workspace files at the root itself, under `canonical_root`, and its message
+/// starts with the path of the file it could not read or parse, then quotes it. The details are
+/// hidden when that path is a linked file, or when the message names none of the root files and
+/// one of them is linked. A message about the project's own file is kept whole, with its line and
+/// column, even when another root file is linked.
+fn linked_root_file_to_hide(
+    workspace_root: &Path,
+    canonical_root: &Path,
+    message: &str,
+) -> Option<PathBuf> {
+    let files = aube::embed::host()
+        .workspace_yaml
+        .into_iter()
+        .chain([PNPM_WORKSPACE, PACKAGE_JSON])
+        .map(|name| {
+            let at = message.find(&canonical_root.join(name).display().to_string());
+            (workspace_root.join(name), at)
+        })
+        .collect::<Vec<_>>();
+    let linked = |path: &PathBuf| !diagnostic::may_quote(path);
+    // The file the message names first is the one that failed. A path that comes later is
+    // only quoted from it, so it says nothing about which file the error is about.
+    if let Some((path, _)) = files
+        .iter()
+        .filter_map(|(path, at)| at.map(|at| (path, at)))
+        .min_by_key(|(_, at)| *at)
+    {
+        return linked(path).then(|| path.clone());
+    }
+    files.into_iter().map(|(path, _)| path).find(linked)
 }
 
 fn workspace_definition(
@@ -664,7 +711,13 @@ fn workspace_definition(
     }))
 }
 
-fn read_package_json(context: &WorkspaceDiscoveryContext, path: &Path) -> Result<PackageJson> {
+/// Reads the `package.json` at `path`, found under `root`: a parse error hides the file's
+/// text when `path` or a directory between `root` and it is a link.
+fn read_package_json(
+    context: &WorkspaceDiscoveryContext,
+    path: &Path,
+    root: &Path,
+) -> Result<PackageJson> {
     let contents = context.read_to_string(path).map_err(|error| {
         eyre::eyre!(
             "failed to read Node package manifest {}: {error}",
@@ -673,8 +726,9 @@ fn read_package_json(context: &WorkspaceDiscoveryContext, path: &Path) -> Result
     })?;
     PackageJson::parse(path, contents.to_string()).map_err(|error| {
         eyre::eyre!(
-            "failed to parse Node package manifest {}: {error}",
-            path.display()
+            "failed to parse Node package manifest {}: {}",
+            path.display(),
+            diagnostic::hide_linked_details_below(error, path, root)
         )
     })
 }
@@ -1731,6 +1785,76 @@ snapshots:
         assert!(
             err.to_string()
                 .contains("missing the package.json \"name\"")
+        );
+    }
+
+    /// A project can ship its workspace metadata as a link to a file of the
+    /// user's, and the parser's message quotes what it could not use.
+    #[test]
+    #[cfg(unix)]
+    fn does_not_quote_linked_workspace_metadata() {
+        use std::os::unix::fs::symlink;
+
+        let temp = tempdir().unwrap();
+        // resolved, as the working directory mise starts from is
+        let temp = temp.path().canonicalize().unwrap();
+        let (home, root) = (temp.join("home"), temp.join("project"));
+        write(
+            &home.join("key"),
+            "-----BEGIN-----\ns3cr3t\n-----END-----\n",
+        );
+        write(&home.join("token.json"), "\"s3cr3t\"\n");
+        let report = |root: &Path| {
+            let error = NodeWorkspaceProvider.discover(root).unwrap_err();
+            format!("{error:#}")
+        };
+
+        // the project's own file is quoted
+        fs::create_dir_all(&root).unwrap();
+        fs::copy(home.join("key"), root.join(PNPM_WORKSPACE)).unwrap();
+        assert!(report(&root).contains("s3cr3t"));
+
+        // still quoted, under its own name, when another root file is linked
+        symlink(home.join("token.json"), root.join(PACKAGE_JSON)).unwrap();
+        let own_workspace = report(&root);
+        assert!(own_workspace.contains("s3cr3t"), "{own_workspace}");
+        assert!(!own_workspace.contains("details hidden"), "{own_workspace}");
+        fs::remove_file(root.join(PACKAGE_JSON)).unwrap();
+
+        fs::remove_file(root.join(PNPM_WORKSPACE)).unwrap();
+        symlink(home.join("key"), root.join(PNPM_WORKSPACE)).unwrap();
+        let linked_workspace = report(&root);
+        assert!(!linked_workspace.contains("s3cr3t"), "{linked_workspace}");
+        assert!(
+            linked_workspace.contains("details hidden"),
+            "{linked_workspace}"
+        );
+
+        fs::remove_file(root.join(PNPM_WORKSPACE)).unwrap();
+        write(&root.join(PNPM_WORKSPACE), "packages:\n  - packages/*\n");
+        fs::create_dir_all(root.join("packages/app")).unwrap();
+        symlink(
+            home.join("token.json"),
+            root.join("packages/app/package.json"),
+        )
+        .unwrap();
+        let linked_manifest = report(&root);
+        assert!(!linked_manifest.contains("s3cr3t"), "{linked_manifest}");
+        assert!(
+            linked_manifest.contains("details hidden"),
+            "{linked_manifest}"
+        );
+
+        // a regular file behind a directory that links out of the project is not read
+        fs::remove_dir_all(root.join("packages")).unwrap();
+        fs::create_dir_all(home.join("pkgs/app")).unwrap();
+        fs::copy(home.join("token.json"), home.join("pkgs/app/package.json")).unwrap();
+        symlink(home.join("pkgs"), root.join("packages")).unwrap();
+        let linked_dir = report(&root);
+        assert!(!linked_dir.contains("s3cr3t"), "{linked_dir}");
+        assert!(
+            linked_dir.contains("outside the workspace root"),
+            "{linked_dir}"
         );
     }
 }

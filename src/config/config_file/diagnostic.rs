@@ -1,7 +1,7 @@
 #![allow(unused_assignments)] // Fields are read by miette's derive macros at runtime
 
 use crate::dirs;
-use crate::file::display_path;
+use crate::file::{self, display_path};
 use miette::{Diagnostic, NamedSource, SourceSpan};
 use std::fmt;
 use std::path::{Path, PathBuf};
@@ -107,7 +107,9 @@ impl MiseDiagnostic {
 /// often a job log the project's author can read. Links inside the global and
 /// system config directories are the user's own; those are told apart by
 /// directory because the trust lookups need settings, which are still loading
-/// while `.miserc.toml` is parsed.
+/// while `.miserc.toml` is parsed. A path that names one of those directories
+/// and leaves it again through `..`, as a project's task include can, is not in
+/// it.
 pub(crate) fn may_quote(path: &Path) -> bool {
     may_quote_below(path, path.parent().unwrap_or(path))
 }
@@ -122,10 +124,21 @@ pub(crate) fn may_quote(path: &Path) -> bool {
 /// reaches back to the deepest directory the file shares with the working
 /// directory. The working directory comes from the OS already resolved, so the
 /// directories it shares hold no link the project put there.
+///
+/// A task include can name a file outside `root` by an absolute path, whose
+/// directories a walk down from `root` never reaches, so the walk starts at the
+/// deepest directory the file shares with `root`. A file that shares none with
+/// it is not quoted.
 pub(crate) fn may_quote_below(path: &Path, root: &Path) -> bool {
-    path.starts_with(*dirs::CONFIG)
-        || path.starts_with(*dirs::SYSTEM_CONFIG)
-        || !reached_through_link(path, &discovery_root(path, root))
+    if file::path_stays_within(path, *dirs::CONFIG)
+        || file::path_stays_within(path, *dirs::SYSTEM_CONFIG)
+    {
+        return true;
+    }
+    let Some(root) = root.ancestors().find(|dir| path.starts_with(dir)) else {
+        return false;
+    };
+    !reached_through_link(path, &discovery_root(path, root))
 }
 
 /// The shallower of `root` and the deepest ancestor `path` shares with the
@@ -229,6 +242,53 @@ fn position(source: &str, offset: usize) -> (usize, usize) {
     (line, column)
 }
 
+/// [`position`] for any number of offsets in one text. An untrusted config can hold any number
+/// of keys to locate, below any number of lines or far into one long line, so each is counted
+/// from the nearest place remembered rather than from the start of the text.
+pub struct Positions<'a> {
+    text: &'a [u8],
+    /// The 0-based line and column of every [`Self::STRIDE`]th byte, and of the end of the text.
+    every_stride: Vec<(usize, usize)>,
+}
+
+impl<'a> Positions<'a> {
+    /// Bytes between the places remembered, and so the most that are read to find a position.
+    const STRIDE: usize = 256;
+
+    pub fn new(text: &'a str) -> Self {
+        let text = text.as_bytes();
+        let mut at = (0, 0);
+        let mut every_stride = vec![at];
+        every_stride.extend(text.chunks(Self::STRIDE).map(|chunk| {
+            at = Self::after(at, chunk);
+            at
+        }));
+        Self { text, every_stride }
+    }
+
+    /// The 1-based line and column of byte `offset`.
+    pub fn line_column(&self, offset: usize) -> (usize, usize) {
+        let offset = offset.min(self.text.len());
+        let near = offset / Self::STRIDE;
+        let rest = &self.text[near * Self::STRIDE..offset];
+        let (line, column) = Self::after(self.every_stride[near], rest);
+        (line + 1, column + 1)
+    }
+
+    /// The 0-based line and column after `text`, which starts at the line and column given.
+    fn after((mut line, mut column): (usize, usize), text: &[u8]) -> (usize, usize) {
+        for byte in text {
+            match byte {
+                b'\n' => (line, column) = (line + 1, 0),
+                // a UTF-8 continuation byte is part of the character before it
+                0x80..=0xBF => {}
+                _ => column += 1,
+            }
+        }
+        (line, column)
+    }
+}
+
 /// For callers that report a `toml::de::Error` as is. Its `Display` quotes the
 /// failing line and its message can quote a value, so only the position is kept
 /// unless [`may_quote`] allows `path` to be quoted.
@@ -254,8 +314,27 @@ pub(crate) fn hide_linked_source_below(
 
 /// What a parse error about a linked file says in place of the parser's
 /// message, which can quote the file's text.
-const LINKED_DETAILS_HIDDEN: &str =
+pub(crate) const LINKED_DETAILS_HIDDEN: &str =
     "details hidden because the file is reached through a link out of the project";
+
+/// For callers that report what a JSON or YAML parser says about `path`. Such
+/// a message can quote a value (`invalid type: string "…"`), and a text with no
+/// `key: value` line is one YAML string, so [`LINKED_DETAILS_HIDDEN`] takes its
+/// place unless [`may_quote`] allows `path` to be quoted.
+///
+/// `path` was found under `root`: every directory between them is checked too, see
+/// [`may_quote_below`].
+pub(crate) fn hide_linked_details_below(
+    error: impl fmt::Display,
+    path: &Path,
+    root: &Path,
+) -> String {
+    if may_quote_below(path, root) {
+        error.to_string()
+    } else {
+        LINKED_DETAILS_HIDDEN.to_string()
+    }
+}
 
 /// The most a parse error shows of a config file, in bytes, and of the parser's
 /// message, in characters. Some config files are parsed with no trust decision
@@ -390,6 +469,28 @@ mod tests {
             assert!(!report.contains("s3cr3t"), "{report}");
             assert!(report.contains(LINKED_DETAILS_HIDDEN), "{report}");
         }
+    }
+
+    /// A task include can name a file outside the project by an absolute path:
+    /// the directories it shares with the project are where the check starts.
+    #[test]
+    fn a_file_outside_the_root_is_checked_from_what_it_shares_with_it() {
+        let tmp = tempfile::tempdir().unwrap();
+        let tmp = tmp.path().canonicalize().unwrap();
+        let (home, project, shared) = (tmp.join("home"), tmp.join("project"), tmp.join("shared"));
+        for dir in [&home, &project, &shared] {
+            std::fs::create_dir_all(dir).unwrap();
+        }
+        std::fs::write(shared.join("tasks.toml"), BODY).unwrap();
+        symlink(&home, shared.join("linked")).unwrap();
+
+        assert!(may_quote_below(&shared.join("tasks.toml"), &project));
+        assert!(!may_quote_below(
+            &shared.join("linked/tasks.toml"),
+            &project
+        ));
+        // no directory in common, so where the file comes from is unknown
+        assert!(!may_quote_below(Path::new("tasks.toml"), &project));
     }
 
     /// What `main` prints for the parse error in `source`, read as a file with
@@ -530,6 +631,36 @@ mod tests {
         assert!(!may_quote(&custom));
     }
 
+    /// The config directories are exempt by prefix, and a prefix says nothing
+    /// about a path that climbs back out of it.
+    #[test]
+    fn a_path_that_leaves_the_config_dir_through_dot_dot_is_not_the_users_own() {
+        let tmp = tempfile::tempdir().unwrap();
+        let tmp = tmp.path().canonicalize().unwrap();
+        let (home, project) = (tmp.join("home"), tmp.join("project"));
+        std::fs::create_dir_all(&home).unwrap();
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::write(home.join("private.toml"), BODY).unwrap();
+        let linked = project.join("tasks.toml");
+        symlink(home.join("private.toml"), &linked).unwrap();
+
+        // Enough `..` to reach the root from the config directory, wherever
+        // it really is: `..` at the root stays there.
+        let to_root: PathBuf = (0..dirs::CONFIG.components().count() + 16)
+            .map(|_| "..")
+            .collect();
+        let path = dirs::CONFIG
+            .join(to_root)
+            .join(linked.strip_prefix("/").unwrap());
+        assert!(path.starts_with(*dirs::CONFIG) && path.is_symlink());
+
+        assert!(may_quote(&dirs::CONFIG.join("tasks.toml")));
+        assert!(!may_quote(&path));
+        assert!(!may_quote_below(&path, &project));
+        let report = reports(&path);
+        assert!(!report.contains("s3cr3t"), "{report}");
+    }
+
     #[test]
     fn a_version_file_linked_to_another_name_is_not_read() {
         let tmp = tempfile::tempdir().unwrap();
@@ -553,6 +684,27 @@ mod tests {
         assert!(links_to_another_name(&project.join("ok")));
         assert!(!links_to_another_name(&project.join("sub/.tool-versions")));
         assert!(!links_to_another_name(&project.join(".node-version")));
+    }
+
+    #[test]
+    fn positions_are_those_counted_from_the_start() {
+        // Lines longer and shorter than a stride, with characters of several bytes across it.
+        let long = "é😀x".repeat(Positions::STRIDE);
+        let short = "=".repeat(Positions::STRIDE - 1);
+        let text = format!("{long}\n\n{short}\r\nk = 1\n");
+        let positions = Positions::new(&text);
+        for (offset, _) in text.char_indices().chain([(text.len(), ' ')]) {
+            assert_eq!(positions.line_column(offset), position(&text, offset));
+        }
+        assert_eq!(Positions::new("").line_column(0), (1, 1));
+        assert_eq!(
+            Positions::new(&short).line_column(usize::MAX),
+            position(&short, short.len())
+        );
+        assert_eq!(
+            Positions::new(&long).line_column(long.len()),
+            position(&long, long.len())
+        );
     }
 
     #[test]

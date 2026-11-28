@@ -85,13 +85,23 @@ pub fn chunkify_version(v: &str) -> Vec<String> {
     chunks
 }
 
+/// The longest range [`npm_semver_range_filter`] hands to the parser. Real
+/// ranges, such as the `devEngines` of a `package.json`, take a few dozen bytes.
+const MAX_NPM_RANGE_LEN: usize = 1024;
+
 /// Filter a list of version strings with an npm-compatible semver range.
 ///
 /// Returns `None` for non-range queries so callers can fall back to mise's
 /// existing fuzzy matching for aliases and non-semver tools.
+///
+/// The range may come from a file that is read without trust, such as a
+/// `package.json`. `Range::parse` clones the bounds it has so far for every
+/// comparator of an alternative, so its cost grows with the square of the
+/// length. A string too long to be a range is treated like one that does not
+/// parse.
 pub fn npm_semver_range_filter(versions: &[String], query: &str) -> Option<Vec<String>> {
     let query = query.trim();
-    if !is_npm_semver_range_query(query) {
+    if query.len() > MAX_NPM_RANGE_LEN || !is_npm_semver_range_query(query) {
         return None;
     }
     let range = Range::parse(query).ok()?;
@@ -231,9 +241,9 @@ pub fn semver_is_at_least(version: &str, minimum: &str) -> Option<bool> {
 #[cfg(test)]
 mod tests {
     use super::{
-        chunkify_version, is_npm_semver_range_query, npm_semver_range_filter, semver_cmp,
-        semver_is_at_least, semver_is_older_than, semver_precedence_cmp, semver_triplet,
-        split_version_prefix,
+        MAX_NPM_RANGE_LEN, chunkify_version, is_npm_semver_range_query, npm_semver_range_filter,
+        semver_cmp, semver_is_at_least, semver_is_older_than, semver_precedence_cmp,
+        semver_triplet, split_version_prefix,
     };
     use std::cmp::Ordering;
 
@@ -411,6 +421,34 @@ mod tests {
             npm_semver_range_filter(&["1.0.0".to_string()], "1.0.0"),
             None
         );
+    }
+
+    #[test]
+    fn test_npm_semver_range_filter_does_not_parse_overlong_ranges() {
+        let versions = ["1.0.0", "20.0.0"].map(String::from).to_vec();
+
+        let longest = format!(">=20{}", " >=0".repeat(255));
+        assert_eq!(longest.len(), MAX_NPM_RANGE_LEN);
+        assert_eq!(
+            npm_semver_range_filter(&versions, &longest).unwrap(),
+            vec!["20.0.0".to_string()]
+        );
+        assert_eq!(
+            npm_semver_range_filter(&versions, &format!("{longest} >=0")),
+            None
+        );
+
+        // Every `>=0` clones the lower bound with all its prerelease
+        // identifiers, so the cost grows with the square of the length. This
+        // one is small enough to parse quickly, and a range of the same shape
+        // in a 1 MB package.json would take minutes.
+        let hostile = format!(
+            ">=1.0.0-{}{}",
+            vec!["a"; 1_000].join("."),
+            " >=0".repeat(500)
+        );
+        assert!(is_npm_semver_range_query(&hostile));
+        assert_eq!(npm_semver_range_filter(&versions, &hostile), None);
     }
 
     #[test]

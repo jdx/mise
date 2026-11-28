@@ -5,6 +5,7 @@ use eyre::Result;
 use itertools::Itertools;
 
 use crate::args::{BackendArg, ToolArg};
+use crate::config::config_file::EffectiveToolRequests;
 use crate::config::{Config, ConfigMap};
 use crate::env_diff::EnvMap;
 use crate::errors::Error;
@@ -178,7 +179,10 @@ impl ToolsetBuilder {
     fn load_config_files(&self, config: &Arc<Config>, ts: &mut Toolset) -> eyre::Result<()> {
         let config_files = self.config_files.as_ref().unwrap_or(&config.config_files);
 
-        for cf in config_files.values().rev() {
+        // highest priority first, so only the requests that take effect count
+        let mut effective = EffectiveToolRequests::default();
+        let mut per_file = Vec::with_capacity(config_files.len());
+        for cf in config_files.values() {
             let is_global = config::is_global_config(cf.get_path());
             match self.scope {
                 ConfigScope::GlobalOnly if !is_global => continue,
@@ -186,7 +190,16 @@ impl ToolsetBuilder {
                 ConfigScope::SystemOnly if !config::is_system_config(cf.get_path()) => continue,
                 _ => {}
             }
-            ts.merge(cf.to_toolset()?);
+            if effective.is_full() {
+                effective.skip(cf.get_path());
+                continue;
+            }
+            let mut cf_ts = cf.to_toolset()?;
+            effective.add(cf.get_path(), &mut cf_ts.versions, |tvl| tvl.requests.len());
+            per_file.push(cf_ts);
+        }
+        for cf_ts in per_file.into_iter().rev() {
+            ts.merge(cf_ts);
         }
         let scoped_files = config_files
             .iter()

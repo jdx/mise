@@ -1815,10 +1815,6 @@ impl Fields {
     fn contains_key(&self, key: &str) -> bool {
         self.0.iter().any(|(name, _)| name == key)
     }
-
-    fn keys(&self) -> impl Iterator<Item = &String> {
-        self.0.iter().map(|(name, _)| name)
-    }
 }
 
 impl TryFrom<toml::Value> for PlatformInfo {
@@ -7597,29 +7593,43 @@ fn find_locked_backend_for_version(
     // test lockfile resolution applies to its candidates. A removed backend is
     // kept, so the tool fails with the removal error instead of quietly
     // installing from whatever backend the registry names.
-    let usable = |tool: &&LockfileTool| {
-        tool.backend.as_ref().is_some_and(|full| {
-            backend::removed_backend_error(full).is_some()
-                || backend::arg_to_backend(BackendArg::new(full.clone(), Some(full.clone())))
-                    .is_some_and(|backend| !backend::is_disabled_backend_type(&backend.get_type()))
-        })
+    let usable = |full: &str| {
+        backend::removed_backend_error(full).is_some()
+            || backend::arg_to_backend(BackendArg::new(full.to_string(), Some(full.to_string())))
+                .is_some_and(|backend| !backend::is_disabled_backend_type(&backend.get_type()))
     };
-    // The lockfile with the highest precedence that locks the tool decides
-    // alone: a global or parent lockfile already on another backend must not
-    // override or split a project's entries.
     let lockfiles = read_lockfiles_by_precedence(config);
-    let entries = lockfiles
+    let entries = usable_lock_entries(&lockfiles, short, usable)?;
+    locked_backend(&entries, version)
+}
+
+/// The entries of `short` in the lockfile with the highest precedence that
+/// has any whose backend is `usable`: a global or parent lockfile already on
+/// another backend must not override or split a project's entries.
+///
+/// `usable` constructs a backend, and a tool can have an entry per version
+/// locked, so it is asked once per distinct backend.
+fn usable_lock_entries<'a>(
+    lockfiles: &'a [Arc<Lockfile>],
+    short: &str,
+    mut usable: impl FnMut(&str) -> bool,
+) -> Option<Vec<&'a LockfileTool>> {
+    let mut known: HashMap<&str, bool> = HashMap::new();
+    lockfiles
         .iter()
         .map(|lockfile| {
             lockfile
                 .tools_for(short)
                 .into_iter()
                 .flatten()
-                .filter(usable)
+                .filter(|tool| {
+                    tool.backend
+                        .as_deref()
+                        .is_some_and(|full| *known.entry(full).or_insert_with(|| usable(full)))
+                })
                 .collect::<Vec<_>>()
         })
-        .find(|entries| !entries.is_empty())?;
-    locked_backend(&entries, version)
+        .find(|entries| !entries.is_empty())
 }
 
 /// Which of a tool's lock entries decides its backend. Without a `version`,
@@ -7769,16 +7779,15 @@ impl TryFrom<toml::Value> for LockfileTool {
                     }
                 }
                 // Handle inline table format: "platforms.linux-x64" = { ... }
-                let platform_keys: Vec<_> = t
-                    .keys()
-                    .filter(|k| k.starts_with("platforms."))
-                    .cloned()
-                    .collect();
-                for key in platform_keys {
-                    if let Some(platform_info) = t.remove(&key) {
-                        let platform_name = key.strip_prefix("platforms.").unwrap().to_string();
-                        platforms.insert(platform_name, PlatformInfo::try_from(platform_info)?);
-                    }
+                // The fields keep their order, so removing a key shifts every
+                // later one: they are split in one pass instead.
+                let (inline_platforms, rest): (Vec<_>, Vec<_>) =
+                    t.0.into_iter()
+                        .partition(|(key, _)| key.starts_with("platforms."));
+                let mut t = Fields(rest);
+                for (key, platform_info) in inline_platforms {
+                    let platform_name = key.strip_prefix("platforms.").unwrap().to_string();
+                    platforms.insert(platform_name, PlatformInfo::try_from(platform_info)?);
                 }
                 let mut options = BTreeMap::new();
                 if let Some(opts) = t.remove("options") {
