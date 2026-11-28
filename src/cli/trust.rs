@@ -219,15 +219,26 @@ fn nearest_local_config_file(filenames: &[String]) -> Option<PathBuf> {
 /// The trust roots `--ignore` and `--untrust` act on for `path`, whose own trust root is `cfr`.
 /// The project's root comes first.
 ///
-/// A file the user named stands only for its own root, and in paranoid mode, where trust is per
-/// file, every file stands only for `cfr`. Otherwise, given a directory or no path, a project
-/// stands for the config roots nested in it, a conf.d folder or `.config/mise`, whichever of its
-/// files was picked: the project's root and each nested root it holds now, including one whose
-/// only configs are for another environment. That way a file the project ships in such a folder
-/// cannot take the refusal for itself and leave the project trusted.
-fn refused_roots(path: &Path, cfr: &Path, named_file: bool) -> Vec<PathBuf> {
-    if named_file || Settings::get().paranoid.config() {
+/// A file the user named stands only for its own root. Otherwise, given a directory or no path, a
+/// project stands for the config roots nested in it, a conf.d folder or `.config/mise`, whichever
+/// of its files was picked: the project's root and each nested root it holds now, including one
+/// whose only configs are for another environment. That way a file the project ships in such a
+/// folder cannot take the refusal for itself and leave the project trusted.
+///
+/// In paranoid mode, where each config is its own trust root, the project stands for each of
+/// its configs on disk instead: those in its nested roots, those for any environment, and the
+/// files in `filenames` there, such as idiomatic version files.
+fn refused_roots(path: &Path, cfr: &Path, named_file: bool, filenames: &[String]) -> Vec<PathBuf> {
+    if named_file {
         return vec![cfr.to_path_buf()];
+    }
+    if Settings::get().paranoid.config() {
+        let project = config_file::config_project(path);
+        return std::iter::once(cfr.to_path_buf())
+            .chain(config::project_config_files(&project, filenames))
+            .filter(|file| !is_global_config(file) && config_file::config_project(file) == project)
+            .unique()
+            .collect();
     }
     let mut roots = project_roots(path, cfr);
     let project = roots[0].clone();
@@ -335,9 +346,23 @@ pub(super) fn untrust_config_file(
         },
     };
     let cfr = cli_trust_root(&path, named_file);
-    let mut roots = refused_roots(&path, &cfr, named_file);
-    if !named_file && !Settings::get().paranoid.config() {
-        let recorded = recorded_nested_roots(&roots);
+    let mut roots = refused_roots(&path, &cfr, named_file, filenames);
+    if !named_file {
+        // An approval of a config the checkout lacks, such as one only another branch has, goes
+        // with the project's, so it asks again when that branch brings the config back.
+        let recorded = if Settings::get().paranoid.config() {
+            let project = config_file::config_project(&path);
+            config_file::trusted_configs_of_project(&project)
+                .into_iter()
+                .filter(|recorded| {
+                    !roots
+                        .iter()
+                        .any(|root| root.canonicalize().is_ok_and(|root| root == *recorded))
+                })
+                .collect()
+        } else {
+            recorded_nested_roots(&roots)
+        };
         roots.extend(recorded);
     }
     for root in &roots {
@@ -428,7 +453,7 @@ impl Trust {
             );
         }
         let cfr = cli_trust_root(&path, self.named_file());
-        let roots = refused_roots(&path, &cfr, self.named_file());
+        let roots = refused_roots(&path, &cfr, self.named_file(), &self.config_filenames);
         // The project's ignore covers every root nested in it, also one that arrives later
         // (`project_is_ignored`), so the nested roots get no ignore of their own. That keeps the
         // project's ignore apart from one the user gave a nested root by naming its file:

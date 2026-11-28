@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+
+# With paranoid `config` on, trust is per file. Revoking or ignoring a directory, or running with
+# no path, still covers every config of the project: its nested roots and its configs for other
+# environments. Naming a file acts on that file only.
+export MISE_TRUSTED_CONFIG_PATHS=""
+export MISE_PARANOID=config
+export MISE_YES=0
+unset CI GITHUB_ACTIONS GITHUB_ACTION 2>/dev/null || true
+
+make_project() {
+  mkdir -p "$1/.config/mise" "$1/.mise/conf.d"
+  printf '[env]\nTOP = "top"\n' >"$1/mise.toml"
+  printf '[env]\nSTAGED = "staged"\n' >"$1/mise.staging.toml"
+  printf '[env]\nNESTED = "nested"\n' >"$1/.config/mise/config.toml"
+  printf '[env]\nFRAGMENT = "fragment"\n' >"$1/.mise/conf.d/x.toml"
+  mise trust "$1/mise.toml"
+  mise trust "$1/.config/mise/config.toml"
+  mise trust "$1/.mise/conf.d/x.toml"
+  MISE_ENV=staging mise trust "$1/mise.staging.toml"
+  assert_contains "MISE_ENV=staging mise -C $1 env" "STAGED=staged"
+  assert_contains "mise -C $1 env" "NESTED=nested"
+  assert_contains "mise -C $1 env" "FRAGMENT=fragment"
+}
+
+# After the project is revoked, trusting its mise.toml again approves that file only.
+assert_all_revoked() {
+  mise trust "$1/mise.toml"
+  assert_fail_contains "mise -C $1 env 2>&1" "not trusted"
+  rm "$1/.config/mise/config.toml"
+  assert_fail_contains "mise -C $1 env 2>&1" "not trusted"
+  rm "$1/.mise/conf.d/x.toml"
+  assert_contains "mise -C $1 env" "TOP=top"
+  assert_fail_contains "MISE_ENV=staging mise -C $1 env 2>&1" "not trusted"
+}
+
+# revoking by directory
+make_project revoked
+assert_contains "mise untrust revoked 2>&1" "untrusted ~/workdir/revoked/mise.staging.toml"
+assert_all_revoked revoked
+
+# revoking with no path, from inside the project
+make_project here
+assert_contains "cd here && mise untrust 2>&1" "untrusted ~/workdir/here/.config/mise/config.toml"
+assert_all_revoked here
+
+# ignoring by directory
+make_project ignored
+assert_contains "mise trust --ignore ignored 2>&1" "ignored ~/workdir/ignored/.mise/conf.d/x.toml"
+assert_not_contains "MISE_ENV=staging mise -C ignored env 2>&1" "=top"
+assert_not_contains "MISE_ENV=staging mise -C ignored env 2>&1" "=staged"
+assert_not_contains "MISE_ENV=staging mise -C ignored env 2>&1" "=nested"
+assert_not_contains "MISE_ENV=staging mise -C ignored env 2>&1" "=fragment"
+
+# Naming a file ignores only that file.
+make_project named
+assert "mise trust --ignore named/.config/mise/config.toml 2>&1" "mise ignored ~/workdir/named/.config/mise/config.toml"
+assert_not_contains "mise -C named env" "NESTED"
+assert_contains "mise -C named env" "TOP=top"
+assert_contains "mise -C named env" "FRAGMENT=fragment"
+assert_contains "MISE_ENV=staging mise -C named env" "STAGED=staged"

@@ -368,19 +368,26 @@ pub(super) fn trust_typed_command(path: &Path, config_root: &Path) -> eyre::Resu
         } else {
             config_root
         };
-        let undo = match untrust_argument(named) {
-            Some(arg) => format!("Undo with `mise untrust {arg}`."),
-            None => format!(
-                "Undo with `mise untrust` and the path {}, quoted for your shell.",
-                named.display()
-            ),
-        };
+        let undo = undo_hint(named, untrust_argument(named));
         info!(
             "trusted {} because you ran a mise command there. {undo}",
             style::epath(config_root),
         );
     }
     Ok(true)
+}
+
+/// How to undo the trust in `named`: the `mise untrust` to type when `argument` quotes it for the
+/// shell, else the path to quote, with its control characters escaped so that a directory name
+/// cannot rewrite the terminal.
+fn undo_hint(named: &Path, argument: Option<String>) -> String {
+    match argument {
+        Some(arg) => format!("Undo with `mise untrust {arg}`."),
+        None => format!(
+            "Undo with `mise untrust` and the path {}, quoted for your shell.",
+            style::escape_controls(&named.display().to_string())
+        ),
+    }
 }
 
 /// `path` as the argument of the `mise untrust` that undoes this trust, quoted for the shell
@@ -406,6 +413,9 @@ fn untrust_argument(path: &Path) -> Option<String> {
 ///   POSIX single quotes, which also keep a Windows path's backslashes. On Unix a path in the home
 ///   directory starts with an unquoted `~`, which expands only when it is not quoted.
 /// - Any other shell, or none named, gets only a full path with nothing any shell reads in it.
+///
+/// A path with a control character gets none: quotes keep it as it is, and printed in the hint
+/// it would reach the terminal.
 fn quote_untrust_path(
     path: &Path,
     shell: Option<crate::shell::ShellType>,
@@ -413,6 +423,9 @@ fn quote_untrust_path(
 ) -> Option<String> {
     use crate::shell::ShellType;
     let full = path.display().to_string();
+    if full.chars().any(char::is_control) {
+        return None;
+    }
     let bare = |backslash: bool| {
         let plain =
             |c: char| c.is_ascii_alphanumeric() || "/:._-".contains(c) || (backslash && c == '\\');
@@ -587,6 +600,28 @@ mod tests {
                 "{shell:?}"
             );
         }
+    }
+
+    /// Quotes keep a control character as it is, so a path with one is not quoted for any shell,
+    /// and the hint shows it escaped.
+    #[test]
+    fn undo_hint_escapes_a_path_with_a_control_character() {
+        use crate::shell::ShellType;
+        let path = Path::new("/work/site\x1b[2J\x07/mise.toml");
+        for shell in [
+            None,
+            Some(ShellType::Bash),
+            Some(ShellType::Zsh),
+            Some(ShellType::Fish),
+            Some(ShellType::Pwsh),
+        ] {
+            for windows in [false, true] {
+                assert_eq!(quote_untrust_path(path, shell, windows), None, "{shell:?}");
+            }
+        }
+        let hint = undo_hint(path, None);
+        assert!(!hint.chars().any(char::is_control), "{hint:?}");
+        assert!(hint.contains(r"site\u{1b}[2J\u{7}"), "{hint:?}");
     }
 
     #[test]
