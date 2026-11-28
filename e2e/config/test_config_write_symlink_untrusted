@@ -69,6 +69,14 @@ assert "mise set FOO=bar"
 assert_contains "cat config/real.toml" 'FOO = "bar"'
 assert "test -L mise.toml"
 
+echo "=== so is a directory link inside the project above a directory the write creates ==="
+mkdir -p ../in-link/real
+cd ../in-link || exit 1
+ln -s real .config
+assert "MISE_TRUSTED_CONFIG_PATHS=$PWD mise set --file .config/mise/config.toml NEWDIR=1"
+assert_contains "cat real/mise/config.toml" 'NEWDIR = "1"'
+cd ../proj || exit 1
+
 echo "=== trust that yes grants in a fresh clone does not cover a link out ==="
 mkdir -p ../clone
 cat <<'TOML' >../outside/clone.toml
@@ -81,6 +89,14 @@ cd ../clone || exit 1
 ln -s ../outside/clone.toml mise.toml
 assert_fail_contains "MISE_YES=1 mise use --rm tiny 2>&1" "trusted before this command"
 assert_contains "cat ../outside/clone.toml" 'tiny = "1"'
+echo "=== and mise use refuses it before installing anything ==="
+# A fresh clone: the run above recorded the trust that yes granted.
+mkdir -p ../clone-use
+cd ../clone-use || exit 1
+ln -s ../outside/clone.toml mise.toml
+assert_fail_contains "MISE_YES=1 mise use dummy@1.0.0 2>&1" "trusted before this command"
+assert_fail "test -e $MISE_DATA_DIR/installs/dummy/1.0.0"
+assert_not_contains "cat ../outside/clone.toml" "dummy"
 cd ../proj || exit 1
 
 echo "=== a linked directory out of the project is not followed ==="
@@ -131,6 +147,33 @@ assert_not_contains "cat $HOME/.config/mise/config.toml" "HOMELINK"
 ln -s .config/mise cfg
 assert_fail_contains "mise set --file cfg/config.toml CFGLINK=1 2>&1" "Write global config with"
 assert_not_contains "cat $HOME/.config/mise/config.toml" "CFGLINK"
+# nor is one to a folder of global config's conf.d, for a fragment that does not exist yet
+mkdir -p .config/mise/conf.d/folder
+rm .mise
+ln -s .config/mise/conf.d/folder .mise
+assert_fail_contains "mise set --file .mise/mise.toml FRAGLINK=1 2>&1" "Write global config with"
+assert_fail "test -e $HOME/.config/mise/conf.d/folder/mise.toml"
+# nor is a file link to a global config file that does not exist yet, which the home directory's
+# project root would otherwise hold
+ln -s .config/mise/config.local.toml mise.toml
+assert_fail_contains "mise set --file mise.toml FILELINK=1 2>&1" "Write global config with"
+assert_fail "test -e $HOME/.config/mise/config.local.toml"
+rm mise.toml
+# nor is one to a fragment in a folder of conf.d that does not exist yet, which the write would
+# create and global discovery would load
+ln -s .config/mise/conf.d/newfolder/mise.toml mise.toml
+assert_fail_contains "mise set --file mise.toml NEWFOLDER=1 2>&1" "Write global config with"
+assert_fail "test -e $HOME/.config/mise/conf.d/newfolder"
+rm mise.toml
+# nor is a task script's link to global config, which stays in the home directory's project root
+rm .mise
+mkdir -p mise-tasks
+ln -s ../.config/mise/config.toml mise-tasks/gcfg
+assert_fail_contains "mise tasks add --file --force gcfg -- echo replaced 2>&1" "leads into global config"
+assert_fail_contains "MISE_SAFE=1 mise tasks add --file --force gcfg -- echo replaced 2>&1" "leads into global config"
+assert_contains "cat $HOME/.config/mise/config.toml" 'FOO = "bar"'
+rm -r mise-tasks
+ln -s .config/mise .mise
 cd "$back" || exit 1
 
 echo "=== nor is one that would create a global config file ==="
@@ -209,6 +252,14 @@ assert_contains "mise edit --dry-run --tool-versions .tool-versions 2>&1" 'tiny 
 assert_fail "test -e ../outside/preview.toml"
 assert_fail_contains "mise edit --tool-versions .tool-versions 2>&1" "refusing to write"
 assert_fail "test -e ../outside/preview.toml"
+# mise use previews the change to the link too, and only the write refuses it. Without --path it
+# would pick .tool-versions, since the dangling link does not exist yet.
+assert_contains "mise use --dry-run --path mise.toml tiny@1.0.0 2>&1" "would update"
+# --dry-run-code exits 1 to say there is a change
+assert_fail_contains "mise use --dry-run-code --path mise.toml tiny@1.0.0 2>&1" "would update"
+assert_fail "test -e ../outside/preview.toml"
+assert_fail_contains "mise use --path mise.toml tiny@1.0.0 2>&1" "refusing to write"
+assert_fail "test -e ../outside/preview.toml"
 
 echo "=== a bare file name's link inside the project is followed ==="
 mkdir -p ../bare/config
@@ -231,6 +282,41 @@ assert "test -e ../outside/tasks/out"
 assert_fail_contains "mise tasks add --file new -- echo new 2>&1" "through a linked directory"
 assert_fail "test -e ../outside/tasks/new"
 
+echo "=== nor is a conf.d folder linked out of the project, though it is a config root ==="
+mkdir -p ../task-folder/.mise/conf.d ../outside/folder/tasks
+printf '#!/usr/bin/env bash\necho folder\n' >../outside/folder/tasks/fout
+chmod +x ../outside/folder/tasks/fout
+printf '[task_config]\nincludes = ["tasks"]\n' >../outside/folder/mise.toml
+cd ../task-folder || exit 1
+echo "[tools]" >mise.toml
+ln -s ../../../outside/folder .mise/conf.d/folder
+# safe mode loads the folder untrusted, and never follows a link out of the project
+assert_contains "MISE_SAFE=1 mise tasks ls" "fout"
+assert_fail_contains "MISE_SAFE=1 MISE_YES=1 mise tasks rm fout 2>&1" "through a linked directory"
+assert "test -e ../outside/folder/tasks/fout"
+
+echo "=== nor is .config/mise linked out of the project, though its mise.toml makes it a root ==="
+mkdir -p ../task-dot-config/.config ../outside/dot-config/tasks
+echo "[tools]" >../outside/dot-config/mise.toml
+cd ../task-dot-config || exit 1
+ln -s ../../outside/dot-config .config/mise
+assert_fail_contains "MISE_SAFE=1 mise tasks add --file new -- echo new 2>&1" "through a linked directory"
+assert_fail "test -e ../outside/dot-config/tasks/new"
+
+echo "=== nor a task directory linked into a state directory inside the project ==="
+mkdir -p ../task-state/state/scripts
+cd ../task-state || exit 1
+echo "[tools]" >mise.toml
+ln -s state/scripts mise-tasks
+# control: while the state directory is elsewhere, the link inside the project is followed
+assert "MISE_TRUSTED_CONFIG_PATHS=$PWD mise tasks add --file control -- echo control"
+assert "test -e state/scripts/control"
+assert_fail_contains "MISE_TRUSTED_CONFIG_PATHS=$PWD MISE_STATE_DIR=$PWD/state mise tasks add --file planted -- echo planted 2>&1" "in mise's state directory"
+assert_fail "test -e state/scripts/planted"
+assert_fail_contains "MISE_TRUSTED_CONFIG_PATHS=$PWD MISE_STATE_DIR=$PWD/state MISE_YES=1 mise tasks rm control 2>&1" "in mise's state directory"
+assert "test -e state/scripts/control"
+cd ../task-link || exit 1
+
 echo "=== a task script's own link out is removed, not followed ==="
 rm mise-tasks
 mkdir mise-tasks
@@ -247,3 +333,92 @@ ln -s ../outside/tasks mise-tasks
 assert "mise trust"
 assert "MISE_YES=1 mise tasks rm out"
 assert_fail "test -e ../outside/tasks/out"
+
+echo "=== a linked .mise is checked for a file mise does not look for there ==="
+mkdir -p ../dot-mise ../outside/dot-mise
+echo "[env]" >../outside/dot-mise/mise.local.toml
+cd ../dot-mise || exit 1
+echo "[tools]" >mise.toml
+ln -s ../outside/dot-mise .mise
+assert_fail_contains "MISE_SAFE=1 mise set --file .mise/mise.local.toml FOO=bar 2>&1" "refusing to write"
+assert_not_contains "cat ../outside/dot-mise/mise.local.toml" "FOO"
+
+echo "=== a path that goes up out of a link with .. is refused ==="
+# The system opens linked/../mise.toml beside where the link leads, not in the project, so the
+# file mise edit would read is not the one its write would replace.
+mkdir -p ../dotdot ../outside/deep/dir
+echo "[env]" >../outside/deep/mise.toml
+cd ../dotdot || exit 1
+echo "[env]" >mise.toml
+ln -s ../outside/deep/dir linked
+assert_fail_contains "mise edit --force linked/../mise.toml 2>&1" "goes up from"
+assert "cat mise.toml" "[env]"
+assert "cat ../outside/deep/mise.toml" "[env]"
+# a .. out of a regular directory names the file it appears to
+mkdir sub
+assert "mise edit --force sub/../mise.toml"
+assert_contains "cat mise.toml" "mise config files are hierarchical"
+
+echo "=== a task include that goes up out of a link with .. is refused ==="
+# Discovery reads linked/../tasks beside where the link leads, so the script it found is not the
+# one the change would reach in the project's own tasks directory.
+mkdir -p ../task-dotdot ../outside/tdeep/dir ../outside/tdeep/tasks
+printf '#!/usr/bin/env bash\necho outside\n' >../outside/tdeep/tasks/dd
+chmod +x ../outside/tdeep/tasks/dd
+cd ../task-dotdot || exit 1
+mkdir tasks
+printf '#!/usr/bin/env bash\necho inside\n' >tasks/dd
+chmod +x tasks/dd
+ln -s ../outside/tdeep/dir linked
+cat <<'TOML' >mise.toml
+[task_config]
+includes = ["linked/../tasks"]
+TOML
+mise trust mise.toml
+assert_contains "mise run dd" "outside"
+assert_fail_contains "MISE_YES=1 mise tasks rm dd 2>&1" "goes up from"
+assert_contains "cat tasks/dd" "inside"
+assert_contains "cat ../outside/tdeep/tasks/dd" "outside"
+assert_fail_contains "mise tasks add --file --force dd -- echo replaced 2>&1" "goes up from"
+assert_contains "cat tasks/dd" "inside"
+assert_contains "cat ../outside/tdeep/tasks/dd" "outside"
+
+echo "=== mise tasks edit checks an existing script that links out of the project ==="
+# The editor writes through the script's link, so it is refused like a write by mise, and once
+# the project was trusted before the command, the editor opens the file the check approved.
+mkdir -p ../edit-link/mise-tasks ../outside/edit
+printf '#!/usr/bin/env bash\necho edited\n' >../outside/edit/ed
+chmod +x ../outside/edit/ed
+cd ../edit-link || exit 1
+echo "[tools]" >mise.toml
+ln -s ../../outside/edit/ed mise-tasks/ed
+assert_fail_contains "EDITOR=echo mise tasks edit ed 2>&1" "refusing to write"
+assert "mise trust ."
+assert "EDITOR=echo mise tasks edit ed" "$(cd ../outside/edit && pwd -P)/ed"
+# --path only prints the path, so it writes nothing and checks nothing
+assert "mise tasks edit --path ed" "$PWD/mise-tasks/ed"
+
+echo "=== mise tasks edit checks a TOML task file that links out of the project ==="
+# The editor saves the file through its link, so the config write check applies to it as it does
+# to `mise tasks rm`, and the editor opens the file the check approved.
+mkdir -p ../edit-toml ../outside/edit-toml
+printf '[tasks.tt]\nrun = "echo hi"\n' >../outside/edit-toml/mise.toml
+cd ../edit-toml || exit 1
+ln -s ../outside/edit-toml/mise.toml mise.toml
+assert_fail_contains "EDITOR=echo mise tasks edit tt 2>&1" "refusing to write"
+assert "mise tasks edit --path tt" "$PWD/mise.toml"
+assert "mise trust mise.toml"
+assert "EDITOR=echo mise tasks edit tt" "$(cd ../outside/edit-toml && pwd -P)/mise.toml"
+
+echo "=== the config directory MISE_GLOBAL_CONFIG_FILE replaces holds no global config ==="
+# Global discovery then reads only the file the variable names, so a file in the default
+# directory is a project's like any other: in safe mode its link out is not followed.
+override_target="$(dirname "$HOME")/override-target"
+mkdir -p "$override_target" "$HOME/.config/mise/conf.d"
+echo "[env]" >"$override_target/linked.toml"
+ln -s "$override_target/linked.toml" "$HOME/.config/mise/conf.d/linked.toml"
+assert_fail_contains "MISE_GLOBAL_CONFIG_FILE=$HOME/elsewhere.toml MISE_SAFE=1 mise set --file $HOME/.config/mise/conf.d/linked.toml OVERRIDDEN=1 2>&1" "refusing to write"
+assert_not_contains "cat $override_target/linked.toml" "OVERRIDDEN"
+# without the variable the directory is global config, which may link anywhere
+assert "MISE_SAFE=1 mise set --file $HOME/.config/mise/conf.d/linked.toml GLOBAL=1"
+assert_contains "cat $override_target/linked.toml" 'GLOBAL = "1"'

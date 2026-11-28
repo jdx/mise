@@ -27,6 +27,37 @@ cat <<'TOML' >outside/victim.toml
 [env]
 LINKED = "1"
 TOML
+
+# A link to a file in a directory another account may write, here or anywhere above, keeps the
+# trust prompt, so a typed command trusts nothing and the write below is never reached. The e2e
+# harness runs in a container whose /tmp is a 777 directory that is not sticky. As in
+# test_trust_typed_on_terminal, this says no to a directory writable by the user's private
+# group too, which only skips the test.
+entries_guarded_up_from() {
+  local dir uid owner
+  dir="$(cd "$1" && pwd -P)" || return 1
+  uid="$(id -u)" || return 1
+  while :; do
+    owner="$(stat -c %u "$dir" 2>/dev/null || stat -f %u "$dir")" || return 1
+    [[ $owner == 0 || $owner == "$uid" ]] || return 1
+    [[ -z "$(find "$dir" -maxdepth 0 -perm /022 ! -perm -1000)" ]] || return 1
+    [[ $dir == / ]] && return 0
+    dir="$(dirname "$dir")"
+  done
+}
+# The test's own directories, up to the harness's temporary root, are made by this account, under a
+# umask that may leave them group-writable.
+test_root="$(cd "$HOME/.." && pwd -P)"
+dir="$(cd outside && pwd -P)"
+while [[ $dir == "$test_root"* && $dir != / ]]; do
+  chmod go-w "$dir" || true
+  dir="$(dirname "$dir")"
+done
+if ! entries_guarded_up_from outside; then
+  echo "skipping: a directory above the link target may be written by another account" >&2
+  exit 0
+fi
+
 cd proj || exit 1
 ln -s ../outside/victim.toml mise.toml
 

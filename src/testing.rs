@@ -11,6 +11,11 @@ use crate::{env, file};
 /// Set once the harness has written the fixture tree; see [`init`].
 const FIXTURES_READY_ENV: &str = "__MISE_TEST_FIXTURES_READY";
 
+/// Set for a child test process that checks the default global config directory: the fixture
+/// otherwise replaces that directory with a single file through `MISE_GLOBAL_CONFIG_FILE`, and
+/// discovery then reads no other file in it.
+pub const DEFAULT_GLOBAL_CONFIG_ENV: &str = "__MISE_TEST_DEFAULT_GLOBAL_CONFIG";
+
 /// Point mise at the `test/` fixture tree and write its config files.
 pub fn init() {
     // Invocations that only list tests (`--list`, which nextest runs twice per
@@ -50,7 +55,11 @@ pub fn init() {
     env::set_var("MISE_CONFIG_DIR", env::HOME.join("config"));
     env::set_var("MISE_ENV", "");
     env::set_var("MISE_DATA_DIR", env::HOME.join("data"));
-    env::set_var("MISE_GLOBAL_CONFIG_FILE", "~/config/config.toml");
+    if env::var_os(DEFAULT_GLOBAL_CONFIG_ENV).is_some() {
+        env::remove_var("MISE_GLOBAL_CONFIG_FILE");
+    } else {
+        env::set_var("MISE_GLOBAL_CONFIG_FILE", "~/config/config.toml");
+    }
     env::set_var("MISE_SYSTEM_CONFIG_FILE", "nonexistent");
     env::set_var(
         "MISE_OVERRIDE_CONFIG_FILENAMES",

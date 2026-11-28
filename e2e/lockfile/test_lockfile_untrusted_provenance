@@ -116,14 +116,19 @@ assert_signature_refused "MISE_SAFE=1 mise install --locked"
 write_lock 'provenance = "minisign"'
 assert_signature_refused "MISE_SAFE=1 mise install"
 
-# the same outside safe mode while the project is not trusted: a missing
-# command installs its tool without asking for trust
-write_lock
-assert_contains "MISE_YES=0 mise trust --show" "untrusted"
-assert_signature_refused "MISE_YES=0 mise hook-not-found -s bash zls"
-write_lock 'provenance = "minisign"'
-assert_signature_refused "MISE_YES=0 mise hook-not-found -s bash zls"
-assert_contains "MISE_YES=0 mise trust --show" "untrusted"
+# outside safe mode, while the project is not trusted, a missing command
+# installs nothing for it: a mistyped command is no consent to the project's
+# config, so neither its tool request nor its lockfile is acted on, and the
+# project stays untrusted
+for provenance in "" 'provenance = "minisign"'; do
+  write_lock "$provenance"
+  assert_contains "MISE_YES=0 mise trust --show" "untrusted"
+  : >../requests.log
+  assert_fail "MISE_YES=0 mise hook-not-found -s bash zls"
+  assert_not_contains "cat ../requests.log" "zls"
+  assert_directory_not_exists "$MISE_DATA_DIR/installs/zls"
+  assert_contains "MISE_YES=0 mise trust --show" "untrusted"
+done
 
 # once the project is trusted its lockfile vouches for the download it
 # recorded, and the install does not repeat the check

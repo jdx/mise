@@ -76,9 +76,10 @@ impl InteractiveConfig {
                 self.handle_rename()?;
             }
             Key::Char('s') if !self.dry_run => {
-                self.save()?;
-                let content = self.doc.to_toml();
-                return Ok(Some(ConfigResult::Saved(content)));
+                if self.save()? {
+                    let content = self.doc.to_toml();
+                    return Ok(Some(ConfigResult::Saved(content)));
+                }
             }
             Key::Char('q') | Key::Escape => {
                 if self.dry_run {
@@ -192,9 +193,11 @@ impl InteractiveConfig {
     pub(super) fn handle_confirm_quit_key(&mut self, key: Key) -> io::Result<Option<ConfigResult>> {
         match key {
             Key::Char('y') | Key::Char('Y') => {
-                self.save()?;
-                let content = self.doc.to_toml();
-                return Ok(Some(ConfigResult::Saved(content)));
+                if self.save()? {
+                    let content = self.doc.to_toml();
+                    return Ok(Some(ConfigResult::Saved(content)));
+                }
+                self.mode = Mode::Navigate;
             }
             Key::Char('n') | Key::Char('N') => {
                 return Ok(Some(ConfigResult::Cancelled));

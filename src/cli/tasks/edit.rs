@@ -1,4 +1,4 @@
-use crate::config::Config;
+use crate::config::{Config, config_file};
 use crate::task::Task;
 use crate::{dirs, file};
 use eyre::Result;
@@ -46,16 +46,29 @@ impl TasksEdit {
             Task::new(&path, path.parent().unwrap(), &project_root)?
         };
         let file = &task.config_source;
-        if !file.exists() {
-            super::write::script_check_before_write(file).await?;
-            file::create_dir_all(file.parent().unwrap())?;
-            file::write(file, default_task())?;
-            file::make_executable(file)?;
+        let create = !file.exists();
+        // A file the editor will write is checked like one mise writes, also when it exists: the
+        // editor follows its links, and the check refuses one out of the project. A script is
+        // checked as `mise tasks add --file` checks it, a TOML file as config writes are. The
+        // editor then opens the destination the check approved, not the links again.
+        let destination = if create || (!self.path && !super::write::is_toml(file)) {
+            super::write::script_check_before_write(file).await?
+        } else if !self.path {
+            config_file::checked_write_destination(file)?
+        } else {
+            file.clone()
+        };
+        if create {
+            if let Some(parent) = destination.parent() {
+                file::create_dir_all(parent)?;
+            }
+            file::write(&destination, default_task())?;
+            file::make_executable(&destination)?;
         }
         if self.path {
             miseprintln!("{}", file.display());
         } else {
-            crate::cli::editor::open_in_editor(file.as_path())?;
+            crate::cli::editor::open_in_editor(&destination)?;
         }
 
         Ok(())

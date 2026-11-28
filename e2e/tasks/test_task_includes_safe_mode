@@ -31,6 +31,14 @@ EOF
   assert_not_contains "MISE_SAFE=1 mise lock --dry-run 2>&1" "s3cr3t"
 done
 
+echo "=== a glob whose folder is outside is skipped before the folder is walked ==="
+cat <<'EOF' >mise.toml
+[task_config]
+includes = ["../private/**/*.toml"]
+EOF
+assert_contains "MISE_SAFE=1 mise tasks ls 2>&1" "ignoring task directory ~/workdir/../private:"
+assert_not_contains "MISE_SAFE=1 mise tasks ls 2>&1" "ignoring task file"
+
 echo "=== a file that parses is not listed, also through a link ==="
 ln -s "$HOME/private/hosts.toml" linked.toml
 for include in "~/private/hosts.toml" "linked.toml"; do
@@ -171,7 +179,7 @@ EOF
 assert "mise trust remote-proj/mise.toml"
 assert "mise install dummy@1.0.0"
 assert "mise ls -C remote-proj"
-assert_contains "MISE_SAFE=1 mise -C other prune --dry-run 2>&1" "not pruning: safe mode (MISE_SAFE=1) skipped the remote task include \`git::https://example.invalid"
+assert_contains "MISE_SAFE=1 mise -C other prune --dry-run 2>&1" 'not pruning: safe mode (MISE_SAFE=1) skipped the remote task include `git::https://example.invalid'
 assert_not_contains "MISE_SAFE=1 mise -C other prune --dry-run 2>&1" "dummy@1.0.0"
 rm -r remote-proj other
 
@@ -224,6 +232,31 @@ cat <<EOF >"$MISE_CONFIG_DIR/config.toml"
 includes = ["$MISE_TMP_DIR/tasks"]
 EOF
 assert_contains "MISE_SAFE=1 mise tasks ls" "from-global-include"
+
+echo "=== a project's include of a link in the global task directory is judged where it leads ==="
+# Global config includes another directory, so only the project's include reads this one
+# (the home directory's own default walk reaches it too, but bounded by the home directory).
+outside_private="$(dirname "$HOME")/outside-private"
+mkdir -p "$outside_private" "$MISE_CONFIG_DIR/tasks"
+echo 'oauth_token = "0uts1de"' >"$outside_private/hosts.toml"
+ln -s "$outside_private/hosts.toml" "$MISE_CONFIG_DIR/tasks/hosts.toml"
+cat <<EOF >mise.toml
+[task_config]
+includes = ["$MISE_CONFIG_DIR/tasks/hosts.toml"]
+EOF
+assert_contains "mise tasks ls --json" "0uts1de"
+assert_not_contains "MISE_SAFE=1 mise tasks ls --json 2>&1" "0uts1de"
+rm mise.toml "$MISE_CONFIG_DIR/tasks/hosts.toml"
+
+echo "=== the global task directory still follows its links without a global config ==="
+outside_global="$(dirname "$HOME")/outside-global"
+mkdir -p "$outside_global"
+printf '[linked-global]\nrun = "echo linked"\n' >"$outside_global/linked.toml"
+ln -s "$outside_global/linked.toml" "$MISE_CONFIG_DIR/tasks/linked.toml"
+mv "$MISE_CONFIG_DIR/config.toml" "$MISE_CONFIG_DIR/config.toml.before"
+assert_contains "MISE_SAFE=1 mise tasks ls" "linked-global"
+mv "$MISE_CONFIG_DIR/config.toml.before" "$MISE_CONFIG_DIR/config.toml"
+rm "$MISE_CONFIG_DIR/tasks/linked.toml"
 
 echo "=== a project config beside global config does not share its exemption ==="
 # ~/mise.toml has the same config root as ~/.config/mise/config.toml, but the

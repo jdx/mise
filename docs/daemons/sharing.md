@@ -75,8 +75,11 @@ reference cannot point to another reference. A reference table accepts only
 the project that defines the daemon.
 
 All of the referenced project's config must be trusted, including inherited
-files. mise reports the path and the `mise trust` command to run after you
-review it. `mise run` and `mise daemons start` never trust another project's
+files: a `.tool-versions` or an idiomatic version file such as `.node-version`
+in a parent directory counts as much as a `mise.toml`. Files that are already
+part of your own project's config do not need trusting again, but a project
+nested inside yours is not covered by your project's trust. mise reports the
+path and the `mise trust` command to run after you review it. `mise run` and `mise daemons start` never trust another project's
 config for you.
 
 ### Environment and lifecycle

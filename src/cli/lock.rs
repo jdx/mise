@@ -232,6 +232,33 @@ async fn keep_locked_when_release_age_holds(
     resolved
 }
 
+/// Adds the entries that `requests` already have in the lockfile, unchanged.
+/// A request with no entry is left out: the tool selecting it is not being
+/// locked, so this run does not add one for it.
+async fn keep_locked_python_entries(
+    config: &Arc<Config>,
+    context: &LockCollectionContext<'_>,
+    requests: Vec<ToolRequest>,
+    tools: &mut Vec<LockTool>,
+) -> Result<()> {
+    for request in requests {
+        let mut opts = request.resolve_options(context.resolve_options)?;
+        opts.locked = true;
+        opts.use_locked_version = true;
+        opts.latest_versions = false;
+        opts.latest_versions_for_all_requests = false;
+        opts.warn_not_in_lockfile = false;
+        match request.resolve(config, &opts).await {
+            Ok(tv) if tv.resolved_from_lockfile() => {
+                push_unique_lock_tool(tools, (tv.ba().clone(), tv));
+            }
+            Ok(_) => debug!("{request} has no lockfile entry to keep"),
+            Err(err) => debug!("keeping no lockfile entry for {request}: {err:#}"),
+        }
+    }
+    Ok(())
+}
+
 fn push_unique_lock_tool(tools: &mut Vec<LockTool>, mut tool: LockTool) {
     // Installed-version resolution can yield an install directory name such
     // as `3.9.6~aube~<digest>`; lock the npm/PyPI version it stands for.
@@ -561,6 +588,17 @@ fn verify_generation_snapshots<'a>(
     Ok(())
 }
 
+/// The task files a lock run snapshots. A remote task's `file` is still its
+/// `git::` or `http(s)://` source here, since only running the task fetches
+/// it; reading that as a path fails on Windows (os error 123), and there is
+/// no local file to watch anyway.
+fn local_task_files(tasks: &BTreeMap<String, Task>) -> impl Iterator<Item = &PathBuf> {
+    tasks
+        .values()
+        .filter(|task| !crate::task::task_fetcher::TaskFetcher::is_unfetched_remote_task(task))
+        .filter_map(|task| task.file.as_ref())
+}
+
 fn read_optional_file(path: &Path) -> Result<Option<Vec<u8>>> {
     match fs::read(path) {
         Ok(content) => Ok(Some(content)),
@@ -837,6 +875,9 @@ impl Lock {
             // ordinary `latest` requests ignore an installed concrete version.
             resolve_rolling_channels: true,
             keep_moved_alias_pins: self.upgrade,
+            // A missing entry is what `mise lock` adds, so the toolset resolve
+            // must not warn about it. `resolve_for_lock` retries such requests.
+            warn_not_in_lockfile: false,
             ..Default::default()
         };
         let monorepo_union = if !self.global && config.monorepo_lockfile_root().is_some() {
@@ -972,7 +1013,7 @@ impl Lock {
         let config_snapshots = setup
             .effective_config_files
             .keys()
-            .chain(setup.tasks.values().filter_map(|task| task.file.as_ref()))
+            .chain(local_task_files(setup.tasks))
             .map(|path| Ok((path.clone(), read_optional_file(path)?)))
             .collect::<Result<BTreeMap<_, _>>>()?;
         let scoped_config_paths = match setup.installed {
@@ -1397,9 +1438,16 @@ impl Lock {
             .await?;
         outcome.resolution_errors.extend(resolution_errors);
         let stale_versions = self.stale_versions_if_pruned(&lockfile, &resolvable);
+        let replaced = self.replaced_versions(
+            &lockfile,
+            &resolved,
+            &resolvable,
+            &stale_versions,
+            crate::config::safe_mode_skipped_task_file(),
+        );
         outcome
             .platform_regressions
-            .extend(self.platform_regression_errors(&resolved, &stale_versions, &results));
+            .extend(self.platform_regression_errors(&resolved, &replaced, &results));
         if run.setup.generate {
             outcome
                 .platform_regressions
@@ -1408,7 +1456,7 @@ impl Lock {
                     &resolved,
                     &resolvable,
                     target_platforms,
-                    &stale_versions,
+                    &replaced,
                 ));
         }
         if !self.json {
@@ -1592,15 +1640,22 @@ impl Lock {
         let resolution_succeeded = resolution_errors.is_empty();
         outcome.resolution_errors.extend(resolution_errors);
 
+        let replaced = self.replaced_versions(
+            &previous,
+            &lockfile,
+            tools,
+            &stale_versions,
+            crate::config::safe_mode_skipped_task_file(),
+        );
         let mut platform_regressions =
-            self.platform_regression_errors(&lockfile, &stale_versions, &results);
+            self.platform_regression_errors(&lockfile, &replaced, &results);
         if generate {
             platform_regressions.extend(self.generated_platform_regression_errors(
                 &previous,
                 &lockfile,
                 tools,
                 target_platforms,
-                &stale_versions,
+                &replaced,
             ));
         }
         if !platform_regressions.is_empty() {
@@ -2395,6 +2450,42 @@ impl Lock {
         self.stale_versions_for_current(lockfile, &current_versions)
     }
 
+    /// The locked versions this run replaces, which the platform regression checks guard.
+    /// Usually those are `stale_versions`, the ones pruning removes. When safe mode skipped
+    /// a task file nothing is pruned, but generation still drops a pin whose every request
+    /// this run moved to another version, so they are the versions of `tools` that
+    /// `previous` locked and `result` no longer has.
+    fn replaced_versions(
+        &self,
+        previous: &Lockfile,
+        result: &Lockfile,
+        tools: &[LockTool],
+        stale_versions: &BTreeMap<String, Vec<String>>,
+        task_file_skipped: bool,
+    ) -> BTreeMap<String, Vec<String>> {
+        if !task_file_skipped {
+            return stale_versions.clone();
+        }
+        self.current_tool_versions(tools)
+            .into_keys()
+            .filter_map(|short| {
+                let kept: BTreeSet<&str> = result
+                    .tools_for(&short)
+                    .into_iter()
+                    .flatten()
+                    .map(|tool| tool.version.as_str())
+                    .collect();
+                let dropped: BTreeSet<String> = previous
+                    .tools_for(&short)?
+                    .iter()
+                    .filter(|tool| !kept.contains(tool.version.as_str()))
+                    .map(|tool| tool.version.clone())
+                    .collect();
+                (!dropped.is_empty()).then(|| (short, dropped.into_iter().collect()))
+            })
+            .collect()
+    }
+
     fn platform_regression_errors(
         &self,
         lockfile: &Lockfile,
@@ -3114,6 +3205,7 @@ impl Lock {
         // Third pass: tool stubs that read their entries from this lockfile.
         // They are not part of any config, so nothing above sees them.
         let python_named = self.tool.iter().any(|t| t.ba.short == "python");
+        // The Pythons that stubs not named by a filtered `mise lock` select.
         let mut stub_python_requests = Vec::new();
         for (path, stub) in live_tool_stubs(target_lockfile_path, config_paths)? {
             // The error of a file that does not parse quotes its content, and the
@@ -3156,12 +3248,10 @@ impl Lock {
                     .iter()
                     .any(|tool| tool.ba.as_ref() == request.ba().as_ref())
             {
-                if python_named {
-                    match crate::backend::pipx::selected_python_dependency(&request) {
-                        Ok(dependency) => stub_python_requests.extend(dependency),
-                        Err(err) => {
-                            debug!("skipping selected python of {}: {err:#}", request.ba())
-                        }
+                match crate::backend::pipx::selected_python_dependency(&request) {
+                    Ok(dependency) => stub_python_requests.extend(dependency),
+                    Err(err) => {
+                        debug!("skipping selected python of {}: {err:#}", request.ba())
                     }
                 }
                 continue;
@@ -3217,15 +3307,32 @@ impl Lock {
                     })
                     .map(|t| t.tvr.clone())
             };
-            // `mise lock python` also locks the Pythons that pipx tools and
-            // stubs select, so pruning python keeps them.
             let mut python_requests = selected_python_requests(
                 all_tools
                     .iter()
-                    .filter(|(ba, _)| python_named || specified_request(ba).is_some()),
+                    .filter(|(ba, _)| specified_request(ba).is_some()),
             )?;
-            python_requests.extend(stub_python_requests);
-            python_requests.extend(task_python_requests);
+            // The Pythons that the tools, stubs and task tools this run does not
+            // name select.
+            let mut other_python_requests = selected_python_requests(
+                all_tools
+                    .iter()
+                    .filter(|(ba, _)| specified_request(ba).is_none()),
+            )?;
+            other_python_requests.extend(stub_python_requests);
+            other_python_requests.extend(task_python_requests);
+            // The python entries are rebuilt from the returned set, so once it
+            // holds any python, the Pythons that other tools select must be in
+            // it too. `mise lock python` locks them; otherwise they keep the
+            // entry they have, as the tools that select them are not locked.
+            let kept_python_requests = if python_named {
+                python_requests.append(&mut other_python_requests);
+                Vec::new()
+            } else if python_requests.is_empty() {
+                Vec::new()
+            } else {
+                other_python_requests
+            };
             // Generate rebuilds every tool in the returned set from scratch, so a
             // pipx tool's Python would replace the project's own Python entries.
             let project_python: Vec<LockTool> =
@@ -3339,6 +3446,8 @@ impl Lock {
                 &mut unique_tools,
             )
             .await?;
+            keep_locked_python_entries(config, context, kept_python_requests, &mut unique_tools)
+                .await?;
             Ok(unique_tools)
         }
     }
@@ -3352,13 +3461,15 @@ impl Lock {
         tools: &mut Vec<LockTool>,
     ) -> Result<()> {
         for request in requests {
-            let opts = request.resolve_options(context.resolve_options)?;
-            let tv = request.resolve(config, &opts).await.wrap_err_with(|| {
-                format!(
-                    "failed to resolve selected Python dependency {request} for lockfile {}",
-                    display_path(target_lockfile_path)
-                )
-            })?;
+            let mut opts = request.resolve_options(context.resolve_options)?;
+            let tv = resolve_for_lock(config, &request, &mut opts)
+                .await
+                .wrap_err_with(|| {
+                    format!(
+                        "failed to resolve selected Python dependency {request} for lockfile {}",
+                        display_path(target_lockfile_path)
+                    )
+                })?;
             push_unique_lock_tool(tools, (tv.ba().clone(), tv));
         }
         Ok(())
@@ -3374,7 +3485,6 @@ impl Lock {
         all_tools: &mut Vec<LockTool>,
     ) -> Result<Vec<ToolRequest>> {
         let mut unnamed_python_requests = Vec::new();
-        let python_named = self.tool.iter().any(|t| t.ba.short == "python");
         for task in tasks.values() {
             let Some(config_path) =
                 self.task_config_path(task, config, config_paths, context.config_files)
@@ -3395,8 +3505,9 @@ impl Lock {
                 let named = self.tool.is_empty()
                     || self.tool.iter().any(|requested| requested.ba == tool.ba);
                 if !named {
-                    // `mise lock python` keeps the Pythons that task tools select.
-                    if python_named && let Some(request) = &tool.tvr {
+                    // A filtered `mise lock` keeps the Pythons that the task
+                    // tools it does not name select.
+                    if let Some(request) = &tool.tvr {
                         // Read the task's own lockfile, as the named branch does.
                         let request = ToolRequest::new_with_options(
                             tool.ba.clone(),
@@ -3649,6 +3760,28 @@ mod tests {
         assert!(!is_downgrade("a1b2c3d", "e4f5a6b"));
         assert!(!is_downgrade("2024.01.15", "2024.02.01"));
         assert!(!is_downgrade("nightly", "0.166.0"));
+    }
+
+    #[test]
+    fn local_task_files_skips_unfetched_remote_sources() {
+        let task = |file: &str| {
+            let mut task = Task::default();
+            task.file = Some(PathBuf::from(file));
+            task
+        };
+        let tasks = BTreeMap::from([
+            (
+                "git".to_string(),
+                task("git::https://github.com/jdx/mise.git//xtasks/a?ref=v1"),
+            ),
+            ("http".to_string(), task("https://example.com/task.sh")),
+            ("local".to_string(), task("tasks/build")),
+            ("inline".to_string(), Task::default()),
+        ]);
+        assert_eq!(
+            local_task_files(&tasks).collect::<Vec<_>>(),
+            vec![&PathBuf::from("tasks/build")]
+        );
     }
 
     #[test]
@@ -4239,6 +4372,36 @@ mod tests {
         assert_eq!(errors.len(), 1);
         assert!(errors[0].contains("failed to resolve dummy@2.0.0 for windows-x64"));
         assert!(errors[0].contains("locked version(s) 1.0.0"));
+    }
+
+    #[test]
+    fn test_generated_platform_regression_with_a_skipped_task_file_checks_dropped_pins() {
+        // Safe mode skipped a task file, so nothing counts as stale, but generation moved
+        // dummy's only request from 1.0.0 to 2.0.0 and dropped 1.0.0, which windows had.
+        let cmd = lock_cmd(&[]);
+        let previous = lockfile_with_dummy_version("1.0.0", &["linux-x64", "windows-x64"]);
+        let generated = lockfile_with_dummy_version("2.0.0", &["linux-x64"]);
+        let tools = vec![configured_tool("dummy", "2.0.0")];
+        let platforms = vec![
+            Platform::parse("linux-x64").unwrap(),
+            Platform::parse("windows-x64").unwrap(),
+        ];
+        let replaced = cmd.replaced_versions(&previous, &generated, &tools, &BTreeMap::new(), true);
+
+        let errors = cmd.generated_platform_regression_errors(
+            &previous, &generated, &tools, &platforms, &replaced,
+        );
+
+        assert_eq!(errors.len(), 1, "{errors:?}");
+        assert!(errors[0].contains("failed to resolve dummy@2.0.0 for windows-x64"));
+
+        // A pin the skipped task still holds stays in the lockfile and is not replaced.
+        let mut kept = generated.clone();
+        kept.restore_missing_versions(&previous, "dummy");
+        assert!(
+            cmd.replaced_versions(&previous, &kept, &tools, &BTreeMap::new(), true)
+                .is_empty()
+        );
     }
 
     #[test]

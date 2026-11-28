@@ -641,7 +641,15 @@ async fn add_plugin_shims(shims_dir: &Path, scope: ShimScope) -> Result<()> {
     }
     let mut jset = JoinSet::new();
     let excluded = Settings::get().shims.exclude.clone();
-    for plugin in backend::list() {
+    // A plugin of a tool that `enable_tools` or `disable_tools` excludes keeps its shims, as
+    // other excluded tools do (see `get_desired_shims`).
+    let plugins = backend::list()
+        .into_iter()
+        .chain(backend::list_installed_excluded_by_tool_filters())
+        // A backend resolved earlier in this process can be cached in both lists, and two
+        // tasks writing the same plugin's shims would race.
+        .unique_by(|plugin| plugin.id().to_string());
+    for plugin in plugins {
         let shims_dir = shims_dir.to_path_buf();
         let excluded = excluded.clone();
         jset.spawn(async move {
@@ -1974,7 +1982,12 @@ async fn get_desired_shims(
     let _mise_bin = mise_bin; // used on Windows only
     let mut shims = HashSet::new();
     let system_installs = Settings::get().system_installs_dir().to_path_buf();
-    for (t, tv) in toolset.list_installed_versions(config).await? {
+    // `enable_tools` and `disable_tools` narrow what this process uses, often only through an
+    // environment variable, but the shims directory serves every process. A tool they exclude
+    // keeps its shims while it is installed, as another project's tools do (#14277, #16069).
+    let mut installed = toolset.list_installed_versions(config).await?;
+    installed.extend(toolset.list_installed_versions_excluded_by_tool_filters()?);
+    for (t, tv) in installed {
         // The listing names the user's copy of a version installed in both
         // directories, and the system shims still need its system copy.
         let tv = match scope {
@@ -2089,7 +2102,6 @@ async fn get_desired_shims(
             let Some(request) = request else { continue };
             if request.is_os_supported()
                 && (global_alias || !request.ignored_in_safe_mode())
-                && !toolset.is_disabled(request.ba())
                 && !crate::backend::is_disabled_backend_type(&request.ba().backend_type())
                 && let Ok(backend) = request.backend()
             {

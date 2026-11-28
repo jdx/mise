@@ -58,6 +58,7 @@ impl HookNotFound {
                     .list_current_versions()
                     .into_iter()
                     .any(|(_, version)| version.ba().short == tool)
+                && !untrusted_config_may_request(&config, tool)
             {
                 Use::use_global_registry_tool(tool).await?;
                 return Ok(());
@@ -65,6 +66,24 @@ impl HookNotFound {
         }
         Err(request_exit(127))
     }
+}
+
+/// Whether a project config left out of the toolset for want of trust asks for `tool`, or may.
+/// Its request is not one to install, but it is the project's choice of that tool, which a
+/// mistyped command must not answer by writing the latest version into global config. A plain
+/// tool list is read for its tool names, without installing anything; a config that was
+/// skipped unread could ask for any tool, so it counts as asking for this one.
+fn untrusted_config_may_request(config: &Config, tool: &str) -> bool {
+    !crate::config::skipped_untrusted_configs().is_empty()
+        || config
+            .config_files
+            .iter()
+            .filter(|(path, _)| !is_global_config(path) && !is_path_trusted(path))
+            .any(|(_, cf)| {
+                cf.to_tool_request_set().map_or(true, |requests| {
+                    requests.list_tools().iter().any(|ba| ba.short == tool)
+                })
+            })
 }
 
 fn registry_bin_provider(bin: &str, settings: &Settings) -> Option<&'static str> {

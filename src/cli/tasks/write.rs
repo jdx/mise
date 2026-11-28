@@ -381,7 +381,7 @@ pub(super) fn ensure_toml(path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn is_toml(path: &Path) -> bool {
+pub(super) fn is_toml(path: &Path) -> bool {
     path.extension().is_some_and(|ext| ext == "toml")
 }
 
@@ -610,12 +610,16 @@ pub(super) async fn choose_definition(name: &str, target: &TargetArgs) -> Result
 }
 
 /// Refuses to write task script `script` through a link out of its project; see
-/// [`config_file::script_check_before_write`].
-pub(super) async fn script_check_before_write(script: &Path) -> Result<()> {
+/// [`config_file::script_check_before_write`]. Returns the path to write, with the links this
+/// check approved resolved.
+pub(super) async fn script_check_before_write(script: &Path) -> Result<PathBuf> {
+    // A task include can name its directory with `..` after a link, which discovery follows
+    // before going up, so the path made absolute below would be another script.
+    config_file::refuse_parent_dir_out_of_link("write task", script)?;
     let script = path_absolutize::Absolutize::absolutize(script)?;
     match script_project_root(&script).await? {
         Some(root) => config_file::script_check_before_write(&script, &root),
-        None => Ok(()),
+        None => Ok(script.into_owned()),
     }
 }
 
@@ -623,6 +627,7 @@ pub(super) async fn script_check_before_write(script: &Path) -> Result<()> {
 /// [`config_file::script_check_before_remove`]. Returns the path to remove, in the directory
 /// this check approved.
 pub(super) async fn script_check_before_remove(script: &Path) -> Result<PathBuf> {
+    config_file::refuse_parent_dir_out_of_link("remove task", script)?;
     let script = path_absolutize::Absolutize::absolutize(script)?;
     match script_project_root(&script).await? {
         Some(root) => config_file::script_check_before_remove(&script, &root),
@@ -664,8 +669,9 @@ pub(super) fn write_config(path: &Path, content: &str) -> Result<bool> {
     if let Some(parent) = destination.parent() {
         file::create_dir_all(parent)?;
     }
+    let trusted_before = config_file::trusted_before_write(path);
     file::write(&destination, content)?;
-    config_file::trust_after_write(path)?;
+    config_file::trust_after_write(path, trusted_before)?;
     Ok(!already_trusted)
 }
 

@@ -42,6 +42,24 @@ repository's config can run code.
   run with it. It does not sandbox mise while it evaluates config, installs
   tools, or runs hooks. Run untrusted projects or tools in an isolated
   environment without access to your usual files or credentials.
+- **Resource exhaustion.** Input that mise reads before you trust it, or that
+  comes from the network, must not make mise hang, crash, or use unbounded
+  memory, disk or CPU. A report that such input does is a security bug. This
+  covers:
+  - project config, `.tool-versions` and `mise.lock` you have not
+    [trusted](#configuration-trust), and any `.miserc.toml`, which never needs
+    trust, including what [`mise activate`](/cli/activate.html) reads when you
+    `cd` into a repository you just cloned
+  - anything mise reads in [safe mode](#safe-mode)
+  - remote metadata, such as version lists, release APIs, checksum lists,
+    registry templates and OAuth responses
+  - downloaded archives, such as decompression bombs or archives with too many
+    entries, even when [download verification](#download-verification) passes
+
+  Trusted config and the tools and tasks it runs are out of scope. Trusted
+  config can already run commands as you, so a trusted config that loops or
+  allocates a lot is a bug, not a vulnerability. The same goes for a tool you
+  chose to install that is large.
 
 ## Configuration trust
 
@@ -100,9 +118,17 @@ idea:
   environments but cannot drop or reorder one that a global or system
   `miserc.toml` selects. The project's own environments come after the global
   ones and override them, so a global environment protects only settings that
-  project config cannot set, such as `paranoid`. The other keys a project file
-  can set change which project files load and how far up mise looks for them;
-  they cannot hide global or system config. Global and system `conf.d`
+  project config cannot set, such as `paranoid`. The environments a project
+  adds or turns on select only project files, never a global or system
+  `config.<env>.toml`. The other keys a project file can set change which
+  project files load and how far up mise looks for them;
+  they cannot hide global or system config. A project's `ignored_config_paths`
+  adds to the list it inherits and cannot remove an entry, so a project under
+  an ignored path stays ignored. Its environment names may use only letters,
+  digits, `_`, `-` and `.`, so they cannot carry shell or template syntax into
+  a trusted config that uses `{{ mise_env }}`. Its override filenames must be
+  file names ending in `.toml` or `tool-versions`, so they cannot make mise
+  read a file such as `~/.netrc` as config. Global and system `conf.d`
   fragments follow only the global and system `env_conf_d`. Templates in a
   project `.miserc.toml` see no environment variables and may use only `if`
   statements and a short list of functions and filters, so they cannot leak your
@@ -184,8 +210,10 @@ started and safe mode is off. Trust that the same command grants does not
 count, however it grants it: because you typed it in the project (see
 [Typed in a terminal](#typed-in-a-terminal)), because you answered yes to the
 prompt, or because `--yes` or `MISE_YES` is set. The prompt names the
-directory, not where its links lead. Otherwise the write fails, names the link and its
-target, and tells you to run `mise trust` there. A link into mise's
+directory, not where its links lead. Otherwise the write fails and names the link and
+its target. Outside safe mode it tells you to run `mise trust` there and run the
+command again. In safe mode trust does not help, so it tells you to write the file
+the link leads to directly, or to replace the link. A link into mise's
 state directory, a dangling link that leads out of the directory, and a
 project's link to global config are never followed, trusted or not; write
 global config with `-g`. A global config file that links into a dotfiles
@@ -201,16 +229,21 @@ when all of these hold:
   captured, such as `$(mise env)` in a prompt or `eval "$(mise env)"` in a
   shell startup file, still asks.
 - Paranoid mode's `config` category is off.
-- mise is not running as a shim, as the `mise x` a shim runs, for shell
-  completion, or for the shell's command-not-found handler after you mistype a
-  command.
+- mise is not running as a shim, as the `mise x` a shim runs, as a
+  [tool stub](/dev-tools/tool-stubs.html), for shell completion, or for the
+  shell's command-not-found handler after you mistype a command. Running a
+  tool that a shim or stub provides is not a mise command.
 - On Unix systems such as Linux and macOS, you own the config file and its
   directory, every other config file the trust would cover in that directory,
   including ones for another `MISE_ENV` such as `mise.prod.toml`, each
   directory between that directory and those files, and the target of each one
   that is a symlink. A config file another account left in a shared directory,
-  such as a `.config/mise.toml` beside your own `mise.toml`, still asks.
-  Windows does not check ownership.
+  such as a `.config/mise.toml` beside your own `mise.toml`, still asks. So does
+  a symlink whose target, or a link it passes through on the way, sits below a
+  directory that neither you nor root owns, or that another account can write
+  to and that is not sticky like `/tmp`: that account could replace the target
+  or repoint the link after the trust is recorded. Windows does not check
+  ownership.
 
 mise cannot tell a command you typed from one a program started on the same
 terminal, so a mise command run from a script or a Makefile target you start
@@ -296,7 +329,8 @@ Two settings decide trust by location:
   `trusted_config_paths` and `mise trust`. mise reads it before it looks for
   config files, so set it in a [`.miserc.toml`](/configuration.html#miserc) or
   in `MISE_IGNORED_CONFIG_PATHS`. A project's `.miserc.toml` cannot ignore
-  global or system config.
+  global or system config, and it can add entries but cannot remove one set
+  in a global or system `miserc.toml` or in a parent directory.
 
 ```toml
 # ~/.config/mise/config.toml

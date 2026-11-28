@@ -40,6 +40,22 @@ impl ToolProvider for MiseToolProvider {
     }
 }
 
+/// Whether the config file `path`, which may not exist yet, is trusted. Global config needs no
+/// trust record, but one that does not exist yet, as on a first `mise edit -g`, is recognized
+/// by where it is, unless a project's link leads there.
+fn edited_file_is_trusted(path: &Path) -> bool {
+    config_file::is_path_trusted(path) || is_global_config_by_location(path)
+}
+
+/// Whether `path` is global config by where it is and the name discovery loads it by, whether
+/// or not it exists yet, rather than a project file that leads there through a link. Another
+/// file in the global config directory is not: mise never loads it, so nothing vouches for the
+/// hosts its tool keys name.
+fn is_global_config_by_location(path: &Path) -> bool {
+    crate::config::is_global_config_by_name(path)
+        && !crate::config::write_reaches_global_config_through_link(path)
+}
+
 /// Version provider that fetches latest versions from backends
 struct MiseVersionProvider {
     /// The file being edited. The editor reads it itself, not through the config loader, so
@@ -54,7 +70,7 @@ impl VersionProvider for MiseVersionProvider {
         // host, which then gets the user's forge token. The config loader applies such a key
         // only from a trusted config, and so does the editor: without trust it looks nothing
         // up and the version is typed in by hand.
-        if config_file::tool_key_requires_trust(tool) && !config_file::is_path_trusted(&self.path) {
+        if config_file::tool_key_requires_trust(tool) && !edited_file_is_trusted(&self.path) {
             return None;
         }
 
@@ -79,10 +95,14 @@ impl VersionProvider for MiseVersionProvider {
 /// on a resolved version nor the one `mise use --pin` makes before it writes. The text comes
 /// from a version list or release API, not from the user: a template in it would render, and
 /// could run commands with exec(), every time the saved config loads, and control characters
-/// would reach the terminal the choices are drawn on. Without a version the editor asks for
-/// one in its text field.
+/// would reach the terminal the choices are drawn on. Nor is a selector that needs trust, such
+/// as `path:`, offered: the editor may save into global config, which is trusted, and the
+/// version was not the user's choice. Without a version the editor asks for one in its text
+/// field.
 fn offerable_version(version: String) -> Option<String> {
-    if crate::tera::contains_template_syntax(&version) {
+    if crate::tera::contains_template_syntax(&version)
+        || config_file::version_requires_trust(&version)
+    {
         return None;
     }
     validate_installable_version(&version).ok()?;
@@ -272,7 +292,7 @@ impl Edit {
                 miseprintln!("{doc}");
             } else {
                 info!("writing to {}", display_path(&path));
-                write_config(&path, doc)?;
+                write_checked_config(&path, doc)?;
             }
         } else if self.should_run_interactive() {
             // Run interactive TOML editor
@@ -286,7 +306,7 @@ impl Edit {
                 miseprintln!("{doc}");
             } else if self.force {
                 info!("writing to {}", display_path(&path));
-                write_config(&path, doc)?;
+                write_checked_config(&path, doc)?;
             } else {
                 info!("writing to {}", display_path(&path));
                 write_new_config(&path, &doc)?;
@@ -323,7 +343,7 @@ impl Edit {
             // The file can become a link while the editor is open, so where it leads is
             // checked again when it is saved.
             .before_save(|path| {
-                config_file::symlink_check_before_write(path)
+                config_file::checked_write_destination(path)
                     .map_err(|e| std::io::Error::other(e.to_string()))
             })
             .with_tool_provider(Box::new(MiseToolProvider))
@@ -435,6 +455,15 @@ fn write_config(path: &Path, doc: String) -> Result<()> {
     file::write(path, doc)
 }
 
+/// [`write_config`] to the file `path` leads to, checked again just before the write: building
+/// the document awaits (an import parses both files), and a link can change in the meantime.
+/// Writing to the destination the check approved, rather than to `path`, is what the editor's
+/// save does too.
+fn write_checked_config(path: &Path, doc: String) -> Result<()> {
+    let destination = config_file::checked_write_destination(path)?;
+    write_config(&destination, doc)
+}
+
 /// Write the default template to a config that must not exist yet.
 ///
 /// The template is a fresh file, not an edit of the one already there, so writing it over an
@@ -443,20 +472,25 @@ fn write_config(path: &Path, doc: String) -> Result<()> {
 /// one reached by `-y` or by running without a terminal (a script, CI, an editor's task
 /// runner), where nobody is watching to notice. `create_new` makes the "does it exist" check
 /// and the creation one step, so a config another process writes in between is not replaced.
+///
+/// The file opened is the destination [`config_file::checked_write_destination`] approves just
+/// before the write, not `path` looked up again: the command checked `path` when it started, and
+/// a link can appear or change in between. That destination is the file a link finally names,
+/// which need not exist: `create_new` does not follow a link in the last component, so a link
+/// whose target is not there yet, as a dotfile manager lays down before it writes the file,
+/// would count as existing. A link to a real config still fails, because its target exists, and
+/// so does a destination that becomes a link after the check.
 fn write_new_config(path: &Path, doc: &str) -> Result<()> {
-    if let Some(parent) = path.parent() {
-        file::create_dir_all(parent)?;
-    }
+    let destination = config_file::checked_write_destination(path)?;
     // Create the directory of the file a dangling link names, too: the link may point into a
     // directory that does not exist yet.
-    let target = symlink_target(path);
-    if let Some(parent) = target.parent() {
+    if let Some(parent) = destination.parent() {
         file::create_dir_all(parent)?;
     }
     let mut f = match std::fs::OpenOptions::new()
         .write(true)
         .create_new(true)
-        .open(&target)
+        .open(&destination)
     {
         Ok(f) => f,
         Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => bail!(
@@ -470,27 +504,6 @@ fn write_new_config(path: &Path, doc: &str) -> Result<()> {
     };
     f.write_all(doc.as_bytes())
         .wrap_err_with(|| format!("failed write: {}", display_path(path)))
-}
-
-/// Follow `path` through any symlinks to the file they finally name, which need not exist.
-///
-/// `create_new` does not follow a symlink in the last component: a link whose target is not
-/// there yet, as a dotfile manager lays down before it writes the file, counts as existing.
-/// Opening the target instead keeps such a link writable, while a link to a real config still
-/// fails because its target exists. A chain longer than the kernel's own limit is left as is,
-/// and `create_new` then reports it as existing.
-fn symlink_target(path: &Path) -> PathBuf {
-    let mut target = path.to_path_buf();
-    for _ in 0..40 {
-        let Ok(link) = std::fs::read_link(&target) else {
-            break;
-        };
-        target = match target.parent() {
-            Some(dir) => dir.join(link),
-            None => link,
-        };
-    }
-    target
 }
 
 // ============================================================================
@@ -573,6 +586,76 @@ fn extract_version(tool: &str, path: &Path) -> Option<String> {
 mod tests {
     use super::*;
 
+    #[cfg(unix)]
+    #[test]
+    fn a_global_config_file_that_does_not_exist_yet_is_trusted_for_version_lookups() {
+        // The fixture replaces the global config directory with one file through
+        // `MISE_GLOBAL_CONFIG_FILE`, so the directory's own rules are checked in a child test
+        // process that starts without it.
+        let child_env = mise::testing::DEFAULT_GLOBAL_CONFIG_ENV;
+        if std::env::var_os(child_env).is_none() {
+            // Here the file the variable names is the global config, and no other file next to it.
+            let global = crate::env::MISE_GLOBAL_CONFIG_FILE.clone().unwrap();
+            assert!(is_global_config_by_location(&global));
+            assert!(!is_global_config_by_location(
+                &global.with_file_name("mise.toml")
+            ));
+            let status = std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "cli::edit::tests::a_global_config_file_that_does_not_exist_yet_is_trusted_for_version_lookups",
+                ])
+                .env(child_env, "1")
+                .stdout(std::process::Stdio::null())
+                .status()
+                .unwrap();
+            assert!(status.success(), "child test failed");
+            return;
+        }
+
+        // Unit tests trust every path with a trust root, so `is_path_trusted` cannot show the
+        // gap here: what is checked is the part that needs no trust record.
+        let global = crate::dirs::CONFIG.join("config.edit-trust-test.toml");
+        assert!(!global.exists());
+        assert!(is_global_config_by_location(&global));
+        assert!(edited_file_is_trusted(&global));
+        // The names discovery loads global config by, for any environment.
+        for name in [
+            "config.toml",
+            "mise.edit-trust-test.local.toml",
+            "conf.d/edit-trust-test.toml",
+            "conf.d/edit-trust-test/mise.toml",
+        ] {
+            assert!(
+                is_global_config_by_location(&crate::dirs::CONFIG.join(name)),
+                "{name}"
+            );
+        }
+        // A file there that discovery never loads is not global config, nor is a file below a
+        // folder fragment's folder.
+        for name in [
+            "edit-trust-test-config.toml",
+            "settings.toml",
+            "conf.d/edit-trust-test/other.toml",
+            "conf.d/edit-trust-test/sub/mise.toml",
+            ".mise/config.toml",
+        ] {
+            assert!(
+                !is_global_config_by_location(&crate::dirs::CONFIG.join(name)),
+                "{name}"
+            );
+        }
+
+        // A project file that only links to it is not global config by location.
+        let tmp = tempfile::tempdir().unwrap();
+        let link = tmp.path().join("mise.toml");
+        std::os::unix::fs::symlink(&global, &link).unwrap();
+        assert!(!is_global_config_by_location(&link));
+        assert!(!is_global_config_by_location(
+            &tmp.path().join("other.toml")
+        ));
+    }
+
     #[test]
     fn offerable_version_keeps_a_plain_version() {
         for v in ["1.2.3", "2024.01.15", "1.2.3+build", "21.0.2-tem"] {
@@ -592,6 +675,10 @@ mod tests {
             "1.2.3 ; id",
             "../1.2.3",
             "",
+            // a selector that takes effect only in a trusted config
+            "path:bin",
+            "ref-main",
+            "rev:1a2b3c",
         ] {
             assert_eq!(offerable_version(v.to_string()), None, "{v:?}");
         }
@@ -626,6 +713,48 @@ mod tests {
             std::fs::read_to_string(&path).unwrap(),
             "[tools]\nnode = \"22\"\n"
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_import_checks_its_destination_again_when_it_saves() {
+        // The config was a regular file when the command checked it, and a link out of the
+        // project by the time the import has its document ready. Tests trust every project, so
+        // the link leads to a file that does not exist yet, which is refused whatever the trust.
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let project = root.join("swapped");
+        let outside = root.join("outside.toml");
+        std::fs::create_dir_all(&project).unwrap();
+        let path = project.join("mise.toml");
+        std::fs::write(&path, "").unwrap();
+        config_file::symlink_check_before_write(&path).unwrap();
+        std::fs::remove_file(&path).unwrap();
+        std::os::unix::fs::symlink(&outside, &path).unwrap();
+
+        let err = write_checked_config(&path, "[tools]\n".to_string()).unwrap_err();
+        assert!(err.to_string().contains("refusing to write"), "{err}");
+        assert!(!outside.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_starter_config_checks_its_destination_again_when_it_creates_it() {
+        // Nothing was at the path when the command checked it, and a dangling link out of the
+        // project is there by the time the template is written. Such a link is refused whatever
+        // the trust, so the file it names is not created.
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let project = root.join("swapped");
+        let outside = root.join("outside.toml");
+        std::fs::create_dir_all(&project).unwrap();
+        let path = project.join("mise.toml");
+        config_file::symlink_check_before_write(&path).unwrap();
+        std::os::unix::fs::symlink(&outside, &path).unwrap();
+
+        let err = write_new_config(&path, "# template\n").unwrap_err();
+        assert!(err.to_string().contains("refusing to write"), "{err}");
+        assert!(!outside.exists());
     }
 
     #[cfg(unix)]

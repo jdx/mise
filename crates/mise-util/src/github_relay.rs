@@ -286,8 +286,9 @@ pub mod unix {
     use axum::{
         Router,
         body::{Body, to_bytes},
-        extract::{Request, State},
+        extract::{ConnectInfo, Request, State, connect_info::Connected},
         response::Response,
+        serve::IncomingStream,
     };
     use reqwest::{Client, Method, Url};
     use std::{
@@ -299,21 +300,76 @@ pub mod unix {
     use tokio_util::sync::CancellationToken;
 
     // Bound accepted connections too, including clients that never send headers.
+    // Where a capability is required, anyone who can reach the listener can
+    // connect without one, so such connections must not be able to use up the
+    // bound: at the limit the oldest connection that has yet to present the
+    // capability is closed to admit the next one.
     struct BoundedListener<L> {
         inner: L,
         permits: Arc<Semaphore>,
+        unproven: Option<std::collections::VecDeque<(Proven, CancellationToken)>>,
     }
     impl<L> BoundedListener<L> {
-        fn new(inner: L) -> Self {
+        fn new(inner: L, capability: bool) -> Self {
             Self {
                 inner,
                 permits: Arc::new(Semaphore::new(32)),
+                unproven: capability.then(Default::default),
             }
+        }
+    }
+    /// Whether a connection has presented the capability or was closed to make
+    /// room. A connection starts unproven and moves once, to proven or to
+    /// evicted, by a single compare-and-swap: whichever of the service and the
+    /// listener gets there first wins, so a connection that proves itself is
+    /// never closed afterwards, and an evicted one can no longer prove itself.
+    #[derive(Clone, Default)]
+    struct Proven(Arc<std::sync::atomic::AtomicU8>);
+    impl Proven {
+        const UNPROVEN: u8 = 0;
+        const PROVEN: u8 = 1;
+        const EVICTED: u8 = 2;
+        fn transition(&self, to: u8) -> std::result::Result<u8, u8> {
+            use std::sync::atomic::Ordering::{AcqRel, Acquire};
+            self.0.compare_exchange(Self::UNPROVEN, to, AcqRel, Acquire)
+        }
+        fn is_unproven(&self) -> bool {
+            self.0.load(std::sync::atomic::Ordering::Acquire) == Self::UNPROVEN
+        }
+        /// Marks the connection proven; false once it has been evicted.
+        fn prove(&self) -> bool {
+            match self.transition(Self::PROVEN) {
+                Ok(_) => true,
+                Err(state) => state == Self::PROVEN,
+            }
+        }
+        /// Marks the connection evicted; false once it has proven itself.
+        fn evict(&self) -> bool {
+            self.transition(Self::EVICTED).is_ok()
+        }
+    }
+    impl<L: axum::serve::Listener> Connected<IncomingStream<'_, BoundedListener<L>>> for Proven {
+        fn connect_info(stream: IncomingStream<'_, BoundedListener<L>>) -> Self {
+            stream.io().proven.clone()
         }
     }
     struct Connection<T> {
         inner: T,
+        proven: Proven,
+        evicted: std::pin::Pin<Box<tokio_util::sync::WaitForCancellationFutureOwned>>,
+        // Dropped before the permit, so a connection that no longer holds a
+        // slot is never the one chosen to give way.
+        _closed: tokio_util::sync::DropGuard,
         _permit: tokio::sync::OwnedSemaphorePermit,
+    }
+    impl<T> Connection<T> {
+        // Fail the I/O of an evicted connection so that hyper drops it.
+        fn poll_evicted(&mut self, cx: &mut std::task::Context<'_>) -> std::io::Result<()> {
+            if self.evicted.as_mut().poll(cx).is_ready() {
+                return Err(std::io::ErrorKind::ConnectionAborted.into());
+            }
+            Ok(())
+        }
     }
     impl<T: tokio::io::AsyncRead + Unpin> tokio::io::AsyncRead for Connection<T> {
         fn poll_read(
@@ -321,6 +377,7 @@ pub mod unix {
             cx: &mut std::task::Context<'_>,
             buf: &mut tokio::io::ReadBuf<'_>,
         ) -> std::task::Poll<std::io::Result<()>> {
+            self.poll_evicted(cx)?;
             std::pin::Pin::new(&mut self.inner).poll_read(cx, buf)
         }
     }
@@ -330,12 +387,14 @@ pub mod unix {
             cx: &mut std::task::Context<'_>,
             buf: &[u8],
         ) -> std::task::Poll<std::io::Result<usize>> {
+            self.poll_evicted(cx)?;
             std::pin::Pin::new(&mut self.inner).poll_write(cx, buf)
         }
         fn poll_flush(
             mut self: std::pin::Pin<&mut Self>,
             cx: &mut std::task::Context<'_>,
         ) -> std::task::Poll<std::io::Result<()>> {
+            self.poll_evicted(cx)?;
             std::pin::Pin::new(&mut self.inner).poll_flush(cx)
         }
         fn poll_shutdown(
@@ -349,16 +408,38 @@ pub mod unix {
         type Io = Connection<L::Io>;
         type Addr = L::Addr;
         async fn accept(&mut self) -> (Self::Io, Self::Addr) {
+            // Accept before taking a slot: only then is it known that a client
+            // is waiting for one, which is when an unproven connection gives way.
+            let (inner, addr) = self.inner.accept().await;
+            let proven = Proven::default();
+            let evict = CancellationToken::new();
+            if let Some(unproven) = &mut self.unproven {
+                unproven.retain(|(proven, closed)| proven.is_unproven() && !closed.is_cancelled());
+                if self.permits.available_permits() == 0 {
+                    // A connection may prove itself or close after the
+                    // `retain`; only one that is still open and loses no race
+                    // to its own proof is closed.
+                    while let Some((proven, oldest)) = unproven.pop_front() {
+                        if !oldest.is_cancelled() && proven.evict() {
+                            oldest.cancel();
+                            break;
+                        }
+                    }
+                }
+                unproven.push_back((proven.clone(), evict.clone()));
+            }
             let permit = self
                 .permits
                 .clone()
                 .acquire_owned()
                 .await
                 .expect("listener semaphore stays open");
-            let (inner, addr) = self.inner.accept().await;
             (
                 Connection {
                     inner,
+                    proven,
+                    evicted: Box::pin(evict.clone().cancelled_owned()),
+                    _closed: evict.drop_guard(),
                     _permit: permit,
                 },
                 addr,
@@ -524,7 +605,10 @@ pub mod unix {
             };
             let task = tokio::spawn(async move {
                 let _ = axum::serve(
-                    BoundedListener::new(listener),
+                    // No capability: the socket is private to this account, and
+                    // the ssh forward reaches it only from the remote account
+                    // whose own bootstrap and commands are the relay's clients.
+                    BoundedListener::new(listener, false),
                     Router::new().fallback(handle).with_state(broker),
                 )
                 .await;
@@ -775,74 +859,85 @@ pub mod unix {
         let authorization = format!("Bearer {capability}");
         let header = format!("Authorization: {authorization}");
         let permits = Arc::new(Semaphore::new(8));
-        let service = Router::new().fallback(move |request: Request| {
-            let client = client.clone();
-            let authorization = authorization.clone();
-            let permits = permits.clone();
-            async move {
-                let result: Result<Response> = async {
-                    let permit = permits.try_acquire_owned()?;
-                    // The user's own Git configuration may add a header of this name.
-                    if !request
-                        .headers()
-                        .get_all("authorization")
-                        .iter()
-                        .any(|value| value.as_bytes() == authorization.as_bytes())
-                    {
-                        bail!("invalid capability");
-                    }
-                    // The client below resolves dot segments, which could leave `git/`.
-                    validate_path(request.uri().path().trim_start_matches('/'))?;
-                    let path = request
-                        .uri()
-                        .path_and_query()
-                        .ok_or_else(|| eyre::eyre!("missing path"))?
-                        .as_str();
-                    let path = path
-                        .strip_prefix('/')
-                        .filter(|p| p.starts_with("git/"))
-                        .ok_or_else(|| eyre::eyre!("unsupported path"))?;
-                    let url = format!("http://localhost/{path}");
-                    let (parts, body) = request.into_parts();
-                    let body =
-                        tokio::time::timeout(request_timeout, to_bytes(body, 8 * 1024 * 1024))
-                            .await??;
-                    let mut req = client.request(parts.method, url);
-                    for name in ["accept", "content-type", "git-protocol", "content-encoding"] {
-                        if let Some(value) = parts.headers.get(name) {
-                            req = req.header(name, value);
+        let service =
+            Router::new().fallback(move |proven: ConnectInfo<Proven>, request: Request| {
+                let client = client.clone();
+                let authorization = authorization.clone();
+                let permits = permits.clone();
+                async move {
+                    let result: Result<Response> = async {
+                        let permit = permits.try_acquire_owned()?;
+                        // The user's own Git configuration may add a header of this name.
+                        if !request
+                            .headers()
+                            .get_all("authorization")
+                            .iter()
+                            .any(|value| value.as_bytes() == authorization.as_bytes())
+                        {
+                            bail!("invalid capability");
                         }
-                    }
-                    let response = send_adapter_request(req.body(body), request_timeout).await?;
-                    let mut builder = Response::builder().status(response.status());
-                    for name in ["content-type", "content-length"] {
-                        if let Some(value) = response.headers().get(name) {
-                            builder = builder.header(name, value);
+                        if !proven.0.prove() {
+                            bail!("connection closed to make room");
                         }
+                        // The client below resolves dot segments, which could leave `git/`.
+                        validate_path(request.uri().path().trim_start_matches('/'))?;
+                        let path = request
+                            .uri()
+                            .path_and_query()
+                            .ok_or_else(|| eyre::eyre!("missing path"))?
+                            .as_str();
+                        let path = path
+                            .strip_prefix('/')
+                            .filter(|p| p.starts_with("git/"))
+                            .ok_or_else(|| eyre::eyre!("unsupported path"))?;
+                        let url = format!("http://localhost/{path}");
+                        let (parts, body) = request.into_parts();
+                        let body =
+                            tokio::time::timeout(request_timeout, to_bytes(body, 8 * 1024 * 1024))
+                                .await??;
+                        let mut req = client.request(parts.method, url);
+                        for name in ["accept", "content-type", "git-protocol", "content-encoding"] {
+                            if let Some(value) = parts.headers.get(name) {
+                                req = req.header(name, value);
+                            }
+                        }
+                        let response =
+                            send_adapter_request(req.body(body), request_timeout).await?;
+                        let mut builder = Response::builder().status(response.status());
+                        for name in ["content-type", "content-length"] {
+                            if let Some(value) = response.headers().get(name) {
+                                builder = builder.header(name, value);
+                            }
+                        }
+                        let stream = futures_util::stream::try_unfold(
+                            (response, permit),
+                            |(mut response, permit)| async move {
+                                let chunk = response
+                                    .chunk()
+                                    .await
+                                    .map_err(|_| std::io::Error::other("relay disconnected"))?;
+                                Ok::<_, std::io::Error>(
+                                    chunk.map(|chunk| (chunk, (response, permit))),
+                                )
+                            },
+                        );
+                        Ok(builder.body(Body::from_stream(stream))?)
                     }
-                    let stream = futures_util::stream::try_unfold(
-                        (response, permit),
-                        |(mut response, permit)| async move {
-                            let chunk = response
-                                .chunk()
-                                .await
-                                .map_err(|_| std::io::Error::other("relay disconnected"))?;
-                            Ok::<_, std::io::Error>(chunk.map(|chunk| (chunk, (response, permit))))
-                        },
-                    );
-                    Ok(builder.body(Body::from_stream(stream))?)
+                    .await;
+                    result.unwrap_or_else(|_| {
+                        Response::builder()
+                            .status(403)
+                            .body(Body::from("relay unavailable"))
+                            .expect("valid response")
+                    })
                 }
-                .await;
-                result.unwrap_or_else(|_| {
-                    Response::builder()
-                        .status(403)
-                        .body(Body::from("relay unavailable"))
-                        .expect("valid response")
-                })
-            }
-        });
+            });
         let task = tokio::spawn(async move {
-            let _ = axum::serve(BoundedListener::new(listener), service).await;
+            let _ = axum::serve(
+                BoundedListener::new(listener, true),
+                service.into_make_service_with_connect_info::<Proven>(),
+            )
+            .await;
         });
         // Aborting this task is sufficient here: exiting the adapter also closes
         // all accepted loopback connections. Local broker cancellation is separate.
@@ -1401,6 +1496,82 @@ pub mod unix {
             ] {
                 assert!(!asset_redirect(&Url::parse(url).unwrap()));
             }
+        }
+
+        #[test]
+        fn a_connection_is_either_proven_or_evicted_never_both() {
+            let proven = Proven::default();
+            assert!(proven.is_unproven());
+            assert!(proven.prove());
+            assert!(proven.prove(), "a second request on the connection");
+            assert!(!proven.evict());
+            assert!(!proven.is_unproven());
+
+            let evicted = Proven::default();
+            assert!(evicted.evict());
+            assert!(!evicted.prove());
+            assert!(!evicted.is_unproven());
+
+            // Racing threads agree on one winner.
+            for _ in 0..1000 {
+                let state = Proven::default();
+                let other = state.clone();
+                let prover = std::thread::spawn(move || other.prove());
+                let evicted = state.evict();
+                let proved = prover.join().unwrap();
+                assert_ne!(proved, evicted);
+            }
+        }
+
+        #[tokio::test]
+        async fn connections_without_the_capability_give_way_at_the_limit() {
+            use axum::serve::Listener;
+            use tokio::io::AsyncReadExt;
+            let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
+                .await
+                .unwrap();
+            let address = listener.local_addr().unwrap();
+            let mut listener = BoundedListener::new(listener, true);
+            let mut clients = Vec::new();
+            let mut proofs = Vec::new();
+            let mut served = Vec::new();
+            for index in 0..32 {
+                clients.push(tokio::net::TcpStream::connect(address).await.unwrap());
+                let (mut connection, _) = listener.accept().await;
+                if index == 0 {
+                    assert!(connection.proven.prove());
+                }
+                proofs.push(connection.proven.clone());
+                // Like hyper, keep the connection until its I/O fails.
+                served.push(tokio::spawn(async move {
+                    let mut byte = [0];
+                    connection.read(&mut byte).await
+                }));
+            }
+            // Every slot is held by a client that sends nothing. The next client
+            // is admitted at the expense of the oldest without the capability.
+            clients.push(tokio::net::TcpStream::connect(address).await.unwrap());
+            let (connection, _) = tokio::time::timeout(Duration::from_secs(5), listener.accept())
+                .await
+                .unwrap();
+            // Bounded, so evicting another connection fails here instead of
+            // waiting on one whose client sends nothing.
+            let evicted = tokio::time::timeout(Duration::from_secs(5), served.remove(1))
+                .await
+                .expect("the oldest connection without the capability is evicted")
+                .unwrap()
+                .unwrap_err();
+            assert_eq!(evicted.kind(), std::io::ErrorKind::ConnectionAborted);
+            // A request that arrives on it after that is refused.
+            assert!(!proofs.remove(1).prove());
+            assert!(served.iter().all(|task| !task.is_finished()));
+            // Connections that presented it are never closed to admit another.
+            assert!(connection.proven.prove());
+            assert!(proofs.iter().all(Proven::prove));
+            clients.push(tokio::net::TcpStream::connect(address).await.unwrap());
+            let waiting = tokio::time::timeout(Duration::from_millis(50), listener.accept()).await;
+            assert!(waiting.is_err());
+            assert!(served.iter().all(|task| !task.is_finished()));
         }
     }
 }

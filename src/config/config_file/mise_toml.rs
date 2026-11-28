@@ -53,7 +53,7 @@ use mise_config::task::TaskDecls;
 
 use super::diagnostic::toml_parse_error;
 use super::min_version::MinVersionSpec;
-use super::{tool_key_requires_trust, version_requires_trust};
+use super::{is_path_version, tool_key_requires_trust, version_requires_trust};
 
 const LEGACY_ENV_KEYS_DEPRECATED_WARN_AT: &str = "2026.4.17";
 const LEGACY_ENV_KEYS_DEPRECATED_REMOVE_AT: &str = "2027.4.0";
@@ -328,7 +328,7 @@ fn drop_unlent_templates(
         }
         keep
     });
-    let top_checksum_dropped = drops_unverified_url(&dropped, options.opts.keys());
+    let top_checksum_dropped = drops_unverified_url(&dropped, options.opts.iter());
     if !explicit.opts.contains_key("url")
         && top_checksum_dropped
         && options.opts.shift_remove("url").is_some()
@@ -338,9 +338,10 @@ fn drop_unlent_templates(
     // A platform with no checksum of its own is checked against the top-level one, as the
     // http backend looks a platform's option up there when the platform does not set it. So a
     // platform that lost its own checksum keeps its url while a top-level one is left.
-    if !options.opts.keys().any(|k| is_checksum_option(k)) {
+    if !crate::backend::http::has_top_level_checksum(options) {
         for at in drop_unverified_platform_urls(
             &mut options.opts,
+            &explicit.opts,
             &dropped,
             unverified,
             top_checksum_dropped,
@@ -360,8 +361,9 @@ fn drop_unlent_templates(
 /// Whether to keep option value `value`, after dropping from it the table entries that hold
 /// template syntax and are not written as they are in one of `written`, the same option's value
 /// in each config that lent its templates. A table none of whose entries is left is dropped.
-/// `at` is the path to `value` in the tool's options. A table whose `url` loses its checksum
-/// this way (see [`drops_unverified_url`]) has its path added to `unverified`.
+/// `at` is the path to `value` in the tool's options. A table that loses its last checksum
+/// this way (see [`drops_unverified_url`]) has its path added to `unverified`, also with no
+/// `url` of its own: a platform's url can be a flat key beside its table.
 fn keep_lent_parts(
     value: &mut toml::Value,
     written: &[&toml::Value],
@@ -388,7 +390,7 @@ fn keep_lent_parts(
         }
         keep
     });
-    if drops_unverified_url(&dropped, table.keys()) && table.contains_key("url") {
+    if drops_unverified_url(&dropped, table.iter()) {
         unverified.push(at.to_vec());
     }
     !table.is_empty()
@@ -401,8 +403,9 @@ const PLATFORM_TABLES: [&str; 2] = ["platforms", "platform"];
 /// Removes the per-platform urls in `opts`, once no top-level checksum is left, that safe mode
 /// leaves with no checksum, and returns where each was. A platform is written either as a table
 /// in `platforms` (or `platform`) or as flat keys such as `platforms_linux_x64_url` (see
-/// [`flat_platform_option`]); the http backend reads both. A platform keeps its url while it has
-/// a checksum of its own in either spelling. Otherwise it loses the url when it lost its own
+/// [`flat_platform_option`]); the http backend reads both. A platform keeps its url while the
+/// backend's own lookup still finds a checksum for it ([`crate::backend::http::download_is_checked`]),
+/// in either spelling and with a value it reads. Otherwise it loses the url when it lost its own
 /// checksum (a flat key in `dropped`, or a table path in `unverified`), or when
 /// `top_checksum_dropped`, as the url would have been checked against the top-level one. The
 /// other paths in `unverified` lose their url as they are.
@@ -410,8 +413,11 @@ const PLATFORM_TABLES: [&str; 2] = ["platforms", "platform"];
 /// The http backend looks up a platform's url and its checksum each under every spelling of the
 /// platform (`macos-x64`, `darwin-amd64`, ...), so the spellings are one platform here too: a
 /// `darwin-arm64` url is checked against a `macos-arm64` checksum.
+///
+/// A url given on the command line, in `explicit`, is kept: it was not lent by another config.
 fn drop_unverified_platform_urls(
     opts: &mut IndexMap<String, toml::Value>,
+    explicit: &IndexMap<String, toml::Value>,
     dropped: &[String],
     unverified: Vec<Vec<String>>,
     top_checksum_dropped: bool,
@@ -436,33 +442,23 @@ fn drop_unverified_platform_urls(
             }
         }
     }
-    // Each platform: whether it has a url, and whether a checksum of its own.
-    let mut platforms: IndexMap<String, (bool, bool)> = IndexMap::new();
-    let tables = PLATFORM_TABLES
-        .into_iter()
-        .filter_map(|table| opts.get(table)?.as_table());
-    for (platform, entry) in tables.flatten() {
-        let Some(entry) = entry.as_table() else {
-            continue;
-        };
-        let (url, checksum) = platforms.entry(spelling(platform)).or_default();
-        *url |= entry.contains_key("url");
-        *checksum |= entry.keys().any(|k| is_checksum_option(k));
-    }
-    for (platform, field) in opts.keys().filter_map(|k| flat_platform_option(k)) {
-        let (url, checksum) = platforms.entry(spelling(&platform)).or_default();
-        if field == "url" {
-            *url = true;
-        } else {
-            *checksum = true;
-        }
-    }
-    let unchecked: Vec<String> = platforms
-        .into_iter()
-        .filter(|(platform, (url, checksum))| {
-            *url && !*checksum && (top_checksum_dropped || lost.contains(platform))
+    let with_url = platforms_with_url(opts);
+    // Whether a platform's download is still checked is the http backend's own lookup, so the
+    // spellings it reads and the values it ignores (a `checksum` array, say) count the same.
+    let left = ToolVersionOptions {
+        opts: opts.clone().into(),
+        ..Default::default()
+    };
+    let checked = |platform: &str| {
+        crate::platform::Platform::parse(platform).is_ok_and(|p| {
+            let target = crate::backend::platform_target::PlatformTarget::new(p);
+            crate::backend::http::download_is_checked(&left, &target)
         })
-        .map(|(platform, _)| platform)
+    };
+    let unchecked: Vec<String> = with_url
+        .iter()
+        .filter(|platform| (top_checksum_dropped || lost.contains(platform)) && !checked(platform))
+        .cloned()
         .collect();
     for table in PLATFORM_TABLES {
         let written: Vec<String> = opts
@@ -474,7 +470,11 @@ fn drop_unverified_platform_urls(
             .cloned()
             .collect();
         for platform in written {
-            if remove_url_at(opts, &[table.to_string(), platform.clone()]) {
+            let given = explicit
+                .get(table)
+                .and_then(|entries| entries.get(&platform)?.get("url"))
+                .is_some();
+            if !given && remove_url_at(opts, &[table.to_string(), platform.clone()]) {
                 removed.push(format!("{table}.{platform}.url"));
             }
         }
@@ -482,13 +482,57 @@ fn drop_unverified_platform_urls(
     opts.retain(|k, _| {
         let unchecked_url = flat_platform_option(k).is_some_and(|(platform, field)| {
             field == "url" && unchecked.contains(&spelling(&platform))
-        });
+        }) && !explicit.contains_key(k);
         if unchecked_url {
             removed.push(k.clone());
         }
         !unchecked_url
     });
+    // A platform with no url of its own downloads from the top-level one, as the http backend
+    // falls back to it. When such a platform lost the checksum that checked it, the top-level url
+    // would download it unchecked, so that url goes, unless it was given on the command line.
+    // This is decided after the removals above: a platform whose own url just went falls back
+    // to the top-level one too. Whether a platform has a url of its own is the backend's lookup
+    // without that fallback, so a url it passes over (an array or a table, say) counts as none.
+    let after = ToolVersionOptions {
+        opts: opts.clone().into(),
+        ..Default::default()
+    };
+    let has_own_url = |platform: &str| {
+        crate::platform::Platform::parse(platform).is_ok_and(|p| {
+            let target = crate::backend::platform_target::PlatformTarget::new(p);
+            crate::backend::static_helpers::lookup_platform_key_for_target(&after, "url", &target)
+                .is_some()
+        })
+    };
+    let inherits_unchecked = lost
+        .iter()
+        .any(|platform| !has_own_url(platform) && !checked(platform));
+    if inherits_unchecked && !explicit.contains_key("url") && opts.shift_remove("url").is_some() {
+        removed.push("url".to_string());
+    }
     removed
+}
+
+/// The platforms in `opts` that have a url of their own, in either spelling, each spelled as
+/// [`crate::backend::static_helpers::preferred_platform_spelling`] spells it.
+fn platforms_with_url(opts: &IndexMap<String, toml::Value>) -> Vec<String> {
+    use crate::backend::static_helpers::preferred_platform_spelling as spelling;
+    let tables = PLATFORM_TABLES
+        .into_iter()
+        .filter_map(|table| opts.get(table)?.as_table());
+    let mut with_url: Vec<String> = tables
+        .flatten()
+        .filter(|(_, entry)| entry.as_table().is_some_and(|e| e.contains_key("url")))
+        .map(|(platform, _)| spelling(platform))
+        .collect();
+    with_url.extend(
+        opts.keys()
+            .filter_map(|k| flat_platform_option(k))
+            .filter(|(_, field)| *field == "url")
+            .map(|(platform, _)| spelling(&platform)),
+    );
+    with_url
 }
 
 /// The platform and field of flat per-platform option `key`, which the http backend reads as
@@ -543,9 +587,16 @@ fn remove_url_at(opts: &mut indexmap::IndexMap<String, toml::Value>, at: &[Strin
 /// backend only checks a download against its publisher's checksum when `checksum_url` is set.
 fn drops_unverified_url<'a>(
     dropped: &[String],
-    mut kept: impl Iterator<Item = &'a String>,
+    mut kept: impl Iterator<Item = (&'a String, &'a toml::Value)>,
 ) -> bool {
-    dropped.iter().any(|k| is_checksum_option(k)) && !kept.any(|k| is_checksum_option(k))
+    dropped.iter().any(|k| is_checksum_option(k))
+        && !kept.any(|(k, v)| is_checksum_option(k) && is_read_as_checksum(v))
+}
+
+/// Whether the http backend reads option value `value` as a checksum: it reads a string (or
+/// another scalar), and passes over an array or a table as if the option were not set.
+fn is_read_as_checksum(value: &toml::Value) -> bool {
+    crate::toolset::scalar_value_to_string(value).is_some()
 }
 
 /// Whether option `key` is one the http backend checks a download against. `checksum_expr` is
@@ -2403,9 +2454,10 @@ impl ConfigFile for MiseToml {
         if let Some(parent) = destination.parent() {
             create_dir_all(parent)?;
         }
+        let trusted_before = super::trusted_before_write(&self.path);
         file::write_atomic(&destination, contents)?;
         super::note_saved(&self.path);
-        trust_after_write(&self.path)?;
+        trust_after_write(&self.path, trusted_before)?;
         Ok(())
     }
 
@@ -2491,6 +2543,18 @@ impl ConfigFile for MiseToml {
             .unwrap()
             .iter()
             .filter(|(_, tvp)| !tvp.0.is_empty())
+            .map(|(ba, _)| ba.short.to_string())
+            .collect()
+    }
+
+    fn safe_mode_project_tool_backends(&self) -> Vec<String> {
+        // Read as written, like `tool_backends`: a template could render to a `path:`
+        // version, and such a tool still counts as the project's, which withholds credentials.
+        self.tools
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(_, tvp)| tvp.0.iter().any(|tool| !is_path_version(&tool.request)))
             .map(|(ba, _)| ba.short.to_string())
             .collect()
     }
@@ -3555,17 +3619,22 @@ mod tests {
     #[test]
     fn a_checksum_expr_is_no_checksum_without_its_checksum_url() {
         let keys = |keys: &[&str]| keys.iter().map(|k| k.to_string()).collect::<Vec<_>>();
+        let kept = |keys: &[&str]| -> toml::Table {
+            keys.iter()
+                .map(|k| (k.to_string(), toml::Value::from("x")))
+                .collect()
+        };
         // The expression reads the file at `checksum_url`: with that dropped, the url is unchecked.
-        let kept = keys(&["url", "checksum_expr"]);
+        let left = kept(&["url", "checksum_expr"]);
         assert!(super::drops_unverified_url(
             &keys(&["checksum_url"]),
-            kept.iter()
+            left.iter()
         ));
         // Dropping only the expression leaves the checksum file to check the download against.
-        let kept = keys(&["url", "checksum_url"]);
+        let left = kept(&["url", "checksum_url"]);
         assert!(!super::drops_unverified_url(
             &keys(&["checksum_expr"]),
-            kept.iter()
+            left.iter()
         ));
 
         // A platform whose only checksum option left is an expression loses its url.
@@ -3575,7 +3644,8 @@ mod tests {
         .unwrap()
         .into_iter()
         .collect();
-        let removed = super::drop_unverified_platform_urls(&mut o, &[], vec![], true);
+        let removed =
+            super::drop_unverified_platform_urls(&mut o, &Default::default(), &[], vec![], true);
         assert_eq!(removed, ["platforms.linux-x64.url"]);
         assert!(o["platforms"]["macos-arm64"].get("url").is_some());
     }
@@ -3597,7 +3667,8 @@ mod tests {
             platforms_macos_arm64_checksum = "sha256:1"
             platforms = { windows-x64 = { url = "w" }, freebsd-x64 = { url = "f", checksum = "sha256:2" } }
         "#});
-        let removed = super::drop_unverified_platform_urls(&mut o, &[], vec![], true);
+        let removed =
+            super::drop_unverified_platform_urls(&mut o, &Default::default(), &[], vec![], true);
         assert_eq!(
             removed,
             [
@@ -3624,7 +3695,13 @@ mod tests {
             platforms = { windows-x64 = { url = "w" } }
         "#});
         let dropped = ["platforms_linux_x64_checksum_url".to_string()];
-        let removed = super::drop_unverified_platform_urls(&mut o, &dropped, vec![], false);
+        let removed = super::drop_unverified_platform_urls(
+            &mut o,
+            &Default::default(),
+            &dropped,
+            vec![],
+            false,
+        );
         assert_eq!(removed, ["platforms_linux_x64_url"]);
         assert!(o.contains_key("platforms_macos_arm64_url"));
         assert!(o["platforms"]["windows-x64"].get("url").is_some());
@@ -3638,7 +3715,13 @@ mod tests {
             vec!["platforms".to_string(), "linux-x64".to_string()],
             vec!["platforms".to_string(), "macos-arm64".to_string()],
         ];
-        let removed = super::drop_unverified_platform_urls(&mut o, &[], unverified, false);
+        let removed = super::drop_unverified_platform_urls(
+            &mut o,
+            &Default::default(),
+            &[],
+            unverified,
+            false,
+        );
         assert_eq!(removed, ["platforms.macos-arm64.url"]);
         assert!(o["platforms"]["linux-x64"].get("url").is_some());
     }
@@ -3659,7 +3742,13 @@ mod tests {
         "#});
         let unverified = vec![vec!["platforms".to_string(), "macos-arm64".to_string()]];
         let dropped = ["platforms_linux_x64_checksum".to_string()];
-        let removed = super::drop_unverified_platform_urls(&mut o, &dropped, unverified, false);
+        let removed = super::drop_unverified_platform_urls(
+            &mut o,
+            &Default::default(),
+            &dropped,
+            unverified,
+            false,
+        );
         assert_eq!(
             removed,
             [
@@ -3674,9 +3763,169 @@ mod tests {
             platforms_macos_x86_64_checksum = "sha256:1"
             platforms = { darwin-x64 = { url = "m" } }
         "#});
-        let removed = super::drop_unverified_platform_urls(&mut o, &[], vec![], true);
+        let removed =
+            super::drop_unverified_platform_urls(&mut o, &Default::default(), &[], vec![], true);
         assert!(removed.is_empty(), "{removed:?}");
         assert!(o["platforms"]["darwin-x64"].get("url").is_some());
+    }
+
+    #[test]
+    fn a_checksum_the_http_backend_does_not_read_checks_no_url() {
+        let opts = |toml: &str| -> indexmap::IndexMap<String, toml::Value> {
+            toml::from_str::<toml::Table>(toml)
+                .unwrap()
+                .into_iter()
+                .collect()
+        };
+        // The backend passes over a `checksum` or `checksum_url` that is an array or a table, so
+        // one under another spelling of the platform leaves the url unchecked.
+        let mut o = opts(indoc! {r#"
+            platforms_macos_aarch64_checksum_url = { a = "c" }
+            platforms = { darwin-arm64 = { url = "m" }, linux-amd64 = { url = "l" }, linux-x64 = { checksum = ["sha256:1"] } }
+        "#});
+        let removed =
+            super::drop_unverified_platform_urls(&mut o, &Default::default(), &[], vec![], true);
+        assert_eq!(
+            removed,
+            ["platforms.darwin-arm64.url", "platforms.linux-amd64.url"]
+        );
+
+        // A table whose checksum was dropped is not checked by one left that is an array.
+        let left: toml::Table = toml::from_str(
+            r#"url = "u"
+checksum_url = ["c"]"#,
+        )
+        .unwrap();
+        assert!(super::drops_unverified_url(
+            &["checksum".to_string()],
+            left.iter()
+        ));
+        let mut o = opts(indoc! {r#"
+            platforms = { darwin-arm64 = { url = "m", checksum_url = ["c"] } }
+        "#});
+        let unverified = vec![vec!["platforms".to_string(), "darwin-arm64".to_string()]];
+        let removed = super::drop_unverified_platform_urls(
+            &mut o,
+            &Default::default(),
+            &[],
+            unverified,
+            false,
+        );
+        assert_eq!(removed, ["platforms.darwin-arm64.url"]);
+    }
+
+    #[test]
+    fn a_platform_table_that_loses_its_checksum_takes_the_flat_url_with_it() {
+        // The table holds only the checksum; its url is a flat key beside it.
+        let mut platforms: toml::Value =
+            toml::from_str::<toml::Table>(r#"linux-x64 = { checksum_url = "{{ vars.sums }}" }"#)
+                .unwrap()
+                .into();
+        let mut unverified = vec![];
+        let keep = super::keep_lent_parts(
+            &mut platforms,
+            &[],
+            &["platforms".to_string()],
+            &mut unverified,
+        );
+        assert!(!keep);
+        assert_eq!(unverified, [vec!["platforms", "linux-x64"]]);
+        let mut o: indexmap::IndexMap<String, toml::Value> =
+            [("platforms_linux_x64_url".to_string(), "l".into())]
+                .into_iter()
+                .collect();
+        let removed = super::drop_unverified_platform_urls(
+            &mut o,
+            &Default::default(),
+            &[],
+            unverified,
+            false,
+        );
+        assert_eq!(removed, ["platforms_linux_x64_url"]);
+    }
+
+    #[test]
+    fn a_platform_that_lost_its_checksum_takes_the_top_level_url_it_downloads_from() {
+        // linux-x64 has no url of its own, so it downloads from the top-level one, which its
+        // dropped checksum checked.
+        let lost = || vec![vec!["platforms".to_string(), "linux-x64".to_string()]];
+        let top: indexmap::IndexMap<String, toml::Value> =
+            [("url".to_string(), "u".into())].into_iter().collect();
+        let mut o = top.clone();
+        let removed =
+            super::drop_unverified_platform_urls(&mut o, &Default::default(), &[], lost(), false);
+        assert_eq!(removed, ["url"]);
+        assert!(!o.contains_key("url"));
+
+        // A url given on the command line is kept.
+        let mut o = top.clone();
+        let removed = super::drop_unverified_platform_urls(&mut o, &top, &[], lost(), false);
+        assert!(removed.is_empty(), "{removed:?}");
+
+        // So is one the platform is still checked against.
+        let mut o = top.clone();
+        o.insert(
+            "platforms_linux_x64_checksum".to_string(),
+            "sha256:x".into(),
+        );
+        let removed =
+            super::drop_unverified_platform_urls(&mut o, &Default::default(), &[], lost(), false);
+        assert!(removed.is_empty(), "{removed:?}");
+        assert!(o.contains_key("url"));
+    }
+
+    #[test]
+    fn a_platform_url_the_http_backend_does_not_read_leaves_the_top_level_url_in_use() {
+        // linux-x64's own url, given on the command line, is an array, which the backend passes
+        // over for the top-level url. Its checksum went, so the top-level url goes too.
+        let given: indexmap::IndexMap<String, toml::Value> =
+            toml::from_str::<toml::Table>(r#"platforms = { linux-x64 = { url = ["l"] } }"#)
+                .unwrap()
+                .into_iter()
+                .collect();
+        let mut o = given.clone();
+        o.insert("url".to_string(), "u".into());
+        let lost = vec![vec!["platforms".to_string(), "linux-x64".to_string()]];
+        let removed = super::drop_unverified_platform_urls(&mut o, &given, &[], lost, false);
+        assert_eq!(removed, ["url"]);
+        assert!(!o.contains_key("url"));
+    }
+
+    #[test]
+    fn a_platform_whose_own_url_goes_takes_the_top_level_url_it_falls_back_to() {
+        // linux-x64 lost its checksum, so its own url goes. Without that url it would download
+        // from the top-level one, which nothing checks either.
+        let lost = vec![vec!["platforms".to_string(), "linux-x64".to_string()]];
+        let mut o: indexmap::IndexMap<String, toml::Value> = [
+            ("url".to_string(), "u".into()),
+            ("platforms_linux_x64_url".to_string(), "l".into()),
+        ]
+        .into_iter()
+        .collect();
+        let removed =
+            super::drop_unverified_platform_urls(&mut o, &Default::default(), &[], lost, false);
+        assert!(removed.contains(&"platforms_linux_x64_url".to_string()));
+        assert!(removed.contains(&"url".to_string()), "{removed:?}");
+        assert!(o.is_empty(), "{o:?}");
+    }
+
+    #[test]
+    fn a_platform_url_given_on_the_command_line_is_kept() {
+        let given: indexmap::IndexMap<String, toml::Value> = toml::from_str::<toml::Table>(
+            r#"
+            platforms_linux_x64_url = "l"
+            platforms = { macos-arm64 = { url = "m" } }
+            "#,
+        )
+        .unwrap()
+        .into_iter()
+        .collect();
+        let mut o = given.clone();
+        o.insert("platforms_linux_arm64_url".to_string(), "a".into());
+        let removed = super::drop_unverified_platform_urls(&mut o, &given, &[], vec![], true);
+        assert_eq!(removed, ["platforms_linux_arm64_url"]);
+        assert!(o.contains_key("platforms_linux_x64_url"));
+        assert!(o["platforms"]["macos-arm64"].get("url").is_some());
     }
 
     #[test]
@@ -4685,6 +4934,31 @@ mod tests {
             Some(&EnvValue::String("{{version}}".to_string()))
         );
         file::remove_file(&p).unwrap();
+    }
+
+    #[test]
+    fn a_tool_only_safe_mode_ignores_is_not_asked_for_in_safe_mode() {
+        // In safe mode a project's `path:` versions are ignored, so a tool with only those is
+        // not the project's, and a global tool of that name keeps its credentials.
+        let cf = MiseToml::from_str(
+            r#"
+            [tools]
+            "http:only-path" = "path:/opt/only-path"
+            "http:mixed" = ["path:/opt/mixed", "1.0.0"]
+            "http:plain" = "1.0.0"
+            "http:empty" = []
+            "#,
+            std::path::Path::new("mise.toml"),
+        )
+        .unwrap();
+        assert_eq!(
+            cf.safe_mode_project_tool_backends(),
+            ["http:mixed", "http:plain"]
+        );
+        assert_eq!(
+            cf.tool_backends(),
+            ["http:only-path", "http:mixed", "http:plain"]
+        );
     }
 
     #[tokio::test]

@@ -117,17 +117,29 @@ impl InteractiveConfig {
         }
     }
 
-    pub(super) fn save(&mut self) -> io::Result<()> {
+    /// Saves the document, unless the `before_save` check refuses the file: that is shown, and
+    /// the editor stays open with the edits, so the user can fix the file and save again. Whether
+    /// the editor may close.
+    pub(super) fn save(&mut self) -> io::Result<bool> {
         if self.dry_run {
             self.renderer.flash_message("Dry-run mode: not saving")?;
         } else {
-            if let Some(check) = &self.before_save {
-                check(&self.path)?;
-            }
-            self.doc.save(&self.path)?;
+            // The check names the file it approved, so the save goes there even if the path
+            // is made a link after the check.
+            let destination = match &self.before_save {
+                Some(check) => match check(&self.path) {
+                    Ok(destination) => destination,
+                    Err(err) => {
+                        self.renderer.flash_error(&format!("Not saved: {err}"))?;
+                        return Ok(false);
+                    }
+                },
+                None => self.path.clone(),
+            };
+            self.doc.save(&destination)?;
             self.doc.modified = false;
             self.renderer.flash_message("Saved")?;
         }
-        Ok(())
+        Ok(true)
     }
 }

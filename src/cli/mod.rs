@@ -488,6 +488,7 @@ impl Commands {
             Self::Completion(_) | Self::HookNotFound(_) | Self::Usage(_) => {
                 CommandOrigin::ShellIntegration
             }
+            Self::ToolStub(_) => CommandOrigin::ToolStub,
             _ => CommandOrigin::Typed,
         }
     }
@@ -2176,6 +2177,23 @@ mod tests {
         };
         assert_eq!(tool_stub.file, PathBuf::from("jqstub"));
         assert_eq!(tool_stub.args, ["--version"]);
+    }
+
+    /// A stub's shebang runs `mise tool-stub` when the user runs the tool, so running it on a
+    /// terminal is not consent to trust the directory it runs in.
+    #[test]
+    fn tool_stub_is_not_a_typed_command() {
+        for args in [
+            vec!["mise", "tool-stub", "jqstub"],
+            vec!["mise", "-q", "tool-stub", "jqstub", "--version"],
+        ] {
+            let cli = parse_cli(&args).unwrap();
+            let origin = cli.command.as_ref().map(Commands::command_origin);
+            assert_eq!(origin, Some(CommandOrigin::ToolStub), "{args:?}");
+        }
+        let cli = parse_cli(&["mise", "exec", "--", "jq"]).unwrap();
+        let origin = cli.command.as_ref().map(Commands::command_origin);
+        assert_eq!(origin, Some(CommandOrigin::Typed));
     }
 
     #[test]

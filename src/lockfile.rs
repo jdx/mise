@@ -852,9 +852,9 @@ fn warn_outdated_lockfile(path: &Path, remedy: &str) {
         && outdated_lockfile_version_today(
             version,
             jiff::Timestamp::now()
-                .to_zoned(jiff::tz::TimeZone::UTC)
+                .to_zoned_datetime(jiff::tz::TimeZone::UTC)
                 .date(),
-            || jiff::Zoned::now().date(),
+            || jiff::ZonedDateTime::now().date(),
         )
     {
         warn_once!(
@@ -2278,28 +2278,79 @@ impl Lockfile {
             .collect();
         for entry in entries {
             let mut entry = entry.clone();
+            let was_bound = !entry.specifiers.is_empty();
             entry
                 .specifiers
                 .retain(|specifier| !rebound.contains(&(specifier.clone(), entry.options.clone())));
-            if present.contains(&(entry.version.clone(), entry.options.clone())) {
+            let is_present = present.contains(&(entry.version.clone(), entry.options.clone()));
+            // Every request this entry was bound to now resolves to another version, so no
+            // request needs it. Back with no specifiers it would read as a legacy entry, which
+            // lookups match by version prefix, so a version the run moved away from could be
+            // picked again.
+            if was_bound && entry.specifiers.is_empty() && !is_present {
+                continue;
+            }
+            if is_present {
+                let mut restored = BTreeMap::new();
                 if let Some(kept) = self.tools.get_mut(&key).and_then(|have| {
                     have.iter_mut()
                         .find(|kept| kept.version == entry.version && kept.options == entry.options)
                 }) {
                     kept.specifiers.extend(entry.specifiers);
-                }
-                continue;
-            }
-            // Generation dropped the shared package records this entry's
-            // conda_deps name along with it, so bring them back too.
-            for (platform, info) in &entry.platforms {
-                for dep in info.conda_deps.iter().flatten() {
-                    if let Some(package) = previous.get_conda_package(platform, dep) {
-                        self.set_conda_package(platform, dep, package.clone());
+                    // This run may have locked the entry for fewer platforms than the requests
+                    // it did not see use. The platforms it no longer records come back, with
+                    // their downloads or as found unsupported, and the ones it locked, or found
+                    // unsupported, stay as it left them. Only from the same backend, though: what
+                    // another backend downloaded, or found no build of, says nothing about this
+                    // one, and `mise lock --check` would take its marker as this backend's.
+                    if kept.backend != entry.backend {
+                        continue;
+                    }
+                    for (platform, info) in entry.platforms {
+                        if !kept.platforms.contains_key(&platform)
+                            && !kept.unsupported_platforms.contains(&platform)
+                        {
+                            kept.platforms.insert(platform.clone(), info.clone());
+                            restored.insert(platform, info);
+                        }
+                    }
+                    for platform in entry.unsupported_platforms {
+                        if !kept.platforms.contains_key(&platform) {
+                            kept.unsupported_platforms.insert(platform);
+                        }
                     }
                 }
+                self.restore_conda_packages(previous, &restored);
+                continue;
             }
+            self.restore_conda_packages(previous, &entry.platforms);
             self.tools.entry(key.clone()).or_default().push(entry);
+        }
+    }
+
+    /// Generation dropped the shared package records that the conda_deps of `platforms`, an
+    /// entry's restored platforms, name along with them, so bring them back from `previous`.
+    /// Only the missing ones: a record this run wrote for the same package file was resolved
+    /// now, so it stays, and a different old one is reported rather than written over it.
+    fn restore_conda_packages(
+        &mut self,
+        previous: &Lockfile,
+        platforms: &BTreeMap<String, PlatformInfo>,
+    ) {
+        for (platform, info) in platforms {
+            for dep in info.conda_deps.iter().flatten() {
+                let Some(package) = previous.get_conda_package(platform, dep) else {
+                    continue;
+                };
+                match self.get_conda_package(platform, dep) {
+                    None => self.set_conda_package(platform, dep, package.clone()),
+                    Some(fresh) if fresh == package => {}
+                    Some(fresh) => warn!(
+                        "conda package {dep} for {platform} was locked from {} now and from {} before; keeping the new record",
+                        fresh.url, package.url
+                    ),
+                }
+            }
         }
     }
 

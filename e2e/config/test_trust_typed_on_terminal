@@ -3,7 +3,8 @@
 # A mise command typed on a terminal in an untrusted project trusts it without
 # the "Trust them?" prompt and says so. Anything that does not look like a person
 # typing it there keeps the prompt: stdout captured by a command substitution,
-# paranoid mode, an ignored directory, the shell's command-not-found handler.
+# paranoid mode, an ignored directory, the shell's command-not-found handler,
+# a tool stub.
 
 require_cmd script
 
@@ -98,6 +99,24 @@ for cmd in 'mise hook-env -s bash' 'mise -q hook-env -s bash'; do
 done
 ok "[trust] the prompt hook does not trust the project"
 
+# A tool stub's shebang runs `mise tool-stub` when the user runs the tool, from
+# whatever directory they are in: they typed the tool's name, not a mise command.
+# The stub's tool cannot install offline, but config loads before that.
+mkdir ../stubs
+cat <<'EOF' >../stubs/widget
+#!/usr/bin/env -S mise tool-stub
+tool = "http:widget"
+version = "1.0.0"
+url = "file:///nonexistent/widget.tar.gz"
+EOF
+chmod +x ../stubs/widget
+output="$(on_pty "MISE_OFFLINE=1 $PWD/../stubs/widget --version")" || true
+assert_contains_text "$output" "Trust them?"
+assert_not_contains_text "$output" "$notice"
+assert_untrusted
+forget_trust
+ok "[trust] running a tool stub does not trust the project"
+
 # Without a terminal nothing is trusted either.
 assert_fail "MISE_YES=0 mise env </dev/null" "not trusted"
 assert_untrusted
@@ -140,6 +159,73 @@ if [ "$(id -u)" != 0 ]; then
   forget_trust
   ok "[trust] another account's linked conf.d fragment still asks"
 fi
+
+# These check the mode of a directory, not who owns it, so they also run as root,
+# as Linux CI does: a 777 directory counts as writable by other accounts.
+
+# Whether every directory from $1 up to / belongs to this user or root, and is
+# sticky or writable by its owner alone, as mise requires of each of them for a
+# config outside the project. The e2e harness runs in a container whose /tmp is
+# a 777 directory that is not sticky. mise also accepts a directory writable by
+# the user's private group; this says no to it, which only skips the check.
+entries_guarded_up_from() {
+  local dir uid owner
+  dir="$(cd "$1" && pwd -P)" || return 1
+  uid="$(id -u)" || return 1
+  while :; do
+    owner="$(stat -c %u "$dir" 2>/dev/null || stat -f %u "$dir")" || return 1
+    [[ $owner == 0 || $owner == "$uid" ]] || return 1
+    [[ -z "$(find "$dir" -maxdepth 0 -perm /022 ! -perm -1000)" ]] || return 1
+    [[ $dir == / ]] && return 0
+    dir="$(dirname "$dir")"
+  done
+}
+
+# A link to the user's own file in a directory any account may write: another
+# account could put its own file there after the trust is recorded.
+mkdir ../shared
+cp mise.toml ../shared/mise.toml
+chmod 644 ../shared/mise.toml
+chmod 777 ../shared
+mv mise.toml mise.toml.orig
+ln -s ../shared/mise.toml mise.toml
+output="$(on_pty 'mise env')" || true
+assert_contains_text "$output" "Trust them?"
+assert_not_contains_text "$output" "$notice"
+assert_untrusted
+forget_trust
+chmod 755 ../shared
+# Under a /tmp any account may write, the directories above ../shared keep the
+# prompt too, so only where they do not can this show it is ../shared's mode.
+if entries_guarded_up_from ../shared; then
+  output="$(on_pty 'mise env')"
+  assert_contains_text "$output" "$notice"
+  assert_not_contains_text "$output" "Trust them?"
+  forget_trust
+fi
+rm mise.toml
+ok "[trust] a link into a directory another account may write still asks"
+
+# The project's own file reached through a link in a directory any account may
+# write: that account could point the link elsewhere. The file is in the
+# project, so ../hop is the only directory outside it that mise checks.
+mkdir ../hop
+ln -s "$PWD/mise.toml.orig" ../hop/link
+chmod 777 ../hop
+ln -s ../hop/link mise.toml
+output="$(on_pty 'mise env')" || true
+assert_contains_text "$output" "Trust them?"
+assert_not_contains_text "$output" "$notice"
+assert_untrusted
+forget_trust
+chmod 755 ../hop
+output="$(on_pty 'mise env')"
+assert_contains_text "$output" "$notice"
+assert_not_contains_text "$output" "Trust them?"
+forget_trust
+rm mise.toml
+mv mise.toml.orig mise.toml
+ok "[trust] a link through another link another account may replace still asks"
 
 # Typed on a terminal: trusted, with a notice, and the config applies. The
 # undo hint is quoted for the shell `mise activate` named.

@@ -16,7 +16,10 @@
 //! [`with_trusted_tool_scope`]: the operator chose that tool and its hosts, so
 //! its requests keep their credentials even on a host a project also names. A
 //! path that misses the scope therefore loses credentials rather than leaking
-//! them.
+//! them. The work for a tool that project config declares runs in an explicitly
+//! untrusted scope, and gets no netrc credentials on any host: a project tool
+//! can reach hosts its URL options do not name (a registry entry, a redirect, a
+//! backend's own lookup), and none of them were chosen by the operator.
 
 use std::collections::HashSet;
 use std::future::Future;
@@ -119,27 +122,36 @@ pub async fn with_tool_scope<T>(trusted: bool, future: impl Future<Output = T>) 
 /// `JoinSet`, [`crate::parallel::parallel`]), so that it runs in the trusted
 /// scopes of the task spawning it: task-locals do not pass to a spawned task, so
 /// without this the work a global tool spreads over tasks would lose its netrc
-/// credentials and its templates' `env`. A future spawned outside those scopes
-/// stays outside them.
+/// credentials and its templates' `env`. The untrusted scope of a project tool
+/// passes on too, so its spawned work gets no netrc credentials either. A future
+/// spawned outside those scopes stays outside them.
 pub fn inherit_trusted_scope<F: Future>(future: F) -> impl Future<Output = F::Output> {
-    let tool = TRUSTED_TOOL.try_with(|trusted| *trusted).unwrap_or(false);
+    let tool = TRUSTED_TOOL.try_with(|trusted| *trusted).ok();
     let templates = crate::tera::in_trusted_templates();
     async move {
         match (tool, templates) {
-            (true, true) => with_tool_scope(true, future).await,
-            (true, false) => with_trusted_tool_scope(future).await,
-            (false, true) => crate::tera::with_trusted_templates(future).await,
-            (false, false) => future.await,
+            (Some(true), true) => with_tool_scope(true, future).await,
+            (Some(true), false) => with_trusted_tool_scope(future).await,
+            (Some(false), true) => {
+                let templates = Box::pin(crate::tera::with_trusted_templates(future));
+                TRUSTED_TOOL.scope(false, templates).await
+            }
+            (Some(false), false) => TRUSTED_TOOL.scope(false, future).await,
+            (None, true) => crate::tera::with_trusted_templates(future).await,
+            (None, false) => future.await,
         }
     }
 }
 
-/// Whether netrc credentials must not be sent with a request for `url`: project
-/// config named its host, and the request is not made for a tool that global or
-/// system config declares.
+/// Whether netrc credentials must not be sent with a request for `url`: the
+/// request is made for a tool that project config declares, or project config
+/// named its host and the request is not made for a tool that global or system
+/// config declares.
 pub fn netrc_denied(url: &url::Url) -> bool {
-    if TRUSTED_TOOL.try_with(|trusted| *trusted).unwrap_or(false) {
-        return false;
+    match TRUSTED_TOOL.try_with(|trusted| *trusted) {
+        Ok(true) => return false,
+        Ok(false) => return true,
+        Err(_) => {}
     }
     NETRC_DENIED_ANY_HOST.load(Ordering::Relaxed)
         || url
@@ -243,6 +255,21 @@ mod tests {
         assert!(nested);
         assert!(!nested_templates);
         assert!(!back);
+
+        // a project tool gets no credentials on a host its options do not name, nor
+        // in the tasks its work spawns
+        let (unnamed, spawned) = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .build()
+            .unwrap()
+            .block_on(with_tool_scope(false, async {
+                let target = url("https://mirror.example/x");
+                let t = target.clone();
+                let spawned = tokio::spawn(inherit_trusted_scope(async move { netrc_denied(&t) }));
+                (netrc_denied(&target), spawned.await.unwrap())
+            }));
+        assert!(unnamed);
+        assert!(spawned);
         deny_netrc_for_url("https://{{ os() }}.evil.example/tool");
         assert!(netrc_denied(&url("https://linux.evil.example/tool")));
         assert!(netrc_denied(&url("https://mirror.example/x")));

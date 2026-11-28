@@ -58,7 +58,11 @@ pub(crate) fn config_source(path: &Path) -> String {
 /// A fragment's project comes from the directories the fragment is in. The `mise.toml` beside
 /// its `conf.d` can be a link to global config, whose root is not the project.
 fn enclosing_project(path: &Path) -> PathBuf {
-    let root = config_root(path);
+    project_of_root(path, config_root(path))
+}
+
+/// [`enclosing_project`] for the config at `path` whose config root is `root`.
+fn project_of_root(path: &Path, root: PathBuf) -> PathBuf {
     if is_conf_d_folder_file(path)
         && let Some(conf_d) = root.parent()
     {
@@ -84,7 +88,11 @@ pub fn nested_root_project(path: &Path) -> Option<PathBuf> {
 /// The project directory a config belongs to: [`enclosing_project`], with `.config/mise` taken
 /// back to the directory that holds `.config`.
 fn outer_project(path: &Path) -> PathBuf {
-    let project = enclosing_project(path);
+    outside_config_dir(enclosing_project(path))
+}
+
+/// `project`, with `.config/mise` taken back to the directory that holds `.config`.
+fn outside_config_dir(project: PathBuf) -> PathBuf {
     if project.ends_with(".config/mise")
         && let Some(outer) = project.parent().and_then(Path::parent)
     {
@@ -93,13 +101,43 @@ fn outer_project(path: &Path) -> PathBuf {
     project
 }
 
+/// The project whose directory holds `path` when `path` is global config only through a link,
+/// such as a project's `mise.toml` linked to the global config: the project its components name,
+/// as they would for any other file there. `None` for global config at its own path, for a real
+/// file the global config dir links to (a dotfiles checkout, which is global config because the
+/// user made it so), and for a file that is not global config.
+///
+/// [`config_root`] gives such a link the global root, the home directory, since global config is
+/// trusted for what it resolves to. The project that holds the link is still the one a command
+/// given that directory means.
+pub fn linked_global_project(path: &Path) -> Option<PathBuf> {
+    let path = path.absolutize().ok()?.to_path_buf();
+    crate::config::is_project_link_to_global_config(&path).then(|| project_by_name(&path))
+}
+
+/// The project directory the absolute `path` names: [`outer_project`] from its components alone,
+/// whatever file is there now.
+///
+/// A trust record holds its path as it was resolved when the record was written. The project
+/// that owns the record is decided from that path: a link that has since replaced the file, to
+/// global config or another checkout, does not move the record out of its project.
+pub fn project_by_name(path: &Path) -> PathBuf {
+    let root = if is_conf_d_folder_file(path) {
+        path.parent()
+            .map_or_else(|| path.to_path_buf(), Path::to_path_buf)
+    } else {
+        spelled_config_root(path)
+    };
+    outside_config_dir(project_of_root(path, root))
+}
+
 /// The project a config was found in, when a symlink lies between that project's directory and
 /// the config, the config itself included.
 ///
 /// Such a link is content of the project, so it decides nothing about trust: a config reached
 /// through it is trusted only when the project is, whatever the link leads to. Global and system
 /// config are exempt, since the user placed them and any link in them.
-pub(crate) fn linked_project(path: &Path) -> Option<PathBuf> {
+pub fn linked_project(path: &Path) -> Option<PathBuf> {
     if is_global_config(path) {
         return None;
     }
@@ -111,9 +149,9 @@ pub(crate) fn linked_project(path: &Path) -> Option<PathBuf> {
         .then_some(project)
 }
 
-/// Whether `path` is a link: a symlink, or on Windows a directory junction too, which
-/// `Path::is_symlink` does not report, which needs no administrator rights to make, and which
-/// `canonicalize` follows like a symlink.
+/// Whether `path` is a link: a symlink, or on Windows a directory junction too. A junction needs
+/// no administrator rights to make, `canonicalize` follows it like a symlink, and only some Rust
+/// releases' `Path::is_symlink` reports it.
 pub(crate) fn is_link(path: &Path) -> bool {
     path.is_symlink() || is_junction(path)
 }
@@ -713,8 +751,9 @@ mod tests {
 mod windows_tests {
     use super::*;
 
-    /// A junction is not a symlink to `Path::is_symlink`, but `canonicalize` follows it, so a
-    /// junction in a project counts as a link the way a symlink does.
+    /// `canonicalize` follows a junction, so a junction in a project counts as a link the way a
+    /// symlink does, whether or not `Path::is_symlink` reports it, which varies between Rust
+    /// releases.
     #[test]
     fn a_junction_is_a_link_and_a_directory_is_not() {
         let temp = tempfile::tempdir().unwrap();
@@ -730,7 +769,6 @@ mod windows_tests {
             .status()
             .unwrap();
         assert!(status.success(), "mklink /J failed");
-        assert!(!junction.is_symlink());
         assert!(is_link(&junction));
         assert!(!is_link(&dir));
 
@@ -749,5 +787,30 @@ mod windows_tests {
             linked_project(&project.join(".config/mise.toml")),
             Some(project.absolutize().unwrap().to_path_buf())
         );
+    }
+}
+
+/// Trust records hold paths in the form `canonicalize` gives them, which on Windows starts with
+/// `\\?\`. `mise untrust` compares a record of a nested root with the roots worked out from it,
+/// so those keep that form. Not unix-only, so `windows-unit` checks the prefix.
+#[cfg(test)]
+mod canonical_form_tests {
+    use super::*;
+
+    #[test]
+    fn the_roots_of_a_canonical_path_keep_its_form() {
+        let temp = tempfile::tempdir().unwrap();
+        let project = temp.path().canonicalize().unwrap().join("proj");
+        let nested_roots = [
+            project.join(".config").join("mise"),
+            project.join(".mise").join("conf.d").join("x"),
+        ];
+        for root in nested_roots {
+            std::fs::create_dir_all(&root).unwrap();
+            let probe = root.join("mise.toml");
+            assert_eq!(config_root(&probe), root);
+            assert_eq!(nested_root_project(&probe).as_ref(), Some(&project));
+            assert_eq!(linked_project(&probe), None);
+        }
     }
 }

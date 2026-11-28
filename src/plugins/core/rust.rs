@@ -107,7 +107,7 @@ fn cutoff_channel_target(version: &str) -> Option<String> {
 /// A date-only cutoff (`2026-11-09`) is the end of its day (`23:59:59Z`), which covers every
 /// build dated that day; a mid-day cutoff may precede a same-day build's publication.
 fn cutoff_day(before: jiff::Timestamp) -> (jiff::civil::Date, bool) {
-    let zoned = before.to_zoned(jiff::tz::TimeZone::UTC);
+    let zoned = before.to_zoned_datetime(jiff::tz::TimeZone::UTC);
     let end_of_day = jiff::civil::time(23, 59, 59, 0);
     (zoned.date(), zoned.time() == end_of_day)
 }
@@ -966,7 +966,7 @@ impl Backend for RustPlugin {
         let current = current_channel_created_at(version, &config_env)
             .await
             .and_then(|ts| ts.parse::<jiff::Timestamp>().ok())
-            .map(|ts| ts.to_zoned(jiff::tz::TimeZone::UTC).date());
+            .map(|ts| ts.to_zoned_datetime(jiff::tz::TimeZone::UTC).date());
         // Already old enough: pin to that build so a lockfile or an upgrade cannot move it.
         if let Some(date) =
             current.filter(|date| channel_build_within_cutoff(*date, day, includes_day))
