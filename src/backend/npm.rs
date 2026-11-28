@@ -2333,18 +2333,25 @@ impl NPMBackend {
     }
 
     /// Whether a dependency graph names the git source with credentials in its
-    /// URL: any credentials, not only the ones the request has now, so a graph
+    /// URL, as userinfo or in a query parameter whose name says it carries one:
+    /// any credentials, not only the ones the request has now, so a graph
     /// stored before a token was rotated, or before the user moved it to a
-    /// credential helper, counts too.
+    /// credential helper, counts too. A query credential is not stripped from
+    /// the stored form, so a graph that holds one is refused.
     pub(crate) fn aube_lock_holds_credentials(&self, lock: &crate::lockfile::AubeLock) -> bool {
+        use mise_util::redactions::{
+            strip_credential_query_params, strip_url_credentials, strip_url_credentials_in_arg,
+        };
         let name = self.tool_name();
         let Some(url) = git_source_url(&name) else {
             return false;
         };
-        let stored = mise_util::redactions::strip_url_credentials_in_arg(url);
+        let stored = strip_url_credentials_in_arg(url);
+        let source = strip_credential_query_params(&stored);
         let holds = |text: &str| {
-            let stripped = mise_util::redactions::strip_url_credentials(text);
-            stripped != text && stripped.contains(stored.as_ref())
+            let stripped = strip_url_credentials(text);
+            let stripped = strip_credential_query_params(&stripped);
+            stripped != text && stripped.contains(source.as_ref())
         };
         let found = std::cell::Cell::new(false);
         aube_graph_map(&lock.graph, &|value| {
@@ -2402,17 +2409,19 @@ impl NPMBackend {
     ///
     /// `context` is `remote_version_cache_context`: a registry other than
     /// npmjs.org has its own `latest`, so it gets its own entry, as its
-    /// version list does.
+    /// version list does. The file is new (`_v2`), so a lookup on npmjs.org
+    /// cannot read the entry an older mise shared with every registry.
     fn latest_version_cache(&self, context: Option<&str>) -> LatestVersionCache {
         self.latest_version_caches
             .lock()
             .unwrap()
             .entry(context.map(str::to_string))
             .or_insert_with(|| {
-                let mut cm =
-                    CacheManagerBuilder::new(self.ba.cache_path().join("latest_version.msgpack.z"))
-                        .with_cache_key(self.ba.full())
-                        .with_fresh_duration(Settings::get().fetch_remote_versions_cache());
+                let mut cm = CacheManagerBuilder::new(
+                    self.ba.cache_path().join("latest_version_v2.msgpack.z"),
+                )
+                .with_cache_key(self.ba.full())
+                .with_fresh_duration(Settings::get().fetch_remote_versions_cache());
                 if let Some(context) = context {
                     cm = cm.with_cache_key(context.to_string());
                 }
@@ -4687,12 +4696,27 @@ packages:
             );
         }
 
-        // A credential in the query string is for the lockfile to refuse.
+        // A credential in the query string is for the lockfile to refuse: it
+        // stays in the stored form, and a graph that holds it counts as holding
+        // credentials.
         let backend = create_npm_git_backend(GIT_SOURCE_WITH_CREDENTIALS);
         assert_eq!(
             backend.aube_lock_stored_form(GIT_SOURCE_WITH_CREDENTIALS),
             "git+https://git.example.test/org/repo.git?access_token=query-token#main"
         );
+        let query_url = "https://git.example.test/org/repo.git?access_token=query-token";
+        let query_lock = crate::lockfile::AubeLock::from_yaml(&format!(
+            r#"importers:
+  .:
+    dependencies:
+      repo:
+        specifier: git+{query_url}#main
+        version: {query_url}#deadbeef
+"#
+        ))
+        .unwrap();
+        assert!(backend.aube_lock_holds_credentials(&query_lock));
+        assert!(!backend.installs_stored_aube_lock(&query_lock, false));
     }
 
     #[test]
