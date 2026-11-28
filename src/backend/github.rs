@@ -508,8 +508,7 @@ impl asset_matcher::ChecksumSource for ForgeChecksumSource<'_> {
         };
         // The probe that picks between the browser and API URLs carries the
         // same forge headers as the request, and nothing added by host.
-        let probe_headers = forge_headers(&file.url)?;
-        let url = release_file_url(&file.url, &file.url_api, Some(&probe_headers)).await;
+        let url = release_file_url(&file.url, &file.url_api, Some(&forge_headers)).await;
         let headers = forge_headers(&url)?;
         // The release chooses this URL, and a GitLab or Forgejo release link can
         // point anywhere. The response is recorded as the asset's checksum (in
@@ -525,13 +524,17 @@ impl asset_matcher::ChecksumSource for ForgeChecksumSource<'_> {
     }
 }
 
+/// Builds the forge headers for a request to a URL.
+type ForgeHeaders<'a> = dyn Fn(&str) -> Result<reqwest::header::HeaderMap> + Sync + 'a;
+
 /// [`asset_download_url`] for any file in a release, such as a checksum file.
-/// With `probe_headers`, the probe of the browser URL carries only those, not
-/// the credentials the HTTP client adds by host alone.
+/// With `probe_headers`, the probe of the browser URL carries only the headers
+/// it builds for that URL, not the credentials the HTTP client adds by host
+/// alone.
 async fn release_file_url(
     url: &str,
     url_api: &str,
-    probe_headers: Option<&reqwest::header::HeaderMap>,
+    probe_headers: Option<&ForgeHeaders<'_>>,
 ) -> String {
     if url_api.is_empty() {
         url.to_string()

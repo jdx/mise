@@ -1919,25 +1919,39 @@ pub const BROWSER_ASSET_MAX_RETRIES: i64 = 1;
 /// required by release assets or repository content. Shared by GitHub-backed installers so they
 /// resolve private downloads consistently.
 pub async fn pick_reachable_asset_url(browser_url: &str, api_url: &str) -> String {
-    pick_reachable_url(browser_url, api_url, None).await
+    pick_reachable_url(browser_url, api_url, async {
+        crate::http::HTTP
+            .head_without_netrc(browser_url, BROWSER_ASSET_MAX_RETRIES)
+            .await
+    })
+    .await
 }
 
 /// [`pick_reachable_asset_url`] for a file a release links to, which a third
-/// party chose: the probe carries `headers`, the forge credentials the request
-/// for the file is meant to carry, and none of the credentials the HTTP client
-/// adds by host alone, as the request itself does.
+/// party chose: the probe carries `headers(browser_url)`, the forge credentials
+/// the request for the file is meant to carry, and none of the credentials the
+/// HTTP client adds by host alone, as the request itself does. They are built
+/// only for a probe, and a browser URL they cannot be built for, such as an
+/// empty or malformed one, falls back to the API URL as a failed probe does.
 pub async fn pick_reachable_release_link_url(
     browser_url: &str,
     api_url: &str,
-    headers: &HeaderMap,
+    headers: impl FnOnce(&str) -> Result<HeaderMap>,
 ) -> String {
-    pick_reachable_url(browser_url, api_url, Some(headers)).await
+    pick_reachable_url(browser_url, api_url, async {
+        let headers = headers(browser_url)?;
+        crate::http::HTTP
+            .head_without_netrc_or_host_auth(browser_url, &headers, BROWSER_ASSET_MAX_RETRIES)
+            .await
+    })
+    .await
 }
 
+/// Runs `probe`, a HEAD of `browser_url`, unless the two URLs are the same.
 async fn pick_reachable_url(
     browser_url: &str,
     api_url: &str,
-    headers: Option<&HeaderMap>,
+    probe: impl Future<Output = Result<reqwest::Response>>,
 ) -> String {
     if browser_url == api_url {
         return browser_url.to_string();
@@ -1947,19 +1961,7 @@ async fn pick_reachable_url(
     // settings) is for the download itself. When github.com's edge answers 5xx
     // for a URL, it tends to keep doing so while the API endpoint still serves
     // the file.
-    let probe = match headers {
-        Some(headers) => {
-            crate::http::HTTP
-                .head_without_netrc_or_host_auth(browser_url, headers, BROWSER_ASSET_MAX_RETRIES)
-                .await
-        }
-        None => {
-            crate::http::HTTP
-                .head_without_netrc(browser_url, BROWSER_ASSET_MAX_RETRIES)
-                .await
-        }
-    };
-    match probe {
+    match probe.await {
         Ok(resp) => {
             let is_html = resp
                 .headers()

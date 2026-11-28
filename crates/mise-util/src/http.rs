@@ -1542,6 +1542,11 @@ impl Client {
         url: U,
         max_retries: i64,
     ) -> Result<Response> {
+        // Before the credential lookup, which can refresh a GitHub OAuth token.
+        ensure!(
+            !crate::network::offline(&Settings::get()),
+            "offline mode is enabled"
+        );
         let url = url.into_url()?;
         let headers = host_auth_headers(&url)?;
         self.head_without_netrc_with(url, &headers, max_retries)
@@ -1557,22 +1562,23 @@ impl Client {
         headers: &HeaderMap,
         max_retries: i64,
     ) -> Result<Response> {
+        ensure!(
+            !crate::network::offline(&Settings::get()),
+            "offline mode is enabled"
+        );
         let url = url.into_url()?;
         let mut all = crate::github::media_type_headers(&url);
         all.extend(headers.clone());
         self.head_without_netrc_with(url, &all, max_retries).await
     }
 
+    /// The HEAD of the two above; each checks offline mode first.
     async fn head_without_netrc_with(
         &self,
         url: Url,
         headers: &HeaderMap,
         max_retries: i64,
     ) -> Result<Response> {
-        ensure!(
-            !crate::network::offline(&Settings::get()),
-            "offline mode is enabled"
-        );
         let retry_state = new_retry_state(headers, true);
         let resp = retry_async_with_retries(
             "HEAD",
