@@ -2,9 +2,7 @@ use crate::config::{
     ConfigPathOptions, override_config_path, resolve_target_config_path, system_config_path,
     top_toml_config,
 };
-use crate::file::{CONFIG_FILE_LIMIT, display_path};
-use eyre::{Result, bail};
-use std::io::Read;
+use eyre::Result;
 use std::path::{Path, PathBuf};
 
 mod explain;
@@ -96,16 +94,5 @@ fn read_target(file: &Path) -> Result<String> {
     if file.metadata().is_ok_and(|m| m.is_file()) {
         return crate::file::read_config_to_string(file);
     }
-    let mut body = String::new();
-    std::fs::File::open(file)?
-        .take(CONFIG_FILE_LIMIT + 1)
-        .read_to_string(&mut body)?;
-    if body.len() as u64 > CONFIG_FILE_LIMIT {
-        bail!(
-            "not reading {}: it is larger than {} MiB, the most mise reads from a config file",
-            display_path(file),
-            CONFIG_FILE_LIMIT / 1024 / 1024
-        );
-    }
-    Ok(body)
+    crate::file::read_config_from(file, std::fs::File::open(file)?)
 }
