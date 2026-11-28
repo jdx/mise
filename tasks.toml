@@ -200,11 +200,26 @@ env = { CARGO_TERM_COLOR = "always", "RUST_TEST_THREADS" = "1" }
 description = "run unit tests with CI time limits"
 # NEXTEST_PROFILE lets CI pick `ci-shared` on shared runners, where the strict
 # ceilings are not a usable signal. Defaults to the strict `ci` profile.
-run = [
-  "cargo nextest run --profile ${NEXTEST_PROFILE:-ci} --all-features --ignore-rust-version --no-fail-fast",
-  "cargo nextest run --profile ${NEXTEST_PROFILE:-ci} --workspace --exclude mise --ignore-rust-version --no-fail-fast",
-  "cargo test --doc --workspace --exclude mise --ignore-rust-version",
-]
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Both commands select the whole workspace with the same features, so Cargo
+# resolves the features of every dependency once and compiles each crate once.
+# Cargo resolves features for the selected packages only: testing `mise` and
+# then `--workspace --exclude mise` gives the ~300 crates they share two
+# feature sets, and the second command compiles all of them again.
+#
+# `--all-features` on the workspace would also turn on the members' own
+# optional features, such as `vfox/cli`. Naming every feature of `mise` is
+# `--all-features` for `mise` alone.
+mise_features="$(
+  cargo metadata --no-deps --format-version 1 |
+    jq -r '[.packages[] | select(.name == "mise") | .features | keys[] | "mise/" + .] | join(",")'
+)"
+cargo nextest run --profile "${NEXTEST_PROFILE:-ci}" --workspace --features "$mise_features" --ignore-rust-version --no-fail-fast
+cargo test --doc --workspace --features "$mise_features" --ignore-rust-version
+'''
 
 ["test:shuffle"]
 description = 'Run tests with shuffling enabled'
