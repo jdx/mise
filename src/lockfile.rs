@@ -2285,13 +2285,8 @@ impl Lockfile {
                     .map(|specifier| (specifier.clone(), entry.options.clone()))
             })
             .collect();
-        for (index, entry) in entries.iter().enumerate() {
-            let others = entries
-                .iter()
-                .enumerate()
-                .filter(|(other, e)| *other != index && e.version == entry.version)
-                .map(|(_, e)| e);
-            let excludes = excluded.excluding(&key, entry, others);
+        for entry in entries {
+            let excludes = |platform: &str| excluded.excludes(&key, entry, platform);
             let mut entry = entry.clone();
             let is_excluded = |platform: &String| excludes(platform);
             let recorded = entry.platforms.len() + entry.unsupported_platforms.len();
@@ -5838,26 +5833,24 @@ pub struct ExcludedPlatform {
     pub platform: String,
 }
 
-/// A request `mise lock` saw: its backend and the lockfile options it has on each platform.
-type SeenRequest = (String, BTreeSet<BTreeMap<String, String>>);
-
 /// The [`ExcludedPlatform`]s of a run. Generation drops their records, so restoring what a
 /// skipped task file may still use must not bring them back. Only a record an exclusion
-/// matches without doubt stays out: a stale row is safer than a lost pin.
+/// matches without doubt stays out: a stale row costs a rewrite on the next `mise lock` that
+/// skips nothing, while a lost pin breaks a locked install.
 ///
 /// | previous entry | matches an exclusion of the same tool, version and platform |
 /// |---|---|
 /// | names a backend | with the same backend and options |
-/// | names no backend (legacy) | with the same options |
-/// | legacy, with no options | also when the tool's version has exactly one request |
+/// | names no backend (legacy), has options | with the same options |
+/// | legacy, with no options | with no options, unless a task file was skipped |
 ///
-/// The last row is for entries written before options were recorded. One request is one
-/// that `mise lock` saw, and no other entry of the previous lockfile for that version stands
-/// for another one, such as a skipped task's.
+/// A legacy entry with no options may have been written before options were recorded, so its
+/// options say nothing about which request it is for. While a task file is skipped, the
+/// requests its tasks make are not seen, and such an entry may be one of theirs.
 #[derive(Debug, Clone, Default)]
 pub struct ExcludedPlatforms {
     records: BTreeSet<ExcludedPlatform>,
-    requests: BTreeMap<(String, String), BTreeSet<SeenRequest>>,
+    task_file_skipped: bool,
 }
 
 impl ExcludedPlatforms {
@@ -5869,58 +5862,31 @@ impl ExcludedPlatforms {
         self.records.insert(record);
     }
 
-    /// Records that `mise lock` saw a request for `tool@version` from `backend`, with these
-    /// lockfile options across the target platforms.
-    pub fn add_request(
-        &mut self,
-        tool: &str,
-        version: &str,
-        backend: String,
-        options: BTreeSet<BTreeMap<String, String>>,
-    ) {
-        self.requests
-            .entry((tool.to_string(), version.to_string()))
-            .or_default()
-            .insert((backend, options));
+    /// Records that safe mode skipped a task file, so the requests its tasks make were not
+    /// seen.
+    pub fn set_task_file_skipped(&mut self, skipped: bool) {
+        self.task_file_skipped = skipped;
     }
 
     pub fn iter(&self) -> impl Iterator<Item = &ExcludedPlatform> {
         self.records.iter()
     }
 
-    /// Which platforms of `entry`, a previous entry of `tool`, are excluded. `others` are the
-    /// previous lockfile's other entries for the same version.
-    fn excluding<'a>(
-        &'a self,
-        tool: &'a str,
-        entry: &'a LockfileTool,
-        mut others: impl Iterator<Item = &'a LockfileTool>,
-    ) -> impl Fn(&str) -> bool + 'a {
-        let mut only_request = || {
-            let requests = self
-                .requests
-                .get(&(tool.to_string(), entry.version.clone()));
-            let Some(requests) = requests.filter(|requests| requests.len() == 1) else {
-                return false;
-            };
-            let (backend, options) = requests.first().unwrap();
-            others.all(|other| {
-                other.backend.as_ref() == Some(backend) && options.contains(&other.options)
-            })
-        };
-        let legacy_unrecorded =
-            entry.backend.is_none() && entry.options.is_empty() && only_request();
-        move |platform: &str| {
-            self.records.iter().any(|e| {
-                e.tool == tool
-                    && e.version == entry.version
-                    && e.platform == platform
-                    && match &entry.backend {
-                        Some(backend) => *backend == e.backend && e.options == entry.options,
-                        None => e.options == entry.options || legacy_unrecorded,
-                    }
-            })
+    /// Whether `platform` of `entry`, a previous entry of `tool`, is excluded.
+    fn excludes(&self, tool: &str, entry: &LockfileTool, platform: &str) -> bool {
+        if entry.backend.is_none() && entry.options.is_empty() && self.task_file_skipped {
+            return false;
         }
+        self.records.iter().any(|e| {
+            e.tool == tool
+                && e.version == entry.version
+                && e.platform == platform
+                && e.options == entry.options
+                && entry
+                    .backend
+                    .as_ref()
+                    .is_none_or(|backend| *backend == e.backend)
+        })
     }
 }
 
