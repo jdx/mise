@@ -158,29 +158,51 @@ if [ "$(id -u)" != 0 ]; then
   rm -r .mise
   forget_trust
   ok "[trust] another account's linked conf.d fragment still asks"
-
-  # A link to the user's own file in a directory any account may write: another
-  # account could put its own file there after the trust is recorded.
-  mkdir ../shared
-  cp mise.toml ../shared/mise.toml
-  chmod 644 ../shared/mise.toml
-  chmod 777 ../shared
-  mv mise.toml mise.toml.orig
-  ln -s ../shared/mise.toml mise.toml
-  output="$(on_pty 'mise env')" || true
-  assert_contains_text "$output" "Trust them?"
-  assert_not_contains_text "$output" "$notice"
-  assert_untrusted
-  forget_trust
-  chmod 755 ../shared
-  output="$(on_pty 'mise env')"
-  assert_contains_text "$output" "$notice"
-  assert_not_contains_text "$output" "Trust them?"
-  rm mise.toml
-  mv mise.toml.orig mise.toml
-  forget_trust
-  ok "[trust] a link into a directory another account may write still asks"
 fi
+
+# These check the mode of a directory, not who owns it, so they also run as root,
+# as Linux CI does: a 777 directory counts as writable by other accounts.
+
+# A link to the user's own file in a directory any account may write: another
+# account could put its own file there after the trust is recorded.
+mkdir ../shared
+cp mise.toml ../shared/mise.toml
+chmod 644 ../shared/mise.toml
+chmod 777 ../shared
+mv mise.toml mise.toml.orig
+ln -s ../shared/mise.toml mise.toml
+output="$(on_pty 'mise env')" || true
+assert_contains_text "$output" "Trust them?"
+assert_not_contains_text "$output" "$notice"
+assert_untrusted
+forget_trust
+chmod 755 ../shared
+output="$(on_pty 'mise env')"
+assert_contains_text "$output" "$notice"
+assert_not_contains_text "$output" "Trust them?"
+forget_trust
+ok "[trust] a link into a directory another account may write still asks"
+
+# The same file reached through a second link, in a directory any account may
+# write: that account could point the second link elsewhere.
+mkdir ../hop
+ln -s ../shared/mise.toml ../hop/link
+chmod 777 ../hop
+rm mise.toml
+ln -s ../hop/link mise.toml
+output="$(on_pty 'mise env')" || true
+assert_contains_text "$output" "Trust them?"
+assert_not_contains_text "$output" "$notice"
+assert_untrusted
+forget_trust
+chmod 755 ../hop
+output="$(on_pty 'mise env')"
+assert_contains_text "$output" "$notice"
+assert_not_contains_text "$output" "Trust them?"
+forget_trust
+rm mise.toml
+mv mise.toml.orig mise.toml
+ok "[trust] a link through another link another account may replace still asks"
 
 # Typed on a terminal: trusted, with a notice, and the config applies. The
 # undo hint is quoted for the shell `mise activate` named.
