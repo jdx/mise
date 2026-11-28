@@ -2330,14 +2330,17 @@ impl Lock {
     /// can compare against the old version entries before they are removed.
     fn prune_stale_versions(&self, lockfile: &mut Lockfile, tools: &[LockTool]) -> Result<()> {
         let current_versions = self.current_tool_versions(tools);
+        // Entries that pin a package to more than one repository are what refuses
+        // an install of a version they do not cover, so no cleanup below drops
+        // them until the user reconciles them.
+        let disagreeing = lockfile
+            .tools()
+            .iter()
+            .filter(|(_, entries)| lockfile::package_pins_disagree(entries))
+            .map(|(short, _)| short.clone())
+            .collect::<BTreeSet<_>>();
         for (short, versions) in &current_versions {
-            // Entries that pin a package to more than one repository are what refuses
-            // an install of a version they do not cover, so they stay until the user
-            // reconciles them.
-            if lockfile
-                .tools_for(short)
-                .is_some_and(|entries| lockfile::package_pins_disagree(entries))
-            {
+            if disagreeing.contains(short) {
                 warn!(
                     "keeping the old {short} entries in mise.lock: they pin it to more than one repository"
                 );
@@ -2360,11 +2363,12 @@ impl Lock {
                 })
                 .collect::<Vec<_>>();
             lockfile.retain_unsuperseded_unbound_entries(|short, entry| {
-                resolved.iter().any(|(name, backend, version)| {
-                    name == short
-                        && version == &entry.version
-                        && entry.backend.as_deref().is_some_and(|b| b == backend)
-                })
+                !disagreeing.contains(short)
+                    && resolved.iter().any(|(name, backend, version)| {
+                        name == short
+                            && version == &entry.version
+                            && entry.backend.as_deref().is_some_and(|b| b == backend)
+                    })
             });
         }
         if self.is_unfiltered_lock_run()
@@ -2389,6 +2393,9 @@ impl Lock {
                 })
                 .collect::<Result<Vec<_>>>()?;
             lockfile.retain_graph_entries(|short, entry| {
+                if disagreeing.contains(short) {
+                    return true;
+                }
                 let mut matching = variants
                     .iter()
                     .filter(|(name, backend, version, _)| {

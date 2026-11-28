@@ -6598,3 +6598,82 @@ backend = "conda:jq"
             .is_some()
     );
 }
+
+#[test]
+fn a_new_version_is_not_written_when_the_package_pins_disagree() {
+    let pinned = |version: &str, repository: &str| {
+        let mut tool = basic_tool(version, "npm:moved");
+        tool.provenance = Some(PackageProvenance {
+            repository: repository.to_string(),
+        });
+        tool
+    };
+    let mut lockfile = Lockfile::default();
+    lockfile.tools.insert(
+        "npm:moved".to_string(),
+        vec![
+            pinned("1.0.0", "github.com/moved/old"),
+            pinned("2.0.0", "github.com/moved/new"),
+        ],
+    );
+    lockfile.set_platform_info(
+        "npm:moved",
+        "3.0.0",
+        Some("npm:moved"),
+        &BTreeMap::new(),
+        "linux-x64",
+        PlatformInfo::default(),
+    );
+    lockfile.set_unsupported_platform(
+        "npm:moved",
+        "3.0.0",
+        Some("npm:moved"),
+        &BTreeMap::new(),
+        "macos-arm64",
+    );
+    let versions = lockfile
+        .tools_for("npm:moved")
+        .unwrap()
+        .iter()
+        .map(|tool| tool.version.as_str())
+        .collect_vec();
+    assert_eq!(versions, ["1.0.0", "2.0.0"]);
+    // The version stays refused rather than locked unpinned.
+    assert!(
+        pinned_package_provenance(
+            lockfile.tools_for("npm:moved").unwrap(),
+            "3.0.0",
+            Some("npm:moved")
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn an_unsupported_platform_entry_takes_the_package_pin() {
+    let mut existing = basic_tool("3.1.0", "npm:@sigstore/bundle");
+    existing.provenance = Some(PackageProvenance {
+        repository: "github.com/sigstore/sigstore-js".to_string(),
+    });
+    let mut lockfile = Lockfile::default();
+    lockfile
+        .tools
+        .insert("npm:@sigstore/bundle".to_string(), vec![existing]);
+    lockfile.set_unsupported_platform(
+        "npm:@sigstore/bundle",
+        "3.2.0",
+        Some("npm:@sigstore/bundle"),
+        &BTreeMap::new(),
+        "linux-x64",
+    );
+    let entry = lockfile
+        .tools_for("npm:@sigstore/bundle")
+        .unwrap()
+        .iter()
+        .find(|tool| tool.version == "3.2.0")
+        .unwrap();
+    assert_eq!(
+        entry.provenance.as_ref().map(|p| p.repository.as_str()),
+        Some("github.com/sigstore/sigstore-js")
+    );
+}

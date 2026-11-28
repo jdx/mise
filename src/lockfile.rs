@@ -3152,13 +3152,11 @@ impl Lockfile {
             }
             // The package's repository pin follows it into an entry for a version or
             // options not locked before, as `merge_tool_entries` does, so pruning the
-            // old entries does not drop it.
-            let provenance = match pinned_package_provenance(tools, version, backend) {
-                Ok(pin) => pin,
-                Err(err) => {
-                    warn!("{err:#}");
-                    None
-                }
+            // old entries does not drop it. When the package's entries pin it to more
+            // than one repository, no entry is written: an unpinned one would let the
+            // version install unverified.
+            let Some(provenance) = new_entry_provenance(tools, version, backend) else {
+                return;
             };
             tools.push(LockfileTool {
                 version: version.to_string(),
@@ -3206,6 +3204,10 @@ impl Lockfile {
                 tool.unsupported_platforms.insert(platform_key.to_string());
             }
         } else {
+            // A new entry takes the package's pin, as in `set_platform_info`.
+            let Some(provenance) = new_entry_provenance(tools, version, backend) else {
+                return;
+            };
             tools.push(LockfileTool {
                 version: version.to_string(),
                 backend: backend.map(|s| s.to_string()),
@@ -3214,7 +3216,7 @@ impl Lockfile {
                 platforms: BTreeMap::new(),
                 aube: None,
                 uv: None,
-                provenance: None,
+                provenance,
                 unsupported_platforms: BTreeSet::from([platform_key.to_string()]),
             });
         }
@@ -7750,6 +7752,22 @@ pub(crate) fn pinned_package_provenance(
             backend.unwrap_or("the package"),
             repositories.join(", ")
         ),
+    }
+}
+
+/// The pin for a new entry of `version`, or `None` when the package's entries
+/// disagree, so the caller writes no entry. The conflict is warned about once.
+fn new_entry_provenance(
+    entries: &[LockfileTool],
+    version: &str,
+    backend: Option<&str>,
+) -> Option<Option<PackageProvenance>> {
+    match pinned_package_provenance(entries, version, backend) {
+        Ok(pin) => Some(pin),
+        Err(err) => {
+            warn_once!("{err:#}");
+            None
+        }
     }
 }
 
