@@ -35,6 +35,10 @@ works.
    | `ubi:owner/repo` with `provider = "gitlab"` | `gitlab:owner/repo`                                                                        |
    | `ubi:https://...`, a direct download URL    | An `http:` tool with that [`url`](/dev-tools/backends/http.html#usage) and a version label |
 
+   A tool you configure by its registry name (`gh = "2"`) has no prefix to
+   change. If its `mise.lock` entries record a `ubi:` backend, delete those
+   entries instead, so the tool installs from the registry's backend.
+
 2. Replace the tool options using the [option mapping](#option-mapping).
 3. Install the tool and run it:
 
@@ -44,9 +48,7 @@ works.
    ```
 
 4. If you use a lockfile, run `mise lock` to write entries for the new tool.
-   A tool you configure by its registry name (`gh = "2"`) whose `mise.lock`
-   entries record a `ubi:` backend keeps failing until you delete those
-   entries; `mise lock` then records the registry's backend. The old installation stays in mise's data directory; delete its
+   The old installation stays in mise's data directory; delete its
    `installs/ubi-owner-repo` directory when you no longer need it.
 
 A tool that named its executable with `exe` usually needs no option on the new

@@ -47,3 +47,16 @@ backend = "ubi:cli/cli[exe=gh]"
 EOF2
 assert_fail "mise install" "gh: ubi:cli/cli[exe=gh]: the ubi backend was removed from mise"
 assert_fail "mise install" "mise.lock pins gh to this backend"
+
+# The same for a core tool's name: the core backend must not answer for it.
+cat <<EOF2 >mise.toml
+[tools]
+node = "22"
+EOF2
+cat <<EOF2 >mise.lock
+[[tools.node]]
+version = "22.0.0"
+backend = "ubi:nodejs/node"
+EOF2
+assert_fail "mise install" "node: ubi:nodejs/node: the ubi backend was removed from mise"
+assert_fail "mise install" "mise.lock pins node to this backend"

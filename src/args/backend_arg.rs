@@ -560,31 +560,49 @@ impl BackendArg {
     /// names a backend mise has removed.
     pub(crate) fn removed_backend_error(&self) -> Option<String> {
         self.removed_backend_error_before_lookup().or_else(|| {
-            let full = self.full();
-            let msg = backend::removed_backend_error(&full)?;
-            let short = unalias_backend(&self.short);
-            let locked = config::is_loaded()
-                && lockfile::get_locked_backend_for_version(
-                    &Config::get_(),
-                    &short,
-                    self.registry_version.as_deref(),
-                )
-                .is_some_and(|locked| backend::removed_backend_error(&locked).is_some());
-            Some(if locked {
-                format!(
-                    "{}: {msg}. mise.lock pins {short} to this backend: delete its \
-                     entries there to install it from the registry's backend",
-                    self.short
-                )
-            } else {
-                format!("{}: {msg}", self.short)
-            })
+            let msg = backend::removed_backend_error(&self.full())?;
+            Some(format!("{}: {msg}", self.short))
         })
     }
 
-    /// [`Self::removed_backend_error`] without `full()`'s lockfile and registry
-    /// lookups: the name, an explicit backend, an env override and a config alias.
+    /// [`Self::removed_backend_error`] for what can answer before the backend
+    /// cache does: the name, an explicit backend, an env override, a config
+    /// alias and a lockfile pin. The cache would answer a core, registry or
+    /// installed tool's name with that tool's backend.
     fn removed_backend_error_before_lookup(&self) -> Option<String> {
+        self.removed_backend_error_before_lockfile()
+            .or_else(|| self.removed_lockfile_pin_error())
+    }
+
+    /// The removal error when mise.lock pins this tool to a removed backend.
+    /// The lookup is memoized, and `full()` runs only for such a pin, which
+    /// confirms nothing above the lockfile (an alias or a plugin URL, say)
+    /// overrides it.
+    fn removed_lockfile_pin_error(&self) -> Option<String> {
+        // As in `full()`, an env override or an explicit backend wins over the lock.
+        if !config::is_loaded()
+            || (self.resolution.explicit && self.full.is_some())
+            || self.env_backend_override().is_some()
+        {
+            return None;
+        }
+        let short = unalias_backend(&self.short);
+        let locked = lockfile::get_locked_backend_for_version(
+            &Config::get_(),
+            &short,
+            self.registry_version.as_deref(),
+        )?;
+        backend::removed_backend_error(&locked)?;
+        let msg = backend::removed_backend_error(&self.full())?;
+        Some(format!(
+            "{}: {msg}. mise.lock pins {short} to this backend: delete its \
+             entries there to install it from the registry's backend",
+            self.short
+        ))
+    }
+
+    /// The name, an explicit backend, an env override and a config alias.
+    fn removed_backend_error_before_lockfile(&self) -> Option<String> {
         if let Some(msg) = backend::removed_backend_error(&self.short) {
             return Some(msg);
         }
