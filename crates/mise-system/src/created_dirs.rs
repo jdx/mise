@@ -16,6 +16,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
+use eyre::WrapErr;
 use serde::{Deserialize, Serialize};
 
 use mise_util::dirs;
@@ -112,9 +113,8 @@ impl CreatedDirs {
     }
 
     /// Write the record, dropping directories that are gone or no longer the ones recorded, and
-    /// targets that are gone. One that cannot be read now may still be there, so it is kept. A
-    /// record that cannot be written only leaves directories behind later, so it warns.
-    fn save(mut self) {
+    /// targets that are gone. One that cannot be read now may still be there, so it is kept.
+    fn save(mut self) -> eyre::Result<()> {
         self.version = VERSION;
         self.dirs
             .retain(|dir, id| match std::fs::symlink_metadata(dir) {
@@ -123,24 +123,14 @@ impl CreatedDirs {
             });
         self.targets.retain(|target| !gone(target));
         let path = record_path();
-        let result = if self.targets.is_empty() && self.dirs.is_empty() {
+        if self.targets.is_empty() && self.dirs.is_empty() {
             if path.exists() {
-                file::remove_file(&path)
-            } else {
-                Ok(())
+                file::remove_file(&path)?;
             }
-        } else {
-            (|| -> eyre::Result<()> {
-                file::create_dir_all(path.parent().expect("dotfiles state parent"))?;
-                file::write_atomic(&path, toml::to_string_pretty(&self)?)
-            })()
-        };
-        if let Err(err) = result {
-            warn!(
-                "files: failed to write dotfiles state {}: {err}",
-                path.display_user()
-            );
+            return Ok(());
         }
+        file::create_dir_all(path.parent().expect("dotfiles state parent"))?;
+        file::write_atomic(&path, toml::to_string_pretty(&self)?)
     }
 
     /// Whether removing files deployed under `target` may remove the emptied directory `dir`.
@@ -193,26 +183,28 @@ impl CreatedDirs {
 }
 
 /// Load the record, let `change` modify it, and write it back when `change` says it changed it,
-/// holding a lock so that two mise processes do not each overwrite what the other recorded. Without
-/// the lock, or with a record that cannot be read, nothing is written.
-fn update(change: impl FnOnce(&mut CreatedDirs) -> bool) {
+/// holding a lock so that two mise processes do not each overwrite what the other recorded. A
+/// record that cannot be read is left as it is, which already keeps every directory.
+fn update(change: impl FnOnce(&mut CreatedDirs) -> bool) -> eyre::Result<()> {
     let path = record_path();
-    let _lock = match mise_util::lock_file::LockFile::new(&path).lock() {
-        Ok(lock) => lock,
-        Err(err) => {
-            warn!(
-                "files: failed to lock dotfiles state {}: {err}",
-                path.display_user()
-            );
-            return;
-        }
-    };
+    let _lock = mise_util::lock_file::LockFile::new(&path).lock()?;
     let mut record = CreatedDirs::load();
     if record.unreadable {
-        return;
+        return Ok(());
     }
     if change(&mut record) {
-        record.save();
+        record.save()?;
+    }
+    Ok(())
+}
+
+/// [`update`] for a change whose loss only leaves directories behind later, so it warns.
+fn update_or_warn(change: impl FnOnce(&mut CreatedDirs) -> bool) {
+    if let Err(err) = update(change) {
+        warn!(
+            "files: failed to update dotfiles state {}: {err}",
+            record_path().display_user()
+        );
     }
 }
 
@@ -221,7 +213,13 @@ fn update(change: impl FnOnce(&mut CreatedDirs) -> bool) {
 /// deployed: `target` and the directories down to each path of `deployed` that exists, as a
 /// removal took them before the record existed. A directory of the user's that holds nothing
 /// mise deployed stays the user's.
-pub(crate) fn track(target: &Path, deployed: impl IntoIterator<Item = PathBuf>) {
+///
+/// An error means `target` is not tracked, so a later removal would take any directory it
+/// empties there, including the user's: the apply must not write under it.
+pub(crate) fn track(
+    target: &Path,
+    deployed: impl IntoIterator<Item = PathBuf>,
+) -> eyre::Result<()> {
     let target = lexical_normalize(target);
     update(|record| {
         if record.tracks(&target) {
@@ -242,15 +240,21 @@ pub(crate) fn track(target: &Path, deployed: impl IntoIterator<Item = PathBuf>) 
                 record.insert(dir.to_path_buf());
             }
         }
-        record.targets.insert(target);
+        record.targets.insert(target.clone());
         true
-    });
+    })
+    .wrap_err_with(|| {
+        format!(
+            "files: cannot record what mise creates under {}, so it does not write there",
+            target.display_user()
+        )
+    })
 }
 
 /// Record the directories of `created` at or beneath `target` that an apply made.
 pub(crate) fn record(target: &Path, created: &[PathBuf]) {
     let target = lexical_normalize(target);
-    update(|record| {
+    update_or_warn(|record| {
         let mut changed = false;
         for dir in created.iter().map(|dir| lexical_normalize(dir)) {
             if dir.starts_with(&target) {
@@ -270,7 +274,7 @@ pub(crate) fn forget(removed: &[PathBuf]) {
     if removed.is_empty() {
         return;
     }
-    update(|record| {
+    update_or_warn(|record| {
         let before = record.dirs.len();
         for dir in removed {
             let dir = lexical_normalize(dir);

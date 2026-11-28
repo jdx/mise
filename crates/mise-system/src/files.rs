@@ -5290,7 +5290,7 @@ pub fn apply_layers(
     validate_composed_file_footprints(requests)?;
     if !opts.dry_run {
         // before any round writes, so each shared target is told apart as it is now
-        track_walking_targets(config, requests);
+        track_walking_targets(config, requests)?;
     }
     let mut worked = false;
     // what earlier rounds create, for a dry run that has not written it
@@ -5829,7 +5829,7 @@ fn execute_layer(
     let has_reconciliation = !plan.reconciliation.stale_links.is_empty();
     if plan.todo.is_empty() && !has_reconciliation {
         if !opts.dry_run {
-            track_walking_targets(config, plan.requests);
+            track_walking_targets(config, plan.requests)?;
             prune_after_apply([], &plan);
             for req in plan.record_symlink_each {
                 let pending = journal::begin_changes(
@@ -5917,7 +5917,7 @@ fn execute_layer(
     }
     // a walking entry's target is shared with the user's files, so what a later removal may take
     // with it is only what mise created there; what is there now is told apart before writing
-    track_walking_targets(config, plan.requests);
+    track_walking_targets(config, plan.requests)?;
     for link in &plan.reconciliation.stale_links {
         if link_points_to(&link.source, &link.target) {
             crate::managed_files::refuse_untrusted_parent_as_root(&link.target)?;
@@ -7648,14 +7648,17 @@ fn deployed_under(req: &FileRequest) -> Vec<PathBuf> {
 /// Start tracking the targets of the walking entries of `requests` that are not tracked yet,
 /// including those of entries that need no change. Entries can share a target, so what every
 /// active entry on it deployed there counts, whichever round or selection applies it.
-fn track_walking_targets<'a>(config: &Config, requests: impl IntoIterator<Item = &'a FileRequest>) {
+fn track_walking_targets<'a>(
+    config: &Config,
+    requests: impl IntoIterator<Item = &'a FileRequest>,
+) -> Result<()> {
     let record = crate::created_dirs::CreatedDirs::load();
     let requests = requests
         .into_iter()
         .filter(|req| shares_target(req) && !record.tracks(&req.target))
         .collect::<Vec<_>>();
     if requests.is_empty() {
-        return;
+        return Ok(());
     }
     // one slot per target, whatever letter case each entry spells it in where that is the same
     // directory, with each entry's paths respelled under the slot's spelling
@@ -7692,8 +7695,9 @@ fn track_walking_targets<'a>(config: &Config, requests: impl IntoIterator<Item =
     // deployed seeded; only a target tracked before this apply makes that unnecessary
     deployed.sort_by_key(|(target, _)| std::cmp::Reverse(target.components().count()));
     for (target, paths) in deployed {
-        crate::created_dirs::track(&target, paths);
+        crate::created_dirs::track(&target, paths)?;
     }
+    Ok(())
 }
 
 /// The ancestors of `path` beneath `root` that exist as something other than a real directory,
