@@ -3,7 +3,8 @@
 # A shebang passes a tool stub as it was run, often by a relative path. MISE_CD
 # moves mise to another directory before the stub is read, keyed and run, but the
 # stub that runs is still the one the command named, on the run that resolves its
-# tool and on the run the cache answers.
+# tool and on the run the cache answers. A -C typed on the command line instead
+# says where the stub path is relative to.
 
 mkdir -p one/bin two/bin three
 write_stub() {
@@ -42,6 +43,14 @@ assert_contains "MISE_LOCKFILE=1 MISE_CD=../two bin/latest" "This is Dummy 1.0.0
 assert_contains "MISE_LOCKFILE=1 MISE_CD=../two bin/latest" "This is Dummy 1.0.0!"
 cd ../two || exit 1
 assert_contains "MISE_LOCKFILE=1 bin/latest" "This is Dummy 2.0.0!"
+
+# A -C typed on the command line says where a relative stub path is, as it does for
+# any other command, even with MISE_CD set.
+cd ../one || exit 1
+assert_contains "mise -C ../two tool-stub bin/dummy" "This is Dummy 2.0.0!"
+assert_contains "mise --cd ../two tool-stub bin/dummy" "This is Dummy 2.0.0!"
+assert_contains "MISE_CD=../three mise -C ../two tool-stub bin/dummy" "This is Dummy 2.0.0!"
+assert_contains "mise tool-stub bin/dummy" "This is Dummy 1.0.0!"
 
 # The stub tracked for `mise prune` is the one that ran, here in a directory MISE_CD
 # does not lead to, so the tool it needs is kept.

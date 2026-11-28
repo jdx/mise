@@ -477,9 +477,18 @@ pub(crate) struct ToolStub {
     /// including a literal `--`.
     #[usage(trailing_var_arg = true, allow_hyphen_values = true)]
     pub args: Vec<String>,
+
+    /// Whether `-C`/`--cd` on this command line moved mise. A stub path typed after it is then
+    /// relative to that directory, as it is for any other command; set by the root command.
+    #[usage(skip)]
+    cd_on_command_line: bool,
 }
 
 impl ToolStub {
+    pub(super) fn inherit_root_cd(&mut self, cd: bool) {
+        self.cd_on_command_line = cd;
+    }
+
     pub(crate) async fn run(self) -> Result<()> {
         // Ignore clap parsing and use raw args from env::ARGS to avoid version flag interception
         let file_str = self.file.to_string_lossy();
@@ -495,7 +504,11 @@ impl ToolStub {
             }
         }; // Drop the lock before await
 
-        let stub_path = invoked_stub_path(&self.file);
+        let stub_path = if self.cd_on_command_line {
+            std::path::absolute(&self.file).unwrap_or_else(|_| self.file.clone())
+        } else {
+            invoked_stub_path(&self.file)
+        };
         let content = stub_content(&stub_path)?;
         let cache_key =
             BinPathCache::cache_key(&stub_path, content.as_bytes())?.map(|key| StubCacheKey {
@@ -525,9 +538,11 @@ struct StubCacheKey {
 }
 
 /// The stub the command line names at `path`, made absolute against the directory mise started
-/// in. A shebang passes the stub as the user ran it, often `./bin/tool`, and `--cd` or `MISE_CD`
-/// moves mise to another directory before the run reads it, where that name is another stub.
-/// The fast path and the run read, key and hand off this one path.
+/// in. A shebang passes the stub as the user ran it, often `./bin/tool`, and `MISE_CD` moves mise
+/// to another directory before the run reads it, where that name is another stub. The fast path
+/// and the run read, key and hand off this one path. A `-C`/`--cd` on the command line says where
+/// the path is relative to instead, so `ToolStub::run` resolves it against that directory; the
+/// fast path takes only the argument right after a leading `tool-stub`, which is then no stub.
 fn invoked_stub_path(path: &Path) -> PathBuf {
     if path.is_absolute() {
         return path.to_path_buf();
@@ -784,10 +799,8 @@ mod tests {
             started_in.join("bin/tool"),
             invoked_stub_path(Path::new("bin/tool"))
         );
-        assert_eq!(
-            PathBuf::from("/opt/bin/tool"),
-            invoked_stub_path(Path::new("/opt/bin/tool"))
-        );
+        let absolute_stub = started_in.join("bin/tool");
+        assert_eq!(absolute_stub, invoked_stub_path(&absolute_stub));
     }
 
     #[cfg(unix)]
