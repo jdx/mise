@@ -44,7 +44,9 @@ works.
    ```
 
 4. If you use a lockfile, run `mise lock` to write entries for the new tool.
-   The old installation stays in mise's data directory; delete its
+   A tool you configure by its registry name (`gh = "2"`) whose `mise.lock`
+   entries record a `ubi:` backend keeps failing until you delete those
+   entries; `mise lock` then records the registry's backend. The old installation stays in mise's data directory; delete its
    `installs/ubi-owner-repo` directory when you no longer need it.
 
 A tool that named its executable with `exe` usually needs no option on the new
