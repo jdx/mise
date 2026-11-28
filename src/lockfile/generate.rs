@@ -232,13 +232,16 @@ fn resolution_key(ba: &crate::args::BackendArg, tv: &ToolVersion, platform: &Pla
     options.core.install_env.sort_keys();
     let mut install_env = tv.install_env();
     install_env.sort_keys();
+    // Safe mode treats a global config's local artifact differently from a
+    // project's, so the two never share a cached result.
     format!(
-        "{}\n{}\n{:?}\n{:?}\n{}",
+        "{}\n{}\n{:?}\n{:?}\n{}\n{}",
         ba.full(),
         tv.version,
         options,
         install_env,
-        platform.to_key()
+        platform.to_key(),
+        tv.request.is_global_config_tool(),
     )
 }
 
