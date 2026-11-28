@@ -394,16 +394,21 @@ fn bootstrap_dirs(prefix: &Path) -> Vec<PathBuf> {
 }
 
 /// Each of `paths` and the directories above it that do not exist, which is
-/// what `mkdir -p` on them would create, parents first.
+/// what `mkdir -p` on them would create, parents first. Only a path the
+/// filesystem reports as not found counts: one that cannot be read (no
+/// permission to search its parent) may well exist, and this list is what a
+/// user is told to remove as root.
 fn missing_paths<'a>(paths: impl IntoIterator<Item = &'a PathBuf>) -> Vec<PathBuf> {
     let mut missing = std::collections::BTreeSet::new();
     for path in paths {
         let path = std::path::absolute(path).unwrap_or_else(|_| path.clone());
         for ancestor in path.ancestors() {
-            if ancestor.symlink_metadata().is_ok() {
-                break;
+            match ancestor.symlink_metadata() {
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                    missing.insert(ancestor.to_path_buf());
+                }
+                _ => break,
             }
-            missing.insert(ancestor.to_path_buf());
         }
     }
     missing.into_iter().collect()
@@ -758,6 +763,27 @@ mod tests {
             missing_paths(std::iter::once(&prefix).chain(&dirs)),
             vec![prefix.join("Homebrew"), prefix.join("Homebrew/Library")]
         );
+    }
+
+    /// a path that cannot be read for lack of permission may exist, so it is
+    /// not listed as something mkdir created
+    #[test]
+    fn missing_paths_skips_paths_it_cannot_read() {
+        use std::os::unix::fs::PermissionsExt;
+        if nix::unistd::geteuid().is_root() {
+            // root can read past any permission
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path().canonicalize().unwrap();
+        let locked = base.join("locked");
+        std::fs::create_dir_all(locked.join("brew")).unwrap();
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).unwrap();
+        let prefix = locked.join("brew");
+        let dirs = vec![prefix.join("Cellar")];
+        let missing = missing_paths(std::iter::once(&prefix).chain(&dirs));
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert_eq!(missing, Vec::<PathBuf>::new());
     }
 
     #[test]
