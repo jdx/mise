@@ -3305,12 +3305,12 @@ impl TaskExecutor {
                 "0".to_string(),
             );
         }
-        if !crate::env::MISE_ENV.is_empty() {
+        for (key, value) in crate::env::mise_env_for_child() {
             Self::insert_env_excluded_from_nested_mise_diff(
                 &mut env,
                 &mut nested_mise_diff_exclude_keys,
-                "MISE_ENV",
-                crate::env::MISE_ENV.join(","),
+                key,
+                value,
             );
         }
         if let Some(span_cx) = otel_span_cx {

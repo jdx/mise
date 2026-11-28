@@ -1,27 +1,48 @@
 use reqwest::header::HeaderMap;
 use reqwest::{Client, ClientBuilder, StatusCode, Url};
 use std::sync::Arc;
-use std::sync::LazyLock;
+use std::sync::{LazyLock, OnceLock};
 use std::time::Duration;
 use tokio::sync::watch;
+
+/// The default of mise's `http_timeout` setting.
+const DEFAULT_HTTP_TIMEOUT: Duration = Duration::from_secs(30);
+
+static HTTP_TIMEOUT: OnceLock<fn() -> Duration> = OnceLock::new();
+
+/// Sets how long the vfox HTTP clients wait to connect and between reads. It is
+/// read once, when the first request builds the clients.
+pub fn set_http_timeout(timeout: fn() -> Duration) {
+    let _ = HTTP_TIMEOUT.set(timeout);
+}
+
+fn http_timeout() -> Duration {
+    HTTP_TIMEOUT
+        .get()
+        .map_or(DEFAULT_HTTP_TIMEOUT, |timeout| timeout())
+}
+
+/// A server that stops sending would otherwise keep a request waiting for as
+/// long as the connection stays open.
+fn client_builder(timeout: Duration) -> ClientBuilder {
+    ClientBuilder::new()
+        .user_agent(format!("vfox.rs/{}", env!("CARGO_PKG_VERSION")))
+        .connect_timeout(timeout)
+        .read_timeout(timeout)
+}
 
 // A client that cannot be built (e.g. no CA certificates on the system) is
 // kept as an error and reported by the request that needs it, as mise's own
 // HTTP client does, instead of aborting the process.
 static CLIENT: LazyLock<Result<Client, String>> = LazyLock::new(|| {
-    mise_tls::build_client(|| {
-        ClientBuilder::new().user_agent(format!("vfox.rs/{}", env!("CARGO_PKG_VERSION")))
-    })
-    .map_err(|err| error_chain(&err))
+    let timeout = http_timeout();
+    mise_tls::build_client(|| client_builder(timeout)).map_err(|err| error_chain(&err))
 });
 
 static NO_REDIRECT_CLIENT: LazyLock<Result<Client, String>> = LazyLock::new(|| {
-    mise_tls::build_client(|| {
-        ClientBuilder::new()
-            .user_agent(format!("vfox.rs/{}", env!("CARGO_PKG_VERSION")))
-            .redirect(reqwest::redirect::Policy::none())
-    })
-    .map_err(|err| error_chain(&err))
+    let timeout = http_timeout();
+    mise_tls::build_client(|| client_builder(timeout).redirect(reqwest::redirect::Policy::none()))
+        .map_err(|err| error_chain(&err))
 });
 
 pub(crate) fn client() -> Result<&'static Client, String> {
@@ -138,10 +159,7 @@ pub(crate) fn http_retry_attempts() -> usize {
 /// Retry policy for the attestation client (`mise-sigstore`), so vfox's
 /// attestation traffic honors `MISE_HTTP_RETRIES` like the rest of vfox's HTTP
 /// rather than hardcoding a default at the call site. Timeout and backoff use
-/// `mise-sigstore`'s defaults: vfox applies no HTTP timeout elsewhere, and
-/// parsing `MISE_HTTP_TIMEOUT` here would duplicate mise's duration parser
-/// (vfox has no access to mise's Settings layer — the env var is the only shared
-/// signal, and vfox already mirrors only the retries knob).
+/// `mise-sigstore`'s defaults.
 pub(crate) fn sigstore_retry_config() -> mise_sigstore::RetryConfig {
     mise_sigstore::RetryConfig {
         retries: http_retries(),
@@ -463,6 +481,18 @@ mod tests {
         assert!(replace_with(temp, &target, dir.path()).is_err());
         assert!(!temp_path.exists());
         assert!(target.join("inside").exists());
+    }
+
+    #[tokio::test]
+    async fn a_server_that_stops_answering_times_out() {
+        let server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::any())
+            .respond_with(wiremock::ResponseTemplate::new(200).set_delay(Duration::from_secs(5)))
+            .mount(&server)
+            .await;
+        let client = mise_tls::build_client(|| client_builder(Duration::from_millis(100))).unwrap();
+        let err = client.get(server.uri()).send().await.unwrap_err();
+        assert!(err.is_timeout(), "{err}");
     }
 
     #[test]

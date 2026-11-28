@@ -35,7 +35,7 @@ use crate::{
     registry::REGISTRY,
 };
 use eyre::{Result, eyre};
-use globset::{GlobBuilder, GlobMatcher};
+use globset::{GlobBuilder, GlobSet, GlobSetBuilder};
 use idiomatic_version::IdiomaticVersionFile;
 use indexmap::{IndexMap, IndexSet};
 use std::sync::LazyLock as Lazy;
@@ -568,7 +568,19 @@ pub(super) async fn parse_detected(
 /// A `path:<dir>` version names a directory that is already on disk, so it needs
 /// no install step: its `bin` is put on PATH as soon as the config loads, which
 /// would let an untrusted repository shadow any command.
+///
+/// A `ref:` or `rev:` version (or `ref-`/`rev-`, which `ToolRequest` reads the same way) names
+/// any commit the tool's repository serves, and forges serve commits nobody published there:
+/// a pull request's head (`refs/pull/1/head`) or, on GitHub, a fork's commit by its id. A
+/// shim or the not-found handler builds such a version from source when another version of
+/// the tool is installed. `tag:` and `branch:` only name what the repository's maintainers
+/// pushed, as a plain version names what they released.
 pub(crate) fn version_requires_trust(version: &str) -> bool {
+    is_path_version(version) || matches!(version.split_once([':', '-']), Some(("ref" | "rev", _)))
+}
+
+/// Whether a tool version is a `path:` version, which safe mode ignores in project config.
+pub(crate) fn is_path_version(version: &str) -> bool {
     version.starts_with("path:")
 }
 
@@ -578,8 +590,12 @@ pub(crate) fn version_requires_trust(version: &str) -> bool {
 /// An `spm:` package named by the URL of a self-hosted forge makes mise derive
 /// that host's API from the name and send it the user's forge token, as an
 /// `api_url` option would.
+///
+/// The key is checked as `BackendArg` reads it, after `unalias_backend` drops
+/// leading `core:` prefixes, so `core:spm:<url>` is the same `spm:` key.
 fn tool_key_requires_trust(tool: &str) -> bool {
-    tool.contains('[') || crate::backend::spm::tool_key_selects_api_host(tool)
+    let tool = crate::backend::unalias_backend(tool.trim());
+    tool.contains('[') || crate::backend::spm::tool_key_selects_api_host(&tool)
 }
 
 /// Whether a detected config requires trust before tracked loading may parse it.
@@ -649,6 +665,39 @@ pub fn config_trust_root(path: &Path) -> PathBuf {
 /// not *need* trust (e.g. safe configs loaded without it).
 pub fn is_path_trusted(path: &Path) -> bool {
     is_trusted(&config_trust_root(path)) || is_trusted(path)
+}
+
+/// Whether mise may put a directory that lives in the project at `dir` first on PATH, such as
+/// the `bin` of a virtualenv there. Its files then run in place of system commands, which is
+/// what `_.python.venv` and `_.path` in that project's own config need trust for.
+///
+/// True when a loaded config file rooted at `dir` is trusted, or, outside paranoid mode, when
+/// `dir` itself is (`mise trust <dir>`). A trust record of a parent directory does not count: a
+/// clone below a trusted project is not that project. What already trusts every config file
+/// below a directory, a `trusted_config_paths` entry or a trusted monorepo root, does count,
+/// through [`is_trusted`]: the project's own config could then put its files on PATH anyway.
+/// A project file linked to global config does not lend it global config's trust. Safe mode
+/// trusts no project, so this is false there.
+pub fn is_project_dir_trusted(config: &Config, dir: &Path) -> bool {
+    if Settings::safe_mode() {
+        return false;
+    }
+    let trusted_config_here = config.config_files.iter().any(|(path, cf)| {
+        cf.project_root().as_deref() == Some(dir)
+            && !config::is_project_link_to_global_config(path)
+            && is_path_trusted(path)
+    });
+    trusted_config_here || (!Settings::get().paranoid.config() && is_trusted(dir))
+}
+
+/// What to run so that [`is_project_dir_trusted`] accepts `dir`, for a warning that names it.
+pub fn project_dir_trust_hint(dir: &Path) -> String {
+    let dir = display_path(dir);
+    if Settings::get().paranoid.config() {
+        format!("trust a mise config file in {dir} with `mise trust <file>`")
+    } else {
+        format!("run `mise trust {dir}`")
+    }
 }
 
 static IMPLICITLY_TRUST_ACTIVE_CONFIG: AtomicBool = AtomicBool::new(false);
@@ -768,7 +817,7 @@ pub fn trust_check(path: &Path) -> eyre::Result<()> {
     // so unsafe config can load before the command starts; safe config is
     // persisted by `trust_active_config` after settings initialization.
     if implicitly_trusts_active_config()
-        && !ci_info::is_ci()
+        && !*mise_util::env::IS_CI
         && Settings::try_get().is_ok_and(|settings| !settings.paranoid.config())
     {
         let config_root = config_trust_root(path);
@@ -974,7 +1023,7 @@ fn is_trusted_without_config_paths(
         if !trusted {
             return false;
         }
-    } else if mise_util::testing::in_tests() || ci_info::is_ci() {
+    } else if mise_util::testing::in_tests() || *mise_util::env::IS_CI {
         // in tests/CI we trust everything
         return true;
     } else if !trust_path(path).exists() {
@@ -1078,10 +1127,39 @@ fn path_is_under_any(path: &Path, ignored: &[PathBuf]) -> bool {
         .any(|p| canonical.starts_with(p))
 }
 
+/// The longest glob [`compile_path_glob`] accepts, in bytes: what a path can be
+/// on Linux. The regex globset generates takes memory in proportion to the
+/// pattern before the size limit of the compiled regex can reject it.
+const GLOB_MAX_LEN: usize = 4096;
+/// The most `{` it accepts. globset recurses once per nested `{…}` while it
+/// builds a glob, so a deeply nested pattern overflows the stack. Every `{` is
+/// counted rather than the nesting itself: a `}` that is escaped or inside a
+/// character class closes nothing, and a depth counter that missed one would
+/// let the nesting through.
+const GLOB_MAX_BRACES: usize = 64;
+
+/// Compiles a path glob that can come from a file read without trust: a
+/// project `.miserc.toml` sets `ignored_config_paths` and the override
+/// filenames, which become the config filename patterns.
+///
+/// `Glob::compile_matcher` panics when the regex it generates is rejected, for
+/// nesting too deep or growing too large. `GlobSetBuilder::build` returns that
+/// as an error instead.
+pub(crate) fn compile_path_glob(pattern: &str) -> Result<GlobSet> {
+    if pattern.len() > GLOB_MAX_LEN {
+        return Err(eyre!("the pattern is longer than {GLOB_MAX_LEN} bytes"));
+    }
+    if pattern.matches('{').count() > GLOB_MAX_BRACES {
+        return Err(eyre!("more than {GLOB_MAX_BRACES} `{{` in the pattern"));
+    }
+    let glob = GlobBuilder::new(pattern).literal_separator(true).build()?;
+    Ok(GlobSetBuilder::new().add(glob).build()?)
+}
+
 #[derive(Default)]
 struct IgnoredConfigPathMatcher {
     literals: Vec<PathBuf>,
-    globs: Vec<GlobMatcher>,
+    globs: Vec<GlobSet>,
 }
 
 impl IgnoredConfigPathMatcher {
@@ -1093,8 +1171,8 @@ impl IgnoredConfigPathMatcher {
                 matcher.literals.push(path.clone());
                 continue;
             }
-            match GlobBuilder::new(&pattern).literal_separator(true).build() {
-                Ok(glob) => matcher.globs.push(glob.compile_matcher()),
+            match compile_path_glob(&pattern) {
+                Ok(glob) => matcher.globs.push(glob),
                 Err(err) => {
                     warn!("invalid ignored_config_paths glob {pattern}: {err}");
                     matcher.literals.push(path.clone());
@@ -1305,7 +1383,7 @@ fn config_requires_trust(path: &Path) -> bool {
 /// nobody trusted. CI trusts everything and records nothing, so it leaves the
 /// marker alone.
 pub(crate) fn set_monorepo_root_marker(path: &Path, enabled: bool) -> Result<()> {
-    if ci_info::is_ci() {
+    if *mise_util::env::IS_CI {
         return Ok(());
     }
     let config_root = config_trust_root(path);
@@ -1790,6 +1868,50 @@ mod ignored_config_path_tests {
 
         assert!(matcher.is_match(&root.path().join("vendor/jj/.config/mise.toml")));
         assert!(!matcher.is_match(&root.path().join("vendor/jj/.config/.mise.toml")));
+    }
+
+    #[test]
+    fn brace_glob_matches_each_alternative() {
+        let root = tempfile::tempdir().unwrap();
+        let pattern = root.path().join("{vendor,third_party}/**/mise.toml");
+        let matcher = IgnoredConfigPathMatcher::new(&[pattern]);
+
+        assert!(matcher.is_match(&root.path().join("vendor/jj/mise.toml")));
+        assert!(matcher.is_match(&root.path().join("third_party/jj/mise.toml")));
+        assert!(!matcher.is_match(&root.path().join("src/jj/mise.toml")));
+    }
+
+    /// A project `.miserc.toml` supplies these patterns without trust, so one
+    /// that globset cannot compile is kept as a literal path instead of taking
+    /// the process down.
+    #[test]
+    fn glob_that_cannot_be_compiled_is_kept_as_a_literal() {
+        let nested = |depth: usize| format!("/x/{}b{}", "{a,".repeat(depth), "}".repeat(depth));
+        for pattern in [
+            // past the regex parser's nesting limit
+            nested(125),
+            // deep enough to overflow the stack in globset's glob-to-regex pass
+            nested(100_000),
+            // 1000 levels again, each `{` followed by a `}` that closes nothing
+            format!("/x/{}b{}", r"{\}".repeat(1000), "}".repeat(1000)),
+            format!("/x/{}b{}", "{[}]".repeat(1000), "}".repeat(1000)),
+            // past the size limit of the compiled regex
+            format!("/x/{}", "?".repeat(2_000_000)),
+        ] {
+            let path = PathBuf::from(pattern);
+            let matcher = IgnoredConfigPathMatcher::new(std::slice::from_ref(&path));
+            assert!(matcher.globs.is_empty());
+            assert_eq!(matcher.literals, [path]);
+        }
+    }
+
+    #[test]
+    fn path_glob_at_the_limits_still_compiles() {
+        let nested = |depth: usize| format!("{}b{}", "{a,".repeat(depth), "}".repeat(depth));
+        assert!(compile_path_glob(&nested(GLOB_MAX_BRACES)).is_ok());
+        assert!(compile_path_glob(&nested(GLOB_MAX_BRACES + 1)).is_err());
+        assert!(compile_path_glob(&"?".repeat(GLOB_MAX_LEN)).is_ok());
+        assert!(compile_path_glob(&"?".repeat(GLOB_MAX_LEN + 1)).is_err());
     }
 
     #[test]

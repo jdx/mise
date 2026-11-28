@@ -205,6 +205,14 @@ assert_fail "test -e ~/.local/tracked-home/.config/untracked.conf"
 assert_succeed "mise dotfiles apply ~/.local/tracked-subdir --yes"
 assert "readlink ~/.local/tracked-subdir/tracked.conf" "$PWD/tracked-home/.config/tracked.conf"
 
+# A source in a repository another user owns is refused by git's ownership
+# check, so commands in that repository's .git/config never run.
+git -C tracked-home config core.fsmonitor "touch $PWD/fsmonitor_ran #"
+assert_fail "GIT_TEST_ASSUME_DIFFERENT_OWNER=1 mise dotfiles status ~/.local/tracked-home" "dubious ownership"
+assert_fail "GIT_TEST_ASSUME_DIFFERENT_OWNER=1 mise dotfiles status ~/.local/tracked-subdir" "dubious ownership"
+assert_fail "test -e $PWD/fsmonitor_ran"
+git -C tracked-home config --unset core.fsmonitor
+
 # Refreshing an existing Git-manifest copy validates against its repository and
 # captures tracked files without replacing the repository or its index.
 assert_succeed "mise dotfiles apply ~/.local/tracked-copy --yes"

@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+
+# Parsing a [settings] table renders the templates in its path settings. The
+# prompt hook looks up the inline shell before it runs the global config's own
+# exec(), and must not parse a project that is not trusted to do so.
+
+export MISE_TRUSTED_CONFIG_PATHS=""
+export MISE_YES=0
+
+cat <<'EOF2' >mise.toml
+[settings]
+jobs = 3
+
+[settings.age]
+key_file = "{{ throw(message='rendered-' ~ 'from-project') }}"
+EOF2
+cat <<'EOF2' >"$MISE_CONFIG_DIR/config.toml"
+[env]
+FROM_GLOBAL = "{{ exec(command='echo global') }}"
+EOF2
+
+assert_not_contains "mise hook-env -s bash --force 2>&1" "rendered-from-project"
+assert_contains "mise hook-env -s bash --force 2>&1" "export FROM_GLOBAL=global"
+
+# Safe mode never uses a project's [settings], so mise settings does not
+# render their templates either.
+assert_not_contains "MISE_SAFE=1 mise settings 2>&1" "rendered-from-project"
+assert_contains "MISE_SAFE=1 mise settings 2>&1" "safe mode does not render"
+# Only the templated setting goes unrendered; the file's others still show.
+assert_contains "MISE_SAFE=1 mise settings 2>/dev/null" "jobs          3"
+
+# A project the user trusted renders them as before.
+assert "mise trust"
+assert_contains "mise settings 2>&1" "rendered-from-project"

@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+
+# A download left behind by always_keep_download is checked against mise.lock
+# like a fresh one, and an archive that fails the check is not kept: retrying an
+# install that failed with a checksum mismatch must not install the file the
+# first attempt refused.
+export MISE_LOCKFILE=1
+
+detect_platform
+CURRENT_PLATFORM="$MISE_PLATFORM"
+if [[ $MISE_PLATFORM_OS == "linux" ]] && type -P ldd >/dev/null && ldd --version 2>&1 | grep -qi musl; then
+  CURRENT_PLATFORM="$CURRENT_PLATFORM-musl"
+fi
+
+# A stand-in JDK: an archive whose only file is a bin/java that prints a banner
+make_jdk() {
+  mkdir -p "$1/jdk-21.0.1/bin"
+  printf '#!/bin/sh\necho "%s" >&2\n' "$2" >"$1/jdk-21.0.1/bin/java"
+  chmod +x "$1/jdk-21.0.1/bin/java"
+  tar -czf "$1/jdk.tar.gz" -C "$1" jdk-21.0.1
+}
+make_jdk "$HOME/locked" "locked java"
+make_jdk "$HOME/other" "other java"
+if command -v sha256sum >/dev/null 2>&1; then
+  CHECKSUM=$(sha256sum "$HOME/locked/jdk.tar.gz" | cut -d' ' -f1)
+else
+  CHECKSUM=$(shasum -a 256 "$HOME/locked/jdk.tar.gz" | cut -d' ' -f1)
+fi
+
+# The locked url serves an archive the lockfile does not describe
+mkdir -p "$HOME/served"
+cp "$HOME/other/jdk.tar.gz" "$HOME/served/openjdk-21.0.1_bin.tar.gz"
+start_http_server --dir "$HOME/served"
+
+cat <<'TOML' >mise.toml
+[tools]
+java = "openjdk-21.0.1"
+TOML
+cat <<TOML >mise.lock
+[[tools.java]]
+version = "openjdk-21.0.1"
+backend = "core:java"
+
+[tools.java."platforms.$CURRENT_PLATFORM"]
+checksum = "sha256:$CHECKSUM"
+url = "http://127.0.0.1:$HTTP_PORT/openjdk-21.0.1_bin.tar.gz"
+TOML
+
+export MISE_ALWAYS_KEEP_DOWNLOAD=1
+DOWNLOADS="$MISE_DATA_DIR/downloads/java/openjdk-21.0.1"
+assert_fail_contains "mise install --locked java 2>&1" "Checksum mismatch"
+assert_fail "test -e $DOWNLOADS/openjdk-21.0.1_bin.tar.gz"
+assert_fail_contains "mise install --locked java 2>&1" "Checksum mismatch"
+assert_not_contains "mise ls --installed" "java"
+
+# An archive already in the downloads directory that does not match is refused
+mkdir -p "$DOWNLOADS"
+cp "$HOME/other/jdk.tar.gz" "$DOWNLOADS/openjdk-21.0.1_bin.tar.gz"
+rm "$HOME/served/openjdk-21.0.1_bin.tar.gz"
+assert_fail_contains "mise install --locked java 2>&1" "Checksum mismatch"
+assert_not_contains "mise ls --installed" "java"
+assert_fail "test -e $DOWNLOADS/openjdk-21.0.1_bin.tar.gz"
+
+# A kept archive that matches the lockfile is still installed without a download
+cp "$HOME/locked/jdk.tar.gz" "$DOWNLOADS/openjdk-21.0.1_bin.tar.gz"
+assert_succeed "mise install --locked java"
+assert_contains "mise x --locked -- java -version 2>&1" "locked java"

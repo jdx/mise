@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+
+# A daemon imported with `project =` is loaded with the whole config hierarchy
+# of the project it names. Every file of that hierarchy needs trust the user
+# already gave, not only its mise.toml.
+
+export MISE_OFFLINE=1
+export MISE_TRUSTED_CONFIG_PATHS=""
+export MISE_YES=0
+unset CI GITHUB_ACTIONS GITHUB_ACTION 2>/dev/null || true
+
+cat >~/bin/pitchfork <<'SH'
+#!/usr/bin/env bash
+case "$1" in
+  usage) echo 'cmd config help="External files" {' ;;
+  schema) echo '{"$defs":{"PitchforkTomlDaemon":{"properties":{"run":{"$ref":"#/$defs/RunCommand"}}},"RunCommand":{"anyOf":[{"type":"string"},{"type":"array"}]}}}' ;;
+  status) printf '{"status":"stopped"}\n' ;;
+  supervisor) printf '{"status":"down"}\n' ;;
+  project) echo '[]' ;;
+esac
+SH
+chmod u+x ~/bin/pitchfork
+export PATH="$HOME/bin:$PATH"
+
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[settings]
+idiomatic_version_file_enable_tools = ["node"]
+TOML
+
+platform="$HOME/src/platform"
+mkdir -p "$platform/services/auth" "$HOME/src/app"
+cat >"$platform/services/auth/mise.toml" <<'TOML'
+[tools]
+pitchfork = "system"
+[daemons.auth]
+run = "sleep 600"
+TOML
+cat >"$HOME/src/app/mise.toml" <<'TOML'
+[tools]
+pitchfork = "system"
+[daemons.auth]
+project = "../platform/services/auth"
+TOML
+mise trust "$platform/services/auth/mise.toml"
+cd "$HOME/src/app" || exit 1
+
+# A template in a .tool-versions above the referenced project does not run.
+marker="$HOME/template-ran"
+cat >"$platform/.tool-versions" <<EOF
+# {{ exec(command='touch $marker') }}
+EOF
+assert_fail_contains "mise daemons start auth 2>&1" "platform/.tool-versions, which is not trusted"
+assert_fail "test -e '$marker'"
+assert_not_contains "ls '$MISE_STATE_DIR/trusted-configs'" "src-platform-"
+
+# Nor does an idiomatic version file there grant its directory trust.
+rm "$platform/.tool-versions"
+echo "path:$HOME/no-such-node" >"$platform/.node-version"
+assert_fail_contains "mise daemons start auth 2>&1" "platform/.node-version, which is not trusted"
+assert_not_contains "ls '$MISE_STATE_DIR/trusted-configs'" "src-platform-"
+
+# Once the user trusts that directory, the import works.
+rm "$platform/.node-version"
+echo "# no tools" >"$platform/.tool-versions"
+mise trust "$platform"
+assert_succeed "mise daemons start auth"
+
+# A project nested inside this one needs the same trust for the files this
+# project did not load itself.
+host="$HOME/src/host"
+nested="$host/vendor/auth"
+mkdir -p "$nested"
+cp "$platform/services/auth/mise.toml" "$nested/mise.toml"
+cat >"$host/mise.toml" <<'TOML'
+[tools]
+pitchfork = "system"
+[daemons.auth]
+project = "vendor/auth"
+TOML
+mise trust "$nested/mise.toml"
+echo "path:$HOME/no-such-node" >"$host/vendor/.node-version"
+cd "$host" || exit 1
+assert_fail_contains "mise daemons start auth 2>&1" "vendor/.node-version, which is not trusted"
+assert_not_contains "ls '$MISE_STATE_DIR/trusted-configs'" "src-host-vendor-"
+
+rm "$host/vendor/.node-version"
+assert_succeed "mise daemons start auth"

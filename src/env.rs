@@ -89,8 +89,12 @@ pub(crate) fn auto_env_setting() -> Option<bool> {
 
 /// The tri-state env_conf_d setting: MISE_ENV_CONF_D env var > .miserc.toml > unset.
 pub(crate) fn env_conf_d_setting() -> Option<bool> {
-    var_bool("MISE_ENV_CONF_D").or_else(miserc::get_env_conf_d)
+    MISE_ENV_CONF_D.or_else(miserc::get_env_conf_d)
 }
+
+/// `MISE_ENV_CONF_D` as this process started with it. Config discovery asks
+/// for it once per `conf.d` pattern of every directory it walks.
+static MISE_ENV_CONF_D: Lazy<Option<bool>> = Lazy::new(|| var_bool("MISE_ENV_CONF_D"));
 
 /// Keep dotted conf.d fragments unconditional through the deprecation window.
 pub(crate) fn env_conf_d_default_for_version(v: &versions::Versioning) -> bool {
@@ -114,7 +118,7 @@ pub(crate) fn env_conf_d_default() -> bool {
 /// ignores project `.miserc.toml` files: those load without trust and must not
 /// change which global fragments load, such as one that turns `paranoid` on.
 pub(crate) fn global_env_conf_d_setting() -> Option<bool> {
-    var_bool("MISE_ENV_CONF_D").or_else(miserc::get_global_env_conf_d)
+    MISE_ENV_CONF_D.or_else(miserc::get_global_env_conf_d)
 }
 
 /// [`env_conf_d`] for the global and system config directories.
@@ -169,6 +173,28 @@ pub(crate) static MISE_ENV_WITH_AUTO: Lazy<Vec<String>> = Lazy::new(|| {
         .chain(MISE_ENV.iter())
         .cloned()
         .collect()
+});
+
+/// [`MISE_ENV_WITH_AUTO`] for the global and system config directories. It
+/// comes from `-E`, `MISE_ENV`, `MISE_AUTO_ENV` and the system and global
+/// miserc files only: a project `.miserc.toml` loads without trust, and the
+/// files of those directories need none and can set global-only settings such
+/// as `yes` and `paranoid`, so a project must not choose which of them load.
+pub(crate) static MISE_GLOBAL_ENV_WITH_AUTO: Lazy<Vec<String>> = Lazy::new(|| {
+    let mise_env = global_environment(&ARGS.read().unwrap());
+    let enabled = var_bool("MISE_AUTO_ENV")
+        .or_else(miserc::get_global_auto_env)
+        .unwrap_or_else(|| auto_env_default_for_version(&crate::version::V));
+    let mut envs = vec![];
+    if enabled {
+        envs.extend(
+            platform_env_names()
+                .into_iter()
+                .filter(|name| !mise_env.contains(name)),
+        );
+    }
+    envs.extend(mise_env);
+    envs
 });
 
 pub(crate) static MISE_IGNORED_CONFIG_PATHS: Lazy<Vec<PathBuf>> = Lazy::new(|| {
@@ -247,21 +273,67 @@ pub fn should_truncate() -> bool {
 // python
 
 fn environment(args: &[String]) -> Vec<String> {
-    // an empty MISE_ENV selects nothing, so only an absent selection falls back
-    let names = explicit_environment(args)
+    if let Some(names) = arg_environment(args) {
+        return miserc::expand_env_sets(names);
+    }
+    // A list a parent mise gave is already expanded, so it counts here as it
+    // is, even where a set has the name of one of its environments; see
+    // [`mise_env_for_child`].
+    if selection_from_parent().is_some() {
+        return env_var_environment().unwrap_or_default();
+    }
+    // an empty MISE_ENV selects nothing, so only an absent selection falls back.
+    let names = env_var_environment()
         .or_else(|| miserc::get_env().cloned())
         .unwrap_or_default();
     miserc::expand_env_sets(names)
 }
 
-/// The environments named by `-E` or `MISE_ENV`, before set names expand.
-/// `None` when neither is given; an empty `MISE_ENV` is `Some` of an empty list.
+/// [`environment`] without the environments and sets of project `.miserc.toml`
+/// files.
+fn global_environment(args: &[String]) -> Vec<String> {
+    let names = explicit_environment(args)
+        .or_else(|| miserc::get_global_env().cloned())
+        .unwrap_or_default();
+    miserc::expand_global_env_sets(names)
+}
+
+/// The environments the user selected with `-E` or `MISE_ENV`, before set
+/// names expand. `None` when neither is given; an empty `MISE_ENV` is `Some` of
+/// an empty list. In a command a parent mise started, this is the selection the
+/// parent recorded; see [`mise_env_for_child`].
 pub fn explicit_environment(args: &[String]) -> Option<Vec<String>> {
+    // Precedence: CLI args > env vars > .miserc.toml
+    if let Some(names) = arg_environment(args) {
+        return Some(names);
+    }
+    if let Some(selected) = selection_from_parent() {
+        return selected;
+    }
+    env_var_environment()
+}
+
+/// The environments named by `MISE_ENV` (or `MISE_PROFILE`, `MISE_ENVIRONMENT`).
+fn env_var_environment() -> Option<Vec<String>> {
+    var("MISE_ENV")
+        .ok()
+        .or_else(|| var("MISE_PROFILE").ok())
+        .or_else(|| var("MISE_ENVIRONMENT").ok())
+        .map(|s| split_env_names(&s))
+}
+
+fn split_env_names(s: &str) -> Vec<String> {
+    s.split(',')
+        .filter(|s| !s.is_empty())
+        .map(String::from)
+        .collect()
+}
+
+/// The environments named by `-E`, `None` when there are none.
+fn arg_environment(args: &[String]) -> Option<Vec<String>> {
     let arg_defs = HashSet::from(["--profile", "-P", "--env", "-E"]);
 
-    // Get environment value from args or env vars
-    // Precedence: CLI args > env vars > .miserc.toml
-    let from_args = if *IS_RUNNING_AS_SHIM {
+    let from_args: Vec<String> = if *IS_RUNNING_AS_SHIM {
         // When running as shim, ignore command line args and use env vars only
         vec![]
     } else {
@@ -304,29 +376,70 @@ pub fn explicit_environment(args: &[String]) -> Option<Vec<String>> {
                 }
             }
         }
-        values
-            .into_iter()
-            .flat_map(|s| {
-                s.split(',')
-                    .filter(|s| !s.is_empty())
-                    .map(String::from)
-                    .collect::<Vec<_>>()
-            })
-            .collect()
+        values.iter().flat_map(|s| split_env_names(s)).collect()
     };
-    if !from_args.is_empty() {
-        return Some(from_args);
+    (!from_args.is_empty()).then_some(from_args)
+}
+
+/// The `MISE_ENV` value mise gave a command it started, set next to it.
+const MISE_ENV_GIVEN: &str = "__MISE_ENV_GIVEN";
+/// The environments the user selected where mise gave that `MISE_ENV`, empty
+/// when the user selected none and the `.miserc.toml` files chose them all.
+const MISE_ENV_SELECTED: &str = "__MISE_ENV_SELECTED";
+
+/// The variables that give a command mise starts the active environments.
+///
+/// A mise command among its descendants sees the environments its parent saw:
+/// the parent's list for config files outside the global config directory, and
+/// the user's selection for the files of the global and system config
+/// directories, so the environments and sets of a project `.miserc.toml` load
+/// none of those there either, also when the command runs in another directory.
+///
+/// So `MISE_ENV` lists them all, expanded, for the command to read and for a
+/// nested mise to use as it is, and mise records next to it the list it gave
+/// and which environments the user selected. While `MISE_ENV` still holds that
+/// list, a nested mise takes that selection as the user's; a `MISE_ENV` set to
+/// anything else is a new selection. A selection whose sets expand to nothing
+/// still gets these variables, with an empty `MISE_ENV`; nothing is set when
+/// the user selected nothing and no environment is active, or the selection is
+/// an empty `MISE_ENV`, which the command inherits as it is.
+pub fn mise_env_for_child() -> Vec<(&'static str, String)> {
+    let selected = explicit_environment(&ARGS.read().unwrap()).unwrap_or_default();
+    child_env_vars(&MISE_ENV, &selected)
+}
+
+fn child_env_vars(given: &[String], selected: &[String]) -> Vec<(&'static str, String)> {
+    if given.is_empty() && selected.is_empty() {
+        return vec![];
     }
-    var("MISE_ENV")
-        .ok()
-        .or_else(|| var("MISE_PROFILE").ok())
-        .or_else(|| var("MISE_ENVIRONMENT").ok())
-        .map(|s| {
-            s.split(',')
-                .filter(|s| !s.is_empty())
-                .map(String::from)
-                .collect()
-        })
+    let given = given.join(",");
+    vec![
+        ("MISE_ENV", given.clone()),
+        (MISE_ENV_GIVEN, given),
+        (MISE_ENV_SELECTED, selected.join(",")),
+    ]
+}
+
+/// The selection a parent mise recorded, while `MISE_ENV` is still the list
+/// it gave: `Some(None)` when the user selected nothing there.
+fn selection_from_parent() -> Option<Option<Vec<String>>> {
+    recorded_selection(
+        var("MISE_ENV").ok().as_deref(),
+        var(MISE_ENV_GIVEN).ok().as_deref(),
+        var(MISE_ENV_SELECTED).ok().as_deref(),
+    )
+}
+
+fn recorded_selection(
+    mise_env: Option<&str>,
+    given: Option<&str>,
+    selected: Option<&str>,
+) -> Option<Option<Vec<String>>> {
+    if mise_env? != given? {
+        return None;
+    }
+    let selected = split_env_names(selected.unwrap_or_default());
+    Some((!selected.is_empty()).then_some(selected))
 }
 
 fn linux_distro() -> Option<String> {
@@ -372,6 +485,77 @@ mod tests {
     use super::*;
     use crate::config::Config;
     use pretty_assertions::assert_eq;
+
+    /// What a parent mise gives a command it starts, and what a nested mise
+    /// there reads back from it.
+    struct ChildCase {
+        active: &'static [&'static str],
+        selected: &'static [&'static str],
+        /// The `MISE_ENV` the command gets, `None` when mise sets nothing.
+        mise_env: Option<&'static str>,
+        /// The user's selection a nested mise reads back.
+        recorded: Option<&'static [&'static str]>,
+    }
+
+    #[test]
+    fn test_child_sees_the_environments_of_its_parent() {
+        let names = |s: &[&str]| s.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let cases = [
+            // the project chose the environments: no selection of the user's
+            ChildCase {
+                active: &["ci"],
+                selected: &[],
+                mise_env: Some("ci"),
+                recorded: None,
+            },
+            // a user selection that a project set expanded
+            ChildCase {
+                active: &["ci", "dev"],
+                selected: &["dev"],
+                mise_env: Some("ci,dev"),
+                recorded: Some(&["dev"]),
+            },
+            ChildCase {
+                active: &["ci"],
+                selected: &["ci"],
+                mise_env: Some("ci"),
+                recorded: Some(&["ci"]),
+            },
+            // a user selection that a project set expanded to nothing
+            ChildCase {
+                active: &[],
+                selected: &["none"],
+                mise_env: Some(""),
+                recorded: Some(&["none"]),
+            },
+            // nothing active and nothing selected: nothing to give
+            ChildCase {
+                active: &[],
+                selected: &[],
+                mise_env: None,
+                recorded: None,
+            },
+        ];
+        for case in cases {
+            let what = format!("{:?} {:?}", case.active, case.selected);
+            let vars: std::collections::HashMap<_, _> =
+                child_env_vars(&names(case.active), &names(case.selected))
+                    .into_iter()
+                    .collect();
+            let get = |key| vars.get(key).map(String::as_str);
+            assert_eq!(get("MISE_ENV"), case.mise_env, "{what}");
+            let child =
+                recorded_selection(get("MISE_ENV"), get(MISE_ENV_GIVEN), get(MISE_ENV_SELECTED));
+            let expected = case.mise_env.map(|_| case.recorded.map(names));
+            assert_eq!(child, expected, "{what}");
+        }
+        // a MISE_ENV the command changed is a selection of its own
+        assert_eq!(
+            recorded_selection(Some("ci,other"), Some("ci"), Some("")),
+            None
+        );
+        assert_eq!(recorded_selection(None, Some("ci"), Some("ci")), None);
+    }
 
     #[tokio::test]
     async fn test_var_path() {

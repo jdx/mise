@@ -722,6 +722,42 @@ pub fn list() -> BackendList {
         .unwrap_or_default()
 }
 
+/// Installed tools that [`list`] leaves out because `enable_tools` or `disable_tools` excludes
+/// them. Those settings narrow what one mise process uses, often only through an environment
+/// variable, while the shims directory serves every process; reshim lists these tools so a
+/// filtered command does not delete their shims. Tools of a disabled backend type stay out.
+pub(crate) fn list_installed_excluded_by_tool_filters() -> BackendList {
+    let settings = Settings::get();
+    let enable_tools = settings.enable_tools();
+    let disable_tools = settings.disable_tools();
+    if enable_tools.is_none() && disable_tools.is_empty() {
+        return vec![];
+    }
+    install_state::list_tools()
+        .values()
+        .filter_map(|ist| {
+            if ist.full.is_some() {
+                return arg_to_backend(ist.clone().into());
+            }
+            // Without manifest metadata an install is listed only through the seed of
+            // `build_tools`: a core tool, or a registry tool with idiomatic files.
+            CORE_PLUGINS.get(&ist.short).cloned().or_else(|| {
+                REGISTRY
+                    .get(ist.short.as_str())
+                    .filter(|rt| !rt.idiomatic_files.is_empty() && rt.is_supported_os())
+                    .and_then(|rt| arg_to_backend(rt.short.into()))
+            })
+        })
+        .filter(|backend| {
+            !tool_enabled(
+                enable_tools.as_ref(),
+                &disable_tools,
+                &backend.id().to_string(),
+            ) && !is_disabled_backend_type(&backend.get_type())
+        })
+        .collect()
+}
+
 /// Backends that can contribute version aliases.
 ///
 /// Only core tools and asdf/vfox plugins override `get_aliases`; every other
@@ -889,6 +925,10 @@ fn backend_list_denial(
 }
 
 pub fn arg_to_backend(ba: BackendArg) -> Option<ABackend> {
+    // `asdf:` selects a backend and names no tool in it. The plugin types assert a name.
+    if ba.tool_name.trim().is_empty() {
+        return None;
+    }
     match ba.backend_type() {
         BackendType::Core => crate::plugins::core::get(&ba),
         BackendType::Aqua => Some(Arc::new(aqua::AquaBackend::from_arg(ba))),
@@ -3748,6 +3788,15 @@ pub trait Backend: Debug + Send + Sync {
         Ok((self._list_remote_versions(config).await?, false))
     }
 
+    /// Whether a list `_list_remote_versions` returns in this process may come
+    /// from local metadata of unknown age rather than from the source. Such a
+    /// list is used, but not saved to the remote-version cache: the cache file
+    /// would be dated now and keep the old answer fresh for
+    /// `fetch_remote_versions_cache`.
+    fn remote_versions_may_be_stale(&self) -> bool {
+        false
+    }
+
     async fn remote_version_cache_context(&self, _config: &Arc<Config>) -> Result<Option<String>> {
         Ok(None)
     }
@@ -4000,7 +4049,10 @@ pub trait Backend: Debug + Send + Sync {
         }
 
         let degraded = std::sync::atomic::AtomicBool::new(false);
+        let fetched = std::sync::atomic::AtomicBool::new(false);
+        let may_be_stale = self.remote_versions_may_be_stale();
         let fetch = || async {
+            fetched.store(true, std::sync::atomic::Ordering::Relaxed);
             trace!("Listing remote versions for {}", ba.to_string());
             // Try versions host first (now returns VersionInfo with timestamps)
             if let Some(tool) = &versions_host_tool {
@@ -4080,9 +4132,22 @@ pub trait Backend: Debug + Send + Sync {
                 &mut remote_versions,
                 [listing_opts, selection_opts],
             );
-            remote_versions.get_or_try_init_async(fetch).await?.clone()
+            if may_be_stale {
+                // A list already in memory or a fresh cache file is used; one
+                // built now from metadata of unknown age is not kept.
+                remote_versions
+                    .get_or_try_init_async_if(fetch, |_| {
+                        !fetched.load(std::sync::atomic::Ordering::Relaxed)
+                    })
+                    .await?
+            } else {
+                remote_versions.get_or_try_init_async(fetch).await?.clone()
+            }
         };
-        if versions.is_empty() || degraded.load(std::sync::atomic::Ordering::Relaxed) {
+        if versions.is_empty()
+            || degraded.load(std::sync::atomic::Ordering::Relaxed)
+            || (refresh && may_be_stale && fetched.load(std::sync::atomic::Ordering::Relaxed))
+        {
             remote_versions.clear()?;
         }
         Ok(filter_cached_prereleases(versions, want_prereleases))
@@ -4413,7 +4478,7 @@ pub trait Backend: Debug + Send + Sync {
             // A postinstall hook's own mise sees its unfinished installation
             // as installed, and only while the hook runs.
             let state_key = tv.state_key();
-            if std::env::var_os("MISE_TOOL_INSTALL_PATH").is_some() {
+            if *IN_POSTINSTALL_HOOK {
                 return check_path_on_disk(install_path, check_symlink, &state_key);
             }
             install_state::installed_check(
@@ -5655,6 +5720,10 @@ pub trait Backend: Debug + Send + Sync {
         {
             warn_once!("{} is deprecated: {reason}", rt.short);
         }
+        // Toolset installs preflight these options before doing any work, but direct callers
+        // such as `install-into` must be protected here too, before `prepare_install_version`,
+        // which can already run a package manager with the request's `install_env`.
+        tv.request.ensure_safe_install_options()?;
         let graph_install_is_current = !ctx.locked
             && !ctx.force
             && (tv.uv_lock.is_some() || tv.aube_lock.is_some())
@@ -5687,9 +5756,6 @@ pub trait Backend: Debug + Send + Sync {
                 stub_keys,
             )?;
         }
-        // Toolset installs preflight these options before doing any work, but
-        // direct callers such as `install-into` must be protected here too.
-        tv.request.ensure_safe_install_options()?;
 
         // Check for --locked mode: if enabled and no lockfile URL exists, fail early
         // Exempt tool stubs from lockfile requirements since they are ephemeral
@@ -5930,10 +5996,6 @@ pub trait Backend: Debug + Send + Sync {
                 .await?;
             ctx.pr.next_operation();
         }
-
-        // Track the installation asynchronously (fire-and-forget)
-        // Do this before install so the request has time to complete during installation
-        versions_host::track_install(tv.short(), &tv.ba().full(), &tv.version);
 
         ctx.pr.set_message("install".into());
 
@@ -7075,6 +7137,20 @@ pub trait Backend: Debug + Send + Sync {
             } else {
                 bail!("Invalid checksum: {checksum}");
             }
+            // An md5 or sha1 hash from the release, not from mise.lock, has
+            // checked the download; the lockfile pins it by blake3 instead.
+            // A version read from mise.lock gets the release's hash for a
+            // platform the lockfile had no checksum for.
+            if lockfile_enabled
+                && static_helpers::is_weak_checksum(checksum)
+                && !tv.checksum_is_from_lockfile(&platform_key, checksum)
+            {
+                let hash = hash::file_hash_blake3(file, Some(ctx.pr.as_ref()))?;
+                tv.lock_platforms
+                    .entry(platform_key.clone())
+                    .or_default()
+                    .checksum = Some(format!("blake3:{hash}"));
+            }
         } else if lockfile_enabled {
             ctx.pr.set_message(format!("generate checksum {filename}"));
             let hash = hash::file_hash_blake3(file, Some(ctx.pr.as_ref()))?;
@@ -7256,6 +7332,13 @@ pub trait Backend: Debug + Send + Sync {
         })
     }
 }
+
+/// Whether this mise was started by a postinstall hook, which is told the
+/// installation it belongs to. Read once: mise sets the variable on the hook's
+/// process, never on its own, and the installed check asks several times per
+/// tool.
+static IN_POSTINSTALL_HOOK: LazyLock<bool> =
+    LazyLock::new(|| std::env::var_os("MISE_TOOL_INSTALL_PATH").is_some());
 
 /// A postinstall hook may invoke mise for the exact installation it is
 /// finishing. That process is entitled to use the path supplied by its parent,

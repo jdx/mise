@@ -406,6 +406,27 @@ packages:
     description: Concurrent traceroute built on trippy that publishes routes
     version_constraint: "false"
     version_overrides:
+      - version_constraint: semver("<= 0.2.1")
+        asset: xmtr-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: zip
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-gnu
+        checksum:
+          type: github_release
+          asset: SHA256SUMS
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            format: tar.gz
+          - goos: darwin
+            format: tar.gz
+          - goos: windows
+            goarch: arm64
+            asset: xmtr-{{.Arch}}-{{.OS}}llvm.{{.Format}}
       - version_constraint: "true"
         asset: xmtr-{{.Arch}}-{{.OS}}.{{.Format}}
         format: zip
@@ -427,6 +448,8 @@ packages:
           - goos: windows
             goarch: arm64
             asset: xmtr-{{.Arch}}-{{.OS}}llvm.{{.Format}}
+        github_artifact_attestations:
+          signer_workflow: Alice39s/xmtr/.github/workflows/release.yml
   - type: github_release
     repo_owner: Aloxaf
     repo_name: silicon
@@ -3211,6 +3234,23 @@ packages:
           - goos: windows
             format: zip
             asset: treemd-{{.Arch}}-{{.OS}}.exe.{{.Format}}
+      - version_constraint: semver("< 0.10.0")
+        asset: treemd-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        files:
+          - name: treemd
+            src: "{{.AssetWithoutExt}}"
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip
+            asset: treemd-{{.Arch}}-{{.OS}}.exe.{{.Format}}
       - version_constraint: "true"
         asset: treemd-{{.Arch}}-{{.OS}}.{{.Format}}
         format: tar.gz
@@ -3228,6 +3268,8 @@ packages:
           - goos: windows
             format: zip
             asset: treemd-{{.Arch}}-{{.OS}}.exe.{{.Format}}
+        github_artifact_attestations:
+          signer_workflow: Epistates/treemd/.github/workflows/release.yml
   - type: github_release
     repo_owner: F1bonacc1
     repo_name: process-compose
@@ -5877,6 +5919,34 @@ packages:
     version_overrides:
       - version_constraint: Version == "v0.7.0-alpha.1"
         no_asset: true
+      - version_constraint: semver("<= 0.8.0-alpha.3")
+        asset: merman-cli-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.xz
+        files:
+          - name: merman-cli
+            src: "{{.AssetWithoutExt}}/merman-cli"
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            replacements:
+              arm64: aarch64
+          - goos: windows
+            format: zip
+            files:
+              - name: merman-cli
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
       - version_constraint: "true"
         asset: merman-cli-{{.Arch}}-{{.OS}}.{{.Format}}
         format: tar.xz
@@ -5905,6 +5975,8 @@ packages:
           - darwin
           - windows
           - amd64
+        github_artifact_attestations:
+          signer_workflow: Latias94/merman/.github/workflows/release.yml
   - type: github_release
     repo_owner: Lifailon
     repo_name: lazyjournal
@@ -11384,7 +11456,7 @@ packages:
           type: github_release
           asset: checksums.txt
           algorithm: sha256
-      - version_constraint: "true"
+      - version_constraint: semver("<= 0.3.1020")
         asset: templ_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
         replacements:
@@ -11400,6 +11472,25 @@ packages:
             opts:
               - --signature
               - https://github.com/a-h/templ/releases/download/{{.Version}}/checksums.txt.sig
+              - --key
+              - https://raw.githubusercontent.com/a-h/templ/refs/tags/{{.Version}}/cosign.pub
+      - version_constraint: "true"
+        asset: templ_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+          cosign:
+            bundle:
+              type: github_release
+              asset: checksums.txt.sigstore.json
+            opts:
               - --key
               - https://raw.githubusercontent.com/a-h/templ/refs/tags/{{.Version}}/cosign.pub
   - type: github_release
@@ -11615,6 +11706,40 @@ packages:
     version_overrides:
       - version_constraint: semver("< 0.1.3")
         error_message: Please update to v0.1.3 or later
+      - version_constraint: semver("< 0.2.0")
+        asset: stagelint-{{trimV .Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-gnu
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+          cosign:
+            opts:
+              - --certificate-identity-regexp
+              - "^https://github\\.com/abemedia/stagelint/\\.github/workflows/.+\\.ya?ml@refs/tags/\\Q{{.Version}}\\E$"
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
+              - --certificate-github-workflow-repository
+              - abemedia/stagelint
+              - --certificate-github-workflow-ref
+              - refs/tags/{{.Version}}
+            bundle:
+              type: github_release
+              asset: checksums.txt.sigstore.json
+        overrides:
+          - goos: windows
+            goarch: amd64
+            format: zip
+          - goos: windows
+            goarch: arm64
+            format: zip
+            asset: stagelint-{{trimV .Version}}-{{.Arch}}-{{.OS}}llvm.{{.Format}}
       - version_constraint: "true"
         asset: stagelint-{{trimV .Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
         format: tar.gz
@@ -11649,6 +11774,8 @@ packages:
             goarch: arm64
             format: zip
             asset: stagelint-{{trimV .Version}}-{{.Arch}}-{{.OS}}llvm.{{.Format}}
+        github_artifact_attestations:
+          signer_workflow: abemedia/stagelint/.github/workflows/publish.yml
   - type: github_release
     repo_owner: abhimanyu003
     repo_name: sttr
@@ -23094,6 +23221,16 @@ packages:
         windows_arm_emulation: true
         replacements:
           darwin: macos
+      - version_constraint: semver("< 0.9.0")
+        asset: ink-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        replacements:
+          darwin: macos
+        checksum:
+          type: github_release
+          asset: SHA256SUMS
+          algorithm: sha256
       - version_constraint: "true"
         asset: ink-{{.OS}}-{{.Arch}}
         format: raw
@@ -23104,6 +23241,8 @@ packages:
           type: github_release
           asset: SHA256SUMS
           algorithm: sha256
+        github_artifact_attestations:
+          signer_workflow: borghei/ink/.github/workflows/release.yml
   - type: github_release
     repo_owner: boyter
     repo_name: cs
@@ -23584,6 +23723,26 @@ packages:
         overrides:
           - goos: windows
             format: zip
+      - version_constraint: semver("< 0.3.0")
+        asset: bronto_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+          cosign:
+            opts:
+              - --certificate
+              - https://github.com/bronto-community/bronto-cli/releases/download/{{.Version}}/checksums.txt.pem
+              - --certificate-identity-regexp
+              - "^https://github\\.com/bronto-community/bronto-cli/\\.github/workflows/.+\\.ya?ml@refs/tags/\\Q{{.Version}}\\E$"
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
+              - --signature
+              - https://github.com/bronto-community/bronto-cli/releases/download/{{.Version}}/checksums.txt.sig
+        overrides:
+          - goos: windows
+            format: zip
       - version_constraint: "true"
         asset: bronto_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
@@ -23604,6 +23763,8 @@ packages:
         overrides:
           - goos: windows
             format: zip
+        github_artifact_attestations:
+          signer_workflow: bronto-community/bronto-cli/.github/workflows/release.yml
   - type: github_release
     repo_owner: bronze1man
     repo_name: yaml2json
@@ -33949,6 +34110,13 @@ packages:
         supported_envs:
           - linux
           - darwin
+      - version_constraint: semver("< 2.18.0")
+        asset: dagu_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
       - version_constraint: "true"
         asset: dagu_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
@@ -33956,6 +34124,8 @@ packages:
           type: github_release
           asset: checksums.txt
           algorithm: sha256
+        github_artifact_attestations:
+          signer_workflow: dagucloud/dagu/.github/workflows/release.yaml
   - type: github_release
     repo_owner: dahlia
     repo_name: gukhanmun
@@ -44420,6 +44590,21 @@ packages:
             asset: ddosify_{{trimV .Version}}_{{.OS}}_all.{{.Format}}
           - goos: windows
             format: zip
+      - version_constraint: semver("<= 2.1.0")
+        asset: ddosify_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        files:
+          - name: ddosify
+        format: tar.gz
+        rosetta2: true
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            asset: ddosify_{{trimV .Version}}_{{.OS}}_all.{{.Format}}
+          - goos: windows
+            format: zip
       - version_constraint: "true"
         asset: ddosify_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
         files:
@@ -44435,6 +44620,8 @@ packages:
             asset: ddosify_{{trimV .Version}}_{{.OS}}_all.{{.Format}}
           - goos: windows
             format: zip
+        github_artifact_attestations:
+          signer_workflow: getanteon/anteon/.github/workflows/release.yml
   - type: http
     repo_owner: ryan-pip
     repo_name: dbt-fusion-versions
@@ -51466,6 +51653,36 @@ packages:
           - goos: windows
             format: zip
   - type: github_release
+    repo_owner: h5i-dev
+    repo_name: h5i
+    description: An Axum-based Rust web framework with Lean 4-verifiable application kernels that run on servers, bare-metal embedded devices, and GPUs, plus integrated security testing
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: h5i-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            replacements:
+              amd64: amd64
+          - goos: windows
+            format: zip
+        supported_envs:
+          - linux
+          - darwin/arm64
+          - windows/amd64
+  - type: github_release
     repo_owner: hadolint
     repo_name: hadolint
     description: Dockerfile linter, validate inline bash, written in Haskell
@@ -51568,6 +51785,12 @@ packages:
       type: github_release
       asset: checksums-{{.Version}}_sha512.txt
       algorithm: sha512
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 5.3.0")
+      - version_constraint: "true"
+        github_artifact_attestations:
+          signer_workflow: hairyhenderson/gomplate/.github/workflows/release-please.yml
   - type: github_release
     repo_owner: handlename
     repo_name: awsc
@@ -70078,6 +70301,29 @@ packages:
           - linux
           - darwin
   - type: github_release
+    repo_owner: mgantlett
+    repo_name: nomos
+    description: "Transactional Go runtime between any coding agent and Git: causal INT/SUB spec-vs-code DAGs, isolated git worktrees, 42 polyglot anti-shim AST checks, receipt-gated SQLite memory, and atomic 2PC releases"
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v4.10.0"
+        no_asset: true
+      - version_constraint: "true"
+        asset: nomos_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+  - type: github_release
     repo_owner: mgdm
     repo_name: htmlq
     description: Like jq, but for HTML
@@ -78689,6 +78935,12 @@ packages:
       type: github_release
       asset: oras_{{trimV .Version}}_checksums.txt
       algorithm: sha256
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 1.3.5")
+      - version_constraint: "true"
+        github_artifact_attestations:
+          signer_workflow: oras-project/oras/.github/workflows/release-github.yml
   - type: github_release
     repo_owner: orf
     repo_name: gping
@@ -97199,6 +97451,33 @@ packages:
     description: Tool to fork a repository, commit files, create a pull request and upload assets using GitHub API
     version_constraint: "false"
     version_overrides:
+      - version_constraint: semver("<= 1.16.0-1")
+        asset: ghcp_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        overrides:
+          - goos: windows
+            format: zip
+        slsa_provenance:
+          type: github_release
+          asset: multiple.intoto.jsonl
+        checksum:
+          type: github_release
+          asset: ghcp_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+          cosign:
+            opts:
+              - --certificate-identity-regexp
+              - "https://github\\.com/suzuki-shunsuke/go-release-workflow/\\.github/workflows/release\\.yaml@.*"
+              - --certificate-oidc-issuer
+              - "https://token.actions.githubusercontent.com"
+              - --signature
+              - https://github.com/suzuki-shunsuke/ghcp/releases/download/{{.Version}}/ghcp_{{trimV .Version}}_checksums.txt.sig
+              - --certificate
+              - https://github.com/suzuki-shunsuke/ghcp/releases/download/{{.Version}}/ghcp_{{trimV .Version}}_checksums.txt.pem
+              - --certificate-github-workflow-repository
+              - suzuki-shunsuke/ghcp
+              - --certificate-github-workflow-ref
+              - refs/tags/{{.Version}}
       - version_constraint: semver("<= 1.16.0")
         asset: ghcp_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
@@ -97226,6 +97505,8 @@ packages:
               - suzuki-shunsuke/ghcp
               - --certificate-github-workflow-ref
               - refs/tags/{{.Version}}
+        github_artifact_attestations:
+          signer_workflow: suzuki-shunsuke/go-release-workflow/.github/workflows/release.yaml
       - version_constraint: "true"
         asset: ghcp_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
@@ -97250,6 +97531,8 @@ packages:
               - suzuki-shunsuke/ghcp
               - --certificate-github-workflow-ref
               - refs/tags/{{.Version}}
+        github_artifact_attestations:
+          signer_workflow: suzuki-shunsuke/go-release-workflow/.github/workflows/release.yaml
   - type: github_release
     repo_owner: suzuki-shunsuke
     repo_name: ghd2i
@@ -101827,6 +102110,39 @@ packages:
       - name: pg_restore
     version_constraint: "false"
     version_overrides:
+      - version_constraint: >-
+          semver(">=18.0.0, < 18.7.0") or
+          semver(">=16.0.0, < 16.16.0") or
+          semver(">=17.0.0, < 17.12.0") or
+          semver(">=15.0.0, < 15.20.0") or
+          semver("< 14.25.0")
+        asset: postgresql-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: psql
+            src: postgresql-{{.Version}}-{{.Arch}}-{{.OS}}/bin/psql
+          - name: pg_dump
+            src: postgresql-{{.Version}}-{{.Arch}}-{{.OS}}/bin/pg_dump
+          - name: pg_dumpall
+            src: postgresql-{{.Version}}-{{.Arch}}-{{.OS}}/bin/pg_dumpall
+          - name: pg_restore
+            src: postgresql-{{.Version}}-{{.Arch}}-{{.OS}}/bin/pg_restore
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu # https://github.com/aquaproj/aqua-registry/issues/34136
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            checksum:
+              # Skip because the contents of the provided file cannot be handled
+              enabled: false
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
       - version_constraint: "true"
         asset: postgresql-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
         format: tar.gz
@@ -101855,6 +102171,8 @@ packages:
           type: github_release
           asset: "{{.Asset}}.sha256"
           algorithm: sha256
+        github_artifact_attestations:
+          signer_workflow: theseus-rs/postgresql-binaries/.github/workflows/build.yml
   - type: github_release
     repo_owner: thestormforge
     repo_name: optimize-controller

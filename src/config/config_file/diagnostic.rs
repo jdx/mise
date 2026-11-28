@@ -257,20 +257,83 @@ pub(crate) fn hide_linked_source_below(
 const LINKED_DETAILS_HIDDEN: &str =
     "details hidden because the file is reached through a link out of the project";
 
+/// The most a parse error shows of a config file, in bytes, and of the parser's
+/// message, in characters. Some config files are parsed with no trust decision
+/// behind them (see [`may_quote`]), and `hook-env` reports a broken one at every
+/// prompt, so the file must not decide how much that prints.
+const EXCERPT_MAX: usize = 4096;
+
+/// The most lines a parse error shows of the value it marks, and of the
+/// parser's message. miette prints each line of either on a line of its own.
+const EXCERPT_MAX_LINES: usize = 20;
+
+/// The parser's span, cut at the end of the line it starts on when it covers
+/// more than [`EXCERPT_MAX_LINES`] lines. The span of a value of the wrong type
+/// is the whole value, which can be most of the file, and miette prints every
+/// line a label covers and formats the label again for each of them.
+fn bounded_span(source: &str, span: std::ops::Range<usize>) -> SourceSpan {
+    let start = span.start;
+    let value = source.get(span).unwrap_or_default();
+    let len = match value.lines().nth(EXCERPT_MAX_LINES) {
+        Some(_) => value.lines().next().map_or(0, str::len),
+        None => value.len(),
+    };
+    SourceSpan::from((start, len))
+}
+
+/// The size of what miette quotes for `span`: the lines it covers and the line
+/// on either side of them.
+fn excerpt_len(source: &str, span: &SourceSpan) -> usize {
+    let source = source.as_bytes();
+    let start = span.offset().min(source.len());
+    let end = (start + span.len()).min(source.len());
+    let before = source[..start].rsplit(|b| *b == b'\n').take(2);
+    let after = source[end..].split(|b| *b == b'\n').take(2);
+    before.chain(after).map(<[u8]>::len).sum::<usize>() + span.len()
+}
+
+/// The parser's message, cut to [`EXCERPT_MAX`] characters and
+/// [`EXCERPT_MAX_LINES`] lines. It quotes a value of the wrong type in full,
+/// and a message from a `Deserialize` impl can hold the value's line breaks.
+fn truncate_message(message: &str) -> String {
+    let end = message
+        .char_indices()
+        .nth(EXCERPT_MAX)
+        .map_or(message.len(), |(i, _)| i);
+    let end = message[..end]
+        .match_indices('\n')
+        .nth(EXCERPT_MAX_LINES - 1)
+        .map_or(end, |(i, _)| i);
+    if end == message.len() {
+        return message.to_string();
+    }
+    format!("{}…", &message[..end])
+}
+
 /// Create an eyre error from a toml::de::Error with rich source context.
 pub(crate) fn toml_parse_error(err: &toml::de::Error, source: &str, path: &Path) -> eyre::Report {
-    let message = err.message().to_string();
+    let message = truncate_message(err.message());
 
     // Get the byte span from toml error
     let span = err
         .span()
-        .map(|r| SourceSpan::from((r.start, r.end.saturating_sub(r.start))))
+        .map(|r| bounded_span(source, r))
         .unwrap_or_else(|| SourceSpan::from((0, 0)));
 
     if !may_quote(path) {
         let (line, column) = position(source, span.offset());
         return eyre::eyre!(
             "Invalid TOML in config file {}:{line}:{column}: {LINKED_DETAILS_HIDDEN}",
+            display_path(path)
+        );
+    }
+
+    // Lines too long to read are not quoted either: miette would print all of
+    // them, and the marker under a line at the same width.
+    if excerpt_len(source, &span) > EXCERPT_MAX {
+        let (line, column) = position(source, span.offset());
+        return eyre::eyre!(
+            "Invalid TOML in config file {}:{line}:{column}: {message}",
             display_path(path)
         );
     }
@@ -327,6 +390,92 @@ mod tests {
             assert!(!report.contains("s3cr3t"), "{report}");
             assert!(report.contains(LINKED_DETAILS_HIDDEN), "{report}");
         }
+    }
+
+    /// What `main` prints for the parse error in `source`, read as a file with
+    /// one setting, a list of strings. A plain report is formatted with `{:#}`,
+    /// its message and causes: `{:?}` also prints the backtrace eyre captures
+    /// when `RUST_BACKTRACE` is set, which the file has no part in.
+    fn rendered(source: &str) -> String {
+        let err =
+            toml::from_str::<std::collections::HashMap<String, Vec<String>>>(source).unwrap_err();
+        let report = toml_parse_error(&err, source, Path::new("/project/.miserc.toml"));
+        match report.downcast_ref::<MiseDiagnostic>() {
+            Some(diagnostic) => diagnostic.render().to_string(),
+            None => format!("{report:#}"),
+        }
+    }
+
+    /// The span of a value of the wrong type is the whole value, and miette
+    /// prints every line of a span: twenty bytes for an empty one.
+    #[test]
+    fn a_value_over_many_lines_is_marked_on_its_first() {
+        for newline in ["\n", "\r\n"] {
+            let source = format!("env = [[{}]]\n", newline.repeat(10_000));
+            let report = rendered(&source);
+            assert!(report.contains("env = [[\n"), "{report}");
+            assert!(report.contains("invalid type: sequence"), "{report}");
+            assert!(report.len() < 1000, "{} bytes", report.len());
+
+            // one of a few lines is still quoted whole
+            let few = newline.repeat(EXCERPT_MAX_LINES - 1);
+            let report = rendered(&format!("env = [[{few}]]\n"));
+            assert!(report.contains("]]\n"), "{report}");
+            let report = rendered(&format!("env = [[{newline}{few}]]\n"));
+            assert!(!report.contains("]]\n"), "{report}");
+        }
+    }
+
+    #[test]
+    fn a_long_line_is_not_quoted() {
+        // the excerpt is the failing line and the one on either side of it
+        let long = "1,".repeat(EXCERPT_MAX);
+        for source in [
+            format!("env = [[{long}]]\n"),
+            format!("# {long}\nenv = [[]]\n"),
+            format!("env = [[]]\n# {long}\n"),
+        ] {
+            let report = rendered(&source);
+            assert!(report.contains(".miserc.toml:"), "{report}");
+            assert!(report.contains("invalid type: sequence"), "{report}");
+            assert!(report.len() < 1000, "{} bytes", report.len());
+        }
+        // a line further away is not part of it
+        for source in [
+            format!("# {long}\n\nenv = [[]]\n"),
+            format!("env = [[]]\n\n# {long}\n"),
+        ] {
+            let report = rendered(&source);
+            assert!(report.contains("env = [[]]\n"), "{report}");
+            assert!(report.len() < 1000, "{} bytes", report.len());
+        }
+        // a line inside the value is
+        let report = rendered(&format!("env = [[\n{long}\n]]\n"));
+        assert!(
+            report.contains(".miserc.toml:1:8: invalid type"),
+            "{report}"
+        );
+        assert!(report.len() < 1000, "{} bytes", report.len());
+    }
+
+    #[test]
+    fn a_long_message_is_cut() {
+        // `invalid type: string "…"` quotes the value, here one of short lines
+        let value = "é\n".repeat(EXCERPT_MAX);
+        let report = rendered(&format!("env = \"\"\"\n{value}\"\"\"\n"));
+        assert!(report.contains("env = \"\"\"\n"), "{report}");
+        assert!(report.contains("invalid type: string"), "{report}");
+        assert!(report.contains('…'), "{report}");
+        assert!(report.len() < 8 * EXCERPT_MAX, "{} bytes", report.len());
+
+        // a `Deserialize` impl can put the value into its message as it is
+        let message = format!("Illegal Versioning: {value}");
+        let cut = truncate_message(&message);
+        assert_eq!(cut.lines().count(), EXCERPT_MAX_LINES);
+        assert!(cut.ends_with("é…"), "{cut}");
+
+        let short = "invalid type: string \"é\", expected a sequence";
+        assert_eq!(truncate_message(short), short);
     }
 
     #[test]

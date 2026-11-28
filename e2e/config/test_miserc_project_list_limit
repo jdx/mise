@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+
+# A project .miserc.toml loads without trust and mise looks for the files of
+# every environment it selects on every command, so its lists are limited.
+
+cat >mise.toml <<'TOML'
+[env]
+SELECTED = "{{ mise_env | default(value=[]) | length }}"
+LAST = "{{ mise_env | default(value=[]) | last }}"
+TOML
+names() {
+  local n
+  for n in $(seq 0 "$2"); do printf '"%s%s",' "$1" "$n"; done
+}
+
+echo "env = [$(names e 1999)]" >.miserc.toml
+assert "mise env --json | jq -r .SELECTED" "64"
+assert "mise env --json | jq -r .LAST" "e63"
+assert_contains "mise env --json 2>&1" "using only the first 64 of the 2000 entries in env"
+
+# nor does a set, or many of them, get more in
+printf 'env = ["all"]\n[env_sets]\nall = [%s]\n' "$(names e 1999)" >.miserc.toml
+assert "mise env --json | jq -r .SELECTED" "1"
+assert "mise env --json | jq -r .LAST" "all"
+{
+  echo "env = [$(names s 63)]"
+  echo "[env_sets]"
+  for n in $(seq 0 63); do echo "s$n = [$(names "m${n}_" 15)]"; done
+} >.miserc.toml
+assert "mise env --json | jq -r .SELECTED" "$((4 * 16 + 60))"
+assert_contains "mise env --json 2>&1" "ignoring 60 of the sets in env_sets"
+
+# the global miserc and MISE_ENV are the user's own and keep every name
+rm .miserc.toml
+echo "env = [$(names e 99)]" >"$MISE_CONFIG_DIR/miserc.toml"
+assert "mise env --json | jq -r .SELECTED" "100"
+MISE_ENV="$(names e 99 | tr -d '"')" assert "mise env --json | jq -r .SELECTED" "100"
+
+# the override filename lists keep their first entries too
+echo "override_config_filenames = [$(names "o" 99 | sed 's/",/.toml",/g')]" >.miserc.toml
+assert_contains "mise env --json 2>&1" "using only the first 64 of the 100 entries in override_config_filenames"

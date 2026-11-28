@@ -163,6 +163,18 @@ UV_PROJECT_ENVIRONMENT = "my.venv"
 python.uv_venv_auto = "create|source"
 ```
 
+mise activates a virtualenv inside the project only when the directory that
+contains `uv.lock` is trusted: a trusted mise config file in it, or
+`mise trust <dir>` (in [paranoid mode](/paranoid.html), a trusted mise config
+file in it). `mise trust` on a parent directory does not count. What trusts
+every config file below a directory does: an entry of
+[`trusted_config_paths`](/configuration/settings.html#trusted_config_paths)
+covers the directory it names and those below it, and a trusted
+[monorepo root](/tasks/monorepo.html) covers a project below it that has a mise
+config file (outside paranoid mode). Otherwise mise warns and leaves the
+virtualenv alone. In safe mode it is never activated. A
+`UV_PROJECT_ENVIRONMENT` outside the project is used either way.
+
 The `uv_create_args` and `python_create_args` options of `_.python.venv` do not
 apply here. To pass arguments when mise creates this environment, set
 `python.uv_venv_create_args`.
@@ -186,7 +198,11 @@ for complete project setups.
 
 The `virtualenv` tool option, such as
 `python = { version = "3.14", virtualenv = ".venv" }`, warns since mise 2026.7.0
-and is removed in 2027.7.0. Use `_.python.venv` instead.
+and is removed in 2027.7.0. Use `_.python.venv` instead. A relative path is
+resolved from the project directory and is activated only when that directory
+is trusted, as for uv projects above. In safe mode a project's `virtualenv`
+option is ignored, and an absolute path applies only when it is set in global
+config.
 
 `python.uv_venv_auto = true` warns since mise 2026.7.0 and is removed in
 2027.7.0. Use `"source"` or `"create|source"`. Besides creating and activating
