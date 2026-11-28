@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+
+# Every project shares the wrapper directory. A shim another project left there for a command
+# this project does not wrap passes the command on to what the PATH holds next. That binary is
+# not the shim's tool, so a due `auto_update` of the mise tool with the same name is left alone.
+# The dummy backend offers 1.0.0, 1.1.0, and 2.0.0.
+export MISE_STATE_DIR="$PWD/state"
+printf '[settings]\ntool_update.global_auto = true\n\n[tools]\ndummy = "1"\n' >"$MISE_CONFIG_DIR/config.toml"
+mise install dummy@1.0.0
+
+inherited_bin="$HOME/inherited-bin"
+mkdir -p "$inherited_bin"
+cat >"$inherited_bin/dummy" <<'EOF'
+#!/usr/bin/env bash
+echo inherited-dummy
+EOF
+chmod +x "$inherited_bin/dummy"
+
+mkdir -p "$HOME/other-project"
+cat >"$HOME/other-project/mise.toml" <<'EOF'
+[wrappers.dummy]
+command = "echo"
+args = ["wrapped-dummy"]
+EOF
+mise trust "$HOME/other-project/mise.toml"
+(cd "$HOME/other-project" && mise reshim)
+
+# A wrapper for another command puts the wrapper directory first on this project's PATH.
+cat >mise.toml <<'EOF'
+[wrappers.cargo]
+command = "echo"
+EOF
+mise reshim
+assert_succeed "test -e '$MISE_DATA_DIR/command-wrappers/bin/dummy'"
+export PATH="$inherited_bin:$MISE_DATA_DIR/shims:$PATH"
+
+assert "mise x -- sh -c 'command -v dummy'" "$MISE_DATA_DIR/command-wrappers/bin/dummy"
+assert "mise x -- sh -c dummy" "inherited-dummy"
+assert_fail "test -e '$MISE_STATE_DIR/tool-update'"
+assert_not_contains "mise ls --installed dummy" "1.1.0"
+
+# The tool's own shim still updates it.
+assert "$MISE_DATA_DIR/shims/dummy" "This is Dummy 1.1.0!"

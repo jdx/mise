@@ -10,6 +10,16 @@ fn syscall_number<T: Into<i64>>(number: T) -> i64 {
     number.into()
 }
 
+/// An ioctl request number as the filter compares it. libc gives the numbers a
+/// different type per C library (an unsigned long on glibc, an int on musl);
+/// every request the kernel defines fits in the unsigned int it reads.
+fn ioctl_request<T: TryInto<u32>>(request: T) -> Result<u64> {
+    request
+        .try_into()
+        .map(u64::from)
+        .map_err(|_| eyre!("ioctl request number does not fit in 32 bits"))
+}
+
 /// Set on a system call number to call it through the x32 ABI.
 ///
 /// An x86_64 kernel built with x32 support takes x32 calls from any 64-bit
@@ -28,12 +38,30 @@ fn native_and_x32(number: i64) -> Vec<i64> {
     return vec![number];
 }
 
-/// Apply a seccomp-bpf filter that blocks network and/or process syscalls.
+/// Apply the sandbox's seccomp-bpf filter.
 ///
-/// Blocks every socket family except AF_UNIX (needed by many tools) and
-/// AF_NETLINK, and blocks io_uring, which can create sockets without entering
-/// socket(). Based on the syscall list from OpenAI's codex-linux-sandbox.
+/// Always refuses the ioctls that push input into a terminal (TIOCSTI) or
+/// paste a console selection into it (TIOCLINUX): `/dev/tty` stays writable in
+/// every sandbox, and a typed-in command runs in the user's shell outside it.
+///
+/// With `deny_net`, blocks every socket family except AF_UNIX (needed by many
+/// tools) and AF_NETLINK, and blocks io_uring, which can create sockets without
+/// entering socket(). Based on the syscall list from OpenAI's
+/// codex-linux-sandbox.
+///
+/// The filter kills a process that makes a system call through another
+/// architecture's ABI, such as a 32-bit program on x86_64, because its numbers
+/// would mean other calls.
 pub(super) fn apply_seccomp_filter(deny_net: bool, deny_process: bool) -> Result<()> {
+    let arch = std::env::consts::ARCH;
+    let target_arch = match arch {
+        "x86_64" => TargetArch::x86_64,
+        "aarch64" => TargetArch::aarch64,
+        // the terminal rule alone is not worth refusing to run over
+        _ if !deny_net && !deny_process => return Ok(()),
+        _ => return Err(eyre!("unsupported architecture for seccomp: {arch}")),
+    };
+
     // Must set PR_SET_NO_NEW_PRIVS before installing seccomp filter
     let ret = unsafe { libc::prctl(libc::PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) };
     if ret != 0 {
@@ -42,13 +70,6 @@ pub(super) fn apply_seccomp_filter(deny_net: bool, deny_process: bool) -> Result
             std::io::Error::last_os_error()
         ));
     }
-
-    let arch = std::env::consts::ARCH;
-    let target_arch = match arch {
-        "x86_64" => TargetArch::x86_64,
-        "aarch64" => TargetArch::aarch64,
-        _ => return Err(eyre!("unsupported architecture for seccomp: {arch}")),
-    };
 
     // Block socket() and socketpair() for every family that is not host-local.
     // Refusing only AF_INET and AF_INET6 misses families that carry IP traffic
@@ -72,6 +93,22 @@ pub(super) fn apply_seccomp_filter(deny_net: bool, deny_process: bool) -> Result
     ])?;
 
     let mut rules: BTreeMap<i64, Vec<SeccompRule>> = BTreeMap::new();
+
+    // The kernel reads an ioctl request as an unsigned int, so compare the low
+    // 32 bits: a request with upper bits set still means TIOCSTI.
+    let mut terminal_injection = Vec::new();
+    for request in [libc::TIOCSTI, libc::TIOCLINUX] {
+        terminal_injection.push(SeccompRule::new(vec![SeccompCondition::new(
+            1,
+            SeccompCmpArgLen::Dword,
+            SeccompCmpOp::Eq,
+            ioctl_request(request)?,
+        )?])?);
+    }
+    rules.insert(syscall_number(libc::SYS_ioctl), terminal_injection.clone());
+    // ioctl is not shared with x32, which has its own number for it.
+    #[cfg(target_arch = "x86_64")]
+    rules.insert(514 | X32_SYSCALL_BIT, terminal_injection);
 
     if deny_net {
         // Without a network socket the process cannot initiate network traffic.
@@ -197,5 +234,49 @@ mod tests {
         })
         .join()
         .unwrap();
+    }
+
+    fn ioctl_errno(number: i64, fd: libc::c_int, request: u64) -> i32 {
+        let byte = b'x';
+        let ret = unsafe { libc::syscall(number as libc::c_long, fd, request, &byte) };
+        if ret < 0 {
+            std::io::Error::last_os_error().raw_os_error().unwrap()
+        } else {
+            0
+        }
+    }
+
+    /// Every sandbox refuses TIOCSTI and TIOCLINUX, so a sandboxed program
+    /// cannot type a command into the terminal it shares with the user's
+    /// shell. On a file that is not a terminal the kernel answers ENOTTY, and
+    /// the filter answers EPERM before the kernel looks, so this holds on
+    /// kernels that refuse TIOCSTI to everyone as well.
+    #[test]
+    fn test_terminal_input_injection_is_refused_in_every_sandbox() {
+        let null = std::fs::File::open("/dev/null").unwrap();
+        let fd = std::os::fd::AsRawFd::as_raw_fd(&null);
+        let ioctl = syscall_number(libc::SYS_ioctl);
+        let tiocsti = ioctl_request(libc::TIOCSTI).unwrap();
+        assert_eq!(ioctl_errno(ioctl, fd, tiocsti), libc::ENOTTY);
+        std::thread::spawn(move || {
+            apply_seccomp_filter(false, false).unwrap();
+            for request in [
+                tiocsti,
+                tiocsti | 0xffff_ffff_0000_0000,
+                ioctl_request(libc::TIOCLINUX).unwrap(),
+            ] {
+                assert_eq!(ioctl_errno(ioctl, fd, request), libc::EPERM, "{request:#x}");
+            }
+            #[cfg(target_arch = "x86_64")]
+            assert_eq!(ioctl_errno(514 | X32_SYSCALL_BIT, fd, tiocsti), libc::EPERM);
+            // other ioctls still reach the kernel
+            assert_eq!(
+                ioctl_errno(ioctl, fd, ioctl_request(libc::TIOCGWINSZ).unwrap()),
+                libc::ENOTTY
+            );
+        })
+        .join()
+        .unwrap();
+        drop(null);
     }
 }

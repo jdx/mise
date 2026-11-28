@@ -1,3 +1,4 @@
+use crate::config::config_file::CommandOrigin;
 use crate::config::settings::SettingsPartial;
 use crate::config::{Config, Settings, SettingsExt, config_file};
 use crate::task::TaskOutput;
@@ -477,6 +478,18 @@ impl Commands {
                 | Self::Usage(_)
                 | Self::Version(_)
         )
+    }
+
+    /// Who ran this command, as far as trust is concerned: a shell integration runs some without
+    /// the user typing a mise command, and none of those is consent to trust the project.
+    fn command_origin(&self) -> CommandOrigin {
+        match self {
+            Self::HookEnv(_) => CommandOrigin::PromptHook,
+            Self::Completion(_) | Self::HookNotFound(_) | Self::Usage(_) => {
+                CommandOrigin::ShellIntegration
+            }
+            _ => CommandOrigin::Typed,
+        }
     }
 
     /// Shell integration runs on startup and every prompt, so it must not do
@@ -1251,6 +1264,11 @@ impl Cli {
                     .task
                     .as_deref()
                     .is_some_and(|task| !matches!(task, "help" | "-h" | "--help")),
+        );
+        config_file::set_command_origin(
+            cli.command
+                .as_ref()
+                .map_or(CommandOrigin::Typed, Commands::command_origin),
         );
         // Validate --cd path BEFORE Settings processes it and changes the directory
         validate_cd_path(&cli.cd)?;

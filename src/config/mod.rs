@@ -3815,16 +3815,18 @@ pub(crate) fn write_reaches_global_config_through_link(path: &Path) -> bool {
     })
 }
 
-/// The symlinks `path` passes through on the way to its file, the file itself included: each as
-/// spelled in `path`, with where it is placed, the directory that holds it (resolved) and its
-/// name there.
+/// The links (symlinks, and junctions on Windows) `path` passes through on the way to its file,
+/// the file itself included: each as spelled in `path`, with where it is placed, the directory
+/// that holds it (resolved) and its name there.
 fn link_placements(
     path: &Path,
 ) -> impl Iterator<Item = (&Path, (PathBuf, std::ffi::OsString))> + '_ {
-    path.ancestors().filter(|p| p.is_symlink()).filter_map(|p| {
-        let dir = p.parent()?.canonicalize().ok()?;
-        Some((p, (dir, p.file_name()?.to_os_string())))
-    })
+    path.ancestors()
+        .filter(|p| config_file::config_root::is_link(p))
+        .filter_map(|p| {
+            let dir = p.parent()?.canonicalize().ok()?;
+            Some((p, (dir, p.file_name()?.to_os_string())))
+        })
 }
 
 /// Where global or system config is spelled for a file `path` resolves to: where discovery
@@ -4793,7 +4795,7 @@ fn load_aliases(config_files: &ConfigMap) -> Result<AliasMap> {
                 alias.backend = Some(full);
             }
             for (from, to) in plugin_aliases.versions {
-                if ignore_path_versions && config_file::version_requires_trust(&to) {
+                if ignore_path_versions && config_file::is_path_version(&to) {
                     debug!(
                         "ignoring tool alias version {from} = {to} in {}: safe mode (MISE_SAFE=1)",
                         display_path(config_file.get_path())

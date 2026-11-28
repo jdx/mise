@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+
+# A checkout can ship `.mise` as a symlink to a directory outside it that holds only conf.d
+# fragments, and a `config.toml` there that leads to global config. The fragments' lockfile
+# sits in that directory, so writing it must still be refused unless the user trusts the
+# checkout.
+
+export MISE_LOCKFILE=1
+export MISE_OFFLINE=1
+export MISE_TRUSTED_CONFIG_PATHS=""
+export MISE_YES=0
+unset CI GITHUB_ACTIONS GITHUB_ACTION 2>/dev/null || true
+
+cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
+[env]
+GLOBALFOO = "g"
+EOF
+
+mkdir -p shared/conf.d clone
+cat >shared/conf.d/tools.toml <<'EOF'
+[tools]
+node = "20.0.0"
+EOF
+ln -s "$MISE_CONFIG_DIR/config.toml" shared/config.toml
+ln -s ../shared clone/.mise
+
+lock="mise -C clone lock --platform linux-x64"
+assert_fail_contains "MISE_SAFE=1 $lock 2>&1" "refusing to write lockfile"
+assert_succeed "test ! -e shared/mise.lock"
+
+# Once the user trusts the checkout, its link is theirs.
+mise trust clone/.mise/conf.d/tools.toml
+assert_succeed "$lock"
+assert_contains "cat shared/mise.lock" "@generated"

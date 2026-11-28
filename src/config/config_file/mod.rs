@@ -54,6 +54,8 @@ pub(crate) mod tool_versions;
 mod typed_consent;
 mod unknown_key;
 
+pub use typed_consent::{CommandOrigin, set_command_origin};
+
 #[derive(Debug, PartialEq)]
 pub(crate) enum ConfigFileType {
     MiseToml,
@@ -579,7 +581,19 @@ pub(super) async fn parse_detected(
 /// A `path:<dir>` version names a directory that is already on disk, so it needs
 /// no install step: its `bin` is put on PATH as soon as the config loads, which
 /// would let an untrusted repository shadow any command.
+///
+/// A `ref:` or `rev:` version (or `ref-`/`rev-`, which `ToolRequest` reads the same way) names
+/// any commit the tool's repository serves, and forges serve commits nobody published there:
+/// a pull request's head (`refs/pull/1/head`) or, on GitHub, a fork's commit by its id. A
+/// shim or the not-found handler builds such a version from source when another version of
+/// the tool is installed. `tag:` and `branch:` only name what the repository's maintainers
+/// pushed, as a plain version names what they released.
 pub fn version_requires_trust(version: &str) -> bool {
+    is_path_version(version) || matches!(version.split_once([':', '-']), Some(("ref" | "rev", _)))
+}
+
+/// Whether a tool version is a `path:` version, which safe mode ignores in project config.
+pub(crate) fn is_path_version(version: &str) -> bool {
     version.starts_with("path:")
 }
 
@@ -589,8 +603,12 @@ pub fn version_requires_trust(version: &str) -> bool {
 /// An `spm:` package named by the URL of a self-hosted forge makes mise derive
 /// that host's API from the name and send it the user's forge token, as an
 /// `api_url` option would.
+///
+/// The key is checked as `BackendArg` reads it, after `unalias_backend` drops
+/// leading `core:` prefixes, so `core:spm:<url>` is the same `spm:` key.
 pub fn tool_key_requires_trust(tool: &str) -> bool {
-    tool.contains('[') || crate::backend::spm::tool_key_selects_api_host(tool)
+    let tool = crate::backend::unalias_backend(tool.trim());
+    tool.contains('[') || crate::backend::spm::tool_key_selects_api_host(&tool)
 }
 
 /// Whether a detected config requires trust before tracked loading may parse it.
@@ -669,6 +687,39 @@ pub fn is_path_trusted(path: &Path) -> bool {
         return is_trusted(&project);
     }
     is_trusted(&config_trust_root(path)) || is_trusted(path)
+}
+
+/// Whether mise may put a directory that lives in the project at `dir` first on PATH, such as
+/// the `bin` of a virtualenv there. Its files then run in place of system commands, which is
+/// what `_.python.venv` and `_.path` in that project's own config need trust for.
+///
+/// True when a loaded config file rooted at `dir` is trusted, or, outside paranoid mode, when
+/// `dir` itself is (`mise trust <dir>`). A trust record of a parent directory does not count: a
+/// clone below a trusted project is not that project. What already trusts every config file
+/// below a directory, a `trusted_config_paths` entry or a trusted monorepo root, does count,
+/// through [`is_trusted`]: the project's own config could then put its files on PATH anyway.
+/// A project file linked to global config does not lend it global config's trust. Safe mode
+/// trusts no project, so this is false there.
+pub fn is_project_dir_trusted(config: &Config, dir: &Path) -> bool {
+    if Settings::safe_mode() {
+        return false;
+    }
+    let trusted_config_here = config.config_files.iter().any(|(path, cf)| {
+        cf.project_root().as_deref() == Some(dir)
+            && !config::is_project_link_to_global_config(path)
+            && is_path_trusted(path)
+    });
+    trusted_config_here || (!Settings::get().paranoid.config() && is_trusted(dir))
+}
+
+/// What to run so that [`is_project_dir_trusted`] accepts `dir`, for a warning that names it.
+pub fn project_dir_trust_hint(dir: &Path) -> String {
+    let dir = display_path(dir);
+    if Settings::get().paranoid.config() {
+        format!("trust a mise config file in {dir} with `mise trust <file>`")
+    } else {
+        format!("run `mise trust {dir}`")
+    }
 }
 
 static IMPLICITLY_TRUST_ACTIVE_CONFIG: AtomicBool = AtomicBool::new(false);
@@ -766,18 +817,11 @@ pub fn trust_active_config() -> Result<()> {
 /// Trusts a config root. The settings snapshot was built without the project's
 /// `[settings]` while it was untrusted, so rebuild it to pick them up.
 fn trust_and_reload_settings(config_root: &Path) -> eyre::Result<()> {
-    trust_then_reload_settings(config_root, || {})
-}
-
-/// [`trust_and_reload_settings`] that runs `on_trusted` once the record is saved, before the
-/// reload, which can fail on the project's own `[settings]`.
-fn trust_then_reload_settings(config_root: &Path, on_trusted: impl FnOnce()) -> eyre::Result<()> {
     let was_trusted = is_trusted(config_root);
     trust(config_root)?;
     if !was_trusted {
         granted_by_this_command(config_root);
     }
-    on_trusted();
     if !was_trusted && settings::is_loaded() {
         Settings::reload()?;
     }
@@ -823,6 +867,28 @@ fn implicit_trust_may_record(path: &Path, config_root: &Path) -> bool {
 /// arrives after the ignore.
 pub(crate) fn project_is_ignored(path: &Path) -> bool {
     config_root::nested_root_project(path).is_some_and(|project| is_ignored(&project))
+}
+
+/// [`trust_and_reload_settings`] that takes the record back when the reload fails on the
+/// project's own `[settings]`. Every later command would fail on that setting at startup,
+/// `mise untrust` too, so a record left behind could not be removed with mise.
+fn trust_and_reload_settings_or_roll_back(config_root: &Path) -> eyre::Result<()> {
+    let was_trusted = is_trusted(config_root);
+    trust(config_root)?;
+    if !was_trusted {
+        granted_by_this_command(config_root);
+    }
+    if !was_trusted
+        && settings::is_loaded()
+        && let Err(err) = Settings::reload()
+    {
+        untrust(config_root)?;
+        if let Ok(canonical) = config_root.canonicalize() {
+            IS_TRUSTED.lock().unwrap().remove(&canonical);
+        }
+        return Err(err);
+    }
+    Ok(())
 }
 
 /// Checks whether a config may load, prompting for trust when appropriate.
@@ -873,7 +939,10 @@ pub fn trust_check(path: &Path) -> eyre::Result<()> {
         Err(UntrustedConfig(path.into(), Untrusted::NotTrusted))?
     }
     ensure_trust_can_approve(path)?;
-    if cmd != "hook-env" && !strict && !is_ignored(&config_root) && !is_ignored(path) {
+    // The prompt hook neither asks nor trusts. The parsed command catches `mise -q hook-env`;
+    // argv[1] covers config loaded before the command line is parsed.
+    let prompt_hook = cmd == "hook-env" || typed_consent::is_prompt_hook();
+    if !prompt_hook && !strict && !is_ignored(&config_root) && !is_ignored(path) {
         // A typed command implies trust like the commands above, so an ignored project's
         // nested root is left to the prompt too.
         if implicit_trust_may_record(path, &config_root)
@@ -1065,7 +1134,14 @@ fn check_trust(path: &Path, canonical: &Path, content_bound: bool, kind: TrustAs
         is_trusted_without_config_paths(path, canonical, content_bound, &record)
             || trusted_config_path_matches(canonical)
     };
-    if trusted && kind == TrustAs::Config && !env_file_approval {
+    // Trust that depends on the file's content is checked again next time: the file can change
+    // within one process, and the memo would keep accepting it.
+    if trusted
+        && kind == TrustAs::Config
+        && !env_file_approval
+        && !content_bound
+        && !record.has_hash()
+    {
         add_trusted(canonical.to_path_buf());
     }
     trusted
@@ -1142,8 +1218,21 @@ fn is_trusted_without_config_paths(
 fn trusted_monorepo_ancestor(canonical: &Path) -> bool {
     canonical.ancestors().skip(2).any(|dir| {
         let record = dirs::TRUSTED_CONFIGS.join(record_name(dir));
-        with_appended_extension(&record, "monorepo").exists() && is_trusted_with(dir, false)
+        (with_appended_extension(&record, "monorepo").exists() || has_legacy_monorepo_marker(dir))
+            && is_trusted_with(dir, false)
     })
+}
+
+remove_by!("2027.11.0", "legacy-trust-record-names");
+
+/// Whether `dir` has a monorepo marker beside a record under a name that mise 2026.11.13 and
+/// earlier used. Loading the root's config writes the marker under the current name, but settings
+/// are read before that, so the first run after an upgrade would otherwise leave out the
+/// `[settings]` of a subproject trusted through the root.
+fn has_legacy_monorepo_marker(dir: &Path) -> bool {
+    legacy_records(&dirs::TRUSTED_CONFIGS, dir)
+        .iter()
+        .any(|record| with_appended_extension(record, "monorepo").exists())
 }
 
 static IS_TRUSTED: Lazy<Mutex<HashSet<PathBuf>>> = Lazy::new(|| Mutex::new(HashSet::new()));
@@ -1160,7 +1249,9 @@ pub fn add_ignored(path: PathBuf) -> Result<()> {
     Ok(())
 }
 pub(crate) fn rm_ignored(path: PathBuf) -> Result<()> {
-    let path = path.canonicalize()?;
+    // A path that is gone, such as a nested root `mise untrust` found by its record, still has
+    // its records removed: they hold it as it was resolved.
+    let path = record_identity(&path);
     for ignore_path in records_for(&dirs::IGNORED_CONFIGS, &path) {
         file::remove_file(&ignore_path)?;
     }
@@ -1395,10 +1486,10 @@ fn trust_as(path: &Path, kind: TrustAs) -> Result<()> {
     let canonicalized_path = path.canonicalize()?;
     // What this writes decides the next check, which the memo would answer from the old state.
     IS_TRUSTED.lock().unwrap().remove(&canonicalized_path);
-    if !record_points_at(&hashed_path, &canonicalized_path) {
-        file::create_dir_all(hashed_path.parent().unwrap())?;
-        file::make_symlink_or_file(&canonicalized_path, &hashed_path)?;
-    }
+    file::create_dir_all(hashed_path.parent().unwrap())?;
+    // The record is written last, after the sidecars that say what it approves: a write that
+    // fails part way leaves no new record, rather than one without its env file marker that
+    // would count as trust in the path as config.
     // The hash is only read for content-bound trust. Record it for an env file too, which is
     // bound to its content when only the `env_files` category is on. A trust root that is a
     // directory is a config trusted the normal way and has no content to hash.
@@ -1423,6 +1514,9 @@ fn trust_as(path: &Path, kind: TrustAs) -> Result<()> {
         file::write(env_file_path, "")?;
     } else if env_file_path.exists() {
         file::remove_file(&env_file_path)?;
+    }
+    if !record_points_at(&hashed_path, &canonicalized_path) {
+        file::make_symlink_or_file(&canonicalized_path, &hashed_path)?;
     }
     Ok(())
 }
@@ -1608,8 +1702,8 @@ pub(crate) fn set_monorepo_root_marker(path: &Path, enabled: bool) -> Result<()>
     }
     let config_root = config_trust_root(path);
     let enabled = enabled && is_trusted(&config_root);
-    // The walk in `trusted_monorepo_ancestor` reads the marker under the current name only, also
-    // for a root whose record has an older one.
+    // The marker is written under the current name, also for a root whose record has an older
+    // one; `trusted_monorepo_ancestor` reads an older name's marker only until this runs.
     let hashed_path = dirs::TRUSTED_CONFIGS.join(hashed_path_filename(&config_root));
     let monorepo_marker = with_appended_extension(&hashed_path, "monorepo");
     if enabled && !monorepo_marker.exists() {
@@ -1625,6 +1719,19 @@ pub(crate) fn set_monorepo_root_marker(path: &Path, enabled: bool) -> Result<()>
         }
     }
     Ok(())
+}
+
+/// The paths strictly below `dir` that have a trust record, whether or not they are still on
+/// disk: a config root that the current checkout lacks keeps its record, and gets it back when
+/// another branch brings its config back.
+pub fn trusted_paths_below(dir: &Path) -> Vec<PathBuf> {
+    let dir = record_identity(dir);
+    file::ls(&dirs::TRUSTED_CONFIGS)
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|record| record_target(&record))
+        .filter(|target| target != &dir && target.starts_with(&dir))
+        .collect()
 }
 
 pub fn untrust(path: &Path) -> eyre::Result<()> {
@@ -2601,6 +2708,24 @@ mod env_file_trust_tests {
         assert!(env_file_trust_check(&path).unwrap());
     }
 
+    /// Config trust bound to the content is not memoized either: the check after an edit
+    /// compares the hash again.
+    #[test]
+    fn an_edited_config_needs_new_trust_even_after_a_passing_check() {
+        let held = crate::test::SettingsGuard::lock();
+        paranoid_on(&held);
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("mise.toml");
+        std::fs::write(&path, "[env]\nA = '1'\n").unwrap();
+
+        trust(&path).unwrap();
+        assert!(is_trusted(&path));
+        assert!(is_trusted(&path));
+
+        std::fs::write(&path, "[env]\nA = '2'\n").unwrap();
+        assert!(!is_trusted(&path));
+    }
+
     #[test]
     fn a_missing_file_is_not_loaded() {
         let held = crate::test::SettingsGuard::lock();
@@ -2841,5 +2966,34 @@ mod hashed_path_filename_tests {
 
         rm_ignored(sub).unwrap();
         untrust(&mono).unwrap();
+    }
+
+    #[test]
+    fn a_monorepo_marker_under_the_old_name_trusts_the_subprojects() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mono = tmp.path().canonicalize().unwrap().join("mono");
+        let sub = mono.join("apps/sub");
+        std::fs::create_dir_all(&sub).unwrap();
+        std::fs::write(mono.join("mise.toml"), "monorepo_root = true\n").unwrap();
+        std::fs::write(sub.join("mise.toml"), "[settings]\njobs = 3\n").unwrap();
+        let config = sub.join("mise.toml");
+
+        // What mise 2026.11.13 left behind: the root's record and marker under the old name,
+        // and nothing under the current one. Settings are read before the root's config loads
+        // and rewrites the marker, so the old marker has to count on its own.
+        let identity = record_identity(&mono);
+        let legacy =
+            dirs::TRUSTED_CONFIGS.join(prefixed_record_name(&identity, hash_to_str(&identity)));
+        file::create_dir_all(&*dirs::TRUSTED_CONFIGS).unwrap();
+        file::make_symlink_or_file(&identity, &legacy).unwrap();
+        file::write(with_appended_extension(&legacy, "monorepo"), "").unwrap();
+        let current = dirs::TRUSTED_CONFIGS.join(hashed_path_filename(&mono));
+        assert!(!with_appended_extension(&current, "monorepo").exists());
+
+        assert!(is_trusted_with(&config, false));
+        assert!(is_path_trusted(&config));
+
+        untrust(&mono).unwrap();
+        file::remove_file(with_appended_extension(&legacy, "monorepo")).ok();
     }
 }

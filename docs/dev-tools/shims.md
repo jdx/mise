@@ -506,7 +506,10 @@ terraform = "tofu"
 
 Run `mise reshim` after adding or removing a wrapper. Wrappers work with both
 `mise activate` and `mise activate --shims` and take precedence over an
-executable with the same name. If the configured tool that provides the
+executable with the same name. The wrapper directory is the first entry of the
+`PATH` that `mise exec`, tasks and `mise env` set, ahead of directories you list
+before mise's shims, such as `~/.cargo/bin`, so a script or build tool started
+there also gets the wrapper. If the configured tool that provides the
 wrapper's command is missing, the wrapper installs it first, as that command's
 own shim would, subject to `not_found_auto_install` unless the tool is lazy.
 
@@ -589,7 +592,16 @@ up with the `mr_boxington` tool option and the `mr-boxington` tool.
 
 The `cargo`, `npm` and `pipx` backends run their install commands without command
 wrappers on `PATH`, so a `cargo` wrapper does not take over the `cargo install` that
-a `cargo:` tool runs.
+a `cargo:` tool runs. A tool's `postinstall` hook keeps the wrapper directory where
+your `PATH` already has it, behind the tool's own directories.
+
+All projects share one wrapper directory. A shim that another project's wrapper left
+there does nothing in a project that does not wrap that command: the command runs as
+it would without the shim, with the `PATH` and environment the shim was started
+with, so a directory you list before mise's shims still wins over a mise tool, and
+the shim does not run `auto_update` for a tool of that name.
+The exception is a Windows `exe` or `file` shim, which runs the command with
+`mise exec`, and that looks mise's tools up first.
 
 Other wrappers still apply. If `pnpm` and `node` are both wrapped, a script that
 `pnpm` runs gets the `node` wrapper, with its `args` and `env`, while `pnpm`'s own
