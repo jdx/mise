@@ -42,6 +42,24 @@ repository's config can run code.
   run with it. It does not sandbox mise while it evaluates config, installs
   tools, or runs hooks. Run untrusted projects or tools in an isolated
   environment without access to your usual files or credentials.
+- **Resource exhaustion.** Input that mise reads before you trust it, or that
+  comes from the network, must not make mise hang, crash, or use unbounded
+  memory, disk or CPU. A report that such input does is a security bug. This
+  covers:
+  - project config, `.tool-versions` and `mise.lock` you have not
+    [trusted](#configuration-trust), and any `.miserc.toml`, which never needs
+    trust, including what [`mise activate`](/cli/activate.html) reads when you
+    `cd` into a repository you just cloned
+  - anything mise reads in [safe mode](#safe-mode)
+  - remote metadata, such as version lists, release APIs, checksum lists,
+    registry templates and OAuth responses
+  - downloaded archives, such as decompression bombs or archives with too many
+    entries, even when [download verification](#download-verification) passes
+
+  Trusted config and the tools and tasks it runs are out of scope. Trusted
+  config can already run commands as you, so a trusted config that loops or
+  allocates a lot is a bug, not a vulnerability. The same goes for a tool you
+  chose to install that is large.
 
 ## Configuration trust
 
