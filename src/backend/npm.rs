@@ -415,10 +415,11 @@ pub(crate) fn selected_node_dependency(request: &ToolRequest) -> Result<Option<T
         selector,
         request.source().clone(),
     )?;
-    // mise.lock does not record the Node an npm tool selects, so the request owns no
-    // lockfile: `--locked` must not demand an entry that `mise lock` never writes, and the
-    // project's own `node` pin must not decide which Node this tool runs on.
-    dependency.set_lockfile_scope(crate::toolset::tool_request::LockfileScope::NoOwner);
+    // Share the npm tool's lockfile scope, as pipx's `python` does, so a project `node`
+    // with the same request is the same install request rather than a private twin.
+    // Locked mode refuses the option (`ensure_node_option_unlocked`) until `mise lock`
+    // records the selected Node.
+    dependency.set_lockfile_scope(request.lockfile_scope().clone());
     Ok(Some(dependency))
 }
 

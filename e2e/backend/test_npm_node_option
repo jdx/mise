@@ -64,3 +64,15 @@ cat >locked/mise.toml <<'EOF2'
 EOF2
 MISE_LOCKFILE=1 mise -C locked lock
 assert_fail_contains "MISE_LOCKFILE=1 MISE_LOCKED=1 mise -C locked install --force" "locked mode does not support yet"
+
+# A project `node` that matches the option is still the project's own tool:
+# installing both reports node as installed and activates it.
+mkdir both
+cat >both/mise.toml <<'EOF2'
+[tools]
+node = "20.12.2"
+"npm:cowsay" = { version = "1.6.0", node = "20.12.2" }
+EOF2
+mise -C both install
+assert_contains "mise -C both ls node --current --json" '"version": "20.12.2"'
+assert_contains "mise -C both x -- node --version" "v20.12.2"
