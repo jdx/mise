@@ -2408,11 +2408,20 @@ fn validate_value(kind: &str, value: &str) -> Result<()> {
     Ok(())
 }
 
+/// The remote host prints the staging directory, and the path then goes into
+/// remote shell commands and into the socket paths of OpenSSH's `-R`, which
+/// expands `${VAR}` from mise's own environment and `%` tokens. So only the
+/// characters `mktemp` writes are accepted after the fixed prefix.
 fn validate_staging_path(path: &str) -> Result<()> {
-    if !path.starts_with("/tmp/mise-bootstrap.")
-        || path["/tmp/mise-bootstrap.".len()..].is_empty()
-        || path.chars().any(char::is_whitespace)
-    {
+    let plain = path
+        .strip_prefix("/tmp/mise-bootstrap.")
+        .is_some_and(|suffix| {
+            !suffix.is_empty()
+                && suffix
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))
+        });
+    if !plain {
         bail!("remote mktemp returned an unsafe staging path: {path:?}");
     }
     Ok(())
@@ -2876,6 +2885,24 @@ mod tests {
         assert!(validate_staging_path("/tmp/mise-bootstrap.").is_err());
         assert!(validate_staging_path("/tmp/other").is_err());
         assert!(validate_staging_path("/tmp/mise-bootstrap.a b").is_err());
+        assert!(validate_staging_path("/tmp/mise-bootstrap.Ab-1_2.x").is_ok());
+        // ssh expands these in a forwarded socket path, the shell in commands.
+        for suffix in [
+            "${GITHUB_TOKEN}",
+            "$HOME",
+            "%d",
+            "a%%b",
+            "a:b",
+            "a\\b",
+            "[a]",
+            "a/../b",
+            "a\nb",
+            "a;b",
+            "a'b",
+        ] {
+            let path = format!("/tmp/mise-bootstrap.{suffix}");
+            assert!(validate_staging_path(&path).is_err(), "{path:?}");
+        }
     }
 
     #[test]

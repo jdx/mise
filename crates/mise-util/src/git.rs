@@ -137,6 +137,7 @@ impl Git {
         let target = checkout_target(gitref);
         let cmd = git_cmd!(
             &self.dir,
+            NO_REPLACE_OBJECTS,
             "-c",
             "advice.detachedHead=false",
             "-c",
@@ -167,6 +168,9 @@ impl Git {
     /// The remote names the refs in a clone, and git does not reject a branch
     /// or tag spelled like an object ID. 64 hex digits in a SHA-1 repository
     /// can only be such a ref, which the remote is free to move.
+    ///
+    /// `HEAD` names the commit, not the files git wrote: the checkout before
+    /// this check passes [`NO_REPLACE_OBJECTS`] so that both are the pin's.
     fn ensure_pinned_commit_checked_out(&self, gitref: &str) -> Result<()> {
         if !looks_like_sha(gitref) {
             return Ok(());
@@ -223,6 +227,7 @@ impl Git {
         };
         exec(git_cmd!(
             &self.dir,
+            NO_REPLACE_OBJECTS,
             "-c",
             "advice.detachedHead=false",
             "-c",
@@ -894,6 +899,17 @@ fn remote_ref_kind(output: &str, branch_ref: &str, tag_ref: &str) -> Option<Remo
 fn looks_like_sha(s: &str) -> bool {
     matches!(s.len(), 40 | 64) && s.bytes().all(|b| b.is_ascii_hexdigit())
 }
+
+/// Git option for checking out a revision in a repository that mise cloned.
+///
+/// A `refs/replace/<id>` ref makes git read another object wherever `<id>` is
+/// asked for, so a checkout of `<id>` writes that object's files and still
+/// records `<id>` in `HEAD`. git does not fetch such refs by default, but the
+/// remote names the refs in a clone: gix creates the ref the remote's `HEAD`
+/// points at, under `refs/replace/` as well. The option is not part of
+/// `git_cmd!`, which also runs in the user's own repositories, where replace
+/// refs are the user's choice.
+const NO_REPLACE_OBJECTS: &str = "--no-replace-objects";
 
 /// The argument to hand `git checkout` for `gitref`.
 ///
