@@ -248,7 +248,21 @@ async fn test_cut_deferred_marker_is_an_error() {
     )
     .unwrap();
     let err = escape_rendered_data(&rendered).unwrap_err().to_string();
-    assert!(err.contains("changed `{{ OS() }}`"), "{err}");
+    assert!(err.contains("a filter or section changed code"), "{err}");
+    assert!(!err.contains("OS()"), "{err}");
+    // The error does not quote the changed call, whose arguments can hold a secret from `env`
+    // that the filter changed past its redaction.
+    ctx.insert("token", "hunter2-secret");
+    let rendered = render_str(
+        &mut deferred,
+        "{% filter upper %}{{ os(windows=token) }}{% endfilter %}",
+        &ctx,
+    )
+    .unwrap();
+    assert!(rendered.contains("HUNTER2-SECRET"), "{rendered}");
+    let err = format!("{:?}", escape_rendered_data(&rendered).unwrap_err());
+    assert!(err.contains("a filter or section changed code"), "{err}");
+    assert!(!err.to_lowercase().contains("hunter2"), "{err}");
     let rendered = render_str(
         &mut deferred,
         "{% filter lower %}{{ os() }}{% endfilter %}",

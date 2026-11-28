@@ -28,7 +28,9 @@ assert "echo $(copies out)" "/srv/project-copy"
 echo "=== safe mode ignores project [oci] ==="
 assert_contains "MISE_SAFE=1 mise oci build --from scratch --no-mise -o out-safe 2>&1" "ignoring [oci] in"
 assert_succeed "test -f out-safe/index.json"
-assert_empty "echo $(copies out-safe)"
+# Assigned first, so a failure to read the image stops the test instead of passing as empty.
+safe_copies="$(copies out-safe)"
+assert_empty "echo $safe_copies"
 
 echo "=== safe mode keeps global [oci] ==="
 cat <<EOF >"$MISE_CONFIG_DIR/config.toml"

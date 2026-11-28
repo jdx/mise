@@ -1605,7 +1605,10 @@ impl MiseToml {
                 let short = ba.short.clone();
                 let tvr = if let Some(mut options) = tool.options.clone() {
                     self.render_tool_options(&context, ba, &mut options)
-                        .wrap_err_with(|| format!("in the options of tool {short}"))?;
+                        .wrap_err_with(|| {
+                            let p = display_path(&self.path);
+                            format!("in the options of tool {short} in {p}")
+                        })?;
                     let mut ba = ba.clone();
                     // The registry entry this version is routed to supplies the defaults:
                     // a backend can carry other options for another version range, and a
@@ -3899,6 +3902,30 @@ mod tests {
         assert!(err.contains("rendered to \"bogus:1.0\""), "{err}");
     }
 
+    /// A filter that changes a deferred `os()` call fails without quoting the call, whose
+    /// arguments can hold a secret the filter changed past its redaction, and names the file,
+    /// the tool and the option instead.
+    #[tokio::test]
+    async fn test_changed_deferred_call_error_does_not_quote_its_arguments() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD.as_ref().unwrap().join(".test.mise.toml");
+        file::write(
+            &p,
+            r#"[tools]
+"http:hello" = { version = "1.0.0", url = "{% set token = 'hunter2-secret' %}{% filter upper %}https://example.com/{{ os(windows=token) }}{% endfilter %}" }
+"#,
+        )
+        .unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        let err = format!("{:?}", cf.to_tool_request_set().unwrap_err());
+        file::remove_file(&p).unwrap();
+        assert!(err.contains("a filter or section changed code"), "{err}");
+        assert!(err.contains("in tool option url"), "{err}");
+        assert!(err.contains("in the options of tool http:hello"), "{err}");
+        assert!(err.contains(".test.mise.toml"), "{err}");
+        assert!(!err.to_lowercase().contains("hunter2"), "{err}");
+    }
+
     #[test]
     fn test_tool_selectors() {
         #[derive(Deserialize)]
@@ -4819,7 +4846,8 @@ mod tests {
             let err = render("{% filter upper %}{{ version }}{% endfilter %}")
                 .unwrap_err()
                 .to_string();
-            assert!(err.contains("changed `{{ VERSION }}`"), "{err}");
+            assert!(err.contains("a filter or section changed code"), "{err}");
+            assert!(!err.contains("VERSION"), "{err}");
             assert_eq!(
                 render("{% filter lower %}v{{ version }}{% endfilter %}").unwrap(),
                 "v{{ version }}"

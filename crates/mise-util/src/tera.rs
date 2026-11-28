@@ -114,8 +114,11 @@ pub fn escape_rendered_data(rendered: &str) -> eyre::Result<String> {
         let (check, after) = after.split_once(DEFERRED_END).ok_or_else(unmatched)?;
         let code = &code[..end];
         if check != deferred_check(code).to_string() {
+            // The changed code is not quoted: a re-emitted `os()` or `arch()` call carries its
+            // arguments, which can come from `env` or `vars`, and the filter that changed them
+            // can also have changed them past the redaction of secrets.
             eyre::bail!(
-                "a filter or section changed `{code}`, code that mise keeps for the backend's render, such as `os()` or `version`; move it out of the filter"
+                "a filter or section changed code that mise keeps for the backend's render, such as `os()`, `arch()` or `version`; move that code out of the filter"
             );
         }
         rest = after;
