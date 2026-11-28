@@ -19,6 +19,9 @@ get_os() {
 	*-linux-*)
 		echo "linux"
 		;;
+	*-freebsd)
+		echo "freebsd"
+		;;
 	*)
 		error "unsupported OS: $RUST_TRIPLE"
 		;;
