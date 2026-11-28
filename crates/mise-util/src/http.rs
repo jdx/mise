@@ -1182,7 +1182,11 @@ impl Client {
                         .to_string(),
                 ));
             }
-            if !same_origin(&next, &url) {
+            // Scheme and port count as a different origin, as they do for reqwest.
+            if next.host() != url.host()
+                || next.port_or_known_default() != url.port_or_known_default()
+                || next.scheme() != url.scheme()
+            {
                 forward.retain_for(&mut headers, &url, &next);
                 // Userinfo carried over from the previous URL is a credential too.
                 let _ = next.set_username("");
@@ -2602,9 +2606,9 @@ impl Client {
         // netrc) without clobbering forge tokens on un-redirected requests.
         let mut final_headers = headers.clone();
         clear_cross_host_credentials(&mut final_headers, &original_url, &mut url);
-        // Refuse the downgrade for credentials that survive origin scoping: a rewrite
-        // to another scheme, host or port drops the original credentials, but userinfo
-        // written into the rule itself is sent as-is. This runs before netrc because netrc credentials are
+        // Refuse the downgrade for credentials that survive host scoping: a same-server
+        // rewrite keeps the original Authorization, and userinfo written into the rule
+        // itself is sent as-is. This runs before netrc because netrc credentials are
         // scoped to the *replacement* host by the user, who already gets them sent to a
         // plain `http://` URL with no rewrite involved — a rewrite must not be stricter
         // than the direct request, or an http mirror fronting an https origin (#7164)
@@ -2616,8 +2620,9 @@ impl Client {
             && !(options.netrc_replacement_only && url.host() == original_url.host())
         {
             let before = final_headers.get(AUTHORIZATION).cloned();
-            final_headers =
-                apply_netrc_credentials(final_headers, &original_url, &url, netrc_headers(&url));
+            final_headers = replacement_netrc_credentials(final_headers, &original_url, &url, || {
+                netrc_headers(&url)
+            })?;
             netrc_fallback_used = url.host() == original_url.host()
                 && final_headers.get(AUTHORIZATION) != before.as_ref();
         }
@@ -3537,19 +3542,24 @@ fn is_credential_header(name: &HeaderName, value: &HeaderValue) -> bool {
         || name.contains("credential")
 }
 
-/// Whether `a` and `b` are one origin: scheme, host and port (the scheme's
-/// default when none is written), as reqwest scopes credentials on a
-/// redirect. A server on another port of the same host is another server.
-fn same_origin(a: &Url, b: &Url) -> bool {
-    a.scheme() == b.scheme()
-        && a.host() == b.host()
-        && a.port_or_known_default() == b.port_or_known_default()
+/// Whether a URL rewrite keeps a request on the server its credentials were
+/// written for: the same host and the same port. A port is another server, so
+/// `https://host/` and `https://host:8443/` differ. A change of scheme between
+/// the defaults (`https://host/` to `http://host/`) is the same server reached in
+/// the clear; credentials stay with it so that
+/// [`ensure_secure_url_replacement`] refuses the downgrade instead of sending
+/// the request without them. A port written out is the same server as the
+/// default it names, so `http://host:443/` and `https://host/` are one too.
+pub fn same_server(original_url: &Url, url: &Url) -> bool {
+    url.host() == original_url.host()
+        && (url.port() == original_url.port()
+            || url.port_or_known_default() == original_url.port_or_known_default())
 }
 
-/// Drop credentials scoped to the original URL before contacting a
-/// replacement at another origin ([`same_origin`]), as a redirect does.
+/// Drop the credentials scoped to the original server ([`same_server`])
+/// before contacting a replacement one.
 pub fn clear_cross_host_credentials(headers: &mut HeaderMap, original_url: &Url, url: &mut Url) {
-    if same_origin(url, original_url) {
+    if same_server(original_url, url) {
         return;
     }
     let credential_headers = headers
@@ -3570,6 +3580,39 @@ pub fn clear_cross_host_credentials(headers: &mut HeaderMap, original_url: &Url,
         url.set_username("")
             .expect("HTTP URLs support clearing usernames");
     }
+}
+
+/// Add the netrc credentials `netrc` looks up to a request rewritten from
+/// `original_url` to `url` ([`apply_netrc_credentials`]).
+///
+/// netrc names a host, not a port or a scheme, so on the original host its
+/// login is the one written for the server the request was meant for. A
+/// rewrite to another port of that host reaches another server
+/// ([`same_server`]) and takes no netrc login, and a rewrite of that host from
+/// HTTPS to HTTP refuses to send one in the clear, as it does for any other
+/// credential ([`ensure_secure_replacement_credentials`]). A rewrite to
+/// another host takes that host's netrc login, even over HTTP: the user wrote
+/// it for the replacement (#7164).
+fn replacement_netrc_credentials(
+    final_headers: HeaderMap,
+    original_url: &Url,
+    url: &Url,
+    netrc: impl FnOnce() -> HeaderMap,
+) -> Result<HeaderMap> {
+    if url.host() != original_url.host() {
+        return Ok(apply_netrc_credentials(
+            final_headers,
+            original_url,
+            url,
+            netrc(),
+        ));
+    }
+    if !same_server(original_url, url) {
+        return Ok(final_headers);
+    }
+    let final_headers = apply_netrc_credentials(final_headers, original_url, url, netrc());
+    ensure_secure_replacement_credentials(original_url, url, &final_headers)?;
+    Ok(final_headers)
 }
 
 /// Merge `netrc` credentials into `final_headers`, honoring the fallback

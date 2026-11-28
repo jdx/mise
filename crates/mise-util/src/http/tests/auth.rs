@@ -448,17 +448,16 @@ fn test_cross_host_replacement_clears_credentials_without_netrc() {
     assert!(redirected.password().is_none());
 }
 
-/// A replacement on the same host but another port or scheme is another
-/// server, so it gets none of the original URL's credentials, as a redirect
-/// there would not.
+/// A replacement on the same host but another port is another server, so it
+/// gets none of the original URL's credentials.
 #[test]
-fn test_same_host_replacement_on_another_port_or_scheme_clears_credentials() {
+fn test_same_host_replacement_on_another_port_clears_credentials() {
     let original: Url = "http://user:password@mirror.example.com/file"
         .parse()
         .unwrap();
     for replacement in [
         "http://user:password@mirror.example.com:8080/file",
-        "https://user:password@mirror.example.com/file",
+        "https://user:password@mirror.example.com:8443/file",
     ] {
         let mut replaced: Url = replacement.parse().unwrap();
         let mut headers = HeaderMap::new();
@@ -475,15 +474,82 @@ fn test_same_host_replacement_on_another_port_or_scheme_clears_credentials() {
         assert!(replaced.password().is_none(), "{replacement}");
     }
 
-    // the default port written out is the same origin
-    let mut same: Url = "http://user:password@mirror.example.com:80/other"
-        .parse()
-        .unwrap();
+    // the default port written out, and a change of scheme between the
+    // defaults, stay on the same server: the credentials stay, so that a
+    // downgrade is refused rather than sent without them
+    for replacement in [
+        "http://user:password@mirror.example.com:80/other",
+        "https://user:password@mirror.example.com/file",
+    ] {
+        let mut same: Url = replacement.parse().unwrap();
+        let mut headers = HeaderMap::new();
+        headers.insert(AUTHORIZATION, HeaderValue::from_static("Bearer kept"));
+        clear_cross_host_credentials(&mut headers, &original, &mut same);
+        assert_eq!(headers[AUTHORIZATION], "Bearer kept", "{replacement}");
+        assert_eq!(same.username(), "user", "{replacement}");
+    }
+}
+
+/// netrc names a host, so its login for the original host is not sent to
+/// another port of it, where another server answers.
+#[test]
+fn test_same_host_replacement_on_another_port_takes_no_netrc_login() {
+    let original: Url = "https://mirror.example.com/file".parse().unwrap();
+    let mut rewritten: Url = "https://mirror.example.com:8443/file".parse().unwrap();
     let mut headers = HeaderMap::new();
-    headers.insert(AUTHORIZATION, HeaderValue::from_static("Bearer kept"));
-    clear_cross_host_credentials(&mut headers, &original, &mut same);
-    assert_eq!(headers[AUTHORIZATION], "Bearer kept");
-    assert_eq!(same.username(), "user");
+    headers.insert(AUTHORIZATION, HeaderValue::from_static("Bearer original"));
+    clear_cross_host_credentials(&mut headers, &original, &mut rewritten);
+
+    let out = replacement_netrc_credentials(headers, &original, &rewritten, || {
+        panic!("netrc was looked up for another server")
+    })
+    .unwrap();
+    assert!(!out.contains_key(AUTHORIZATION));
+
+    // the same server still takes it, and another host takes its own
+    let out =
+        replacement_netrc_credentials(HeaderMap::new(), &original, &original, basic_netrc_headers)
+            .unwrap();
+    assert_eq!(out[AUTHORIZATION], "Basic bmV0cmM=");
+    let mirror: Url = "https://other.example.com/file".parse().unwrap();
+    let out =
+        replacement_netrc_credentials(HeaderMap::new(), &original, &mirror, basic_netrc_headers)
+            .unwrap();
+    assert_eq!(out[AUTHORIZATION], "Basic bmV0cmM=");
+}
+
+/// An HTTPS-to-HTTP rewrite that keeps the host refuses to send the host's
+/// netrc login in the clear, as it refuses the original credentials. One to
+/// another host still takes that host's login (#7164).
+#[test]
+fn test_same_host_https_to_http_replacement_refuses_a_netrc_login() {
+    let original: Url = "https://mirror.example.com/file".parse().unwrap();
+    let downgraded: Url = "http://mirror.example.com/file".parse().unwrap();
+
+    let err = replacement_netrc_credentials(
+        HeaderMap::new(),
+        &original,
+        &downgraded,
+        basic_netrc_headers,
+    )
+    .unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("refusing to send credentials over an HTTPS-to-HTTP URL replacement"),
+        "{err}"
+    );
+
+    // without a netrc entry the downgrade goes ahead without credentials
+    let out =
+        replacement_netrc_credentials(HeaderMap::new(), &original, &downgraded, HeaderMap::new)
+            .unwrap();
+    assert!(out.is_empty());
+
+    let mirror: Url = "http://mirror.internal/file".parse().unwrap();
+    let out =
+        replacement_netrc_credentials(HeaderMap::new(), &original, &mirror, basic_netrc_headers)
+            .unwrap();
+    assert_eq!(out[AUTHORIZATION], "Basic bmV0cmM=");
 }
 
 #[test]

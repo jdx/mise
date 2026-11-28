@@ -151,16 +151,10 @@ async fn streaming_upload_allows_a_body_longer_than_the_read_timeout() {
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn test_request_drops_custom_credentials_on_a_same_host_https_to_http_replacement() {
-    // Same-host downgrade: another scheme is another origin, so the credential
-    // header is dropped, as a redirect would drop it, rather than sent in cleartext.
-    let mut server = mockito::Server::new_async().await;
-    let mock = server
-        .mock("GET", "/file")
-        .match_header("x-api-key", mockito::Matcher::Missing)
-        .with_body("ok")
-        .create_async()
-        .await;
+async fn test_request_rejects_custom_credentials_on_https_to_http_replacement() {
+    // Same-host downgrade: host scoping keeps the credential header, so sending it
+    // would expose it in cleartext.
+    let server = mockito::Server::new_async().await;
     let replacement = server.url();
     let original = replacement.replacen("http://", "https://", 1);
     let _guard = {
@@ -176,15 +170,14 @@ async fn test_request_drops_custom_credentials_on_a_same_host_https_to_http_repl
     headers.insert("x-api-key", HeaderValue::from_static("secret"));
     let client = Client::new(Duration::from_secs(1), ClientKind::Http).unwrap();
 
-    let body = client
+    let err = client
         .get_text_request(format!("{original}/file"))
         .headers(&headers)
         .send()
         .await
-        .unwrap();
+        .unwrap_err();
 
-    assert_eq!(body, "ok");
-    mock.assert_async().await;
+    assert!(err.to_string().contains("refusing to send credentials"));
 }
 
 #[tokio::test(flavor = "current_thread")]
