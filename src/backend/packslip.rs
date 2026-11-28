@@ -2342,7 +2342,7 @@ impl PackslipBackend {
         vfox_plugin: bool,
     ) -> Result<(ToolVersion, PendingPin)> {
         let project = self.project()?;
-        let raw_opts = tv.request.options();
+        let raw_opts = tv.request.options().literal();
         let opts = PackslipOptions::new(&raw_opts);
         let pin = pin(&project, &opts)?;
         let require_log = !opts.allow_unlogged();
@@ -2612,21 +2612,17 @@ impl PackslipBackend {
 
         // Unpack as the manifest describes the file, not as its name suggests.
         ctx.pr.next_operation();
-        let mut install_opts = tv.request.options();
-        if let Some(format) = &artifact.format {
-            install_opts
-                .insert_option("format".into(), toml::Value::String(format.clone()))
-                .map_err(|e| eyre!(e))?;
-        }
         // A bare executable, compressed or not, lands at the path its bin
         // entry names: the artifact's own name minus any compression suffix.
-        if artifact.format.as_deref().is_some_and(is_bare_format)
-            && let Some(bin) = artifact.bin.first()
-        {
-            install_opts
-                .insert_option("bin".into(), toml::Value::String(bin.path.clone()))
-                .map_err(|e| eyre!(e))?;
-        }
+        let bare_bin = artifact
+            .format
+            .as_deref()
+            .is_some_and(is_bare_format)
+            .then(|| artifact.bin.first())
+            .flatten()
+            .map(|bin| bin.path.as_str());
+        let install_opts =
+            install_options(tv.request.options(), artifact.format.as_deref(), bare_bin)?;
         // The statement names every executable by path, so nothing here may
         // rename one: a tidied platform suffix would put the file somewhere the
         // statement does not point, and `link_bins` would not find it.
@@ -2722,7 +2718,10 @@ impl Backend for PackslipBackend {
     }
 
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
-        let opts = config.get_tool_opts_with_overrides(&self.ba).await?;
+        let opts = config
+            .get_tool_opts_with_overrides(&self.ba)
+            .await?
+            .literal();
         self.policy_versions(&opts, false).await
     }
 
@@ -2750,7 +2749,9 @@ impl Backend for PackslipBackend {
             // Written back so that a later offline command has something to
             // serve. Like the shared path, the cache holds the prerelease
             // superset and the filter below is applied on the way out.
-            let versions = self.policy_versions(selection_opts, refresh).await?;
+            let versions = self
+                .policy_versions(&selection_opts.literal(), refresh)
+                .await?;
             if versions.is_empty() {
                 cache.clear()?;
             } else if let Err(err) = cache.write(&versions) {
@@ -2813,11 +2814,14 @@ impl Backend for PackslipBackend {
         // but new yanks, changed stampers, or a missing previously accepted
         // signed list must not be hidden by it.
         let project = self.project()?;
-        let opts = PackslipOptions::new(selection_opts);
+        // Policy reads the options as written; the trait methods above take
+        // them as stored.
+        let literal_opts = selection_opts.literal();
+        let opts = PackslipOptions::new(&literal_opts);
         let pin = pin(&project, &opts)?;
         let recommendation = self.recommendation(&project, &opts, &pin).await?;
-        let versions = self.vendor_versions(selection_opts, refresh).await?;
-        let stamps = crate::packslip_stamps::fetch(&project, selection_opts).await?;
+        let versions = self.vendor_versions(&literal_opts, refresh).await?;
+        let stamps = crate::packslip_stamps::fetch(&project, &literal_opts).await?;
         let candidates = latest_candidates(
             versions,
             recommendation.as_deref(),
@@ -2878,9 +2882,10 @@ impl Backend for PackslipBackend {
         let before =
             crate::backend::effective_latest_before_date(self, selection_opts, before_date)?;
         let project = self.project()?;
-        let opts = PackslipOptions::new(selection_opts);
+        let literal_opts = selection_opts.literal();
+        let opts = PackslipOptions::new(&literal_opts);
         let pin = pin(&project, &opts)?;
-        let stamps = crate::packslip_stamps::fetch(&project, selection_opts).await?;
+        let stamps = crate::packslip_stamps::fetch(&project, &literal_opts).await?;
         let stamps = stamps.as_ref();
         eligible_matches(&project, query, versions, |version| {
             self.admits(&project, version, &opts, &pin, before, stamps)
@@ -2918,7 +2923,7 @@ impl Backend for PackslipBackend {
         let artifact = selected_artifact(
             &statement,
             &install_path,
-            PackslipOptions::new(&tv.request.options())
+            PackslipOptions::new(&tv.request.options().literal())
                 .variant()
                 .as_deref(),
         );
@@ -2940,7 +2945,7 @@ impl Backend for PackslipBackend {
         let artifact = selected_artifact(
             &statement,
             &install_path,
-            PackslipOptions::new(&tv.request.options())
+            PackslipOptions::new(&tv.request.options().literal())
                 .variant()
                 .as_deref(),
         );
@@ -2974,7 +2979,7 @@ impl Backend for PackslipBackend {
         let artifact = selected_artifact(
             &statement,
             &install_path,
-            PackslipOptions::new(&tv.request.options())
+            PackslipOptions::new(&tv.request.options().literal())
                 .variant()
                 .as_deref(),
         );
@@ -3000,7 +3005,7 @@ impl Backend for PackslipBackend {
         target: &PlatformTarget,
     ) -> Result<PlatformInfo> {
         let project = self.project()?;
-        let raw_opts = tv.request.options();
+        let raw_opts = tv.request.options().literal();
         let opts = PackslipOptions::new(&raw_opts);
         let pin = pin(&project, &opts)?;
         let stamps = crate::packslip_stamps::fetch(&project, &raw_opts).await?;
@@ -3082,7 +3087,7 @@ impl Backend for PackslipBackend {
         request: &ToolRequest,
         _target: &PlatformTarget,
     ) -> Result<BTreeMap<String, String>> {
-        let raw_opts = request.options();
+        let raw_opts = request.options().literal();
         let opts = PackslipOptions::new(&raw_opts);
         let mut options = BTreeMap::new();
         if let Some(variant) = opts.variant() {
@@ -3126,6 +3131,28 @@ fn bin_link_path(bins_dir: &Path, name: &str) -> PathBuf {
     }
 }
 
+/// The options `install_artifact` unpacks a payload with: the tool's, as stored
+/// (escaped, since the helper renders `bin_path` and decodes the rest itself),
+/// plus the manifest's `format` and, for a bare executable, its `bin` path,
+/// escaped the same way so that they reach the helper as the text they are.
+fn install_options(
+    stored: ToolVersionOptions,
+    format: Option<&str>,
+    bare_bin: Option<&str>,
+) -> Result<ToolVersionOptions> {
+    let mut opts = stored;
+    for (key, value) in [("format", format), ("bin", bare_bin)] {
+        if let Some(value) = value {
+            opts.insert_option(
+                key.into(),
+                toml::Value::String(crate::tera::escape_template_syntax(value)),
+            )
+            .map_err(|e| eyre!(e))?;
+        }
+    }
+    Ok(opts)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3140,6 +3167,37 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
     use tokio::sync::OnceCell;
+
+    #[test]
+    fn install_options_keep_substituted_text_literal() {
+        // what config load stores when a template substituted `{{ version }}/bin`
+        // into `bin_path`, and `tool{` into `rename_exe`
+        let escaped = crate::tera::escape_template_syntax;
+        let stored: ToolVersionOptions = toml::from_str(&format!(
+            "bin_path = '{}'\nrename_exe = '{}'\n",
+            escaped("{{ version }}/bin"),
+            escaped("tool{"),
+        ))
+        .unwrap();
+        let opts = install_options(stored.clone(), Some("raw"), Some("bin/{{x}}")).unwrap();
+        // the stored options go to `install_artifact` as they are, still escaped,
+        // so a render of `bin_path` outputs the substituted text
+        assert_eq!(opts.get("bin_path"), stored.get("bin_path"));
+        assert_eq!(opts.get("rename_exe"), stored.get("rename_exe"));
+        // and the helper's one decoding gives the text, the manifest's included
+        let literal = opts.literal();
+        assert_eq!(literal.get("rename_exe"), Some("tool{"));
+        assert_eq!(literal.get("format"), Some("raw"));
+        assert_eq!(literal.get("bin"), Some("bin/{{x}}"));
+        let mut tera = crate::tera::get_tera(None);
+        let rendered = crate::tera::render_str(
+            &mut tera,
+            opts.get("bin_path").unwrap(),
+            &tera::Context::new(),
+        )
+        .unwrap();
+        assert_eq!(rendered, "{{ version }}/bin");
+    }
 
     #[derive(Debug)]
     struct RetryLifecycleBackend {

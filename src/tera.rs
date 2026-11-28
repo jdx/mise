@@ -2,7 +2,9 @@ pub use mise_util::tera::*;
 
 /// [`render_str`] for a template in the config file at `path`. Safe mode loads
 /// project config without trust, so its templates get an empty `env`; global
-/// and system config is operator-owned and keeps the real one.
+/// and system config is operator-owned and keeps the real one. A project
+/// template stays untrusted when it renders inside the trusted scope of an
+/// operator's task or tool.
 pub fn render_config_str(
     tera: &mut TeraEngine,
     input: &str,
@@ -13,7 +15,7 @@ pub fn render_config_str(
     if crate::config::is_global_config(path) {
         render_str_with_env(tera, input, context)
     } else {
-        render_str(tera, input, context)
+        render_untrusted_str(tera, input, context)
     }
 }
 

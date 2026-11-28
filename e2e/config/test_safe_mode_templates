@@ -22,6 +22,39 @@ assert_contains "SAFE_TEMPLATE=secret mise tasks ls" "token=secret"
 assert_contains "SAFE_TEMPLATE=secret MISE_SAFE=1 mise tasks ls" "token=none"
 assert_not_contains "SAFE_TEMPLATE=secret MISE_SAFE=1 mise tasks ls" "secret"
 
+echo "=== project templates do not see the operator's vars ==="
+cat <<'EOF' >"$MISE_CONFIG_DIR/config.toml"
+[vars]
+mirror_token = "operator-secret"
+
+[tasks.global-task]
+run = "echo {{ arg(name='mirror', default=vars.mirror_token) }}"
+description = "global={{ vars.mirror_token }}"
+EOF
+cat <<'EOF' >mise.toml
+[tasks.build]
+run = "echo {{ arg(name='mirror', default=vars.mirror_token | default(value='none')) }}"
+description = "token={{ vars | json_encode }}"
+EOF
+assert_contains "mise tasks ls" "operator-secret"
+assert_not_contains "MISE_SAFE=1 mise tasks ls" 'token={"mirror_token"'
+assert_contains "MISE_SAFE=1 mise tasks ls" "token={}"
+# a task global config declares is the operator's and keeps them, in the run
+# script its usage is read from too
+assert_contains "MISE_SAFE=1 mise tasks ls" "global=operator-secret"
+assert_contains "MISE_SAFE=1 mise tasks info global-task" "arg <mirror> default=operator-secret"
+assert_contains "MISE_SAFE=1 mise tasks info build" "arg <mirror> default=none"
+# so is a file task in the global task directory, which keeps env too
+mkdir -p "$MISE_CONFIG_DIR/tasks"
+cat <<'EOF' >"$MISE_CONFIG_DIR/tasks/gfile"
+#!/usr/bin/env bash
+#MISE description="file={{ env.SAFE_TEMPLATE | default(value='none') }}/{{ vars.mirror_token | default(value='none') }}"
+echo gfile
+EOF
+chmod +x "$MISE_CONFIG_DIR/tasks/gfile"
+assert_contains "SAFE_TEMPLATE=from-env MISE_SAFE=1 mise tasks ls" "file=from-env/operator-secret"
+rm -r "$MISE_CONFIG_DIR/tasks" "$MISE_CONFIG_DIR/config.toml"
+
 echo "=== get_env() and the file filters are refused ==="
 for template in "get_env(name='HOME')" "'/etc/hostname' | hash_file" "'/etc/hostname' | file_size" "'/etc/hostname' | last_modified"; do
   safe_template_tool "{{ $template }}" >mise.toml
@@ -80,4 +113,35 @@ palias = "1.0.0"
 EOF
 assert_fail "SAFE_CHANNEL=stable MISE_SAFE=1 mise install palias"
 assert_succeed "SAFE_CHANNEL=stable mise install palias"
+rm mise.toml
+
+# a `{{` the environment puts in a URL with a legacy `{version}`, which
+# `{{version}}` is also read as, reaches the backend as the text it was
+mkdir -p 'odd{{dir'
+printf '#!/bin/sh\necho legacy-tool\n' >'odd{{dir/legacy-1.0.0'
+for url in "{version}" "{{version}}"; do
+  cat <<EOF >mise.toml
+[tools]
+"http:legacy" = { version = "1.0.0", url = "file://$PWD/{{env.ODD_DIR}}/legacy-$url" }
+EOF
+  assert_succeed "ODD_DIR='odd{{dir' mise install http:legacy@1.0.0"
+  assert_succeed "ODD_DIR='odd{{dir' mise where http:legacy@1.0.0"
+  assert_succeed "ODD_DIR='odd{{dir' mise uninstall http:legacy@1.0.0"
+done
+rm mise.toml
+
+# an option mise uses as written, like the file name `rename_exe` gives the
+# binary, gets the text the template substituted, not the escape that keeps it
+# from being rendered again
+printf '#!/bin/sh\necho renamed-tool\n' >stable/renamed-1.0.0
+for name in 'odd{{name' 'odd{'; do
+  cat <<EOF >mise.toml
+[tools]
+"http:renamed" = { version = "1.0.0", url = "file://$PWD/stable/renamed-{{version}}", rename_exe = "{{env.ODD_NAME}}" }
+EOF
+  assert_succeed "ODD_NAME='$name' mise install http:renamed@1.0.0"
+  install_dir="$(ODD_NAME="$name" mise where http:renamed@1.0.0)"
+  assert "ls '$install_dir'" "$name"
+  assert_succeed "ODD_NAME='$name' mise uninstall http:renamed@1.0.0"
+done
 rm mise.toml

@@ -620,6 +620,48 @@ mod tests {
     }
 
     #[test]
+    fn test_julia_version_dates_scale_with_the_document() {
+        // julia's versions.json is keyed by version, with dates on each release's files. The
+        // registry expression must not read the whole document once per version: expr-lang
+        // copies a variable on every read, which makes a long list take minutes.
+        let expr = crate::registry::baked_registry()
+            .get("julia")
+            .unwrap()
+            .backend_options("http:julia", None)
+            .get("version_date_expr")
+            .unwrap()
+            .to_string();
+        let mut releases = vec![
+            r#""1.10.0": {"files": [{"url": "a"}, {"url": "b", "last-modified": "2026-10-15"}]}"#
+                .to_string(),
+            r#""1.9.0": {"files": [{"url": "c"}]}"#.to_string(),
+            r#""1.8.0": {"files": []}"#.to_string(),
+        ];
+        releases
+            .extend((0..3000).map(|n| format!(r#""2.{n}.0": {{"files": [], "stable": true}}"#)));
+        let body = format!("{{{}}}", releases.join(","));
+
+        let start = std::time::Instant::now();
+        let dates = eval_version_dates(
+            &expr,
+            &[body],
+            &strings(&["1.8.0", "1.9.0", "1.10.0", "2.0.0"]),
+        )
+        .unwrap();
+        let elapsed = start.elapsed();
+
+        assert_eq!(dates.len(), 1);
+        assert_eq!(dates["1.10.0"], "2026-10-15");
+        // A linear walk takes tens of milliseconds in a debug build, and the quadratic ones took
+        // seconds or minutes. The budget sits far from both, so a runner that deschedules the
+        // test for a moment does not fail it.
+        assert!(
+            elapsed < std::time::Duration::from_secs(3),
+            "3003 versions took {elapsed:?}"
+        );
+    }
+
+    #[test]
     fn test_version_dates_from_from_pairs() {
         let dates = eval_version_dates(
             r#"fromPairs([["1.0.0", "2024-01-02"]])"#,

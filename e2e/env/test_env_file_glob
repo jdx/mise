@@ -14,3 +14,89 @@ echo "VAR2=2" >env.d/2.env
 mise env -s bash
 assert_contains "mise env -s bash" "VAR1=1"
 assert_contains "mise env -s bash" "VAR2=2"
+
+# `*` stays in its directory, as in a shell: a file below it is not loaded
+mkdir -p env.d/nested cloned/docs
+echo "VAR3=3" >env.d/nested/3.env
+echo "CLONED=1" >cloned/docs/.env.example
+assert_contains "mise env -s bash" "VAR2=2"
+assert_not_contains "mise env -s bash" "VAR3=3"
+
+# `**` descends
+cat <<'EOS' >.mise.toml
+[env]
+_.file = ["env.d/**/*.env", ".env.*"]
+EOS
+assert_contains "mise env -s bash" "VAR1=1"
+assert_contains "mise env -s bash" "VAR3=3"
+assert_not_contains "mise env -s bash" "CLONED=1"
+
+# a `*` that a template renders is part of a directory's name
+mkdir -p 'src*' srcfoo
+echo "OWN=1" >'src*/.env'
+echo "OWN_LOCAL=1" >'src*/.env.local'
+echo "SIBLING=1" >srcfoo/.env
+echo "SIBLING_LOCAL=1" >srcfoo/.env.local
+cat <<'EOS' >.mise.toml
+[env]
+_.file = ["{{cwd}}/.env", "{{cwd}}/.env.*"]
+EOS
+cd 'src*' || exit 1
+assert_contains "mise env -s bash" "OWN=1"
+assert_contains "mise env -s bash" "OWN_LOCAL=1"
+assert_not_contains "mise env -s bash" "SIBLING"
+cat <<'EOS' >../.mise.toml
+[env]
+_.file = { path = "{{cwd}}/.env", find_up = true }
+EOS
+assert_contains "mise env -s bash" "OWN=1"
+assert_not_contains "mise env -s bash" "SIBLING"
+cd .. || exit 1
+
+# a template or `$VAR` can name the directory a glob is matched in, a `$` written before a
+# template included, but cannot be part of the glob
+# shellcheck disable=SC2016 # mise expands $SUB, not the shell
+for entry in 'env.d/{{ env.SUB }}/*.env' 'env.d/$SUB/*.env' 'env.d/${{ "SUB" }}/*.env'; do
+  cat <<EOS >.mise.toml
+[env]
+_.file = '$entry'
+EOS
+  assert_contains "SUB=nested mise env -s bash" "VAR3=3"
+  assert_not_contains "SUB=nested mise env -s bash" "VAR1"
+done
+mkdir -p profiles
+echo "DEV_PROFILE=1" >profiles/dev.env
+# shellcheck disable=SC2016 # mise expands $PROFILE, not the shell
+for entry in 'profiles/{{ env.PROFILE }}.e*' 'profiles/$PROFILE.e*' 'profiles/${{ "PROFILE" }}.e*' 'profiles/${% if true %}PROFILE{% endif %}.e*'; do
+  cat <<EOS >.mise.toml
+[env]
+_.file = '$entry'
+EOS
+  assert_fail "PROFILE=dev mise env -s bash" 'a template or $VAR is part of the glob, which starts after "profiles/"'
+done
+
+# the branch of a conditional that renders holds the pattern
+cat <<'EOS' >.mise.toml
+[env]
+_.file = "{% if env.PROFILE == 'dev' %}env.d/*.env{% else %}profiles/d*.env{% endif %}"
+EOS
+assert_contains "PROFILE=dev mise env -s bash" "VAR1=1"
+assert_not_contains "PROFILE=dev mise env -s bash" "DEV_PROFILE"
+assert_contains "PROFILE=prod mise env -s bash" "DEV_PROFILE=1"
+assert_not_contains "PROFILE=prod mise env -s bash" "VAR1"
+
+# only a `**` the entry writes as a component descends, not a run of `*`s a group forms
+mkdir -p stars/a/b
+echo "STARS_ONE=1" >stars/a/.env
+echo "STARS_DEEP=1" >stars/a/b/.env
+cat <<'EOS' >.mise.toml
+[env]
+_.file = "stars/*{*,dev}/.env"
+EOS
+assert_contains "mise env -s bash" "STARS_ONE=1"
+assert_not_contains "mise env -s bash" "STARS_DEEP"
+cat <<'EOS' >.mise.toml
+[env]
+_.file = "stars/{**,dev}/.env"
+EOS
+assert_contains "mise env -s bash" "STARS_DEEP=1"

@@ -146,6 +146,22 @@ pub(crate) trait TaskToolValueExt {
     fn render_templates(&mut self, tera: &mut TeraEngine, context: &tera::Context) -> Result<()>;
 }
 
+/// `future`, a render of a task's templates, in that task's scope: a task only the operator wrote
+/// ([`Task::is_operators`]) keeps `env` and `vars` for its templates in safe mode, in its
+/// metadata, its `run` scripts and its usage spec alike. Any other task's templates lose them,
+/// even when it renders inside the trusted scope of the operator's work, such as one of their
+/// tasks or tools. Boxed: held inline, the scope nests the render's future in that of every
+/// caller, which then takes too deep a layout for the compiler to build.
+fn in_task_template_scope<'a, T: 'a>(
+    operators: bool,
+    future: impl std::future::Future<Output = T> + Send + 'a,
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = T> + Send + 'a>> {
+    Box::pin(crate::tera::with_templates_trusted(
+        operators,
+        Box::pin(future),
+    ))
+}
+
 fn task_tool_value_has_template(value: &toml::Value) -> bool {
     match value {
         toml::Value::String(value) => contains_template_syntax(value),
@@ -198,26 +214,38 @@ impl TaskToolValueExt for TaskToolValue {
     }
 
     fn render_templates(&mut self, tera: &mut TeraEngine, context: &tera::Context) -> Result<()> {
+        use crate::config::config_file::mise_toml::{render_option_for_backend, shield_raw_blocks};
+
+        /// `for_backend`: the option is rendered again by the backend.
         fn render_value(
             value: &mut toml::Value,
             tera: &mut TeraEngine,
             context: &tera::Context,
+            for_backend: bool,
         ) -> Result<()> {
             match value {
+                // Backends render tool options again at install time: a raw block's body is
+                // code for that render, and what this render substituted (an env var, a
+                // command's output) stays data there, as for `[tools]` options.
+                toml::Value::String(value) if contains_template_syntax(value) && for_backend => {
+                    *value = render_option_for_backend(shield_raw_blocks(value), |shielded| {
+                        Ok(render_str(tera, shielded, context)?)
+                    })?;
+                }
                 toml::Value::String(value) if contains_template_syntax(value) => {
                     *value = render_str(tera, value, context)?;
                 }
                 toml::Value::Array(values) => {
                     for value in values {
                         if task_tool_value_has_template(value) {
-                            render_value(value, tera, context)?;
+                            render_value(value, tera, context, for_backend)?;
                         }
                     }
                 }
                 toml::Value::Table(values) => {
                     for (_, value) in values.iter_mut() {
                         if task_tool_value_has_template(value) {
-                            render_value(value, tera, context)?;
+                            render_value(value, tera, context, for_backend)?;
                         }
                     }
                 }
@@ -236,9 +264,14 @@ impl TaskToolValueExt for TaskToolValue {
                 if contains_template_syntax(&map.version) {
                     map.version = render_str(tera, &map.version, context)?;
                 }
-                for value in map.opts.values_mut() {
+                for (key, value) in map.opts.iter_mut() {
                     if task_tool_value_has_template(value) {
-                        render_value(value, tera, context)?;
+                        // A typed core option (`install_env`, `lazy_bins`, ...) is read as this
+                        // render leaves it, as it is for `[tools]`: nothing renders it again to
+                        // undo an escape.
+                        let for_backend = !ToolVersionOptions::is_typed_core_option(key);
+                        render_value(value, tera, context, for_backend)
+                            .wrap_err_with(|| format!("in tool option {key}"))?;
                     }
                 }
             }
@@ -1291,11 +1324,35 @@ impl Task {
             && self.additional_config_sources.iter().all(|p| trusted(p))
     }
 
+    /// Whether only the operator wrote this task: every file it is defined in is global or
+    /// system config or lies under their task include directories, and it extends no template.
+    /// Applying a template records the template's file as a config source, but some tasks are
+    /// built before templates are applied, and a template can come from a project.
+    fn is_operators(&self) -> bool {
+        let global = |path: &Path| {
+            config::is_global_config(path) || config::is_global_task_include_path(path)
+        };
+        self.extends.is_none()
+            && global(&self.config_source)
+            && self.additional_config_sources.iter().all(|p| global(p))
+    }
+
     pub fn tool_args(&self) -> Result<Vec<ToolArg>> {
-        self.tools
+        let args = self
+            .tools
             .iter()
             .map(|(tool, value)| value.to_tool_arg(tool))
-            .collect()
+            .collect::<Result<Vec<_>>>()?;
+        // In safe mode the tools of a project's task are the project's, like its `[tools]`, so
+        // their options are kept inert in the same way (see `is_safe_mode_project_tool`).
+        if config::Settings::safe_mode() && !self.is_operators() {
+            config::record_safe_mode_project_tools(
+                args.iter()
+                    .flat_map(|arg| [arg.ba.short.clone(), arg.ba.full()])
+                    .collect(),
+            );
+        }
+        Ok(args)
     }
 
     pub fn new(path: &Path, prefix: &Path, config_root: &Path) -> Result<Task> {
@@ -2058,7 +2115,20 @@ impl Task {
             }
         }
     }
+    /// The task's usage spec and its rendered `run` scripts, rendered in the scope of
+    /// [`Self::render`].
     pub(crate) async fn parse_usage_spec_with_vars(
+        &self,
+        config: &Arc<Config>,
+        cwd: Option<PathBuf>,
+        env: &EnvMap,
+        extra_vars: Option<IndexMap<String, String>>,
+    ) -> Result<(usage::Spec, Vec<String>)> {
+        let parse = self.parse_usage_spec_with_vars_unscoped(config, cwd, env, extra_vars);
+        in_task_template_scope(self.is_operators(), parse).await
+    }
+
+    async fn parse_usage_spec_with_vars_unscoped(
         &self,
         config: &Arc<Config>,
         cwd: Option<PathBuf>,
@@ -2158,6 +2228,15 @@ impl Task {
         config: &Arc<Config>,
         strict: bool,
     ) -> Result<usage::Spec> {
+        let parse = self.parse_usage_spec_for_display_unscoped(config, strict);
+        in_task_template_scope(self.is_operators(), parse).await
+    }
+
+    async fn parse_usage_spec_for_display_unscoped(
+        &self,
+        config: &Arc<Config>,
+        strict: bool,
+    ) -> Result<usage::Spec> {
         // The directory only feeds script parsing here. A broken `dir` template is reported
         // by `mise tasks validate` and when the task runs, so it does not fail the spec.
         let dir = self.dir(config).await.unwrap_or(None);
@@ -2196,6 +2275,14 @@ impl Task {
     /// environment directives. This is used before the scheduler starts, where
     /// source/module hooks must not run ahead of task dependencies.
     pub(crate) async fn parse_usage_spec_for_preflight(
+        &self,
+        config: &Arc<Config>,
+    ) -> Result<usage::Spec> {
+        let parse = self.parse_usage_spec_for_preflight_unscoped(config);
+        in_task_template_scope(self.is_operators(), parse).await
+    }
+
+    async fn parse_usage_spec_for_preflight_unscoped(
         &self,
         config: &Arc<Config>,
     ) -> Result<usage::Spec> {
@@ -2241,9 +2328,24 @@ impl Task {
         TaskScriptParser::new(self.config_root.clone()).validate_template_syntax(self, input)
     }
 
+    /// The task's `run` scripts rendered with `args`, in the scope of [`Self::render`].
     /// `run_shell` is `mise run --shell`, which runs a script with no shebang when the task sets
     /// no `shell`; the template functions quote their values for the shell that reads the script.
     pub(crate) async fn render_run_scripts_with_args(
+        &self,
+        config: &Arc<Config>,
+        cwd: Option<PathBuf>,
+        args: &[String],
+        env: &EnvMap,
+        extra_vars: Option<IndexMap<String, String>>,
+        run_shell: Option<String>,
+    ) -> Result<Vec<(String, Vec<String>)>> {
+        let render = self
+            .render_run_scripts_with_args_unscoped(config, cwd, args, env, extra_vars, run_shell);
+        in_task_template_scope(self.is_operators(), render).await
+    }
+
+    async fn render_run_scripts_with_args_unscoped(
         &self,
         config: &Arc<Config>,
         cwd: Option<PathBuf>,
@@ -2949,6 +3051,11 @@ impl Task {
     }
 
     pub(crate) async fn render(&mut self, config: &Arc<Config>, config_root: &Path) -> Result<()> {
+        let operators = self.is_operators();
+        in_task_template_scope(operators, self.render_fields(config, config_root)).await
+    }
+
+    async fn render_fields(&mut self, config: &Arc<Config>, config_root: &Path) -> Result<()> {
         if !self.has_render_templates() {
             self.store_raw_render_inputs();
             self.parse_plain_depends()?;
@@ -3081,6 +3188,17 @@ impl Task {
     }
 
     pub async fn render_runtime_templates_with_usage(
+        &mut self,
+        config: &Arc<Config>,
+        usage_values: &IndexMap<String, tera::Value>,
+    ) -> Result<()> {
+        // In the same scope as `render`, for the templates deferred until its usage args are
+        // known.
+        let operators = self.is_operators();
+        in_task_template_scope(operators, self.render_usage_fields(config, usage_values)).await
+    }
+
+    async fn render_usage_fields(
         &mut self,
         config: &Arc<Config>,
         usage_values: &IndexMap<String, tera::Value>,
@@ -7911,6 +8029,182 @@ echo "test"
                 toml::Value::String("tool".to_string()),
                 toml::Value::String("static".to_string()),
             ]))
+        );
+    }
+
+    #[test]
+    fn test_task_tool_substituted_value_stays_data_for_the_backend_render() {
+        use indexmap::IndexMap;
+
+        use super::{TaskToolValue, TaskToolValueExt, TaskToolValueMap};
+        use crate::tera::{TeraEngine, render_str};
+
+        let branch = "{{ exec(command='touch RAN') }}";
+        let mut opts = IndexMap::new();
+        opts.insert(
+            "url".to_string(),
+            toml::Value::String("https://e/{{ branch }}".to_string()),
+        );
+        let mut tool = TaskToolValue::Map(TaskToolValueMap {
+            version: "1.0.0".to_string(),
+            opts,
+        });
+        let mut context = tera::Context::new();
+        context.insert("branch", branch);
+        let mut tera = TeraEngine::V2(Box::default());
+        tool.render_templates(&mut tera, &context).unwrap();
+        let TaskToolValue::Map(map) = &tool else {
+            panic!("tool is a map");
+        };
+        let url = map.opts["url"].as_str().unwrap();
+        // the backend's render gives the substituted value back as text
+        assert_eq!(
+            render_str(&mut tera, url, &context).unwrap(),
+            format!("https://e/{branch}")
+        );
+    }
+
+    /// `install_env` reaches the installer as the task render leaves it, so a substituted value
+    /// arrives as it is, not escaped for a backend render that never happens.
+    #[test]
+    fn test_task_tool_install_env_gets_the_substituted_value() {
+        use indexmap::IndexMap;
+
+        use super::{TaskToolValue, TaskToolValueExt, TaskToolValueMap};
+        use crate::config::env_directive::EnvValue;
+        use crate::tera::TeraEngine;
+
+        let mut install_env = toml::map::Map::new();
+        install_env.insert(
+            "FOO".to_string(),
+            toml::Value::String("{{ branch }}".to_string()),
+        );
+        let opts = IndexMap::from([
+            ("install_env".to_string(), toml::Value::Table(install_env)),
+            (
+                "install_env.BAR".to_string(),
+                toml::Value::String("{{ branch }}".to_string()),
+            ),
+        ]);
+        let mut tool = TaskToolValue::Map(TaskToolValueMap {
+            version: "1.0.0".to_string(),
+            opts,
+        });
+        let mut context = tera::Context::new();
+        context.insert("branch", "{{ literal }}");
+        let mut tera = TeraEngine::V2(Box::default());
+        tool.render_templates(&mut tera, &context).unwrap();
+        let arg = tool.to_tool_arg("node").unwrap();
+        let options = arg.tvr.unwrap().options();
+        assert_eq!(
+            options.install_env.get("FOO"),
+            Some(&EnvValue::String("{{ literal }}".to_string()))
+        );
+        assert_eq!(
+            options.install_env.get("BAR"),
+            Some(&EnvValue::String("{{ literal }}".to_string()))
+        );
+    }
+
+    /// A project task's templates render untrusted even inside the trusted scope of the
+    /// operator's work, such as an operator task or tool that renders it, and an operator task's
+    /// keep their trust.
+    #[tokio::test]
+    async fn test_project_task_templates_are_untrusted_inside_trusted_work() {
+        use super::in_task_template_scope;
+        use crate::tera::{in_trusted_templates, with_trusted_templates};
+
+        let (project, operators) = with_trusted_templates(async {
+            (
+                in_task_template_scope(false, async { in_trusted_templates() }).await,
+                in_task_template_scope(true, async { in_trusted_templates() }).await,
+            )
+        })
+        .await;
+        assert!(!project);
+        assert!(operators);
+        assert!(in_task_template_scope(true, async { in_trusted_templates() }).await);
+        assert!(!in_task_template_scope(false, async { in_trusted_templates() }).await);
+    }
+
+    /// Every typed core option is read as the task render leaves it, so a substituted value
+    /// such as a shim name ending in `{` arrives as it is, not escaped for a backend render.
+    #[test]
+    fn test_task_tool_typed_core_options_get_the_substituted_value() {
+        use indexmap::IndexMap;
+
+        use super::{TaskToolValue, TaskToolValueExt, TaskToolValueMap};
+        use crate::tera::TeraEngine;
+
+        let opts = IndexMap::from([
+            (
+                "lazy_bins".to_string(),
+                toml::Value::String("{{ name }}".to_string()),
+            ),
+            (
+                "depends".to_string(),
+                toml::Value::Array(vec![toml::Value::String("{{ dep }}".to_string())]),
+            ),
+            (
+                "url".to_string(),
+                toml::Value::String("https://e/{{ name }}".to_string()),
+            ),
+        ]);
+        let mut tool = TaskToolValue::Map(TaskToolValueMap {
+            version: "1.0.0".to_string(),
+            opts,
+        });
+        let mut context = tera::Context::new();
+        context.insert("name", "helper{");
+        context.insert("dep", "x{{ y }}");
+        let mut tera = TeraEngine::V2(Box::default());
+        tool.render_templates(&mut tera, &context).unwrap();
+        let options = tool.to_tool_arg("node").unwrap().tvr.unwrap().options();
+        assert_eq!(options.lazy_bins, vec!["helper{".to_string()]);
+        assert_eq!(options.depends, Some(vec!["x{{ y }}".to_string()]));
+        // an option a backend renders again keeps the escape that its render undoes
+        assert_eq!(options.get("url"), Some(r#"https://e/helper{{ "{" }}"#));
+    }
+
+    /// A task has no `version` at render time, so a raw block is how an option defers an
+    /// expression on `version` to the backend. Its body stays code for the backend's render,
+    /// next to substituted values that stay data.
+    #[test]
+    fn test_task_tool_raw_block_stays_code_for_the_backend_render() {
+        use indexmap::IndexMap;
+
+        use super::{TaskToolValue, TaskToolValueExt, TaskToolValueMap};
+        use crate::tera::{TeraEngine, render_str};
+
+        let mut opts = IndexMap::new();
+        opts.insert(
+            "url".to_string(),
+            toml::Value::String(
+                "https://e/{{ branch }}/t-{% raw %}{{ version | replace(from='.', to='_') }}{% endraw %}.tgz"
+                    .to_string(),
+            ),
+        );
+        let mut tool = TaskToolValue::Map(TaskToolValueMap {
+            version: "1.2.3".to_string(),
+            opts,
+        });
+        let mut context = tera::Context::new();
+        context.insert("branch", "{{ version }}");
+        let mut tera = TeraEngine::V2(Box::default());
+        tool.render_templates(&mut tera, &context).unwrap();
+        let TaskToolValue::Map(map) = &tool else {
+            panic!("tool is a map");
+        };
+        let mut backend_context = tera::Context::new();
+        backend_context.insert("version", "1.2.3");
+        assert_eq!(
+            render_str(
+                &mut tera,
+                map.opts["url"].as_str().unwrap(),
+                &backend_context
+            )
+            .unwrap(),
+            "https://e/{{ version }}/t-1_2_3.tgz"
         );
     }
 

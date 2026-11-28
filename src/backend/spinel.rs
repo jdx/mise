@@ -83,7 +83,10 @@ impl Backend for SpinelBackend {
 
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
         let repo = validate_repo(&self.tool_name())?;
-        let opts = config.get_tool_opts_with_overrides(self.ba()).await?;
+        let opts = config
+            .get_tool_opts_with_overrides(self.ba())
+            .await?
+            .literal();
         let prefix = SpinelOptions::new(&opts).tag_prefix().to_string();
         let remote = repo_url(&repo);
         timeout::run_with_timeout_async(
@@ -122,7 +125,7 @@ impl Backend for SpinelBackend {
         ctx: &crate::install_context::InstallContext,
         tv: crate::toolset::ToolVersion,
     ) -> Result<crate::toolset::ToolVersion> {
-        let request_opts = tv.request.options();
+        let request_opts = tv.request.options().literal();
         if SpinelOptions::new(&request_opts)
             .values
             .str("spinel")

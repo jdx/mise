@@ -13,7 +13,10 @@ checksum_expr = '"sha256:" + filter(fromJSON(body)[version + ""].files, { #.url 
 checksum_url = "https://julialang-s3.julialang.org/bin/versions.json"
 # versions.json gained a last-modified on each release's files in August 2026, so
 # releases before then (and prereleases like 1.12.0-rc1) stay undated.
-version_date_expr = 'let all = fromJSON(body); map(keys(all), { let v = #; let dated = filter(all[v].files, { #["last-modified"] != nil }); [v, len(dated) > 0 ? dated[0]["last-modified"] : ""] })'
+# Walks toPairs() rather than indexing the document by version inside map(), and binds no
+# `let` in the closure: expr-lang copies a variable on every read, and either way the cost
+# grew with the square of the list.
+version_date_expr = 'map(toPairs(fromJSON(body)), { [#[0], first(filter(#[1].files, { #["last-modified"] != nil }))?.["last-modified"] ?? ""] })'
 version_expr = 'sortVersions(filter(keys(fromJSON(body)), { # matches "^\\d+\\.\\d+\\.\\d+(-[0-9A-Za-z\\.-]+)?$" }))'
 version_list_url = "https://julialang-s3.julialang.org/bin/versions.json"
 

@@ -15,6 +15,7 @@ use crate::backend::version_list;
 use crate::backend::{MISE_BINS_DIR, runtime_path_for_install_path};
 use crate::config::Config;
 use crate::config::Settings;
+use crate::config::SettingsExt;
 use crate::http::{DownloadFileMetadata, HTTP};
 use crate::install_context::InstallContext;
 use crate::lockfile::PlatformInfo;
@@ -155,15 +156,21 @@ pub(crate) struct HttpBackend {
     ba: Arc<BackendArg>,
 }
 
-#[derive(Debug, Clone, Copy)]
+/// The http options. `url`, `checksum_url`, `bin_path` and `headers` are rendered again here, so
+/// they are read as stored, with what config load substituted escaped. Every other option is
+/// used as written, as a file name, a checksum or a version-listing setting, so it is read from
+/// [`ToolVersionOptions::literal`].
+#[derive(Debug, Clone)]
 struct HttpOptions<'a> {
     values: BackendOptions<'a>,
+    literal: ToolVersionOptions,
 }
 
 impl<'a> HttpOptions<'a> {
     fn new(raw: &'a ToolVersionOptions) -> Self {
         Self {
             values: BackendOptions::new(raw),
+            literal: raw.literal(),
         }
     }
 
@@ -171,28 +178,37 @@ impl<'a> HttpOptions<'a> {
         self.values.raw()
     }
 
+    fn plain(&self) -> BackendOptions<'_> {
+        BackendOptions::new(&self.literal)
+    }
+
     fn url(&self) -> Option<String> {
         self.values.platform_string("url")
     }
 
     fn checksum(&self) -> Option<String> {
-        self.values.platform_string("checksum")
+        self.plain().platform_string("checksum")
     }
 
     fn format(&self) -> Option<String> {
-        self.values.platform_string("format")
+        self.plain().platform_string("format")
     }
 
     fn strip_components(&self) -> Option<String> {
-        self.values.platform_string("strip_components")
+        self.plain().platform_string("strip_components")
     }
 
     fn bin(&self) -> Option<String> {
-        self.values.platform_string("bin")
+        self.plain().platform_string("bin")
     }
 
     fn rename_exe(&self) -> Option<String> {
-        self.values.platform_string("rename_exe")
+        self.plain().platform_string("rename_exe")
+    }
+
+    /// `rename_exe` as written, in its string or table form.
+    fn rename_exe_value(&self) -> Option<&toml::Value> {
+        lookup_value_with_fallback(&self.literal, "rename_exe")
     }
 
     fn bin_path(&self) -> Option<String> {
@@ -214,8 +230,8 @@ impl<'a> HttpOptions<'a> {
             let bins: Vec<String> = bins.into_iter().filter(|s| !s.is_empty()).collect();
             (!bins.is_empty()).then_some(bins)
         };
-        parse(self.values.platform_value_without_base("filter_bins"))
-            .or_else(|| parse(self.values.raw().opts.get("filter_bins")))
+        parse(self.plain().platform_value_without_base("filter_bins"))
+            .or_else(|| parse(self.literal.opts.get("filter_bins")))
     }
 
     fn shared_extraction(&self) -> bool {
@@ -223,11 +239,11 @@ impl<'a> HttpOptions<'a> {
     }
 
     fn windows_script_interpreter(&self) -> Option<String> {
-        self.values.platform_string("windows_script_interpreter")
+        self.plain().platform_string("windows_script_interpreter")
     }
 
-    fn checksum_expr(&self) -> Option<&'a str> {
-        self.values.str("checksum_expr")
+    fn checksum_expr(&self) -> Option<&str> {
+        self.literal.get("checksum_expr")
     }
 
     // Target-aware accessors for cross-platform `mise lock`. These resolve
@@ -237,7 +253,7 @@ impl<'a> HttpOptions<'a> {
     }
 
     fn checksum_for_target(&self, target: &PlatformTarget) -> Option<String> {
-        self.values.platform_string_for_target("checksum", target)
+        self.plain().platform_string_for_target("checksum", target)
     }
 
     fn checksum_url_for_target(&self, target: &PlatformTarget) -> Option<String> {
@@ -245,17 +261,26 @@ impl<'a> HttpOptions<'a> {
             .platform_string_for_target("checksum_url", target)
     }
 
+    /// Whether `mise lock` evaluates `checksum_expr` for `target`: only when no
+    /// checksum is pinned for it and a checksum source names the manifest.
+    fn lock_evaluates_checksum_expr(&self, target: &PlatformTarget) -> bool {
+        self.checksum_expr().is_some()
+            && self.checksum_for_target(target).is_none()
+            && self.checksum_url_for_target(target).is_some()
+    }
+
     fn format_for_target(&self, target: &PlatformTarget) -> Option<String> {
-        self.values.platform_string_for_target("format", target)
+        self.plain().platform_string_for_target("format", target)
     }
 
     fn strip_components_for_target(&self, target: &PlatformTarget) -> Option<String> {
-        self.values
+        self.plain()
             .platform_string_for_target("strip_components", target)
     }
 
     fn rename_exe_for_target(&self, target: &PlatformTarget) -> Option<String> {
-        self.values.platform_string_for_target("rename_exe", target)
+        self.plain()
+            .platform_string_for_target("rename_exe", target)
     }
 
     /// Request headers from the `headers` table, with each value rendered as a template
@@ -264,7 +289,7 @@ impl<'a> HttpOptions<'a> {
     fn headers(&self, version: Option<&str>) -> Result<HeaderMap> {
         header_map(
             lookup_value_with_fallback(self.raw(), "headers"),
-            lookup_value_with_fallback(self.raw(), "headers_forward"),
+            lookup_value_with_fallback(&self.literal, "headers_forward"),
             version,
         )
     }
@@ -277,38 +302,38 @@ impl<'a> HttpOptions<'a> {
     ) -> Result<HeaderMap> {
         header_map(
             self.values.platform_value_for_target("headers", target),
-            self.values
+            self.plain()
                 .platform_value_for_target("headers_forward", target),
             version,
         )
     }
 
-    fn version_list_url(&self) -> Option<&'a str> {
-        self.values.str("version_list_url")
+    fn version_list_url(&self) -> Option<&str> {
+        self.literal.get("version_list_url")
     }
 
-    fn version_regex(&self) -> Option<&'a str> {
-        self.values.str("version_regex")
+    fn version_regex(&self) -> Option<&str> {
+        self.literal.get("version_regex")
     }
 
-    fn version_json_path(&self) -> Option<&'a str> {
-        self.values.str("version_json_path")
+    fn version_json_path(&self) -> Option<&str> {
+        self.literal.get("version_json_path")
     }
 
-    fn version_expr(&self) -> Option<&'a str> {
-        self.values.str("version_expr")
+    fn version_expr(&self) -> Option<&str> {
+        self.literal.get("version_expr")
     }
 
-    fn version_date_expr(&self) -> Option<&'a str> {
-        self.values.str("version_date_expr")
+    fn version_date_expr(&self) -> Option<&str> {
+        self.literal.get("version_date_expr")
     }
 
-    fn version_date_url(&self) -> Option<&'a str> {
-        self.values.str("version_date_url")
+    fn version_date_url(&self) -> Option<&str> {
+        self.literal.get("version_date_url")
     }
 
-    fn version_date_next_expr(&self) -> Option<&'a str> {
-        self.values.str("version_date_next_expr")
+    fn version_date_next_expr(&self) -> Option<&str> {
+        self.literal.get("version_date_next_expr")
     }
 
     fn url_platforms(&self) -> Vec<String> {
@@ -581,7 +606,7 @@ impl HttpBackend {
         // keeps a readable name when it is path-safe and hashes anything else (the
         // table form, or a scalar with path separators / Windows-invalid characters)
         // so nothing unsafe reaches the cache directory name.
-        if let Some(rename) = lookup_value_with_fallback(opts.raw(), "rename_exe") {
+        if let Some(rename) = opts.rename_exe_value() {
             parts.push(format!("rename_{}", rename_cache_token(rename)));
             // When rename_exe is used, bin_path affects where the rename happens,
             // so different bin_path values result in different cached content.
@@ -930,7 +955,7 @@ impl HttpBackend {
         file::ensure_symlinks_stay_within(dest)?;
 
         // Handle rename_exe option for archives
-        if let Some(rename_value) = lookup_value_with_fallback(opts.raw(), "rename_exe") {
+        if let Some(rename_value) = opts.rename_exe_value() {
             // When bin_path is not explicitly set, auto-detect bin/ subdirectory to match
             // the same logic used by discover_bin_paths() for PATH construction
             let search_dir = if let Some(bin_path_template) = opts.bin_path() {
@@ -1173,6 +1198,21 @@ impl HttpBackend {
     // Version listing
     // -------------------------------------------------------------------------
 
+    /// Refuses, in safe mode, to evaluate the expression option `key` of a tool that
+    /// project config declares. Nothing limits the memory or time an expression takes
+    /// (`0..40000000` alone is an array of that many values), and safe mode loads project
+    /// config nobody reviewed. The registry's own expression for the tool still runs, and
+    /// so does every expression of a tool that only global or system config declares.
+    fn ensure_safe_expr(&self, key: &str, expr: &str) -> Result<()> {
+        if Settings::safe_mode()
+            && crate::config::is_safe_mode_project_tool(&self.ba)
+            && self.ba.registry_opts().get(key) != Some(expr)
+        {
+            Settings::ensure_not_safe(&format!("evaluating {key} of {}", self.ba.short))?;
+        }
+        Ok(())
+    }
+
     /// Fetch versions from version_list_url if configured, with release dates from
     /// `version_date_expr` when it is set.
     async fn fetch_versions(&self, config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
@@ -1187,6 +1227,15 @@ impl HttpBackend {
         let regex = opts.version_regex();
         let json_path = opts.version_json_path();
         let version_expr = opts.version_expr();
+        for (key, expr) in [
+            ("version_expr", version_expr),
+            ("version_date_expr", opts.version_date_expr()),
+            ("version_date_next_expr", opts.version_date_next_expr()),
+        ] {
+            if let Some(expr) = expr {
+                self.ensure_safe_expr(key, expr)?;
+            }
+        }
 
         let headers = opts.headers(None)?;
         let (versions, body) =
@@ -1513,6 +1562,14 @@ impl Backend for HttpBackend {
             .into());
         };
 
+        // Refused here, since a checksum that cannot be resolved still writes a url-only
+        // entry, but only where `resolve_lock_checksum` would evaluate it: a platform
+        // with a pinned checksum, or with no checksum source, never reads the manifest.
+        if opts.lock_evaluates_checksum_expr(target)
+            && let Some(expr) = opts.checksum_expr()
+        {
+            self.ensure_safe_expr("checksum_expr", expr)?;
+        }
         let mut checksum = self.resolve_lock_checksum(&opts, tv, target, &url).await;
 
         // A checksum source was configured but produced nothing for this target
@@ -1616,6 +1673,9 @@ impl Backend for HttpBackend {
             && opts.checksum_url_for_target(&target).is_some()
         {
             ctx.pr.set_message(format!("resolve checksum {filename}"));
+            if let Some(expr) = opts.checksum_expr() {
+                self.ensure_safe_expr("checksum_expr", expr)?;
+            }
             let published = self
                 .resolve_lock_checksum(&opts, &tv, &target, &url)
                 .await
@@ -2155,6 +2215,28 @@ mod tests {
     }
 
     #[test]
+    fn lock_evaluates_checksum_expr_only_for_unpinned_platforms() {
+        let raw: ToolVersionOptions = toml::from_str(
+            r#"
+            checksum_url = "https://example.invalid/SHASUMS"
+            checksum_expr = "body"
+
+            [platforms.linux-x64]
+            checksum = "sha256:abc"
+            "#,
+        )
+        .unwrap();
+        let opts = HttpOptions::new(&raw);
+        let target =
+            |key: &str| PlatformTarget::new(crate::platform::Platform::parse(key).unwrap());
+        // a pinned platform never reads the manifest, so safe mode need not refuse it
+        assert!(!opts.lock_evaluates_checksum_expr(&target("linux-x64")));
+        assert!(opts.lock_evaluates_checksum_expr(&target("macos-arm64")));
+        let no_source: ToolVersionOptions = toml::from_str(r#"checksum_expr = "body""#).unwrap();
+        assert!(!HttpOptions::new(&no_source).lock_evaluates_checksum_expr(&target("linux-x64")));
+    }
+
+    #[test]
     fn install_symlink_path_uses_sanitized_version_pathname() {
         let version = "/outside-root/mise-http-version-out/selected-prefix";
         let tv = http_test_tv(version);
@@ -2344,6 +2426,35 @@ mod tests {
         assert_eq!(
             backend.missing_url_error(&none).to_string(),
             "Http backend requires 'url' option"
+        );
+    }
+
+    #[test]
+    fn options_used_as_written_read_the_substituted_text() {
+        // config load stored `tool{` and `a{{b`, which templates substituted, escaped
+        let escaped = |text: &str| crate::tera::escape_template_syntax(text);
+        let raw: ToolVersionOptions = toml::from_str(&format!(
+            "url = 'https://example.com/{dir}/tool'\nrename_exe = '{name}'\nbin = '{name}'\n\
+             version_list_url = 'https://example.com/{dir}/versions'",
+            dir = escaped("a{{b"),
+            name = escaped("tool{"),
+        ))
+        .unwrap();
+        let opts = HttpOptions::new(&raw);
+        assert_eq!(opts.rename_exe().as_deref(), Some("tool{"));
+        assert_eq!(
+            opts.rename_exe_value(),
+            Some(&toml::Value::String("tool{".to_string()))
+        );
+        assert_eq!(opts.bin().as_deref(), Some("tool{"));
+        assert_eq!(
+            opts.version_list_url(),
+            Some("https://example.com/a{{b/versions")
+        );
+        // the URL is rendered for each version, so it keeps the escaped text
+        assert_eq!(
+            opts.url().as_deref(),
+            Some(r#"https://example.com/a{{ "{{" }}b/tool"#)
         );
     }
 

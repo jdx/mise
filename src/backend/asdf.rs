@@ -247,7 +247,7 @@ impl AsdfBackend {
         tv: &ToolVersion,
     ) -> Result<ScriptManager> {
         let mut sm = self.plugin.script_man.clone();
-        for (key, value) in tv.request.options().opts_as_strings() {
+        for (key, value) in tv.request.options().literal().opts_as_strings() {
             let k = format!("MISE_TOOL_OPTS__{}", key.to_uppercase());
             sm = sm.with_env(k, value);
         }

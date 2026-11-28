@@ -485,7 +485,7 @@ pub fn selected_python_dependency(request: &ToolRequest) -> Result<Option<ToolRe
     if request.ba().backend_type() != BackendType::Pipx {
         return Ok(None);
     }
-    let options = request.options();
+    let options = request.options().literal();
     let options = PipxOptions::new(&options);
     options.validate_semantic()?;
     let Some(selector) = options.selected_python()? else {
@@ -501,7 +501,7 @@ pub fn selected_python_dependency(request: &ToolRequest) -> Result<Option<ToolRe
 }
 
 pub(crate) fn has_selected_python(tv: &ToolVersion) -> Result<bool> {
-    let options = tv.request.options();
+    let options = tv.request.options().literal();
     Ok(PipxOptions::new(&options).selected_python()?.is_some())
 }
 
@@ -562,7 +562,7 @@ impl Backend for PIPXBackend {
     }
 
     fn get_dependencies_for(&self, opts: &ToolVersionOptions) -> eyre::Result<Vec<&str>> {
-        if PipxOptions::new(opts).has_uv_only_options()? {
+        if PipxOptions::new(&opts.literal()).has_uv_only_options()? {
             Ok(vec!["uv", "python"])
         } else {
             self.get_dependencies()
@@ -804,7 +804,7 @@ impl Backend for PIPXBackend {
         ctx: &InstallContext,
         mut tv: ToolVersion,
     ) -> Result<ToolVersion> {
-        let request_options = tv.request.options();
+        let request_options = tv.request.options().literal();
         PipxOptions::new(&request_options).validate_semantic()?;
         // An explicit selector is never a graph-only preference. Bind it
         // before any branch that may fall back to version-only uv or pipx so
@@ -916,7 +916,7 @@ impl Backend for PIPXBackend {
         tv: &ToolVersion,
         check_symlink: bool,
     ) -> Result<bool> {
-        let selected_python = PipxOptions::new(&tv.request.options())
+        let selected_python = PipxOptions::new(&tv.request.options().literal())
             .selected_python()?
             .is_some();
         if tv.uv_lock.is_some() {
@@ -983,7 +983,7 @@ impl Backend for PIPXBackend {
             return Ok(tv);
         }
 
-        let request_options = tv.request.options();
+        let request_options = tv.request.options().literal();
         let options = PipxOptions::new(&request_options);
 
         // Check if pipx is available (unless uvx is being used)
@@ -1201,7 +1201,7 @@ impl Backend for PIPXBackend {
         request: &ToolRequest,
         _target: &PlatformTarget,
     ) -> Result<BTreeMap<String, String>> {
-        let opts = request.options();
+        let opts = request.options().literal();
         PipxOptions::new(&opts).lockfile_options()
     }
 
@@ -1654,7 +1654,10 @@ impl PIPXBackend {
     }
 
     async fn get_registry_url(&self, config: &Arc<Config>) -> eyre::Result<String> {
-        let raw_options = config.get_tool_opts_with_overrides(&self.ba).await?;
+        let raw_options = config
+            .get_tool_opts_with_overrides(&self.ba)
+            .await?
+            .literal();
         let options = PipxOptions::new(&raw_options);
         let registry_url = options
             .registry_url()

@@ -187,7 +187,8 @@ Pass `cache_key` or `cache_duration` to cache the output under
 `MISE_CACHE_DIR`. The cache is keyed by the command, its directory, and
 `cache_key`, so changing `cache_key` runs the command again. `cache_duration`,
 such as `"1h"` or `"1d"`, makes the cached output expire; without it, mise
-reuses the output until the cache is cleared:
+reuses the output until the cache is cleared. The cached output is not
+encrypted; on Unix, mise keeps it in a directory only your user can read:
 
 ```toml
 [env]
@@ -198,7 +199,7 @@ Both functions need a [trusted](/security.html#configuration-trust) config. In
 [safe mode](/security.html#safe-mode) (`MISE_SAFE=1`), they fail with an error
 instead of running, and neither is available in `.miserc.toml`. Safe mode also
 refuses `get_env()` and the `hash_file`, `file_size` and `last_modified`
-filters, and `env` is empty outside global and system config files.
+filters, and `env` and `vars` are empty outside global and system config files.
 
 ::: warning
 `exec()` runs every time its template renders, including under `--dry-run`.

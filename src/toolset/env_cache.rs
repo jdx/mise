@@ -515,6 +515,16 @@ pub(crate) fn compute_settings_hash() -> String {
         hasher.update(b"\0");
     }
 
+    // The working directory is an input too: `env_file` names are searched from it upwards
+    // and templates read `cwd`. Without it, directories that load the same config files
+    // (only the global one, say) share an entry, and one directory's dotenv is applied in
+    // the other.
+    hasher.update(b"cwd");
+    if let Some(cwd) = &*dirs::CWD {
+        hasher.update(cwd.as_os_str().as_encoded_bytes());
+    }
+    hasher.update(b"\0");
+
     let hash = hasher.finalize();
     hex::encode(&hash.as_bytes()[..8]) // Short hash for debugging
 }

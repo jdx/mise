@@ -34,7 +34,7 @@ pub(super) async fn install(
     tool_name: &str,
     action: NativeBinstallAction,
 ) -> Result<bool> {
-    let request_options = tv.request.options();
+    let request_options = tv.request.options().literal();
     let opts = CargoOptions::new(&request_options);
     let version = tv.version.as_str();
     let crate_name = opts.crate_arg().unwrap_or_else(|| tool_name.to_string());

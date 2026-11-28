@@ -438,7 +438,7 @@ impl RustPlugin {
         tv: &ToolVersion,
         runtime: &RustRuntime,
     ) -> Result<bool> {
-        let raw_opts = tv.request.options();
+        let raw_opts = tv.request.options().literal();
         let (profile, components, targets) = RustOptions::new(&raw_opts).install_args();
         let effective_profile = match profile {
             Some(profile) => profile,
@@ -804,7 +804,7 @@ impl Backend for RustPlugin {
         let key = format!(
             "{runtime:?}\0{}\0{:?}",
             tv.install_path().display(),
-            tv.request.options()
+            tv.request.options().literal()
         );
         check_once(key, self.rustup_state_satisfied(tv, &runtime)).await
     }
@@ -814,7 +814,7 @@ impl Backend for RustPlugin {
         request: &ToolRequest,
         _target: &PlatformTarget,
     ) -> Result<BTreeMap<String, String>> {
-        let raw_opts = request.options();
+        let raw_opts = request.options().literal();
         Ok(RustOptions::new(&raw_opts).lockfile_options())
     }
 
@@ -1061,7 +1061,7 @@ impl Backend for RustPlugin {
         let _state_locks = lock_rust_state(&runtime.homes).await?;
         self.setup_rustup(ctx, &tv, &runtime).await?;
 
-        let raw_opts = tv.request.options();
+        let raw_opts = tv.request.options().literal();
         let (profile, components, targets) = RustOptions::new(&raw_opts).install_args();
         let effective_profile = match profile.as_deref() {
             Some(profile) => profile.to_string(),
@@ -1165,7 +1165,7 @@ impl Backend for RustPlugin {
                 oi.tool_request = ToolRequest::new_with_options(
                     tv.request.ba().clone(),
                     &latest,
-                    tv.request.options(),
+                    tv.request.options().literal(),
                     tv.request.source().clone(),
                 )?;
                 oi.tool_request

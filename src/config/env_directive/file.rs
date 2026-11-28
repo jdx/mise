@@ -16,6 +16,9 @@ use std::{
 
 // use indexmap so source is after value for `mise env --json` output
 type EnvMap = IndexMap<String, String>;
+/// A name `find_up` looks for in each directory: a path relative to the directory, and the glob
+/// matched below that path, if any.
+type FindUpName = (PathBuf, Option<String>);
 
 #[derive(serde::Serialize, serde::Deserialize)]
 struct Env<V> {
@@ -152,11 +155,11 @@ impl EnvResults {
         let mut out = IndexMap::new();
         let mut patterns = Vec::with_capacity(inputs.len());
         for input in &inputs {
-            patterns.push(PathBuf::from(ctx.parse_template("_.file", input)?));
+            patterns.push(ctx.parse_path_template("_.file", input)?);
         }
         let has_glob = patterns
             .iter()
-            .any(|pattern| crate::config::is_glob_pattern(&pattern.to_string_lossy()));
+            .any(|pattern| crate::config::is_glob_pattern(&pattern.path.to_string_lossy()));
         let expand = expand && crate::config::Settings::get().env_shell_expand;
         // Accumulate loaded vars so opted-in expansion can reference values from
         // an earlier file in the same directive or an earlier env block.
@@ -167,17 +170,32 @@ impl EnvResults {
             // A relative name starts at the config root, like every other relative path in a
             // config. An absolute path, such as `{{cwd}}/.env`, starts at its own directory and
             // searches for its file name. Consecutive names with the same start are searched
-            // together, directory by directory, and groups apply in the order written.
-            let mut groups: Vec<(PathBuf, Vec<PathBuf>)> = Vec::new();
+            // together, directory by directory, and groups apply in the order written. A glob is
+            // matched below each directory, from the directory it is written in.
+            let mut groups: Vec<(PathBuf, Vec<FindUpName>)> = Vec::new();
             for pattern in &patterns {
-                let pattern = file::replace_path(pattern);
-                let (start, name) = if pattern.is_absolute() {
-                    match (pattern.parent(), pattern.file_name()) {
-                        (Some(dir), Some(name)) => (normalize_dots(dir), PathBuf::from(name)),
-                        _ => continue,
+                let (start, name) = match &pattern.dir {
+                    None => {
+                        let path = file::replace_path(&pattern.path);
+                        if path.is_absolute() {
+                            match (path.parent(), path.file_name()) {
+                                (Some(dir), Some(name)) => {
+                                    (normalize_dots(dir), (PathBuf::from(name), None))
+                                }
+                                _ => continue,
+                            }
+                        } else {
+                            (ctx.config_root.to_path_buf(), (path, None))
+                        }
                     }
-                } else {
-                    (ctx.config_root.to_path_buf(), pattern)
+                    Some((dir, glob)) => {
+                        let dir = file::replace_path(dir);
+                        if dir.is_absolute() {
+                            (normalize_dots(&dir), (PathBuf::new(), Some(glob.clone())))
+                        } else {
+                            (ctx.config_root.to_path_buf(), (dir, Some(glob.clone())))
+                        }
+                    }
                 };
                 match groups.last_mut() {
                     Some((dir, names)) if *dir == start => names.push(name),
@@ -192,8 +210,11 @@ impl EnvResults {
                 // directory a later name wins. A single name is the same walk with one name.
                 let mut nearest_first = Vec::new();
                 for dir in start.ancestors() {
-                    for name in names.iter().rev() {
-                        let mut matches = xx::file::glob(dir.join(name)).unwrap_or_default();
+                    for (name, glob) in names.iter().rev() {
+                        let mut matches = match glob {
+                            None => vec![dir.join(name)],
+                            Some(glob) => super::glob_files_in(&dir.join(name), glob),
+                        };
                         matches.reverse();
                         nearest_first.extend(matches);
                     }
@@ -203,14 +224,17 @@ impl EnvResults {
             paths
         } else {
             patterns
-                .into_iter()
-                .flat_map(|pattern| xx::file::glob(ctx.normalize_path(pattern)).unwrap_or_default())
+                .iter()
+                .flat_map(|pattern| ctx.expand_path(pattern))
                 .collect()
         };
         // A global entry that names its file outright is the operator's own choice. One that
-        // searches upward, or a glob, can find files in repositories, so those need approval like
-        // project config.
-        let operator_owned = !find_up && !has_glob && crate::config::is_global_config(ctx.source);
+        // searches upward, a glob, or a template or `$VAR` such as `{{cwd}}/.env`, can find files
+        // in repositories, so those need approval like project config.
+        let operator_owned = !find_up
+            && !has_glob
+            && !inputs.iter().any(|input| super::is_templated(input))
+            && crate::config::is_global_config(ctx.source);
         for p in paths {
             if !operator_owned
                 && !crate::config::config_file::env_file_trust_check_from(&p, Some(ctx.source))?
@@ -543,6 +567,64 @@ mod tests {
         restore_env_var("MISE_SOPS_AGE_KEY", prev_age_key);
         restore_env_var("MISE_SOPS_AGE_KEY_FILE", prev_age_key_file);
         restore_env_var("MISE_SOPS_ROPS", prev_rops);
+    }
+
+    #[tokio::test]
+    async fn resolved_age_key_file_is_not_rendered_as_a_template() {
+        // Panics rather than failing the render: the age key lookup falls back to other keys
+        // when a template fails, so an error here could go unnoticed.
+        fn not_a_template(s: String) -> Result<String> {
+            panic!("age key file was rendered as a template: {s}")
+        }
+
+        let _settings = crate::test::SettingsGuard::lock();
+        let _lock = ENV_MUTEX.lock().await;
+        // Restores the variables even when an assertion fails. Declared after the settings
+        // guard, so it drops first and the settings reset reads them restored.
+        let mut environment = crate::test::EnvVarGuard::new();
+        // The key must come from the key file, not from a key the process happens to have.
+        for var in [
+            "MISE_SOPS_AGE_KEY",
+            "MISE_SOPS_AGE_KEY_FILE",
+            "SOPS_AGE_KEY",
+            "SOPS_AGE_KEY_FILE",
+            "MISE_SOPS_ROPS",
+        ] {
+            environment.remove(var);
+        }
+        Settings::reset(None);
+        let config = Config::reset().await.unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let p = tmp.path().join(".env.toml");
+        // A resolved value is a path, whatever it looks like: it can come from an env file or
+        // hold a directory name.
+        let key_file = tmp.path().join("{{ exec(command='false') }}.txt");
+        file::write(&p, encrypted_toml()).unwrap();
+        file::write(&key_file, AGE_PRIVATE_KEY).unwrap();
+        let key_file = key_file.to_string_lossy().to_string();
+
+        // Set by an earlier env directive.
+        for var in ["MISE_SOPS_AGE_KEY_FILE", "SOPS_AGE_KEY_FILE"] {
+            let mut exec_env = TeraEnvMap::new();
+            exec_env.insert(var.into(), key_file.clone());
+            let env = EnvResults::toml(&config, &exec_env, &p, not_a_template, &mut false)
+                .await
+                .unwrap();
+            assert_eq!(env.get("SECRET").unwrap(), "mysecret", "{var}");
+        }
+
+        // Set in the process environment, which for MISE_SOPS_AGE_KEY_FILE is the
+        // sops.age_key_file setting.
+        for var in ["MISE_SOPS_AGE_KEY_FILE", "SOPS_AGE_KEY_FILE"] {
+            environment.set(var, &key_file);
+            Settings::reset(None);
+            let exec_env = TeraEnvMap::new();
+            let env = EnvResults::toml(&config, &exec_env, &p, not_a_template, &mut false)
+                .await
+                .unwrap();
+            assert_eq!(env.get("SECRET").unwrap(), "mysecret", "{var}");
+            environment.remove(var);
+        }
     }
 
     #[tokio::test]

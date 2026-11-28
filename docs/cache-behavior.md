@@ -95,7 +95,8 @@ an unrelated session computes its own. The cache is encrypted on disk, but any
 process that inherits the session key can read it.
 
 The cache key covers config paths and modification times, resolved tool
-versions, relevant settings, the base `PATH`, and the mise version. Entries
+versions, relevant settings, the working directory, the base `PATH`, and the
+mise version, so each directory has its own entry. Entries
 expire after [`env_cache_ttl`](/configuration/settings.html#env_cache_ttl), and
 files that env plugins declare as watched invalidate them. Edits to dotenv files
 or `_.source` scripts can still leave a nested command with a cached

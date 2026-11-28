@@ -199,7 +199,7 @@ impl Backend for SPMBackend {
     /// holds a URL or checksum for another platform; a lockfile without any belongs to a package
     /// built from source.
     fn requires_lockfile_url(&self, tv: &ToolVersion) -> bool {
-        let raw_opts = tv.request.options();
+        let raw_opts = tv.request.options().literal();
         let opts = SpmOptions::new(&raw_opts);
         // A platform that opts out of bundles builds from source and has no URL to lock
         // Install reads the options of the host it runs on, so this does too
@@ -221,7 +221,7 @@ impl Backend for SPMBackend {
         tv: &ToolVersion,
         target: &PlatformTarget,
     ) -> Result<PlatformInfo> {
-        let raw_opts = tv.request.options();
+        let raw_opts = tv.request.options().literal();
         let opts = SpmOptions::new(&raw_opts);
         let mode = opts.artifactbundle_mode(Some(target))?;
         let revision =
@@ -282,7 +282,10 @@ impl Backend for SPMBackend {
     /// top-level keys, while listing reads the platform's value first, so a
     /// list from another host gets its own entry.
     async fn remote_version_cache_context(&self, config: &Arc<Config>) -> Result<Option<String>> {
-        let raw_opts = config.get_tool_opts_with_overrides(&self.ba).await?;
+        let raw_opts = config
+            .get_tool_opts_with_overrides(&self.ba)
+            .await?
+            .literal();
         let platform_values: BTreeMap<&str, String> = self
             .remote_version_listing_tool_option_keys()
             .iter()
@@ -296,12 +299,15 @@ impl Backend for SPMBackend {
         request: &crate::toolset::ToolRequest,
         target: &PlatformTarget,
     ) -> Result<BTreeMap<String, String>> {
-        let raw_opts = request.options();
+        let raw_opts = request.options().literal();
         Ok(SpmOptions::new(&raw_opts).lockfile_options(target))
     }
 
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
-        let raw_opts = config.get_tool_opts_with_overrides(&self.ba).await?;
+        let raw_opts = config
+            .get_tool_opts_with_overrides(&self.ba)
+            .await?
+            .literal();
         let opts = SpmOptions::new(&raw_opts);
         let provider = GitProvider::from_ba_with_opts(&self.ba, &opts)?;
         let repo = SwiftPackageRepo::new(&self.tool_name(), &provider)?;
@@ -352,7 +358,7 @@ impl Backend for SPMBackend {
         )
         .await;
         let mut tv = tv;
-        let raw_opts = tv.request.options();
+        let raw_opts = tv.request.options().literal();
         let opts = SpmOptions::new(&raw_opts);
         let install_command = opts.source_install_command()?;
         let provider = GitProvider::from_ba_with_opts(&self.ba, &opts)?;
@@ -584,7 +590,7 @@ impl SPMBackend {
         tv: &ToolVersion,
         executables: Vec<String>,
     ) -> eyre::Result<Vec<String>> {
-        let raw_opts = tv.request.options();
+        let raw_opts = tv.request.options().literal();
         let opts = SpmOptions::new(&raw_opts);
         filter_executables(&opts, executables)
     }
@@ -918,7 +924,7 @@ pub(crate) enum GitProviderKind {
 impl GitProvider {
     #[cfg(test)]
     fn from_ba(ba: &BackendArg) -> Self {
-        let raw_opts = ba.opts();
+        let raw_opts = ba.opts().literal();
         let opts = SpmOptions::new(&raw_opts);
         Self::for_mode(ba, &opts, false, None).unwrap()
     }

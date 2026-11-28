@@ -55,12 +55,189 @@ pub fn contains_template_syntax(input: &str) -> bool {
     input.contains("{{") || input.contains("{%") || input.contains("{#")
 }
 
+/// Delimits template code that a first render emits on purpose for a later render (a
+/// re-emitted `os()` call, the `{{ version }}` placeholder). It holds a per-process random
+/// number, so a value substituted by the first render cannot produce it, and only digits
+/// between control characters, so no filter in the first render changes it by accident. A span
+/// opens with this stem and `(`, and closes with it, `)`, a check number of the code and the
+/// stem's control character. A filter that cuts off one end of a span leaves a marker with no
+/// partner, and one that changes the code (an `upper` filter over `{{ version }}`) leaves a
+/// check number that no longer fits; [`escape_rendered_data`] refuses both, instead of shifting
+/// which parts of the output count as code or passing changed code on.
+static DEFERRED_STEM: Lazy<String> = Lazy::new(|| format!("\u{1f}{}", rand::rng().random::<u64>()));
+const DEFERRED_OPEN: &str = "(\u{1f}";
+const DEFERRED_CLOSE: char = ')';
+const DEFERRED_END: char = '\u{1f}';
+
+/// The check number a deferred span carries for its code: FNV-1a, written in digits, which no
+/// case or whitespace filter changes.
+fn deferred_check(code: &str) -> u64 {
+    code.bytes().fold(0xcbf2_9ce4_8422_2325, |hash, byte| {
+        (hash ^ u64::from(byte)).wrapping_mul(0x0100_0000_01b3)
+    })
+}
+
+/// Wrap template code a first render emits for a later render, so that
+/// [`escape_rendered_data`] keeps it live.
+pub fn mark_deferred(code: &str) -> String {
+    let stem = &*DEFERRED_STEM;
+    let check = deferred_check(code);
+    format!("{stem}{DEFERRED_OPEN}{code}{stem}{DEFERRED_CLOSE}{check}{DEFERRED_END}")
+}
+
+/// Make the output of a first render safe to render again: the spans marked with
+/// [`mark_deferred`] stay template code, and everything else, which is data the first render
+/// produced (an environment variable, a directory name, a command's output), renders back to
+/// itself instead of being evaluated as template code.
+///
+/// Fails when a marker has no partner, as when a filter in the first render cut off one end of
+/// a span, since the output can then no longer be split into code and data, and when a filter
+/// changed the code of a span, as a `{% filter upper %}` around `{{ version }}` does.
+pub fn escape_rendered_data(rendered: &str) -> eyre::Result<String> {
+    let stem = DEFERRED_STEM.as_str();
+    let unmatched = || {
+        eyre::eyre!(
+            "a filter cut into code that mise keeps for the backend's render, such as `os()` or `version`, so that code can no longer be told apart from substituted text"
+        )
+    };
+    let mut out = String::with_capacity(rendered.len());
+    let mut rest = rendered;
+    while let Some(start) = rest.find(stem) {
+        out.push_str(&escape_template_syntax(&rest[..start]));
+        let code = rest[start + stem.len()..]
+            .strip_prefix(DEFERRED_OPEN)
+            .ok_or_else(unmatched)?;
+        let end = code.find(stem).ok_or_else(unmatched)?;
+        let after = code[end + stem.len()..]
+            .strip_prefix(DEFERRED_CLOSE)
+            .ok_or_else(unmatched)?;
+        let (check, after) = after.split_once(DEFERRED_END).ok_or_else(unmatched)?;
+        let code = &code[..end];
+        if check != deferred_check(code).to_string() {
+            // The changed code is not quoted: a re-emitted `os()` or `arch()` call carries its
+            // arguments, which can come from `env` or `vars`, and the filter that changed them
+            // can also have changed them past the redaction of secrets.
+            eyre::bail!(
+                "a filter or section changed code that mise keeps for the backend's render, such as `os()`, `arch()` or `version`; move that code out of the filter"
+            );
+        }
+        rest = after;
+        out.push_str(code);
+    }
+    out.push_str(&escape_template_syntax(rest));
+    Ok(out)
+}
+
+/// Rewrite every `{{`, `{%` and `{#` in `data` as an expression that renders to it, so that a
+/// render of the result, by either engine, outputs `data` unchanged. A `{` that ends `data` is
+/// rewritten too, since deferred code or other text placed after the result could complete it
+/// into an opener.
+pub fn escape_template_syntax(data: &str) -> String {
+    static OPENER: Lazy<Regex> = Lazy::new(|| Regex::new(r"\{[{%#]|\{$").unwrap());
+    if !contains_template_syntax(data) && !data.ends_with('{') {
+        return data.to_string();
+    }
+    OPENER
+        .replace_all(data, |caps: &regex::Captures| {
+            format!("{{{{ \"{}\" }}}}", &caps[0])
+        })
+        .into_owned()
+}
+
+/// Undo [`escape_template_syntax`]: turn each `{{ "{{" }}`, `{{ "{%" }}`, `{{ "{#" }}` and
+/// `{{ "{" }}` back into the text it renders to, and leave the rest alone. This is what a render
+/// of an escaped value outputs for those expressions, for a consumer that reads the value as
+/// plain text and never renders it.
+pub fn unescape_template_syntax(text: &str) -> std::borrow::Cow<'_, str> {
+    static ESCAPED: Lazy<Regex> = Lazy::new(|| Regex::new(r#"\{\{ "(\{[{%#]?)" \}\}"#).unwrap());
+    if !text.contains("{{ \"{") {
+        return text.into();
+    }
+    ESCAPED.replace_all(text, "$1")
+}
+
+/// The end of the template tag that `tag` opens (`{{`, `{%` or `{#`), just after its `close`
+/// (`}}`, `%}` or `#}`), or `None` when it has none. A closer inside a string literal of a `{{ }}`
+/// or `{% %}` tag does not end it. The configured engine's strings are read: Tera 2 lets a `\`
+/// escape the quote that would close one, and Tera 1 does not.
+pub fn template_tag_end(tag: &str, close: &str) -> Option<usize> {
+    tag_end(tag, close, use_tera_v1)
+}
+
+/// [`template_tag_end`] for a template that Tera 1 (`tera_v1`) or Tera 2 renders whatever the
+/// setting says, such as one that a backend always renders with Tera 2.
+pub fn template_tag_end_for(tag: &str, close: &str, tera_v1: bool) -> Option<usize> {
+    tag_end(tag, close, || tera_v1)
+}
+
+/// [`template_tag_end`], with `tera_v1` read only when a string in the tag has a `\`.
+fn tag_end(tag: &str, close: &str, tera_v1: impl Fn() -> bool) -> Option<usize> {
+    let bytes = tag.as_bytes();
+    let mut escapes = None;
+    let mut i = 2;
+    while i < bytes.len() {
+        if close != "#}" && matches!(bytes[i], b'"' | b'\'' | b'`') {
+            let quote = bytes[i];
+            i += 1;
+            loop {
+                match *bytes.get(i)? {
+                    b'\\' if *escapes.get_or_insert_with(|| !tera_v1()) => i += 2,
+                    b if b == quote => break,
+                    _ => i += 1,
+                }
+            }
+        } else if bytes[i..].starts_with(close.as_bytes()) {
+            return Some(i + close.len());
+        }
+        i += 1;
+    }
+    None
+}
+
+/// When `text` starts with a `{% raw %}` tag, `-` markers included, the end of the block: just
+/// after the first `{% endraw %}` that follows, or the end of `text` when none does. Tera outputs
+/// everything in between as text, so no tag opens there, whatever it looks like.
+pub fn raw_block_end(text: &str) -> Option<usize> {
+    raw_block(text).map(|block| block.end)
+}
+
+/// A `{% raw %}` block at the start of a text ([`raw_block`]), as offsets into that text.
+#[derive(Debug, PartialEq)]
+pub struct RawBlock {
+    /// Between the `{% raw %}` and `{% endraw %}` tags: the text Tera outputs as written.
+    pub body: std::ops::Range<usize>,
+    /// Just after the `{% endraw %}`, or the end of the text when the block has none.
+    pub end: usize,
+}
+
+/// The `{% raw %}` block that `text` starts with, if it starts with one ([`raw_block_end`]).
+pub fn raw_block(text: &str) -> Option<RawBlock> {
+    static RAW_OPEN: Lazy<Regex> = Lazy::new(|| Regex::new(r"^\{%-?\s*raw\s*-?%\}").unwrap());
+    static RAW_CLOSE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\{%-?\s*endraw\s*-?%\}").unwrap());
+    let open = RAW_OPEN.find(text)?;
+    Some(match RAW_CLOSE.find(&text[open.end()..]) {
+        Some(close) => RawBlock {
+            body: open.end()..open.end() + close.start(),
+            end: open.end() + close.end(),
+        },
+        None => RawBlock {
+            body: open.end()..text.len(),
+            end: text.len(),
+        },
+    })
+}
+
 pub enum TeraEngine {
     V2(Box<Tera>),
     V1(Box<tera1::Tera>),
 }
 
 impl TeraEngine {
+    /// Whether this is the Tera 1 engine that the `tera_v1` setting selects.
+    pub fn is_v1(&self) -> bool {
+        matches!(self, Self::V1(_))
+    }
+
     fn render_str(&mut self, input: &str, context: &Context) -> TeraResult<String> {
         match self {
             Self::V2(tera) => tera
@@ -88,6 +265,19 @@ impl TeraEngine {
 
 pub fn render_str(tera: &mut TeraEngine, input: &str, context: &Context) -> TeraResult<String> {
     tera.render_str(input, &safe_context(context))
+}
+
+/// [`render_str`] for a template in project config. It is rendered without the
+/// trust of an enclosing [`with_trusted_templates`] scope, so in safe mode it
+/// gets no `env` or `vars` even when the render happens during work for an
+/// operator's task or tool, such as an operator task's render building the
+/// toolset that reads the project's `[tools]` for the first time.
+pub fn render_untrusted_str(
+    tera: &mut TeraEngine,
+    input: &str,
+    context: &Context,
+) -> TeraResult<String> {
+    TRUSTED_TEMPLATES.sync_scope(false, || render_str(tera, input, context))
 }
 
 /// [`render_str`] for a template the operator wrote, in global or system
@@ -198,18 +388,29 @@ pub fn in_trusted_templates() -> bool {
         .unwrap_or(false)
 }
 
-/// Empties `env` in safe mode. Project config loads without trust there, and
-/// what its templates render reaches the URLs mise requests, the lockfile and
-/// command output, so they must not see the credentials in the operator's
-/// environment. This is done on every render rather than where a context is
-/// built because backends and tasks render with contexts of their own.
+/// Empties `env` and `vars` in safe mode. Project config loads without trust
+/// there, and what its templates render reaches the URLs mise requests, the
+/// lockfile and command output, so they must not see the credentials in the
+/// operator's environment. Safe mode drops a project's own `[vars]`, so the
+/// `vars` left are the operator's (global and system config, `mise vars`
+/// answers) and are withheld for the same reason. This is done on every render
+/// rather than where a context is built because backends and tasks render with
+/// contexts of their own.
 fn safe_context(context: &Context) -> std::borrow::Cow<'_, Context> {
-    if !context.contains_key("env") || !safe_mode() || in_trusted_templates() {
+    const WITHHELD: [&str; 2] = ["env", "vars"];
+    if !WITHHELD.iter().any(|key| context.contains_key(key))
+        || !safe_mode()
+        || in_trusted_templates()
+    {
         return std::borrow::Cow::Borrowed(context);
     }
-    let mut context = context.clone();
-    context.insert("env", &EnvMap::new());
-    std::borrow::Cow::Owned(context)
+    let mut safe = context.clone();
+    for key in WITHHELD {
+        if context.contains_key(key) {
+            safe.insert(key, &EnvMap::new());
+        }
+    }
+    std::borrow::Cow::Owned(safe)
 }
 
 fn tera_err(message: impl ToString) -> tera::Error {
@@ -1944,17 +2145,10 @@ fn reemit_template_fn_v1(
     name: &'static str,
 ) -> impl Fn(&HashMap<String, JsonValue>) -> tera1::Result<JsonValue> {
     move |args| {
-        let mut parts: Vec<String> = args
+        let parts = args
             .iter()
-            .filter_map(|(k, v)| reemit_arg_literal(v).map(|lit| format!("{k}={lit}")))
-            .collect();
-        let rendered = if parts.is_empty() {
-            format!("{{{{ {name}() }}}}")
-        } else {
-            parts.sort();
-            format!("{{{{ {name}({}) }}}}", parts.join(", "))
-        };
-        Ok(json!(rendered))
+            .filter_map(|(k, v)| reemit_arg_literal_v1(v).map(|lit| format!("{k}={lit}")));
+        Ok(json!(reemit_call(name, parts)))
     }
 }
 
@@ -2055,30 +2249,48 @@ pub fn tera1_read_file(
 fn reemit_template_fn(name: &'static str) -> impl Fn(Kwargs, &State) -> TeraResult<Value> {
     move |args: Kwargs, _: &State| {
         let args = args.deserialize::<std::collections::BTreeMap<String, serde_json::Value>>()?;
-        let mut parts: Vec<String> = args
+        let parts = args
             .iter()
-            .filter_map(|(k, v)| reemit_arg_literal(v).map(|lit| format!("{k}={lit}")))
-            .collect();
-        let rendered = if parts.is_empty() {
-            format!("{{{{ {name}() }}}}")
-        } else {
-            parts.sort();
-            format!("{{{{ {name}({}) }}}}", parts.join(", "))
-        };
-        Ok(Value::from(rendered))
+            .filter_map(|(k, v)| reemit_arg_literal(v).map(|lit| format!("{k}={lit}")));
+        Ok(Value::from(reemit_call(name, parts)))
     }
 }
 
-/// Render a Tera function argument value back into its template literal form so
-/// it round-trips through re-emission. Tera string literals are literal (no
-/// escape sequences), so strings are simply re-quoted; numbers/bools render
-/// natively; other types are dropped (os()/arch() ignore non-string remaps).
+/// The call `name(parts)` as template code, marked as deferred so that
+/// [`escape_rendered_data`] keeps it live.
+fn reemit_call(name: &str, parts: impl Iterator<Item = String>) -> String {
+    let mut parts: Vec<String> = parts.collect();
+    parts.sort();
+    mark_deferred(&format!("{{{{ {name}({}) }}}}", parts.join(", ")))
+}
+
+/// Render a Tera 2 function argument value back into its template literal form so
+/// it round-trips through re-emission. Tera 2 decodes escape sequences in string
+/// literals, so `\` and `"` are escaped; numbers/bools render natively; other types
+/// are dropped (os()/arch() ignore non-string remaps).
 fn reemit_arg_literal(v: &serde_json::Value) -> Option<String> {
     match v {
-        serde_json::Value::String(s) => Some(format!("\"{s}\"")),
+        serde_json::Value::String(s) => Some(format!(
+            "\"{}\"",
+            s.replace('\\', "\\\\").replace('"', "\\\"")
+        )),
         serde_json::Value::Number(n) => Some(n.to_string()),
         serde_json::Value::Bool(b) => Some(b.to_string()),
         _ => None,
+    }
+}
+
+/// Tera 1 string literals have no escape sequences, so a string holding `"` is written as
+/// quoted pieces joined with `~` around a `'"'` literal.
+fn reemit_arg_literal_v1(v: &serde_json::Value) -> Option<String> {
+    match v {
+        serde_json::Value::String(s) => Some(
+            s.split('"')
+                .map(|piece| format!("\"{piece}\""))
+                .collect::<Vec<_>>()
+                .join(" ~ '\"' ~ "),
+        ),
+        _ => reemit_arg_literal(v),
     }
 }
 
@@ -2171,8 +2383,12 @@ pub fn tera_exec(
                             + &command),
                     )[..8]
                         .to_string();
+                    // The output may be a secret, such as a token a credential helper prints.
+                    // Whether it is redacted is up to the entry the template is in, which this
+                    // function cannot see.
                     let mut cacheman =
-                        CacheManagerBuilder::new(dirs::CACHE.join("exec").join(cachehash));
+                        CacheManagerBuilder::new(dirs::CACHE.join("exec").join(cachehash))
+                            .private();
                     if let Some(cache) = cache {
                         cacheman = cacheman.with_cache_key(cache);
                     }

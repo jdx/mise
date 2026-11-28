@@ -586,6 +586,31 @@ impl ToolOptions {
         self.opts
     }
 
+    /// These options as plain text. Config load escapes the template syntax in what a template
+    /// substituted into an option (`{{ "{{" }}` for `{{`), so that a backend that renders the
+    /// option again reads it as text. Code that uses an option as written and never renders it,
+    /// such as a file name, `rename_exe` or an argument, reads it from this copy, which has
+    /// those escapes undone; code that renders an option keeps reading the escaped value.
+    pub(crate) fn literal(&self) -> Self {
+        fn unescape(value: &mut toml::Value) {
+            match value {
+                toml::Value::String(s) => {
+                    if let std::borrow::Cow::Owned(literal) =
+                        crate::tera::unescape_template_syntax(s)
+                    {
+                        *s = literal;
+                    }
+                }
+                toml::Value::Array(values) => values.iter_mut().for_each(unescape),
+                toml::Value::Table(table) => table.iter_mut().for_each(|(_, v)| unescape(v)),
+                _ => {}
+            }
+        }
+        let mut literal = self.clone();
+        literal.opts.values_mut().for_each(unescape);
+        literal
+    }
+
     pub fn is_empty(&self) -> bool {
         self.os.as_ref().is_none_or(|os| os.is_empty())
             && self.depends.as_ref().is_none_or(|d| d.is_empty())
@@ -683,6 +708,16 @@ impl ToolOptions {
         if overrides.auto_update.is_some() {
             self.auto_update.clone_from(&overrides.auto_update);
         }
+    }
+
+    /// Whether [`Self::insert_option`] parses `key` into one of the typed core options (`os`,
+    /// `depends`, `install_env`, `lazy`, `lazy_bins`, `auto_update`). mise reads those as plain
+    /// text, and no backend renders them again.
+    pub(crate) fn is_typed_core_option(key: &str) -> bool {
+        matches!(
+            key,
+            "os" | "depends" | "install_env" | "lazy" | "lazy_bins" | "auto_update"
+        ) || key.starts_with("install_env.")
     }
 
     pub fn insert_option(&mut self, key: String, value: toml::Value) -> Result<(), String> {
@@ -1125,6 +1160,72 @@ mod tests {
         .unwrap();
         let redact = |s: &str| mise_util::redactions::redact_url_userinfo_in_arg(s).into_owned();
         assert_eq!(redact_tool_options(options, &redact), expected);
+    }
+
+    #[test]
+    fn literal_options_undo_the_escapes_of_substituted_text() {
+        // what config load stores when a template substituted `tool{` and `a{{b`
+        let escaped = |text: &str| crate::tera::escape_template_syntax(text);
+        let options: ToolVersionOptions = toml::from_str(&format!(
+            r#"
+            rename_exe = '{rename}'
+            filter_bins = ['{bin}', 'plain']
+            url = 'https://example.com/{bin}/tool-{{{{ version }}}}'
+
+            [platforms.linux-x64]
+            rename_exe = '{rename}'
+            "#,
+            rename = escaped("tool{"),
+            bin = escaped("a{{b"),
+        ))
+        .unwrap();
+        let literal = options.literal();
+        assert_eq!(literal.get("rename_exe"), Some("tool{"));
+        assert_eq!(
+            literal.get_nested_string("platforms.linux-x64.rename_exe"),
+            Some("tool{".to_string())
+        );
+        assert_eq!(
+            literal.opts.get("filter_bins"),
+            Some(&toml::Value::Array(vec![s("a{{b"), s("plain")]))
+        );
+        // template code the user wrote is not an escape, and stays as it is
+        assert_eq!(
+            literal.get("url"),
+            Some("https://example.com/a{{b/tool-{{ version }}")
+        );
+        // the stored options keep the escaped text, for a backend that renders them
+        assert_eq!(options.get("rename_exe"), Some(r#"tool{{ "{" }}"#));
+    }
+
+    /// The keys `is_typed_core_option` names are those `insert_option` keeps out of the backend
+    /// options, so a template render that escapes backend options leaves them alone.
+    #[test]
+    fn typed_core_options_are_the_ones_kept_out_of_backend_options() {
+        let typed = [
+            ("os", s("linux")),
+            ("depends", s("node")),
+            ("install_env", toml::Value::Table(toml::map::Map::new())),
+            ("install_env.FOO", s("x")),
+            ("lazy", toml::Value::Boolean(true)),
+            ("lazy_bins", s("helper")),
+            ("auto_update", toml::Value::Boolean(true)),
+        ];
+        for (key, value) in typed {
+            assert!(ToolVersionOptions::is_typed_core_option(key), "{key}");
+            let mut options = ToolVersionOptions::default();
+            options.insert_option(key.to_string(), value).unwrap();
+            assert!(options.opts.is_empty(), "{key}");
+        }
+        // core options stored with the backend options, and backend options, are not typed
+        for key in [
+            "postinstall",
+            "minimum_release_age",
+            "install_before",
+            "url",
+        ] {
+            assert!(!ToolVersionOptions::is_typed_core_option(key), "{key}");
+        }
     }
 
     #[test]

@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+
+# Nothing limits the memory or time an expression takes: `0..40000000` alone is
+# an array of that many values. Safe mode loads project config nobody reviewed,
+# so it refuses the expression options of a tool that project config declares.
+# The registry's own expressions still run, and so do those of a tool from
+# global config.
+
+FIXTURE_DIR="$TMPDIR/safe-mode-http-expr"
+mkdir -p "$FIXTURE_DIR"
+echo "1.0.0" >"$FIXTURE_DIR/versions"
+echo '<a href="4.9.9/">4.9.9</a><a href="4.21.3/">4.21.3</a>' >"$FIXTURE_DIR/oc"
+start_http_server --dir "$FIXTURE_DIR"
+BASE="http://localhost:$HTTP_PORT"
+
+# http_tool NAME VERSION OPTIONS
+http_tool() {
+  cat <<TOML
+[tools."http:$1"]
+version = "$2"
+url = "$BASE/tool-{{ version }}"
+version_list_url = "$BASE/versions"
+$3
+TOML
+}
+refused() {
+  echo "evaluating $1 of http:project-expr is disabled in safe mode (MISE_SAFE=1)"
+}
+
+for expr in version_expr version_date_expr; do
+  http_tool project-expr latest "$expr = 'split(body, \"\\n\")'" >mise.toml
+  assert_fail_contains "MISE_SAFE=1 mise ls-remote http:project-expr" "$(refused "$expr")"
+  assert_fail_contains "MISE_SAFE=1 mise lock --bump --dry-run --json" "$(refused "$expr")"
+done
+
+http_tool project-expr 1.0.0 "checksum_url = '$BASE/versions'
+checksum_expr = '\"sha256:\" + body'" >mise.toml
+# The lock run reports the platform as skipped, or fails, by lockfile mode.
+assert_contains "MISE_SAFE=1 mise lock --platform linux-x64 2>&1 || true" "$(refused checksum_expr)"
+assert_not_contains "cat mise.lock 2>/dev/null || true" "project-expr"
+
+# Outside safe mode the config is trusted, and its expression runs.
+http_tool project-expr latest "version_expr = 'split(body, \"\\n\")'" >mise.toml
+assert "mise ls-remote http:project-expr" "1.0.0"
+
+# A task's tools are the project's too.
+cat <<TOML >mise.toml
+[tasks.x]
+run = "true"
+[tasks.x.tools]
+"http:task-expr" = { version = "latest", url = "$BASE/tool", version_list_url = "$BASE/versions", version_expr = 'split(body, "\\n")' }
+TOML
+assert_fail_contains "MISE_SAFE=1 mise lock --bump --dry-run --json" "evaluating version_expr of http:task-expr is disabled in safe mode (MISE_SAFE=1)"
+rm mise.toml
+
+# Global config is the operator's.
+http_tool global-expr latest "version_expr = 'split(body, \"\\n\")'" >"$MISE_CONFIG_DIR/config.toml"
+assert "MISE_SAFE=1 mise ls-remote http:global-expr" "1.0.0"
+rm "$MISE_CONFIG_DIR/config.toml"
+
+# A project may declare a registry tool: the expression is the registry's.
+cat <<'TOML' >mise.toml
+[tools]
+oc = "latest"
+TOML
+export MISE_USE_VERSIONS_HOST=0
+export MISE_URL_REPLACEMENTS="{\"https://mirror.openshift.com/pub/openshift-v4/clients/ocp/\":\"$BASE/oc\"}"
+assert "MISE_SAFE=1 mise ls-remote oc" "4.9.9
+4.21.3"
+
+# An expression the project sets for that tool is not the registry's.
+cat <<'TOML' >mise.toml
+[tools]
+oc = { version = "latest", version_expr = "versions" }
+TOML
+assert_fail_contains "MISE_SAFE=1 mise ls-remote oc" "evaluating version_expr of oc is disabled in safe mode (MISE_SAFE=1)"

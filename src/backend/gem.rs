@@ -337,7 +337,7 @@ impl GemBackend {
     /// publishing commands. So a token genuinely can appear here, and anything
     /// it touches is registered for redaction rather than assumed harmless.
     ///
-    /// Read through `get_tool_opts_with_overrides` rather than `ba().opts()`.
+    /// Read through `get_tool_opts_with_overrides` rather than `ba().opts().literal()`.
     /// A backend built straight from a CLI argument, as `mise ls-remote
     /// gem:foo` does, carries no options from the config at all, so reading the
     /// arg would silently fall back to the machine's primary source while the
@@ -345,7 +345,10 @@ impl GemBackend {
     /// answer under the configured registry. The next install would then take a
     /// version from one registry and ask the other for it.
     async fn configured_source(&self, config: &Arc<Config>) -> Result<Option<Url>> {
-        let opts = config.get_tool_opts_with_overrides(self.ba()).await?;
+        let opts = config
+            .get_tool_opts_with_overrides(self.ba())
+            .await?
+            .literal();
         let Some(raw) = opts.get("source") else {
             return Ok(None);
         };

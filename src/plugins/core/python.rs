@@ -638,7 +638,7 @@ impl PythonPlugin {
             .map(|s| re_digits.replace(s, "").to_string());
         if cfg!(unix) {
             if let (Some(major), Some(minor), Some(suffix)) = (major, minor, suffix) {
-                let raw_opts = tv.request.options();
+                let raw_opts = tv.request.options().literal();
                 let opts = PythonOptions::new(&raw_opts);
                 if opts.patch_sysconfig() {
                     sysconfig::update_sysconfig(&install, major, minor, &suffix)?;
@@ -743,7 +743,7 @@ impl PythonPlugin {
         config: &Arc<Config>,
         tv: &ToolVersion,
     ) -> eyre::Result<Option<PathBuf>> {
-        let raw_opts = tv.request.options();
+        let raw_opts = tv.request.options().literal();
         let opts = PythonOptions::new(&raw_opts);
         if let Some(virtualenv) = opts.virtualenv() {
             deprecated_at!(
@@ -1260,7 +1260,7 @@ impl Backend for PythonPlugin {
             }
         }
 
-        let raw_opts = request.options();
+        let raw_opts = request.options().literal();
         opts.extend(PythonOptions::new(&raw_opts).lockfile_options());
         Ok(opts)
     }

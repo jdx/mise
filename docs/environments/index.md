@@ -268,7 +268,20 @@ _.file = ".env"
 - YAML values are read as written: `VERSION: 1.10` sets `1.10`, and
   `ZIP: 02134` keeps its leading zero.
 - The path can be a glob pattern such as `.env.*`; every matching file is
-  loaded.
+  loaded, in name order, including the files of each `{a,b}` alternative. As
+  in a shell, `*` matches within one directory and `**` matches directories at
+  any depth, so `.env.*` loads the files next to the config and `**/.env.*`
+  also those in every directory below it. A path is a pattern only when it
+  writes a `*`, so `.env.{local,test}` names one file; list the files to load
+  each. A template such as <span v-pre>`{{cwd}}`</span> can name the directory
+  a pattern is matched in, as in <span v-pre>`{{cwd}}/.env.*`</span>, and what
+  it renders is taken as a directory name, even one that holds a `*`. It cannot
+  be part of the pattern: <span v-pre>`env.d/{{env.PROFILE}}*.env`</span> is an
+  error. With [`env_shell_expand`](/configuration/settings.html#env_shell_expand)
+  on, the default, the same goes for a `$VAR`: `env.d/$PROFILE/*.env` loads the files in that
+  directory, and `env.d/$PROFILE*.env` is an error. With it off, a `$` is part
+  of the name, so `env.d/$PROFILE*.env` matches names that start with
+  `$PROFILE`.
 - A path that matches no file is skipped without an error, so `_.file` can
   point at an optional, untracked `.env`.
 - Values from the file replace variables already in the environment.

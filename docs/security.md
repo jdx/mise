@@ -322,6 +322,11 @@ These fail with `<operation> is disabled in safe mode (MISE_SAFE=1)`:
   `install_command`. `mise lock` does not run uv for a `pypi:` tool that sets
   `install_env`, so it warns and locks that tool's version without a
   [dependency graph](/dev-tools/mise-lock.html#dependency-graphs).
+- The `http:` backend's `version_expr`, `version_date_expr`,
+  `version_date_next_expr` and `checksum_expr`, for a tool that project config
+  or a project task declares, since nothing limits the memory or time an expression takes. The
+  expressions the registry sets for a tool still run, and so do those of a tool
+  that only global or system config declares.
 - asdf plugin scripts, so tools from the `asdf:` backend cannot list or install
   versions.
 - Requests to S3, which are signed with your AWS credentials, so tools from the
@@ -346,10 +351,14 @@ These are skipped without an error, so resolution commands keep working:
 - The environment of the process that runs mise, in templates: `env` is empty
   in templates outside global and system config files, so a repository cannot
   put your credentials into a URL mise requests, into `mise.lock` or into
-  command output. A template that reads a variable without a `default` fails, as
-  it does when the variable is unset. This covers a project's `.miserc.toml`
-  too. The options of a tool from global or system config, including a global
-  `[tool_alias]`, keep `env` when a backend renders them later.
+  command output. `vars` is empty there too, since what is left of it in safe
+  mode is yours: global and system `[vars]` and answers saved with `mise vars`.
+  A template that reads a variable without a `default` fails, as it does when
+  the variable is unset. This covers a project's `.miserc.toml` too. The
+  options of a tool from global or system config, including a global
+  `[tool_alias]`, the tasks and dotfiles global or system config declares, and
+  the file tasks in the global or system `tasks` directory keep `env` and
+  `vars`. A task that `extends` a template does not.
 - `_.source` in every config, including global config.
 - Project `[shell_alias]`.
 - The commands in a project task's usage spec that shell completion would run.
@@ -396,6 +405,11 @@ These are skipped without an error, so resolution commands keep working:
   tasks are listed from their TOML alone.
 - Project `[deps]`, so `mise deps` and `mise exec` do not run a repository's
   dependency providers. Providers in global and system config still run.
+- Project `[oci]`, so a repository cannot have
+  [`mise oci`](/dev-tools/mise-oci.html) copy files from the build host into
+  the image with `[[oci.copy]]`, or pull a base image with your registry
+  credentials. `mise oci` names the skipped files. `--from`, `--copy` and,
+  with `--include-global`, the `[oci]` in global config still apply.
 - Project daemon declarations. Daemons also do not start or stop when you change
   directories.
 - Project `[bootstrap]`, `[dotfiles]` and `[dotfile_groups]`, and the

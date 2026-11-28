@@ -159,6 +159,18 @@ go = "1.27"
 "go:github.com/mikefarah/yq/v4" = { version = "latest", install_env = { GOPROXY = "{{ vars.goproxy }}" } }
 ```
 
+A value a template substitutes is text, never template code. Only the
+expressions that read `version`, the platform functions such as `os()` in an
+http or s3 `url`, and the body of a <span v-pre>`{% raw %}`</span> block are
+left for the backend to render at install time. If an environment variable, a
+directory name, or the output of `exec()` contains <span v-pre>`{{`</span>,
+<span v-pre>`{%`</span> or <span v-pre>`{#`</span>, it is escaped. An option
+the backend renders again, such as an http `url`, `checksum_url` or header, or
+a github `asset_pattern`, gets those characters as they are once it renders.
+The escaping is internal: an option mise uses as written, such as
+`version_list_url`, `rename_exe` or `bin`, gets the substituted text itself,
+without rendering it again.
+
 ## OS-specific tools {#os-specific-tools}
 
 Set `os` to install and use a tool only on some platforms. Everywhere else,
