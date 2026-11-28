@@ -3972,18 +3972,19 @@ fn split_replacement(replacement: &str) -> (Option<&str>, &str, &str) {
 }
 
 /// The scheme and the rest of a replacement that starts with an `http`, `https`,
-/// `ws`, `wss` or `ftp` scheme followed by `/` or `\`, which the URL parser reads
-/// the authority of after any run of those.
+/// `ws`, `wss` or `ftp` scheme, which the URL parser reads the authority of
+/// after any run of `/` and `\` that follows the colon, an empty one included:
+/// `https:user:password@host/` names `host`.
 fn special_scheme(replacement: &str) -> Option<(&str, &str)> {
-    replacement.split_once(':').filter(|(scheme, rest)| {
+    replacement.split_once(':').filter(|(scheme, _)| {
         matches!(
             scheme.to_ascii_lowercase().as_str(),
             "http" | "https" | "ws" | "wss" | "ftp"
-        ) && rest.starts_with(['/', '\\'])
+        )
     })
 }
 
-/// Whether a replacement that does not start with a special scheme
+/// Whether a replacement with an `@` that does not start with a special scheme
 /// ([`special_scheme`]) puts more than `//`, or a backslash, in front of where
 /// its authority would be: `///user:password@host/`, `\\user:password@host/`,
 /// `git:///user:password@host/`. There is no authority there, so mise cannot
@@ -3992,7 +3993,9 @@ fn special_scheme(replacement: &str) -> Option<(&str, &str)> {
 /// query of a request to another host. Such a rule is refused.
 fn ambiguous_replacement_authority(replacement: &str) -> bool {
     let parsed = without_url_tabs(trim_url_start(replacement));
-    if special_scheme(&parsed).is_some() {
+    // Without an `@` there is no login to misplace, so `file:///opt/mirror/`
+    // and other paths are replacements like any other.
+    if special_scheme(&parsed).is_some() || !parsed.contains('@') {
         return false;
     }
     let is_scheme = |scheme: &str| {

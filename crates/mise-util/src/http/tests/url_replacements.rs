@@ -342,6 +342,7 @@ fn test_replacement_credentials_are_found_in_every_spelling_of_the_server() {
         "https://user:secret@mirror.example.com/",
         "https:////user:secret@mirror.example.com/",
         "https:/user:secret@mirror.example.com/",
+        "https:user:secret@mirror.example.com/",
         r"https:\\user:secret@mirror.example.com/",
         r"https:/\user:secret@mirror.example.com/",
         "HTTPS:///user:secret@mirror.example.com/",
@@ -448,8 +449,21 @@ fn test_replacements_that_name_no_server_are_refused() {
         );
     }
 
-    // A path, a `//host` and a host with a port are still replacements.
+    // A path, a `//host`, a host with a port and a `file:///` URL, none of
+    // which has a login to misplace, are still replacements.
     for (key, replacement, url, expected) in [
+        (
+            "https://github.com/",
+            "file:///opt/mirror/",
+            "https://github.com/a/tool.tar.gz",
+            "file:///opt/mirror/a/tool.tar.gz",
+        ),
+        (
+            "/old/",
+            "///new/",
+            "https://files.example.com/old/a",
+            "https://files.example.com///new/a",
+        ),
         (
             "/old/",
             "/new/",
