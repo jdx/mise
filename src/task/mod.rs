@@ -148,19 +148,18 @@ pub(crate) trait TaskToolValueExt {
 
 /// `future`, a render of a task's templates, in that task's scope: a task only the operator wrote
 /// ([`Task::is_operators`]) keeps `env` and `vars` for its templates in safe mode, in its
-/// metadata, its `run` scripts and its usage spec alike. Boxed: held inline, the scope nests the
-/// render's future in that of every caller, which then takes too deep a layout for the compiler
-/// to build.
+/// metadata, its `run` scripts and its usage spec alike. Any other task's templates lose them,
+/// even when it renders inside the trusted scope of the operator's work, such as one of their
+/// tasks or tools. Boxed: held inline, the scope nests the render's future in that of every
+/// caller, which then takes too deep a layout for the compiler to build.
 fn in_task_template_scope<'a, T: 'a>(
     operators: bool,
     future: impl std::future::Future<Output = T> + Send + 'a,
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = T> + Send + 'a>> {
-    let future = Box::pin(future);
-    if operators {
-        Box::pin(crate::tera::with_templates_trusted(true, future))
-    } else {
-        future
-    }
+    Box::pin(crate::tera::with_templates_trusted(
+        operators,
+        Box::pin(future),
+    ))
 }
 
 fn task_tool_value_has_template(value: &toml::Value) -> bool {
@@ -267,10 +266,10 @@ impl TaskToolValueExt for TaskToolValue {
                 }
                 for (key, value) in map.opts.iter_mut() {
                     if task_tool_value_has_template(value) {
-                        // `install_env` goes to the installer as this render leaves it, as it
-                        // does for `[tools]`: nothing renders it again to undo an escape. That
-                        // holds for a flat `install_env.FOO` key too.
-                        let for_backend = key != "install_env" && !key.starts_with("install_env.");
+                        // A typed core option (`install_env`, `lazy_bins`, ...) is read as this
+                        // render leaves it, as it is for `[tools]`: nothing renders it again to
+                        // undo an escape.
+                        let for_backend = !ToolVersionOptions::is_typed_core_option(key);
                         render_value(value, tera, context, for_backend)
                             .wrap_err_with(|| format!("in tool option {key}"))?;
                     }
@@ -8105,6 +8104,66 @@ echo "test"
             options.install_env.get("BAR"),
             Some(&EnvValue::String("{{ literal }}".to_string()))
         );
+    }
+
+    /// A project task's templates render untrusted even inside the trusted scope of the
+    /// operator's work, such as an operator task or tool that renders it, and an operator task's
+    /// keep their trust.
+    #[tokio::test]
+    async fn test_project_task_templates_are_untrusted_inside_trusted_work() {
+        use super::in_task_template_scope;
+        use crate::tera::{in_trusted_templates, with_trusted_templates};
+
+        let (project, operators) = with_trusted_templates(async {
+            (
+                in_task_template_scope(false, async { in_trusted_templates() }).await,
+                in_task_template_scope(true, async { in_trusted_templates() }).await,
+            )
+        })
+        .await;
+        assert!(!project);
+        assert!(operators);
+        assert!(in_task_template_scope(true, async { in_trusted_templates() }).await);
+        assert!(!in_task_template_scope(false, async { in_trusted_templates() }).await);
+    }
+
+    /// Every typed core option is read as the task render leaves it, so a substituted value
+    /// such as a shim name ending in `{` arrives as it is, not escaped for a backend render.
+    #[test]
+    fn test_task_tool_typed_core_options_get_the_substituted_value() {
+        use indexmap::IndexMap;
+
+        use super::{TaskToolValue, TaskToolValueExt, TaskToolValueMap};
+        use crate::tera::TeraEngine;
+
+        let opts = IndexMap::from([
+            (
+                "lazy_bins".to_string(),
+                toml::Value::String("{{ name }}".to_string()),
+            ),
+            (
+                "depends".to_string(),
+                toml::Value::Array(vec![toml::Value::String("{{ dep }}".to_string())]),
+            ),
+            (
+                "url".to_string(),
+                toml::Value::String("https://e/{{ name }}".to_string()),
+            ),
+        ]);
+        let mut tool = TaskToolValue::Map(TaskToolValueMap {
+            version: "1.0.0".to_string(),
+            opts,
+        });
+        let mut context = tera::Context::new();
+        context.insert("name", "helper{");
+        context.insert("dep", "x{{ y }}");
+        let mut tera = TeraEngine::V2(Box::default());
+        tool.render_templates(&mut tera, &context).unwrap();
+        let options = tool.to_tool_arg("node").unwrap().tvr.unwrap().options();
+        assert_eq!(options.lazy_bins, vec!["helper{".to_string()]);
+        assert_eq!(options.depends, Some(vec!["x{{ y }}".to_string()]));
+        // an option a backend renders again keeps the escape that its render undoes
+        assert_eq!(options.get("url"), Some(r#"https://e/helper{{ "{" }}"#));
     }
 
     /// A task has no `version` at render time, so a raw block is how an option defers an

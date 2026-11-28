@@ -188,10 +188,7 @@ fn normalize_option_template_value(value: toml::Value) -> toml::Value {
 }
 
 fn should_normalize_option_template(key: &str) -> bool {
-    !matches!(
-        key,
-        "os" | "depends" | "install_env" | "lazy" | "lazy_bins" | "auto_update"
-    ) && !key.starts_with("install_env.")
+    !ToolVersionOptions::is_typed_core_option(key)
 }
 
 fn insert_tool_option<E>(

@@ -710,6 +710,16 @@ impl ToolOptions {
         }
     }
 
+    /// Whether [`Self::insert_option`] parses `key` into one of the typed core options (`os`,
+    /// `depends`, `install_env`, `lazy`, `lazy_bins`, `auto_update`). mise reads those as plain
+    /// text, and no backend renders them again.
+    pub(crate) fn is_typed_core_option(key: &str) -> bool {
+        matches!(
+            key,
+            "os" | "depends" | "install_env" | "lazy" | "lazy_bins" | "auto_update"
+        ) || key.starts_with("install_env.")
+    }
+
     pub fn insert_option(&mut self, key: String, value: toml::Value) -> Result<(), String> {
         if self.insert_core_option(&key, &value)? {
             return Ok(());
@@ -1186,6 +1196,36 @@ mod tests {
         );
         // the stored options keep the escaped text, for a backend that renders them
         assert_eq!(options.get("rename_exe"), Some(r#"tool{{ "{" }}"#));
+    }
+
+    /// The keys `is_typed_core_option` names are those `insert_option` keeps out of the backend
+    /// options, so a template render that escapes backend options leaves them alone.
+    #[test]
+    fn typed_core_options_are_the_ones_kept_out_of_backend_options() {
+        let typed = [
+            ("os", s("linux")),
+            ("depends", s("node")),
+            ("install_env", toml::Value::Table(toml::map::Map::new())),
+            ("install_env.FOO", s("x")),
+            ("lazy", toml::Value::Boolean(true)),
+            ("lazy_bins", s("helper")),
+            ("auto_update", toml::Value::Boolean(true)),
+        ];
+        for (key, value) in typed {
+            assert!(ToolVersionOptions::is_typed_core_option(key), "{key}");
+            let mut options = ToolVersionOptions::default();
+            options.insert_option(key.to_string(), value).unwrap();
+            assert!(options.opts.is_empty(), "{key}");
+        }
+        // core options stored with the backend options, and backend options, are not typed
+        for key in [
+            "postinstall",
+            "minimum_release_age",
+            "install_before",
+            "url",
+        ] {
+            assert!(!ToolVersionOptions::is_typed_core_option(key), "{key}");
+        }
     }
 
     #[test]
