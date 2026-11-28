@@ -340,6 +340,8 @@ pub struct ToolNpmOptions {
     pub bun_args: Option<String>,
     /// extra arguments for npm installs (shell-split)
     pub npm_args: Option<String>,
+    /// mise-managed Node version this tool's executables always run on (embedded aube only)
+    pub node: Option<String>,
 }
 
 #[derive(JsonSchema)]

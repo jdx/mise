@@ -1051,7 +1051,10 @@ A small download can be built to unpack to far more data than the disk holds:
 1 GiB of zeroes is under 1 KiB of bzip2. When mise unpacks a tool's archive or
 compressed file, it stops, and the install fails, once the output is larger
 than 256 MiB and more than this many times the size of the download. Tool
-archives rarely unpack to more than 10 times their size.
+archives rarely unpack to more than 10 times their size. A Homebrew bottle's
+files count at their full length, including the holes of a sparse file, and
+each hard link counts as a file of its own, since copying a bottle's config
+files or re-signing its binaries can write each name separately.
 
 Raise it for a tool that legitimately unpacks to more, such as an archive of
 mostly empty disk images. `0` means no limit.
@@ -5265,11 +5268,11 @@ env = "MISE_WINDOWS_SHIM_MODE"
 type = "String"
 
 [write_targets.dotfiles]
-description = "Global config file where `mise dot add` creates new `[dotfiles]` entries."
+description = "Global config file where `mise dot add` and `mise dot track` create new `[dotfiles]` entries."
 docs = """
-`mise dot edit` uses it too when it adds an entry. `mise dot track` does not:
-it writes new track entries to the global `config.toml`, or to
-`conf.d/dotfiles-tracking.toml` when another entry already manages the target.
+`mise dot edit` uses it too when it adds an entry. `mise dot track` writes a
+new track entry for a target that another entry already manages to
+`conf.d/dotfiles-tracking.toml` instead.
 Existing entries stay in the file that declares them. The path may be absolute,
 start with `~/`, or be relative to the `config_root` of the config file that sets it, and may use
 templates such as `{{ config_source | dirname }}`. It must name a file that mise loads from the global config

@@ -769,8 +769,13 @@ impl RubyPlugin {
             }
             true
         } else {
-            self.verify_github_artifact_attestations(ctx.pr.as_ref(), &tarball_path, &tv.version)
-                .await?
+            self.verify_github_artifact_attestations(
+                ctx.pr.as_ref(),
+                &tarball_path,
+                &tv.version,
+                &url,
+            )
+            .await?
         };
 
         // Record provenance only if verification actually succeeded (not skipped)

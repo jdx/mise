@@ -406,7 +406,7 @@ The value must be a complete semantic version. The tool's `version_order` can be
 anything: mise compares only the version being installed with the boundary.
 
 Either kind of GitHub attestation counts, as long as it names the tool's
-repository:
+repository and, when it names a tag, the tag of the release being installed:
 
 - A build provenance attestation from the project's workflow
   (`actions/attest-build-provenance`). Check it with

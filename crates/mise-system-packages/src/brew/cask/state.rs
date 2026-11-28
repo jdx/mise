@@ -646,6 +646,13 @@ pub(super) fn package_state(req: &PackageRequest, cask: &Cask) -> Result<Package
         return Ok(state);
     }
     let installed = mise_installed_cask_version(cask)?;
+    // Older receipts can record the wrapper link even when the executable it
+    // invokes was never copied from the staging directory.
+    if installed.as_deref() == Some(cask.version.as_str())
+        && command_wrapper_needs_repair(cask, &artifacts)?
+    {
+        return Ok(PackageState::Missing);
+    }
     // A retarget leaves the recorded version matching while the declared app
     // is not installed anywhere, so reporting it installed would hide work
     // that apply still has to do.
@@ -1454,6 +1461,15 @@ pub(super) fn cask_prune_plan_from_tokens(
             plan.skipped.push(CaskPruneSkip {
                 token,
                 reason: "an incomplete cask transaction is pending".to_string(),
+                forceable: false,
+            });
+            continue;
+        }
+        if !receipt.pkg_ids.is_empty() {
+            plan.skipped.push(CaskPruneSkip {
+                token,
+                reason: "mise cannot uninstall pkg artifacts. Follow the vendor's uninstall instructions"
+                    .to_string(),
                 forceable: false,
             });
             continue;

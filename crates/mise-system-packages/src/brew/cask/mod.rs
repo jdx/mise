@@ -127,6 +127,11 @@ fn installed_skip_reason(
     if mode == InstallMode::Upgrade && cask.version == "latest" {
         return Ok(Some("skipped: cask version is latest"));
     }
+    if previous.is_some_and(|receipt| receipt.version == cask.version)
+        && command_wrapper_needs_repair(cask, artifacts)?
+    {
+        return Ok(None);
+    }
     if version.is_some_and(|version| should_skip_installed(cask, version, mode))
         && declared_apps_are_owned(cask, artifacts, previous)?
     {
@@ -950,11 +955,16 @@ impl BrewCaskManager {
             record_cask_action(cask.manager, &mut journal, &format!("artifact[{index}]"))?;
         }
         // Postflight hooks receive the caskroom as staged_path and may modify
-        // the binary payload there before its artifacts are linked.
+        // the executable payload there before its artifacts are linked.
         if artifacts
             .binaries
             .iter()
             .any(|binary| payload_backed_binary(&stage, binary))
+            || artifacts.command_wrappers.iter().any(|wrapper| {
+                staged_command_wrapper_executable(&stage, &appdir, &cask, wrapper).is_some_and(
+                    |path| path.is_file() && path_starts_with_resolved_root(&path, &stage),
+                )
+            })
         {
             durabilize_stage_payload(&stage, &tmp_caskroom, &artifacts.apps)?;
         }
@@ -4574,6 +4584,45 @@ fn expand_command_wrapper_content(value: &str, appdir: &Path) -> String {
 fn expand_command_wrapper_value(value: &str, appdir: &Path, cask: &Cask) -> String {
     let staged_path = caskroom_version_dir(cask.manager, &cask.token, &cask.version);
     expand_cask_template(value, &staged_path, appdir, Some(&cask.version))
+}
+
+fn staged_command_wrapper_executable(
+    root: &Path,
+    appdir: &Path,
+    cask: &Cask,
+    wrapper: &CommandWrapperArtifact,
+) -> Option<PathBuf> {
+    let executable = expand_command_wrapper_value(wrapper.executable.as_deref()?, appdir, cask);
+    generated_caskroom_artifact(root, cask, &executable)
+}
+
+fn command_wrapper_needs_repair(cask: &Cask, artifacts: &CaskArtifacts) -> Result<bool> {
+    // Repair reruns the whole install. Only do this automatically for
+    // wrapper-only casks. Informational and uninstall stanzas do not run
+    // during installation.
+    if artifacts.command_wrappers.is_empty()
+        || cask.artifacts.iter().any(|artifact| {
+            !matches!(
+                artifact_type(artifact).as_str(),
+                "command_wrapper"
+                    | "caveats"
+                    | "uninstall"
+                    | "uninstall_preflight"
+                    | "uninstall_preflight_steps"
+                    | "uninstall_postflight"
+                    | "uninstall_postflight_steps"
+                    | "zap"
+            )
+        })
+    {
+        return Ok(false);
+    }
+    let appdir = cask_appdir_for(cask, &artifacts.apps)?;
+    let caskroom = caskroom_version_dir(cask.manager, &cask.token, &cask.version);
+    Ok(artifacts.command_wrappers.iter().any(|wrapper| {
+        staged_command_wrapper_executable(&caskroom, &appdir, cask, wrapper)
+            .is_some_and(|path| !path.is_file())
+    }))
 }
 
 fn find_binary_source(

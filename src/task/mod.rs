@@ -1,6 +1,8 @@
 use crate::args::{BackendArg, ToolArg};
 use crate::config::config_file::mise_toml::EnvList;
-use crate::config::env_directive::{EnvDirective, EnvResolveOptions, EnvResults, ToolsFilter};
+use crate::config::env_directive::{
+    EnvDirective, EnvResolveOptions, EnvResults, Rendered, ToolsFilter,
+};
 use crate::config::{self, Config, SettingsExt};
 use crate::path_env::PathEnv;
 use crate::task::task_script_parser::TaskScriptParser;
@@ -382,6 +384,13 @@ pub struct Task {
     /// Boolean fields explicitly present in a structured TOML task definition.
     pub(crate) toml_bool_presence: TaskTomlBoolPresence,
     pub dir: Option<String>,
+    /// `dir` is the output of a template render, not a template.
+    ///
+    /// `dir` is rendered once, when the task loads. What that pass substitutes (`{{ cwd }}`, an
+    /// env value, `exec()` output) is data: a path that contains `{{ ... }}` is still a path, and
+    /// rendering it again would run an `exec()` that came in as a directory name. Unset while
+    /// `dir` is as written, which includes a template that failed to render.
+    pub(crate) dir_rendered: bool,
     pub hide: bool,
     pub global: bool,
     pub raw: bool,
@@ -733,17 +742,24 @@ const FILE_TASK_BODY_KEYS: &[&str] = &["run", "run_windows", "file", "usage"];
 
 /// Header keys whose value guards how a task runs. A bad one fails the task instead of being
 /// skipped, so a typo cannot drop a confirmation prompt, a sandbox restriction or a lock.
-/// `cache` is one of them because `cache.sandbox` is a sandbox restriction.
+/// `cache` is one of them because `cache.sandbox` is a sandbox restriction, each `allow_*` list
+/// because a non-empty one turns its deny on, and `extends` because the template it names can
+/// carry any of these.
 const FILE_TASK_GUARD_KEYS: &[&str] = &[
     "confirm",
     "lock",
     "cache",
+    "extends",
     "deny_all",
     "deny_read",
     "deny_write",
     "deny_net",
     "deny_env",
     "deny_unix",
+    "allow_read",
+    "allow_write",
+    "allow_net",
+    "allow_env",
     "allow_unix",
 ];
 
@@ -912,8 +928,23 @@ fn parse_task_script_usage_with_env(
 /// the message naming it, the offending span and the spec text itself all live in the
 /// diagnostic, which neither eyre nor a derived `Debug` asks for. Going through the reporter
 /// is what turns a spec error back into something that names a line.
-pub(crate) fn render_usage_err(err: usage::error::UsageErr) -> String {
-    format!("{:?}", usage::miette::Error::from(err))
+///
+/// The KDL parser recovers from an error and carries on, so it reports every error it finds,
+/// and each is rendered with the whole line it is on. Specs are parsed from config that is not
+/// trusted yet to list and complete tasks, and one long line of errors would render to the
+/// square of its size, so only the first few errors are rendered and the rest are counted.
+pub(crate) fn render_usage_err(mut err: usage::error::UsageErr) -> String {
+    const SHOWN: usize = 5;
+    let mut more = 0;
+    if let usage::error::UsageErr::KdlError(kdl) = &mut err {
+        more = kdl.diagnostics.len().saturating_sub(SHOWN);
+        kdl.diagnostics.truncate(SHOWN);
+    }
+    let mut rendered = format!("{:?}", usage::miette::Error::from(err));
+    if more > 0 {
+        rendered.push_str(&format!("\n\n  ... and {more} more errors"));
+    }
+    rendered
 }
 
 /// Parse a task's `usage` field, naming the task and what was wrong with its spec.
@@ -2210,6 +2241,8 @@ impl Task {
         TaskScriptParser::new(self.config_root.clone()).validate_template_syntax(self, input)
     }
 
+    /// `run_shell` is `mise run --shell`, which runs a script with no shebang when the task sets
+    /// no `shell`; the template functions quote their values for the shell that reads the script.
     pub(crate) async fn render_run_scripts_with_args(
         &self,
         config: &Arc<Config>,
@@ -2217,6 +2250,7 @@ impl Task {
         args: &[String],
         env: &EnvMap,
         extra_vars: Option<IndexMap<String, String>>,
+        run_shell: Option<String>,
     ) -> Result<Vec<(String, Vec<String>)>> {
         let parsed = self
             .parse_usage_spec_with_vars(config, cwd.clone(), env, extra_vars.clone())
@@ -2257,6 +2291,7 @@ impl Task {
             let scripts = self
                 .make_script_parser(config, parser_dir, extra_vars)
                 .await
+                .with_run_shell(run_shell)
                 .parse_run_scripts_with_args(config, self, &scripts_only, &env, &args, &spec)
                 .await?;
             Ok(scripts.into_iter().map(|s| (s, vec![])).collect())
@@ -2291,13 +2326,16 @@ impl Task {
     }
 
     pub async fn dir(&self, config: &Arc<Config>) -> Result<Option<PathBuf>> {
+        // A `dir` rendered at load is a path, never template source. A default taken from
+        // `task_config` below has not been rendered yet and is rendered here, once.
+        let rendered = self.dir.is_some() && self.dir_rendered;
         let dir = self.dir.clone().or_else(|| {
             self.cf(config)
                 .as_ref()
                 .and_then(|cf| cf.task_config().dir.clone())
         });
         if let Some(dir) = dir {
-            let dir = if contains_template_syntax(&dir) {
+            let dir = if !rendered && contains_template_syntax(&dir) {
                 let config_root = self.config_root.clone().unwrap_or_default();
                 let mut tera = get_tera(Some(&config_root));
                 let tera_ctx = self.tera_ctx(config).await?;
@@ -2753,6 +2791,7 @@ impl Task {
         }
         if other.dir.is_some() {
             self.dir = other.dir;
+            self.dir_rendered = other.dir_rendered;
         }
         merge_bool(&mut self.hide, other.hide, other.toml_bool_presence.hide);
         merge_bool(&mut self.raw, other.raw, other.toml_bool_presence.raw);
@@ -2948,10 +2987,12 @@ impl Task {
         // reported where the task is used (`Task::dir`) or by `mise tasks validate`,
         // instead of failing every task command.
         if let Some(dir) = &mut self.dir
+            && !self.dir_rendered
             && contains_template_syntax(dir)
             && let Ok(rendered) = render_str(&mut tera, dir, &tera_ctx)
         {
             *dir = rendered;
+            self.dir_rendered = true;
         }
         if let Some(shell) = &mut self.shell
             && contains_template_syntax(shell)
@@ -3574,12 +3615,14 @@ fn match_tasks_with_context(
         .map(|t| {
             let mut t = t.clone();
             t.args = td.args.clone();
-            // Apply env vars from dependency - these affect task identity/deduplication
+            // Apply env vars from dependency - these affect task identity/deduplication.
+            // The declaring task rendered their templates (`TaskDep::render`), so the
+            // dependency does not render the result again.
             if !td.env.is_empty() {
                 let env_directives: Vec<EnvDirective> = td
                     .env
                     .iter()
-                    .map(|(k, v)| EnvDirective::Val(k.clone(), v.clone(), Default::default()))
+                    .map(|(k, v)| EnvDirective::rendered(k.clone(), v.clone(), Rendered::Templates))
                     .collect();
                 t = t.with_dependency_env(&env_directives);
                 if let Some(config_root) = &t.config_root {
@@ -3679,6 +3722,7 @@ impl Task {
             env: decl.env,
             vars: decl.vars,
             dir: decl.dir,
+            dir_rendered: false,
             hide: decl.hide.unwrap_or(false),
             // Where the task was loaded from decides this, never the declaration: a
             // project task that says `global = true` would otherwise pass for a global
@@ -3753,6 +3797,7 @@ impl Default for Task {
             overlay_vars: vec![],
             toml_bool_presence: Default::default(),
             dir: None,
+            dir_rendered: false,
             hide: false,
             global: false,
             raw: false,
@@ -5150,6 +5195,26 @@ exec shapeme "$@"
             .unwrap();
         let err = super::parse_task_script_usage(tmp.path()).unwrap_err();
         assert!(err.to_string().contains("larger than 16 MiB"), "{err}");
+    }
+
+    /// Each error the parser recovers from quotes its whole line, so a spec that is one line
+    /// of errors renders only the first few of them.
+    #[test]
+    fn test_usage_spec_error_renders_only_the_first_few() {
+        let spec = "a=;".repeat(1000);
+        let err = super::parse_task_usage_field("build", &spec).unwrap_err();
+        let rendered = err.to_string();
+        assert!(rendered.contains("invalid usage spec for task 'build'"));
+        assert_eq!(rendered.matches(&spec).count(), 5, "{}", rendered.len());
+        assert!(
+            rendered.contains("and 1995 more errors"),
+            "{}",
+            rendered.len()
+        );
+
+        // A spec with a single error is reported as before.
+        let err = super::parse_task_usage_field("build", "a=").unwrap_err();
+        assert!(!err.to_string().contains("more errors"), "{err}");
     }
 
     #[test]
@@ -7116,6 +7181,13 @@ echo "test"
         for (name, header) in [
             ("confirm", "confirm=1"),
             ("deny-net", "deny_net=\"yes\""),
+            // an allow list implies its deny, so skipping one would skip the sandbox
+            ("allow-read", "allow_read=\".\""),
+            ("allow-write", "allow_write=\"./dist\""),
+            ("allow-net", "allow_net=\"example.com\""),
+            ("allow-env", "allow_env=[1]"),
+            // a template can carry a confirmation prompt or a sandbox restriction
+            ("extends", "extends=[\"safe\"]"),
             ("lock", "lock=1"),
             (
                 "cache",

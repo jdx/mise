@@ -147,6 +147,22 @@ pub enum PathPosition {
     Append,
 }
 
+/// How much of a value is already rendered. mise sets this on the values one task hands to
+/// another: they were rendered where they were written and are data from then on, so text a
+/// template substituted into them (a directory name, an argument, exec() output) is never
+/// evaluated as a template.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Rendered {
+    /// A value as a config file wrote it: templates are rendered, then `$VAR` is expanded.
+    #[default]
+    No,
+    /// Templates are rendered, as in the `env` of a `depends`, `depends_post` or `run` entry,
+    /// which the declaring task renders; `$VAR` is expanded where the value is applied.
+    Templates,
+    /// Final text, as in the resolved env a task passes to the tasks its `run` entries start.
+    Final,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct EnvDirectiveOptions {
     #[serde(default)]
@@ -167,6 +183,9 @@ pub struct EnvDirectiveOptions {
     /// `[vars]` only: ask for this value once and remember the answer on this machine.
     #[serde(default)]
     pub prompt: Option<String>,
+    /// A value (`KEY = value`) only. mise sets it and a config file cannot: see [`Rendered`].
+    #[serde(skip)]
+    pub rendered: Rendered,
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -221,6 +240,15 @@ impl EnvDirective {
             | EnvDirective::PythonVenv { options: opts, .. }
             | EnvDirective::Module(_, _, opts) => opts,
         }
+    }
+
+    /// `key = value` for a value that a task has already rendered. See [`Rendered`].
+    pub fn rendered(key: String, value: String, rendered: Rendered) -> Self {
+        let options = EnvDirectiveOptions {
+            rendered,
+            ..Default::default()
+        };
+        Self::Val(key, value, options)
     }
 }
 
@@ -702,6 +730,7 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                         find_up: false,
                                         prompt: None,
                                         position: PathPosition::default(),
+                                        rendered: Rendered::No,
                                     },
                                 });
                             }

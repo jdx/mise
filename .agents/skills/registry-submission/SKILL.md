@@ -1,6 +1,6 @@
 ---
 name: registry-submission
-description: Rules for adding a new tool or shorthand to mise's `registry/` — the popularity bar, the required user warning and popularity check, the PR's Popularity section, and which backends are accepted. Use before creating any new registry entry or registry PR. Not needed for maintenance of existing entries.
+description: Rules for adding a new tool or shorthand to mise's `registry/` — the popularity bar, the required popularity check, the PR's Popularity section, and which backends are accepted. Use before creating any new registry entry or registry PR. Not needed for maintenance of existing entries.
 ---
 
 # Registry Submissions
@@ -13,20 +13,19 @@ description: Rules for adding a new tool or shorthand to mise's `registry/` — 
 
 ## Required check for new registry additions
 
-Before adding a new tool or shorthand to `registry/`, ALWAYS do the following. This check does not apply when editing an existing registry entry; do not ask the user about popularity for maintenance or fixes to tools already in the registry.
+Before adding a new tool or shorthand to `registry/`, verify that it meets the popularity bar. The check applies only to new tools and shorthands.
 
-1. **Warn the user clearly and ask:** "New registry additions have a high popularity bar: jdx generally rejects projects without thousands of GitHub stars and will not give a reason. Is this tool already widely used outside your own projects and does it meet that bar?" If it's the user's own tool, a fork, an internal/company tool, or something with a small audience, **stop and tell them the PR will be rejected.** Do not submit.
-2. **Actively check popularity for every new registry addition — no exceptions.** Look up real numbers; do not guess. Useful sources:
+1. **Check popularity for every new registry addition.** Look up real numbers; do not guess. Useful sources:
    - GitHub stars and fork count (`gh repo view owner/repo --json stargazerCount,forkCount`)
    - Recent release activity / last commit date (`gh repo view owner/repo --json pushedAt,latestRelease`)
    - Download counts on relevant package registries (npm `npmjs.com/package/x`, crates.io, PyPI, Homebrew analytics, etc.)
    - Whether the project shows up in third-party docs, awesome-lists, or other tools
-3. **Apply the bar.** Rough signals — very low numbers are disqualifying:
+2. **Apply the bar.** Skip personal or internal tools, forks, and tools with a small audience. Look for:
    - GitHub stars in the thousands, not hundreds
    - Active maintenance (recent releases, not abandoned)
    - Real third-party usage (referenced in docs, blog posts, other tools, package registries)
    - Recognizable in its ecosystem
-4. **Include the popularity data in the PR description.** Every PR adding a new registry tool or shorthand MUST contain a short section like:
+3. **Include the popularity data in the PR description.** Every PR adding a new registry tool or shorthand MUST contain a short section like:
 
    ```
    ## Popularity
@@ -37,8 +36,7 @@ Before adding a new tool or shorthand to `registry/`, ALWAYS do the following. T
 
    This is non-negotiable for new additions — it lets the maintainer evaluate the submission without re-doing the research. New-tool PRs without it look speculative and are more likely to be rejected.
 
-5. **If the tool is borderline or numbers are low, warn the user clearly** that the PR is likely to be rejected without reason, and ask if they still want to proceed. Do not soften this — users have repeatedly been surprised when their PR was closed, and the agent should have warned them up front.
-6. **Suggest the alternative:** users can install any tool themselves via explicit backend syntax (`mise use aqua:owner/repo`, `mise use github:owner/repo`, `mise use cargo:name`, `mise use npm:name`, etc.) or by writing a [tool plugin](https://mise.jdx.dev/tool-plugin-development.html). The registry is _only_ for shorthand convenience for popular tools — not for enabling installation.
+4. **Suggest the alternative:** users can install any tool themselves via explicit backend syntax (`mise use aqua:owner/repo`, `mise use github:owner/repo`, `mise use cargo:name`, `mise use npm:name`, etc.) or by writing a [tool plugin](https://mise.jdx.dev/tool-plugin-development.html). The registry is _only_ for shorthand convenience for popular tools — not for enabling installation.
 
 ## Backend choice: packslip (preferred), then aqua, github, or gitlab
 

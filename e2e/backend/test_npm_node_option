@@ -1,0 +1,117 @@
+#!/usr/bin/env bash
+
+# `node = "..."` on an npm: tool binds its executables to that mise-managed
+# Node, whatever `node` is on PATH when the command runs.
+cat >mise.toml <<'EOF2'
+[tools]
+"npm:cowsay" = { version = "1.6.0", node = "20.11.1" }
+EOF2
+mise install
+
+install_dir="$(mise where npm:cowsay)"
+assert_contains "echo '$install_dir'" "installs/npm-cowsay/1.6.0~aube~"
+node_dir="$MISE_DATA_DIR/installs/node/20.11.1"
+assert_succeed "test -x '$node_dir/bin/node'"
+assert_contains "cat '$install_dir/.mise-node.json'" '"request": "20.11.1"'
+assert_contains "cat '$install_dir/node_modules/.bin/cowsay'" "$node_dir/bin/node"
+
+# A `node` earlier on PATH that refuses to run must not be used.
+mkdir fake-node
+cat >fake-node/node <<'EOF2'
+#!/bin/sh
+echo "wrong node" >&2
+exit 1
+EOF2
+chmod +x fake-node/node
+assert_contains "PATH='$PWD/fake-node':\$PATH mise x -- cowsay bound" "bound"
+
+# The bound Node stays installed while the tool needs it.
+mise prune --yes
+assert_succeed "test -x '$node_dir/bin/node'"
+
+# Changing the selected Node installs a separate copy bound to the new one, so
+# a project still on the old Node keeps its own.
+first_dir="$install_dir"
+cat >mise.toml <<'EOF2'
+[tools]
+"npm:cowsay" = { version = "1.6.0", node = "20.12.2" }
+EOF2
+mise install
+install_dir="$(mise where npm:cowsay)"
+assert_not_contains "echo '$install_dir'" "$first_dir"
+assert_contains "cat '$first_dir/.mise-node.json'" '"request": "20.11.1"'
+assert_contains "cat '$install_dir/.mise-node.json'" '"request": "20.12.2"'
+assert_contains "cat '$install_dir/node_modules/.bin/cowsay'" "$MISE_DATA_DIR/installs/node/20.12.2/bin/node"
+
+# A prefix request finds the copy bound to its own Node, not another one.
+cat >mise.toml <<'EOF2'
+[tools]
+"npm:cowsay" = { version = "1.6", node = "20.11.1" }
+EOF2
+assert "mise where npm:cowsay" "$first_dir"
+mise install
+assert_contains "cat '$first_dir/node_modules/.bin/cowsay'" "$node_dir/bin/node"
+assert_contains "cat '$install_dir/node_modules/.bin/cowsay'" "$MISE_DATA_DIR/installs/node/20.12.2/bin/node"
+cat >mise.toml <<'EOF2'
+[tools]
+"npm:cowsay" = { version = "1.6.0", node = "20.12.2" }
+EOF2
+
+# A version that `prune.exclude` keeps still runs on the Node it is bound to,
+# even after no tracked config needs that Node.
+mkdir old
+cat >old/mise.toml <<'EOF2'
+[tools]
+"npm:cowsay" = { version = "1.5.0", node = "20.11.1" }
+EOF2
+mise -C old install
+old_dir="$(mise -C old where npm:cowsay)"
+rm -rf old
+MISE_PRUNE_EXCLUDE=npm:cowsay mise prune --yes
+assert_succeed "test -d '$old_dir'"
+assert_succeed "test -x '$node_dir/bin/node'"
+mise prune --yes
+assert_fail "test -d '$old_dir'"
+assert_fail "test -d '$first_dir'"
+assert_fail "test -d '$node_dir'"
+
+# A prefix request binds the installation it resolved to, not the `node/20`
+# link that moves when a newer 20.x installs.
+cat >mise.toml <<'EOF2'
+[tools]
+"npm:cowsay" = { version = "1.6.0", node = "20" }
+EOF2
+mise install
+install_dir="$(mise where npm:cowsay)"
+assert_contains "cat '$install_dir/.mise-node.json'" '"request": "20"'
+assert_succeed "test -L '$MISE_DATA_DIR/installs/node/20'"
+assert_not_contains "cat '$install_dir/node_modules/.bin/cowsay'" "$MISE_DATA_DIR/installs/node/20/bin/node"
+
+# A binding prune cannot read stops prune instead of risking the Node it names.
+echo "not json" >"$install_dir/.mise-node.json"
+assert_fail_contains "mise prune --yes" "cannot safely prune"
+
+# Other installers cannot bind executables, so the option is an error there.
+assert_fail_contains "MISE_NPM_PACKAGE_MANAGER=npm mise install --force" "needs the embedded aube installer"
+
+# mise.lock does not record the selected Node yet, so locked mode refuses the
+# option up front instead of failing on a Node download it cannot verify.
+mkdir locked
+cat >locked/mise.toml <<'EOF2'
+[tools]
+"npm:cowsay" = { version = "1.6.0", node = "20.11.1" }
+EOF2
+MISE_LOCKFILE=1 mise -C locked lock
+assert_fail_contains "MISE_LOCKFILE=1 MISE_LOCKED=1 mise -C locked install --force" "locked mode does not support yet"
+
+# A project `node` that matches the option is still the project's own tool:
+# installing both reports node as installed and activates it.
+mkdir both
+cat >both/mise.toml <<'EOF2'
+[tools]
+node = "20.12.2"
+"npm:cowsay" = { version = "1.6.0", node = "20.12.2" }
+EOF2
+mise -C both install
+assert_contains "mise -C both ls node --current --json" '"version": "20.12.2"'
+assert_contains "mise -C both x -- node --version" "v20.12.2"

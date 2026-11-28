@@ -10,7 +10,7 @@ use indexmap::IndexMap;
 use itertools::Itertools;
 use serde::de::DeserializeOwned;
 use serde_json::{Value as JsonValue, json};
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::iter::once;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -55,6 +55,10 @@ pub(super) struct TaskScriptParser {
     /// `task_source_files(only_changed=true)`. Stored as a path rather than a
     /// timestamp so a template that never asks for filtering costs no syscall.
     baseline: Option<PathBuf>,
+    /// `mise run --shell`, which runs a script with no shebang when the task sets no `shell`.
+    /// The template functions quote their values for the shell that reads the script, which
+    /// [`rendered_script_shell`] picks.
+    run_shell: Option<String>,
 }
 
 impl TaskScriptParser {
@@ -63,7 +67,13 @@ impl TaskScriptParser {
             dir,
             extra_vars: None,
             baseline: None,
+            run_shell: None,
         }
+    }
+
+    pub(super) fn with_run_shell(mut self, shell: Option<String>) -> Self {
+        self.run_shell = shell;
+        self
     }
 
     pub(super) fn with_extra_vars(mut self, vars: IndexMap<String, String>) -> Self {
@@ -898,29 +908,27 @@ impl TaskScriptParser {
                 out.push(script.trim().to_string());
                 continue;
             }
-            let shell_type = shell_from_shebang(script)
-                .or(task.shell()?)
-                .unwrap_or(Settings::get().default_inline_shell()?)[0]
-                .parse()
-                .ok();
+            // A template can render a shebang where the source has none, and then the shell the
+            // source would run under, such as a `--shell` that cannot be parsed, is never used.
+            // So it is quoted for as an unknown program, which leaves out only a value some shell
+            // would quote, and its error is raised only if such a value had to go in.
+            let shell = rendered_script_shell(script, task, self.run_shell.as_deref());
+            let quoting = shell.as_ref().map_or(ArgQuoting::Unknown, ArgQuoting::of);
+            // The values the template functions quoted for `shell`, checked once the script is
+            // rendered and the shell that runs it is known.
+            let quoted = Arc::new(Mutex::new(Vec::new()));
             let escape = {
-                move |v: &usage::parse::ParseValue| match v {
-                    usage::parse::ParseValue::MultiString(_) => {
-                        // these are already escaped
-                        v.to_string()
-                    }
-                    _ => match shell_type {
-                        Some(ShellType::Zsh | ShellType::Bash | ShellType::Fish) => {
-                            shell_words::quote(&v.to_string()).to_string()
-                        }
-                        _ => v.to_string(),
-                    },
+                let quoted = quoted.clone();
+                move |v: &usage::parse::ParseValue| {
+                    quoted.lock().unwrap().push(v.clone());
+                    quoting.escape(v)
                 }
             };
             let mut tera = self.get_tera();
             self.register_task_source_files_function(&mut tera, task);
             Self::register_template_function(&mut tera, "arg", {
                 {
+                    let escape = escape.clone();
                     let usage_args = m.args.clone();
                     move |args| {
                         let seen_args = Arc::new(Mutex::new(HashSet::new()));
@@ -944,6 +952,7 @@ impl TaskScriptParser {
             });
             let flag_func = {
                 |default_value: String| {
+                    let escape = escape.clone();
                     let usage_flags = m.flags.clone();
                     move |args: &HashMap<String, JsonValue>| {
                         let name = Self::string_arg(args, "name")?;
@@ -964,9 +973,43 @@ impl TaskScriptParser {
             tera_ctx.insert("env", &env);
             let usage_map = Self::make_usage_ctx(spec, &m);
             tera_ctx.insert("usage", &usage_map);
-            out.push(Self::render_script_with_context(
-                &mut tera, script, &tera_ctx,
-            )?);
+            let rendered = Self::render_script_with_context(&mut tera, script, &tera_ctx)?;
+            // The values were quoted for the shell the source picks, before rendering. A
+            // template can render a shebang where there was none, or change one, and the script
+            // then runs under a shell that reads that quoting otherwise.
+            let quoted = std::mem::take(&mut *quoted.lock().unwrap());
+            if !quoted.is_empty() {
+                let runs = rendered_script_shell(&rendered, task, self.run_shell.as_deref())?;
+                let runs_quoting = ArgQuoting::of(&runs);
+                if quoted.iter().any(|v| !quoting.reads_alike(runs_quoting, v)) {
+                    let shell = shell?;
+                    if let Some(unknown) = [&shell, &runs]
+                        .into_iter()
+                        .find(|shell| ArgQuoting::of(shell) == ArgQuoting::Unknown)
+                    {
+                        let (what, example) = if unknown.from_shebang {
+                            ("shebang", "#!/usr/bin/env -S bash -e")
+                        } else {
+                            ("shell", "env bash -c")
+                        };
+                        eyre::bail!(
+                            "task {}: mise cannot tell which program its {what} `{}` starts, so \
+                             it cannot quote the values of arg(), option() and flag() for it. Name \
+                             the program after `env` and its options, for example `{example}`.",
+                            task.name,
+                            unknown.words.join(" "),
+                        );
+                    }
+                    eyre::bail!(
+                        "task {}: its script renders to run under {}, but arg(), option() and \
+                         flag() quoted their values for {}. Write the shebang without a template.",
+                        task.name,
+                        runs.name(),
+                        shell.name(),
+                    );
+                }
+            }
+            out.push(rendered);
         }
         Ok(out)
     }
@@ -1122,14 +1165,281 @@ pub(super) fn subcommand_name_from_parse(cmds: &[usage::SpecCommand]) -> Option<
     }
 }
 
+/// The shell that reads an inline run script once it is rendered, so the one whose quoting the
+/// template functions must use. It is the shell `TaskExecutor::exec_script` starts for it:
+///
+/// - Rendering trims the script, so a `#!` after leading whitespace is a shebang. Such a script
+///   is written to an executable file. The OS runs that file under its shebang on Unix, unless
+///   `use_file_shell_for_executable_tasks` is set; then, and on Windows, where the OS cannot
+///   start an extensionless script, mise picks a file shell as for a file task: the task's
+///   `shell`, then the shebang, then the default file shell.
+/// - Any other script runs under the task's `shell`, then `mise run --shell`, then the default
+///   inline shell.
+///
+/// The fallback shells are read only when the script needs one, so a shebang script still runs
+/// when a `--shell` it does not use cannot be parsed.
+fn rendered_script_shell(
+    script: &str,
+    task: &Task,
+    run_shell: Option<&str>,
+) -> Result<ScriptShell> {
+    let script = script.trim_start();
+    let configured = |words| ScriptShell {
+        words,
+        from_shebang: false,
+    };
+    if !script.starts_with("#!") {
+        return Ok(configured(match task.shell()? {
+            Some(shell) => shell,
+            None => super::task_executor::inline_shell(run_shell)?,
+        }));
+    }
+    let shebang = ScriptShell {
+        words: shell_from_shebang(script).unwrap_or_default(),
+        from_shebang: true,
+    };
+    if cfg!(unix) && !Settings::get().use_file_shell_for_executable_tasks {
+        return Ok(shebang);
+    }
+    match task.shell()? {
+        Some(shell) => Ok(configured(shell)),
+        None if !shebang.words.is_empty() => Ok(shebang),
+        None => Ok(configured(Settings::get().default_file_shell()?)),
+    }
+}
+
+/// A shell [`rendered_script_shell`] picks, and whether the script's shebang names it or the
+/// task's `shell`, `mise run --shell` or a default shell setting does.
+struct ScriptShell {
+    words: Vec<String>,
+    from_shebang: bool,
+}
+
+impl ScriptShell {
+    /// The program, for an error message: the one `env` starts when mise can tell.
+    fn name(&self) -> String {
+        match self.command().and_then(|shell| shell.into_iter().next()) {
+            Some(program) => program,
+            None if self.words.is_empty() => "no shell".into(),
+            None => self.words.join(" "),
+        }
+    }
+
+    /// The command this shell runs: see [`resolve_env`].
+    fn command(&self) -> Option<Vec<String>> {
+        let words = if self.from_shebang {
+            EnvWords::Shebang
+        } else {
+            EnvWords::Separate
+        };
+        resolve_env(&self.words, words)
+    }
+}
+
+/// How the template functions quote a value for the shell that reads the script.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ArgQuoting {
+    Fish,
+    Posix,
+    /// A shell whose quoting mise does not know, such as `cmd`: the value goes in as it is.
+    Raw,
+    /// A program mise cannot name, such as the one an `env` wrapper starts after options mise
+    /// does not know. It may be a shell, so only a value no shell quotes goes in.
+    Unknown,
+}
+
+impl ArgQuoting {
+    /// Whether `v`, quoted for `self`, reads the same in a script that `other` runs. fish and
+    /// POSIX shells read their own quoting, so the quoted text has to match. How a `Raw`
+    /// interpreter, such as Tcl, reads quotes is unknown, so with one on either side only a value
+    /// that neither side quotes, such as `true` or a plain word, is safe. An `Unknown` program
+    /// may be any of them, so only a value that none of them quotes is.
+    fn reads_alike(self, other: Self, v: &usage::parse::ParseValue) -> bool {
+        if self == Self::Unknown || other == Self::Unknown {
+            let plain = Self::unquoted(v);
+            return [Self::Fish, Self::Posix, Self::Raw]
+                .into_iter()
+                .all(|quoting| quoting.escape(v) == plain);
+        }
+        if self == other {
+            return true;
+        }
+        let (quoted, other_quoted) = (self.escape(v), other.escape(v));
+        if self == Self::Raw || other == Self::Raw {
+            let plain = Self::unquoted(v);
+            quoted == plain && other_quoted == plain
+        } else {
+            quoted == other_quoted
+        }
+    }
+
+    /// The words of `v` joined with spaces and no quoting.
+    fn unquoted(v: &usage::parse::ParseValue) -> String {
+        match v {
+            usage::parse::ParseValue::MultiString(values) => values.join(" "),
+            _ => v.to_string(),
+        }
+    }
+
+    /// The quoting for the program `shell` runs, which for an `env` wrapper is the one `env`
+    /// starts.
+    fn of(shell: &ScriptShell) -> Self {
+        let Some(shell) = shell.command() else {
+            return Self::Unknown;
+        };
+        // No shell runs the script then: the executor refuses a blank `--shell`, and the kernel
+        // a blank shebang.
+        let Some(program) = shell.first() else {
+            return Self::Raw;
+        };
+        match program.parse() {
+            Ok(ShellType::Fish) => Self::Fish,
+            Ok(ShellType::Zsh | ShellType::Bash) => Self::Posix,
+            // `dash`, `ksh` and `ash` are no `ShellType`, but they read POSIX quoting too.
+            _ if crate::path::is_posix_shell_program(Path::new(program)) => Self::Posix,
+            _ => Self::Raw,
+        }
+    }
+
+    fn escape(self, v: &usage::parse::ParseValue) -> String {
+        match (self, v) {
+            // fish reads `\'` and `\\` inside single quotes as escapes, so POSIX quoting, which
+            // is also how usage joins these, would let a value end its own string
+            (Self::Fish, usage::parse::ParseValue::MultiString(values)) => values
+                .iter()
+                .map(|value| crate::shell::fish_escape(value.into()))
+                .join(" "),
+            // these are already escaped
+            (_, usage::parse::ParseValue::MultiString(_)) => v.to_string(),
+            (Self::Fish, _) => crate::shell::fish_escape(v.to_string().into()).to_string(),
+            (Self::Posix, _) => shell_words::quote(&v.to_string()).to_string(),
+            (Self::Raw | Self::Unknown, _) => v.to_string(),
+        }
+    }
+}
+
+/// The words of the shebang on the first line of `script`: the program the kernel starts and
+/// its arguments. The kernel skips blanks after `#!`.
 fn shell_from_shebang(script: &str) -> Option<Vec<String>> {
-    let shebang = script.lines().next()?.strip_prefix("#!")?;
-    let shebang = shebang.strip_prefix("/usr/bin/env -S").unwrap_or(shebang);
-    let shebang = shebang.strip_prefix("/usr/bin/env").unwrap_or(shebang);
-    let mut parts = shebang.split_whitespace();
-    let shell = parts.next()?;
-    let args = parts.map(|s| s.to_string()).collect_vec();
-    Some(once(shell.to_string()).chain(args).collect())
+    let words = script
+        .lines()
+        .next()?
+        .strip_prefix("#!")?
+        .split_whitespace()
+        .map(str::to_string)
+        .collect_vec();
+    (!words.is_empty()).then_some(words)
+}
+
+/// The command `shell` runs: `shell` itself, or for an `env` wrapper, wherever `env` is
+/// installed, the command `env` starts. `None` when mise cannot tell which program that is.
+pub(super) fn resolve_env(shell: &[String], words: EnvWords) -> Option<Vec<String>> {
+    let mut shell = shell.to_vec();
+    while shell.first().is_some_and(|program| is_env(program)) {
+        shell = env_command(&shell[1..], words)?;
+    }
+    Some(shell)
+}
+
+/// How `env` gets the words after it, which decides which of them it may read as more than
+/// they say.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum EnvWords {
+    /// Each word is an argument of its own, as mise starts a task `shell` or `mise run --shell`:
+    /// only the string of an `-S` is split, so only it is read for [`ENV_SPLIT_STRING_SYNTAX`].
+    /// `env COLOR='#fff' bash -c` sets `COLOR` to `#fff` and starts bash.
+    Separate,
+    /// The words of a shebang, which any of may be read that way (see
+    /// [`ENV_SPLIT_STRING_SYNTAX`]).
+    Shebang,
+}
+
+/// Whether no shell mise knows quotes `value`, so that a shell mise cannot name reads it as it
+/// is: the rule [`ArgQuoting::Unknown`] holds the template functions to.
+pub(super) fn no_shell_quotes(value: &str) -> bool {
+    ArgQuoting::Unknown.reads_alike(
+        ArgQuoting::Unknown,
+        &usage::parse::ParseValue::String(value.to_string()),
+    )
+}
+
+pub(super) fn is_env(program: &str) -> bool {
+    Path::new(program)
+        .file_name()
+        .is_some_and(|name| name == "env" || name == "env.exe")
+}
+
+/// The characters GNU `env` reads in a `-S` string as more than themselves: quotes, `\` escapes,
+/// `${NAME}` and `#` comments. Linux hands `env` all the words of a shebang as one argument, which
+/// `-S` splits, so any of the words may be read that way.
+const ENV_SPLIT_STRING_SYNTAX: [char; 5] = ['\'', '"', '\\', '$', '#'];
+
+/// The next of `env`'s words, or `None` when there is none or, in a shebang, `env` may read it as
+/// more than it is.
+fn next_env_word(words: &mut VecDeque<String>, how: EnvWords) -> Option<String> {
+    words
+        .pop_front()
+        .filter(|word| how == EnvWords::Separate || !word.contains(ENV_SPLIT_STRING_SYNTAX))
+}
+
+/// The command `env` runs for `args`, read as GNU `env` reads them: options up to `--` or the
+/// first word that is none, where `-S STRING` puts the words of `STRING` in its place; then
+/// `NAME=value` settings; then the command. `None` when mise cannot tell which program that is:
+/// there is none, `env` has an option mise does not know, or a word `env` splits (any word, in a
+/// shebang) may mean more than it says.
+fn env_command(args: &[String], how: EnvWords) -> Option<Vec<String>> {
+    let mut words: VecDeque<String> = args.iter().cloned().collect();
+    let mut options = true;
+    loop {
+        let word = next_env_word(&mut words, how)?;
+        if options && word == "--" {
+            options = false;
+            continue;
+        }
+        if options && word.starts_with('-') && word != "-" {
+            let split = match word.as_str() {
+                "-S" | "--split-string" => Some(next_env_word(&mut words, how)?),
+                _ => word
+                    .strip_prefix("--split-string=")
+                    .or_else(|| word.strip_prefix("-S"))
+                    .map(str::to_string),
+            };
+            if let Some(split) = split {
+                // `env` reads this string's quotes, escapes, `${NAME}` and comments
+                if split.contains(ENV_SPLIT_STRING_SYNTAX) {
+                    return None;
+                }
+                for word in split.split_whitespace().rev() {
+                    words.push_front(word.to_string());
+                }
+                continue;
+            }
+            match word.as_str() {
+                "-u" | "--unset" | "-C" | "--chdir" => {
+                    next_env_word(&mut words, how)?;
+                }
+                "-i" | "--ignore-environment" | "-0" | "--null" | "-v" | "--debug" => {}
+                _ if word.starts_with("--unset=") || word.starts_with("--chdir=") => {}
+                _ if word.len() > 2 && (word.starts_with("-u") || word.starts_with("-C")) => {}
+                _ => return None,
+            }
+            continue;
+        }
+        // `env -` is `env -i`.
+        if options && word == "-" {
+            options = false;
+            continue;
+        }
+        options = false;
+        // `NAME=value`
+        if word.contains('=') {
+            continue;
+        }
+        if word.is_empty() || word.starts_with('-') || word.contains(char::is_whitespace) {
+            return None;
+        }
+        return Some(once(word).chain(words).collect());
+    }
 }
 
 /// Whether a render error is a template reading a field of `env` that the context lacks.
@@ -1141,6 +1451,10 @@ fn is_missing_env_field(err: &str) -> bool {
 mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
+
+    /// A `mise run --shell` that cannot be split into words on any platform. Windows reads single
+    /// quotes as part of a word, so only an unmatched double quote fails everywhere.
+    const UNPARSABLE_SHELL: &str = "\"";
 
     fn tera_v1() -> crate::test::SettingsGuard {
         let guard = crate::test::SettingsGuard::lock();
@@ -1174,6 +1488,498 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(parsed_scripts, vec!["echo abc"]);
+    }
+
+    #[tokio::test]
+    async fn test_task_parse_arg_quotes_for_the_shell_that_runs_the_script() {
+        let _guard = crate::test::SettingsGuard::lock();
+        let config = Config::get().await.unwrap();
+        let script = "echo {{ arg(i=0, name='foo') }}";
+        let value = [r"\'; touch injected #".to_string()];
+        let fish_quoted = r"echo '\\\'; touch injected #'";
+        let posix_quoted = r"echo '\'\''; touch injected #'";
+        // The default inline shell is `cmd /c` on Windows, which reads no quoting the template
+        // functions know, so they insert the value as it is there.
+        let default_quoted = if cfg!(windows) {
+            r"echo \'; touch injected #"
+        } else {
+            posix_quoted
+        };
+        let bash = "#!/usr/bin/env bash\n";
+        let fish = "#!/usr/bin/env fish\n";
+        // The rule is `rendered_script_shell`'s. (task shell, `mise run --shell`,
+        // `use_file_shell_for_executable_tasks`, script prefix, expected)
+        let cases = [
+            (None, None, false, "", default_quoted),
+            (None, Some("fish -c"), false, "", fish_quoted),
+            (Some("bash -c"), Some("fish -c"), false, "", posix_quoted),
+            (None, Some("fish -c"), false, bash, posix_quoted),
+            // Rendering trims the script, so this is a shebang too.
+            (
+                None,
+                Some("fish -c"),
+                false,
+                " \n#!/bin/bash\n",
+                posix_quoted,
+            ),
+            (Some("bash -e"), None, true, fish, posix_quoted),
+            (Some("fish"), None, true, bash, fish_quoted),
+            (Some("dash"), None, true, bash, posix_quoted),
+            (None, Some("fish -c"), true, bash, posix_quoted),
+            // A `--shell` the script does not use is not read.
+            (None, Some(UNPARSABLE_SHELL), false, bash, posix_quoted),
+        ];
+        for (task_shell, run_shell, file_shell, prefix, expected) in cases {
+            Settings::override_with(|settings| {
+                settings.use_file_shell_for_executable_tasks = Some(file_shell);
+            })
+            .unwrap();
+            let task = Task {
+                shell: task_shell.map(str::to_string),
+                ..Default::default()
+            };
+            let scripts = vec![format!("{prefix}{script}")];
+            let parser = TaskScriptParser::new(None).with_run_shell(run_shell.map(str::to_string));
+            let (_, spec) = parser
+                .parse_run_scripts(&config, &task, &scripts, &Default::default())
+                .await
+                .unwrap();
+            let parsed = parser
+                .parse_run_scripts_with_args(
+                    &config,
+                    &task,
+                    &scripts,
+                    &Default::default(),
+                    &value,
+                    &spec,
+                )
+                .await
+                .unwrap();
+            assert_eq!(
+                parsed,
+                vec![format!("{}{expected}", prefix.trim_start())],
+                "task shell {task_shell:?}, --shell {run_shell:?}, file shell {file_shell}, \
+                 prefix {prefix:?}"
+            );
+        }
+        // A blank `--shell` names no shell; the executor refuses it rather than this panicking.
+        let task = Task::default();
+        let scripts = vec![script.to_string()];
+        let parser = TaskScriptParser::new(None).with_run_shell(Some(" ".into()));
+        let (_, spec) = parser
+            .parse_run_scripts(&config, &task, &scripts, &Default::default())
+            .await
+            .unwrap();
+        parser
+            .parse_run_scripts_with_args(
+                &config,
+                &task,
+                &scripts,
+                &Default::default(),
+                &value,
+                &spec,
+            )
+            .await
+            .unwrap();
+    }
+
+    /// The template functions quote for the shell the source picks, before rendering, so a
+    /// shebang that only rendering makes, or changes, would run the script under a shell that
+    /// reads that quoting otherwise.
+    #[tokio::test]
+    async fn test_task_parse_arg_refuses_a_shebang_that_changes_the_quoting() {
+        let _guard = crate::test::SettingsGuard::lock();
+        Settings::override_with(|settings| {
+            settings.use_file_shell_for_executable_tasks = Some(false);
+        })
+        .unwrap();
+        let config = Config::get().await.unwrap();
+        let arg = "echo {{ arg(i=0, name='foo') }}";
+        let value = [r"\'; touch injected #".to_string()];
+        let rendered_bash = format!("{{{{ '#!/usr/bin/env bash' }}}}\n{arg}");
+        let templated_bash = format!("#!/usr/bin/env {{{{ 'bash' }}}}\n{arg}");
+        let static_bash = format!("#!/usr/bin/env bash\n{arg}");
+        let rendered_bash_flag = "{{ '#!/usr/bin/env bash' }}\necho {{ flag(name='force') }}";
+        let word = ["hello".to_string()];
+        let force = ["--force".to_string()];
+        let var_arg = "{{ arg(name='words', var=true) }}";
+        let rendered_tcl = format!("{{{{ '#!/usr/bin/env tclsh' }}}}\nputs {var_arg}");
+        let rendered_bash_words = format!("{{{{ '#!/usr/bin/env bash' }}}}\necho {var_arg}");
+        let spaced = ["a b".to_string(), "c".to_string()];
+        let words = ["a".to_string(), "c".to_string()];
+        // (task shell, `mise run --shell`, script, args, refused)
+        let cases: [(_, _, String, &[String], _); 14] = [
+            // A `--shell` that cannot be parsed is not read for a script that renders a shebang,
+            // where a value that no shell quotes goes in as it is.
+            (
+                None,
+                Some(UNPARSABLE_SHELL),
+                rendered_bash.clone(),
+                &word,
+                false,
+            ),
+            (
+                None,
+                Some(UNPARSABLE_SHELL),
+                "{{ '#!/usr/bin/env bash' }}\necho hi".into(),
+                &[],
+                false,
+            ),
+            (None, Some("fish -c"), rendered_bash.clone(), &value, true),
+            (
+                Some("fish -c"),
+                None,
+                rendered_bash.clone(),
+                &value,
+                cfg!(unix),
+            ),
+            (None, Some("fish -c"), templated_bash.clone(), &value, true),
+            // The same quoting either way.
+            (Some("bash -c"), None, rendered_bash.clone(), &value, false),
+            (None, Some("fish -c"), static_bash, &value, false),
+            // No value was quoted.
+            (
+                None,
+                Some("fish -c"),
+                "{{ '#!/usr/bin/env bash' }}\necho hi".into(),
+                &[],
+                false,
+            ),
+            // A boolean flag and a plain word read the same in every shell.
+            (
+                None,
+                Some("fish -c"),
+                rendered_bash_flag.into(),
+                &force,
+                false,
+            ),
+            (None, Some("fish -c"), rendered_bash_flag.into(), &[], false),
+            (None, Some("fish -c"), rendered_bash.clone(), &word, false),
+            // fish and POSIX quote `a b` alike, so switching between them keeps it whole.
+            (None, Some("fish -c"), rendered_bash_words, &spaced, false),
+            // Tcl does not read those quotes, but takes plain words as they are.
+            (None, Some("bash -c"), rendered_tcl.clone(), &spaced, true),
+            (None, Some("bash -c"), rendered_tcl, &words, false),
+        ];
+        for (task_shell, run_shell, script, args, refused) in cases {
+            let task = Task {
+                name: "t".into(),
+                shell: task_shell.map(str::to_string),
+                ..Default::default()
+            };
+            let scripts = vec![script.clone()];
+            let parser = TaskScriptParser::new(None).with_run_shell(run_shell.map(str::to_string));
+            let (_, spec) = parser
+                .parse_run_scripts(&config, &task, &scripts, &Default::default())
+                .await
+                .unwrap();
+            let parsed = parser
+                .parse_run_scripts_with_args(
+                    &config,
+                    &task,
+                    &scripts,
+                    &Default::default(),
+                    args,
+                    &spec,
+                )
+                .await;
+            let case = format!("task shell {task_shell:?}, --shell {run_shell:?}, {script:?}");
+            match parsed {
+                Err(err) if refused => {
+                    assert!(
+                        format!("{err:#}").contains("Write the shebang"),
+                        "{case}: {err:#}"
+                    )
+                }
+                Err(err) => panic!("{case}: {err:#}"),
+                Ok(parsed) => {
+                    assert!(!refused, "{case}: {parsed:?}");
+                    assert!(parsed[0].starts_with("#!/usr/bin/env "), "{case}");
+                }
+            }
+        }
+        // A value some shell quotes needs the shell the source picks, so that `--shell` is read
+        // then, and its error is the one mise reports.
+        let task = Task {
+            name: "t".into(),
+            ..Default::default()
+        };
+        let scripts = vec![rendered_bash];
+        let parser = TaskScriptParser::new(None).with_run_shell(Some(UNPARSABLE_SHELL.into()));
+        let (_, spec) = parser
+            .parse_run_scripts(&config, &task, &scripts, &Default::default())
+            .await
+            .unwrap();
+        let err = parser
+            .parse_run_scripts_with_args(
+                &config,
+                &task,
+                &scripts,
+                &Default::default(),
+                &value,
+                &spec,
+            )
+            .await
+            .unwrap_err();
+        let parse_err = crate::path::split_shell_command(UNPARSABLE_SHELL).unwrap_err();
+        assert!(
+            format!("{err:#}").contains(&parse_err.to_string()),
+            "{err:#}"
+        );
+    }
+
+    #[test]
+    fn test_shell_from_shebang_looks_past_env() {
+        let words = |words: &str| Some(words.split(' ').map(str::to_string).collect_vec());
+        // (shebang, the command it runs, or None when mise cannot tell which program `env` starts)
+        for (shebang, expected) in [
+            ("#!/usr/bin/env bash -e", words("bash -e")),
+            ("#! /usr/bin/env bash -e", words("bash -e")),
+            ("#!/usr/bin/env -S bash -e", words("bash -e")),
+            ("#!/usr/bin/env -Sbash -e", words("bash -e")),
+            ("#!/usr/bin/env -Sbash", words("bash")),
+            ("#!/usr/bin/env --split-string=bash", words("bash")),
+            ("#!/usr/bin/env --split-string bash", words("bash")),
+            ("#!/usr/bin/env --split-string= bash", words("bash")),
+            ("#!/usr/bin/env -S-i bash", words("bash")),
+            ("#!/usr/bin/env -SFOO=1 bash", words("bash")),
+            ("#!/usr/bin/env -u FOO bash", words("bash")),
+            ("#!/usr/bin/env --unset FOO bash", words("bash")),
+            ("#!/usr/bin/env -uFOO --unset=BAR bash", words("bash")),
+            ("#!/usr/bin/env -C /tmp bash", words("bash")),
+            ("#!/usr/bin/env --chdir=/tmp -i bash", words("bash")),
+            ("#!/usr/bin/env -u X -C /tmp FOO=1 bash", words("bash")),
+            ("#!/usr/bin/env -- bash", words("bash")),
+            ("#!/usr/bin/env -- FOO=1 bash", words("bash")),
+            ("#!/usr/bin/env -i -- bash", words("bash")),
+            ("#!/usr/bin/env - bash", words("bash")),
+            ("#!/usr/bin/env env bash", words("bash")),
+            ("#!/bin/env -S -u FOO X=1 bash -e", words("bash -e")),
+            ("#!\t/bin/bash -e", words("/bin/bash -e")),
+            ("#!/usr/local/bin/tclsh", words("/usr/local/bin/tclsh")),
+            ("#!/usr/bin/env", None),
+            ("#!/usr/bin/env -S", None),
+            ("#!/usr/bin/env -u", None),
+            ("#!/usr/bin/env --frobnicate bash", None),
+            ("#!/usr/bin/env -iS bash", None),
+            // Options end at the first setting, so `-i` is the command.
+            ("#!/usr/bin/env FOO=1 -i bash", None),
+            ("#!/usr/bin/env -- -i bash", None),
+            // `env -S` reads quotes, escapes, `${NAME}` and comments, which mise does not.
+            ("#!/usr/bin/env -S 'FOO=1 bash'", None),
+            ("#!/usr/bin/env -S -i FOO=a\\_bash tclsh", None),
+            ("#!/usr/bin/env -S ${SHELL}", None),
+            ("#!/usr/bin/env -S #bash tclsh", None),
+        ] {
+            let shell = shell_from_shebang(shebang).unwrap();
+            assert_eq!(
+                resolve_env(&shell, EnvWords::Shebang),
+                expected,
+                "{shebang}"
+            );
+        }
+        assert_eq!(shell_from_shebang("echo hi"), None);
+        assert_eq!(shell_from_shebang("#! "), None);
+        let bare_env = ScriptShell {
+            words: vec!["/usr/bin/env".to_string()],
+            from_shebang: true,
+        };
+        assert_eq!(ArgQuoting::of(&bare_env), ArgQuoting::Unknown);
+    }
+
+    /// When mise starts `env` with each word as its own argument, `env` reads quotes, escapes,
+    /// `${NAME}` and comments only in an `-S` string, so a setting can hold them.
+    #[test]
+    fn test_resolve_env_reads_split_syntax_only_where_env_splits() {
+        let words = |words: &[&str]| words.iter().map(|w| w.to_string()).collect_vec();
+        let bash = Some(words(&["bash", "-c"]));
+        for (shell, separate, shebang) in [
+            (
+                words(&["env", "COLOR=#fff", "bash", "-c"]),
+                bash.clone(),
+                None,
+            ),
+            (
+                words(&["env", "A=$HOME", "B=a\\b", "bash", "-c"]),
+                bash.clone(),
+                None,
+            ),
+            (
+                words(&["env", "-u", "#x", "bash", "-c"]),
+                bash.clone(),
+                None,
+            ),
+            (
+                words(&["env", "-S", "COLOR=x bash", "-c"]),
+                bash.clone(),
+                bash.clone(),
+            ),
+            (words(&["env", "-S", "COLOR=#fff bash", "-c"]), None, None),
+            (words(&["env", "-SCOLOR=$X", "bash", "-c"]), None, None),
+            (
+                words(&["env", "--split-string=#", "bash", "-c"]),
+                None,
+                None,
+            ),
+        ] {
+            assert_eq!(
+                resolve_env(&shell, EnvWords::Separate),
+                separate,
+                "{shell:?}"
+            );
+            assert_eq!(resolve_env(&shell, EnvWords::Shebang), shebang, "{shell:?}");
+        }
+    }
+
+    /// Every way to spell `env` before a shell either quotes `arg()` values for that shell or
+    /// refuses them, in a shebang and in a task `shell` or `mise run --shell`. None inserts the
+    /// value as it is.
+    #[tokio::test]
+    async fn test_task_parse_arg_never_inserts_raw_for_an_env_shell() {
+        let _guard = crate::test::SettingsGuard::lock();
+        Settings::override_with(|settings| {
+            settings.use_file_shell_for_executable_tasks = Some(false);
+        })
+        .unwrap();
+        let config = Config::get().await.unwrap();
+        let payload = "ok; touch injected #";
+        // (what follows `env`, whether a shebang quotes the value, whether a shell does)
+        let env_args = [
+            ("-S-i bash", true, true),
+            ("-SFOO=1 bash", true, true),
+            ("-- FOO=1 bash", true, true),
+            // In a shebang `env -S` reads the quotes, which mise refuses. In a shell, mise's
+            // splitter reads them: on Windows it groups only double quotes and keeps single ones.
+            ("-S 'FOO=1 bash'", false, !cfg!(windows)),
+            ("-S \"FOO=1 bash\"", false, true),
+            ("-Sbash", true, true),
+            // mise hands `env` the setting as one literal word; a shebang may be split by `-S`.
+            ("COLOR='#fff' bash", false, true),
+            ("-i -- bash", true, true),
+            ("-u X -C /tmp FOO=1 bash", true, true),
+            ("bash", true, true),
+            ("FOO=1 -i bash", false, false),
+            ("--frobnicate bash", false, false),
+        ];
+        // (shebang, task `shell`, `mise run --shell`, whether the value is quoted)
+        let mut cases = vec![];
+        for (args, in_shebang, in_shell) in env_args {
+            cases.push((
+                Some(format!("#!/usr/bin/env {args}")),
+                None,
+                None,
+                in_shebang,
+            ));
+            let shell = format!("env {args} -c");
+            cases.push((None, Some(shell.clone()), None, in_shell));
+            cases.push((None, None, Some(shell), in_shell));
+        }
+        for (shebang, task_shell, run_shell, quotes) in cases {
+            let case = format!("{shebang:?} {task_shell:?} {run_shell:?}");
+            let from_shebang = shebang.is_some();
+            let task = Task {
+                name: "t".into(),
+                shell: task_shell,
+                ..Default::default()
+            };
+            let shebang = shebang.map(|s| format!("{s}\n")).unwrap_or_default();
+            let scripts = vec![format!("{shebang}echo {{{{ arg(name='foo') }}}}")];
+            let parser = TaskScriptParser::new(None).with_run_shell(run_shell);
+            let (_, spec) = parser
+                .parse_run_scripts(&config, &task, &scripts, &Default::default())
+                .await
+                .unwrap();
+            let parsed = parser
+                .parse_run_scripts_with_args(
+                    &config,
+                    &task,
+                    &scripts,
+                    &Default::default(),
+                    &[payload.to_string()],
+                    &spec,
+                )
+                .await;
+            match parsed {
+                Ok(parsed) if quotes => assert_eq!(
+                    parsed[0],
+                    format!("{shebang}echo 'ok; touch injected #'"),
+                    "{case}"
+                ),
+                Err(err) if !quotes => {
+                    let what = if from_shebang { "shebang" } else { "shell" };
+                    let err = format!("{err:#}");
+                    assert!(
+                        err.contains(&format!("cannot tell which program its {what} `")),
+                        "{case}: {err}"
+                    );
+                }
+                parsed => panic!("{case}: {parsed:?}"),
+            }
+        }
+    }
+
+    /// The values are quoted for the shell `env` starts, however the shebang spells it. When mise
+    /// cannot tell which program that is, a value that needs quoting is refused.
+    #[tokio::test]
+    async fn test_task_parse_arg_quotes_for_the_shell_env_starts() {
+        let _guard = crate::test::SettingsGuard::lock();
+        Settings::override_with(|settings| {
+            settings.use_file_shell_for_executable_tasks = Some(false);
+        })
+        .unwrap();
+        let config = Config::get().await.unwrap();
+        let task = Task {
+            name: "t".into(),
+            ..Default::default()
+        };
+        let payload = "ok; touch injected #";
+        let quoted = Some("'ok; touch injected #'");
+        // (shebang, value, what goes in, or None when the task is refused)
+        for (shebang, value, expected) in [
+            ("#! /usr/bin/env bash", payload, quoted),
+            ("#!/bin/env bash", payload, quoted),
+            ("#!/usr/bin/env -S bash -e", payload, quoted),
+            ("#!/usr/bin/env -Sbash -e", payload, quoted),
+            ("#!/usr/bin/env -Sbash", payload, quoted),
+            ("#!/usr/bin/env --split-string=bash", payload, quoted),
+            ("#!/usr/bin/env -u FOO bash", payload, quoted),
+            ("#!/usr/bin/env -C /tmp bash", payload, quoted),
+            ("#!/usr/bin/env --frobnicate bash", payload, None),
+            ("#!/usr/bin/env", payload, None),
+            ("#!/usr/bin/env --frobnicate bash", "ok", Some("ok")),
+        ] {
+            let value = [value.to_string()];
+            let scripts = vec![format!("{shebang}\necho {{{{ arg(name='foo') }}}}")];
+            let parser = TaskScriptParser::new(None);
+            let (_, spec) = parser
+                .parse_run_scripts(&config, &task, &scripts, &Default::default())
+                .await
+                .unwrap();
+            let parsed = parser
+                .parse_run_scripts_with_args(
+                    &config,
+                    &task,
+                    &scripts,
+                    &Default::default(),
+                    &value,
+                    &spec,
+                )
+                .await;
+            match (parsed, expected) {
+                (Ok(parsed), Some(expected)) => {
+                    assert_eq!(
+                        parsed[0],
+                        format!("{shebang}\necho {expected}"),
+                        "{shebang}"
+                    )
+                }
+                (Err(err), None) => assert!(
+                    format!("{err:#}").contains("cannot tell which program"),
+                    "{shebang}: {err:#}"
+                ),
+                (parsed, _) => panic!("{shebang} with {value:?}: {parsed:?}"),
+            }
+        }
     }
 
     #[tokio::test]

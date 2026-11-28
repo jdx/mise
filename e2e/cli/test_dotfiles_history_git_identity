@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# History commits use an optional Git email shared across machines.
+# History commits use an optional Git name and email shared across machines.
 require_cmd git
 require_cmd hostname
 
@@ -27,3 +27,15 @@ after_watch=$(git --git-dir="$repo" rev-parse HEAD)
 assert_fail "test $before_watch = $after_watch"
 assert "git --git-dir=$repo log -1 --format='%an <%ae> | %cn <%ce>'" \
   "mise <mise@$host> | mise <mise@$host>"
+
+# a name template shows the machine where commit lists show only names
+# [history] is the last table in the file
+echo 'git_name = "{hostname}"' >>"$MISE_CONFIG_DIR/config.toml"
+echo four >~/.history-identity
+assert_succeed 'mise dot save'
+assert "git --git-dir=$repo log -1 --format='%an <%ae> | %cn <%ce>'" \
+  "$host <mise@$host> | $host <mise@$host>"
+
+sed -i.bak 's/^git_name = .*/git_name = "a <b>"/' "$MISE_CONFIG_DIR/config.toml"
+echo five >~/.history-identity
+assert_fail 'mise dot save' "git_name must resolve to a Git author name"

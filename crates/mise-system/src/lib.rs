@@ -4075,7 +4075,7 @@ mod tests {
 
     #[test]
     fn package_env_selector_matches_active_environments() {
-        let package = PackageTomlConfig::Options(PackageOptionsTomlConfig {
+        let package = PackageTomlConfig::Options(Box::new(PackageOptionsTomlConfig {
             version: "latest".to_string(),
             os: vec![],
             env: vec!["desktop".to_string(), "work".to_string()],
@@ -4088,7 +4088,7 @@ mod tests {
             channel: None,
             classic: None,
             names: Default::default(),
-        });
+        }));
 
         assert!(package.is_env_supported(&["work".to_string()]));
         assert!(package.is_env_supported(&["home".to_string(), "desktop".to_string()]));

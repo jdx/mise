@@ -154,8 +154,8 @@ covers modes, templates, permissions, and conflicts.
 Put `[dotfiles]` in one of these places:
 
 - Your global config, `~/.config/mise/config.toml`, so that it applies from
-  any directory. `mise dot track` writes its entries here, and so does
-  `mise dot add`, unless
+  any directory. `mise dot track` and `mise dot add` write their entries here,
+  unless
   [`write_targets.dotfiles`](/configuration/settings.html#write_targets.dotfiles)
   names another global file.
 - A [`conf.d` folder](/configuration.html#conf-d-folders) next to the sources

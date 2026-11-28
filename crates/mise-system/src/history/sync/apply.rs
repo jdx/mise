@@ -1096,8 +1096,10 @@ impl Applying<'_> {
         let repo = pull.repo;
         let written = touched.len() + directories.len();
         scope.promote(&touched);
+        // Name what this machine wrote: the merge before it already holds
+        // the incoming tree, so the checkpoint's own diff is usually empty.
         let summary = Summary {
-            message: Some(format!("applied {written} incoming change(s)")),
+            message: crate::history::checkpoint::describe_written(&touched, directories.len()),
         };
         state::save(repo, sync_state, "applied")?;
         let applied: BTreeSet<String> = ready

@@ -2475,10 +2475,10 @@ const EXTRACT_MIN_LIMIT: u64 = if cfg!(test) {
 };
 
 /// The most bytes unpacking `input` may produce: `extract_max_ratio` times its
-/// size, and at least [`EXTRACT_MIN_LIMIT`]. Release archives rarely unpack to
+/// size, and at least `EXTRACT_MIN_LIMIT`. Release archives rarely unpack to
 /// more than 10 times their size, while 1 GiB of zeroes is under 1 KiB of
 /// bzip2, so without a bound a small download could fill the disk.
-fn extract_limit(input: &Path) -> Result<u64> {
+pub fn extract_limit(input: &Path) -> Result<u64> {
     Ok(extract_limit_for_size(input.metadata()?.len()))
 }
 
@@ -2520,7 +2520,7 @@ impl ExtractBudget {
     }
 }
 
-fn extract_limit_error(limit: u64) -> std::io::Error {
+pub fn extract_limit_error(limit: u64) -> std::io::Error {
     std::io::Error::other(format!(
         "unpacked size exceeds {limit} bytes, the limit set by the extract_max_ratio setting"
     ))
@@ -4016,6 +4016,25 @@ pub fn clone_dir(from: &PathBuf, to: &PathBuf) -> Result<()> {
 fn skip_curdir_components(path: &Path) -> impl Iterator<Item = std::path::Component<'_>> {
     path.components()
         .skip_while(|c| matches!(c, std::path::Component::CurDir))
+}
+
+/// The top-level directory or file that the first entry of a tar archive unpacks to, skipping
+/// leading `.` components. Reads only as far as that entry, so a large archive is not
+/// decompressed in full. `None` for an archive with no such entry.
+pub fn first_tar_entry_top_level(
+    archive: &Path,
+    format: ExtractionFormat,
+) -> Result<Option<String>> {
+    let tar = open_tar(format, archive)?;
+    let mut archive = Archive::new(tar);
+    for entry in archive.entries()? {
+        let entry = entry?;
+        let path = entry.path()?;
+        if let Some(first) = skip_curdir_components(&path).next() {
+            return Ok(Some(first.as_os_str().to_string_lossy().to_string()));
+        }
+    }
+    Ok(None)
 }
 
 /// Inspects the top-level contents of a tar archive without extracting it.

@@ -133,6 +133,11 @@ on the tool's `aqua:` backend: from that version on, a missing attestation fails
 dot-separated numbers, such as `0.72`, is placed by those numbers. Earlier
 versions, and channels or refs such as `nightly`, are unaffected.
 
+An attestation that names a tag (GitHub's release attestation, or build
+provenance from a workflow run that a tag started) must name the version's
+release tag, when mise knows it. An older release's asset and attestation would
+otherwise pass for a newer version.
+
 The SLSA signer fields are the exact Fulcio certificate URI subject and OIDC
 issuer. Packages whose recipe has no signer skip SLSA and may use another check.
 To supply one, see

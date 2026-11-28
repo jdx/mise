@@ -230,6 +230,15 @@ pub async fn list_remote_versions_across_ranges(
 /// later backend, and platform or settings filtering can select one too. Compare against the declared first backend
 /// rather than the filtered `RegistryTool::backends()` list, so a client-side filter
 /// promoting another backend does not make it inherit the published list.
+/// The runtime a tool's own option selects for it (`python` for pipx, `node` for npm). It is
+/// installed as that tool's private dependency instead of being taken from the active toolset.
+pub(crate) fn selected_runtime_dependency(request: &ToolRequest) -> Result<Option<ToolRequest>> {
+    if let Some(python) = pipx::selected_python_dependency(request)? {
+        return Ok(Some(python));
+    }
+    npm::selected_node_dependency(request)
+}
+
 pub(crate) fn backend_arg_is_preferred_registry_backend(ba: &BackendArg) -> bool {
     let full = ba.full_without_opts();
     REGISTRY
@@ -1512,6 +1521,49 @@ pub(crate) async fn configured_toolset_or_path_which(
     Ok(which_non_pristine_executable(bin))
 }
 
+/// Makes absolute the entries of `env`'s PATH that are one of `tool_paths`, the
+/// bin directories mise put there for a toolset. With a relative `MISE_DATA_DIR`
+/// those are relative to mise's working directory, and a command that starts
+/// somewhere else, as a plugin hook does from the home directory in a directory
+/// the user has not trusted, would not find them. Other relative entries came
+/// from the user's PATH or config and keep the meaning they had. An entry whose
+/// absolute form cannot go on PATH, because the working directory holds the PATH
+/// separator, stays relative: a command in that directory still finds it.
+fn absolutize_path_entries(
+    env: &mut BTreeMap<String, String>,
+    tool_paths: &[PathBuf],
+    absolute: impl Fn(PathBuf) -> std::io::Result<PathBuf>,
+) -> eyre::Result<()> {
+    let relative: HashSet<&Path> = tool_paths
+        .iter()
+        .map(PathBuf::as_path)
+        .filter(|path| path.is_relative())
+        .collect();
+    let Some(path_val) = env.get(&*env::PATH_KEY).filter(|_| !relative.is_empty()) else {
+        return Ok(());
+    };
+    let paths: Vec<PathBuf> = env::split_paths(path_val)
+        .map(|path| {
+            if !relative.contains(path.as_path()) {
+                return path;
+            }
+            match absolute(path.clone()) {
+                Ok(absolute) if env::join_paths([&absolute]).is_ok() => absolute,
+                _ => {
+                    debug!("keeping {} relative on PATH", path.display());
+                    path
+                }
+            }
+        })
+        .collect();
+    let joined = env::join_paths(&paths)?;
+    env.insert(
+        env::PATH_KEY.to_string(),
+        joined.to_string_lossy().into_owned(),
+    );
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1546,6 +1598,47 @@ mod tests {
         assert!(!msg.contains("secret"), "{msg}");
         assert_eq!(removed_backend_error("github:BurntSushi/ripgrep"), None);
         assert_eq!(removed_backend_error("ripgrep"), None);
+    }
+
+    #[test]
+    fn only_the_toolset_paths_are_made_absolute() {
+        let tool = PathBuf::from(".mise/installs/dummy/1.0.0/bin");
+        let user = PathBuf::from("node_modules/.bin");
+        let inherited = std::env::temp_dir();
+        let path = env::join_paths([&tool, &user, &inherited]).unwrap();
+        let mut env = BTreeMap::from([(
+            env::PATH_KEY.to_string(),
+            path.to_string_lossy().into_owned(),
+        )]);
+        absolutize_path_entries(
+            &mut env,
+            &[tool.clone(), inherited.clone()],
+            std::path::absolute,
+        )
+        .unwrap();
+        let paths: Vec<PathBuf> = env::split_paths(&env[&*env::PATH_KEY]).collect();
+        assert_eq!(
+            paths,
+            vec![std::path::absolute(&tool).unwrap(), user, inherited]
+        );
+    }
+
+    #[test]
+    fn a_tool_path_that_cannot_go_on_path_absolute_stays_relative() {
+        let tool = PathBuf::from(".mise/installs/dummy/1.0.0/bin");
+        let mut env = BTreeMap::from([(
+            env::PATH_KEY.to_string(),
+            tool.to_string_lossy().into_owned(),
+        )]);
+        // a working directory that PATH cannot hold: Windows quotes an entry with
+        // a `;` in it, so only a `"` is refused there
+        let sep = if cfg!(windows) { "\"" } else { ":" };
+        let cwd = std::env::temp_dir().join(format!("a{sep}b"));
+        absolutize_path_entries(&mut env, std::slice::from_ref(&tool), |path| {
+            Ok(cwd.join(path))
+        })
+        .unwrap();
+        assert_eq!(env[&*env::PATH_KEY], tool.to_string_lossy());
     }
 
     #[test]
@@ -4394,6 +4487,15 @@ pub trait Backend: Debug + Send + Sync {
         false
     }
 
+    /// Whether a version with at least two dots, such as "1.2.3", names one
+    /// release as written. Prefer-offline commands (`exec`, `hook-env`) then use
+    /// it without listing remote versions when nothing installed matches it.
+    /// Return `false` for a backend whose dotted versions can still be prefixes
+    /// of several releases, so those commands resolve them like `mise install`.
+    fn dotted_version_names_a_release(&self, _version: &str) -> bool {
+        true
+    }
+
     /// Whether `version` names a rolling release channel (e.g. zig's "master")
     /// rather than a concrete version. Cheap (no network). Channels are re-resolved
     /// to a concrete version like "latest" so `mise upgrade`/`outdated` can track
@@ -4762,7 +4864,9 @@ pub trait Backend: Debug + Send + Sync {
             }
         };
         let filter = !self.include_prereleases(selection_opts);
-        let versions = self.fuzzy_match_filter(versions, query, filter);
+        let versions = self
+            .match_request(config, versions, query, selection_opts, filter)
+            .await?;
         let mut versions = self.version_order(selection_opts)?.order(versions);
         // Every caller that resolves a request — `latest`, a prefix, a partial
         // version — takes the last entry of this list, so the cutoff has to be
@@ -4778,6 +4882,37 @@ pub trait Backend: Debug + Send + Sync {
             .await?;
         }
         Ok(versions)
+    }
+
+    /// The versions a request names by something other than a version prefix, such as a
+    /// Java id converted from `.sdkmanrc`, among those listed for `selection_opts`. `None`
+    /// matches the request as a prefix, with [`Backend::fuzzy_match_filter`].
+    async fn versions_named_by(
+        &self,
+        _config: &Arc<Config>,
+        _query: &str,
+        _selection_opts: &ToolVersionOptions,
+    ) -> eyre::Result<Option<HashSet<String>>> {
+        Ok(None)
+    }
+
+    /// The listed versions a request matches: those [`Backend::versions_named_by`]
+    /// gives, or else those it matches as a prefix.
+    async fn match_request(
+        &self,
+        config: &Arc<Config>,
+        versions: Vec<String>,
+        query: &str,
+        selection_opts: &ToolVersionOptions,
+        filter_prereleases: bool,
+    ) -> eyre::Result<Vec<String>> {
+        let named = self
+            .versions_named_by(config, query, selection_opts)
+            .await?;
+        Ok(match named {
+            Some(named) => versions.into_iter().filter(|v| named.contains(v)).collect(),
+            None => self.fuzzy_match_filter(versions, query, filter_prereleases),
+        })
     }
 
     /// Remote versions the release-age cutoff excluded, in listing order.
@@ -4823,11 +4958,14 @@ pub trait Backend: Debug + Send + Sync {
             })
             .collect();
         let matched: HashSet<String> = self
-            .fuzzy_match_filter(
+            .match_request(
+                config,
                 hidden.iter().map(|v| v.version.clone()).collect(),
                 query,
+                &opts,
                 !self.include_prereleases(&opts),
             )
+            .await?
             .into_iter()
             .collect();
         // `latest` resolution falls back to the whole date-filtered list when
@@ -6392,6 +6530,11 @@ pub trait Backend: Debug + Send + Sync {
     }
 
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion>;
+
+    /// Record provenance for backends that also create links in their version slots.
+    fn record_user_link(&self, _link: &Path) -> Result<()> {
+        Ok(())
+    }
     async fn uninstall_version(
         &self,
         config: &Arc<Config>,
@@ -6888,11 +7031,9 @@ pub trait Backend: Debug + Send + Sync {
         // hooks (e.g., MiseEnv Lua hooks). Those modules may depend on tools that
         // are not in the dependency toolset, causing "command not found" errors.
         // The dependency env only needs tool bin paths on PATH, not module outputs.
-        let mut env = self
-            .dependency_toolset(config)
-            .await?
-            .full_env_without_tools(config)
-            .await?;
+        let ts = self.dependency_toolset(config).await?;
+        let mut env = ts.full_env_without_tools(config).await?;
+        absolutize_path_entries(&mut env, &ts.list_paths(config).await, std::path::absolute)?;
 
         // Remove mise shims from PATH to prevent infinite shim recursion when a
         // dependency tool (e.g., go) is configured but not installed. Without this,
@@ -6917,6 +7058,9 @@ pub trait Backend: Debug + Send + Sync {
     ) -> eyre::Result<BTreeMap<String, String>> {
         let dependencies = ctx.dependency_context(&tv.request).await?;
         let mut env = dependencies.base_env_for_install(&ctx.config).await?;
+        // Install hooks also start in the home directory, so a relative
+        // `MISE_DATA_DIR` needs the same fix as `dependency_env`.
+        absolutize_path_entries(&mut env, &dependencies.paths, std::path::absolute)?;
         self.remove_dependency_shims(&mut env)?;
         Ok(env)
     }

@@ -414,7 +414,11 @@ run_in_docker() {
   host_tmp="$(mktemp -d "$host_tmp_root/mise-e2e-tmp.XXXXXX")"
   host_root="$(mktemp -d "$host_tmp_root/mise-e2e-root.XXXXXX")"
   host_home="$(mktemp -d "$host_tmp_root/mise-e2e-home.XXXXXX")"
-  chmod 777 "$host_tmp" "$host_root" "$host_home"
+  # Writable by every user (tests run as `nobody` too) with the sticky bit,
+  # as a real /tmp is: mise refuses to work as root below a directory any
+  # user can rename entries in. The host user still owns these directories,
+  # so the cleanup below can remove what the container created in them.
+  chmod 1777 "$host_tmp" "$host_root" "$host_home"
 
   local docker_args=(
     docker run --rm
@@ -469,6 +473,31 @@ run_in_docker() {
 if [[ ${MISE_E2E_DOCKER:-0} == 1 ]]; then
   as_group "E2E $TEST" run_in_docker
 elif [[ ${MISE_E2E_INSIDE_DOCKER:-0} == 1 ]]; then
+  # /tmp, /home and /root are host directories that the host user created (see
+  # run_in_docker), so in the container they belong to that uid. As root, mise
+  # refuses a Homebrew prefix below a directory another user owns, which is
+  # every prefix a test makes under them. Root owns them on a real system, so
+  # give them to root for the test and hand them back for the host's cleanup.
+  # When root cannot change their owner (a user-namespace-remapped daemon, or no
+  # CAP_CHOWN), the test runs with the owners as they are; only tests that need
+  # a root-owned prefix then fail.
+  if [[ $(id -u) == 0 ]]; then
+    mount_dirs=(/tmp /home /root)
+    mount_owners=()
+    for dir in "${mount_dirs[@]}"; do
+      mount_owners+=("$(stat -c %u:%g "$dir")")
+    done
+    restore_mount_owners() {
+      local i
+      for i in "${!mount_dirs[@]}"; do
+        chown "${mount_owners[$i]}" "${mount_dirs[$i]}" 2>/dev/null || true
+      done
+    }
+    trap restore_mount_owners EXIT
+    if ! chown 0:0 "${mount_dirs[@]}" 2>/dev/null; then
+      echo "note: cannot give ${mount_dirs[*]} to root; running with their owners as they are" >&2
+    fi
+  fi
   run_test
 else
   as_group "E2E $TEST" run_test

@@ -93,8 +93,9 @@ runs = 10
 # holds the work directory, and the system directories point at empty ones
 # inside it.
 #
-# `mise x` and the shims are missing here too: each ends by exec-ing its
-# command, which leaves valgrind no process to count. `env-large` covers the config work they do first.
+# `mise x` and the shims end by exec-ing their command, which would leave
+# valgrind no process to count. They set `count_until = "exec"`, so the count
+# stops at the exec and covers mise alone, never the tool it hands over to.
 
 [group.large]
 setup = [
@@ -140,6 +141,26 @@ group = "large"
 [bench.ls-large]
 cmd = ["./target/release/mise", "-C", "{{ env.MISE_PERF_LARGE }}/project", "ls"]
 group = "large"
+
+# `mise x`: resolve the toolset, build its environment and PATH, and exec.
+[bench.x-large]
+cmd = [
+  "./target/release/mise",
+  "-C",
+  "{{ env.MISE_PERF_LARGE }}/project",
+  "x",
+  "--",
+  "node",
+]
+group = "large"
+count_until = "exec"
+
+# A shim: what every call to a tool on PATH pays before the tool starts.
+[bench.shim-large]
+cmd = ["{{ env.MISE_PERF_LARGE }}/data/shims/node"]
+dir = "{{ env.MISE_PERF_LARGE }}/project"
+group = "large"
+count_until = "exec"
 
 # Loading every task, as completion and `mise tasks` do.
 [bench.tasks-ls-large]
