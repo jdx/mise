@@ -546,7 +546,7 @@ for the tool and platform you care about.
 | spm                                                                                                | The version, and the bundle's URL and checksum when installed from an artifact bundle                       |
 
 Locked mode does not require a URL for `asdf`, `cargo`, `dotnet`, `gem`, `go`,
-`npm`, `pypi` (`pipx`), `spinel`, `spm`, `ubi`, `core:dotnet`, `core:rust`,
+`npm`, `pypi` (`pipx`), `spinel`, `spm`, `core:dotnet`, `core:rust`,
 `core:swift` and vfox backend plugins. Most of them do not record one; `spm`
 (for an artifact bundle install) and `core:swift` record a URL and checksum,
 and a recorded checksum is still verified. The exemption covers artifact URLs

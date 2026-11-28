@@ -71,7 +71,6 @@ export const sidebar: SidebarItem[] = [
           { text: "s3", link: "/dev-tools/backends/s3" },
           { text: "spinel (experimental)", link: "/dev-tools/backends/spinel" },
           { text: "spm", link: "/dev-tools/backends/spm" },
-          { text: "ubi (deprecated)", link: "/dev-tools/backends/ubi" },
           { text: "vfox", link: "/dev-tools/backends/vfox" },
         ],
       },

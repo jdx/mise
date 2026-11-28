@@ -10,6 +10,6 @@ EOF
 cat <<EOF >mise.lock
 [[tools.gh]]
 version = "1.0.0"
-backend = "ubi:cli/cli[exe=gh]"
+backend = "github:cli/cli[filter_bins=gh]"
 EOF
-assert "mise tool gh --backend" "ubi:cli/cli[exe=gh]"
+assert "mise tool gh --backend" "github:cli/cli[filter_bins=gh]"

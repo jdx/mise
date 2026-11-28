@@ -59,10 +59,6 @@ pub(crate) fn option_defs(
             open_fragment::<decl::ToolForgejoOptions>(generator),
         ),
         (
-            "tool_ubi_options",
-            open_fragment::<decl::ToolUbiOptions>(generator),
-        ),
-        (
             "tool_http_options",
             open_fragment::<decl::ToolHttpOptions>(generator),
         ),

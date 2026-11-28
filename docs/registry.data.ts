@@ -166,12 +166,6 @@ export default {
           ? slug
           : `https://${options.provider == "gitlab" ? "gitlab.com" : "github.com"}/${slug}`,
       http: () => "",
-      ubi: (slug, options) => {
-        const repoName = slug.split("/").slice(0, 2).join("/");
-        return `https://${
-          options.provider === "gitlab" ? "gitlab.com" : "github.com"
-        }/${repoName}`;
-      },
       vfox: (slug) => `https://github.com/${slug}`,
     };
 

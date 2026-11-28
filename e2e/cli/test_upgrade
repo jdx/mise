@@ -66,13 +66,13 @@ mise upgrade tiny --inactive
 assert_contains "mise ls --installed tiny" "$latest_tiny"
 
 # ensure options are retained
-mise use "ubi:bazelbuild/buildtools[exe=buildifier,matching=buildifier]@7.1.2"
+mise use "github:bazelbuild/buildtools[matching=buildifier,rename_exe=buildifier]@7.1.2"
 assert "cat mise.toml" '[tools]
-"ubi:bazelbuild/buildtools" = { version = "7.1.2", exe = "buildifier", matching = "buildifier" }'
-bazelbuild_latest=$(mise latest ubi:bazelbuild/buildtools)
-mise up --bump ubi:bazelbuild/buildtools
+"github:bazelbuild/buildtools" = { version = "7.1.2", matching = "buildifier", rename_exe = "buildifier" }'
+bazelbuild_latest=$(mise latest github:bazelbuild/buildtools)
+mise up --bump github:bazelbuild/buildtools
 assert "cat mise.toml" "[tools]
-\"ubi:bazelbuild/buildtools\" = { version = \"$bazelbuild_latest\", exe = \"buildifier\", matching = \"buildifier\" }"
+\"github:bazelbuild/buildtools\" = { version = \"$bazelbuild_latest\", matching = \"buildifier\", rename_exe = \"buildifier\" }"
 
 rm -f .tool-versions
 echo "tools.dummy = 'prefix:1'" >mise.toml

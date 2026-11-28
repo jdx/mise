@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+
+# The ubi backend was removed. A tool that still names it fails with the
+# backend to use instead, rather than as an unknown plugin.
+assert_fail "mise install ubi:cli/cli@2.0.0" "ubi:cli/cli: the ubi backend was removed from mise. Use github:cli/cli (gitlab:cli/cli for a GitLab project) instead."
+assert_fail "mise use ubi:cli/cli@2.0.0" "the ubi backend was removed from mise"
+
+cat <<EOF2 >mise.toml
+[tools]
+"ubi:cli/cli" = { version = "2.0.0", exe = "gh" }
+EOF2
+assert_fail "mise install" "Use github:cli/cli (gitlab:cli/cli for a GitLab project) instead."
+# Commands that skip tools they cannot install still say why.
+assert_contains "mise ls 2>&1" "the ubi backend was removed from mise"
+
+# An alias that points at a ubi: tool names the replacement too.
+cat <<EOF2 >mise.toml
+[tool_alias]
+legacytool = "ubi:cli/cli"
+
+[tools]
+legacytool = "2.0.0"
+EOF2
+assert_fail "mise install" "legacytool: ubi:cli/cli: the ubi backend was removed from mise"
+assert_contains "mise ls 2>&1" "legacytool: ubi:cli/cli: the ubi backend was removed from mise"
+
+# An alias named after a core tool must not fall back to the core tool.
+cat <<EOF2 >mise.toml
+[tool_alias]
+node = "ubi:nodejs/node"
+
+[tools]
+node = "22"
+EOF2
+assert_fail "mise install" "node: ubi:nodejs/node: the ubi backend was removed from mise"
+
+# A shorthand that mise.lock pins to ubi: must not quietly switch to the
+# registry's backend.
+cat <<EOF2 >mise.toml
+[tools]
+gh = "2.0.0"
+EOF2
+cat <<EOF2 >mise.lock
+[[tools.gh]]
+version = "2.0.0"
+backend = "ubi:cli/cli[exe=gh]"
+EOF2
+assert_fail "mise install" "gh: ubi:cli/cli[exe=gh]: the ubi backend was removed from mise"
+assert_fail "mise install" "mise.lock pins gh to this backend"
+
+# The same for a core tool's name: the core backend must not answer for it.
+cat <<EOF2 >mise.toml
+[tools]
+node = "22"
+EOF2
+cat <<EOF2 >mise.lock
+[[tools.node]]
+version = "22.0.0"
+backend = "ubi:nodejs/node"
+EOF2
+assert_fail "mise install" "node: ubi:nodejs/node: the ubi backend was removed from mise"
+assert_fail "mise install" "mise.lock pins node to this backend"
