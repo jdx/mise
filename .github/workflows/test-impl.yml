@@ -457,6 +457,29 @@ jobs:
               TOKEN_B: ${{ steps.tokens.outputs.token_7 || secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
             run: *e2e-run
 
+  # FreeBSD release binaries are best-effort and nothing runs them, so this
+  # only checks that the release feature set still compiles for the target.
+  # It is not required: a red check here is a heads-up
+  # that the next release will ship without the FreeBSD archive.
+  check-freebsd:
+    # A failure here must not fail the reusable workflow that test.yml requires.
+    continue-on-error: true
+    permissions:
+      contents: read
+    runs-on: ${{ !inputs.trusted && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64;overrides.cache-tag=cache' }}
+    timeout-minutes: 60
+    needs: [classify-changes]
+    if: needs.classify-changes.outputs.full-ci == 'true'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: taiki-e/install-action@51cd0b8c0499559d9a4d75c0f5c67bec3a894ec8 # v2.75.28
+        with:
+          tool: cross
+      - run: rustup update stable --no-self-update && rustup default stable
+      - run: cross check --target x86_64-unknown-freebsd --ignore-rust-version --no-default-features --features rustls-native-roots,self_update,vfox/vendored-lua,openssl/vendored
+
   bootstrap-linux-host:
     permissions:
       contents: read

@@ -2022,9 +2022,12 @@ impl HistoryRepo {
             body.push('\n');
         }
         let email = super::config::git_email()?;
+        let name = super::config::git_name()?;
         let mut call = PlumbingCall::new(args)
             .stdin(body.as_bytes())
+            .env("GIT_AUTHOR_NAME", name.as_str())
             .env("GIT_AUTHOR_EMAIL", email.as_str())
+            .env("GIT_COMMITTER_NAME", name)
             .env("GIT_COMMITTER_EMAIL", email);
         if let Some(date) = author_date {
             call = call.env("GIT_AUTHOR_DATE", date);

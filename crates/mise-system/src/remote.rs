@@ -1735,7 +1735,21 @@ impl RemoteArtifactResolver {
             return Ok(path.clone());
         }
         self.ensure_official_local(local).await?;
-        let checksum = self.manifest().await?.checksum(&asset)?.to_string();
+        let checksum = self
+            .manifest()
+            .await?
+            .checksum(&asset)
+            .wrap_err_with(|| {
+                if platform.os == "freebsd" {
+                    format!(
+                        "FreeBSD builds are best-effort and mise {} shipped without one; set mise_bin, remote_mise, or bootstrap_command",
+                        MISE_VERSION.as_str()
+                    )
+                } else {
+                    format!("no official mise release artifact named {asset}")
+                }
+            })?
+            .to_string();
         if self.directory.is_none() {
             self.directory = Some(tempfile::tempdir()?);
         }
@@ -1853,6 +1867,14 @@ fn release_asset_name(os: &str, arch: &str, libc: Option<LibcFlavor>) -> Result<
             Some(LibcFlavor::Musl) => format!("linux-{release_arch}-musl"),
             None => bail!("Linux release targets require a detected libc family"),
         },
+        // Best-effort release target: only x86_64 is built, and a release
+        // whose FreeBSD build failed has no such artifact.
+        "freebsd" if arch == "x86_64" => {
+            if libc.is_some() {
+                bail!("FreeBSD release targets cannot declare a libc family");
+            }
+            format!("freebsd-{release_arch}")
+        }
         _ => {
             bail!(
                 "mise {} has no official precompiled artifact for {os}/{arch}; set mise_bin, remote_mise, or bootstrap_command",
@@ -1869,7 +1891,7 @@ fn official_release_assets(os: &str, arch: &str) -> Result<Vec<String>> {
             .into_iter()
             .map(|libc| release_asset_name(os, arch, Some(libc)))
             .collect(),
-        "macos" => Ok(vec![release_asset_name(os, arch, None)?]),
+        "macos" | "freebsd" => Ok(vec![release_asset_name(os, arch, None)?]),
         "windows" => {
             let release_arch = match arch {
                 "x86_64" => "x64",
@@ -3251,7 +3273,12 @@ mod tests {
             format!("mise-v{version}-macos-arm64")
         );
         assert!(release_asset_name("linux", "riscv64", Some(LibcFlavor::Glibc)).is_err());
-        assert!(release_asset_name("freebsd", "x86_64", None).is_err());
+        assert_eq!(
+            release_asset_name("freebsd", "x86_64", None).unwrap(),
+            format!("mise-v{version}-freebsd-x64")
+        );
+        assert!(release_asset_name("freebsd", "aarch64", None).is_err());
+        assert!(release_asset_name("freebsd", "x86_64", Some(LibcFlavor::Glibc)).is_err());
         assert!(release_asset_name("linux", "x86_64", None).is_err());
     }
 
@@ -3296,6 +3323,14 @@ mod tests {
             }
         );
         assert!(parse_remote_platform("Linux\nx86_64\nunknown\n").is_err());
+        assert_eq!(
+            parse_remote_platform("FreeBSD\namd64\nnone\n").unwrap(),
+            RemotePlatform {
+                os: "freebsd".to_string(),
+                arch: "x86_64".to_string(),
+                libc: None,
+            }
+        );
         assert!(parse_remote_platform("Linux\nx86_64\n").is_err());
         assert!(parse_remote_platform("Darwin\narm64\nnone\nextra\n").is_err());
     }
