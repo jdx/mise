@@ -1750,6 +1750,17 @@ mod tests {
         assert!(!msg.contains("hunter2"), "{msg}");
     }
 
+    #[tokio::test]
+    async fn test_unresolved_explicit_backend_does_not_take_the_short_names_plugin() {
+        let _settings = crate::test::SettingsGuard::lock();
+        load_tools().await.unwrap();
+        // `tiny` is an installed asdf plugin, which the plain short resolves to.
+        assert_eq!(BackendArg::from("tiny").backend_type(), BackendType::Asdf);
+        let ba = BackendArg::new("tiny".to_string(), Some("bogus:owner/repo".to_string()));
+        assert_eq!(ba.backend_type(), BackendType::Unknown);
+        assert!(get(&ba).is_none());
+    }
+
     fn create_test_backend_arg(tool: &str) -> Arc<BackendArg> {
         Arc::new(BackendArg::new_raw(
             tool.to_string(),

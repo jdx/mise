@@ -598,6 +598,13 @@ impl BackendArg {
             return BackendType::Unknown;
         }
 
+        // An explicit identifier whose backend prefix did not resolve must not
+        // take the backend recorded or configured for its short name: that is
+        // a different backend than the one selected.
+        if self.has_explicit_backend() && full.contains(':') {
+            return BackendType::Unknown;
+        }
+
         // Legacy install state may have a backend type without a full
         // identifier. Keep it as a fallback when `full()` was inconclusive.
         if !self.short.contains(':')
