@@ -198,14 +198,33 @@ fn tag_end(tag: &str, close: &str, tera_v1: impl Fn() -> bool) -> Option<usize> 
 /// after the first `{% endraw %}` that follows, or the end of `text` when none does. Tera outputs
 /// everything in between as text, so no tag opens there, whatever it looks like.
 pub fn raw_block_end(text: &str) -> Option<usize> {
+    raw_block(text).map(|block| block.end)
+}
+
+/// A `{% raw %}` block at the start of a text ([`raw_block`]), as offsets into that text.
+#[derive(Debug, PartialEq)]
+pub struct RawBlock {
+    /// Between the `{% raw %}` and `{% endraw %}` tags: the text Tera outputs as written.
+    pub body: std::ops::Range<usize>,
+    /// Just after the `{% endraw %}`, or the end of the text when the block has none.
+    pub end: usize,
+}
+
+/// The `{% raw %}` block that `text` starts with, if it starts with one ([`raw_block_end`]).
+pub fn raw_block(text: &str) -> Option<RawBlock> {
     static RAW_OPEN: Lazy<Regex> = Lazy::new(|| Regex::new(r"^\{%-?\s*raw\s*-?%\}").unwrap());
     static RAW_CLOSE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\{%-?\s*endraw\s*-?%\}").unwrap());
     let open = RAW_OPEN.find(text)?;
-    Some(
-        RAW_CLOSE
-            .find(&text[open.end()..])
-            .map_or(text.len(), |close| open.end() + close.end()),
-    )
+    Some(match RAW_CLOSE.find(&text[open.end()..]) {
+        Some(close) => RawBlock {
+            body: open.end()..open.end() + close.start(),
+            end: open.end() + close.end(),
+        },
+        None => RawBlock {
+            body: open.end()..text.len(),
+            end: text.len(),
+        },
+    })
 }
 
 pub enum TeraEngine {

@@ -336,3 +336,17 @@ fn test_raw_block_end() {
     assert_eq!(raw_block_end("{% if raw %}"), None);
     assert_eq!(raw_block_end("{{ raw }}"), None);
 }
+
+#[test]
+fn test_raw_block_body() {
+    let block = |body, end| Some(RawBlock { body, end });
+    assert_eq!(raw_block("{% raw %}{{x{% endraw %}rest"), block(9..12, 24));
+    assert_eq!(
+        raw_block("{%- raw -%}{{x{%- endraw -%}rest"),
+        block(11..14, 28)
+    );
+    // an unclosed block runs to the end of the text
+    assert_eq!(raw_block("{%raw%}{{x"), block(7..10, 10));
+    assert_eq!(raw_block("{% raw %}{% endraw %}"), block(9..9, 21));
+    assert_eq!(raw_block("a{% raw %}"), None);
+}

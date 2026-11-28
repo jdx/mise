@@ -220,21 +220,36 @@ enum Piece {
 ///   end of the name.
 ///   A `$` before anything else is written text, and so is a `$` before a template tag, which
 ///   renders first. With `shell_expand` off (`env_shell_expand`), every `$` is written text.
+/// - The body of a `{% raw %}` block renders as it is written, so it is written text and no
+///   template tag opens in it, as the other template scans read it ([`crate::tera::raw_block`]).
+///   Its `$` syntax is still read, since `$VAR`s expand after the render. The `{% raw %}` and
+///   `{% endraw %}` around it are tags.
 fn template_pieces(input: &str, shell_expand: bool) -> Vec<(Piece, std::ops::Range<usize>)> {
     let bytes = input.as_bytes();
     let mut pieces = Vec::new();
     let mut text_start = 0;
     let mut i = 0;
+    // Where the body of the raw block being read ends, while in one.
+    let mut raw_end: Option<usize> = None;
     while i < bytes.len() {
+        if raw_end.is_some_and(|end| i >= end) {
+            raw_end = None;
+        }
         let found = match bytes[i] {
-            b'{' if is_tag_open(bytes, i) => {
+            b'{' if raw_end.is_none() && is_tag_open(bytes, i) => {
                 let piece = if bytes[i + 1] == b'{' {
                     Piece::Substituted
                 } else {
                     Piece::Tag
                 };
                 let close = tag_close(bytes[i + 1]);
-                let mut end = template_tag_end(input, i);
+                let mut end = match crate::tera::raw_block(&input[i..]) {
+                    Some(raw) => {
+                        raw_end = Some(i + raw.body.end);
+                        i + raw.body.start
+                    }
+                    None => template_tag_end(input, i),
+                };
                 let tag = &input[i..end];
                 let mut start = i;
                 if bytes.get(i + 2) == Some(&b'-') {
@@ -250,8 +265,9 @@ fn template_pieces(input: &str, shell_expand: bool) -> Vec<(Piece, std::ops::Ran
                     i += 2;
                     continue;
                 }
-                Some(b'{') if !is_tag_open(bytes, i + 1) => {
-                    let end = braced_expr_end(input, i + 2).map_or(input.len(), |end| end + 1);
+                Some(b'{') if raw_end.is_some() || !is_tag_open(bytes, i + 1) => {
+                    let end =
+                        braced_expr_end(input, i + 2, raw_end).map_or(input.len(), |end| end + 1);
                     Some((Piece::Substituted, i, end))
                 }
                 Some(&b) if is_var_start(b.into()) => {
@@ -306,15 +322,26 @@ fn template_tag_end(input: &str, at: usize) -> usize {
 
 /// Where the `}` that closes a `${` whose body starts at `start` is, as [`read_braced_expr`]
 /// finds it once the template has rendered: a template tag in the body, such as the fallback in
-/// `${P:-{{ env.DEFAULT }}}`, renders first, so its braces do not close the expression.
-fn braced_expr_end(input: &str, start: usize) -> Option<usize> {
+/// `${P:-{{ env.DEFAULT }}}`, renders first, so its braces do not close the expression. The
+/// body of a `{% raw %}` block renders as it is written, so its braces do. `raw_end` is where the
+/// body of the raw block that `start` is in ends, when it is in one.
+fn braced_expr_end(input: &str, start: usize, mut raw_end: Option<usize>) -> Option<usize> {
     let bytes = input.as_bytes();
     let mut depth = 1;
     let mut command_depth = 0;
     let mut i = start;
     while i < bytes.len() {
-        if is_tag_open(bytes, i) {
-            i = template_tag_end(input, i);
+        if raw_end.is_some_and(|end| i >= end) {
+            raw_end = None;
+        }
+        if raw_end.is_none() && is_tag_open(bytes, i) {
+            match crate::tera::raw_block(&input[i..]) {
+                Some(raw) => {
+                    raw_end = Some(i + raw.body.end);
+                    i += raw.body.start;
+                }
+                None => i = template_tag_end(input, i),
+            }
             continue;
         }
         let next = bytes.get(i + 1);
@@ -322,7 +349,7 @@ fn braced_expr_end(input: &str, start: usize) -> Option<usize> {
             b'(' if command_depth > 0 => command_depth += 1,
             b')' if command_depth > 0 => command_depth -= 1,
             _ if command_depth > 0 => {}
-            b'$' if next == Some(&b'{') && !is_tag_open(bytes, i + 1) => {
+            b'$' if next == Some(&b'{') && (raw_end.is_some() || !is_tag_open(bytes, i + 1)) => {
                 depth += 1;
                 i += 1;
             }
@@ -2208,6 +2235,97 @@ mod tests {
         let wrapped = marks.wrap_substitutions("a*{# c #}");
         assert_eq!(marks.strip(&wrapped), "a*{# c #}");
         assert_eq!(SubstitutionMarks::strip_any(&wrapped), "a*{# c #}");
+    }
+
+    /// The body of a `{% raw %}` block is text the entry writes, as the other template scans
+    /// read it: no tag opens in it, and a `*` in it makes a pattern. Its `$VAR`s still expand.
+    #[test]
+    fn test_raw_block_body_is_written() {
+        use Piece::*;
+        let pieces = |input: &str| template_pieces(input, true);
+        assert_eq!(
+            pieces("{% raw %}{{label{% endraw %}/*.env"),
+            vec![
+                (Tag, 0..9),
+                (Written, 9..16),
+                (Tag, 16..28),
+                (Written, 28..34)
+            ]
+        );
+        assert!(writes_a_star("{% raw %}{{label{% endraw %}/*.env", true));
+        assert!(writes_a_star("{% raw %}{{ '*' }}{% endraw %}.env", true));
+        assert!(!writes_a_star(
+            "{% raw %}{{label{% endraw %}{{ '*' }}",
+            true
+        ));
+        // a `$VAR` in the body expands after the render, and a `${` ends at the first brace
+        // that closes it, since a tag does not open in the body
+        assert_eq!(
+            pieces("{% raw %}$HOME/{{x{% endraw %}"),
+            vec![
+                (Tag, 0..9),
+                (Substituted, 9..14),
+                (Written, 14..18),
+                (Tag, 18..30)
+            ]
+        );
+        assert_eq!(
+            pieces("{% raw %}${A:-{{b}}{% endraw %}"),
+            vec![
+                (Tag, 0..9),
+                (Substituted, 9..18),
+                (Written, 18..19),
+                (Tag, 19..31)
+            ]
+        );
+        assert_eq!(
+            template_pieces("{% raw %}$HOME/{{x{% endraw %}", false),
+            vec![(Tag, 0..9), (Written, 9..18), (Tag, 18..30)]
+        );
+        // a raw block in a `${` fallback is text too
+        assert_eq!(
+            pieces("${A:-{% raw %}}{% endraw %}}"),
+            vec![(Substituted, 0..15), (Tag, 15..27), (Written, 27..28)]
+        );
+        // the `-` of either tag trims the whitespace next to it
+        assert_eq!(
+            pieces("a {%- raw -%} b {%- endraw -%} c"),
+            vec![
+                (Written, 0..1),
+                (Tag, 1..14),
+                (Written, 14..15),
+                (Tag, 15..31),
+                (Written, 31..32),
+            ]
+        );
+        // an unclosed block makes the rest of the entry its body
+        assert_eq!(
+            pieces("{% raw %}{{a/*.env"),
+            vec![(Tag, 0..9), (Written, 9..18)]
+        );
+        assert!(writes_a_star("{% raw %}{{a/*.env", true));
+        // and once rendered, a `{` the body writes is a glob character like any written one
+        let mut engine = TeraEngine::V2(Box::default());
+        assert_eq!(
+            split_path(
+                &mut engine,
+                "d/{% raw %}{{label{% endraw %}/*.env",
+                &glob_context(),
+                true
+            )
+            .unwrap(),
+            Some(("d/".to_string(), "{{label/*.env".to_string()))
+        );
+        assert_eq!(
+            split_path(
+                &mut engine,
+                "{% raw %}$P{% endraw %}/*.env",
+                &glob_context(),
+                true
+            )
+            .unwrap(),
+            Some(("dev/".to_string(), "*.env".to_string()))
+        );
     }
 
     /// A `$VAR` that tags join is a substitution once rendered: in the glob it is an error, and
