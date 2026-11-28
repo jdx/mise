@@ -415,8 +415,36 @@ pub(crate) fn selected_node_dependency(request: &ToolRequest) -> Result<Option<T
         selector,
         request.source().clone(),
     )?;
-    dependency.set_lockfile_scope(request.lockfile_scope().clone());
+    // mise.lock does not record the Node an npm tool selects, so the request owns no
+    // lockfile: `--locked` must not demand an entry that `mise lock` never writes, and the
+    // project's own `node` pin must not decide which Node this tool runs on.
+    dependency.set_lockfile_scope(crate::toolset::tool_request::LockfileScope::NoOwner);
     Ok(Some(dependency))
+}
+
+/// Refuse a locked install of an npm tool that selects its own Node.
+///
+/// `mise lock` does not record that Node yet, so locked mode has no pinned download for it.
+/// Say so up front rather than failing later on a Node the lockfile cannot name.
+pub(crate) fn ensure_node_option_unlocked(
+    config: &Config,
+    request: &ToolRequest,
+    invocation_locked: bool,
+) -> Result<()> {
+    if selected_node_dependency(request)?.is_none() || !Settings::get().lockfile_enabled() {
+        return Ok(());
+    }
+    let locked = invocation_locked
+        || config.invocation_locked_for(request.source(), Settings::get().locked)
+        || request.tool_config_locked(config, true);
+    if locked {
+        eyre::bail!(
+            "{} sets the node option, which locked mode does not support yet: mise.lock does not record the selected Node\n\
+             hint: install without --locked, or remove the node option",
+            request.ba().short
+        );
+    }
+    Ok(())
 }
 
 /// The file in an install directory that records the Node its executables were bound to.
@@ -434,15 +462,35 @@ pub(crate) struct BoundNode {
 }
 
 impl BoundNode {
-    /// The binding recorded in `install_path`, if its executables were bound to a Node.
-    pub(crate) fn read(install_path: &Path) -> Option<Self> {
-        let contents = std::fs::read_to_string(bound_node_receipt(install_path)).ok()?;
-        let value: Value = serde_json::from_str(&contents).ok()?;
-        Some(Self {
-            request: value.get("request")?.as_str()?.to_string(),
-            version: value.get("version")?.as_str()?.to_string(),
-            node: PathBuf::from(value.get("node")?.as_str()?),
-        })
+    /// The binding recorded in `install_path`: `None` when its executables were not bound to
+    /// a Node, an error when the record exists but cannot be read.
+    pub(crate) fn read(install_path: &Path) -> Result<Option<Self>> {
+        let receipt = bound_node_receipt(install_path);
+        let contents = match std::fs::read_to_string(&receipt) {
+            Ok(contents) => contents,
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(err) => {
+                return Err(eyre::Report::new(err)
+                    .wrap_err(format!("failed to read {}", receipt.display())));
+            }
+        };
+        let value: Value = serde_json::from_str(&contents).map_err(|err| {
+            eyre::Report::new(err).wrap_err(format!("invalid Node binding {}", receipt.display()))
+        })?;
+        let field = |name: &str| {
+            value
+                .get(name)
+                .and_then(Value::as_str)
+                .map(str::to_string)
+                .ok_or_else(|| {
+                    eyre::eyre!("invalid Node binding {}: missing {name}", receipt.display())
+                })
+        };
+        Ok(Some(Self {
+            request: field("request")?,
+            version: field("version")?,
+            node: PathBuf::from(field("node")?),
+        }))
     }
 
     fn write(&self, install_path: &Path) -> Result<()> {
@@ -461,9 +509,10 @@ impl BoundNode {
 /// Whether an install's executables are bound the way `selected` asks: to a Node that
 /// still exists for the same request, or to none when nothing is selected.
 fn bound_node_matches(install_path: &Path, selected: Option<&str>) -> bool {
+    // An unreadable record matches nothing, so the reinstall rewrites it.
     match (BoundNode::read(install_path), selected) {
-        (None, None) => true,
-        (Some(bound), Some(selected)) => bound.request == selected && bound.node.exists(),
+        (Ok(None), None) => true,
+        (Ok(Some(bound)), Some(selected)) => bound.request == selected && bound.node.exists(),
         _ => false,
     }
 }
@@ -2898,6 +2947,13 @@ impl NPMBackend {
                     self.display_tool_name()
                 )
             })?;
+        // The executable is found through the runtime path, which for an unlocked request
+        // is a link such as `installs/node/24` that moves when a newer 24.x installs. Name
+        // the installation itself so the tool keeps the Node it was bound to.
+        let node = match node.strip_prefix(selected.runtime_path()) {
+            Ok(relative) => selected.install_path().join(relative),
+            Err(_) => node,
+        };
         Ok(Some(BoundNode {
             request: request.to_string(),
             version: selected.version.clone(),
@@ -3884,7 +3940,7 @@ mod tests {
             node: node.clone(),
         };
         bound.write(install.path()).unwrap();
-        assert_eq!(BoundNode::read(install.path()), Some(bound));
+        assert_eq!(BoundNode::read(install.path()).unwrap(), Some(bound));
         assert!(bound_node_matches(install.path(), Some("24")));
         assert!(!bound_node_matches(install.path(), Some("26")));
         assert!(!bound_node_matches(install.path(), None));

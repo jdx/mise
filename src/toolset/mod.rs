@@ -1809,12 +1809,17 @@ fn receipt_legacy_install_name(resolved: &Path, installs: &Path) -> Option<Strin
 /// An `npm:` tool with a `node` option runs the Node it was installed with, which can be
 /// older than the one its request resolves to now. Keep that one until the tool is
 /// reinstalled and bound to another.
-fn keep_bound_node(tv: &ToolVersion, source: &Path, needed: &mut NeededVersions) {
+fn keep_bound_node(tv: &ToolVersion, source: &Path, needed: &mut NeededVersions) -> Result<()> {
     if tv.ba().backend_type() != crate::backend::backend_type::BackendType::Npm {
-        return;
+        return Ok(());
     }
-    let Some(bound) = crate::backend::npm::BoundNode::read(&tv.install_path()) else {
-        return;
+    let install_path = tv.install_path();
+    // Launchers name the bound Node directly, so prune must not guess when the record of
+    // which one cannot be read: deleting that Node would break the tool.
+    let Some(bound) =
+        crate::backend::npm::BoundNode::read(&install_path).wrap_err("cannot safely prune")?
+    else {
+        return Ok(());
     };
     let node_ba = BackendArg::from("node");
     let identity_installs = crate::install_layout::resolver::installs_of(&node_ba);
@@ -1823,14 +1828,20 @@ fn keep_bound_node(tv: &ToolVersion, source: &Path, needed: &mut NeededVersions)
     {
         Some(ReceiptPython::Identity(dir)) => {
             let Some(dir_name) = crate::install_layout::resolver::dir_name_of(&dir) else {
-                return;
+                bail!(
+                    "cannot safely prune: {} is bound to an unkeyable Node installation {}",
+                    tv.ba().short,
+                    dir.display()
+                );
             };
             (String::new(), dir_name)
         }
         Some(ReceiptPython::Legacy(name)) => (node_ba.short.to_string(), name),
-        None => return,
+        // A Node that is gone, or outside this user's installs, has nothing left to keep.
+        None => return Ok(()),
     };
     needed.entry(key).or_default().insert(source.to_path_buf());
+    Ok(())
 }
 
 /// The interpreter and version a receipt records, or `None` for one that names
@@ -1887,7 +1898,7 @@ async fn collect_needed_versions(
             .or_default()
             .insert(source.to_path_buf());
         keep_uv_python_variants(&tv, source, needed)?;
-        keep_bound_node(&tv, source, needed);
+        keep_bound_node(&tv, source, needed)?;
         for runtime in
             crate::install_context::install_dependency_declarations(&tv.request).versioned()
         {

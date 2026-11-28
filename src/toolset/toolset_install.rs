@@ -354,6 +354,9 @@ impl Toolset {
         // key, rather than just their backend, so that private runtimes are not
         // returned to callers such as `mise use` and persisted as user tools.
         let private_dependency_keys = self.add_private_install_dependencies(&mut versions)?;
+        for request in &versions {
+            crate::backend::npm::ensure_node_option_unlocked(config, request, opts.locked)?;
+        }
         ensure_compatible_install_requests(&versions)?;
         ensure_safe_install_options(&versions)?;
 

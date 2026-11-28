@@ -37,5 +37,30 @@ mise install
 assert_contains "cat '$install_dir/.mise-node.json'" '"request": "20.12.2"'
 assert_contains "cat '$install_dir/node_modules/.bin/cowsay'" "$MISE_DATA_DIR/installs/node/20.12.2/bin/node"
 
+# A prefix request binds the installation it resolved to, not the `node/20`
+# link that moves when a newer 20.x installs.
+cat >mise.toml <<'EOF2'
+[tools]
+"npm:cowsay" = { version = "1.6.0", node = "20" }
+EOF2
+mise install
+assert_contains "cat '$install_dir/.mise-node.json'" '"request": "20"'
+assert_succeed "test -L '$MISE_DATA_DIR/installs/node/20'"
+assert_not_contains "cat '$install_dir/node_modules/.bin/cowsay'" "$MISE_DATA_DIR/installs/node/20/bin/node"
+
+# A binding prune cannot read stops prune instead of risking the Node it names.
+echo "not json" >"$install_dir/.mise-node.json"
+assert_fail_contains "mise prune --yes" "cannot safely prune"
+
 # Other installers cannot bind executables, so the option is an error there.
 assert_fail_contains "MISE_NPM_PACKAGE_MANAGER=npm mise install --force" "needs the embedded aube installer"
+
+# mise.lock does not record the selected Node yet, so locked mode refuses the
+# option up front instead of failing on a Node download it cannot verify.
+mkdir locked
+cat >locked/mise.toml <<'EOF2'
+[tools]
+"npm:cowsay" = { version = "1.6.0", node = "20.11.1" }
+EOF2
+MISE_LOCKFILE=1 mise -C locked lock
+assert_fail_contains "MISE_LOCKFILE=1 MISE_LOCKED=1 mise -C locked install --force" "locked mode does not support yet"

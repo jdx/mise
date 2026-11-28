@@ -458,7 +458,8 @@ while a tool uses it.
 - The binding is fixed when the tool installs. Changing or removing `node`
   reinstalls the tool; a newer Node matching the same request takes effect on
   the next reinstall.
-- The selected Node is not yet recorded in `mise.lock`.
+- The selected Node is not yet recorded in `mise.lock`, so locked mode
+  (`--locked`, `locked = true` or `tool_config.locked`) refuses the option.
 
 ## Settings
 
