@@ -1,6 +1,7 @@
 //! Runtime dependency closure resolution, topologically sorted (deps first).
 
 use std::borrow::Cow;
+use std::collections::hash_map::Entry;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use eyre::{Report, bail};
@@ -16,6 +17,7 @@ use mise_settings::Settings;
 pub(super) struct ResolvedFormula {
     pub formula: Formula,
     pub tap_raw_base: Option<String>,
+    pub tap_inferred: bool,
     /// directly requested in config (vs pulled in as a dependency)
     pub on_request: bool,
 }
@@ -186,8 +188,7 @@ async fn resolve_closure(
     provision_ruby: bool,
 ) -> Result<Vec<ResolvedFormula>> {
     let host_tag = tag::host_tag();
-    let mut formulae: HashMap<FormulaKey, Formula> = HashMap::new();
-    let mut raw_bases: HashMap<FormulaKey, Option<String>> = HashMap::new();
+    let mut formulae: HashMap<FormulaKey, ResolvedFormula> = HashMap::new();
     // alias (or canonical name) -> canonical name, so repeated alias
     // occurrences in the dep graph don't re-fetch from the API
     let mut canonical: HashMap<FormulaKey, FormulaKey> = HashMap::new();
@@ -232,7 +233,7 @@ async fn resolve_closure(
 
         let mut failed = vec![];
         for (_, key, requested, result) in fetched {
-            let (formula, effective_tap_name, effective_tap_url) = match result {
+            let (mut formula, effective_tap_name, effective_tap_url) = match result {
                 Ok(resolved) => resolved,
                 Err(err) => {
                     failed.push((key, requested, err));
@@ -272,13 +273,21 @@ async fn resolve_closure(
                     ))
                     .or_insert_with(|| canonical_key.clone());
             }
-            if !formulae.contains_key(&canonical_key) {
+            if let Entry::Vacant(entry) = formulae.entry(canonical_key.clone()) {
+                let tap_inferred = formula.tap.is_none() && effective_tap_name.is_some();
+                if tap_inferred {
+                    formula.tap.clone_from(&effective_tap_name);
+                }
                 let tag = dep_tag(&formula, &host_tag);
                 for dep in install_deps(&formula, &tag) {
                     queue.push((canonical_key.dependency(dep, tap_urls), false));
                 }
-                raw_bases.insert(canonical_key.clone(), tap_raw_base(&canonical_key));
-                formulae.insert(canonical_key.clone(), formula);
+                entry.insert(ResolvedFormula {
+                    formula,
+                    tap_raw_base: tap_raw_base(&canonical_key),
+                    tap_inferred,
+                    on_request: false,
+                });
             }
             if requested {
                 on_request.insert(canonical_key);
@@ -298,8 +307,7 @@ async fn resolve_closure(
     struct VisitContext<'a> {
         host_tag: &'a str,
         tap_urls: &'a BTreeMap<String, String>,
-        formulae: &'a HashMap<FormulaKey, Formula>,
-        raw_bases: &'a HashMap<FormulaKey, Option<String>>,
+        formulae: &'a HashMap<FormulaKey, ResolvedFormula>,
         canonical: &'a HashMap<FormulaKey, FormulaKey>,
         done: &'a mut HashSet<FormulaKey>,
         visiting: &'a mut Vec<FormulaKey>,
@@ -316,12 +324,12 @@ async fn resolve_closure(
             debug!("dependency cycle involving {}, breaking", key.name);
             return Ok(());
         }
-        let Some(formula) = ctx.formulae.get(key) else {
+        let Some(resolved) = ctx.formulae.get(key) else {
             bail!("unresolved dependency: {}", key.name);
         };
         ctx.visiting.push(key.clone());
-        let tag = dep_tag(formula, ctx.host_tag);
-        for dep in install_deps(formula, &tag) {
+        let tag = dep_tag(&resolved.formula, ctx.host_tag);
+        for dep in install_deps(&resolved.formula, &tag) {
             let dep_key = key.dependency(dep, ctx.tap_urls);
             let dep_key = ctx.canonical.get(&dep_key).cloned().unwrap_or(dep_key);
             visit(&dep_key, ctx)?;
@@ -329,9 +337,8 @@ async fn resolve_closure(
         ctx.visiting.pop();
         ctx.done.insert(key.clone());
         ctx.sorted.push(ResolvedFormula {
-            formula: ctx.formulae[key].clone(),
-            tap_raw_base: ctx.raw_bases.get(key).cloned().flatten(),
             on_request: ctx.on_request.contains(key),
+            ..resolved.clone()
         });
         Ok(())
     }
@@ -346,7 +353,6 @@ async fn resolve_closure(
         host_tag: &host_tag,
         tap_urls,
         formulae: &formulae,
-        raw_bases: &raw_bases,
         canonical: &canonical,
         done: &mut done,
         visiting: &mut visiting,
@@ -396,16 +402,13 @@ async fn fetch_formula_with_fallback(
     )
     .await
     {
-        Ok(mut formula) => {
+        Ok(formula) => {
             let effective_tap_name = match formula.tap.as_deref() {
                 Some("homebrew/core") => None,
                 Some(tap) => Some(tap.to_string()),
                 None => key.tap_name.clone(),
             };
             let effective_tap_url = effective_tap_name.as_ref().and(key.tap_url.clone());
-            if formula.tap.is_none() {
-                formula.tap.clone_from(&effective_tap_name);
-            }
             Ok((formula, effective_tap_name, effective_tap_url))
         }
         Err(err) if key.tap_name.is_some() && api::split_tap_name(&key.name).is_none() => {
@@ -455,6 +458,7 @@ mod tests {
         ResolvedFormula {
             formula: serde_json::from_value(json).unwrap(),
             tap_raw_base: None,
+            tap_inferred: false,
             on_request: false,
         }
     }

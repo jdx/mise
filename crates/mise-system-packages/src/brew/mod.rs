@@ -642,6 +642,7 @@ mod tests {
             }))
             .unwrap(),
             tap_raw_base: None,
+            tap_inferred: false,
             on_request: true,
         }
     }

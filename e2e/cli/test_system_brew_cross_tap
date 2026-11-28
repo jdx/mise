@@ -51,3 +51,15 @@ output="$(mise bootstrap packages apply --dry-run brew:example/main/root brew:ex
 assert_contains_text "$output" "build child/2 from source (requested"
 child_count="$(grep -c '^build child/' <<<"$output")"
 [[ $child_count == "1" ]] || fail "expected one child build, got $child_count"
+
+# Older mise used a core receipt when the tap's metadata omitted its tap.
+# Prune must keep that configured dependency and still remove unused formulae.
+mkdir -p "$MISE_SYSTEM_BREW_PREFIX"/{Cellar/child/2,Cellar/obsolete/1,opt}
+for keg in child/2 obsolete/1; do
+  printf '%s\n' '{"installed_on_request":true,"source":{"tap":"homebrew/core"}}' \
+    >"$MISE_SYSTEM_BREW_PREFIX/Cellar/$keg/INSTALL_RECEIPT.json"
+  ln -s "../Cellar/$keg" "$MISE_SYSTEM_BREW_PREFIX/opt/${keg%/*}"
+done
+output="$(mise bootstrap packages prune --manager brew --dry-run)"
+assert_contains_text "$output" "remove brew:obsolete@1"
+assert_not_contains_text "$output" "remove brew:child@2"

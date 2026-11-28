@@ -180,13 +180,16 @@ async fn configured_package_closure(
     if configured.is_empty() {
         return Ok(HashSet::new());
     }
-    Ok(
-        resolve::resolve_closure_with_taps(configured, tap_urls, false)
-            .await?
-            .into_iter()
-            .map(|rf| formula_package_name(&rf.formula))
-            .collect(),
-    )
+    let mut keep = HashSet::new();
+    for rf in resolve::resolve_closure_with_taps(configured, tap_urls, false).await? {
+        // Older mise wrote a core receipt when tap metadata omitted the tap.
+        // Keep that short identity as well as the new qualified identity.
+        if rf.tap_inferred {
+            keep.insert(rf.formula.name.clone());
+        }
+        keep.insert(formula_package_name(&rf.formula));
+    }
+    Ok(keep)
 }
 
 /// The formulae a kept, installed formula still links against. An installed
