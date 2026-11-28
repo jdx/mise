@@ -601,6 +601,13 @@ async fn run_staged(
         }
     }
     argv.push(format!("MISE_TRUSTED_CONFIG_PATHS={project}"));
+    if repository.is_none() || preview_setup {
+        // The staging directory sits in the target's shared /tmp, so config
+        // search stops there: a mise.toml another user left above it is never
+        // loaded. A real repository bootstrap runs in the target's own global
+        // config directory and keeps the target's own ceiling.
+        argv.push(format!("MISE_CEILING_PATHS={staging}"));
+    }
     if let Some(mise_env) = &session.host.mise_env {
         // An explicit empty list selects no environments; the empty value masks the aliases.
         argv.push(format!("MISE_ENV={}", mise_env.join(",")));
@@ -2277,15 +2284,59 @@ impl SshSession<'_> {
         args
     }
 
+    /// Run a remote command and return its stdout. Every caller expects a
+    /// short answer (a path, a version, a platform), so each stream is read
+    /// only up to [`Self::OUTPUT_LIMIT`]: a host that keeps writing ends the
+    /// command with an error instead of filling memory.
     async fn output_async(&self, remote_argv: &[&str]) -> Result<String> {
         let args = self.args(false, remote_argv);
         info!("$ {} {}", self.ssh.display(), shell_words::join(&args));
-        let output = tokio::process::Command::new(&self.ssh)
+        let mut child = tokio::process::Command::new(&self.ssh)
             .args(args)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
             .kill_on_drop(true)
-            .output()
-            .await?;
-        checked_output(output, &self.host.name)
+            .spawn()?;
+        let stdout = child.stdout.take().expect("piped stdout");
+        let stderr = child.stderr.take().expect("piped stderr");
+        // a stream over the limit fails its reader, which ends the join at
+        // once, even while the other stream is still open; returning drops the
+        // child, which kills it
+        let (stdout, stderr) = tokio::try_join!(
+            self.read_limited(stdout, Self::OUTPUT_LIMIT),
+            self.read_limited(stderr, Self::OUTPUT_LIMIT),
+        )?;
+        let status = child.wait().await?;
+        checked_output(
+            Output {
+                status,
+                stdout,
+                stderr,
+            },
+            &self.host.name,
+        )
+    }
+
+    const OUTPUT_LIMIT: u64 = 1024 * 1024;
+
+    /// Read `reader` to its end, failing as soon as it has given more than
+    /// `limit` bytes.
+    async fn read_limited(
+        &self,
+        reader: impl tokio::io::AsyncRead + Unpin,
+        limit: u64,
+    ) -> Result<Vec<u8>> {
+        use tokio::io::AsyncReadExt as _;
+        let mut buf = Vec::new();
+        reader.take(limit + 1).read_to_end(&mut buf).await?;
+        if buf.len() as u64 > limit {
+            bail!(
+                "remote command on '{}' wrote more than {limit} bytes of output",
+                self.host.name
+            );
+        }
+        Ok(buf)
     }
 
     async fn status_with_stdin_async(&self, remote_argv: &[&str], input: File) -> Result<()> {
@@ -2536,6 +2587,51 @@ mod tests {
     fn source_host(source: &Path, excludes: &[&str]) -> Result<RemoteHost> {
         let excludes: Vec<String> = excludes.iter().map(|e| e.to_string()).collect();
         ad_hoc_host("example.test", source.to_path_buf(), &excludes)
+    }
+
+    /// A host that answers a short question with endless output must not
+    /// make mise hold all of it; a normal answer still comes through.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn remote_output_is_read_up_to_a_limit() -> Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+        let temp = tempfile::tempdir()?;
+        let host = source_host(temp.path(), &[])?;
+        let ssh = temp.path().join("ssh");
+        let session = SshSession {
+            relay: false,
+            ssh: ssh.clone(),
+            host: &host,
+            connect_timeout: 5,
+            control_path: None,
+        };
+        for (script, limit_hit) in [
+            ("head -c 3000000 /dev/zero", true),
+            ("head -c 3000000 /dev/zero >&2", true),
+            // the other stream stays open: the limit must still end it
+            ("head -c 3000000 /dev/zero\nexec sleep 60 >/dev/null", true),
+            (
+                "head -c 3000000 /dev/zero >&2\nexec sleep 60 2>/dev/null",
+                true,
+            ),
+            ("echo /home/me", false),
+        ] {
+            fs::write(&ssh, format!("#!/bin/sh\n{script}\n"))?;
+            fs::set_permissions(&ssh, fs::Permissions::from_mode(0o700))?;
+            let result = tokio::time::timeout(
+                std::time::Duration::from_secs(20),
+                session.output_async(&["true"]),
+            )
+            .await
+            .unwrap_or_else(|_| panic!("{script}: still waiting after the limit"));
+            if limit_hit {
+                let err = result.expect_err(script).to_string();
+                assert!(err.contains("more than 1048576 bytes"), "{script}: {err}");
+            } else {
+                assert_eq!(result?, "/home/me\n");
+            }
+        }
+        Ok(())
     }
 
     #[test]
