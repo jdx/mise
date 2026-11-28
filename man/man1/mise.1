@@ -6125,6 +6125,12 @@ Per\-host filtering does not work: Linux and macOS exit with an error,
 and Windows runs the command without network restrictions. See
 https://mise.jdx.dev/sandboxing.html#access\-to\-particular\-hosts
 .TP
+\fB\-\-allow\-connect\-port\fR \fI<PORT>\fR
+Allow outbound TCP connections to PORT on any IP address (Linux 6.7 or later)
+
+Blocks TCP connections to other ports and creation of other IP sockets.
+Repeat to allow multiple ports. Conflicts with \-\-deny\-net and \-\-deny\-all.
+.TP
 \fB\-\-allow\-read\fR \fI<PATH>\fR
 Allow reads from PATH (implies \-\-deny\-read for everything else)
 .TP

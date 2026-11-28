@@ -16,13 +16,14 @@ hooks outside it. To load config you have not reviewed, use
 
 ## Platform support
 
-| Restriction                                                                       | Linux                                   | macOS                                   | Windows          |
-| --------------------------------------------------------------------------------- | --------------------------------------- | --------------------------------------- | ---------------- |
-| Reads and writes (`--deny-read`, `--deny-write`, `--allow-read`, `--allow-write`) | Landlock, Linux 5.13 (writes: 6.2)      | Seatbelt (`sandbox-exec`)               | Not enforced     |
-| All network access (`--deny-net`)                                                 | seccomp, on x86_64 and arm64            | Seatbelt                                | Not enforced     |
-| Access to particular hosts (`--allow-net`)                                        | Not supported; mise exits with an error | Not supported; mise exits with an error | Not enforced     |
-| Connections to Unix sockets (`--deny-unix`, `--allow-unix`)                       | Landlock, Linux 7.1; older kernels fail | Not supported; mise exits with an error | Not enforced     |
-| Environment variables (`--deny-env`, `--allow-env`)                               | Filtered by mise                        | Filtered by mise                        | Filtered by mise |
+| Restriction                                                                       | Linux                                      | macOS                                   | Windows          |
+| --------------------------------------------------------------------------------- | ------------------------------------------ | --------------------------------------- | ---------------- |
+| Reads and writes (`--deny-read`, `--deny-write`, `--allow-read`, `--allow-write`) | Landlock, Linux 5.13 (writes: 6.2)         | Seatbelt (`sandbox-exec`)               | Not enforced     |
+| All network access (`--deny-net`)                                                 | seccomp, on x86_64 and arm64               | Seatbelt                                | Not enforced     |
+| Outbound TCP by port (`--allow-connect-port`)                                     | Landlock 6.7+, seccomp on x86_64 and arm64 | Error                                   | Error            |
+| Access to particular hosts (`--allow-net`)                                        | Not supported; mise exits with an error    | Not supported; mise exits with an error | Not enforced     |
+| Connections to Unix sockets (`--deny-unix`, `--allow-unix`)                       | Landlock, Linux 7.1; older kernels fail    | Not supported; mise exits with an error | Not enforced     |
+| Environment variables (`--deny-env`, `--allow-env`)                               | Filtered by mise                           | Filtered by mise                        | Filtered by mise |
 
 On Windows, mise filters the environment and warns that file, network and
 process restrictions are not supported, then runs the command without them. In a container, the host kernel provides Landlock and seccomp; if
@@ -58,23 +59,24 @@ exist before the command starts ([why](#linux)).
 
 ## Flags and task properties {#cli-flags}
 
-Each flag works with `mise exec` and `mise run`, and has a task property with
-the same meaning. Repeat an `--allow-*` flag to allow more paths or variables.
+Most flags work with `mise exec` and `mise run` and have an equivalent task
+property. Repeat an `--allow-*` flag to allow more values.
 
-| Flag                   | Task property      | Effect                                                                                           |
-| ---------------------- | ------------------ | ------------------------------------------------------------------------------------------------ |
-| `--deny-all`           | `deny_all`         | Turn on the read, write, network and environment restrictions                                    |
-| `--deny-read`          | `deny_read`        | Block reads, except the [implicit paths](#implicit-access)                                       |
-| `--deny-write`         | `deny_write`       | Block writes, except to `/tmp` and `/dev`                                                        |
-| `--deny-net`           | `deny_net`         | Block network sockets and io_uring; Unix sockets still work (see `--deny-unix`)                  |
-| `--deny-env`           | `deny_env`         | Pass only the [essential variables](#environment-variables)                                      |
-| `--allow-read=<path>`  | `allow_read`       | Allow reads under a path, and block other reads                                                  |
-| `--allow-write=<path>` | `allow_write`      | Allow reads and writes under a path, and block other writes                                      |
-| `--deny-unix`          | `deny_unix`        | Block connections to Unix sockets, except those allowed (Linux 7.1 or later)                     |
-| `--allow-unix=<path>`  | `allow_unix`       | Allow connections to a socket, or to every socket under a directory, and block other sockets     |
-| `--allow-env=<var>`    | `allow_env`        | Pass a variable or a `*` pattern, and block other variables                                      |
-| `--allow-net=<host>`   | `allow_net`        | Does not work on any platform; see [access to particular hosts](#access-to-particular-hosts)     |
-|                        | `pass_through_env` | Experimental. Pass a variable without adding it to the task cache key; does not filter by itself |
+| Flag                          | Task property      | Effect                                                                                           |
+| ----------------------------- | ------------------ | ------------------------------------------------------------------------------------------------ |
+| `--deny-all`                  | `deny_all`         | Turn on the read, write, network and environment restrictions                                    |
+| `--deny-read`                 | `deny_read`        | Block reads, except the [implicit paths](#implicit-access)                                       |
+| `--deny-write`                | `deny_write`       | Block writes, except to `/tmp` and `/dev`                                                        |
+| `--deny-net`                  | `deny_net`         | Block network sockets and io_uring; Unix sockets still work (see `--deny-unix`)                  |
+| `--deny-env`                  | `deny_env`         | Pass only the [essential variables](#environment-variables)                                      |
+| `--allow-read=<path>`         | `allow_read`       | Allow reads under a path, and block other reads                                                  |
+| `--allow-write=<path>`        | `allow_write`      | Allow reads and writes under a path, and block other writes                                      |
+| `--deny-unix`                 | `deny_unix`        | Block connections to Unix sockets, except those allowed (Linux 7.1 or later)                     |
+| `--allow-unix=<path>`         | `allow_unix`       | Allow connections to a socket, or to every socket under a directory, and block other sockets     |
+| `--allow-env=<var>`           | `allow_env`        | Pass a variable or a `*` pattern, and block other variables                                      |
+| `--allow-net=<host>`          | `allow_net`        | Does not work on any platform; see [access to particular hosts](#access-to-particular-hosts)     |
+| `--allow-connect-port=<port>` |                    | Allow [outbound TCP by port](#access-to-particular-tcp-ports-on-linux) with `mise exec` on Linux |
+|                               | `pass_through_env` | Experimental. Pass a variable without adding it to the task cache key; does not filter by itself |
 
 ## Sandbox every command {#default-restrictions}
 
@@ -217,8 +219,25 @@ particular hosts:
   accepts only `*` or `localhost` as a network host.
 - On Windows, mise warns and runs the command without network restrictions.
 
-Use `--deny-net` to block internet sockets, and a firewall or proxy outside mise
-when a command may reach only certain hosts.
+Use a firewall outside mise when a command may reach only certain hosts.
+On Linux, mise can also [allow outbound TCP by port](#access-to-particular-tcp-ports-on-linux).
+
+## Access to particular TCP ports on Linux
+
+Use `mise exec --allow-connect-port=<port> -- <command>` to allow outbound
+TCP connections only to the given destination port. Repeat the flag to allow
+multiple ports. This requires Landlock ABI 4 (Linux 6.7 or later) and seccomp
+support on x86_64 or arm64. The command fails to start if mise cannot enforce
+the restrictions. This flag conflicts with `--deny-net`, `--deny-all`, and
+`--allow-net`, including deny settings from configuration.
+
+An allowed port is reachable on **any IPv4 or IPv6 address**, including
+remote hosts. Use an external firewall or network isolation to restrict the
+destination address to a local proxy. The sandbox denies explicit TCP binds,
+creation of UDP and other IP sockets, and io_uring. Unix sockets are controlled
+separately by `--deny-unix` and `--allow-unix`. Launch the command without
+inherited network sockets if it should only use connections it opens under
+this policy.
 
 ## Platform details
 
@@ -231,7 +250,7 @@ cannot stop a command from truncating files; on such a kernel `--deny-write`,
 sandbox. If Landlock is unavailable or cannot apply the rules, the command
 fails.
 
-Network rules use a
+`--deny-net` uses a
 [seccomp-bpf](https://www.kernel.org/doc/html/latest/userspace-api/seccomp_filter.html)
 filter that allows Unix and netlink sockets and blocks every other socket
 family. It also blocks io_uring, which can create sockets the filter does not

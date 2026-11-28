@@ -49,6 +49,10 @@ such as `/usr/bin/env node` or a `-c` command, finds those entries first. Set
   Per-host filtering does not work: Linux and macOS exit with an error,
   and Windows runs the command without network restrictions. See
   <https://mise.jdx.dev/sandboxing.html#access-to-particular-hosts>
+- **`--allow-connect-port <PORT>`** — Allow outbound TCP connections to PORT on any IP address (Linux 6.7 or later)
+
+  Blocks TCP connections to other ports and creation of other IP sockets.
+  Repeat to allow multiple ports. Conflicts with --deny-net and --deny-all.
 - **`--allow-read <PATH>`** — Allow reads from PATH (implies --deny-read for everything else)
 - **`--allow-write <PATH>`** — Allow writes to PATH (implies --deny-write for everything else)
 - **`--allow-unix <PATH>`** — Allow connections to the Unix socket at PATH, or to every socket under it if PATH is a directory (implies --deny-unix for every other socket)

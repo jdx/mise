@@ -2128,6 +2128,7 @@ impl Run {
                     allow_write: self.allow_write.clone(),
                     allow_list_dirs: vec![],
                     allow_net: self.allow_net.clone(),
+                    allow_connect_port: vec![],
                     allow_unix: self.allow_unix.clone(),
                     allow_env: self.allow_env.clone(),
                     pass_through_env: vec![],

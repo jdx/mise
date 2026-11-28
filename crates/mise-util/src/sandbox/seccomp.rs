@@ -38,6 +38,13 @@ fn native_and_x32(number: i64) -> Vec<i64> {
     return vec![number];
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum NetworkPolicy {
+    Unrestricted,
+    Blocked,
+    TcpOnly,
+}
+
 /// Apply the sandbox's seccomp-bpf filter.
 ///
 /// Always refuses the ioctls that push input into a terminal (TIOCSTI) or
@@ -46,19 +53,21 @@ fn native_and_x32(number: i64) -> Vec<i64> {
 ///
 /// With `deny_net`, blocks every socket family except AF_UNIX (needed by many
 /// tools) and AF_NETLINK, and blocks io_uring, which can create sockets without
-/// entering socket(). Based on the syscall list from OpenAI's
+/// entering socket(). The port allowlist mode also permits ordinary IPv4 and
+/// IPv6 TCP sockets, whose connections are checked by Landlock. Based on the
+/// syscall list from OpenAI's
 /// codex-linux-sandbox.
 ///
 /// The filter kills a process that makes a system call through another
 /// architecture's ABI, such as a 32-bit program on x86_64, because its numbers
 /// would mean other calls.
-pub(super) fn apply_seccomp_filter(deny_net: bool, deny_process: bool) -> Result<()> {
+pub(super) fn apply_seccomp_filter(network: NetworkPolicy, deny_process: bool) -> Result<()> {
     let arch = std::env::consts::ARCH;
     let target_arch = match arch {
         "x86_64" => TargetArch::x86_64,
         "aarch64" => TargetArch::aarch64,
         // the terminal rule alone is not worth refusing to run over
-        _ if !deny_net && !deny_process => return Ok(()),
+        _ if network == NetworkPolicy::Unrestricted && !deny_process => return Ok(()),
         _ => return Err(eyre!("unsupported architecture for seccomp: {arch}")),
     };
 
@@ -70,27 +79,6 @@ pub(super) fn apply_seccomp_filter(deny_net: bool, deny_process: bool) -> Result
             std::io::Error::last_os_error()
         ));
     }
-
-    // Block socket() and socketpair() for every family that is not host-local.
-    // Refusing only AF_INET and AF_INET6 misses families that carry IP traffic
-    // under another number, such as AF_SMC, which falls back to plain TCP.
-    // The conditions of one rule are ANDed.
-    // Allow AF_UNIX (1) — needed by many tools for IPC
-    // Allow AF_NETLINK (16) — libc uses it to list interfaces and addresses
-    let socket_rule_not_local = SeccompRule::new(vec![
-        SeccompCondition::new(
-            0, // first arg: domain/family
-            SeccompCmpArgLen::Dword,
-            SeccompCmpOp::Ne,
-            libc::AF_UNIX as u64,
-        )?,
-        SeccompCondition::new(
-            0,
-            SeccompCmpArgLen::Dword,
-            SeccompCmpOp::Ne,
-            libc::AF_NETLINK as u64,
-        )?,
-    ])?;
 
     let mut rules: BTreeMap<i64, Vec<SeccompRule>> = BTreeMap::new();
 
@@ -110,16 +98,20 @@ pub(super) fn apply_seccomp_filter(deny_net: bool, deny_process: bool) -> Result
     #[cfg(target_arch = "x86_64")]
     rules.insert(514 | X32_SYSCALL_BIT, terminal_injection);
 
-    if deny_net {
-        // Without a network socket the process cannot initiate network traffic.
-        for syscall in [
-            syscall_number(libc::SYS_socket),
-            syscall_number(libc::SYS_socketpair),
-        ]
-        .into_iter()
-        .flat_map(native_and_x32)
-        {
-            rules.insert(syscall, vec![socket_rule_not_local.clone()]);
+    if network != NetworkPolicy::Unrestricted {
+        let local_only = vec![SeccompRule::new(vec![
+            socket_arg_ne(0, libc::AF_UNIX)?,
+            socket_arg_ne(0, libc::AF_NETLINK)?,
+        ])?];
+        let socket_rules = match network {
+            NetworkPolicy::TcpOnly => tcp_socket_rules()?,
+            _ => local_only.clone(),
+        };
+        for syscall in native_and_x32(syscall_number(libc::SYS_socket)) {
+            rules.insert(syscall, socket_rules.clone());
+        }
+        for syscall in native_and_x32(syscall_number(libc::SYS_socketpair)) {
+            rules.insert(syscall, local_only.clone());
         }
         // IORING_OP_SOCKET creates a socket while the kernel services a ring
         // request, which never enters socket() and so is invisible to the
@@ -184,6 +176,48 @@ pub(super) fn apply_seccomp_filter(deny_net: bool, deny_process: bool) -> Result
     Ok(())
 }
 
+fn socket_arg_ne(arg: u8, value: libc::c_int) -> Result<SeccompCondition> {
+    Ok(SeccompCondition::new(
+        arg,
+        SeccompCmpArgLen::Dword,
+        SeccompCmpOp::Ne,
+        value as u64,
+    )?)
+}
+
+fn tcp_socket_rules() -> Result<Vec<SeccompRule>> {
+    // Allow only the local families and IP sockets that Landlock can mediate.
+    // Each seccomp rule ANDs its conditions. Either a non-stream type or a
+    // non-TCP protocol is enough to reject a socket in one of the IP families.
+    let mut rules = vec![SeccompRule::new(vec![
+        socket_arg_ne(0, libc::AF_UNIX)?,
+        socket_arg_ne(0, libc::AF_NETLINK)?,
+        socket_arg_ne(0, libc::AF_INET)?,
+        socket_arg_ne(0, libc::AF_INET6)?,
+    ])?];
+    for family in [libc::AF_INET, libc::AF_INET6] {
+        let is_family =
+            SeccompCondition::new(0, SeccompCmpArgLen::Dword, SeccompCmpOp::Eq, family as u64)?;
+        rules.push(SeccompRule::new(vec![
+            is_family.clone(),
+            // Compare the type without the permitted CLOEXEC/NONBLOCK flags.
+            socket_arg_ne(1, libc::SOCK_STREAM)?,
+            socket_arg_ne(1, libc::SOCK_STREAM | libc::SOCK_CLOEXEC)?,
+            socket_arg_ne(1, libc::SOCK_STREAM | libc::SOCK_NONBLOCK)?,
+            socket_arg_ne(
+                1,
+                libc::SOCK_STREAM | libc::SOCK_CLOEXEC | libc::SOCK_NONBLOCK,
+            )?,
+        ])?);
+        rules.push(SeccompRule::new(vec![
+            is_family,
+            socket_arg_ne(2, 0)?,
+            socket_arg_ne(2, libc::IPPROTO_TCP)?,
+        ])?);
+    }
+    Ok(rules)
+}
+
 #[cfg(all(test, any(target_arch = "x86_64", target_arch = "aarch64")))]
 mod tests {
     use super::*;
@@ -212,7 +246,7 @@ mod tests {
         // The filter binds to the calling thread, so a scratch thread keeps it
         // away from the rest of the test run.
         std::thread::spawn(|| {
-            apply_seccomp_filter(true, false).unwrap();
+            apply_seccomp_filter(NetworkPolicy::Blocked, false).unwrap();
             let socket = syscall_number(libc::SYS_socket);
             for family in [libc::AF_INET, libc::AF_INET6, libc::AF_VSOCK, AF_SMC] {
                 assert_eq!(
@@ -259,7 +293,7 @@ mod tests {
         let tiocsti = ioctl_request(libc::TIOCSTI).unwrap();
         assert_eq!(ioctl_errno(ioctl, fd, tiocsti), libc::ENOTTY);
         std::thread::spawn(move || {
-            apply_seccomp_filter(false, false).unwrap();
+            apply_seccomp_filter(NetworkPolicy::Unrestricted, false).unwrap();
             for request in [
                 tiocsti,
                 tiocsti | 0xffff_ffff_0000_0000,

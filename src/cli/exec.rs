@@ -95,6 +95,13 @@ pub(crate) struct Exec {
     #[usage(long, value_name = "HOST", verbatim_doc_comment)]
     pub allow_net: Vec<String>,
 
+    /// Allow outbound TCP connections to PORT on any IP address (Linux 6.7 or later)
+    ///
+    /// Blocks TCP connections to other ports and creation of other IP sockets.
+    /// Repeat to allow multiple ports. Conflicts with --deny-net and --deny-all.
+    #[usage(long, value_name = "PORT", verbatim_doc_comment)]
+    pub allow_connect_port: Vec<std::num::NonZeroU16>,
+
     /// Allow reads from PATH (implies --deny-read for everything else)
     #[usage(long, value_name = "PATH", verbatim_doc_comment)]
     pub allow_read: Vec<std::path::PathBuf>,
@@ -519,6 +526,7 @@ impl Exec {
                 allow_write: self.allow_write,
                 allow_list_dirs: vec![],
                 allow_net: self.allow_net,
+                allow_connect_port: self.allow_connect_port,
                 allow_unix: self.allow_unix,
                 allow_env: self.allow_env,
                 pass_through_env: vec![],
@@ -528,6 +536,7 @@ impl Exec {
         );
         let project_roots: Vec<&std::path::Path> =
             config.project_root.as_deref().into_iter().collect();
+        sandbox.validate_connect_ports()?;
         sandbox.resolve_paths(&project_roots)?;
 
         // Only when asked: `mise x` hands the command nothing by default, and fnox never
