@@ -11,12 +11,16 @@ RELEASE="$(mktemp -d "${TMPDIR:-/tmp}/bun-release.XXXXXX")"
 start_http_server --dir "$RELEASE" --handler - <<'PY'
 import hashlib
 import io
+import json
 import zipfile
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 state_file = Path("last-requested-zip.txt").absolute()
 mode_file = Path("mode").absolute()
+request_log = Path("browser-requests").absolute()
+release_url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.10"
+api_url = "https://api.github.com/repos/oven-sh/bun/releases/assets"
 script = b"""#!/usr/bin/env bash
 echo 1.3.10
 """
@@ -30,6 +34,35 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         path = self.path.split("?", 1)[0]
+        mode = mode_file.read_text().strip()
+        if path.startswith("/api/"):
+            if mode != "outage":
+                return self.send_error(404)
+            zip_name = state_file.read_text().splitlines()[0]
+            assets = [
+                {"name": name, "browser_download_url": f"{release_url}/{name}", "url": f"{api_url}/{asset_id}"}
+                for asset_id, name in [(1, zip_name), (2, "SHASUMS256.txt")]
+            ]
+            if path.endswith("/releases/tags/bun-v1.3.10"):
+                return self.reply(json.dumps({
+                    "tag_name": "bun-v1.3.10", "created_at": "2025-01-01T00:00:00Z",
+                    "draft": False, "prerelease": False, "assets": assets,
+                }).encode())
+            if path.endswith("/releases/assets/1"):
+                if self.headers.get("Accept") == "application/vnd.github+json":
+                    return self.reply(json.dumps(assets[0]).encode())
+                path = zip_name
+            elif path.endswith("/releases/assets/2"):
+                path = "SHASUMS256.txt"
+            else:
+                return self.send_error(404)
+            if self.headers.get("Accept") != "application/octet-stream":
+                return self.send_error(406)
+        elif mode == "outage":
+            with request_log.open("a") as log:
+                print(Path(path).name, file=log)
+            return self.send_error(504)
+
         if path.endswith(".zip"):
             zip_name = Path(path).name
             body = io.BytesIO()
@@ -43,7 +76,6 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(data)
         if path.endswith("SHASUMS256.txt") and state_file.exists():
             zip_name, sha = state_file.read_text().splitlines()[:2]
-            mode = mode_file.read_text().strip()
             if mode == "absent":
                 return self.send_error(404)
             if mode == "error":
@@ -59,7 +91,7 @@ class Handler(BaseHTTPRequestHandler):
 SERVER_CLASS = HTTPServer
 PY
 
-MISE_URL_REPLACEMENTS="$(printf '{\"https://github.com/oven-sh/bun/releases/download\":\"http://127.0.0.1:%s\"}' "$HTTP_PORT")"
+MISE_URL_REPLACEMENTS="$(printf '{"https://github.com/oven-sh/bun/releases/download":"http://127.0.0.1:%s","https://api.github.com/repos/oven-sh/bun":"http://127.0.0.1:%s/api"}' "$HTTP_PORT" "$HTTP_PORT")"
 export MISE_URL_REPLACEMENTS
 # Retries would turn the 500 case into minutes of backoff
 export MISE_HTTP_RETRIES=0
@@ -86,3 +118,26 @@ assert_contains "mise x bun@1.3.10 -- bun -v" "1.3.10"
 mise uninstall bun@1.3.10
 echo absent >"$RELEASE/mode"
 assert_contains "mise install bun@1.3.10 2>&1" "skipping checksum verification"
+
+# Both the archive and its checksum move to the API after one browser retry.
+mise uninstall bun@1.3.10
+echo outage >"$RELEASE/mode"
+export MISE_HTTP_RETRIES=4 MISE_LOCKFILE=1 MISE_DOWNLOAD_CACHE=0
+touch mise.lock
+assert_succeed "mise use bun@1.3.10"
+assert_contains "cat mise.lock" 'url_api = "https://api.github.com/repos/oven-sh/bun/releases/assets/1"'
+assert_contains "mise x -- bun -v" "1.3.10"
+assert "sort '$RELEASE/browser-requests' | uniq -c | awk '{ print \$1 }'" $'2\n2'
+
+# Locked installs need only the ZIP. Exercise both a new lock and a legacy
+# lock without the API asset URL.
+mise uninstall bun@1.3.10
+: >"$RELEASE/browser-requests"
+assert_succeed "mise install --locked"
+assert "wc -l <'$RELEASE/browser-requests' | tr -d ' '" "2"
+mise uninstall bun@1.3.10
+sed '/url_api = /d' mise.lock >mise.lock.tmp
+mv mise.lock.tmp mise.lock
+: >"$RELEASE/browser-requests"
+assert_succeed "mise install --locked"
+assert "wc -l <'$RELEASE/browser-requests' | tr -d ' '" "2"
