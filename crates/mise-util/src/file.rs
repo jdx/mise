@@ -546,7 +546,7 @@ pub fn hard_link_or_copy<P: AsRef<Path>, Q: AsRef<Path>>(from: P, to: Q) -> Resu
 }
 
 pub fn copy_dir_all_preserve_symlinks(from: &Path, to: &Path) -> Result<()> {
-    copy_dir_all_preserve_symlinks_skipping(from, to, &[])
+    copy_dir_all_preserve_symlinks_skipping(from, to, &[], false)
 }
 
 /// Copies `from` into `to` like [`copy_dir_all_preserve_symlinks`], without
@@ -555,6 +555,7 @@ fn copy_dir_all_preserve_symlinks_skipping(
     from: &Path,
     to: &Path,
     skip_top_level: &[&str],
+    #[cfg_attr(not(target_os = "macos"), allow(unused_variables))] preserve_directory_xattrs: bool,
 ) -> Result<()> {
     trace!("cp -a {} {}", from.display(), to.display());
     let permissions = fs::metadata(from)?.permissions();
@@ -577,6 +578,15 @@ fn copy_dir_all_preserve_symlinks_skipping(
         let dest = to.join(relative);
         if entry.file_type().is_dir() {
             create_dir_all(&dest)?;
+            #[cfg(target_os = "macos")]
+            if preserve_directory_xattrs {
+                copy_directory_xattrs(entry.path(), &dest).wrap_err_with(|| {
+                    format!(
+                        "failed to copy extended attributes for {}",
+                        display_path(entry.path())
+                    )
+                })?;
+            }
             directory_permissions.push((dest, entry.metadata()?.permissions()));
         } else if entry.file_type().is_symlink() {
             create_dir_all(dest.parent().unwrap())?;
@@ -3116,7 +3126,24 @@ const DMG_VOLUME_METADATA: &[&str] = &[
 ];
 
 fn copy_dmg_volume(volume: &Path, dest: &Path) -> Result<()> {
-    copy_dir_all_preserve_symlinks_skipping(volume, dest, DMG_VOLUME_METADATA)
+    // App bundles are directories and cask preflight can rely on their xattrs.
+    copy_dir_all_preserve_symlinks_skipping(volume, dest, DMG_VOLUME_METADATA, true)
+}
+
+#[cfg(target_os = "macos")]
+fn copy_directory_xattrs(from: &Path, to: &Path) -> Result<()> {
+    use std::ffi::CString;
+
+    let from = CString::new(from.as_os_str().as_bytes())?;
+    let to = CString::new(to.as_os_str().as_bytes())?;
+    let flags = nix::libc::COPYFILE_XATTR | nix::libc::COPYFILE_NOFOLLOW;
+    // SAFETY: both paths are NUL-terminated and outlive the call, and a null state is allowed.
+    let result =
+        unsafe { nix::libc::copyfile(from.as_ptr(), to.as_ptr(), std::ptr::null_mut(), flags) };
+    if result != 0 {
+        return Err(std::io::Error::last_os_error().into());
+    }
+    Ok(())
 }
 
 /// Whole-disk devices that `hdiutil info` reports as still attached from `archive`.
