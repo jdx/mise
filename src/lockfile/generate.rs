@@ -719,6 +719,7 @@ pub async fn generate(
     // recorded for this version or, when it was not locked before, for the
     // package. An install that showed another repository than the recorded
     // one must not replace the pin.
+    let mut unpinnable = vec![];
     for (short, entries) in &mut candidate.tools {
         for entry in entries.iter_mut() {
             let verified = installed
@@ -747,11 +748,21 @@ pub async fn generate(
                         .and_then(|previous| previous.provenance.clone())
                     {
                         Some(pin) => Some(pin),
-                        None => crate::lockfile::pinned_package_provenance(
+                        None => match crate::lockfile::pinned_package_provenance(
                             previous_entries,
                             &entry.version,
                             entry.backend.as_deref(),
-                        )?,
+                        ) {
+                            Ok(pin) => pin,
+                            // Pins that disagree leave this version no repository to verify
+                            // against. Installing it is refused, so keep the package's
+                            // entries as they are and lock the other tools.
+                            Err(err) => {
+                                warn!("not updating {short} in mise.lock: {err:#}");
+                                unpinnable.push(short.clone());
+                                break;
+                            }
+                        },
                     }
                 }
                 None => None,
@@ -767,6 +778,16 @@ pub async fn generate(
                 );
             }
             entry.provenance = verified.or(recorded);
+        }
+    }
+    for short in unpinnable {
+        match previous.tools_for(&short) {
+            Some(previous_entries) => {
+                candidate.tools.insert(short, previous_entries.clone());
+            }
+            None => {
+                candidate.tools.remove(&short);
+            }
         }
     }
     for (short, entries) in &mut candidate.tools {
