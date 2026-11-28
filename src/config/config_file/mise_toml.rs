@@ -2433,9 +2433,10 @@ impl ConfigFile for MiseToml {
         if let Some(parent) = destination.parent() {
             create_dir_all(parent)?;
         }
+        let trusted_before = super::trusted_before_write(&self.path);
         file::write_atomic(&destination, contents)?;
         super::note_saved(&self.path);
-        trust_after_write(&self.path)?;
+        trust_after_write(&self.path, trusted_before)?;
         Ok(())
     }
 

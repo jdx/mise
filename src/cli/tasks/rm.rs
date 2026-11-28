@@ -130,13 +130,13 @@ impl TasksRm {
         if !self.dry_run {
             // Removing a task needs no trust, so none is asked for or recorded. A paranoid trust
             // record is bound to the file's content, though, so it is renewed for a file that
-            // was trusted before the edit.
+            // was trusted before the edit, as trust from before the command still.
             let renew_trust =
-                Settings::get().paranoid.config() && config_file::is_path_trusted(path);
+                Settings::get().paranoid.config() && config_file::trusted_before_write(path);
             let destination = config_file::checked_write_destination(path)?;
             file::write(destination, doc.to_string())?;
             if renew_trust {
-                config_file::trust_after_write(path)?;
+                config_file::trust_after_write(path, true)?;
             }
         }
         Report::new(task, Action::Removed, Kind::Toml, path)

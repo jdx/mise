@@ -1606,19 +1606,35 @@ fn has_trust_hash(path: &Path) -> bool {
 /// there has none to record and leaves trust as it was. Global config is trusted without a
 /// record, and its trust root is the home directory: a record for it would trust a project
 /// in `~`, and clear a decision to ignore that project.
-pub fn trust_after_write(path: &Path) -> Result<()> {
+///
+/// `trusted_before` is [`trusted_before_write`], taken before the write changed the file. Trust
+/// the record adds is this command's, so a later write in the same root does not count it as
+/// trust from before the command and follow a link out of the project. A record that only renews
+/// trust from before, as paranoid mode's content-bound one does, is not.
+pub fn trust_after_write(path: &Path, trusted_before: bool) -> Result<()> {
     if Settings::safe_mode() || config::is_global_config_write(path) {
         return Ok(());
     }
-    // Trust recorded for a write is this command's: a later write in the same root must not
-    // count it as trust from before the command and follow a link out of the project.
     let config_root = config_trust_root(path);
-    let was_trusted = is_trusted(&config_root);
     trust(&config_root)?;
-    if !was_trusted {
+    if !trusted_before {
         granted_by_this_command(&config_root);
     }
     Ok(())
+}
+
+/// Whether the trust [`trust_after_write`] records for `path` is already there, asked before the
+/// write. It has to be asked then: in paranoid mode the record is the file's own and bound to its
+/// content, so once the write changes the file it no longer counts. The file's trust in paranoid
+/// mode is also the trust loading goes by, a linked project's `trusted_config_paths` included.
+/// Otherwise the record is the config root's, and only the root's trust says it is there already.
+pub fn trusted_before_write(path: &Path) -> bool {
+    let config_root = config_trust_root(path);
+    if config_root == path {
+        is_path_trusted(path)
+    } else {
+        is_trusted(&config_root)
+    }
 }
 
 /// Asks for the trust that [`trust_after_write`] is about to record, before the write.
@@ -2689,10 +2705,27 @@ mod tests {
         assert!(!is_trusted(&path));
         let root = config_trust_root(&path);
         assert_eq!(root, path);
-        trust_after_write(&path).unwrap();
+        let trusted_before = trusted_before_write(&path);
+        assert!(!trusted_before);
+        std::fs::write(&path, "[env]\n").unwrap();
+        trust_after_write(&path, trusted_before).unwrap();
         assert!(is_trusted(&root));
         assert!(trusted_by_this_command(&root));
         untrust(&root).unwrap();
+
+        // A file trusted before the write keeps trust from before the command once the write
+        // has changed it and renewed its record, so a second write may follow its links too.
+        let renewed = dir.path().canonicalize().unwrap().join("renewed.toml");
+        std::fs::write(&renewed, "").unwrap();
+        trust(&renewed).unwrap();
+        let trusted_before = trusted_before_write(&renewed);
+        assert!(trusted_before);
+        std::fs::write(&renewed, "[env]\n").unwrap();
+        assert!(!is_trusted(&renewed));
+        trust_after_write(&renewed, trusted_before).unwrap();
+        assert!(is_trusted(&renewed));
+        assert!(!trusted_by_this_command(&renewed));
+        untrust(&renewed).unwrap();
         Settings::reset(None);
     }
 
