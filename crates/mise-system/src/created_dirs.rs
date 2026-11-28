@@ -282,8 +282,14 @@ pub(crate) fn forget(removed: &[PathBuf]) {
                 .dirs
                 .retain(|recorded, _| !file::same_location_ignoring_case(recorded, &dir));
         }
-        // a removal may have taken a target with it
-        record.targets.retain(|target| !gone(target));
+        // a removal may have taken a target with it; a target that is gone for another reason may
+        // be one an apply is about to create, so it stays
+        record.targets.retain(|target| {
+            !(gone(target)
+                && removed
+                    .iter()
+                    .any(|dir| file::same_location_ignoring_case(&lexical_normalize(dir), target)))
+        });
         (record.dirs.len(), record.targets.len()) != before
     });
 }
