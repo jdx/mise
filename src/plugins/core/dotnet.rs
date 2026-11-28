@@ -69,6 +69,20 @@ impl DotnetPlugin {
         Settings::get().dotnet.isolated
     }
 
+    fn execution_root(tv: &ToolVersion) -> PathBuf {
+        let install_path = tv.install_path();
+        if Self::is_isolated() {
+            return install_path;
+        }
+        let shared_root = dotnet_root();
+        if file::is_symlink_or_junction(&install_path)
+            && !is_managed_shared_link(&install_path, &shared_root)
+        {
+            return install_path;
+        }
+        shared_root
+    }
+
     async fn test_dotnet(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<()> {
         let raw_opts = tv.request.options();
         let opts = DotnetOptions::new(&raw_opts);
@@ -233,10 +247,16 @@ impl Backend for DotnetPlugin {
             return false;
         }
 
-        let matches_mode = if Self::is_isolated() {
-            !file::is_symlink_or_junction(&install_path)
-        } else {
-            file::is_symlink_to(&install_path, &dotnet_root())
+        let matches_mode = match (
+            Self::is_isolated(),
+            file::is_symlink_or_junction(&install_path),
+        ) {
+            (isolated, false) => isolated,
+            (isolated, true) => {
+                let shared_root = dotnet_root();
+                !is_managed_shared_link(&install_path, &shared_root)
+                    || (!isolated && file::same_file(&install_path, &shared_root))
+            }
         };
         if !matches_mode {
             return false;
@@ -303,6 +323,7 @@ impl Backend for DotnetPlugin {
             .execute()?;
 
         if !isolated {
+            file::create_dir_all(install_dir.join(SHARED_ROOT_MARKER))?;
             // Symlink install_path -> DOTNET_ROOT so mise can track the installation
             file::remove_all(tv.install_path())?;
             file::make_symlink(&install_dir, &tv.install_path())?;
@@ -319,9 +340,8 @@ impl Backend for DotnetPlugin {
         _pr: &dyn SingleReport,
         tv: &ToolVersion,
     ) -> Result<()> {
-        if Self::is_isolated() {
-            // Isolated: mise handles removal of install_path by default
-        } else {
+        let shared_root = dotnet_root();
+        if !Self::is_isolated() && file::is_symlink_to(&tv.install_path(), &shared_root) {
             let raw_opts = tv.request.options();
             let opts = DotnetOptions::new(&raw_opts);
             if opts.runtime().is_some() {
@@ -329,16 +349,13 @@ impl Backend for DotnetPlugin {
                 let Some(framework) = opts.runtime_framework_name() else {
                     return Ok(());
                 };
-                let runtime_dir = dotnet_root()
-                    .join("shared")
-                    .join(framework)
-                    .join(&tv.version);
+                let runtime_dir = shared_root.join("shared").join(framework).join(&tv.version);
                 if runtime_dir.exists() {
                     file::remove_all(&runtime_dir)?;
                 }
             } else {
                 // SDK: only remove this SDK version from the shared root
-                let sdk_dir = dotnet_root().join("sdk").join(&tv.version);
+                let sdk_dir = shared_root.join("sdk").join(&tv.version);
                 if sdk_dir.exists() {
                     file::remove_all(&sdk_dir)?;
                 }
@@ -352,11 +369,7 @@ impl Backend for DotnetPlugin {
         _config: &Arc<Config>,
         tv: &ToolVersion,
     ) -> Result<Vec<PathBuf>> {
-        if Self::is_isolated() {
-            Ok(vec![tv.install_path()])
-        } else {
-            Ok(vec![dotnet_root()])
-        }
+        Ok(vec![Self::execution_root(tv)])
     }
 
     async fn exec_env(
@@ -365,11 +378,7 @@ impl Backend for DotnetPlugin {
         _ts: &Toolset,
         tv: &ToolVersion,
     ) -> Result<BTreeMap<String, String>> {
-        let root = if Self::is_isolated() {
-            tv.install_path()
-        } else {
-            dotnet_root()
-        };
+        let root = Self::execution_root(tv);
         let mut env = BTreeMap::from([
             (
                 "DOTNET_ROOT".to_string(),
@@ -413,13 +422,26 @@ fn sdk_list_display(lines: &[String]) -> String {
     }
 }
 
+const SHARED_ROOT_MARKER: &str = ".mise-dotnet-shared";
+
+fn is_managed_shared_link(install_path: &Path, shared_root: &Path) -> bool {
+    install_path.join(SHARED_ROOT_MARKER).is_dir()
+        // Older installs have no marker. Recognize the configured and default roots.
+        || file::same_file(install_path, shared_root)
+        || file::same_file(install_path, &default_dotnet_root())
+}
+
+fn default_dotnet_root() -> PathBuf {
+    dirs::DATA.join("dotnet-root")
+}
+
 fn dotnet_root() -> PathBuf {
     Settings::get()
         .dotnet
         .dotnet_root
         .clone()
         .or(env::var_path("DOTNET_ROOT"))
-        .unwrap_or(dirs::DATA.join("dotnet-root"))
+        .unwrap_or_else(default_dotnet_root)
 }
 
 fn install_script_path() -> PathBuf {
