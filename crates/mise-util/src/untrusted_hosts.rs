@@ -128,11 +128,25 @@ pub fn forge_token_denied_at(forge: Forge, url: &url::Url) -> bool {
 /// [`forge_token_denied_at`] for a lookup that knows only the host, such as
 /// `mise token`: the token is withheld when any origin on `host` is denied.
 pub fn forge_token_denied(forge: Forge, host: &str) -> bool {
-    let host = host.to_ascii_lowercase();
+    let host = parse_host(host);
     forge_token_denied_where(
         forge,
-        |origin| matches!(origin, url::Origin::Tuple(_, h, _) if h.to_string() == host),
+        |origin| matches!((origin, &host), (url::Origin::Tuple(_, h, _), Some(host)) if h == host),
     )
+}
+
+/// `host` as a URL holds it: lowercase, and an IPv6 address with or without
+/// its brackets (`host_str` writes them, a host typed on the command line may
+/// not) as the address itself.
+fn parse_host(host: &str) -> Option<url::Host> {
+    let bare = host
+        .strip_prefix('[')
+        .and_then(|host| host.strip_suffix(']'))
+        .unwrap_or(host);
+    match bare.parse() {
+        Ok(address) => Some(url::Host::Ipv6(address)),
+        Err(_) => url::Host::parse(host).ok(),
+    }
 }
 
 fn forge_token_denied_where(forge: Forge, matches: impl Fn(&url::Origin) -> bool) -> bool {
@@ -279,6 +293,25 @@ mod tests {
         assert!(!forge_token_denied(Forge::GitHub, "api.github.com"));
         assert!(!forge_token_denied(Forge::GitHub, "ghe.corp.example"));
         assert!(!forge_token_denied(Forge::GitHub, "other.example"));
+        reset();
+    }
+
+    #[test]
+    fn an_ipv6_api_url_is_denied_by_its_address() {
+        let _lock = crate::testing::lock_ignoring_poison(&crate::testing::SETTINGS_LOCK);
+        reset();
+        let api_url = "http://[::1]:8443/api/v3";
+        deny_forge_token_for_url(api_url);
+        let parsed = url::Url::parse(api_url).unwrap();
+        assert!(forge_token_denied(
+            Forge::GitHub,
+            parsed.host_str().unwrap()
+        ));
+        assert!(forge_token_denied(Forge::GitHub, "[::1]"));
+        assert!(forge_token_denied(Forge::GitHub, "::1"));
+        assert!(forge_token_denied(Forge::GitHub, "0:0:0:0:0:0:0:1"));
+        assert!(!forge_token_denied(Forge::GitHub, "::2"));
+        assert!(!forge_token_denied(Forge::GitHub, "127.0.0.1"));
         reset();
     }
 

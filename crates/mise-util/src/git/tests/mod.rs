@@ -446,6 +446,34 @@ fn git_credential_fill_asks_about_the_scheme_and_port_of_the_request() {
     );
 }
 
+/// An IPv6 address goes to Git in brackets, as Git stores it, so the port
+/// that follows is not read as part of the address.
+#[cfg(unix)]
+#[test]
+fn git_credential_fill_asks_about_an_ipv6_host_in_brackets() {
+    let tmp = tempfile::tempdir().unwrap();
+    let store = tmp.path().join("git-credentials");
+    std::fs::write(&store, "http://alice:for-v6@[::1]:8443\n").unwrap();
+    let global = tmp.path().join("gitconfig");
+    std::fs::write(
+        &global,
+        format!(
+            "[credential]\n\thelper = store --file='{}'\n",
+            store.display()
+        ),
+    )
+    .unwrap();
+    let mut env = crate::testing::EnvVarGuard::new();
+    env.set("GIT_CONFIG_GLOBAL", &global);
+    env.set("GIT_CONFIG_NOSYSTEM", "1");
+
+    let url = url::Url::parse("http://[::1]:8443/api/v1").unwrap();
+    for (provider, host) in [("v6-url-host", url.host_str().unwrap()), ("v6-bare", "::1")] {
+        let token = crate::tokens::get_git_credential_token(provider, host, Some(&url));
+        assert_eq!(token.as_deref(), Some("for-v6"), "{host}");
+    }
+}
+
 mod worktree;
 
 #[test]

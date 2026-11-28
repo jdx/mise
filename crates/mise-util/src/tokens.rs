@@ -219,6 +219,19 @@ fn credential_command_uses_legacy_host_arg(cmd: &str) -> bool {
     cmd.contains("$1") || cmd.contains("${1}")
 }
 
+/// The `host` Git keeps a credential under: an IPv6 address in brackets, as in
+/// a URL, so that the port that follows stays apart from it.
+fn credential_host(host: &str, port: Option<u16>) -> String {
+    let host = match host.parse::<std::net::Ipv6Addr>() {
+        Ok(address) => format!("[{address}]"),
+        Err(_) => host.to_string(),
+    };
+    match port {
+        Some(port) => format!("{host}:{port}"),
+        None => host,
+    }
+}
+
 /// Get a token by running `git credential fill`.
 ///
 /// Git identifies a credential by protocol and by host including any port, so
@@ -236,10 +249,7 @@ pub fn get_git_credential_token(
     url: Option<&url::Url>,
 ) -> Option<String> {
     let protocol = url.map_or("https", |url| url.scheme());
-    let host = match url.and_then(|url| url.port()) {
-        Some(port) => format!("{host}:{port}"),
-        None => host.to_string(),
-    };
+    let host = credential_host(host, url.and_then(|url| url.port()));
     let cache_key = format!("{provider}:{protocol}://{host}");
     let mut cache = GIT_CREDENTIAL_CACHE
         .lock()
