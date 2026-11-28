@@ -481,6 +481,11 @@ impl Use {
             path.set_file_name(&*env::MISE_DEFAULT_CONFIG_FILENAME);
         }
 
+        // A dry run writes nothing, so it previews a dangling link's new config instead of
+        // refusing it the way a write does. A real run refuses it here and again when it saves.
+        if self.is_dry_run() && path.is_symlink() && !path.exists() {
+            return config_file::init(&path).await;
+        }
         config_file::parse_or_init(&path).await
     }
 

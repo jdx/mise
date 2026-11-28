@@ -1735,12 +1735,25 @@ fn in_state_dir(destination: &Path) -> bool {
 /// the write itself but does not close it: mise opens the file by its path, not through a
 /// directory it holds open.
 pub fn checked_write_destination(path: &Path) -> Result<PathBuf> {
+    if let Some(link) = link_left_through_parent_dir(path)? {
+        return Err(eyre!(
+            "refusing to write {}: its `..` goes up from {}, a link, so it names the directory above where that link leads rather than the one it appears to. Write the path without `..`",
+            style::display_path_escaped(path),
+            style::display_path_escaped(&link)
+        ));
+    }
     // The directory is resolved from the absolute path: a bare file name such as `mise.toml`
     // has an empty parent, which does not resolve. A directory the write is about to create is
     // resolved through the part of it that exists, so a link above it is judged where it leads.
     let abs = path.absolutize()?;
     let dir = abs.parent().map(file::desymlink_path);
-    let dir_leads_out = config_root::linked_project(path).is_some_and(|project| {
+    // The project is the one a config in this directory would be found in. A file mise does not
+    // look for there, such as `.mise/mise.local.toml`, is its own root by name, which would leave
+    // a linked `.mise` out of the directories checked; the config mise reads there, here
+    // `.mise/config.toml`, takes it back to the project around it, as for a lockfile.
+    let linked_project =
+        config_root::linked_project(path).or_else(|| config_root::linked_lockfile_project(&abs));
+    let dir_leads_out = linked_project.is_some_and(|project| {
         let project = project.canonicalize().ok();
         !matches!((&dir, project), (Some(dir), Some(project)) if dir.starts_with(&project))
     });
@@ -1821,6 +1834,27 @@ pub fn checked_write_destination(path: &Path) -> Result<PathBuf> {
         style::display_path_escaped(&target),
         style::display_path_escaped(&project)
     ))
+}
+
+/// The link that `path` goes up from with `..`, if any. The system resolves `link/..` to the
+/// directory above where the link leads, while [`Absolutize`] drops both by name, so a path such
+/// as `linked/../mise.toml` opens one file and would be checked, and written, as another. Windows
+/// resolves `..` by name too, and `std::path::absolute` already removes it there.
+fn link_left_through_parent_dir(path: &Path) -> Result<Option<PathBuf>> {
+    let mut prefix = PathBuf::new();
+    for component in std::path::absolute(path)?.components() {
+        match component {
+            std::path::Component::ParentDir => {
+                if config_root::is_link(&prefix) {
+                    return Ok(Some(prefix));
+                }
+                prefix.pop();
+            }
+            std::path::Component::CurDir => {}
+            component => prefix.push(component),
+        }
+    }
+    Ok(None)
 }
 
 /// Refuses to write task script `script`, found in a task directory of config root `root`,
@@ -1926,6 +1960,15 @@ fn script_link_check(script: &Path, root: &Path, follow_own_link: bool) -> Resul
     }
     if is_trusted(&root) && !trusted_by_this_command(&root) {
         return Ok(target);
+    }
+    // Paranoid mode approves a config by its content, which `mise trust` records for each file,
+    // not for the directory. It does not load a task reached through a link inside a project
+    // either (see `ensure_trust_can_approve`), so only `trusted_config_paths` approves the link.
+    if Settings::get().paranoid.config() {
+        return refuse(&format!(
+            "the link leaves the project, and paranoid mode cannot approve it: it approves a file by its content, and a link inside a project is that project's to change. Replace the link with a regular directory, or add {} to `trusted_config_paths`",
+            style::display_path_escaped(&root)
+        ));
     }
     refuse(&format!(
         "the link leaves the project, and mise follows such a link only for a project that was trusted before this command. Check where the link leads, run `mise trust` in {} and run the command again, or replace the link",
@@ -2782,6 +2825,50 @@ mod tests {
             checked_write_destination(&dir.path().join("alias/mise.local.toml")).unwrap(),
             project.join("mise.local.toml")
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_write_does_not_go_up_out_of_a_link() {
+        // `linked/..` is the directory above where the link leads, which is where the system
+        // opens the file, so checking `mise.toml` in the project instead would approve another file.
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let project = root.join("proj");
+        std::fs::create_dir_all(project.join("sub")).unwrap();
+        std::fs::create_dir_all(root.join("outside/deep/dir")).unwrap();
+        std::fs::write(project.join("mise.toml"), "").unwrap();
+        std::fs::write(root.join("outside/deep/mise.toml"), "").unwrap();
+        std::os::unix::fs::symlink(root.join("outside/deep/dir"), project.join("linked")).unwrap();
+
+        let err = checked_write_destination(&project.join("linked/../mise.toml")).unwrap_err();
+        assert!(err.to_string().contains("goes up from"), "{err}");
+        let err = checked_write_destination(&project.join("linked/x/../../mise.toml")).unwrap_err();
+        assert!(err.to_string().contains("goes up from"), "{err}");
+        // A `..` out of a regular directory names the file it appears to.
+        assert_eq!(
+            checked_write_destination(&project.join("sub/../mise.toml")).unwrap(),
+            project.join("mise.toml")
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_linked_dot_mise_is_checked_for_a_file_mise_does_not_look_for_there() {
+        // `.mise/mise.local.toml` is not a name mise reads in `.mise`, so by its name the file is
+        // its own root, and the link `.mise` would be that root rather than a link in the project.
+        // Tests trust every project, so the link leads to a file that does not exist yet, which is
+        // refused whatever the trust.
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let project = root.join("proj");
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::create_dir_all(root.join("outside")).unwrap();
+        std::fs::write(project.join("mise.toml"), "").unwrap();
+        std::os::unix::fs::symlink(root.join("outside"), project.join(".mise")).unwrap();
+
+        let err = checked_write_destination(&project.join(".mise/mise.local.toml")).unwrap_err();
+        assert!(err.to_string().contains("refusing to write"), "{err}");
     }
 
     #[test]

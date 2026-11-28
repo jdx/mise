@@ -456,20 +456,25 @@ fn write_checked_config(path: &Path, doc: String) -> Result<()> {
 /// one reached by `-y` or by running without a terminal (a script, CI, an editor's task
 /// runner), where nobody is watching to notice. `create_new` makes the "does it exist" check
 /// and the creation one step, so a config another process writes in between is not replaced.
+///
+/// The file opened is the destination [`config_file::checked_write_destination`] approves just
+/// before the write, not `path` looked up again: the command checked `path` when it started, and
+/// a link can appear or change in between. That destination is the file a link finally names,
+/// which need not exist: `create_new` does not follow a link in the last component, so a link
+/// whose target is not there yet, as a dotfile manager lays down before it writes the file,
+/// would count as existing. A link to a real config still fails, because its target exists, and
+/// so does a destination that becomes a link after the check.
 fn write_new_config(path: &Path, doc: &str) -> Result<()> {
-    if let Some(parent) = path.parent() {
-        file::create_dir_all(parent)?;
-    }
+    let destination = config_file::checked_write_destination(path)?;
     // Create the directory of the file a dangling link names, too: the link may point into a
     // directory that does not exist yet.
-    let target = symlink_target(path);
-    if let Some(parent) = target.parent() {
+    if let Some(parent) = destination.parent() {
         file::create_dir_all(parent)?;
     }
     let mut f = match std::fs::OpenOptions::new()
         .write(true)
         .create_new(true)
-        .open(&target)
+        .open(&destination)
     {
         Ok(f) => f,
         Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => bail!(
@@ -483,27 +488,6 @@ fn write_new_config(path: &Path, doc: &str) -> Result<()> {
     };
     f.write_all(doc.as_bytes())
         .wrap_err_with(|| format!("failed write: {}", display_path(path)))
-}
-
-/// Follow `path` through any symlinks to the file they finally name, which need not exist.
-///
-/// `create_new` does not follow a symlink in the last component: a link whose target is not
-/// there yet, as a dotfile manager lays down before it writes the file, counts as existing.
-/// Opening the target instead keeps such a link writable, while a link to a real config still
-/// fails because its target exists. A chain longer than the kernel's own limit is left as is,
-/// and `create_new` then reports it as existing.
-fn symlink_target(path: &Path) -> PathBuf {
-    let mut target = path.to_path_buf();
-    for _ in 0..40 {
-        let Ok(link) = std::fs::read_link(&target) else {
-            break;
-        };
-        target = match target.parent() {
-            Some(dir) => dir.join(link),
-            None => link,
-        };
-    }
-    target
 }
 
 // ============================================================================
@@ -663,6 +647,26 @@ mod tests {
         std::os::unix::fs::symlink(&outside, &path).unwrap();
 
         let err = write_checked_config(&path, "[tools]\n".to_string()).unwrap_err();
+        assert!(err.to_string().contains("refusing to write"), "{err}");
+        assert!(!outside.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_starter_config_checks_its_destination_again_when_it_creates_it() {
+        // Nothing was at the path when the command checked it, and a dangling link out of the
+        // project is there by the time the template is written. Such a link is refused whatever
+        // the trust, so the file it names is not created.
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let project = root.join("swapped");
+        let outside = root.join("outside.toml");
+        std::fs::create_dir_all(&project).unwrap();
+        let path = project.join("mise.toml");
+        config_file::symlink_check_before_write(&path).unwrap();
+        std::os::unix::fs::symlink(&outside, &path).unwrap();
+
+        let err = write_new_config(&path, "# template\n").unwrap_err();
         assert!(err.to_string().contains("refusing to write"), "{err}");
         assert!(!outside.exists());
     }
