@@ -33,10 +33,19 @@ fn home_dir() -> PathBuf {
     mise_util::testing::slot_home(&homes)
 }
 
-/// Make `to` match `from`: copy the files whose content differs, and remove
-/// what an earlier test left there that `from` does not have.
+/// Make `to` match `from`: copy the files whose content differs, restore the
+/// permissions of the others, and remove what an earlier test left there that
+/// `from` does not have.
 fn sync_fixtures(from: &Path, to: &Path) -> eyre::Result<()> {
-    if from.is_dir() {
+    let from_is_dir = from.is_dir();
+    // An earlier test may have put a link, or a file where the fixture is a
+    // directory (or the reverse). The fixtures themselves contain no links.
+    let replaced = std::fs::symlink_metadata(to)
+        .is_ok_and(|current| current.is_symlink() || current.is_dir() != from_is_dir);
+    if replaced {
+        file::remove_all(to)?;
+    }
+    if from_is_dir {
         std::fs::create_dir_all(to)?;
         let mut wanted = BTreeSet::new();
         for entry in std::fs::read_dir(from)? {
@@ -53,11 +62,18 @@ fn sync_fixtures(from: &Path, to: &Path) -> eyre::Result<()> {
         return Ok(());
     }
     let wanted = std::fs::read(from)?;
-    if std::fs::read(to).is_ok_and(|current| current == wanted) {
+    if !std::fs::read(to).is_ok_and(|current| current == wanted) {
+        // copy() rather than write(): it copies the permissions too, and the
+        // plugin scripts must stay executable.
+        std::fs::copy(from, to)?;
         return Ok(());
     }
-    // copy() rather than write(): the plugin scripts must stay executable.
-    std::fs::copy(from, to)?;
+    // Same content, but a test can have changed the mode, for example by
+    // writing the same script again without its executable bit.
+    let permissions = std::fs::metadata(from)?.permissions();
+    if std::fs::metadata(to)?.permissions() != permissions {
+        std::fs::set_permissions(to, permissions)?;
+    }
     Ok(())
 }
 
