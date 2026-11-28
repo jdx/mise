@@ -274,13 +274,11 @@ impl S3Backend {
             pr.set_length(content_length);
         }
 
-        // Stream the body to a temp file then rename for atomic operation
-        let tmp_path = dest.with_extension("tmp");
-        if let Err(err) = write_body(resp.body, s3_url, &tmp_path, max_bytes, pr).await {
-            let _ = file::remove_file(&tmp_path);
-            return Err(err);
-        }
-        std::fs::rename(&tmp_path, dest)?;
+        // Stream the body to a temp file then rename for atomic operation. The
+        // temp file is deleted when it is dropped before the rename.
+        let tmp_path = download_temp_path(dest)?;
+        write_body(resp.body, s3_url, &tmp_path, max_bytes, pr).await?;
+        tmp_path.persist(dest)?;
 
         Ok(())
     }
@@ -502,6 +500,24 @@ async fn create_s3_client(region: Option<&str>, endpoint: Option<&str>) -> Resul
     }
 
     Ok(S3Client::from_conf(s3_config.build()))
+}
+
+/// A new, uniquely named file beside `dest` to download into, so that no name
+/// `dest` can have (one ending in `.tmp` included) makes it `dest` itself.
+fn download_temp_path(dest: &Path) -> Result<tempfile::TempPath> {
+    let dir = match dest.parent() {
+        Some(dir) if !dir.as_os_str().is_empty() => dir,
+        _ => Path::new("."),
+    };
+    let prefix = format!(
+        ".{}.",
+        dest.file_name().unwrap_or_default().to_string_lossy()
+    );
+    Ok(tempfile::Builder::new()
+        .prefix(&prefix)
+        .suffix(".tmp")
+        .tempfile_in(dir)?
+        .into_temp_path())
 }
 
 /// Write an S3 object body to `path` chunk by chunk, failing once it passes `max_bytes`.
@@ -1235,5 +1251,28 @@ checksum = "sha256:abc123"
             backend.missing_url_error(&none).to_string(),
             "S3 backend requires 'url' option"
         );
+    }
+
+    #[test]
+    fn test_download_temp_path_is_never_the_destination() {
+        let dir = tempfile::tempdir().unwrap();
+        for name in ["tool.tar.gz", "tool.tmp", "tool"] {
+            let dest = dir.path().join(name);
+            let tmp = download_temp_path(&dest).unwrap();
+            assert_ne!(&*tmp, dest.as_path());
+            assert_eq!(tmp.parent(), dest.parent());
+            assert!(tmp.exists());
+            // A download that fails drops the temp file, which removes it and
+            // leaves nothing under the destination's name.
+            let tmp_file = tmp.to_path_buf();
+            drop(tmp);
+            assert!(!tmp_file.exists());
+            assert!(!dest.exists());
+        }
+        let dest = dir.path().join("tool.tmp");
+        let tmp = download_temp_path(&dest).unwrap();
+        std::fs::write(&tmp, "done").unwrap();
+        tmp.persist(&dest).unwrap();
+        assert_eq!(std::fs::read_to_string(&dest).unwrap(), "done");
     }
 }

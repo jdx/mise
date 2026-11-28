@@ -543,13 +543,18 @@ fn says_version_is_missing(rest: &str, module: &str, version: &str) -> bool {
 }
 
 /// The module path without a `/vN` major version suffix, which names no
-/// directory of the repository.
+/// directory of the repository. Go writes one only for major version 2 and up,
+/// without a leading zero, so a last element such as `v1` or `v0` is a
+/// directory and stays.
 fn strip_major_version_suffix(module: &str) -> &str {
     match module.rsplit_once('/') {
         Some((base, last))
-            if last.len() > 1
-                && last.starts_with('v')
-                && last[1..].bytes().all(|b| b.is_ascii_digit()) =>
+            if last.strip_prefix('v').is_some_and(|n| {
+                !n.is_empty()
+                    && !n.starts_with('0')
+                    && n != "1"
+                    && n.bytes().all(|b| b.is_ascii_digit())
+            }) =>
         {
             base
         }
@@ -1147,6 +1152,12 @@ async fn query_proxy_list(proxies: &[GoProxy], encoded_path: &str) -> ProxyListR
                 if is_not_found_or_gone || proxy.fall_through == FallThrough::OnAnyError {
                     continue;
                 }
+                // An error after a refusal keeps the refusal: as an error it
+                // would hand the lookup to `go list`, which asks the same
+                // chain and gets the oversized list again.
+                if too_many {
+                    return ProxyListResult::TooMany;
+                }
                 return ProxyListResult::Error;
             }
         }
@@ -1482,6 +1493,26 @@ mod tests {
                 "v2.0.0",
                 true,
             ),
+            // Only v2 and up is a major version suffix: `v1` and `v0` are
+            // directories of the repository.
+            (
+                "go: example.com/tool/v1@v1.2.3: example.com/tool/v1@v1.2.3: invalid version: unknown revision v1/v1.2.3",
+                "example.com/tool/v1",
+                "v1.2.3",
+                true,
+            ),
+            (
+                "go: example.com/tool/v0@v0.2.3: example.com/tool/v0@v0.2.3: invalid version: unknown revision v0/v0.2.3",
+                "example.com/tool/v0",
+                "v0.2.3",
+                true,
+            ),
+            (
+                "go: example.com/tool/v1@v1.2.3: example.com/tool/v1@v1.2.3: invalid version: unknown revision tool/v1.2.3",
+                "example.com/tool/v1",
+                "v1.2.3",
+                false,
+            ),
             // A directory the module path does not end in is another module.
             (
                 "go: example.com/tool/sub@v1.2.3: example.com/tool/sub@v1.2.3: invalid version: unknown revision other/v1.2.3",
@@ -1816,7 +1847,7 @@ mod tests {
             .mock("GET", "/example.com/tool/@v/list")
             .with_status(200)
             .with_body(oversized)
-            .expect(3)
+            .expect(4)
             .create_async()
             .await;
         let mut fallback = mockito::Server::new_async().await;
@@ -1846,6 +1877,22 @@ mod tests {
             ProxyListResult::TooMany
         ));
         missing_list.assert_async().await;
+        // Nor does a later proxy that fails, which would hand the lookup to
+        // `go list` and so fetch the oversized list again.
+        let mut unavailable = mockito::Server::new_async().await;
+        let unavailable_list = unavailable
+            .mock("GET", "/example.com/tool/@v/list")
+            .with_status(503)
+            // The HTTP client retries a 503.
+            .expect_at_least(1)
+            .create_async()
+            .await;
+        let then_failing = parse_goproxy_value(&format!("{}|{}", hostile.url(), unavailable.url()));
+        assert!(matches!(
+            query_proxy_list(&then_failing, "example.com/tool").await,
+            ProxyListResult::TooMany
+        ));
+        unavailable_list.assert_async().await;
         // `|` moves on to the next proxy after any error, this one included.
         let chained = parse_goproxy_value(&format!("{}|{}", hostile.url(), fallback.url()));
         assert!(matches!(
