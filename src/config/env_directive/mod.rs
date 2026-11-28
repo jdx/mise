@@ -472,17 +472,34 @@ impl SubstitutionMarks {
 }
 
 /// The glob [`SubstitutionMarks::segments`] stand for.
+///
+/// A substitution that renders nothing between two written `*`s leaves one `*`: the entry
+/// writes no `**` there, so the walk must not descend, as `env/*${SUFFIX:-}*/.env` would.
 fn glob_of(segments: &[(bool, &str)]) -> String {
-    segments
-        .iter()
-        .map(|(data, text)| {
-            if *data {
-                escape_glob(text)
-            } else {
-                text.to_string()
-            }
-        })
-        .collect()
+    let mut glob = String::new();
+    let mut after_data = false;
+    for (data, text) in segments {
+        if *data {
+            glob.push_str(&escape_glob(text));
+            after_data = true;
+            continue;
+        }
+        let mut text = *text;
+        if after_data && text.starts_with('*') && ends_with_wildcard_star(&glob) {
+            text = &text[1..];
+        }
+        glob.push_str(text);
+        after_data = after_data && text.is_empty();
+    }
+    glob
+}
+
+/// Whether `glob` ends with a `*` wildcard, not one escaped with a `\` outside Windows.
+fn ends_with_wildcard_star(glob: &str) -> bool {
+    let Some(rest) = glob.strip_suffix('*') else {
+        return false;
+    };
+    cfg!(windows) || (rest.len() - rest.trim_end_matches('\\').len()).is_multiple_of(2)
 }
 
 /// Glob syntax that matches `text` and nothing else. Each metacharacter goes in a character
@@ -1776,12 +1793,25 @@ mod tests {
                 "[ab]{% if 1 %}*{% endif %}",
             ),
             ("{{ x }}/*", &x("a?[b]"), "a[?][[]b[]]/*"),
+            // an empty substitution does not join two written `*`s into a `**`
+            ("*{{ x }}*/.env", &x(""), "*/.env"),
+            (
+                "*$X{{ x }}*/.env",
+                &|s: &str| s.replace("$X", "").replace("{{ x }}", ""),
+                "*/.env",
+            ),
+            ("**{{ x }}/.env", &x(""), "**/.env"),
+            ("*{{ x }}*/.env", &x("a"), "*a*/.env"),
         ] {
             assert_eq!(
                 glob(pattern, rendered).as_deref(),
                 Some(expected),
                 "{pattern}"
             );
+        }
+        // a `*` escaped before an empty substitution is a written star, and stays one
+        if cfg!(unix) {
+            assert_eq!(glob("\\*{{ x }}*.env", &x("")).as_deref(), Some("\\**.env"));
         }
         // data cannot end a substitution early
         let forged = format!("*{PATTERN_MARK}0>*");
