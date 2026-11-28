@@ -233,11 +233,8 @@ enum BinPathError {
 }
 
 fn resolve_platform_specific_bin(stub: &ToolStubFile, stub_path: &Path) -> String {
-    // Try to find platform-specific bin field first
-    let platform_key = get_current_platform_key();
-
-    // Check for platform-specific bin field: platforms.{platform}.bin
-    if let Some(bin) = stub.platform_bin(&platform_key) {
+    // The bin of the platform the tool was downloaded for: platforms.{platform}.bin
+    if let Some(bin) = stub.bin_for_this_platform() {
         return bin.to_string();
     }
 
@@ -252,12 +249,6 @@ fn resolve_platform_specific_bin(stub: &ToolStubFile, stub_path: &Path) -> Strin
         .and_then(|s| s.to_str())
         .unwrap_or(&stub.tool_name)
         .to_string()
-}
-
-fn get_current_platform_key() -> String {
-    use crate::config::Settings;
-    let settings = Settings::get();
-    format!("{}-{}", settings.os(), settings.arch())
 }
 
 async fn find_cached_or_resolve_bin_path(

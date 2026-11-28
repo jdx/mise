@@ -93,14 +93,13 @@ fn has_http_backend_config(opts: &indexmap::IndexMap<String, toml::Value>) -> bo
     false
 }
 
-/// Whether `platform` is written the way mise names the platform it runs on (see
-/// `Settings::os` and `Settings::arch`): `macos` rather than `darwin`, `x64` rather than `amd64`
-/// or `x86_64`, `arm64` rather than `aarch64`.
-fn is_canonical_platform_key(platform: &str) -> bool {
-    let Some((os, arch)) = platform.split_once('-') else {
-        return false;
-    };
-    os != "darwin" && !matches!(arch, "amd64" | "x86_64" | "aarch64")
+/// Whether `platform` is a plain `os-arch` key, the only kind a download's `url` and a run's
+/// `bin` are looked up under (see [`ToolStubFile::bin_for_this_platform`]). A qualified key
+/// such as `linux-x64-musl` is not one.
+fn is_os_arch_key(platform: &str) -> bool {
+    platform
+        .split_once('-')
+        .is_some_and(|(os, arch)| !os.is_empty() && !arch.is_empty() && !arch.contains('-'))
 }
 
 /// Extract TOML content from a bootstrap script's comment block
@@ -192,12 +191,22 @@ impl ToolStubFile {
             .as_str()
     }
 
+    /// The `bin` the stub names for the platform a run downloads for. It is looked up under
+    /// the `os-arch` keys the download's `url` is, in the same order: the machine's platform
+    /// and its aliases (`macos-arm64`, then `darwin-arm64`, ...), so the two come from one
+    /// platform even when `MISE_OS` or `MISE_ARCH` names another.
+    pub fn bin_for_this_platform(&self) -> Option<&str> {
+        crate::backend::static_helpers::platform_aliases()
+            .into_iter()
+            .find_map(|(os, arch)| self.platform_bin(&format!("{os}-{arch}")))
+    }
+
     /// Whether every platform the stub downloads for has its own `bin`, so a run never uses the
     /// top-level `bin`, which defaults to the stub's file name. Only an `http:` stub without a
     /// top-level `url` lists the platforms it supports: any other runs on platforms it does not
-    /// name. A platform's `url` may be written under an alias such as `darwin-arm64`, but a run
-    /// looks its `bin` up only under the name mise gives the platform (`macos-arm64`), so an alias
-    /// counts as a platform without its own `bin`.
+    /// name. A run looks a platform's `bin` up as its download looks up the `url`, under an
+    /// `os-arch` key or an alias of one, so a qualified key such as `linux-x64-musl` counts as a
+    /// platform without its own `bin`.
     pub fn sets_bin_for_every_platform(&self) -> bool {
         if !self.tool_name.starts_with("http:") || self.opts.contains_key("url") {
             return false;
@@ -208,9 +217,9 @@ impl ToolStubFile {
         };
         let platforms = list_available_platforms_with_key(&opts, "url");
         !platforms.is_empty()
-            && platforms.iter().all(|platform| {
-                is_canonical_platform_key(platform) && self.platform_bin(platform).is_some()
-            })
+            && platforms
+                .iter()
+                .all(|platform| is_os_arch_key(platform) && self.platform_bin(platform).is_some())
     }
 
     // Create a ToolRequest directly using ToolVersionOptions
@@ -299,13 +308,47 @@ bin = "t"
         let top_level_url = format!("url = \"https://example.com/a.tar.gz\"\n{every}");
         assert!(!stub(&top_level_url).sets_bin_for_every_platform());
 
-        // a run on macOS looks the bin up under macos-arm64, not darwin-arm64
+        // a run looks the bin up under an alias, as the download does the url
         let alias = every.replace("macos-arm64", "darwin-arm64");
-        assert!(!stub(&alias).sets_bin_for_every_platform());
+        assert!(stub(&alias).sets_bin_for_every_platform());
+
+        // but under no qualified key
+        let qualified = every.replace("linux-x64", "linux-x64-musl");
+        assert!(!stub(&qualified).sets_bin_for_every_platform());
 
         let not_http = every.replace("http:t", "github:o/t");
         assert!(!stub(&not_http).sets_bin_for_every_platform());
 
         assert!(!stub("tool = \"http:t\"\n").sets_bin_for_every_platform());
+    }
+
+    #[test]
+    fn test_bin_for_this_platform_follows_the_download() {
+        // whichever spelling of this machine's platform the url is under, the bin under the
+        // same key is the one a run uses
+        for (os, arch) in crate::backend::static_helpers::platform_aliases() {
+            let platform = format!("{os}-{arch}");
+            let stub = stub(&format!(
+                "tool = \"http:t\"\n[platforms.{platform}]\nurl = \"https://example.com/t.tar.gz\"\nbin = \"{platform}-bin\"\n"
+            ));
+            let opts = ToolVersionOptions {
+                opts: stub.opts.clone().into(),
+                ..Default::default()
+            };
+            assert!(lookup_platform_key(&opts, "url").is_some(), "{platform}");
+            assert_eq!(
+                stub.bin_for_this_platform(),
+                Some(format!("{platform}-bin").as_str())
+            );
+        }
+
+        // a platform that is not this machine's is never used
+        let other = if cfg!(target_os = "linux") {
+            "windows-x64"
+        } else {
+            "linux-x64"
+        };
+        let stub = stub(&format!("[platforms.{other}]\nbin = \"other\"\n"));
+        assert_eq!(stub.bin_for_this_platform(), None);
     }
 }
