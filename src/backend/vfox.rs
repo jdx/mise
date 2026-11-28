@@ -256,7 +256,7 @@ fn is_tool_option_env_key(key: &str) -> bool {
 /// `ignored_config_paths` names, and lets a `trusted_config_paths` entry for the
 /// config override a `mise trust --ignore` of the root. Global config does not
 /// vouch for a directory, and safe mode trusts none.
-pub(crate) fn dir_is_trusted(config: &Config, dir: &Path) -> bool {
+fn dir_is_trusted(config: &Config, dir: &Path) -> bool {
     use crate::config::config_file::{
         is_ignored, is_ignored_via_setting, is_path_trusted, is_trusted,
     };
@@ -301,6 +301,38 @@ pub(crate) fn dir_is_trusted(config: &Config, dir: &Path) -> bool {
             step.join(".git").symlink_metadata().is_err() && !is_ignored(&step)
         })
     })
+}
+
+/// The `MISE_PROJECT_ROOT` an environment hook gets before
+/// [`withhold_untrusted_dirs`]: config `[env]` over the environment mise
+/// started with, as in [`Backend::dependency_env`]. Before the config env is
+/// resolved, only the starting environment.
+fn hook_project_root(config: &Config) -> Option<String> {
+    const KEY: &str = "MISE_PROJECT_ROOT";
+    if let Some(results) = config.env_results_cached() {
+        if let Some((value, _)) = results.env.get(KEY) {
+            return Some(value.clone());
+        }
+        if results.env_remove.contains(KEY) {
+            return None;
+        }
+    }
+    env::PRISTINE_ENV.get(KEY).cloned()
+}
+
+/// The trust that decides what an environment hook sees of the project:
+/// whether the current directory is trusted, which gives the hook `PWD` and
+/// starts its commands there, and whether the directory its
+/// `MISE_PROJECT_ROOT` names is (`None` when unset), which keeps that
+/// variable. `mise trust` changes these without changing a config file, so
+/// cached environments are keyed on them.
+pub(crate) fn env_hook_trust(config: &Config) -> (bool, Option<bool>) {
+    let cwd = dirs::CWD
+        .as_deref()
+        .is_some_and(|cwd| dir_is_trusted(config, cwd));
+    let project_root =
+        hook_project_root(config).map(|root| dir_is_trusted(config, Path::new(&root)));
+    (cwd, project_root)
 }
 
 /// Names, one per line, the plugins whose environment hooks are running in
@@ -1331,7 +1363,9 @@ impl VfoxBackend {
             use std::hash::{Hash, Hasher};
             let mut hasher = std::collections::hash_map::DefaultHasher::new();
             opts.hash(&mut hasher);
-            cwd_trusted.hash(&mut hasher);
+            // A hook that hands `MISE_PROJECT_ROOT` to a command rather than
+            // reading it with `os.getenv` leaves no record of the read.
+            env_hook_trust(config).hash(&mut hasher);
             // The hook gets the install path as an absolute path, and a
             // relative data directory puts the same relative path in a
             // different place in each project.

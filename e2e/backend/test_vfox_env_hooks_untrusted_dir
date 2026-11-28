@@ -140,12 +140,17 @@ assert_not_contains "cd pipenv-repo && MISE_SAFE=1 mise env" "/pipenv-repo/.venv
 mkdir -p other
 mise trust other
 assert_not_contains "cd pipenv-repo && mise --cd ../other env" "/pipenv-repo/.venv"
+# MISE_PROJECT_ROOT can name a project other than the current directory
+rooted_exec="cd other && MISE_PROJECT_ROOT=$PWD/poetry-repo MISE_ENV_CACHE=1 __MISE_ENV_CACHE_KEY=dGVzdGtleXRlc3RrZXl0ZXN0a2V5dGVzdGtleXRlc3Q= mise exec -- printenv PATH"
+assert_contains "$rooted_exec" "/poetry-repo/.venv/bin"
 
 # and no longer once the trust is withdrawn
 mise trust --untrust pipenv-repo
 mise trust --untrust poetry-repo
 assert_not_contains "cd pipenv-repo && mise env" "/pipenv-repo/.venv"
 assert_not_contains "cd poetry-repo && mise env" "/poetry-repo/.venv"
+# including from the env cache, where only that project's trust changed
+assert_not_contains "$rooted_exec" "/poetry-repo/.venv/bin"
 
 # safe mode passes no options from an untrusted mise.toml to the hook
 rm "$MISE_CONFIG_DIR/config.toml"
