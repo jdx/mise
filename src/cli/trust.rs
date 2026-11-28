@@ -108,6 +108,7 @@ impl Trust {
             untrust_config_file(
                 self.config_file()?,
                 self.named_file(),
+                self.named_dir(),
                 &self.config_filenames,
             )
         } else if self.ignore {
@@ -243,14 +244,20 @@ fn nearest_local_config_file(filenames: &[String]) -> Option<PathBuf> {
 /// A picked file that is global config stands only for itself, since its root is the home
 /// directory and a sweep from there would reach the configs of another project. In paranoid
 /// mode the sweep is per file, so it starts from the directory instead, as [`paranoid_project`]
-/// finds it, and leaves the global files out: a directory whose only config is global config
-/// itself still stands for that file.
-fn refused_roots(path: &Path, cfr: &Path, named_file: bool, filenames: &[String]) -> Vec<PathBuf> {
+/// finds it, and leaves the global files out, those of every environment: a directory whose
+/// only config is global config itself still stands for that file.
+fn refused_roots(
+    path: &Path,
+    cfr: &Path,
+    named_file: bool,
+    named_dir: Option<&Path>,
+    filenames: &[String],
+) -> Vec<PathBuf> {
     if named_file {
         return vec![cfr.to_path_buf()];
     }
     if Settings::get().paranoid.config() {
-        let Some(project) = paranoid_project(path) else {
+        let Some(project) = paranoid_project(path, named_dir) else {
             return vec![cfr.to_path_buf()];
         };
         let roots: Vec<PathBuf> = std::iter::once(cfr.to_path_buf())
@@ -258,6 +265,7 @@ fn refused_roots(path: &Path, cfr: &Path, named_file: bool, filenames: &[String]
             .filter(|file| {
                 file.is_file()
                     && !is_global_config(file)
+                    && !config::lives_in_global_config_dir(file)
                     && config_file::config_root::linked_project(file).is_none()
                     && config_file::config_project(file) == project
             })
@@ -292,16 +300,16 @@ fn refused_roots(path: &Path, cfr: &Path, named_file: bool, filenames: &[String]
 /// The project whose configs a paranoid untrust or ignore of a directory, or with no path, acts
 /// on, from the file picked there. When that file is a project's link to global config, it is the
 /// project that holds the link. When it is global config itself, such as the config in a dotfiles
-/// checkout that the global config dir links to, it is the directory its path names. Either way
-/// the project's other configs are found whichever file was picked, and the sweep leaves the
-/// global files out.
-fn paranoid_project(path: &Path) -> Option<PathBuf> {
+/// checkout that the global config dir links to, it is `named_dir`, the directory the user named,
+/// and no more: naming the global config dir must not reach the home directory's configs. Either
+/// way the project's other configs are found whichever file was picked, and the sweep leaves the
+/// global files out. `None` for global config picked with no directory named.
+fn paranoid_project(path: &Path, named_dir: Option<&Path>) -> Option<PathBuf> {
     if let Some(project) = config_file::config_root::linked_global_project(path) {
         return Some(project);
     }
     if is_global_config(path) {
-        let path = path.absolutize().ok()?;
-        return Some(config_file::config_root::project_by_name(&path));
+        return Some(named_dir?.absolutize().ok()?.to_path_buf());
     }
     Some(config_file::config_project(path))
 }
@@ -395,9 +403,12 @@ fn warn_trusted_via_settings(roots: &[PathBuf]) {
     }
 }
 
+/// `named_dir` is the directory the user named, if they named one, which bounds a sweep started
+/// from global config picked there (see [`paranoid_project`]).
 pub(super) fn untrust_config_file(
     config_file: Option<PathBuf>,
     named_file: bool,
+    named_dir: Option<&Path>,
     filenames: &[String],
 ) -> Result<()> {
     let path = match config_file {
@@ -411,13 +422,13 @@ pub(super) fn untrust_config_file(
         },
     };
     let cfr = cli_trust_root(&path, named_file);
-    let roots = refused_roots(&path, &cfr, named_file, filenames);
+    let roots = refused_roots(&path, &cfr, named_file, named_dir, filenames);
     // An approval of a config the checkout lacks, such as one only another branch has, goes with
     // the project's, so it asks again when that branch brings the config back.
     let recorded: Vec<PathBuf> = if named_file {
         vec![]
     } else if Settings::get().paranoid.config() {
-        paranoid_project(&path)
+        paranoid_project(&path, named_dir)
             .map(|project| {
                 config_file::trusted_configs_of_project(&project)
                     .into_iter()
@@ -532,12 +543,20 @@ impl Trust {
         // paranoid mode a directory whose picked file is such a link stands for the project that
         // holds it, whose other configs are ignored.
         let paranoid = Settings::get().paranoid.config();
-        let project = paranoid.then(|| paranoid_project(&path)).flatten();
+        let project = paranoid
+            .then(|| paranoid_project(&path, self.named_dir()))
+            .flatten();
         if is_global_config(&path) && (self.named_file() || project.is_none()) {
             return Err(global_config_ignore_refused(&path));
         }
         let cfr = cli_trust_root(&path, self.named_file());
-        let roots = refused_roots(&path, &cfr, self.named_file(), &self.config_filenames);
+        let roots = refused_roots(
+            &path,
+            &cfr,
+            self.named_file(),
+            self.named_dir(),
+            &self.config_filenames,
+        );
         // A directory whose only config is global config itself stands for that file.
         if roots.iter().any(|root| is_global_config(root)) {
             return Err(global_config_ignore_refused(&path));
@@ -744,6 +763,11 @@ impl Trust {
     /// Whether the user named a config file, rather than a directory or nothing.
     fn named_file(&self) -> bool {
         self.config_file.as_ref().is_some_and(|p| p.is_file())
+    }
+
+    /// The directory the user named, if they named one.
+    fn named_dir(&self) -> Option<&Path> {
+        self.config_file.as_deref().filter(|p| p.is_dir())
     }
 
     fn get_next_untrusted(&self) -> Option<PathBuf> {

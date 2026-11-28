@@ -34,7 +34,8 @@ impl Untrust {
         } else {
             crate::config::trust_config_filenames().await
         };
-        trust::untrust_config_file(config_file, named_file, &filenames)
+        let named_dir = self.config_file.as_deref().filter(|p| p.is_dir());
+        trust::untrust_config_file(config_file, named_file, named_dir, &filenames)
     }
 
     fn config_file(&self) -> Result<Option<PathBuf>> {

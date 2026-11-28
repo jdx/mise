@@ -3902,6 +3902,28 @@ pub(crate) fn is_project_link_to_global_config(path: &Path) -> bool {
         .is_some_and(|global| global != path && !path.canonicalize().is_ok_and(|real| real == path))
 }
 
+/// Whether `path` lives in the global or system config directory, followed
+/// through links to it such as a dotfiles checkout that the global config dir
+/// links to, whichever environment selects it: a `config.staging.toml` there is
+/// global config as soon as staging is selected, so a project's trust must not
+/// reach it while staging is not. Only the directory is resolved, so a
+/// project's own link to a global file is not in it. A directory that
+/// `MISE_GLOBAL_CONFIG_FILE` or `MISE_SYSTEM_CONFIG_FILE` replaces holds no
+/// global config.
+pub fn lives_in_global_config_dir(path: &Path) -> bool {
+    let Some(dir) = path.parent() else {
+        return false;
+    };
+    let dir = file::desymlink_path_cached(dir);
+    [
+        (env::MISE_GLOBAL_CONFIG_FILE.is_none()).then_some(*dirs::CONFIG),
+        (env::MISE_SYSTEM_CONFIG_FILE.is_none()).then_some(*dirs::SYSTEM_CONFIG),
+    ]
+    .into_iter()
+    .flatten()
+    .any(|global| dir.starts_with(file::desymlink_path_cached(global)))
+}
+
 /// The path global or system config discovery found `path` at, if `path` is
 /// global config. The two differ when `path` only resolves to that file, which
 /// also holds for a symlink to it from a directory the user does not control,
