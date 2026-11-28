@@ -273,6 +273,25 @@ impl CondaBackend {
         Ok(Self::flatten_repodata(&repodata))
     }
 
+    /// The records `mise lock` locks: those `fetch` returns, solved for `specs` on
+    /// `platform` under the `before` cutoff. Each failure says which step failed and
+    /// leaves out the fetch's and the solver's own errors, which can quote a channel URL
+    /// with a token in it.
+    async fn lock_records(
+        fetch: impl std::future::Future<Output = Result<Vec<RepoDataRecord>>>,
+        specs: Vec<MatchSpec>,
+        platform: CondaPlatform,
+        tool_name: &str,
+        target: &str,
+        before: Option<jiff::Timestamp>,
+    ) -> Result<Vec<RepoDataRecord>> {
+        let fetched = fetch.await.wrap_err_with(|| {
+            format!("failed to fetch conda repodata for {tool_name} for {target}")
+        })?;
+        Self::solve_records(fetched, specs, platform, before)
+            .wrap_err_with(|| lock_solve_failure(tool_name, target, before))
+    }
+
     /// Solve the conda environment for `specs` on `platform` from `records`,
     /// choosing only from packages released by `before`.
     fn solve_records(
@@ -1576,16 +1595,15 @@ impl Backend for CondaBackend {
         // themselves. The fetch's and the solver's errors stay out of them: they
         // can quote a channel URL with a token in its path or query.
         let specs = vec![match_spec];
-        let fetched = Self::fetch_records(&specs, platform, opts)
-            .await
-            .wrap_err_with(|| {
-                format!(
-                    "failed to fetch conda repodata for {tool_name} for {}",
-                    target.to_key()
-                )
-            })?;
-        let records = Self::solve_records(fetched, specs, platform, tv.before_date)
-            .wrap_err_with(|| lock_solve_failure(&tool_name, &target.to_key(), tv.before_date))?;
+        let records = Self::lock_records(
+            Self::fetch_records(&specs, platform, opts),
+            specs.clone(),
+            platform,
+            &tool_name,
+            &target.to_key(),
+            tv.before_date,
+        )
+        .await?;
 
         let tool_name_norm = tool_name.to_lowercase();
         let mut main_record = None;
@@ -1817,10 +1835,9 @@ mod tests {
         assert_eq!(kept[0].version, "9.1.0");
     }
 
-    #[test]
-    fn a_lock_solve_names_the_cutoff_it_solved_under() {
-        use super::{CondaPlatform, exact_match_spec, lock_solve_failure};
-        use eyre::WrapErr;
+    #[tokio::test]
+    async fn a_lock_solve_names_the_cutoff_it_solved_under() {
+        use super::{CondaPlatform, exact_match_spec};
         use rattler_conda_types::utils::TimestampMs;
         let mut new = make_record(
             "vim",
@@ -1834,27 +1851,36 @@ mod tests {
         new.package_record.subdir = "noarch".to_string();
         let cutoff: jiff::Timestamp = "2024-06-01T00:00:00Z".parse().unwrap();
         let spec = || vec![exact_match_spec("vim", "9.2.0").unwrap()];
+        let lock = |fetched: eyre::Result<Vec<_>>, before| {
+            CondaBackend::lock_records(
+                async { fetched },
+                spec(),
+                CondaPlatform::NoArch,
+                "vim",
+                "linux-x64",
+                before,
+            )
+        };
 
         // The solver chose under the cutoff, so the failure names it.
-        let err = CondaBackend::solve_records(
-            vec![new.clone()],
-            spec(),
-            CondaPlatform::NoArch,
-            Some(cutoff),
-        )
-        .wrap_err_with(|| lock_solve_failure("vim", "linux-x64", Some(cutoff)))
-        .unwrap_err();
+        let err = lock(Ok(vec![new.clone()]), Some(cutoff)).await.unwrap_err();
         assert_eq!(
             err.to_string(),
             "failed to solve vim for linux-x64 with packages released before 2024-06-01T00:00:00Z (minimum_release_age)"
         );
+        // A fetch failure says so, without the fetch's own error.
+        let err = lock(
+            Err(eyre::eyre!("https://token@example.invalid")),
+            Some(cutoff),
+        )
+        .await
+        .unwrap_err();
         assert_eq!(
-            lock_solve_failure("vim", "linux-x64", None),
-            "failed to solve vim for linux-x64"
+            err.to_string(),
+            "failed to fetch conda repodata for vim for linux-x64"
         );
         // Without the cutoff the same records solve.
-        let solved =
-            CondaBackend::solve_records(vec![new], spec(), CondaPlatform::NoArch, None).unwrap();
+        let solved = lock(Ok(vec![new]), None).await.unwrap();
         assert_eq!(solved.len(), 1);
     }
 
