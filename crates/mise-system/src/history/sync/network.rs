@@ -10,6 +10,11 @@ use crate::history::shadow::HistoryRepo;
 /// The fetched setup branch head.
 pub(crate) const UPSTREAM_REF: &str = "refs/remotes/origin/setup";
 
+/// The commit a push was last attempted with. It is written before the push
+/// and cleared once origin's answer is recorded in `UPSTREAM_REF`, so a sync
+/// that stops in between still marks what origin may already hold.
+pub(crate) const PUSHING_REF: &str = "refs/mise/pushing";
+
 /// A Git transport failed, as distinct from an invalid local configuration,
 /// encryption policy, or reconciliation plan.
 #[derive(Debug, thiserror::Error)]
