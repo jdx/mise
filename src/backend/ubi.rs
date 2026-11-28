@@ -553,10 +553,19 @@ impl UbiBackend {
         })?;
         match lock {
             ExtractAllLock::TreeMatches => return Ok(()),
-            ExtractAllLock::TreeMismatch { expected, actual } => bail!(
-                "Checksum mismatch for directory {}:\nExpected: blake3:{expected}\nActual:   blake3:{actual}",
-                file::display_path(install_dir)
-            ),
+            ExtractAllLock::TreeMismatch { expected, actual } => {
+                let hint = if picked_name == EXTRACT_ALL_CHECKSUM_NAME {
+                    format!(
+                        "\nhint: If an older mise recorded {platform_key} for the file named {EXTRACT_ALL_CHECKSUM_NAME}, remove the entry from mise.lock to record a checksum of the whole install"
+                    )
+                } else {
+                    String::new()
+                };
+                bail!(
+                    "Checksum mismatch for directory {}:\nExpected: blake3:{expected}\nActual:   blake3:{actual}{hint}",
+                    file::display_path(install_dir)
+                )
+            }
             ExtractAllLock::InvalidTree => bail!("Invalid checksum: {platform_key}"),
             ExtractAllLock::OneFile { key, picked } => {
                 if ctx.locked {
@@ -599,7 +608,8 @@ impl UbiBackend {
 /// - the key of the picked file holds that file's checksum, whatever its name,
 ///   so a file named `tool-extract_all` or `musl-tool` keeps its checksum;
 /// - the key `<prefix>extract_all` holds the checksum of the whole install, and,
-///   when the picked file is named `extract_all`, may hold that file's instead;
+///   when the picked file is named `extract_all`, may hold that file's instead if
+///   it is not a blake3 checksum, which a whole-install one always is;
 /// - of the other keys, one ending in `-extract_all` is the whole-install key of
 ///   other options, and on glibc one starting with `musl-` belongs to the musl
 ///   platform, whose keys extend the glibc ones;
@@ -672,8 +682,12 @@ fn extract_all_lock(
             Some(expected) if actual == expected.to_lowercase() => {
                 return Ok(ExtractAllLock::TreeMatches);
             }
-            // The checksum of the picked file, read below.
-            _ if kind(key) == ExtractAllKey::TreeOrPickedFile => {}
+            // Only a checksum that is not a blake3 one can be told apart from a
+            // whole-install checksum, so only that one is read below as the picked
+            // file's. A blake3 one that does not match fails: the release names the
+            // files, so a file named `extract_all` whose content is the bytes the
+            // whole-install digest covers would match it and pass any other files.
+            None if kind(key) == ExtractAllKey::TreeOrPickedFile => {}
             Some(expected) => {
                 return Ok(ExtractAllLock::TreeMismatch {
                     expected: expected.to_string(),
@@ -1253,8 +1267,21 @@ mod tests {
                 false,
                 TreeMatches,
             ),
+            // A blake3 checksum under that key that does not match is not read as the
+            // file's: the file's content could be the bytes the whole-install digest
+            // covers. Any other algorithm can only be the file's.
             (
                 vec![("linux-x64-extract_all", "blake3:ff")],
+                glibc,
+                "extract_all",
+                false,
+                TreeMismatch {
+                    expected: "ff".into(),
+                    actual: "aa".into(),
+                },
+            ),
+            (
+                vec![("linux-x64-extract_all", "sha256:ff")],
                 glibc,
                 "extract_all",
                 false,
