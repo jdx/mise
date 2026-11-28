@@ -294,7 +294,10 @@ asking.
 Leaving the root untrusted does not prevent this. Even after `mise trust` in a
 subproject, the next command you type there trusts the untrusted root above it
 and prints the notice. To keep the root out, run `mise trust --ignore` on the
-root's config, then `mise trust` in each subproject you want. Alternatively,
+root's config, then run `mise trust` with the path to each subproject config
+you want to approve, such as `mise trust app/mise.toml`. Without a path,
+`mise trust` picks the nearest untrusted config, which can be the ignored root
+once the subproject is trusted. Alternatively,
 enable paranoid mode's `config` category. Typed commands then ask again, and
 trusting the root trusts only that file.
 

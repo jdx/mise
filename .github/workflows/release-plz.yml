@@ -46,7 +46,7 @@ jobs:
       - run: mkdir -p "$HOME/bin" && echo "$HOME/bin" >> "$GITHUB_PATH"
       - run: rustup update stable --no-self-update && rustup default stable && rustup component add rustfmt clippy
       - run: cargo build --all-features --ignore-rust-version && cp target/debug/mise "$HOME"/bin
-      - uses: ./.github/actions/mise-tools
+      - uses: $/.github/actions/mise-tools
         with:
           cache: false
       - run: mise x -- aube install
