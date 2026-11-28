@@ -1847,29 +1847,13 @@ fn raw_blocks(input: &str) -> Vec<(usize, regex::Captures<'_>)> {
             at = start + 1;
             continue;
         };
-        match tag_end(rest, close) {
+        match crate::tera::template_tag_end(rest, close) {
             Some(end) => at = start + end,
             // Tera rejects a tag with no closer; nothing after it is a block.
             None => break,
         }
     }
     blocks
-}
-
-/// The end of the tag `tag` opens, after its `close`, skipping string literals in it.
-fn tag_end(tag: &str, close: &str) -> Option<usize> {
-    let mut i = 2;
-    let bytes = tag.as_bytes();
-    while i < bytes.len() {
-        if close != "#}" && matches!(bytes[i], b'"' | b'\'' | b'`') {
-            let quote = bytes[i];
-            i += 1 + bytes[i + 1..].iter().position(|&b| b == quote)?;
-        } else if bytes[i..].starts_with(close.as_bytes()) {
-            return Some(i + close.len());
-        }
-        i += 1;
-    }
-    None
 }
 
 /// The body of a `{% raw %}` block is written to be rendered by the backend, so it is swapped
@@ -4538,6 +4522,10 @@ mod tests {
         let (out, deferred) = shield_raw_blocks(input);
         assert_eq!(deferred.exprs, vec!["{{ version }}"]);
         assert!(out.starts_with(r#"{{ "}}" }}{% raw %}"#), "{out}");
+        // Tera 2 reads `\"` as a quote inside the string, which still closes after it
+        let input = r#"{{ "\"" }}{% raw %}{{ version }}{% endraw %}"#;
+        let (_, deferred) = shield_raw_blocks(input);
+        assert_eq!(deferred.exprs, vec!["{{ version }}"]);
     }
 
     #[tokio::test]

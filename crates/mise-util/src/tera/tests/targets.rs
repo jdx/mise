@@ -223,3 +223,33 @@ fn test_escape_template_syntax_leaves_plain_text_alone() {
     assert_eq!(escape_template_syntax("a}}b%}c"), "a}}b%}c");
     assert_eq!(escape_template_syntax("{{x"), r#"{{ "{{" }}x"#);
 }
+
+/// A tag ends at the first closer outside its string literals. Tera 2 strings take `\` escapes,
+/// so an escaped quote leaves the string open there; Tera 1 strings do not.
+#[test]
+fn test_template_tag_end_skips_string_literals() {
+    let cases = |v1: bool| {
+        let tags = [
+            ("{{ x }}rest", "}}", Some(7)),
+            ("{{ 'a}}' }}rest", "}}", Some(11)),
+            ("{% set a = \"%}\" %}rest", "%}", Some(18)),
+            ("{{ `}}` }}rest", "}}", Some(10)),
+            ("{# '#} rest", "#}", Some(6)),
+            ("{{ 'a }}", "}}", None),
+            ("{{ x", "}}", None),
+        ];
+        for (tag, close, end) in tags {
+            assert_eq!(template_tag_end(tag, close), end, "{tag} v1={v1}");
+        }
+        let escaped = r#"{{ "a\" }}" }}rest"#;
+        let end = if v1 { 10 } else { 14 };
+        assert_eq!(template_tag_end(escaped, "}}"), Some(end), "v1={v1}");
+        assert_eq!(template_tag_end(r#"{{ "a\\" }}rest"#, "}}"), Some(11));
+    };
+    {
+        let _lock = crate::testing::lock_ignoring_poison(&crate::testing::SETTINGS_LOCK);
+        cases(false);
+    }
+    let _guard = SettingsGuard::tera_v1();
+    cases(true);
+}

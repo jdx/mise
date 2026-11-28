@@ -107,6 +107,33 @@ pub fn escape_template_syntax(data: &str) -> String {
         .into_owned()
 }
 
+/// The end of the template tag that `tag` opens (`{{`, `{%` or `{#`), just after its `close`
+/// (`}}`, `%}` or `#}`), or `None` when it has none. A closer inside a string literal of a `{{ }}`
+/// or `{% %}` tag does not end it. The configured engine's strings are read: Tera 2 lets a `\`
+/// escape the quote that would close one, and Tera 1 does not.
+pub fn template_tag_end(tag: &str, close: &str) -> Option<usize> {
+    let bytes = tag.as_bytes();
+    let mut escapes = None;
+    let mut i = 2;
+    while i < bytes.len() {
+        if close != "#}" && matches!(bytes[i], b'"' | b'\'' | b'`') {
+            let quote = bytes[i];
+            i += 1;
+            loop {
+                match *bytes.get(i)? {
+                    b'\\' if *escapes.get_or_insert_with(|| !use_tera_v1()) => i += 2,
+                    b if b == quote => break,
+                    _ => i += 1,
+                }
+            }
+        } else if bytes[i..].starts_with(close.as_bytes()) {
+            return Some(i + close.len());
+        }
+        i += 1;
+    }
+    None
+}
+
 pub enum TeraEngine {
     V2(Box<Tera>),
     V1(Box<tera1::Tera>),
