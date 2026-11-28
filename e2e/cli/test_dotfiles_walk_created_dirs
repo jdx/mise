@@ -138,18 +138,21 @@ assert_succeed "mise dot apply --yes --force"
 assert "readlink $HOME/t/new/sub/file" "$DOTS/pkg/new/sub/file"
 assert_not_contains "cat $MISE_STATE_DIR/dotfiles/created_dirs.toml" "$HOME/t/new"
 
-# a target whose tracking cannot be recorded is not written to, since a later
-# removal could then take the user's directories there
-rm -rf "$HOME/t" "$HOME/elsewhere" "$MISE_STATE_DIR/dotfiles"
-mkdir -p "$HOME/t/app" "$MISE_STATE_DIR/dotfiles"
-chmod 555 "$MISE_STATE_DIR/dotfiles"
-assert_fail_contains "mise dot apply --yes" "cannot record what mise creates under"
-chmod 755 "$MISE_STATE_DIR/dotfiles"
-assert "find $HOME/t -mindepth 1" "$HOME/t/app"
+# root ignores the mode bits these cases rely on
+if [ "$(id -u)" != 0 ]; then
+  # a target whose tracking cannot be recorded is not written to, since a later
+  # removal could then take the user's directories there
+  rm -rf "$HOME/t" "$HOME/elsewhere" "$MISE_STATE_DIR/dotfiles"
+  mkdir -p "$HOME/t/app" "$MISE_STATE_DIR/dotfiles"
+  chmod 555 "$MISE_STATE_DIR/dotfiles"
+  assert_fail_contains "mise dot apply --yes" "cannot record what mise creates under"
+  chmod 755 "$MISE_STATE_DIR/dotfiles"
+  assert "find $HOME/t -mindepth 1" "$HOME/t/app"
 
-# so is a target the apply would create
-rm -rf "$HOME/t"
-chmod 555 "$MISE_STATE_DIR/dotfiles"
-assert_fail_contains "mise dot apply --yes" "cannot record what mise creates under"
-chmod 755 "$MISE_STATE_DIR/dotfiles"
-assert_fail "test -e $HOME/t"
+  # so is a target the apply would create
+  rm -rf "$HOME/t"
+  chmod 555 "$MISE_STATE_DIR/dotfiles"
+  assert_fail_contains "mise dot apply --yes" "cannot record what mise creates under"
+  chmod 755 "$MISE_STATE_DIR/dotfiles"
+  assert_fail "test -e $HOME/t"
+fi

@@ -190,6 +190,10 @@ impl CreatedDirs {
     fn insert(&mut self, dir: PathBuf) -> bool {
         // the record is TOML, which holds only UTF-8 paths; mise leaves such a directory behind
         if dir.to_str().is_none() {
+            warn!(
+                "files: {} is not recorded as mise's because its name is not UTF-8, so removals leave it",
+                dir.display_user()
+            );
             return false;
         }
         let Some(id) = identity(&dir) else {
