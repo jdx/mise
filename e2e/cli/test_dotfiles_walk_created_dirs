@@ -1,0 +1,158 @@
+#!/usr/bin/env bash
+# e2e:non-root
+# A symlink-each or directory-copy target is shared with the user's files.
+# Removing what mise deployed there removes the directories mise created once
+# they are empty, and leaves the user's own directories, even empty ones.
+
+DOTS="$HOME/.dotfiles"
+mkdir -p "$DOTS/pkg/app" "$DOTS/pkg/new/sub" "$DOTS/pkg/gone"
+echo "app" >"$DOTS/pkg/app/conf"
+echo "new" >"$DOTS/pkg/new/sub/file"
+echo "gone" >"$DOTS/pkg/gone/file"
+
+cat <<EOF >mise.toml
+[dotfile_groups.pkg]
+target = "~/t"
+EOF
+
+# the user made ~/t/app before mise linked anything into it
+mkdir -p "$HOME/t/app"
+assert_succeed "mise dot apply --yes"
+assert "readlink $HOME/t/app/conf" "$DOTS/pkg/app/conf"
+assert "readlink $HOME/t/new/sub/file" "$DOTS/pkg/new/sub/file"
+
+# a source file removed: its link goes, and the directory mise made for it
+rm -r "$DOTS/pkg/gone"
+assert_succeed "mise dot apply --yes"
+assert_fail "test -e $HOME/t/gone"
+
+# the user's directory stays when its last link goes
+rm "$DOTS/pkg/app/conf"
+assert_succeed "mise dot apply --yes"
+assert_fail "test -L $HOME/t/app/conf"
+assert_succeed "test -d $HOME/t/app"
+
+# unapplying the group takes the directories mise made, not the user's
+echo "app" >"$DOTS/pkg/app/conf"
+assert_succeed "mise dot apply --yes"
+assert_succeed "mise dot unapply --group pkg --yes"
+assert_fail "test -e $HOME/t/app/conf"
+assert_fail "test -e $HOME/t/new"
+assert_succeed "test -d $HOME/t/app"
+
+# the same for a symlink-each entry outside a group
+rm -r "$HOME/t"
+mkdir -p "$HOME/t/app"
+cat <<EOF >mise.toml
+[dotfiles]
+"~/t" = { source = "$DOTS/pkg", mode = "symlink-each" }
+EOF
+assert_succeed "mise dot apply --yes"
+assert "readlink $HOME/t/new/sub/file" "$DOTS/pkg/new/sub/file"
+assert_succeed "mise dot unapply ~/t --yes"
+assert_fail "test -e $HOME/t/app/conf"
+assert_fail "test -e $HOME/t/new"
+assert_succeed "test -d $HOME/t/app"
+
+# and for a directory copied into place
+rm -r "$HOME/t"
+mkdir -p "$HOME/t/app"
+cat <<EOF >mise.toml
+[dotfiles]
+"~/t" = { source = "$DOTS/pkg", mode = "copy" }
+EOF
+assert_succeed "mise dot apply --yes"
+assert "cat $HOME/t/new/sub/file" "new"
+assert_succeed "mise dot unapply ~/t --yes"
+assert_fail "test -e $HOME/t/new"
+assert_succeed "test -d $HOME/t/app"
+
+# a target deployed before mise recorded its directories is tracked by the
+# next apply even when nothing changes, and a file of the user's that matches
+# what the copy would write does not make its directory mise's
+rm -rf "$HOME/t" "$MISE_STATE_DIR/dotfiles/created_dirs.toml"
+mkdir -p "$HOME/t/app" "$HOME/t/new/sub"
+echo "app" >"$HOME/t/app/conf"
+echo "new" >"$HOME/t/new/sub/file"
+assert_succeed "mise dot apply --yes"
+assert_contains "cat $MISE_STATE_DIR/dotfiles/created_dirs.toml" "$HOME/t"
+assert_succeed "mise dot unapply ~/t --yes"
+assert_succeed "test -d $HOME/t/app"
+
+# a directory mise made, which the user deleted and made again, is theirs
+rm -rf "$HOME/t"
+mkdir -p "$HOME/t"
+cat <<EOF >mise.toml
+[dotfiles]
+"~/t" = { source = "$DOTS/pkg", mode = "symlink-each" }
+EOF
+assert_succeed "mise dot apply --yes"
+echo "mine" >"$HOME/t/new/mine"
+assert_succeed "mise dot unapply ~/t --yes"
+assert_succeed "test -f $HOME/t/new/mine"
+rm -r "$HOME/t/new"
+mkdir "$HOME/t/new"
+assert_succeed "mise dot apply --yes"
+assert_succeed "mise dot unapply ~/t --yes"
+assert_fail "test -e $HOME/t/new/sub"
+assert_succeed "test -d $HOME/t/new"
+
+# a file of the user's that a forced apply replaced with a directory is mise's
+rm -rf "$HOME/t"
+mkdir -p "$HOME/t"
+echo "blocker" >"$HOME/t/new"
+assert_fail "mise dot apply --yes"
+assert_succeed "mise dot apply --yes --force"
+assert "readlink $HOME/t/new/sub/file" "$DOTS/pkg/new/sub/file"
+assert_succeed "mise dot unapply ~/t --yes"
+assert_fail "test -e $HOME/t/new"
+
+# forcing a link to a directory out of the way: the directories made in its
+# place, and those beneath it that the link used to show, are mise's
+rm -rf "$HOME/t" "$HOME/elsewhere"
+mkdir -p "$HOME/t" "$HOME/elsewhere/sub"
+ln -s "$HOME/elsewhere" "$HOME/t/new"
+assert_succeed "mise dot apply --yes --force"
+assert "readlink $HOME/t/new/sub/file" "$DOTS/pkg/new/sub/file"
+assert_succeed "mise dot unapply ~/t --yes"
+assert_fail "test -e $HOME/t/new"
+assert_succeed "test -d $HOME/elsewhere/sub"
+
+# a record mise cannot read keeps every directory, and refuses an apply that
+# would write under a target it cannot record
+assert_succeed "mise dot apply --yes"
+echo "not toml [" >"$MISE_STATE_DIR/dotfiles/created_dirs.toml"
+assert_succeed "mise dot unapply ~/t --yes"
+assert_fail "test -L $HOME/t/new/sub/file"
+assert_succeed "test -d $HOME/t/new/sub"
+assert "cat $MISE_STATE_DIR/dotfiles/created_dirs.toml" "not toml ["
+assert_fail_contains "mise dot apply --yes" "cannot be read; fix or remove it"
+assert_fail "test -L $HOME/t/new/sub/file"
+
+# a target that is a link to a directory is followed, not replaced, so the
+# user's directories it shows are not recorded as mise's
+rm -rf "$HOME/t" "$HOME/elsewhere" "$MISE_STATE_DIR/dotfiles/created_dirs.toml"
+mkdir -p "$HOME/elsewhere/new/sub"
+ln -s "$HOME/elsewhere" "$HOME/t"
+assert_succeed "mise dot apply --yes --force"
+assert "readlink $HOME/t/new/sub/file" "$DOTS/pkg/new/sub/file"
+assert_not_contains "cat $MISE_STATE_DIR/dotfiles/created_dirs.toml" "$HOME/t/new"
+
+# root ignores the mode bits these cases rely on
+if [ "$(id -u)" != 0 ]; then
+  # a target whose tracking cannot be recorded is not written to, since a later
+  # removal could then take the user's directories there
+  rm -rf "$HOME/t" "$HOME/elsewhere" "$MISE_STATE_DIR/dotfiles"
+  mkdir -p "$HOME/t/app" "$MISE_STATE_DIR/dotfiles"
+  chmod 555 "$MISE_STATE_DIR/dotfiles"
+  assert_fail_contains "mise dot apply --yes" "cannot record what mise creates under"
+  chmod 755 "$MISE_STATE_DIR/dotfiles"
+  assert "find $HOME/t -mindepth 1" "$HOME/t/app"
+
+  # so is a target the apply would create
+  rm -rf "$HOME/t"
+  chmod 555 "$MISE_STATE_DIR/dotfiles"
+  assert_fail_contains "mise dot apply --yes" "cannot record what mise creates under"
+  chmod 755 "$MISE_STATE_DIR/dotfiles"
+  assert_fail "test -e $HOME/t"
+fi

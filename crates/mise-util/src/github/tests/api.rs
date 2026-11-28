@@ -67,6 +67,91 @@ async fn test_pick_reachable_asset_url_falls_back_quickly_on_5xx() {
     );
     mock.assert_async().await;
 }
+/// A release link's probe carries the headers built for its browser URL, and a
+/// browser URL they cannot be built for (empty or malformed) falls back to the
+/// API URL as a failed probe does, rather than failing the request.
+#[tokio::test]
+async fn test_pick_reachable_release_link_url_builds_probe_headers_for_the_browser_url() {
+    // A probe refuses to run offline, so a test switching offline mode on must not run
+    // in the middle of this one.
+    struct SettingsLock<'a>(#[allow(dead_code)] std::sync::MutexGuard<'a, ()>);
+    let _lock = SettingsLock(crate::testing::lock_ignoring_poison(
+        &crate::testing::SETTINGS_LOCK,
+    ));
+    let mut server = mockito::Server::new_async().await;
+    let mock = server
+        .mock("HEAD", "/SHA256SUMS")
+        .match_header("authorization", "Bearer forge")
+        .with_status(200)
+        .with_header("content-type", "text/plain")
+        .create_async()
+        .await;
+    let browser_url = format!("{}/SHA256SUMS", server.url());
+    let built_for = Mutex::new(Vec::new());
+    let headers = |url: &str| {
+        built_for.lock().unwrap().push(url.to_string());
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            reqwest::header::AUTHORIZATION,
+            HeaderValue::from_static("Bearer forge"),
+        );
+        Ok(headers)
+    };
+    assert_eq!(
+        pick_reachable_release_link_url(&browser_url, ASSET_API_URL, headers).await,
+        browser_url
+    );
+    mock.assert_async().await;
+    assert_eq!(*built_for.lock().unwrap(), [browser_url]);
+
+    for browser_url in ["", "not a url"] {
+        let failing = |url: &str| -> Result<HeaderMap> { bail!("invalid request URL {url:?}") };
+        assert_eq!(
+            pick_reachable_release_link_url(browser_url, ASSET_API_URL, failing).await,
+            ASSET_API_URL,
+            "{browser_url:?}"
+        );
+    }
+
+    // No probe, no headers.
+    let unused = |_: &str| -> Result<HeaderMap> { panic!("no probe is made") };
+    assert_eq!(
+        pick_reachable_release_link_url(ASSET_API_URL, ASSET_API_URL, unused).await,
+        ASSET_API_URL
+    );
+}
+
+/// Offline, a release link's probe builds no headers, since finding a token
+/// can refresh it over the network, and falls back to the API URL as a refused
+/// probe does.
+#[tokio::test]
+async fn test_pick_reachable_release_link_url_builds_no_headers_offline() {
+    struct Restore<'a> {
+        _lock: std::sync::MutexGuard<'a, ()>,
+    }
+    impl Drop for Restore<'_> {
+        fn drop(&mut self) {
+            crate::testing::reset_settings(None);
+        }
+    }
+    let _restore = {
+        let lock = crate::testing::lock_ignoring_poison(&crate::testing::SETTINGS_LOCK);
+        let mut settings = <mise_settings::SettingsPartial as confique::Layer>::empty();
+        settings.offline = Some(true);
+        crate::testing::reset_settings(Some(settings));
+        Restore { _lock: lock }
+    };
+    let unused = |_: &str| -> Result<HeaderMap> { panic!("no headers are built offline") };
+    assert_eq!(
+        pick_reachable_release_link_url(
+            "https://github.com/o/r/releases/download/v1/SHA256SUMS",
+            ASSET_API_URL,
+            unused
+        )
+        .await,
+        ASSET_API_URL
+    );
+}
 #[tokio::test]
 async fn test_pick_reachable_asset_url_falls_back_on_html_login_page() {
     // Some private repos return a 200 HTML login page at the browser URL instead of a

@@ -71,6 +71,18 @@ pub(crate) fn strip_option_credentials(value: &toml::Value) -> toml::Value {
     }
 }
 
+/// Removes [`CREDENTIAL_OPT_KEYS`] from the tables in `value`, at any depth.
+fn remove_credential_opts(value: &mut toml::Value) {
+    match value {
+        toml::Value::Array(values) => values.iter_mut().for_each(remove_credential_opts),
+        toml::Value::Table(table) => table.retain(|key, value| {
+            remove_credential_opts(value);
+            !is_credential_opt(key)
+        }),
+        _ => {}
+    }
+}
+
 /// Options as they may be stored in a file; see [`strip_option_credentials`].
 pub(crate) fn strip_options_credentials<'a>(
     opts: impl IntoIterator<Item = (&'a String, &'a toml::Value)>,
@@ -311,6 +323,24 @@ impl ResolvedToolOptions {
             ToolOptionSource::InlineBackendArg,
         ] {
             target.apply_overrides(&self.options_from_sources(&[source]), source);
+        }
+    }
+
+    /// Removes the [`CREDENTIAL_OPT_KEYS`] that are still the ones in `beneath`,
+    /// the options as they stood before later layers were applied: its
+    /// `headers`, and those inside a table of it (`platforms.<platform>`) that
+    /// no later layer replaced. Credentials a later layer set itself are kept.
+    pub(crate) fn withhold_credentials_from(&mut self, beneath: &IndexMap<String, toml::Value>) {
+        for (key, value) in beneath {
+            if self.options.opts.get(key) != Some(value) {
+                continue;
+            }
+            if is_credential_opt(key) {
+                self.options.opts.shift_remove(key);
+                self.sources.shift_remove(key);
+            } else if let Some(value) = self.options.opts.get_mut(key) {
+                remove_credential_opts(value);
+            }
         }
     }
 
@@ -1097,6 +1127,54 @@ mod tests {
         .unwrap();
         let redact = |s: &str| mise_util::redactions::redact_url_userinfo_in_arg(s).into_owned();
         assert_eq!(redact_tool_options(options, &redact), expected);
+    }
+
+    #[test]
+    fn withheld_credentials_are_those_of_the_layer_beneath() {
+        let alias: ToolVersionOptions = toml::from_str(
+            r#"
+            url = "https://dl.example.com/tool-{{ version }}.tar.gz"
+            headers = { X-Api-Key = "tok3n" }
+            headers_forward = { X-Api-Key = ["cdn.example.com"] }
+            platforms_macos_arm64_headers = { X-Api-Key = "tok3n" }
+            platforms_macos_x64_headers = { X-Api-Key = "tok3n" }
+
+            [platforms.linux-x64]
+            url = "https://dl.example.com/tool-linux.tar.gz"
+            headers = { X-Api-Key = "tok3n" }
+            "#,
+        )
+        .unwrap();
+        let entry: ToolVersionOptions = toml::from_str(
+            r#"
+            version_list_url = "https://project.example.com/versions"
+            platforms_macos_x64_headers = { Accept = "text/plain" }
+            "#,
+        )
+        .unwrap();
+        let mut resolved = ResolvedToolOptions::default();
+        resolved.apply_overrides(&alias, ToolOptionSource::BackendAlias);
+        let beneath = resolved.effective().opts.clone();
+        resolved.apply_overrides(&entry, ToolOptionSource::Request);
+        resolved.withhold_credentials_from(&beneath);
+
+        let expected: ToolVersionOptions = toml::from_str(
+            r#"
+            url = "https://dl.example.com/tool-{{ version }}.tar.gz"
+            platforms_macos_x64_headers = { Accept = "text/plain" }
+            version_list_url = "https://project.example.com/versions"
+
+            [platforms.linux-x64]
+            url = "https://dl.example.com/tool-linux.tar.gz"
+            "#,
+        )
+        .unwrap();
+        assert_eq!(resolved.effective(), &expected);
+        assert_eq!(resolved.source_for_key("headers"), None);
+        assert_eq!(
+            resolved.source_for_key("platforms_macos_x64_headers"),
+            Some(ToolOptionSource::Request)
+        );
     }
 
     fn s(v: &str) -> toml::Value {

@@ -1166,8 +1166,11 @@ pub(crate) fn record_safe_mode_credential_hosts(
 /// from every host a project tool's URL options name, whichever code path makes the request;
 /// a tool that global or system config declares runs here in a trusted scope, so its requests
 /// keep their credentials on such a host, and the templates its backend renders from that
-/// config's options (a global `[tool_alias]` `url`, say) keep `env`. A path that does not come
-/// through here loses credentials rather than leaking them.
+/// config's options (a global `[tool_alias]` `url`, say) keep `env`. A tool that project config
+/// declares runs here in an untrusted scope, so its requests get no netrc credentials on any
+/// host but one an operator's URL replacement moves a request to: the servers it asks name
+/// hosts its options do not, as a release does for its asset. A path that does not come
+/// through here withholds them from the hosts those options name.
 pub(crate) async fn with_safe_mode_tool_scope<T>(
     ba: &BackendArg,
     future: impl std::future::Future<Output = T>,

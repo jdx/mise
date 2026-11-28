@@ -79,7 +79,9 @@ pub(crate) type DownloadProgress = dyn Fn(u64, Option<u64>) + Send + Sync;
 
 pub(crate) const URL_REWRITER_REGISTRY_KEY: &str = "url_rewriter_fn";
 pub(crate) const HTTP_HEADERS_RESOLVER_REGISTRY_KEY: &str = "http_headers_resolver_fn";
-pub(crate) type HttpHeadersResolver = Arc<dyn Fn(&Url) -> HeaderMap + Send + Sync>;
+/// Resolves the default headers of a request: called with the URL requested and the URL the
+/// plugin named, before the URL rewriter ran.
+pub(crate) type HttpHeadersResolver = Arc<dyn Fn(&Url, &Url) -> HeaderMap + Send + Sync>;
 
 static HTTP_CANCELLATION: LazyLock<HttpCancellation> = LazyLock::new(Default::default);
 

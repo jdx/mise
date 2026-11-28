@@ -1,5 +1,9 @@
 [profile.default]
-test-threads = 1
+# nextest runs every test in its own process, and each process uses the home
+# directory of its slot (`mise_util::testing::slot_home`: `test/home/<slot>`
+# for mise, `crates/<crate>/test/<slot>` for the crates with their own harness),
+# so tests that run at the same time do not share files.
+test-threads = "num-cpus"
 slow-timeout = { period = "250ms", terminate-after = 4 }
 status-level = "all"
 retries = { backoff = "exponential", count = 4, delay = "1s", max-delay = "10s" }
@@ -10,6 +14,16 @@ retries = { backoff = "exponential", count = 4, delay = "1s", max-delay = "10s" 
 [[profile.default.overrides]]
 filter = 'package(mise-cache-core) & test(tests::retries_wait_for_retry_after)'
 slow-timeout = { period = "1s", terminate-after = 3 }
+
+# The first of these reads every Rust source file in the repository and the
+# second parses three lists of a few megabytes under a counting allocator, so
+# their cost grows with the source tree and with the size of those lists. Both
+# take about 0.9s on the dedicated CI runner with nothing else running, which
+# leaves no margin under the ordinary ceiling once other tests share the CPUs.
+# That holds for every profile, since they all run tests at the same time.
+[[profile.default.overrides]]
+filter = 'test(errors::docs_reference::quoted_messages_are_in_the_source) | test(backend::asset_matcher::tests::test_checksum_list_parsing_does_not_copy_the_list)'
+slow-timeout = { period = "500ms", terminate-after = 4 }
 
 [profile.ci]
 inherits = "default"

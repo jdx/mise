@@ -196,7 +196,9 @@ impl VfoxPlugin {
             crate::github::resolve_token("github.com").map(|(token, _)| token)
         }));
         vfox.set_url_rewriter(crate::http::apply_url_replacements);
-        vfox.set_http_headers_resolver(crate::http::netrc_headers);
+        // A mirror an operator's URL replacement chose keeps its netrc login
+        // in safe mode, as `mise lock` and the default download path do.
+        vfox.set_http_headers_resolver(crate::http::rewritten_request_netrc_headers);
         let rx = vfox.log_subscribe();
         (vfox, rx)
     }

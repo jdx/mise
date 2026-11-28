@@ -5288,6 +5288,10 @@ pub fn apply_layers(
     // each round is planned alone, so the claims of entries in different
     // rounds are checked against each other here
     validate_composed_file_footprints(requests)?;
+    if !opts.dry_run {
+        // before any round writes, so each shared target is told apart as it is now
+        track_walking_targets(config, requests)?;
+    }
     let mut worked = false;
     // what earlier rounds create, for a dry run that has not written it
     let mut pending: Vec<(PathBuf, bool)> = vec![];
@@ -5825,6 +5829,7 @@ fn execute_layer(
     let has_reconciliation = !plan.reconciliation.stale_links.is_empty();
     if plan.todo.is_empty() && !has_reconciliation {
         if !opts.dry_run {
+            track_walking_targets(config, plan.requests)?;
             prune_after_apply([], &plan);
             for req in plan.record_symlink_each {
                 let pending = journal::begin_changes(
@@ -5910,6 +5915,9 @@ fn execute_layer(
             return Ok(false);
         }
     }
+    // a walking entry's target is shared with the user's files, so what a later removal may take
+    // with it is only what mise created there; what is there now is told apart before writing
+    track_walking_targets(config, plan.requests)?;
     for link in &plan.reconciliation.stale_links {
         if link_points_to(&link.source, &link.target) {
             crate::managed_files::refuse_untrusted_parent_as_root(&link.target)?;
@@ -5945,40 +5953,82 @@ fn execute_layer(
             current = Some((*req, written.len()));
             recheck_removal(req, rendered.as_deref(), opts.force)?;
             refuse_untrusted_parents(req)?;
-            if req.mode == FileMode::SymlinkEach {
-                unfold_source_links(req, written)?;
-            }
+            // a link to a source directory unfolded into a real one is a directory mise made
+            let unfolded = written.len();
+            let unfold = if req.mode == FileMode::SymlinkEach {
+                unfold_source_links(req, written)
+            } else {
+                Ok(())
+            };
+            let unfolded = written[unfolded..].to_vec();
+            // what was unfolded stays unfolded when a later step fails, so it is recorded then too
+            let recording = |result: Result<()>| {
+                if result.is_err() && shares_target(req) {
+                    crate::created_dirs::record(&req.target, &unfolded);
+                }
+                result
+            };
+            recording(unfold)?;
             // the links the entry recorded as its own, which a failed apply may finish pruning
             // (see `settle_failed_apply`)
             // each with where it points now, which the captured link must match exactly
-            let stale = if req.mode == FileMode::SymlinkEach {
-                stale_links(req)?
-                    .into_iter()
-                    .filter_map(|link| std::fs::read_link(&link).ok().map(|dest| (link, dest)))
-                    .collect()
-            } else {
-                HashMap::new()
-            };
-            let pending =
-                journal::begin_changes_with(DOTFILES_PART, &req.target_raw, touched_paths(req)?)?;
+            let mut stale = HashMap::new();
+            if req.mode == FileMode::SymlinkEach {
+                recording(stale_links(req).map(|links| {
+                    stale.extend(links.into_iter().filter_map(|link| {
+                        std::fs::read_link(&link).ok().map(|dest| (link, dest))
+                    }));
+                }))?;
+            }
+            let mut pending = None;
+            recording((|| {
+                pending = Some(journal::begin_changes_with(
+                    DOTFILES_PART,
+                    &req.target_raw,
+                    touched_paths(req)?,
+                )?);
+                Ok(())
+            })())?;
+            let pending = pending.expect("journal begun");
             let start = written.len();
             // what is missing now is what a failed apply may have to take away again
             let mut created = missing_ancestors(&req.target);
-            if req.mode == FileMode::SymlinkEach
-                || req.mode == FileMode::Copy && req.source.is_dir()
-            {
+            let walks = shares_target(req);
+            // what a forced apply replaces with a directory, which is then mise's too
+            // (counted once the apply has run, as it may follow a link rather than replace it)
+            let mut replaceable = vec![];
+            if walks {
                 if std::fs::symlink_metadata(&req.target).is_err() {
                     created.push(req.target.clone());
+                }
+                if opts.force && blocks_dir(&req.target) {
+                    replaceable.push((req.target.clone(), vec![req.target.clone()]));
                 }
                 // and the directories the walk creates beneath it
                 for (_, target) in walk_source_files(req).unwrap_or_default() {
                     created.extend(missing_ancestors(&target));
+                    if opts.force {
+                        replaceable.extend(replaceable_ancestors(&req.target, &target));
+                    }
                 }
             }
-            if let Err(err) = apply_one(req, rendered.as_deref(), written) {
-                settle_failed_apply(req, &created, &stale, pending);
-                return Err(err);
+            let applied = match apply_one(req, rendered.as_deref(), written) {
+                Ok(()) => Ok(pending),
+                Err(err) => {
+                    settle_failed_apply(req, &created, &stale, pending);
+                    Err(err)
+                }
+            };
+            if walks {
+                let replaced = replaceable
+                    .into_iter()
+                    .filter(|(blocker, _)| !blocks_dir(blocker) && blocker.is_dir())
+                    .flat_map(|(_, dirs)| dirs);
+                let mut made = [created.as_slice(), unfolded.as_slice()].concat();
+                made.extend(replaced);
+                crate::created_dirs::record(&req.target, &made);
             }
+            let pending = applied?;
             // a target that appeared since planning is left alone and not
             // written, so it is not this group's to prune
             if req.create_if_missing && written[start..].contains(&req.target) {
@@ -6362,15 +6412,17 @@ fn record_template_states(updates: &[(&FileRequest, String)]) -> Result<()> {
 }
 
 fn cleanup_reconciled_directories(reconciliation: &SymlinkEachReconciliation) -> Result<()> {
+    let created = crate::created_dirs::CreatedDirs::load();
     for target in &reconciliation.targets {
-        remove_empty_dirs_upward(
+        let removed = remove_empty_dirs_upward(
             reconciliation
                 .stale_links
                 .iter()
                 .filter(|link| link.target.starts_with(target))
                 .filter_map(|link| link.target.parent()),
-            |dir| dir != target && dir.starts_with(target),
+            |dir| dir != target && dir.starts_with(target) && created.may_remove(target, dir),
         )?;
+        crate::created_dirs::forget(&removed);
     }
     Ok(())
 }
@@ -6506,6 +6558,7 @@ pub fn execute_unapply(
         return Ok(());
     }
     if opts.dry_run {
+        let created = crate::created_dirs::CreatedDirs::load();
         for plan in todo {
             for path in &plan.paths {
                 let suffix = if plan.conditional {
@@ -6518,7 +6571,7 @@ pub fn execute_unapply(
             for dir in prunable_created_dirs(plan.req) {
                 miseprintln!("rmdir {} (if empty)", dir.display_user());
             }
-            if plan.cleanup_empty_dirs {
+            if plan.cleanup_empty_dirs && created.may_remove(&plan.req.target, &plan.req.target) {
                 miseprintln!("rmdir {} (if empty)", plan.req.target.display_user());
             }
             if opts.verbose && plan.cleanup_empty_dirs {
@@ -6936,9 +6989,11 @@ fn unapply_one(plan: &UnapplyPlan<'_>) -> Result<()> {
     if plan.cleanup_empty_dirs && plan.req.target.is_dir() {
         parents.push(plan.req.target.clone());
         // the walk ends at the target: its parent does not start with it
-        remove_empty_dirs_upward(parents.iter().map(PathBuf::as_path), |dir| {
-            dir.starts_with(&plan.req.target)
+        let created = crate::created_dirs::CreatedDirs::load();
+        let removed = remove_empty_dirs_upward(parents.iter().map(PathBuf::as_path), |dir| {
+            dir.starts_with(&plan.req.target) && created.may_remove(&plan.req.target, dir)
         })?;
+        crate::created_dirs::forget(&removed);
     }
     Ok(())
 }
@@ -7542,6 +7597,140 @@ fn remove_empty_dirs_upward<'a>(
     Ok(removed)
 }
 
+/// Whether `req` deploys each file of a source directory under its target, which it shares with
+/// files mise does not manage.
+fn shares_target(req: &FileRequest) -> bool {
+    req.mode == FileMode::SymlinkEach || req.mode == FileMode::Copy && req.source.is_dir()
+}
+
+/// What `req` has already deployed under its target and still holds there: links of its source,
+/// the links its `symlink-each` record names, and the paths its group's record owns under the
+/// target. Used to tell the directories an earlier mise created from the user's, before mise
+/// recorded them. A file that merely exists where the entry would copy one is not evidence: it may
+/// be the user's.
+fn deployed_under(req: &FileRequest) -> Vec<PathBuf> {
+    let mut paths = vec![];
+    if req.mode == FileMode::SymlinkEach {
+        paths.extend(
+            walk_source_files(req)
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|(source, target)| link_points_to(source, target))
+                .map(|(_, target)| target),
+        );
+        if let LoadedSymlinkEachState::Present(state) = load_symlink_each_state(req) {
+            paths.extend(
+                state
+                    .links
+                    .into_iter()
+                    .filter(|link| link_points_to(&link.source, &link.target))
+                    .map(|link| link.target),
+            );
+        }
+        // and the links reconciliation is about to remove as this entry's
+        paths.extend(stale_links(req).unwrap_or_default());
+    }
+    if let Some(group) = &req.group
+        && let Some(record) = crate::dotfile_groups::load_record(group)
+    {
+        let target = lexical_normalize(&req.target);
+        paths.extend(
+            record
+                .paths
+                .into_iter()
+                .filter(|path| lexical_normalize(&path.root) == target && path.is_owned())
+                .map(|path| path.target),
+        );
+    }
+    paths
+}
+
+/// Start tracking the targets of the walking entries of `requests` that are not tracked yet,
+/// including those of entries that need no change. Entries can share a target, so what every
+/// active entry on it deployed there counts, whichever round or selection applies it.
+fn track_walking_targets<'a>(
+    config: &Config,
+    requests: impl IntoIterator<Item = &'a FileRequest>,
+) -> Result<()> {
+    let record = crate::created_dirs::CreatedDirs::load();
+    let requests = requests
+        .into_iter()
+        .filter(|req| shares_target(req))
+        .collect::<Vec<_>>();
+    if requests.is_empty() {
+        return Ok(());
+    }
+    // whether a target is tracked is unknown, and recording one is impossible, so nothing is
+    // written under a walking target until the record is fixed
+    record.ensure_readable()?;
+    let requests = requests
+        .into_iter()
+        .filter(|req| !record.tracks(&req.target))
+        .collect::<Vec<_>>();
+    if requests.is_empty() {
+        return Ok(());
+    }
+    // one slot per target, whatever letter case each entry spells it in where that is the same
+    // directory, with each entry's paths respelled under the slot's spelling
+    let mut deployed: Vec<(PathBuf, Vec<PathBuf>)> = vec![];
+    for req in &requests {
+        let target = lexical_normalize(&req.target);
+        if !deployed
+            .iter()
+            .any(|(slot, _)| file::same_location_ignoring_case(slot, &target))
+        {
+            deployed.push((target, vec![]));
+        }
+    }
+    let active = files_from_config(config).unwrap_or_default();
+    for req in requests.into_iter().chain(&active) {
+        if !shares_target(req) {
+            continue;
+        }
+        let target = lexical_normalize(&req.target);
+        if let Some((slot, paths)) = deployed
+            .iter_mut()
+            .find(|(slot, _)| file::same_location_ignoring_case(slot, &target))
+        {
+            paths.extend(deployed_under(req).into_iter().map(|path| {
+                let path = lexical_normalize(&path);
+                match path.strip_prefix(&target) {
+                    Ok(rel) => slot.join(rel),
+                    Err(_) => path,
+                }
+            }));
+        }
+    }
+    crate::created_dirs::track(deployed)
+}
+
+/// The ancestors of `path` beneath `root` that exist as something other than a real directory,
+/// such as a file or a link, which a forced apply may replace with a directory. Each comes with the
+/// directories that would then be new: itself, and every one between it and `path`, wherever the
+/// old link showed one. `root` is not among them, as a link there is followed.
+fn replaceable_ancestors(root: &Path, path: &Path) -> Vec<(PathBuf, Vec<PathBuf>)> {
+    let ancestors = path
+        .ancestors()
+        .skip(1)
+        .take_while(|dir| *dir != root && dir.starts_with(root))
+        .collect::<Vec<_>>();
+    ancestors
+        .iter()
+        .enumerate()
+        .filter(|(_, dir)| blocks_dir(dir))
+        .map(|(at, dir)| {
+            let beneath = ancestors[..=at].iter().map(|d| d.to_path_buf()).collect();
+            (dir.to_path_buf(), beneath)
+        })
+        .collect()
+}
+
+/// Whether `path` is there as something other than a real directory: a file or a link.
+fn blocks_dir(path: &Path) -> bool {
+    std::fs::symlink_metadata(path).is_ok_and(|meta| !meta.is_dir())
+        || file::is_symlink_or_junction(path)
+}
+
 /// Ancestors of `path` that do not exist yet, outermost first.
 pub(crate) fn missing_ancestors(path: &Path) -> Vec<PathBuf> {
     let mut missing = vec![];
@@ -7965,9 +8154,14 @@ fn prune_stale_links(req: &FileRequest, written: &mut Vec<PathBuf>) -> Result<()
         written.push(path.clone());
     }
     let needed: HashSet<PathBuf> = needed_dirs(req)?.into_iter().collect();
-    remove_empty_dirs_upward(stale.iter().filter_map(|p| p.parent()), |dir| {
-        dir != req.target && dir.starts_with(&req.target) && !needed.contains(dir)
+    let created = crate::created_dirs::CreatedDirs::load();
+    let removed = remove_empty_dirs_upward(stale.iter().filter_map(|p| p.parent()), |dir| {
+        dir != req.target
+            && dir.starts_with(&req.target)
+            && !needed.contains(dir)
+            && created.may_remove(&req.target, dir)
     })?;
+    crate::created_dirs::forget(&removed);
     Ok(())
 }
 

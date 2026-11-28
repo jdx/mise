@@ -287,9 +287,16 @@ pub(crate) fn redact_credentials(value: &str) -> String {
         // whatever precedes the last `@` inside it.
         let end = ends_at(tail, &|c| matches!(c, '/' | '?' | '#') || c.is_whitespace());
         let authority = &tail[..end];
-        let host = authority
-            .rsplit_once('@')
-            .map_or(authority, |(_, host)| host);
+        let (userinfo, host) = authority.rsplit_once('@').unwrap_or(("", authority));
+        // The `url` crate, which sends the request, ends the authority of an
+        // `http(s)` URL at a `\`, so in `https://evil.example\@gitlab.com/` the
+        // text before the `@` names the host. Such a userinfo stays in the
+        // identity as a digest of itself: the URL is not the one without it,
+        // and a password with a `\` in it is still not written out.
+        if userinfo.contains('\\') {
+            out.push_str(&digest_of_string(userinfo)[..16]);
+            out.push('@');
+        }
         out.push_str(host);
         // The path runs to the query; the query to the fragment or whitespace.
         let tail = &tail[end..];
@@ -2209,6 +2216,27 @@ mod tests {
         assert_ne!(
             windows_comparable(Path::new(r"\\server\share")),
             windows_comparable(Path::new(r"C:\server\share"))
+        );
+    }
+
+    /// A `\` ends the authority of an `http(s)` URL for the parser that sends
+    /// the request, so `https://evil.example\@gitlab.com/` is evil.example and
+    /// must not share an identity with gitlab.com.
+    #[test]
+    fn a_backslash_host_keeps_an_identity_of_its_own() {
+        let backslash = redact_credentials(r"https://evil.example\@gitlab.com/api/v4");
+        assert_ne!(backslash, "https://gitlab.com/api/v4");
+        assert_eq!(
+            backslash,
+            format!(
+                "https://{}@gitlab.com/api/v4",
+                &digest_of_string(r"evil.example\")[..16]
+            )
+        );
+        assert!(!redact_credentials(r"https://user:to\ken@host.example/x").contains("ken"));
+        assert_ne!(
+            canonical_backend(r"cargo:https://evil.example\@github.com/acme/tool"),
+            canonical_backend("cargo:https://github.com/acme/tool")
         );
     }
 

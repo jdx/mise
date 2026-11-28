@@ -139,7 +139,7 @@ fn test_enterprise_token_is_not_sent_to_public_raw_content() {
         // `resolve_token` would allow git credential helpers to run, which
         // can block or prompt; the enterprise exclusion is unaffected by
         // skipping them.
-        if let Some((token, _)) = resolve_token_inner(host, false) {
+        if let Some((token, _)) = resolve_token_inner(host, false, None) {
             assert_ne!(
                 token, "ghes-secret",
                 "{host} must not receive MISE_GITHUB_ENTERPRISE_TOKEN"
@@ -291,6 +291,54 @@ fn test_enterprise_api_path_gets_token_only_at_api_url_origin() {
     });
 }
 
+/// In safe mode a project tool's URL option can name GitHub's own hosts, and
+/// the project gets the response back (as versions, say). The generic client's
+/// automatic token is withheld from such a host, except in the work done for a
+/// tool from global config.
+#[test]
+fn test_host_auth_headers_withhold_token_from_hosts_a_project_named() {
+    use reqwest::header::AUTHORIZATION;
+    let _settings = crate::testing::lock_ignoring_poison(&crate::testing::SETTINGS_LOCK);
+    with_github_token(|| {
+        let auth =
+            |url: &str| crate::http::host_auth_headers(&url::Url::parse(url).unwrap()).unwrap();
+        let raw = "https://raw.githubusercontent.com/owner/private/main/deploy.env";
+        let contents = "https://api.github.com/repos/owner/private/contents/deploy.env";
+        crate::untrusted_hosts::reset();
+        assert!(auth(raw).contains_key(AUTHORIZATION));
+        assert!(auth(contents).contains_key(AUTHORIZATION));
+
+        crate::untrusted_hosts::deny_netrc_for_url(raw);
+        assert!(!auth(raw).contains_key(AUTHORIZATION));
+        assert!(auth(contents).contains_key(AUTHORIZATION));
+
+        crate::untrusted_hosts::deny_netrc_for_url(contents);
+        let headers = auth(contents);
+        assert!(!headers.contains_key(AUTHORIZATION));
+        // public content still downloads
+        assert_eq!(headers.get("accept").unwrap(), "application/vnd.github.raw");
+
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap();
+        // a project tool's work gets none there either
+        let project = runtime.block_on(crate::untrusted_hosts::with_tool_scope(false, async {
+            auth(raw)
+        }));
+        assert!(!project.contains_key(AUTHORIZATION));
+        // a global tool keeps the token on the same hosts
+        let trusted = runtime.block_on(crate::untrusted_hosts::with_tool_scope(true, async {
+            (auth(raw), auth(contents))
+        }));
+        assert!(trusted.0.contains_key(AUTHORIZATION));
+        assert!(trusted.1.contains_key(AUTHORIZATION));
+        // and so do the forge backends, which ask for a repository's own URLs
+        let forge = get_headers(contents, API_URL).unwrap();
+        assert!(forge.contains_key(AUTHORIZATION));
+        crate::untrusted_hosts::reset();
+    });
+}
+
 /// `github.enterprise_hosts` names Enterprise Servers whose `/api/v3` URLs get
 /// the token from any caller, such as an `http:` tool or a remote task file.
 #[test]
@@ -322,4 +370,62 @@ fn test_get_headers_rejects_relative_url() {
             .contains("invalid request URL for GitHub auth headers"),
         "unexpected error: {err}"
     );
+}
+
+/// A private raw file is fetched with the token Git keeps for github.com, and
+/// Git is asked about the server the request goes to: a raw URL on another
+/// port is another server, and Git has no credential for it.
+#[cfg(unix)]
+#[test]
+fn test_raw_content_asks_git_about_the_port_of_the_request() {
+    use confique::Layer;
+
+    struct SettingsGuard {
+        _lock: std::sync::MutexGuard<'static, ()>,
+    }
+    impl Drop for SettingsGuard {
+        fn drop(&mut self) {
+            crate::testing::reset_settings(None);
+        }
+    }
+    let _settings = SettingsGuard {
+        _lock: crate::testing::lock_ignoring_poison(&crate::testing::SETTINGS_LOCK),
+    };
+    with_github_token(|| {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = tmp.path().join("git-credentials");
+        std::fs::write(&store, "https://alice:for-default-port@github.com\n").unwrap();
+        let global = tmp.path().join("gitconfig");
+        std::fs::write(
+            &global,
+            format!(
+                "[credential]\n\thelper = store --file='{}'\n",
+                store.display()
+            ),
+        )
+        .unwrap();
+        let mut env = crate::testing::EnvVarGuard::new();
+        env.set("GIT_CONFIG_GLOBAL", &global);
+        env.set("GIT_CONFIG_NOSYSTEM", "1");
+        env.remove("GITHUB_TOKEN");
+        let mut settings = mise_settings::SettingsPartial::empty();
+        settings.github.use_git_credentials = Some(true);
+        settings.github.gh_cli_tokens = Some(false);
+        crate::testing::reset_settings(Some(settings));
+
+        let auth = |url: &str| {
+            get_headers(url, API_URL)
+                .unwrap()
+                .get(reqwest::header::AUTHORIZATION)
+                .map(|v| v.to_str().unwrap().to_string())
+        };
+        assert_eq!(
+            auth("https://raw.githubusercontent.com/owner/private/main/f").as_deref(),
+            Some("Bearer for-default-port")
+        );
+        assert_eq!(
+            auth("https://raw.githubusercontent.com:8443/owner/private/main/f"),
+            None
+        );
+    });
 }
