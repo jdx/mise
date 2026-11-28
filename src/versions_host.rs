@@ -30,15 +30,6 @@ static PLUGINS_USE_VERSION_HOST: LazyLock<HashSet<&str>> = LazyLock::new(|| {
 pub(crate) fn lists_versions_for(tool: &str) -> bool {
     PLUGINS_USE_VERSION_HOST.contains(tool)
 }
-/// Tools that should have downloads tracked
-/// (all core plugins and registry tools, including java/python)
-static PLUGINS_TRACK_DOWNLOADS: LazyLock<HashSet<&str>> = LazyLock::new(|| {
-    CORE_PLUGINS
-        .keys()
-        .map(|name| name.as_str())
-        .chain(REGISTRY.keys())
-        .collect()
-});
 /// Response format from the versions host TOML endpoint
 #[derive(serde::Deserialize)]
 struct VersionsResponse {
@@ -172,85 +163,6 @@ pub(crate) fn parse_version_list(body: &str) -> eyre::Result<Vec<VersionInfo>> {
         })
         .collect())
 }
-/// Tracks a tool installation asynchronously (fire-and-forget)
-/// Tracks all core plugins and registry tools (including java/python)
-pub(crate) fn track_install(tool: &str, full: &str, version: &str) {
-    let settings = Settings::get();
-    if settings.offline() {
-        return;
-    }
-
-    // Check if tracking is enabled (also requires use_versions_host to be enabled)
-    if !settings.use_versions_host || !settings.use_versions_host_track {
-        return;
-    }
-
-    // An excluded repository's name must not reach the host, even under a
-    // known tool name (`tool_alias`, or a fork installed as `jq`).
-    if mise_util::versions_host::backend_excluded(full) {
-        return;
-    }
-
-    // Only track known tools (core plugins and registry tools)
-    if !PLUGINS_TRACK_DOWNLOADS.contains(tool) {
-        return;
-    }
-
-    let tool = tool.to_string();
-    let full = full.to_string();
-    let version = version.to_string();
-
-    // Fire-and-forget: spawn a task that won't block installation
-    tokio::spawn(async move {
-        if let Err(e) = track_install_async(&tool, &full, &version).await {
-            trace!("Failed to track install for {tool}@{version}: {e}");
-        }
-    });
-}
-async fn track_install_async(tool: &str, full: &str, version: &str) -> eyre::Result<()> {
-    use crate::platform::{ARCH, OS};
-
-    let ctx = VersionsHostLogContext::install_track(tool, full, version);
-    let url = track_install_url(tool, full, version, &OS, &ARCH);
-
-    // The beacon is a static asset: usage is counted from the CDN's request
-    // logs, so only the status matters and the body is ignored.
-    match HTTP_FETCH
-        .get_async_with_headers_allow_error_status(url, &VERSIONS_HOST_HEADERS)
-        .await
-    {
-        Ok(resp) if resp.status().is_success() => log_versions_host_trace(ctx, "success", ""),
-        Ok(resp) => {
-            log_versions_host_trace(ctx, "failed", &format!("status={}", resp.status().as_u16()))
-        }
-        Err(err) => log_versions_host_trace(
-            ctx,
-            "failed",
-            &format!(
-                "status={} error={}",
-                http::error_code(&err).unwrap_or(0),
-                log_value(&err.to_string())
-            ),
-        ),
-    }
-
-    Ok(())
-}
-/// The static install beacon. Every value is a query parameter. `full` has
-/// any URL credentials, query, and fragment removed first because request URLs
-/// are logged, and is left out when it cannot be cleaned.
-fn track_install_url(tool: &str, full: &str, version: &str, os: &str, arch: &str) -> String {
-    let full = sanitize_full(full)
-        .map(|full| format!("&full={}", urlencoding::encode(&full)))
-        .unwrap_or_default();
-    format!(
-        "https://mise-versions.jdx.dev/t?tool={}{full}&version={}&os={}&arch={}",
-        urlencoding::encode(tool),
-        urlencoding::encode(version),
-        urlencoding::encode(os),
-        urlencoding::encode(arch),
-    )
-}
 /// Fetch and unpack a gzipped python-build-standalone index
 /// (`python-precompiled-<arch>-<os>.gz`).
 pub(crate) async fn python_precompiled(file: &str) -> eyre::Result<String> {
@@ -316,46 +228,6 @@ mod tests {
         assert!(list_python_build_definitions().await.unwrap().is_none());
     }
 
-    #[test]
-    fn test_track_install_url_puts_every_field_in_the_query() {
-        assert_eq!(
-            track_install_url("node", "core:node", "22.1.0", "macos", "arm64"),
-            "https://mise-versions.jdx.dev/t?tool=node&full=core%3Anode&version=22.1.0&os=macos&arch=arm64"
-        );
-    }
-    #[test]
-    fn test_track_install_url_encodes_values() {
-        assert_eq!(
-            track_install_url("a&b=c", "ubi:owner/repo", "1.0 rc+1", "linux", "x64"),
-            "https://mise-versions.jdx.dev/t?tool=a%26b%3Dc&full=ubi%3Aowner%2Frepo&version=1.0%20rc%2B1&os=linux&arch=x64"
-        );
-    }
-    #[test]
-    fn test_track_install_url_strips_credentials_from_full() {
-        assert_eq!(
-            track_install_url(
-                "foo",
-                "http:https://user:secret@example.com/foo.tar.gz?token=abc#frag",
-                "1.0.0",
-                "linux",
-                "x64"
-            ),
-            "https://mise-versions.jdx.dev/t?tool=foo&full=http%3Ahttps%3A%2F%2Fexample.com%2Ffoo.tar.gz&version=1.0.0&os=linux&arch=x64"
-        );
-    }
-    #[test]
-    fn test_track_install_url_omits_full_it_cannot_clean() {
-        assert_eq!(
-            track_install_url(
-                "foo",
-                "http:https://user:secret@[bad/a",
-                "1.0.0",
-                "linux",
-                "x64"
-            ),
-            "https://mise-versions.jdx.dev/t?tool=foo&version=1.0.0&os=linux&arch=x64"
-        );
-    }
     #[test]
     fn test_gunzip_text_stops_at_its_limit() {
         use std::io::Write;

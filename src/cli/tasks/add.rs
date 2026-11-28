@@ -126,6 +126,7 @@ impl TasksAdd {
             Action::Replaced
         };
         if action != Action::Unchanged && !self.dry_run {
+            write::script_check_before_write(&path).await?;
             file::create_dir_all(path.parent().unwrap())?;
             file::write(&path, content)?;
             file::make_executable(&path)?;

@@ -2714,24 +2714,16 @@ const LOCAL_CONFIG_FILENAMES: [&str; 10] = [
     ".mise.local.toml",
 ];
 
-/// Whether `path` is found under one of mise's own config filenames, or under a name that the
-/// `MISE_OVERRIDE_*_FILENAMES` and `MISE_DEFAULT_*_FILENAME` environment variables set. A name
-/// that only a `.miserc.toml` adds does not count: a project's `.miserc.toml` loads before
-/// anything is trusted, so it must not decide what an approval of a file covers.
-pub(crate) fn has_own_config_filename(path: &Path) -> bool {
-    let escape = |s: &str| glob::Pattern::escape(s);
-    let mut names: Vec<String> = [".tool-versions"]
-        .into_iter()
-        .chain(MISE_CONFIG_FILENAMES)
-        .chain(LOCAL_CONFIG_FILENAMES)
-        .map(String::from)
-        .collect();
+/// The config filenames that the `MISE_OVERRIDE_*_FILENAMES` and `MISE_DEFAULT_*_FILENAME`
+/// environment variables set, without the ones a `.miserc.toml` adds.
+fn user_config_filenames() -> Vec<String> {
+    let mut names = vec![];
     for var in [
         "MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES",
         "MISE_OVERRIDE_CONFIG_FILENAMES",
     ] {
         if let Ok(value) = std::env::var(var) {
-            names.extend(value.split(':').filter(|s| !s.is_empty()).map(escape));
+            names.extend(value.split(':').filter(|s| !s.is_empty()).map(String::from));
         }
     }
     for var in [
@@ -2739,9 +2731,34 @@ pub(crate) fn has_own_config_filename(path: &Path) -> bool {
         "MISE_DEFAULT_CONFIG_FILENAME",
     ] {
         if let Ok(value) = std::env::var(var) {
-            names.push(escape(&value));
+            names.push(value);
         }
     }
+    names
+}
+
+/// Whether `path` is found under one of mise's own config filenames, or under a name that the
+/// `MISE_OVERRIDE_*_FILENAMES` and `MISE_DEFAULT_*_FILENAME` environment variables set. A name
+/// that only a `.miserc.toml` adds does not count: a project's `.miserc.toml` loads before
+/// anything is trusted, so it must not decide what an approval of a file covers.
+pub(crate) fn has_own_config_filename(path: &Path) -> bool {
+    let user_names = user_config_filenames();
+    // A name the user set counts wherever the file is: the search below only looks in the
+    // working directory and the ones above it, and would miss `child/project.toml`.
+    if path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| user_names.iter().any(|user| user == name))
+    {
+        return true;
+    }
+    let mut names: Vec<String> = [".tool-versions"]
+        .into_iter()
+        .chain(MISE_CONFIG_FILENAMES)
+        .chain(LOCAL_CONFIG_FILENAMES)
+        .map(String::from)
+        .collect();
+    names.extend(user_names.iter().map(|name| glob::Pattern::escape(name)));
     let Ok(path) = path.absolutize() else {
         return false;
     };
@@ -3782,27 +3799,22 @@ pub(crate) fn is_project_link_to_global_config(path: &Path) -> bool {
 /// a project file linked to a global config file, or a project's `.mise` or `.config` linked to
 /// the global config directory, where the file need not exist yet.
 ///
-/// What decides is where each link on the way to the file is placed, not where it leads: two
-/// spellings of global config resolve to the same file whoever placed the link between them.
-/// A link that global config's own spelling also passes through is the user's layout (a
-/// linked `~/.config`). Any other link is the user's own only when it sits above the directory
-/// the path spells as its project, in a directory that holds the global config directory: a
-/// linked `/home`, or a link to the home directory placed beside it. A link at or below that
-/// project directory, or one placed in a directory that does not hold global config, such as
-/// a checkout's `home` linked to the home directory, is a project's link to global config.
+/// What decides is where each link on the way to the file is placed and what it stands for, not
+/// where the file finally lands: two spellings of global config resolve to the same file whoever
+/// placed the link between them, and the user's global config directory may itself link into a
+/// dotfiles checkout anywhere. A link that global config's own spelling also passes through is
+/// the user's layout (a linked `~/.config`). Any other link is the user's own only when it is
+/// another name for a directory above the global config directory, placed in such a directory
+/// itself, and not below the directory the path spells as its project: a linked `/home`, or a
+/// link to the home directory placed beside it (see [`is_alias_above_global_config_dir`]). A
+/// link to the global config directory itself (`~/cfg` or a project's `.mise`), one below the
+/// project directory, or one placed in a directory that does not hold global config, such as a
+/// checkout's `home` linked to the home directory, is a project's link to global config.
 pub(crate) fn write_reaches_global_config_through_link(path: &Path) -> bool {
     let Some(global) = global_config_spelling(path) else {
         return false;
     };
-    let Some(target_dir) = resolve_for_write(path).and_then(|real| {
-        if real == path {
-            return None;
-        }
-        real.parent().map(Path::to_path_buf)
-    }) else {
-        return false;
-    };
-    if global == path {
+    if global == path || resolve_for_write(path).is_none_or(|real| real == path) {
         return false;
     }
     let users_links = link_placements(&global)
@@ -3810,21 +3822,57 @@ pub(crate) fn write_reaches_global_config_through_link(path: &Path) -> bool {
         .collect::<Vec<_>>();
     let project = config_file::config_root::spelled_project(path);
     link_placements(path).any(|(spelled, placement)| {
-        let in_project = spelled.starts_with(&project) && spelled != project;
-        !users_links.contains(&placement) && (in_project || !target_dir.starts_with(&placement.0))
+        let below_project = spelled.starts_with(&project) && spelled != project;
+        !users_links.contains(&placement)
+            && (below_project
+                || !is_alias_above_global_config_dir(spelled, &placement.0, path, &global))
     })
 }
 
-/// The symlinks `path` passes through on the way to its file, the file itself included: each as
-/// spelled in `path`, with where it is placed, the directory that holds it (resolved) and its
-/// name there.
+/// Whether `link`, a symlink on `path` placed in `link_dir` (resolved), is another name for a
+/// directory above the directory of `global`, the spelling of the global config file `path`
+/// reaches, and is placed in such a directory too: `/usr/home` for `/home`, or `~/../linkhome`
+/// for `~`. The rest of `path` below the link must spell the global config file as `global`
+/// does below that directory, so the link stands above the global config directory, which is
+/// compared as spelled, before any link the two paths share is followed.
+fn is_alias_above_global_config_dir(
+    link: &Path,
+    link_dir: &Path,
+    path: &Path,
+    global: &Path,
+) -> bool {
+    let (Ok(rest), Ok(target)) = (path.strip_prefix(link), link.canonicalize()) else {
+        return false;
+    };
+    let Some(config_dir) = global.parent().map(|dir| match dir.parent() {
+        Some(owner) if dir.ends_with("conf.d") => owner,
+        _ => dir,
+    }) else {
+        return false;
+    };
+    let (mut placed_above, mut stands_above) = (false, false);
+    for holder in config_dir.ancestors().skip(1) {
+        let Ok(resolved) = holder.canonicalize() else {
+            continue;
+        };
+        placed_above |= resolved == link_dir;
+        stands_above |= resolved == target && global.strip_prefix(holder).is_ok_and(|r| r == rest);
+    }
+    placed_above && stands_above
+}
+
+/// The links (symlinks, and junctions on Windows) `path` passes through on the way to its file,
+/// the file itself included: each as spelled in `path`, with where it is placed, the directory
+/// that holds it (resolved) and its name there.
 fn link_placements(
     path: &Path,
 ) -> impl Iterator<Item = (&Path, (PathBuf, std::ffi::OsString))> + '_ {
-    path.ancestors().filter(|p| p.is_symlink()).filter_map(|p| {
-        let dir = p.parent()?.canonicalize().ok()?;
-        Some((p, (dir, p.file_name()?.to_os_string())))
-    })
+    path.ancestors()
+        .filter(|p| config_file::config_root::is_link(p))
+        .filter_map(|p| {
+            let dir = p.parent()?.canonicalize().ok()?;
+            Some((p, (dir, p.file_name()?.to_os_string())))
+        })
 }
 
 /// Where global or system config is spelled for a file `path` resolves to: where discovery
@@ -4798,7 +4846,7 @@ fn load_aliases(config_files: &ConfigMap) -> Result<AliasMap> {
                 alias.backend = Some(full);
             }
             for (from, to) in plugin_aliases.versions {
-                if ignore_path_versions && config_file::version_requires_trust(&to) {
+                if ignore_path_versions && config_file::is_path_version(&to) {
                     debug!(
                         "ignoring tool alias version {from} = {to} in {}: safe mode (MISE_SAFE=1)",
                         display_path(config_file.get_path())

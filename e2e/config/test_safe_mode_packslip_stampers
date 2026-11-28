@@ -1,0 +1,146 @@
+#!/usr/bin/env bash
+
+# `packslip.stampers` is the operator's policy: a release that none of the named
+# hosts approved is neither locked nor installed. The tool option
+# `trust = "vendor"` exempts a tool from it, so in safe mode it must not count
+# when a project writes it, just as a project's `[settings]` cannot clear the
+# stampers. Only a `[tools]` entry of global or system config may set it there.
+
+export MISE_MINIMUM_RELEASE_AGE=0
+export MISE_USE_VERSIONS_HOST=0
+# The default, which the e2e environment replaces: `mise lock` fails when a tool
+# does not resolve.
+export MISE_LOCKFILE_MODE=generate
+unset GITHUB_TOKEN GITHUB_API_TOKEN MISE_GITHUB_TOKEN
+mkdir server-state
+# The repository ID the fixture's signing certificate records.
+cat >server-state/repos.json <<'EOF'
+{"mise-plugins/vfox-bfs": {"id": 1106235958, "full_name": "mise-plugins/vfox-bfs", "owner": {"id": 128710789}}}
+EOF
+python3 "$ROOT/test/fixtures/packslip-vfox/server.py" "$PWD/server-state" &
+server_pid=$!
+trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+for _ in {1..600}; do
+  [[ -f server-state/port ]] && break
+  sleep 0.1
+done
+server="http://127.0.0.1:$(cat server-state/port)"
+# The server stands in for GitHub and for the stamping host. It has no stamp
+# lists, so the stamper has approved nothing.
+export MISE_URL_REPLACEMENTS="{\"https://api.github.com\":\"$server\",\"https://github.com\":\"$server\",\"https://raw.githubusercontent.com\":\"$server\",\"https://stamps.example.com\":\"$server\"}"
+
+tool="packslip:mise-plugins/vfox-bfs"
+version="0.1.0-dev.2"
+install="$MISE_DATA_DIR/installs/packslip-mise-plugins-vfox-bfs/$version"
+no_stamp="carries no stamp from stamps.example.com"
+operator_settings() {
+  cat <<'EOF'
+[settings.packslip]
+stampers = ["stamps.example.com=RWTAVOFZR6bcSVX+dSDiaFuHVVytD5UMn/HtxqPp/UbQDE5MW1nPZth7"]
+EOF
+}
+operator_settings >"$MISE_CONFIG_DIR/config.toml"
+assert_refused() {
+  rm -f mise.lock
+  assert_fail_contains "MISE_SAFE=1 mise lock" "$no_stamp"
+  assert_fail_contains "MISE_SAFE=1 mise install $*" "$no_stamp"
+  assert_fail "grep -qs '$version' mise.lock"
+  assert_directory_not_exists "$install"
+}
+
+echo "=== a project cannot exempt its tool from the stampers ==="
+cat <<EOF >mise.toml
+[tools]
+"$tool" = "$version"
+EOF
+assert_refused
+cat <<EOF >mise.toml
+[tools]
+"$tool" = { version = "$version", trust = "vendor" }
+EOF
+assert_refused
+cat <<EOF >mise.toml
+[tools]
+"${tool}[trust=vendor]" = "$version"
+EOF
+assert_refused
+cat <<EOF >mise.toml
+[tool_alias]
+bfs = "${tool}[trust=vendor]"
+
+[tools]
+bfs = "$version"
+EOF
+assert_refused
+assert_directory_not_exists "$MISE_DATA_DIR/installs/bfs/$version"
+cat <<EOF >mise.toml
+[tasks.build]
+run = "true"
+
+[tasks.build.tools]
+"$tool" = { version = "$version", trust = "vendor" }
+EOF
+assert_refused --include-task-tools
+rm mise.toml
+mkdir app
+cat <<EOF >mise.toml
+monorepo_root = true
+
+[monorepo]
+config_roots = ["app"]
+lockfile = true
+EOF
+cat <<EOF >app/mise.toml
+[tools]
+"$tool" = { version = "$version", trust = "vendor" }
+EOF
+assert_fail_contains "MISE_SAFE=1 mise lock" "$no_stamp"
+rm -rf app mise.toml mise.lock
+
+echo "=== nor when global config declares the tool without the option ==="
+cat <<EOF >>"$MISE_CONFIG_DIR/config.toml"
+
+[tools]
+"$tool" = "$version"
+EOF
+cat <<EOF >mise.toml
+[tools]
+"$tool" = { version = "$version", trust = "vendor" }
+EOF
+assert_refused
+
+echo "=== global config is the operator's, so its exemption still applies ==="
+operator_settings >"$MISE_CONFIG_DIR/config.toml"
+cat <<EOF >>"$MISE_CONFIG_DIR/config.toml"
+
+[tools]
+"$tool" = { version = "$version", trust = "vendor" }
+EOF
+rm mise.toml
+assert_succeed "MISE_SAFE=1 mise install"
+assert "test -f '$install/metadata.lua'"
+mise uninstall "$tool@$version"
+assert_directory_not_exists "$install"
+
+echo "=== whatever letter case the global entry spells the repository in ==="
+operator_settings >"$MISE_CONFIG_DIR/config.toml"
+cat <<EOF >>"$MISE_CONFIG_DIR/config.toml"
+
+[tools]
+"packslip:mise-plugins/VFOX-BFS" = { version = "$version", trust = "vendor" }
+EOF
+assert_succeed "MISE_SAFE=1 mise install '${tool}[trust=vendor]@$version'"
+assert "test -f '$install/metadata.lua'"
+mise uninstall "$tool@$version"
+assert_directory_not_exists "$install"
+
+echo "=== without safe mode a trusted project's option is honoured ==="
+operator_settings >"$MISE_CONFIG_DIR/config.toml"
+cat <<EOF >mise.toml
+[tools]
+"$tool" = { version = "$version", trust = "vendor" }
+EOF
+assert_succeed "mise lock"
+assert_contains "cat mise.lock" "$version"
+assert_succeed "mise install"
+assert "test -f '$install/metadata.lua'"

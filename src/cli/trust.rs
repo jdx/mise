@@ -14,9 +14,11 @@ use std::sync::Arc;
 /// Mark a config file as trusted
 ///
 /// Trust lets mise load the parts of a config file that can run code or change
-/// your environment. A mise command you type in a terminal trusts the project's
-/// config for you and says so. Otherwise mise prompts, skips the file, or fails
-/// with an untrusted-config error when it cannot prompt.
+/// your environment. A mise command you type in a terminal, with stdin, stdout
+/// and stderr all on it, trusts the project's config for you and says so, unless
+/// paranoid mode's `config` category is on or the config belongs to another
+/// account. Otherwise mise prompts, skips the file, or fails with an
+/// untrusted-config error when it cannot prompt.
 ///
 /// A file with no template syntax that contains only `min_version`, `[tools]`
 /// entries with plain version strings (or arrays of them), and `[tasks]` in
@@ -108,9 +110,12 @@ impl Trust {
             while self.trust_next_config()? {}
             // Env files need trust whether or not their project's config was already trusted.
             let descendants = self.get_descendants();
+            // Each found config is trusted by the root the scan checked, as the ancestor pass
+            // does. Taking it as a file the user named would, with only `env_files` on, approve
+            // one whose name only a `.miserc.toml` declares as an env file and leave its project
+            // untrusted.
             for p in self.get_untrusted_descendants() {
-                self.config_file = Some(p);
-                self.trust()?;
+                Self::trust_root(&config_trust_root(&p))?;
             }
             Self::trust_env_files().await?;
             Self::trust_descendant_env_files(&descendants)?;
@@ -220,7 +225,7 @@ fn nearest_local_config_file(filenames: &[String]) -> Option<PathBuf> {
 /// only configs are for another environment. That way a file the project ships in such a folder
 /// cannot take the refusal for itself and leave the project trusted.
 fn refused_roots(path: &Path, cfr: &Path, named_file: bool) -> Vec<PathBuf> {
-    if named_file || cfr == path || Settings::get().paranoid.config() {
+    if named_file || Settings::get().paranoid.config() {
         return vec![cfr.to_path_buf()];
     }
     let project =
@@ -235,6 +240,75 @@ fn refused_roots(path: &Path, cfr: &Path, named_file: bool) -> Vec<PathBuf> {
         }
     }
     roots.into_iter().unique().collect()
+}
+
+/// The nested roots of the project at `roots[0]` that have a trust record but are not in
+/// `roots`, the roots [`refused_roots`] found from the configs on disk. A nested root whose
+/// configs the checkout lacks, such as one another branch adds, keeps its record, so untrusting
+/// the project removes it as well: otherwise the approval would outlive the project's and count
+/// again once that branch is checked out. An ignore needs no such search, since the project's
+/// ignore already covers the nested roots that arrive later.
+fn recorded_nested_roots(roots: &[PathBuf]) -> Vec<PathBuf> {
+    let canonical = |p: &Path| p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
+    let project = canonical(&roots[0]);
+    let known: HashSet<PathBuf> = roots.iter().map(|root| canonical(root)).collect();
+    config_file::trusted_paths_below(&project)
+        .into_iter()
+        .filter(|recorded| {
+            // A record names a root, not a config in it, so ask where a config there would go.
+            let probe = recorded.join("mise.toml");
+            !known.contains(recorded)
+                && config_trust_root(&probe) == *recorded
+                && config_file::config_root::nested_root_project(&probe).as_ref() == Some(&project)
+        })
+        .collect()
+}
+
+/// The trust root that `mise trust` records for `path`, which `--ignore` and `--untrust` act on.
+/// A directory or no path stands for the project, whichever file in it the names in effect
+/// pick: with only `env_files` on, a name that `.miserc.toml` added would otherwise make that
+/// file its own root and leave the project's record in place.
+fn cli_trust_root(path: &Path, named_file: bool) -> PathBuf {
+    if named_file {
+        config_file::trust_root_for_cli(path)
+    } else {
+        config_trust_root(path)
+    }
+}
+
+/// Whether `mise trust` without a path or with `--all` has to act on the trust root `ctr`, which
+/// loading would refuse. A config paranoid mode reaches through a link inside a project is
+/// judged as loading judges it, by that project, whatever record its target has: when the
+/// project is not trusted (`trusted_config_paths` can trust it), `mise trust` fails on it with
+/// that reason instead of finishing as if nothing were left.
+fn needs_trust(ctr: &Path) -> bool {
+    if config_file::ensure_trust_can_approve(ctr).is_err() {
+        !config_file::is_path_trusted(ctr)
+    } else {
+        !config_file::is_trusted(ctr)
+    }
+}
+
+/// Warns about each root an untrust or ignore acted on that `trusted_config_paths` still trusts.
+/// A nested root can be listed there without its project. One inside a root already named is
+/// covered by that warning.
+fn warn_trusted_via_settings(roots: &[PathBuf]) {
+    let mut warned: Vec<PathBuf> = vec![];
+    for root in roots {
+        let root = root.canonicalize().unwrap_or_else(|_| root.clone());
+        if warned.iter().any(|w| root.starts_with(w))
+            || !Settings::get()
+                .trusted_config_paths()
+                .any(|p| root.starts_with(p))
+        {
+            continue;
+        }
+        warn!(
+            "{} is trusted via settings so it will still be trusted.",
+            display_path(&root)
+        );
+        warned.push(root);
+    }
 }
 
 pub(super) fn untrust_config_file(
@@ -252,8 +326,12 @@ pub(super) fn untrust_config_file(
             }
         },
     };
-    let cfr = config_file::trust_root_for_cli(&path);
-    let roots = refused_roots(&path, &cfr, named_file);
+    let cfr = cli_trust_root(&path, named_file);
+    let mut roots = refused_roots(&path, &cfr, named_file);
+    if !named_file && !Settings::get().paranoid.config() {
+        let recorded = recorded_nested_roots(&roots);
+        roots.extend(recorded);
+    }
     for root in &roots {
         config_file::untrust(root)?;
     }
@@ -266,19 +344,12 @@ pub(super) fn untrust_config_file(
         config_file::untrust(&path)?;
     }
     for root in &roots {
-        info!("untrusted {}", display_path(&root.canonicalize()?));
+        // A recorded nested root may be gone from the checkout; its record holds it resolved.
+        let root = root.canonicalize().unwrap_or_else(|_| root.clone());
+        info!("untrusted {}", display_path(&root));
     }
     let cfr = roots[0].canonicalize()?;
-
-    let trusted_via_settings = Settings::get()
-        .trusted_config_paths()
-        .any(|p| cfr.starts_with(p));
-    if trusted_via_settings {
-        warn!(
-            "{} is trusted via settings so it will still be trusted.",
-            display_path(&cfr)
-        );
-    }
+    warn_trusted_via_settings(&roots);
 
     if !Settings::get().paranoid.config()
         && let Some(main_path) = crate::git::main_checkout_equivalent(&cfr)
@@ -348,7 +419,7 @@ impl Trust {
                 display_path(&path)
             );
         }
-        let cfr = config_file::trust_root_for_cli(&path);
+        let cfr = cli_trust_root(&path, self.named_file());
         let roots = refused_roots(&path, &cfr, self.named_file());
         for root in &roots {
             config_file::add_ignored(root.clone())?;
@@ -364,24 +435,13 @@ impl Trust {
         for root in &roots {
             info!("ignored {}", display_path(&root.canonicalize()?));
         }
-        let cfr = roots[0].canonicalize()?;
-
-        let trusted_via_settings = Settings::get()
-            .trusted_config_paths()
-            .any(|p| cfr.starts_with(p));
-        if trusted_via_settings {
-            warn!(
-                "{} is trusted via settings so it will still be trusted.",
-                display_path(&cfr)
-            );
-        }
+        warn_trusted_via_settings(&roots);
         Ok(())
     }
     fn trust(&self) -> Result<()> {
         let path = match self.config_file()? {
             // A directory is the project whichever file in it the names in effect pick.
-            Some(filename) if !self.named_file() => config_file::config_trust_root(&filename),
-            Some(filename) => config_file::trust_root_for_cli(&filename),
+            Some(filename) => cli_trust_root(&filename, self.named_file()),
             None => match self.get_next_untrusted() {
                 Some(path) => path,
                 None => {
@@ -412,10 +472,16 @@ impl Trust {
         let Some(path) = self.get_next_untrusted() else {
             return Ok(false);
         };
-        config_file::ensure_trust_can_approve(&path)?;
-        config_file::trust(&path)?;
-        info!("trusted {}", display_path(&path.canonicalize()?));
+        Self::trust_root(&path)?;
         Ok(true)
+    }
+
+    /// Trusts the trust root `root` that a scan found untrusted, and says so.
+    fn trust_root(root: &Path) -> Result<()> {
+        config_file::ensure_trust_can_approve(root)?;
+        config_file::trust(root)?;
+        info!("trusted {}", display_path(&root.canonicalize()?));
+        Ok(())
     }
 
     /// In paranoid mode, trusts the env files and scripts the trusted configs read, which have
@@ -531,7 +597,7 @@ impl Trust {
             .filter(|p| !is_global_config(p))
             .map(|p| config_trust_root(&p))
             .unique()
-            .find(|ctr| !config_file::is_trusted(ctr))
+            .find(|ctr| needs_trust(ctr))
     }
 
     /// Untrusted config files in subdirectories of the current directory.
@@ -543,7 +609,7 @@ impl Trust {
     fn get_untrusted_descendants(&self) -> Vec<PathBuf> {
         self.get_descendants()
             .into_iter()
-            .filter(|p| !config_file::is_trusted(&config_trust_root(p)))
+            .filter(|p| needs_trust(&config_trust_root(p)))
             .collect()
     }
 
@@ -622,7 +688,9 @@ impl Trust {
             .filter(|p| !is_global_config(p))
             .map(|p| config_trust_root(&p))
             .unique()
-            .map(|p| (display_path(&p), config_file::is_trusted(&p)))
+            // The same check as loading: in paranoid mode a linked config's target record does
+            // not count, and `trusted_config_paths` can trust the project that holds the link.
+            .map(|p| (display_path(&p), !needs_trust(&p)))
             .rev()
             .collect::<Vec<_>>();
         if trusted.is_empty() {

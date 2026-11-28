@@ -385,8 +385,15 @@ declares it, on the artifact or on its checksum file. Finding none fails as a
 possible downgrade instead of skipping verification, also when the shared
 mise-versions cache or a lockfile reported the missing attestation. Other
 provenance, such as SLSA, does not count.
-Earlier versions, versions that are not semantic versions (`nightly`, `1.0`,
-`2024.01.15`), and users who turn off
+On a `github:` backend both the requested version and the version the release
+lookup resolves it to are compared, so `aube@2.3.0` still needs an attestation
+when a mirror answers for it with an older or unplaceable release name.
+A version made only of dot-separated numbers is placed against the boundary by
+those numbers, a missing one counting as 0, so with `attestations_since =
+"0.71.1"` a release tagged `v0.72` or `0.72.0.1` needs an attestation and
+`0.71` does not.
+Earlier versions, versions that are neither (`nightly`, `ref:main`,
+`1.0.0-rc.1` below a `1.0.0` boundary), and users who turn off
 [`github_attestations`](/configuration/settings.html#github_attestations) or
 [`github.github_attestations`](/configuration/settings.html#github.github_attestations)
 are unaffected.

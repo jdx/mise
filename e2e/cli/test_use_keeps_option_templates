@@ -129,3 +129,41 @@ assert_not_contains "cat other/mise.toml" "example.com/top"
 assert_not_contains "cat other/mise.toml" "example.com/linux"
 assert_contains "cat other/mise.toml" 'url = "https://example.com/mac"'
 assert_contains "cat other/mise.toml" 'checksum = "sha256:0000'
+
+# a platform with no checksum of its own is checked against the top-level one,
+# so a pinned top-level checksum keeps the platform's url
+cat >mise.toml <<'TOML'
+[tools]
+dummy = { version = "1.0.0", checksum = "sha256:1111111111111111111111111111111111111111111111111111111111111111", platforms = { linux-x64 = { url = "https://example.com/linux", checksum_url = "https://example.com/{{ version | upper }}/SHA256SUMS" } } }
+TOML
+rm -rf other
+mkdir other
+assert_not_contains "MISE_SAFE=1 mise use --path other/mise.toml dummy@2.0.0 2>&1" "without it the download would not be checked"
+assert_not_contains "cat other/mise.toml" "version |"
+assert_contains "cat other/mise.toml" 'url = "https://example.com/linux"'
+assert_contains "cat other/mise.toml" 'checksum = "sha256:1111'
+
+# and a platform with no checksum of its own loses its url along with the
+# top-level checksum it was checked against
+cat >mise.toml <<'TOML'
+[tools]
+dummy = { version = "1.0.0", checksum_url = "https://example.com/{{ version | upper }}.sha256", platforms = { linux-x64 = { url = "https://example.com/linux" }, macos-arm64 = { url = "https://example.com/mac", checksum = "sha256:2222222222222222222222222222222222222222222222222222222222222222" } } }
+TOML
+rm -rf other
+mkdir other
+assert_contains "MISE_SAFE=1 mise use --path other/mise.toml dummy@2.0.0 2>&1" "platforms.linux-x64.url"
+assert_not_contains "cat other/mise.toml" "version |"
+assert_not_contains "cat other/mise.toml" "example.com/linux"
+assert_contains "cat other/mise.toml" 'url = "https://example.com/mac"'
+
+# the same goes for the flat per-platform keys the http backend reads
+cat >mise.toml <<'TOML'
+[tools]
+dummy = { version = "1.0.0", platforms_linux_x64_url = "https://example.com/linux", platforms_linux_x64_checksum_url = "https://example.com/{{ version | upper }}/SHA256SUMS", platforms_macos_arm64_url = "https://example.com/mac" }
+TOML
+rm -rf other
+mkdir other
+assert_contains "MISE_SAFE=1 mise use --path other/mise.toml dummy@2.0.0 2>&1" "platforms_linux_x64_url"
+assert_not_contains "cat other/mise.toml" "version |"
+assert_not_contains "cat other/mise.toml" "example.com/linux"
+assert_contains "cat other/mise.toml" 'platforms_macos_arm64_url = "https://example.com/mac"'

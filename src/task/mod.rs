@@ -3237,9 +3237,10 @@ impl Task {
         }
         env_remove.extend(env_results.env_remove);
 
-        // Apply path additions from _.path directives
+        // Apply path additions from _.path directives. `env` holds the PATH the toolset built,
+        // whose command wrappers stay ahead of the task's own directories.
         if !env_results.env_paths.is_empty() {
-            let mut path_env = PathEnv::from_iter(env::split_paths(
+            let mut path_env = PathEnv::from_child_path(env::split_paths(
                 &env.get(&*env::PATH_KEY).cloned().unwrap_or_default(),
             ));
             for path in env_results.env_paths {
