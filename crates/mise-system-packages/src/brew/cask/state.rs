@@ -1458,6 +1458,15 @@ pub(super) fn cask_prune_plan_from_tokens(
             });
             continue;
         }
+        if !receipt.pkg_ids.is_empty() {
+            plan.skipped.push(CaskPruneSkip {
+                token,
+                reason: "mise cannot uninstall pkg artifacts. Follow the vendor's uninstall instructions"
+                    .to_string(),
+                forceable: false,
+            });
+            continue;
+        }
         // Schema 2 is the first to record every target with its fingerprint,
         // which a forced removal needs to tell what is still the cask's.
         let schema_records_targets = matches!(receipt.schema_version, 2 | 3);
