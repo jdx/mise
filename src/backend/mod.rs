@@ -6347,6 +6347,11 @@ pub trait Backend: Debug + Send + Sync {
     }
 
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion>;
+
+    /// Record provenance for backends that also create links in their version slots.
+    fn record_user_link(&self, _link: &Path) -> Result<()> {
+        Ok(())
+    }
     async fn uninstall_version(
         &self,
         config: &Arc<Config>,

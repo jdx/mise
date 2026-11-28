@@ -70,6 +70,16 @@ cat >"$linked_sdk/dotnet" <<'SH'
 printf '%s\n' "linked SDK"
 SH
 chmod +x "$linked_sdk/dotnet"
+
+# A pre-upgrade custom-root link has the same layout as a pre-upgrade user link.
+legacy_link="$MISE_DATA_DIR/installs/dotnet/8.0.409"
+ln -s "$linked_sdk" "$legacy_link"
+for isolated in 0 1; do
+  export MISE_DOTNET_ISOLATED="$isolated"
+  assert_fail_contains "mise install dotnet@8.0.409" "points to an unrecorded .NET root"
+  test -L "$legacy_link"
+done
+
 mise link dotnet@8.0.409 "$linked_sdk"
 for isolated in 0 1; do
   export MISE_DOTNET_ISOLATED="$isolated"
