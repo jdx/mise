@@ -5717,7 +5717,17 @@ pub async fn resolve_tool_lock_info(
             Ok(info) => {
                 let conda_packages = if backend.get_type() == BackendType::Conda {
                     let conda_backend = CondaBackend::from_arg(ba.clone());
-                    match conda_backend.resolve_conda_packages(&tv, &target).await {
+                    // Its dependencies with no published checksum are downloaded to
+                    // hash them, so this runs in the tool's safe mode scope too.
+                    let packages = crate::env::with_install_env(
+                        tv.install_env(),
+                        crate::toolset::with_safe_mode_tool_scope(
+                            backend.ba(),
+                            conda_backend.resolve_conda_packages(&tv, &target),
+                        ),
+                    )
+                    .await;
+                    match packages {
                         Ok(packages) => packages,
                         Err(e) => {
                             return (

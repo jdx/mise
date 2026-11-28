@@ -695,7 +695,7 @@ pub async fn generate(
     resolved.sort_by_key(|(ordinal, _, _)| *ordinal);
     let mut unsupported = crate::lockfile::UnsupportedPlatforms::new(platform_selection.named());
     for (_, specifier, resolution) in resolved {
-        let (short, version, backend, platform, info, options, conda, status) = resolution;
+        let (short, version, backend, platform, info, options, mut conda, status) = resolution;
         if status == LockResolutionStatus::Unsupported {
             unsupported.record(&short, &version, &platform.to_key());
             candidate.set_unsupported_platform(
@@ -735,6 +735,7 @@ pub async fn generate(
                 carry_forge_ids(old, &mut info);
             }
         }
+        keep_stronger_conda_pins(&candidate, &platform.to_key(), &mut conda);
         if let Some(error) = conda_pin_conflict(&candidate, &platform.to_key(), &conda) {
             report.abandon();
             bail!("{error} ({short}@{version} on {})", platform.to_key());
@@ -1153,6 +1154,40 @@ fn conda_pin_conflict(
         ));
     }
     None
+}
+
+/// Keep a shared row's SHA-256 pin when the channel now publishes only a weaker
+/// checksum (MD5) for the same file: replacing it would let every tool that names
+/// the row accept bytes the old pin refuses. The file's name and channel are the
+/// same, so the bytes the SHA-256 pins are still the ones to install, and an install
+/// checks them against it.
+fn keep_stronger_conda_pins(
+    candidate: &Lockfile,
+    platform: &str,
+    conda: &mut BTreeMap<String, crate::backend::conda::CondaPackageInfo>,
+) {
+    let is_sha256 = |checksum: &str| {
+        checksum
+            .split_once(':')
+            .is_some_and(|(algorithm, _)| algorithm.eq_ignore_ascii_case("sha256"))
+    };
+    for (key, package) in conda.iter_mut() {
+        let Some(old) = candidate
+            .get_conda_package(platform, key)
+            .and_then(|existing| existing.checksum.as_deref())
+        else {
+            continue;
+        };
+        if is_sha256(old)
+            && crate::hash::is_well_formed_checksum(old)
+            && package
+                .checksum
+                .as_deref()
+                .is_none_or(|new| !is_sha256(new))
+        {
+            package.checksum = Some(old.to_string());
+        }
+    }
 }
 
 fn ensure_no_downgrade(old: &PlatformInfo, new: &PlatformInfo, backend: &str) -> Result<()> {
@@ -1649,6 +1684,10 @@ mod tests {
             let same = BTreeMap::from([(dep.clone(), row(checksum))]);
             assert!(conda_pin_conflict(&candidate, platform, &same).is_none());
         }
+        // A weaker checksum for a SHA-256 row keeps the SHA-256 pin.
+        let mut weaker = BTreeMap::from([(dep.clone(), row(format!("md5:{}", "c".repeat(32))))]);
+        keep_stronger_conda_pins(&candidate, platform, &mut weaker);
+        assert_eq!(weaker[&dep].checksum.as_deref(), Some(sha("a").as_str()));
         // A malformed pin is repaired, not defended.
         candidate.set_conda_package(platform, &dep, row("sha256:abc".into()));
         assert!(conda_pin_conflict(&candidate, platform, &incoming).is_none());
