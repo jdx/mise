@@ -657,6 +657,29 @@ fn looks_like_config_file(path: &Path) -> bool {
         || config::has_own_config_filename(path)
 }
 
+/// The project directory `path` belongs to, whatever paranoid mode makes its trust root: the
+/// project a link inside it leads from, or that holds the nested root it is in, else its config
+/// root.
+pub fn config_project(path: &Path) -> PathBuf {
+    config_root::linked_project(path)
+        .or_else(|| config_root::nested_root_project(path))
+        .unwrap_or_else(|| config_root::config_root(path))
+}
+
+/// The paths of the project at `project` with a trust record that approves them as config,
+/// whether or not they are still on disk. In paranoid mode each config is its own trust root, so
+/// these are the files the user approved there, a config that another branch brings back
+/// included. Env file approvals are not trust in a config and are left out.
+pub fn trusted_configs_of_project(project: &Path) -> Vec<PathBuf> {
+    let project = record_identity(project);
+    trusted_paths_below(&project)
+        .into_iter()
+        .filter(|path| {
+            config_project(path) == project && !TrustRecord::find(path).is_env_file_approval()
+        })
+        .collect()
+}
+
 pub fn config_trust_root(path: &Path) -> PathBuf {
     if settings::is_loaded() && Settings::get().paranoid.config() {
         path.to_path_buf()
@@ -981,7 +1004,10 @@ pub(crate) fn env_file_trust_check_from(
     declared_in: Option<&Path>,
 ) -> eyre::Result<bool> {
     if Settings::safe_mode() {
-        debug!("safe mode: not loading env file {}", display_path(path));
+        debug!(
+            "safe mode: not loading env file {}",
+            style::display_path_escaped(path)
+        );
         return Ok(false);
     }
     named_env_file_trust_check(path, declared_in)

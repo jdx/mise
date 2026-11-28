@@ -1424,7 +1424,7 @@ impl SettingsExt for Settings {
                 if !p.is_absolute() {
                     warn_while_loading_settings(format!(
                         "ignoring trusted_config_paths entry {}: it must be an absolute path or start with ~/",
-                        p.display()
+                        crate::ui::style::display_path_escaped(p)
                     ));
                 }
                 p.is_absolute()
