@@ -45,6 +45,32 @@ If the prefix does not exist, mise creates it with Homebrew's standard layout,
 using sudo to create the directory and give it to your user. It then installs
 formulae as that user, so run mise as the user who should own the prefix.
 
+As root, mise refuses to install into or change a prefix when the prefix, a
+directory above it, or one of its standard directories belongs to another user,
+since that user could redirect root's writes. A standard directory that is a
+symlink, such as a Cellar on another disk, is checked along with the directories
+it leads to. The one exception is the user who ran `sudo mise`. Run as your own
+user, mise makes the same checks before it uses sudo to create the prefix or
+change its owner, trusting you instead of the `sudo mise` user, so it refuses a
+setup that would fail before it creates anything. For the same
+reason, mise refuses a prefix when any of those directories is writable by every
+user (`chmod o+w`) and has no sticky bit. The sticky bit is set on `/tmp`, for
+example, and with it only an entry's owner can rename or remove that entry.
+It does not protect a name that does not exist yet, such as a prefix of
+`/tmp/brew` that mise is about to create: another user could create it first
+as a symlink. So once mise has created the missing prefix and standard
+directories, and before it changes their owner or writes a file, it checks them
+again and refuses a link or directory that appeared in the meantime. If that
+second check refuses after sudo created directories, the error lists the paths
+that did not exist before, so you can check them and remove them.
+Directories that their group can write to are allowed, because Homebrew's usual
+layout gives an admin group write access. mise trusts the members of that group
+as much as the owner. This check reads only the owner and the mode bits:
+access control lists (ACLs) that grant write access to other users or groups
+are not checked, so remove any such entries from these directories yourself.
+mise changes nothing in a refused prefix, including the
+lock files it cleans up otherwise.
+
 Linked commands go into `<prefix>/bin`. These packages get no mise shims, and
 mise does not change the current shell's `PATH`, so add the directory in your
 shell startup file:
@@ -241,12 +267,21 @@ For each formula, dependencies first, mise downloads the bottle from ghcr.io
 and checks its sha256 against Homebrew's API, unpacks it into the Cellar,
 rewrites Homebrew's placeholder paths, re-signs changed binaries on macOS,
 writes a Homebrew-compatible receipt, and links the keg into the prefix.
-Keg-only formulae get only the `opt` link. mise never runs `brew`.
+Keg-only formulae get only the `opt` link. mise never runs `brew`. A bottle may
+contain symlinks within its keg and into the prefix, such as
+`../../../opt/<dependency>/lib`; mise refuses to install a bottle with a symlink
+that points outside the prefix, or whose target has a `..` after a name (such
+as `dep/x/../..`), since where that lands can change when another formula is
+installed or upgraded.
 
 Like `brew install`, mise copies the `etc` and `var` files a bottle ships into
 the prefix. A file you already have there is never overwritten: the bottle's
-copy is written beside it as `<file>.default`. It then runs the formula's
-declarative `post_install_steps` from the Homebrew API, which is how
+copy is written beside it as `<file>.default`, unless `<file>.default` is a
+symlink, which mise leaves alone. mise does not copy files through
+a symlink below `etc` or `var`, and does not install a symlink from there that
+would point outside the prefix or whose target has a `..` after a name; it
+skips each with a warning. It then runs the
+formula's declarative `post_install_steps` from the Homebrew API, which is how
 `ca-certificates` builds `etc/ca-certificates/cert.pem` and `openssl@4` links
 its `cert.pem` to it. mise implements the generic step types (`symlink`,
 `copy`, `move`, `remove`, `mkdir_p`, `touch`, `write`, `set_permissions` and

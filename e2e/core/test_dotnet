@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-export MISE_DOTNET_ROOT="$MISE_DATA_DIR/dotnet-root"
+export MISE_DOTNET_ROOT="$MISE_DATA_DIR/custom-dotnet-root"
 
 # SDK install validation should not use global.json-sensitive SDK selection.
 cat <<EOF >global.json
@@ -47,6 +47,42 @@ assert_fail_contains "mise x dotnet[runtime=invalid]@8.0.12 -- true" "Invalid ru
 # An already-active SDK ahead of the shims must not shadow the SDK being validated.
 rm -f global.json
 export MISE_DOTNET_ISOLATED=1 MISE_ACTIVATE_AGGRESSIVE=0
+assert "mise ls dotnet --json | jq -r '.[] | select(.version == \"8.0.408\") | .installed'" "false"
+assert_contains "mise install --dry-run dotnet@8.0.408 2>&1" "would install"
 mise install dotnet@8.0.408
 sdk8="$(mise where dotnet@8.0.408)"
+test ! -L "$sdk8"
 PATH="$sdk8:$MISE_DATA_DIR/shims:$PATH" DOTNET_ROOT="$sdk8" assert_contains "mise install dotnet@9.0.100 && mise x dotnet@9.0.100 -- dotnet --version" "9.0.100"
+
+# Switching back to shared mode must install the SDK into the shared root.
+export MISE_DOTNET_ISOLATED=0
+assert "mise ls dotnet --json | jq -r '.[] | select(.version == \"9.0.100\") | .installed'" "false"
+assert_contains "mise install --dry-run dotnet@9.0.100 2>&1" "would install"
+assert_contains "mise install dotnet@9.0.100 && mise x dotnet@9.0.100 -- dotnet --version" "9.0.100"
+assert_contains "mise install --dry-run dotnet@9.0.100 2>&1" "already installed"
+MISE_DOTNET_ROOT="$MISE_DATA_DIR/other-dotnet-root" assert_contains "mise install --dry-run dotnet@9.0.100 2>&1" "would install"
+
+# Linked SDKs remain usable in both modes, even with a different shared root.
+linked_sdk="$PWD/linked-sdk"
+mkdir -p "$linked_sdk/sdk/8.0.409"
+cat >"$linked_sdk/dotnet" <<'SH'
+#!/bin/sh
+printf '%s\n' "linked SDK"
+SH
+chmod +x "$linked_sdk/dotnet"
+
+# A pre-upgrade custom-root link has the same layout as a pre-upgrade user link.
+legacy_link="$MISE_DATA_DIR/installs/dotnet/8.0.409"
+ln -s "$linked_sdk" "$legacy_link"
+for isolated in 0 1; do
+  export MISE_DOTNET_ISOLATED="$isolated"
+  assert_fail_contains "mise install dotnet@8.0.409" "points to an unrecorded .NET root"
+  test -L "$legacy_link"
+done
+
+mise link dotnet@8.0.409 "$linked_sdk"
+for isolated in 0 1; do
+  export MISE_DOTNET_ISOLATED="$isolated"
+  assert_contains "mise install --dry-run dotnet@8.0.409 2>&1" "already installed"
+  assert "mise x dotnet@8.0.409 -- dotnet --version" "linked SDK"
+done

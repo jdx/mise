@@ -176,6 +176,17 @@ impl SystemPrune {
         };
         if plan.is_empty() {
             info!("brew: nothing to prune");
+            let settings = Settings::get();
+            let casks_enabled = settings
+                .system_packages
+                .managers
+                .as_ref()
+                .is_none_or(|enabled| enabled.iter().any(|manager| manager == "brew-cask"));
+            if casks_enabled && brew::BrewCaskManager::new().is_available() {
+                info!(
+                    "To check for unused casks, run `mise bootstrap packages prune -m brew-cask --dry-run`."
+                );
+            }
             return Ok(());
         }
         if self.dry_run {

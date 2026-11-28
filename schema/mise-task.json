@@ -2776,6 +2776,10 @@
         "npm_args": {
           "type": "string",
           "description": "extra arguments for npm installs (shell-split)"
+        },
+        "node": {
+          "type": "string",
+          "description": "mise-managed Node version this tool's executables always run on (embedded aube only)"
         }
       }
     },

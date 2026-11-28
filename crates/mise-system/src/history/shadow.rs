@@ -743,6 +743,12 @@ impl HistoryRepo {
         Ok(commit)
     }
 
+    /// The trailer that records which matcher version captured a commit,
+    /// on a line of its own after the message.
+    pub(crate) fn matcher_trailer(matcher: u32) -> String {
+        format!("\n{}{matcher}", Self::MATCHER_TRAILER)
+    }
+
     /// Create an ordinary child commit. The caller advances the branch with
     /// an expected-head check; recovery blobs never enter this tree.
     pub(crate) fn write_checkpoint_commit(
@@ -767,10 +773,51 @@ impl HistoryRepo {
         // A separate trailer preserves compatibility with older clients,
         // whose Mise-History JSON record rejects unknown fields.
         if let Some(matcher) = checkpoint.tree.coverage.matcher {
-            message.push_str(&format!("\n{}{matcher}", Self::MATCHER_TRAILER));
+            message.push_str(&Self::matcher_trailer(matcher));
         }
         let parent = self.ref_oid(Self::HISTORY_REF)?;
         self.commit_tree(&tree, parent.as_deref().into_iter().collect(), &message)
+    }
+
+    /// Like [`Self::write_checkpoint_commit`], replacing the head commit
+    /// `folded` instead of following it: the new commit takes its parents
+    /// and its author date, so it still says when the change began.
+    pub(crate) fn write_folded_checkpoint_commit(
+        &self,
+        snapshot_tree: &str,
+        checkpoint: &Checkpoint,
+        folded: &str,
+    ) -> Result<String> {
+        let record = checkpoint.for_commit();
+        let mut message = format!(
+            "{}\n\n{}{}",
+            checkpoint.description,
+            Self::RECORD_TRAILER,
+            serde_json::to_string(&record)?
+        );
+        if let Some(matcher) = checkpoint.tree.coverage.matcher {
+            message.push_str(&format!("\n{}{matcher}", Self::MATCHER_TRAILER));
+        }
+        let parents = self.parents_of(folded)?;
+        let author_date = self.author_date(folded)?;
+        self.commit_tree_dated(
+            snapshot_tree,
+            parents.iter().map(String::as_str).collect(),
+            &message,
+            Some(&author_date),
+        )
+    }
+
+    /// A commit's author date in Git's raw form (`<seconds> <offset>`).
+    pub(crate) fn author_date(&self, commit: &str) -> Result<String> {
+        self.output_str(PlumbingCall::new([
+            "show",
+            "-s",
+            "--format=%ad",
+            "--date=raw",
+            commit,
+        ]))
+        .map(|date| date.trim().to_string())
     }
 
     #[cfg(test)]
@@ -898,6 +945,32 @@ impl HistoryRepo {
 
     pub(crate) fn read_meta(&self, commit: &str) -> Result<Checkpoint> {
         Self::read_meta_in(&self.gix()?, commit)
+    }
+
+    /// The portable streams `commit`'s own record names as omitted or
+    /// incomplete, exactly as written. [`Self::read_meta`] turns them into
+    /// display paths, which drops the variant a stream belongs to.
+    pub(crate) fn uncaptured_streams(&self, commit: &str) -> Result<Vec<String>> {
+        let repo = self.gix()?;
+        let id = gix::ObjectId::from_hex(commit.as_bytes())?;
+        let commit_object = repo.find_commit(id)?;
+        let message = commit_object.message_raw()?;
+        let message = String::from_utf8_lossy(message.as_ref());
+        let Some(trailer) = message
+            .trim()
+            .lines()
+            .rev()
+            .find_map(|line| line.strip_prefix(Self::RECORD_TRAILER))
+        else {
+            return Ok(vec![]);
+        };
+        let record: super::store::CommitRecord = serde_json::from_str(trailer)
+            .wrap_err_with(|| format!("reading history metadata for {commit}"))?;
+        Ok(record
+            .omitted
+            .into_iter()
+            .chain(record.incomplete)
+            .collect())
     }
 
     /// [`Self::read_meta`] through an open repository, so a walk over many
@@ -1957,6 +2030,18 @@ impl HistoryRepo {
         parents: Vec<&str>,
         message: &str,
     ) -> Result<String> {
+        self.commit_tree_dated(tree, parents, message, None)
+    }
+
+    /// [`Self::commit_tree`] with an author date (Git's raw form) other than
+    /// now.
+    fn commit_tree_dated(
+        &self,
+        tree: &str,
+        parents: Vec<&str>,
+        message: &str,
+        author_date: Option<&str>,
+    ) -> Result<String> {
         let mut args = vec!["commit-tree".to_string(), tree.to_string()];
         for parent in parents {
             args.push("-p".to_string());
@@ -1969,12 +2054,17 @@ impl HistoryRepo {
             body.push('\n');
         }
         let email = super::config::git_email()?;
-        self.output_str(
-            PlumbingCall::new(args)
-                .stdin(body.as_bytes())
-                .env("GIT_AUTHOR_EMAIL", email.as_str())
-                .env("GIT_COMMITTER_EMAIL", email),
-        )
+        let name = super::config::git_name()?;
+        let mut call = PlumbingCall::new(args)
+            .stdin(body.as_bytes())
+            .env("GIT_AUTHOR_NAME", name.as_str())
+            .env("GIT_AUTHOR_EMAIL", email.as_str())
+            .env("GIT_COMMITTER_NAME", name)
+            .env("GIT_COMMITTER_EMAIL", email);
+        if let Some(date) = author_date {
+            call = call.env("GIT_AUTHOR_DATE", date);
+        }
+        self.output_str(call)
     }
 
     /// A commit carrying another commit's identity: its author and committer
@@ -2251,7 +2341,6 @@ impl HistoryRepo {
         self.update_history_head(&commit, Some(&head))
     }
 
-    #[cfg(test)]
     pub(crate) fn read_annotation(
         &self,
         commit: &str,
@@ -2667,6 +2756,17 @@ mod tests {
         assert_eq!(
             rebuilt.tree.coverage.incomplete[0].path,
             "~/.native/unreadable"
+        );
+        // sync reads the same record as portable streams
+        let mut streams = repo.uncaptured_streams(&commit).unwrap();
+        streams.sort();
+        assert_eq!(
+            streams,
+            [
+                "home/.native/large",
+                "home/.native/plugin",
+                "home/.native/unreadable"
+            ]
         );
     }
 

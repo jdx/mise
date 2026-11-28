@@ -139,3 +139,11 @@ cat <<'EOF' >typo.toml
 prot = 5432
 EOF
 assert_contains "mise config explain --file typo.toml" "daemons.db.prot  not a key mise reads; did you mean port?"
+
+# A key holding a C1 control is written with it escaped, and reads back as the same name.
+cat <<'EOF' >c1.toml
+[tasks."a\u009b2J"]
+run = "true"
+EOF
+assert_contains "mise config explain --file c1.toml --json" '"a\u009B2J"'
+assert "mise config explain --file c1.toml --json | jq -r '.[1].path[1] | explode | map(tostring) | join(\",\")'" "97,155,50,74"

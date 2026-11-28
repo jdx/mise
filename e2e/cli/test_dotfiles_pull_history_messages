@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+# A pull records no empty bookkeeping commits, and its merge and apply
+# commits name the files involved.
+require_cmd git
+export MISE_HISTORY_NOTIFY=false
+origin="$PWD/messages-origin.git"
+git init -q --bare -b main "$origin"
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.one" = { mode = "track" }
+"~/.two" = { mode = "track" }
+TOML
+echo v1 >~/.one
+echo v1 >~/.two
+assert_succeed "mise dot save ~/.one ~/.two"
+assert_succeed "mise dot track ~/.config/mise/config.toml --yes"
+assert_succeed "mise dot origin set file://$origin --sync manual --yes"
+assert_succeed "mise dot sync"
+
+second="$(dirname "$HOME")/second"
+mkdir -p "$second"
+export second
+b() {
+  (
+    cd "$second" || exit
+    env HOME="$second" XDG_CONFIG_HOME="$second/.config" MISE_CONFIG_DIR="$second/.config/mise" \
+      MISE_STATE_DIR="$second/.local/state/mise" MISE_DATA_DIR="$second/.local/share/mise" \
+      MISE_CACHE_DIR="$second/.cache/mise" MISE_TRUSTED_CONFIG_PATHS="$second" mise "$@"
+  )
+}
+export -f b
+assert_succeed "b bootstrap --adopt file://$origin --yes"
+repo="$second/.local/state/mise/history/repo.git"
+export repo
+subjects() { git --git-dir="$repo" log --format=%s "$@"; }
+export -f subjects
+
+# the pull writes the incoming file and both its commits name it
+echo v2 >~/.one
+assert_succeed "mise dot save ~/.one"
+assert_succeed "mise dot sync"
+start=$(git --git-dir="$repo" rev-parse HEAD)
+assert_succeed "b dot sync"
+assert_succeed "b dot pull --yes"
+assert "cat $second/.one" "v2"
+# the pull's own commits: no empty "before apply" protective commit
+assert "subjects --first-parent $start..HEAD" "apply: wrote ~/.one
+merge origin dotfiles: edited ~/.one"
+
+# a local save waiting to be published merges the same way
+echo v3 >~/.one
+assert_succeed "mise dot save ~/.one"
+assert_succeed "mise dot sync"
+echo v2 >"$second/.two"
+assert_succeed "b dot save $second/.two"
+start=$(git --git-dir="$repo" rev-parse HEAD)
+assert_succeed "b dot sync"
+assert_succeed "b dot pull --yes"
+assert "cat $second/.one" "v3"
+assert "subjects --first-parent $start..HEAD" "apply: wrote ~/.one
+merge origin dotfiles: edited ~/.one"
+
+# both machines made the same edit: the merge writes nothing, and the pull
+# leaves no empty apply commit after it
+echo v4 >~/.one
+assert_succeed "mise dot save ~/.one"
+assert_succeed "mise dot sync"
+echo v4 >"$second/.one"
+assert_succeed "b dot save $second/.one"
+start=$(git --git-dir="$repo" rev-parse HEAD)
+assert_succeed "b dot sync"
+assert_succeed "b dot pull --yes"
+assert "subjects --first-parent $start..HEAD" "merge origin dotfiles"
+# captured with one matcher on both sides, so the merge records it: an apply
+# that writes nothing after it compares equal and is skipped
+assert_contains "git --git-dir=$repo log -1 --format=%B HEAD" "Mise-History-Matcher: "
+
+# a permission change alone is named in the merge
+assert_succeed "mise dot sync"
+assert_succeed "mise dot pull --yes"
+chmod 600 ~/.one
+assert_succeed "mise dot save ~/.one"
+assert_succeed "mise dot sync"
+echo v3 >"$second/.two"
+assert_succeed "b dot save $second/.two"
+start=$(git --git-dir="$repo" rev-parse HEAD)
+assert_succeed "b dot sync"
+assert_succeed "b dot pull --yes"
+assert_contains "subjects --first-parent $start..HEAD" "merge origin dotfiles: edited ~/.one"

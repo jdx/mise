@@ -1,4 +1,4 @@
-use super::keys::{quote_key, rejoin, split_keys};
+use super::keys::{json_text, quote_key, rejoin, split_keys};
 use crate::config::config_file::diagnostic::Positions;
 use crate::config::schema;
 use crate::file::display_path;
@@ -116,7 +116,7 @@ impl ConfigExplain {
         if !file.exists() {
             bail!("config file not found: {}", display_path(&file));
         }
-        let body = std::fs::read_to_string(&file)?;
+        let body = super::read_target(&file)?;
         let doc = toml_edit::Document::parse(body.as_str())
             .map_err(|e| eyre::eyre!("{}: {e}", display_path(&file)))?;
         let mut keys = vec![];
@@ -135,7 +135,7 @@ impl ConfigExplain {
         }
 
         if self.json {
-            miseprintln!("{}", serde_json::to_string_pretty(&keys)?);
+            miseprintln!("{}", json_text(&keys)?);
             return Ok(());
         }
         miseprintln!("{}", display_path(&file));

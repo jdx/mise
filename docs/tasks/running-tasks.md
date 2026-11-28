@@ -173,7 +173,8 @@ forwards extra arguments according to the task's form:
 
 - If `run` is an array, the arguments go only to its last entry.
 - For an inline command, mise appends the arguments to the command, quoted for
-  the shell.
+  the shell. A `fish` shell gets fish's quoting; any other program on Unix gets
+  POSIX shell quoting.
 - A [shebang script](/tasks/toml-tasks.html#shell-shebang) or a file task
   receives them as script arguments, such as `$1` and `$@` in Bash.
 
@@ -596,7 +597,7 @@ mise run --at HEAD~1 bench > before.txt
 ```
 
 mise checks REV out into a detached
-[`git worktree`](https://git-scm.com/docs/git-worktree) under its temporary
+[`git worktree`](https://git-scm.com/docs/git-worktree) under its state
 directory, runs the tasks there with that revision's own config, tasks and
 tools, and removes the worktree afterwards, also when a task fails, the tasks
 time out (`--timeout`) or you press Ctrl-C. The run exits with the tasks'
@@ -605,8 +606,12 @@ status. Uncommitted changes in your checkout play no part: REV is a commit.
 - The tasks run in the same directory, relative to the repository root, as
   the one you ran mise from. The worktree directory has your checkout's name.
 - Submodules are initialized at REV, using your clones of them as a reference,
-  so only objects they lack are fetched. Git hooks do not run, neither your
-  checkout's nor any that REV keeps in the repository.
+  so only objects they lack are fetched. They are initialized only when the
+  directory you run from, or one above it in the repository, is trusted in
+  your checkout, or a config REV has there is, such as a `conf.d` folder,
+  since their URLs are REV's to choose. In paranoid mode they are not
+  initialized, not even for config trusted by `trusted_config_paths`. Git hooks do not run, neither your checkout's nor any
+  that REV keeps in the repository.
 - Ignored files are not there: a fresh worktree has no `target/`,
   `node_modules/` or `.env`. Pass `--at-setup CMD` to prepare them. It runs in
   the worktree's copy of the directory you ran mise from (not a task's `dir`)
@@ -624,8 +629,9 @@ status. Uncommitted changes in your checkout play no part: REV is a commit.
 - A `mise run --at` inside a `--at` run (where `MISE_RUN_AT_REV` is set) is
   refused.
 
-- Config is looked up from the worktree, so a `mise.toml` in a directory above
-  your checkout (other than the global config) does not apply.
+- Config is looked up from the worktree and no further up, so a `mise.toml` in
+  a directory above your checkout or above the worktree (other than the global
+  config) does not apply. The worktree's directory can be read only by you.
 
 - [Daemons](/daemons.html) that the tasks require keep running after the run,
   as they do after any `mise run`, but their project is gone with the worktree.

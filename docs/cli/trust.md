@@ -29,7 +29,9 @@ setting), which have trust of their own. Give a file's path to trust only
 that file.
 
 Trusting a config file in a repository's main checkout also trusts the same
-path in its git worktrees. Paranoid mode (<https://mise.jdx.dev/paranoid.html>)
+path in its git worktrees. `--worktrees` trusts it in every checkout of the
+repository instead, from any of them, which is how worktrees of a bare
+repository share trust. Paranoid mode (<https://mise.jdx.dev/paranoid.html>)
 turns off automatic and worktree trust and requires trust, tied to the
 file's contents, for every config outside the global and system config.
 See <https://mise.jdx.dev/security.html#configuration-trust>
@@ -46,6 +48,9 @@ See <https://mise.jdx.dev/security.html#configuration-trust>
 
   Does not trust or untrust any files.
 - **`--untrust`** — Remove explicit trust for this config
+- **`--worktrees`** — Trust this config in every checkout of its git repository
+
+  Covers the same path in the main checkout and in every linked worktree, including worktrees created later and worktrees of a bare repository. A config at another path in a worktree still needs its own trust. With `--untrust`, removes this grant. Not available in paranoid mode, which ties trust to each file's contents.
 - **`-h --help`** — Print help
 
 ## Examples
@@ -60,6 +65,12 @@ Trust a specific file
 
 ```
 mise trust ~/src/app/mise.toml
+```
+
+Trust the nearest config here in every worktree of this git repository
+
+```
+mise trust --worktrees
 ```
 
 List configs here and above with their trust status

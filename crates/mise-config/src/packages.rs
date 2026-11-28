@@ -13,12 +13,17 @@ use std::collections::BTreeMap;
 pub enum PackageTomlConfig {
     /// version pin in the manager's native format, or "latest"
     Version(String),
-    Options(PackageOptionsTomlConfig),
+    // Boxed: the options table is much larger than a bare version string.
+    Options(Box<PackageOptionsTomlConfig>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(extend("dependentRequired" = {"url": ["sha256", "artifact", "version"]}))]
+#[schemars(extend("dependentSchemas" = {"cask": {
+    "properties": {"version": {"const": "latest"}},
+    "not": {"anyOf": [{"required": ["url"]}, {"required": ["sha256"]}, {"required": ["artifact"]}]}
+}}))]
 pub struct PackageOptionsTomlConfig {
     /// version pin in the manager's native format, or "latest"
     #[serde(default = "latest_package_version")]
@@ -50,6 +55,10 @@ pub struct PackageOptionsTomlConfig {
     #[serde(default)]
     #[schemars(length(min = 1), regex(pattern = r".*\S.*"))]
     pub artifact: Option<String>,
+    /// macos-app only: official Homebrew cask whose current version, download, checksum and app to install, e.g. figma; the cask must install only app bundles. Cannot be combined with url, sha256, artifact, or a version pin
+    #[serde(default)]
+    #[schemars(length(min = 1), regex(pattern = r"^[a-z0-9_+@-][a-z0-9._+@-]*$"))]
+    pub cask: Option<String>,
     /// snap only: channel to install from and track, e.g. latest/stable or 22/edge
     #[serde(default)]
     #[schemars(regex(
@@ -149,6 +158,29 @@ impl PackageTomlConfig {
                     )
                 }),
             Self::Version(_) => None,
+        }
+    }
+
+    /// The `cask` a `macos-app` entry reads its download from, with the
+    /// entry's version, which `validate_app_cask` requires to be "latest".
+    pub fn app_cask(&self) -> Option<(&str, &str)> {
+        match self {
+            Self::Options(options) => options
+                .cask
+                .as_deref()
+                .map(|cask| (cask, options.version.as_str())),
+            Self::Version(_) => None,
+        }
+    }
+
+    /// Whether any of the inline download fields is set, including a `sha256`
+    /// or `artifact` without the `url` that [`Self::app_fields`] keys on.
+    pub fn has_app_download_fields(&self) -> bool {
+        match self {
+            Self::Options(options) => {
+                options.url.is_some() || options.sha256.is_some() || options.artifact.is_some()
+            }
+            Self::Version(_) => false,
         }
     }
 

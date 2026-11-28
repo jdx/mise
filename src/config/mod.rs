@@ -3820,7 +3820,7 @@ pub fn is_override_config(path: &Path) -> bool {
 /// config spelled where discovery found it is not, and neither is a real file
 /// the user linked into their global config (a dotfiles checkout): that file
 /// is global config because the user made it so.
-pub(crate) fn is_project_link_to_global_config(path: &Path) -> bool {
+pub fn is_project_link_to_global_config(path: &Path) -> bool {
     discovered_global_config(path)
         .is_some_and(|global| global != path && !path.canonicalize().is_ok_and(|real| real == path))
 }
@@ -4531,18 +4531,28 @@ fn resolve_global_write_path(opts: &ConfigPathOptions) -> Result<PathBuf> {
             }
             return Ok(path.clone());
         }
-        let path = configured_global_write_path(section)?.unwrap_or_else(global_config_path);
-        let key = section.setting_name().trim_start_matches("settings.");
-        if let Some(ignored) = settings::ignored_write_target(key) {
-            warn!(
-                "{key} in {} is ignored because it only applies from global config; writing to {}",
-                display_path(&ignored),
-                display_path(&path)
-            );
-        }
-        return Ok(path);
+        return global_section_write_path(section, global_config_path);
     }
     Ok(global_config_path())
+}
+
+/// The global file where a new `section` entry goes: the section's `write_targets`
+/// file when it is set, otherwise `default`. Warns when a non-global config set the
+/// target, since that file is ignored.
+pub fn global_section_write_path(
+    section: GlobalWriteSection,
+    default: impl FnOnce() -> PathBuf,
+) -> Result<PathBuf> {
+    let path = configured_global_write_path(section)?.unwrap_or_else(default);
+    let key = section.setting_name().trim_start_matches("settings.");
+    if let Some(ignored) = settings::ignored_write_target(key) {
+        warn!(
+            "{key} in {} is ignored because it only applies from global config; writing to {}",
+            display_path(&ignored),
+            display_path(&path)
+        );
+    }
+    Ok(path)
 }
 
 /// Whether `err` is the untrusted-config error for a config the user has just
@@ -7513,10 +7523,16 @@ async fn load_tasks_includes(
                     let mut tera = crate::tera::get_tera(Some(config_root.as_ref()));
                     let tera_ctx = task.tera_ctx(&config).await?;
                     // A broken template stays raw so `Task::dir` reports it for this task only.
-                    render_str(&mut tera, dir, &tera_ctx).unwrap_or_else(|err| {
-                        debug!("failed to render task_config dir {dir:?}: {err:#}");
-                        dir.clone()
-                    })
+                    match render_str(&mut tera, dir, &tera_ctx) {
+                        Ok(rendered) => {
+                            task.dir_rendered = true;
+                            rendered
+                        }
+                        Err(err) => {
+                            debug!("failed to render task_config dir {dir:?}: {err:#}");
+                            dir.clone()
+                        }
+                    }
                 } else {
                     dir.clone()
                 });
@@ -8389,6 +8405,9 @@ async fn load_task_sources_from_configs(
             );
             continue;
         }
+        if remote_source.is_some() && !is_global {
+            ensure_remote_task_source_pinned(include)?;
+        }
         let artifacts = if include.starts_with("git::") {
             vec![resolve_git_url_to_path(include).await?]
         } else if include.starts_with(OCI_INCLUDE_PREFIX) || include.starts_with(ZIP_INCLUDE_PREFIX)
@@ -8455,6 +8474,23 @@ fn trust_check_task_include(path: &Path, require_trust: bool) -> Result<()> {
     }
     if require_trust && !is_global_task_include_path(path) && task_include_requires_trust(path) {
         trust_check(path)?;
+    }
+    Ok(())
+}
+
+/// Paranoid mode binds a project config's trust to its content, so a remote task file or task
+/// include it names must be pinned the way a remote config include must be: the config's hash
+/// then covers what is fetched. A source that can move is refused before anything is fetched.
+/// Safe mode, where trust is not asked for, keeps its own rules.
+pub(crate) fn ensure_remote_task_source_pinned(source: &str) -> Result<()> {
+    if Settings::try_get().is_ok_and(|settings| settings.paranoid.config())
+        && !Settings::safe_mode()
+        && !remote_include::is_pinned(source)
+    {
+        bail!(
+            "paranoid mode binds trust to content, so a remote task source must be a git:: URL \
+             pinned to a commit sha or an oci:: reference pinned to a digest: {source}"
+        );
     }
     Ok(())
 }

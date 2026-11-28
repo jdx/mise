@@ -47,7 +47,8 @@ impl OutdatedInfo {
         let current = Self::current_version(config, &t, &tv)?;
         let oi = Self {
             source: tv.request.source().clone(),
-            name: tv.ba().short.to_string(),
+            // Only printed, so it leaves out the credentials of a URL.
+            name: crate::toolset::install_state::state_short(&tv.ba().short).into_owned(),
             current,
             requested: tv.request.version(),
             tool_request: tv.request.clone(),

@@ -1,7 +1,7 @@
 use eyre::{Result, eyre};
 use landlock::{
-    ABI, AccessFs, AccessNet, BitFlags, Compatible, PathBeneath, PathFd, Ruleset, RulesetAttr,
-    RulesetCreatedAttr, RulesetStatus, Scope,
+    ABI, AccessFs, AccessNet, BitFlags, Compatible, NetPort, PathBeneath, PathFd, Ruleset,
+    RulesetAttr, RulesetCreatedAttr, RulesetStatus, Scope,
 };
 
 use super::SandboxConfig;
@@ -140,15 +140,14 @@ fn required_access(handled_access: BitFlags<AccessFs>) -> BitFlags<AccessFs> {
 /// 6.7, and seccomp refuses network sockets on every kernel.
 fn create_ruleset(
     handled_access: BitFlags<AccessFs>,
-    scope_abstract_sockets: bool,
-    deny_tcp: bool,
+    config: &SandboxConfig,
 ) -> Result<landlock::RulesetCreated> {
     let required = required_access(handled_access);
     let mut ruleset = Ruleset::default()
         .set_compatibility(landlock::CompatLevel::HardRequirement)
         .handle_access(required)
         .map_err(|e| unsupported_error(required, e))?;
-    if scope_abstract_sockets {
+    if config.effective_deny_unix() {
         ruleset = ruleset
             .scope(Scope::AbstractUnixSocket)
             .map_err(|e| unsupported_error(required, e))?;
@@ -157,14 +156,47 @@ fn create_ruleset(
         .set_compatibility(landlock::CompatLevel::BestEffort)
         .handle_access(handled_access)
         .map_err(|e| eyre!("failed to create landlock ruleset: {e}"))?;
-    if deny_tcp {
+    if config.effective_deny_net() {
         ruleset = ruleset
             .handle_access(AccessNet::BindTcp | AccessNet::ConnectTcp)
             .map_err(|e| eyre!("failed to create landlock ruleset: {e}"))?;
     }
-    ruleset
+    if !config.allow_connect_port.is_empty() {
+        ruleset =
+            require_tcp_port_support(ruleset)?.set_compatibility(landlock::CompatLevel::BestEffort);
+    }
+    let ruleset = ruleset
         .create()
-        .map_err(|e| eyre!("failed to create landlock ruleset: {e}"))
+        .map_err(|e| eyre!("failed to create landlock ruleset: {e}"))?;
+    add_tcp_connect_rules(ruleset, config)
+}
+
+fn require_tcp_port_support(ruleset: Ruleset) -> Result<Ruleset> {
+    ruleset
+        .set_compatibility(landlock::CompatLevel::HardRequirement)
+        .handle_access(AccessNet::BindTcp | AccessNet::ConnectTcp)
+        .map_err(|err| {
+            eyre!(
+                "sandbox: --allow-connect-port requires Landlock ABI 4 (Linux 6.7 or later): {err}"
+            )
+        })
+}
+
+fn add_tcp_connect_rules(
+    mut ruleset: landlock::RulesetCreated,
+    config: &SandboxConfig,
+) -> Result<landlock::RulesetCreated> {
+    for port in &config.allow_connect_port {
+        ruleset = ruleset
+            .add_rule(
+                NetPort::new(port.get(), AccessNet::ConnectTcp)
+                    .set_compatibility(landlock::CompatLevel::HardRequirement),
+            )
+            .map_err(|err| {
+                eyre!("failed to add Landlock TCP connect rule for port {port}: {err}")
+            })?;
+    }
+    Ok(ruleset)
 }
 
 /// Explain why the kernel cannot enforce `required`, naming the right that a
@@ -202,11 +234,9 @@ fn unsupported_error(required: BitFlags<AccessFs>, err: impl std::fmt::Display) 
 pub(super) fn check_kernel_support(config: &SandboxConfig) -> Result<()> {
     let handled_access = handled_access(config);
     if !handled_access.is_empty() {
-        create_ruleset(
-            handled_access,
-            config.effective_deny_unix(),
-            config.effective_deny_net(),
-        )?;
+        create_ruleset(handled_access, config)?;
+    } else if !config.allow_connect_port.is_empty() {
+        create_network_domain(config)?;
     }
     Ok(())
 }
@@ -230,17 +260,13 @@ pub(super) fn apply_landlock(
 
     let handled_access = handled_access(config);
     if handled_access.is_empty() {
-        if config.effective_deny_net() {
-            return apply_network_domain();
+        if config.effective_deny_net() || !config.allow_connect_port.is_empty() {
+            return apply_network_domain(config);
         }
         return Ok(());
     }
 
-    let mut ruleset = create_ruleset(
-        handled_access,
-        config.effective_deny_unix(),
-        config.effective_deny_net(),
-    )?;
+    let mut ruleset = create_ruleset(handled_access, config)?;
 
     if deny_read && deny_write {
         // Both restricted: add read rules for system paths, full for /tmp and /dev
@@ -344,15 +370,14 @@ pub(super) fn apply_landlock(
 }
 
 /// Put a network-only sandbox in a Landlock domain that refuses TCP bind and
-/// connect and refuses nothing on the filesystem.
+/// connect (apart from allowed destination ports) and permits filesystem access.
 ///
-/// seccomp keeps the command from creating a network socket, but not from
-/// borrowing one: a process outside any domain lets a same-user process
+/// Seccomp restricts creation of network sockets. Landlock also keeps the
+/// command from borrowing one: a process outside any domain lets a same-user process
 /// ptrace it or open its `/proc/<pid>/mem`, and so create a socket in it and
 /// copy the descriptor out. A process in a domain can do neither to a process
-/// outside it. TCP is what seccomp already refuses, so the domain adds no
-/// restriction a command could notice besides that scope (and `mount`, which
-/// every domain refuses).
+/// outside it. When TCP is fully blocked, the domain also denies new binds
+/// and connects on any TCP socket the command receives.
 ///
 /// Every Landlock layer refuses a rename or hard link into another directory
 /// (`Refer`) unless one of its rules grants it, even a layer that handles no
@@ -360,23 +385,32 @@ pub(super) fn apply_landlock(
 /// another Landlock sandbox can still reparent what that sandbox allows.
 ///
 /// Landlock handles network access from Linux 6.7. On an older kernel the
-/// domain is not created and the command runs under seccomp alone.
-fn apply_network_domain() -> Result<()> {
-    let Ok(ruleset) = Ruleset::default()
-        .set_compatibility(landlock::CompatLevel::HardRequirement)
-        .handle_access(AccessNet::BindTcp | AccessNet::ConnectTcp)
-    else {
-        return Ok(());
+/// domain is not created for a full network block, which can run under
+/// seccomp alone. A TCP port allowlist requires Landlock enforcement.
+fn create_network_domain(config: &SandboxConfig) -> Result<Option<landlock::RulesetCreated>> {
+    let ruleset = match require_tcp_port_support(Ruleset::default()) {
+        Ok(ruleset) => ruleset,
+        Err(_) if config.allow_connect_port.is_empty() => return Ok(None),
+        Err(err) => return Err(err),
     };
     let refer: BitFlags<AccessFs> = AccessFs::Refer.into();
     let root = PathFd::new("/").map_err(|e| eyre!("failed to open / for landlock: {e}"))?;
-    let status = ruleset
+    let ruleset = ruleset
         .handle_access(refer)
         .and_then(|r| r.create())
         .and_then(|r| r.add_rule(PathBeneath::new(root, refer)))
-        .and_then(|r| r.restrict_self())
+        .map_err(|e| eyre!("failed to create landlock ruleset: {e}"))?;
+    add_tcp_connect_rules(ruleset, config).map(Some)
+}
+
+fn apply_network_domain(config: &SandboxConfig) -> Result<()> {
+    let Some(ruleset) = create_network_domain(config)? else {
+        return Ok(());
+    };
+    let status = ruleset
+        .restrict_self()
         .map_err(|e| eyre!("failed to apply landlock restrictions: {e}"))?;
-    if !status.no_new_privs {
+    if status.ruleset == RulesetStatus::NotEnforced || !status.no_new_privs {
         eyre::bail!("failed to apply landlock restrictions: {status:?}");
     }
     Ok(())

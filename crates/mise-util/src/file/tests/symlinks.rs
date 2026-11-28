@@ -611,6 +611,25 @@ fn test_copy_dir_all_preserve_symlinks_copies_empty_directory() {
 }
 
 #[test]
+#[cfg(target_os = "macos")]
+fn test_copy_dmg_volume_preserves_app_directory_xattrs() -> Result<()> {
+    let tmp = tempfile::tempdir()?;
+    let volume = tmp.path().join("volume");
+    let app = volume.join("Example.app");
+    let dest = tmp.path().join("extracted");
+    let attr = "com.apple.FinderInfo";
+    let value = "4150504C00000000000000000000000000000000000000000000000000000000";
+
+    create_dir_all(app.join("Contents"))?;
+    cmd!("/usr/bin/xattr", "-wx", attr, value, &app).run()?;
+    copy_dmg_volume(&volume, &dest)?;
+
+    // Parallels' preflight fails if the attribute is absent on the staged bundle.
+    cmd!("/usr/bin/xattr", "-d", attr, dest.join("Example.app")).run()?;
+    Ok(())
+}
+
+#[test]
 #[cfg(unix)]
 fn test_copy_dmg_volume_skips_unreadable_volume_metadata() {
     use std::os::unix::fs::PermissionsExt;

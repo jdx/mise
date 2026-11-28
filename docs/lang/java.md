@@ -76,16 +76,14 @@ This changes your global config. Add `--local` to enable it in the project's
 A version without a vendor in `.java-version`, such as `21`, uses
 `java.shorthand_vendor` like any other request.
 
-For `.sdkmanrc`, mise maps SDKMAN's vendor identifiers to mise names. For
-example, `21.0.9-tem` becomes `temurin-21.0.9`, and `21.0.9-amzn` becomes
-`corretto-21.0.9`. Because of Azul's version numbering, `11.0.12-zulu` maps to
-the major version only, `zulu-11`.
-
-mise cannot translate these SDKMAN identifiers: `bisheng` (Huawei BiSheng,
-formerly `bsg`), `graal` (Oracle GraalVM), `jbr` (JetBrains Runtime) and `nik`
-(Liberica NIK). Write the mise name in `mise.toml` instead, such as
-`java = "oracle-graalvm-21"`, `java = "jetbrains-21"` or
-`java = "liberica-nik-openjdk21"`. BiSheng is not available through mise.
+For `.sdkmanrc`, mise installs the same build SDKMAN names, including its build
+number and its JavaFX or CRaC variant. For example, `21.0.13.1-fx+5-librca`
+becomes `liberica-javafx-21.0.13.1+5`, `26.0.2.0+11.1-amzn` becomes
+`corretto-26.0.2.11.1`, and `8.0.512.0-fx+9-zulu` becomes the Zulu JavaFX build
+of Java 8.0.512, `zulu-javafx-8.98.0.111`. When mise has no build that matches
+the identifier exactly, installing it fails instead of picking a different
+build. Write the mise name in `mise.toml` in that case, such as
+`java = "temurin-21"`. BiSheng is not available through mise.
 
 ## Use a JDK installed elsewhere {#using-unsupported-versions}
 

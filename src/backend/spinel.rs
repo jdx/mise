@@ -89,7 +89,13 @@ impl Backend for SpinelBackend {
         timeout::run_with_timeout_async(
             async || {
                 // git ls-remote rather than the GitHub API: no token, no rate limit.
-                let output = crate::git::ls_remote(&["--tags", "--refs"], &remote, &[]).await?;
+                // Sorted by version, not text, so `v1.10.0` comes after `v1.9.0`.
+                let output = crate::git::ls_remote(
+                    &["--tags", "--refs", "--sort=version:refname"],
+                    &remote,
+                    &[],
+                )
+                .await?;
                 Ok(versions_from_ls_remote(&output, &prefix))
             },
             Settings::get().fetch_remote_versions_timeout(),

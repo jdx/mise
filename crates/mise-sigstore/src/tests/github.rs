@@ -100,6 +100,7 @@ async fn github_attestation_sources_succeeds_when_one_method_fails() {
                 "../../tests/fixtures/github_release_attestation_jdx_mise.json"
             )),
         ],
+        &[],
         None,
     )
     .await
@@ -190,6 +191,7 @@ async fn github_attestation_sources_fails_when_all_methods_fail() {
     let error = crate::github::verify_github_attestation_sources_for_artifact(
         Artifact::from(&digest),
         &[invalid_attestation()],
+        &[],
         None,
     )
     .await
@@ -202,6 +204,39 @@ async fn github_attestation_sources_fails_when_all_methods_fail() {
     )));
     assert!(messages.iter().any(|message| message
         == "cached GitHub attestation verification failed overall: no attestation verified"));
+}
+
+#[tokio::test]
+async fn github_attestation_sources_checks_no_more_than_an_api_answer_holds() {
+    // Whoever holds the list picks its length, and every entry checked costs
+    // a pass over the artifact, so entries past the limit are not looked at.
+    let capture = capture_logs();
+    let digest = fixture_digest();
+    let genuine = fixture_attestation(include_str!(
+        "../../tests/fixtures/github_release_attestation_jdx_mise.json"
+    ));
+    let verify = async |padding: usize| {
+        let mut attestations = vec![invalid_attestation(); padding];
+        attestations.push(genuine.clone());
+        crate::github::verify_github_attestation_sources_for_artifact(
+            Artifact::from(&digest),
+            &attestations,
+            &[],
+            None,
+        )
+        .await
+    };
+
+    let limit = crate::github::MAX_HELD_ATTESTATIONS;
+    assert_eq!(verify(limit - 1).await.unwrap(), ["jdx/mise"]);
+
+    let error = verify(10_000).await.unwrap_err();
+    assert!(matches!(error, AttestationError::Verification(_)));
+    let checked = captured_messages(&capture)
+        .iter()
+        .filter(|message| message.contains("invalid attestation JSON"))
+        .count();
+    assert_eq!(checked, limit - 1 + limit);
 }
 
 #[tokio::test]
@@ -218,6 +253,7 @@ async fn github_attestation_made_by_another_repository_is_rejected() {
             Artifact::from(&digest),
             &attestations,
             repository,
+            &[],
             None,
             &mut TrustRoots::default(),
         )
@@ -235,6 +271,78 @@ async fn github_attestation_made_by_another_repository_is_rejected() {
         ),
         "{error}"
     );
+}
+
+#[tokio::test]
+async fn github_attestation_made_for_another_tag_is_rejected() {
+    // Every release is attested under the same repository name, so a genuine
+    // v2026.9.12 attestation must not pass for another version's asset.
+    let digest = fixture_digest();
+    let attestations = [fixture_attestation(include_str!(
+        "../../tests/fixtures/github_release_attestation_jdx_mise.json"
+    ))];
+    let verify = async |repository, tags: &[&str]| {
+        let tags: Vec<String> = tags.iter().map(|tag| tag.to_string()).collect();
+        crate::bundle::verify_attestation_bundles_for_artifact(
+            Artifact::from(&digest),
+            &attestations,
+            repository,
+            &tags,
+            None,
+            &mut TrustRoots::default(),
+        )
+        .await
+    };
+
+    let old = ["2026.9.12", "v2026.9.12"];
+    let new = ["2026.11.6", "v2026.11.6"];
+
+    assert!(verify("jdx/mise", &[]).await.unwrap());
+    assert!(verify("jdx/mise", &old).await.unwrap());
+    let error = verify("jdx/mise", &new).await.unwrap_err();
+    assert!(
+        error.to_string().contains("made for tag v2026.9.12"),
+        "{error}"
+    );
+    // Nor is it left for the caller to accept as a renamed repository's.
+    let error = verify("erlang/rebar3", &new).await.unwrap_err();
+    assert!(
+        matches!(&error, AttestationError::Verification(_)),
+        "{error}"
+    );
+}
+
+#[tokio::test]
+async fn github_attestation_sources_leave_out_another_tag() {
+    let digest = fixture_digest();
+    let attestations = [fixture_attestation(include_str!(
+        "../../tests/fixtures/github_release_attestation_jdx_mise.json"
+    ))];
+    let sources = async |tag: &str| {
+        crate::github::verify_github_attestation_sources_for_artifact(
+            Artifact::from(&digest),
+            &attestations,
+            &[tag.to_string()],
+            None,
+        )
+        .await
+    };
+
+    assert_eq!(sources("v2026.9.12").await.unwrap(), ["jdx/mise"]);
+    let error = sources("v2026.11.6").await.unwrap_err();
+    assert!(
+        error.to_string().contains("made for tag v2026.9.12"),
+        "{error}"
+    );
+}
+
+#[test]
+fn build_provenance_names_the_tag_its_run_was_started_for() {
+    let bundle: Bundle = serde_json::from_str(include_str!(
+        "../../tests/fixtures/github_build_provenance_jdx_mise.json"
+    ))
+    .unwrap();
+    assert_eq!(bundle_source_tag(&bundle).as_deref(), Some("v2026.9.12"));
 }
 
 #[test]
@@ -306,19 +414,68 @@ async fn unreachable_tuf_repository_is_a_trust_root_error_not_a_signature_failur
             )),
         ],
         "jdx/mise",
+        &[],
         None,
         &mut TrustRoots::default(),
+    )
+    .await;
+    // With only the skipped bundle, nothing was checked: that is a trust root
+    // error, not a signature that failed, for both aggregators.
+    let unchecked = crate::bundle::verify_attestation_bundles_for_artifact(
+        Artifact::from(&digest),
+        &[public_good_attestation()],
+        "jdx/mise",
+        &[],
+        None,
+        &mut TrustRoots::default(),
+    )
+    .await;
+    let unchecked_sources = crate::github::verify_github_attestation_sources_for_artifact(
+        Artifact::from(&digest),
+        &[public_good_attestation()],
+        &[],
+        None,
     )
     .await;
     crate::set_tuf_url(None);
 
     assert!(verified.unwrap());
+    assert!(
+        matches!(unchecked, Err(AttestationError::TrustRoot(_))),
+        "{unchecked:?}"
+    );
+    assert!(
+        matches!(unchecked_sources, Err(AttestationError::TrustRoot(_))),
+        "{unchecked_sources:?}"
+    );
     let warnings: Vec<_> = captured_messages(&capture)
         .into_iter()
         .filter(|message| message.contains("were not checked because a TUF trust root"))
         .collect();
     assert_eq!(warnings.len(), 1, "{warnings:?}");
     assert!(warnings[0].starts_with("1 GitHub attestation(s) were not checked"));
+}
+
+#[test]
+fn only_unloadable_trust_roots_are_a_trust_root_error() {
+    let trust_root = || AttestationError::TrustRoot("tuf unreachable".to_string()).to_string();
+    assert!(matches!(
+        crate::github::no_attestation_verified(vec![trust_root(), trust_root()], 2),
+        AttestationError::TrustRoot(_)
+    ));
+    // one signature that was checked and failed makes it a rejection
+    assert!(matches!(
+        crate::github::no_attestation_verified(
+            vec![trust_root(), "signature mismatch".to_string()],
+            1
+        ),
+        AttestationError::Verification(ref msg) if msg.contains("signature mismatch")
+    ));
+    // nothing to check at all is not a trust root failure
+    assert!(matches!(
+        crate::github::no_attestation_verified(Vec::new(), 0),
+        AttestationError::Verification(ref msg) if msg == "No valid attestations found"
+    ));
 }
 
 #[test]

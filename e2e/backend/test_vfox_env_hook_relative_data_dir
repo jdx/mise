@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+
+# With a relative data directory, two projects install the same tool version
+# in different places. An environment hook gets the absolute install path, so
+# a result mise cached for one project must not be used in the other.
+
+PLUGIN_DIR="$PWD/vfox-env-hook-relative-data-dir"
+
+mkdir -p "$PLUGIN_DIR/hooks"
+
+cat >"$PLUGIN_DIR/metadata.lua" <<'LUA'
+PLUGIN = {}
+PLUGIN.name = "env-hook-relative-data-dir"
+PLUGIN.version = "0.1.0"
+PLUGIN.homepage = "https://example.com/env-hook-relative-data-dir"
+PLUGIN.license = "MIT"
+PLUGIN.description = "environment hook that reports its install path"
+LUA
+
+cat >"$PLUGIN_DIR/hooks/available.lua" <<'LUA'
+function PLUGIN:Available(ctx)
+	return {
+		{ version = "1.0.0" },
+	}
+end
+LUA
+
+cat >"$PLUGIN_DIR/hooks/pre_install.lua" <<'LUA'
+function PLUGIN:PreInstall(ctx)
+	return { version = ctx.version }
+end
+LUA
+
+cat >"$PLUGIN_DIR/hooks/env_keys.lua" <<'LUA'
+function PLUGIN:EnvKeys(ctx)
+	return {
+		{ key = "PROBE_HOME", value = ctx.path },
+	}
+end
+LUA
+
+git -C "$PLUGIN_DIR" init -q
+git -C "$PLUGIN_DIR" add .
+git -C "$PLUGIN_DIR" -c user.name=mise -c user.email=mise@example.com commit -qm "test(e2e): initialize plugin fixture"
+
+for project in project-a project-b; do
+  mkdir "$project"
+  cat >"$project/mise.toml" <<EOF
+[tools]
+"vfox:file://$PLUGIN_DIR" = "1.0.0"
+EOF
+  (cd "$project" && mise trust mise.toml && MISE_DATA_DIR=.mise mise install)
+done
+
+assert_contains "cd project-a && MISE_DATA_DIR=.mise mise env" "PROBE_HOME=$PWD/project-a/.mise/installs/"
+assert_contains "cd project-b && MISE_DATA_DIR=.mise mise env" "PROBE_HOME=$PWD/project-b/.mise/installs/"

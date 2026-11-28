@@ -94,6 +94,7 @@ export const values: Record<string, string> = {
   "tools.<npm:…>.pnpm_args": '"--ignore-scripts"',
   "tools.<npm:…>.bun_args": '"--ignore-scripts"',
   "tools.<npm:…>.npm_args": '"--ignore-scripts"',
+  "tools.<npm:…>.node": '"24"',
   "tools.<pypi:…>.with": '["requests", "rich"]',
   "tools.<pypi:…>.expose": '["flake8"]',
   "tools.<pypi:…>.dependency_prereleases": '"allow"',
@@ -379,6 +380,7 @@ export const values: Record<string, string> = {
     '["age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p"]',
   "history.exclude": '["~/.ssh/**", "!~/.ssh/config"]',
   "history.git_email": '"dotfiles@{hostname}"',
+  "history.git_name": '"{hostname}"',
   "history.machine": '"work-laptop"',
   "history.reload": '{ "~/.zshrc" = "exec zsh" }',
   "history.reload.<key>": '"tmux source-file ~/.tmux.conf"',
@@ -480,6 +482,7 @@ export const values: Record<string, string> = {
     "packages.<key>.sha256":
       '"3b7a5e1f0c7d4a8e9f2b6c1d0e5a4f8b7c3d2e1a0f9b8c7d6e5f4a3b2c1d0e9f"',
     "packages.<key>.artifact": '"Nuvio.app"',
+    "packages.<key>.cask": '"figma"',
     "packages.<key>.channel": '"latest/stable"',
     "packages.<key>.classic": "true",
     "packages.<key>.state": '"absent"',

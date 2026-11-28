@@ -162,6 +162,7 @@ pub fn apply_prune_plan(plan: &PrunePlan, dry_run: bool) -> Result<()> {
         }
         return Ok(());
     }
+    prefix::refuse_foreign_as_root()?;
     for candidate in &plan.remove {
         unlink_and_remove_keg(candidate)?;
     }

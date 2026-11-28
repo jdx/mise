@@ -133,13 +133,15 @@ pub(crate) static SETTINGS_LOCK: Mutex<()> = Mutex::new(());
 #[cfg(test)]
 pub(crate) fn reset_settings(overrides: Option<mise_settings::SettingsPartial>) {
     use confique::{Config, Layer};
-    let mut overrides = overrides.unwrap_or_else(mise_settings::SettingsPartial::empty);
-    overrides
-        .lockfile_mode
-        .get_or_insert_with(|| "merge".into());
+    let overrides = overrides.unwrap_or_else(mise_settings::SettingsPartial::empty);
+    // Below the environment, like the `settings.toml` defaults.
+    let mut fallback = mise_settings::SettingsPartial::empty();
+    fallback.lockfile_mode = Some("merge".into());
+    // Earlier sources win, so a test's own setting beats `MISE_*`.
     let builder = mise_settings::Settings::builder()
+        .preloaded(overrides)
         .env()
-        .preloaded(overrides);
+        .preloaded(fallback);
     mise_settings::store(std::sync::Arc::new(builder.load().unwrap()));
 }
 

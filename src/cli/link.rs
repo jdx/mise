@@ -53,9 +53,9 @@ impl Link {
             None => bail!("must provide a version for {}", self.tool.style()),
         };
         let config = Config::get().await?;
+        let backend = tvr.backend()?;
         let version_pathname = match tvr {
             ToolRequest::Version { version, .. } => {
-                let backend = tvr.backend()?;
                 let resolved_alias = config.resolve_alias(&backend, version).await?;
                 if version == "latest"
                     || resolved_alias != *version
@@ -107,6 +107,7 @@ impl Link {
                 file::create_dir_all(target.parent().unwrap())?;
                 make_symlink(&path, &target)?;
             }
+            backend.record_user_link(&target)?;
 
             if path.exists() {
                 install_state::clear_incomplete_marker(&self.tool.ba, &version_pathname)?;

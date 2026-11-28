@@ -41,6 +41,8 @@ pub struct SandboxConfig {
     /// names are visible to a sandboxed command either way.
     pub allow_list_dirs: Vec<PathBuf>,
     pub allow_net: Vec<String>,
+    /// Outbound TCP destination ports allowed on Linux, regardless of IP address.
+    pub allow_connect_port: Vec<std::num::NonZeroU16>,
     /// Unix sockets that stay reachable under `deny_unix`; implies it.
     pub allow_unix: Vec<PathBuf>,
     pub allow_env: Vec<String>,
@@ -326,6 +328,7 @@ impl SandboxConfig {
             || !self.allow_read.is_empty()
             || !self.allow_write.is_empty()
             || !self.allow_net.is_empty()
+            || !self.allow_connect_port.is_empty()
     }
 
     /// Resolve allow_* paths to absolute paths relative to cwd.
@@ -415,6 +418,30 @@ impl SandboxConfig {
 
     pub fn effective_deny_env(&self) -> bool {
         self.deny_env || !self.allow_env.is_empty()
+    }
+
+    pub fn validate_connect_ports(&self) -> eyre::Result<()> {
+        if !self.allow_connect_port.is_empty() {
+            if !cfg!(target_os = "linux") {
+                eyre::bail!("--allow-connect-port is only supported on Linux");
+            }
+            if self.deny_net || !self.allow_net.is_empty() {
+                eyre::bail!(
+                    "--allow-connect-port conflicts with other network restrictions (--deny-net, --deny-all, or --allow-net)"
+                );
+            }
+        }
+        Ok(())
+    }
+
+    #[cfg(target_os = "linux")]
+    pub(crate) fn needs_landlock(&self) -> bool {
+        self.effective_deny_read()
+            || self.effective_deny_write()
+            || self.effective_deny_unix()
+            || self.effective_deny_net()
+            || !self.allow_connect_port.is_empty()
+            || self.deny_process
     }
 
     /// Refuse per-host network exceptions, which no supported sandbox can enforce.
@@ -591,6 +618,8 @@ impl SandboxConfig {
             return Ok(None);
         }
 
+        self.validate_connect_ports()?;
+
         #[cfg(target_os = "linux")]
         {
             self.warn_missing_allow_paths();
@@ -618,18 +647,13 @@ impl SandboxConfig {
 
     #[cfg(target_os = "linux")]
     fn apply_linux(&self, program: &str) -> eyre::Result<()> {
-        if self.effective_deny_read()
-            || self.effective_deny_write()
-            || self.effective_deny_unix()
-            || self.effective_deny_net()
-            || self.deny_process
-        {
+        if self.needs_landlock() {
             landlock::apply_landlock(self, Some(std::path::Path::new(program)))?;
         }
         // the filter also refuses terminal input injection, which every sandbox needs
         if self.restricts_more_than_env() {
             self.reject_allow_net()?;
-            seccomp::apply_seccomp_filter(self.effective_deny_net(), self.deny_process)?;
+            seccomp_apply(self)?;
         }
         Ok(())
     }
@@ -713,8 +737,15 @@ pub fn landlock_apply(
 
 /// Apply the seccomp filter: terminal input injection always, network and processes as asked (Linux only).
 #[cfg(target_os = "linux")]
-pub fn seccomp_apply(deny_net: bool, deny_process: bool) -> eyre::Result<()> {
-    seccomp::apply_seccomp_filter(deny_net, deny_process)
+pub fn seccomp_apply(config: &SandboxConfig) -> eyre::Result<()> {
+    let network = if config.effective_deny_net() {
+        seccomp::NetworkPolicy::Blocked
+    } else if !config.allow_connect_port.is_empty() {
+        seccomp::NetworkPolicy::TcpOnly
+    } else {
+        seccomp::NetworkPolicy::Unrestricted
+    };
+    seccomp::apply_seccomp_filter(network, config.deny_process)
 }
 
 /// Generate a macOS Seatbelt profile string (macOS only).

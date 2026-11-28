@@ -19,6 +19,7 @@ use crate::config::project::{effective_requests, nearest_project_tool_requests, 
 use crate::env;
 use crate::file;
 use crate::runtime_symlinks::is_runtime_symlink;
+use crate::toolset::install_state::state_short;
 use crate::toolset::{ToolRequestSet, ToolSource, ToolVersion, Toolset};
 use crate::ui::table::MiseTable;
 
@@ -293,7 +294,7 @@ impl Ls {
         let mut plugins = JSONOutput::new();
         for (plugin_name, runtimes) in &runtimes
             .into_iter()
-            .chunk_by(|(_, p, _, _)| p.id().to_string())
+            .chunk_by(|(_, p, _, _)| state_short(p.id()).into_owned())
         {
             let mut r = vec![];
             for (ls, p, tv, source) in runtimes {
@@ -308,7 +309,8 @@ impl Ls {
                     .await,
                 );
             }
-            plugins.insert(plugin_name.clone(), r);
+            // Two spellings of one tool that differ only in credentials share a key.
+            plugins.entry(plugin_name).or_default().extend(r);
         }
         miseprintln!("{}", serde_json::to_string_pretty(&plugins)?);
         Ok(())
@@ -649,7 +651,7 @@ struct Row {
 
 impl Row {
     fn display_tool(&self) -> Cell {
-        Cell::new(&self.tool).fg(Color::Blue)
+        Cell::new(state_short(self.tool.id())).fg(Color::Blue)
     }
     fn display_version(&self) -> Cell {
         let annotate = |version: String| {
@@ -884,13 +886,9 @@ async fn resolve_version_status(
     active: bool,
 ) -> VersionStatus {
     let install_path = tv.install_path();
-    if install_path.is_symlink() && !is_runtime_symlink(&install_path) {
-        // `exists()` resolves the link, so this is asking whether it still leads anywhere.
-        if install_path.exists() {
-            VersionStatus::Symlink(tv.display_version().to_string(), active)
-        } else {
-            VersionStatus::BrokenSymlink(tv.display_version().to_string())
-        }
+    let symlink = install_path.is_symlink() && !is_runtime_symlink(&install_path);
+    if symlink && !install_path.exists() {
+        VersionStatus::BrokenSymlink(tv.display_version().to_string())
     } else if !p.is_version_installed(config, tv, true) {
         // A lazy declaration safe mode refuses, or with no command left to shim,
         // does not install on first use, so it is just missing.
@@ -899,6 +897,8 @@ async fn resolve_version_status(
         } else {
             VersionStatus::Missing(tv.display_version().to_string())
         }
+    } else if symlink {
+        VersionStatus::Symlink(tv.display_version().to_string(), active)
     } else {
         let category = env::install_path_category(&install_path);
         if category != env::InstallPathCategory::Local {

@@ -29,6 +29,7 @@ MiseToml(~/cwd/.test.mise.toml): ToolRequestSet: <empty> {
                 expand: false,
                 find_up: false,
                 prompt: None,
+                rendered: No,
             },
         ),
         Val(
@@ -42,6 +43,7 @@ MiseToml(~/cwd/.test.mise.toml): ToolRequestSet: <empty> {
                 expand: false,
                 find_up: false,
                 prompt: None,
+                rendered: No,
             },
         ),
         Val(
@@ -55,6 +57,7 @@ MiseToml(~/cwd/.test.mise.toml): ToolRequestSet: <empty> {
                 expand: false,
                 find_up: false,
                 prompt: None,
+                rendered: No,
             },
         ),
     ],

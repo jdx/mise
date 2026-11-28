@@ -565,7 +565,10 @@ impl Use {
             }
 
             if !remove.is_empty() {
-                let tools_to_remove = remove.iter().map(|r| r.to_string()).join(", ");
+                let tools_to_remove = remove
+                    .iter()
+                    .map(|r| crate::toolset::install_state::state_short(&r.short))
+                    .join(", ");
                 messages.push(format!("remove: {tools_to_remove}"));
             }
 
@@ -592,7 +595,10 @@ impl Use {
                 );
             }
             if !remove.is_empty() {
-                let tools_to_remove = remove.iter().map(|r| r.to_string()).join(", ");
+                let tools_to_remove = remove
+                    .iter()
+                    .map(|r| crate::toolset::install_state::state_short(&r.short))
+                    .join(", ");
                 miseprintln!(
                     "{} {} removed: {tools_to_remove}",
                     style("mise").green(),

@@ -4066,8 +4066,8 @@ mod tests {
                 .unwrap();
             #[cfg(unix)]
             {
-                let inherited_without_selector =
-                    PackageTomlConfig::Options(mise_config::packages::PackageOptionsTomlConfig {
+                let inherited_without_selector = PackageTomlConfig::Options(Box::new(
+                    mise_config::packages::PackageOptionsTomlConfig {
                         version: "1.0.0".to_string(),
                         os: vec![],
                         env: vec![],
@@ -4077,18 +4077,20 @@ mod tests {
                         url: None,
                         sha256: None,
                         artifact: None,
+                        cask: None,
                         channel: None,
                         classic: None,
                         names: Default::default(),
-                    });
+                    },
+                ));
                 cf.update_bootstrap_package_with_fallback(
                     "brew:tree",
                     "latest",
                     Some(&inherited_without_selector),
                 )
                 .unwrap();
-                let inherited_with_appdir =
-                    PackageTomlConfig::Options(mise_config::packages::PackageOptionsTomlConfig {
+                let inherited_with_appdir = PackageTomlConfig::Options(Box::new(
+                    mise_config::packages::PackageOptionsTomlConfig {
                         version: "1.0.0".to_string(),
                         os: vec![],
                         env: vec![],
@@ -4098,10 +4100,12 @@ mod tests {
                         url: None,
                         sha256: None,
                         artifact: None,
+                        cask: None,
                         channel: None,
                         classic: None,
                         names: Default::default(),
-                    });
+                    },
+                ));
                 cf.update_bootstrap_package_with_fallback(
                     "brew-cask:1password",
                     "latest",
