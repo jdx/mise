@@ -2097,6 +2097,53 @@ mod tests {
         assert!(ensure_edit_keeps_tool_request_count(&files, &below).is_err());
     }
 
+    /// A `.tool-versions` edit is counted as it will be saved, not as the file was read.
+    #[test]
+    fn a_tool_versions_edit_is_counted_as_it_will_be_saved() {
+        let dir = tempfile::tempdir().unwrap();
+        let parent_body = format!(
+            "[tools]\nnode = [{}]\n",
+            "\"1\",".repeat(MAX_TOOL_REQUESTS - 1)
+        );
+        let parent: Arc<dyn ConfigFile> =
+            Arc::new(MiseToml::from_str(&parent_body, &dir.path().join("parent.toml")).unwrap());
+        let path = dir.path().join(".tool-versions");
+        let read: Arc<dyn ConfigFile> =
+            Arc::new(ToolVersions::parse_str("ruby 3\n", path.clone()).unwrap());
+        let files: IndexMap<PathBuf, Arc<dyn ConfigFile>> = [&read, &parent]
+            .into_iter()
+            .map(|cf| (cf.get_path().to_path_buf(), cf.clone()))
+            .collect();
+        ensure_edit_keeps_tool_request_count(&files, &read).unwrap();
+
+        let python = BackendArg::from("python");
+        let request = |version: &str| {
+            ToolRequest::new(
+                Arc::new(python.clone()),
+                version,
+                ToolSource::ToolVersions(path.clone()),
+            )
+            .unwrap()
+        };
+        let edited: Arc<dyn ConfigFile> =
+            Arc::new(ToolVersions::parse_str("ruby 3\n", path.clone()).unwrap());
+        edited
+            .replace_versions(&python, vec![request("3")])
+            .unwrap();
+        let err = ensure_edit_keeps_tool_request_count(&files, &edited).unwrap_err();
+        assert!(err.to_string().contains("1001 tool versions"), "{err}");
+        // removing the tool again leaves the file as it was read
+        edited.remove_tool(&python).unwrap();
+        ensure_edit_keeps_tool_request_count(&files, &edited).unwrap();
+        assert!(
+            !edited
+                .to_tool_request_set()
+                .unwrap()
+                .tools
+                .contains_key(&python)
+        );
+    }
+
     /// Files from the highest priority down; a tool's list in a closer file replaces the lists
     /// below it, so only the lists that take effect count toward the bound.
     #[test]

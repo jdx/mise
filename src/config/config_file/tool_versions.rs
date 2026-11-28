@@ -175,17 +175,28 @@ impl ToolVersions {
     }
 
     fn populate_toolset(&self) -> eyre::Result<()> {
-        let source = ToolSource::ToolVersions(self.path.clone());
         let plugins = self.plugins.lock().unwrap();
         let count = plugins.values().map(|tvp| tvp.versions.len()).sum();
         ensure_tool_request_count(&self.path, count)?;
-        for (ba, tvp) in &*plugins {
+        *self.tools.lock().unwrap() = self.tool_requests(&plugins)?;
+        Ok(())
+    }
+
+    /// The requests `plugins` make, which an edit sets again so that
+    /// [`ConfigFile::to_tool_request_set`] lists the file as it will be saved.
+    fn tool_requests(
+        &self,
+        plugins: &IndexMap<BackendArg, ToolVersionPlugin>,
+    ) -> eyre::Result<ToolRequestSet> {
+        let source = ToolSource::ToolVersions(self.path.clone());
+        let mut tools = ToolRequestSet::new();
+        for (ba, tvp) in plugins {
             for version in &tvp.versions {
                 let tvr = ToolRequest::new(Arc::new(ba.clone()), version, source.clone())?;
-                self.tools.lock().unwrap().add_version(tvr, &source)
+                tools.add_version(tvr, &source)
             }
         }
-        Ok(())
+        Ok(tools)
     }
 }
 
@@ -233,6 +244,7 @@ impl ConfigFile for ToolVersions {
             Some(prev) => plugins[prev].post.push_str(&templates),
             None => self.pre.lock().unwrap().push_str(&templates),
         }
+        *self.tools.lock().unwrap() = self.tool_requests(&plugins)?;
         Ok(())
     }
 
@@ -297,6 +309,7 @@ impl ConfigFile for ToolVersions {
             plugin.versions.push(version);
         }
         plugin.raw = templated.then(|| words.join(" "));
+        *self.tools.lock().unwrap() = self.tool_requests(&plugins)?;
         Ok(())
     }
 
