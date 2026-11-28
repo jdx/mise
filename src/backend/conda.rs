@@ -217,7 +217,8 @@ impl CondaBackend {
         record
             .indexed_timestamp
             .or(record.timestamp)
-            .map(|t| t.jiff_timestamp())
+            // rattler hands back a jiff 0.2 timestamp; both versions span the same range.
+            .and_then(|t| jiff::Timestamp::from_nanosecond(t.jiff_timestamp().as_nanosecond()).ok())
             .filter(|t| t.as_second() > 0)
     }
 
@@ -1703,7 +1704,7 @@ mod tests {
     fn version_infos_use_earliest_timestamp() {
         use rattler_conda_types::utils::TimestampMs;
         let ms =
-            |s: &str| TimestampMs::from_timestamp_millis(s.parse::<jiff::Timestamp>().unwrap());
+            |s: &str| TimestampMs::from_timestamp_millis(s.parse::<jiff_0_2::Timestamp>().unwrap());
         let mut a = make_record("vim", "9.1.0", "a_0", "https://x.invalid/a.conda").package_record;
         a.timestamp = Some(ms("2024-03-02T00:00:00Z"));
         let mut b = make_record("vim", "9.1.0", "b_1", "https://x.invalid/b.conda").package_record;

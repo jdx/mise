@@ -110,7 +110,7 @@ jobs:
           if git diff --name-only "$DIFF_BASE_SHA" "$PR_HEAD_SHA" | grep -qE '^\.github/workflows/registry(-impl)?\.yml$'; then
             echo "modified=true" >> "$GITHUB_OUTPUT"
           fi
-      - uses: ./.github/actions/registry-diff
+      - uses: $/.github/actions/registry-diff
         id: registry-diff
         if: steps.workflow-check.outputs.modified != 'true'
         with:
@@ -200,7 +200,7 @@ jobs:
           persist-credentials: false
       - name: Fetch token from pool
         id: token
-        uses: ./.github/actions/fetch-token
+        uses: $/.github/actions/fetch-token
         with:
           api-secret: ${{ secrets.MISE_VERSIONS_API_SECRET }}
       - name: Set pooled token
@@ -217,7 +217,7 @@ jobs:
           path: target/debug
       - run: chmod +x target/debug/mise
       - run: echo target/debug >> "$GITHUB_PATH"
-      - uses: ./.github/actions/mise-tools
+      - uses: $/.github/actions/mise-tools
       # our own e2e image, the e2e tag moves on purpose
       # jactionlint ignore=unpinned-images
       - name: Pull e2e Docker image

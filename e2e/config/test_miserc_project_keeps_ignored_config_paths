@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+
+# ignored_config_paths is a hard block that overrides trusted_config_paths. A
+# project .miserc.toml loads without trust, so a checkout under an ignored path
+# must not be able to un-ignore itself by dropping the entry. The test harness
+# trusts every config here by path, so an un-ignored config loads and renders.
+unset MISE_IGNORED_CONFIG_PATHS
+echo "ignored_config_paths = [\"$PWD/vendor\"]" >"$MISE_CONFIG_DIR/miserc.toml"
+
+mkdir -p vendor/checkout/.config
+cat >vendor/checkout/mise.toml <<'TOML'
+[env]
+FROM_IGNORED = "{{ exec(command='echo rendered') }}"
+TOML
+cd vendor/checkout || exit 1
+assert_not_contains "mise env" "FROM_IGNORED"
+
+for file in .miserc.toml .miserc.local.toml .config/miserc.toml ../.miserc.toml; do
+  for ignored in '' '"/nonexistent"'; do
+    echo "ignored_config_paths = [$ignored]" >"$file"
+    assert_not_contains "mise env" "FROM_IGNORED"
+    assert_not_contains "CI=1 mise env" "FROM_IGNORED"
+  done
+  rm "$file"
+done
+echo '{% if os() %}ignored_config_paths = []{% endif %}' >.miserc.toml
+assert_not_contains "mise env" "FROM_IGNORED"
+
+# Nor can it drop an entry from a .miserc.toml in a parent directory.
+rm "$MISE_CONFIG_DIR/miserc.toml"
+assert_contains "mise env" "FROM_IGNORED=rendered"
+echo 'ignored_config_paths = ["vendor"]' >../../.miserc.toml
+echo 'ignored_config_paths = []' >.miserc.toml
+assert_not_contains "mise env" "FROM_IGNORED"
+rm ../../.miserc.toml .miserc.toml
+
+# A project file still adds its own entries to the inherited ones.
+mkdir -p ../other legacy
+echo 'env.FROM_OTHER = "1"' >../other/mise.toml
+echo 'env.FROM_LEGACY = "1"' >legacy/mise.toml
+echo 'env.FROM_CHECKOUT = "1"' >mise.toml
+echo "ignored_config_paths = [\"$PWD/../other\"]" >"$MISE_CONFIG_DIR/miserc.toml"
+echo 'ignored_config_paths = ["legacy"]' >.miserc.toml
+assert_contains "mise env" "FROM_CHECKOUT"
+assert_not_contains "mise -C legacy env" "FROM_LEGACY"
+assert_not_contains "mise -C ../other env" "FROM_OTHER"
+rm .miserc.toml
+
+# The user can still replace the list for themselves.
+echo 'ignored_config_paths = []' >"$MISE_CONFIG_DIR/miserc.local.toml"
+assert_contains "mise -C ../other env" "FROM_OTHER"
+rm "$MISE_CONFIG_DIR/miserc.local.toml"
+assert_contains "MISE_IGNORED_CONFIG_PATHS=/nonexistent mise -C ../other env" "FROM_OTHER"

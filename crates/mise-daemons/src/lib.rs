@@ -1322,13 +1322,12 @@ fn hierarchy_config_paths(dir: &Path) -> Result<Vec<PathBuf>> {
         }
         // Within one directory this helper lists the highest-precedence file
         // first, which is the opposite of the order wanted here. It also lists
-        // `.tool-versions`, which is not TOML and would fail to parse; only a
-        // TOML config can carry [daemons] anyway.
+        // `.tool-versions`. That one cannot carry [daemons], but the project is
+        // later loaded with it, so it is kept here for the trust check.
         paths.extend(
             host::config_paths_in_dir(&ancestor)
                 .into_iter()
                 .rev()
-                .filter(|path| path.extension().is_some_and(|ext| ext == "toml"))
                 .filter(|path| !host::config_path_is_ignored(path, false)),
         );
     }
@@ -1406,7 +1405,8 @@ fn import(
         );
     }
     let paths = hierarchy_config_paths(&dir)?;
-    if paths.is_empty() {
+    let is_toml = |path: &Path| path.extension().is_some_and(|ext| ext == "toml");
+    if !paths.iter().any(|path| is_toml(path)) {
         bail!(
             "[daemons.{local_name}].project expects a mise configuration in {}, which has none; add a mise.toml declaring [daemons.{remote_name}] there",
             dir.display()
@@ -1437,6 +1437,11 @@ fn import(
                 mise_util::file::display_path(path),
                 untrusted.display()
             );
+        }
+        // Only a TOML config can declare daemons; `.tool-versions` is checked
+        // above because the project is loaded with it, and is not TOML.
+        if !is_toml(path) {
+            continue;
         }
         let cf = host::parse_config_file(path)?;
         // Ask the same question `load` asks. `project_root` is the config root

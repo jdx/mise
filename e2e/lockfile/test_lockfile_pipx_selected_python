@@ -112,3 +112,49 @@ assert_contains "cat mise.lock" 'specifiers = ["3.12"]'
 mise lock pipx:yamllint
 assert_contains "cat mise.lock" 'specifiers = ["3.13"]'
 assert_contains "cat mise.lock" 'specifiers = ["3.12"]'
+
+echo "=== mise lock <tool> keeps the python another tool selects ==="
+unset MISE_LOCKFILE_MODE
+cat <<'EOF2' >mise.toml
+[tools]
+"pipx:yamllint" = { version = "1.38.0", python = "3.12" }
+"pipx:black" = { version = "25.9.0", python = "3.13" }
+EOF2
+rm -f mise.lock
+touch mise.lock
+mise lock
+assert_contains "cat mise.lock" 'specifiers = ["3.12"]'
+assert_contains "cat mise.lock" 'specifiers = ["3.13"]'
+yamllint_python=$(grep '^version = "3\.12\.' mise.lock)
+mise lock pipx:black
+# The other tool's Python keeps its exact entry, not just a 3.12 one.
+assert "grep '^version = \"3\.12\.' mise.lock" "$yamllint_python"
+assert_contains "cat mise.lock" 'specifiers = ["3.12"]'
+assert_contains "cat mise.lock" 'specifiers = ["3.13"]'
+mise lock --check
+
+echo "=== locked mode: mise lock adds a selected python ==="
+cat <<'EOF2' >mise.toml
+[tool_config]
+locked = true
+
+[tools]
+"pipx:yamllint" = { version = "1.38.0", python = "3.12" }
+EOF2
+rm -f mise.lock
+touch mise.lock
+assert_not_contains "mise lock 2>&1" "not in the lockfile"
+assert_contains "cat mise.lock" 'specifiers = ["3.12"]'
+mise lock --check
+
+echo "=== locked mode: changing the selected python locks the new one ==="
+cat <<'EOF2' >mise.toml
+[tool_config]
+locked = true
+
+[tools]
+"pipx:yamllint" = { version = "1.38.0", python = "3.13" }
+EOF2
+mise lock pipx:yamllint
+assert_contains "cat mise.lock" 'specifiers = ["3.13"]'
+mise lock --check
