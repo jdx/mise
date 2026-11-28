@@ -125,9 +125,7 @@ fn lex(code: &str) -> Result<Vec<Token<'_>>> {
     let mut code = code.trim();
     while !code.is_empty() {
         // Stop as soon as the tag is too long to parse, without storing the rest of its tokens
-        if tokens.len() > MAX_TAG_TOKENS {
-            bail!("template expression has more than {MAX_TAG_TOKENS} tokens");
-        }
+        check_token_budget(&tokens)?;
         if code.starts_with(" ") {
             let end = code
                 .char_indices()
@@ -179,6 +177,8 @@ fn lex(code: &str) -> Result<Vec<Token<'_>>> {
                 code = &code[first_end..];
 
                 while let Some(end) = dotted_identifier_end(code) {
+                    // A chain such as `.A.B.C...` adds tokens without returning to the outer loop
+                    check_token_budget(&tokens)?;
                     tokens.push(Token::Dot);
                     tokens.push(Token::Ident(&code[1..end]));
                     code = &code[end..];
@@ -205,7 +205,15 @@ fn lex(code: &str) -> Result<Vec<Token<'_>>> {
             }
         }
     }
+    check_token_budget(&tokens)?;
     Ok(tokens)
+}
+
+fn check_token_budget(tokens: &[Token]) -> Result<()> {
+    if tokens.len() > MAX_TAG_TOKENS {
+        bail!("template expression has more than {MAX_TAG_TOKENS} tokens");
+    }
+    Ok(())
 }
 
 fn dotted_identifier_end(code: &str) -> Option<usize> {
