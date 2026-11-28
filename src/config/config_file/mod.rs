@@ -673,9 +673,16 @@ pub fn config_trust_root(path: &Path) -> PathBuf {
 /// A config reached through a symlink inside its project is judged by that project alone:
 /// trust in what the link leads to, another project or a file approved by content, is not trust
 /// in the project that holds the link.
+///
+/// A nested root of an ignored project is ignored with it, as config discovery leaves it out
+/// ([`project_is_ignored`]), so the trust its own directory has, from a trusted monorepo root
+/// above it or from CI, does not count. `trusted_config_paths` still does.
 pub fn is_path_trusted(path: &Path) -> bool {
     if let Some(project) = config_root::linked_project(path) {
         return is_trusted(&project);
+    }
+    if project_is_ignored(path) && !is_trusted_via_config_paths(path) {
+        return false;
     }
     is_trusted(&config_trust_root(path)) || is_trusted(path)
 }
@@ -825,7 +832,7 @@ fn implicit_trust_may_record(path: &Path, config_root: &Path) -> bool {
 /// Whether `path` sits in a config root nested in a project (a conf.d folder, `.config/mise`)
 /// whose project is ignored. Ignoring a project ignores those roots too, including one that
 /// arrives after the ignore.
-pub(crate) fn project_is_ignored(path: &Path) -> bool {
+pub fn project_is_ignored(path: &Path) -> bool {
     config_root::nested_root_project(path).is_some_and(|project| is_ignored(&project))
 }
 
@@ -1206,7 +1213,7 @@ pub fn add_ignored(path: PathBuf) -> Result<()> {
     IS_IGNORED.lock().unwrap().insert(path);
     Ok(())
 }
-pub(crate) fn rm_ignored(path: PathBuf) -> Result<()> {
+pub fn rm_ignored(path: PathBuf) -> Result<()> {
     // A path that is gone, such as a nested root `mise untrust` found by its record, still has
     // its records removed: they hold it as it was resolved.
     let path = record_identity(&path);
@@ -2999,6 +3006,32 @@ mod hashed_path_filename_tests {
         ));
 
         rm_ignored(sub).unwrap();
+        untrust(&mono).unwrap();
+    }
+
+    /// A nested root of an ignored project, also one that arrives after the ignore, is not
+    /// trusted through its own directory, which a trusted monorepo root above it (or, here, the
+    /// test run) would trust.
+    #[test]
+    fn a_nested_root_of_an_ignored_project_is_not_trusted() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mono = tmp.path().canonicalize().unwrap().join("mono");
+        let sub = mono.join("apps/sub");
+        let late = sub.join(".mise/conf.d/late");
+        std::fs::create_dir_all(&late).unwrap();
+        std::fs::write(mono.join("mise.toml"), "monorepo_root = true\n").unwrap();
+        std::fs::write(sub.join("mise.toml"), "").unwrap();
+        trust(&mono).unwrap();
+        file::write(with_appended_extension(&trust_path(&mono), "monorepo"), "").unwrap();
+        add_ignored(sub.clone()).unwrap();
+        let config = late.join("mise.toml");
+        std::fs::write(&config, "").unwrap();
+
+        assert!(is_trusted(&config_trust_root(&config)));
+        assert!(!is_path_trusted(&config));
+
+        rm_ignored(sub).unwrap();
+        assert!(is_path_trusted(&config));
         untrust(&mono).unwrap();
     }
 

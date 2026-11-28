@@ -1834,6 +1834,33 @@ fn test_has_own_config_filename_counts_every_environment() -> Result<()> {
     Ok(())
 }
 
+/// The answer for a named file does not depend on the directory mise runs in: the search starts
+/// beside the file, so a file below the working directory is matched against its own project.
+#[test]
+fn test_has_own_config_filename_ignores_the_working_directory() -> Result<()> {
+    let tmp = TempDir::new()?;
+    let app = tmp.path().canonicalize()?.join("app");
+    let files = [
+        ".mise/config.staging.toml",
+        ".config/mise/config.dev.toml",
+        "mise/conf.d/web/mise.qa.toml",
+        "mise.toml",
+    ];
+    for file in files {
+        let path = app.join(file);
+        fs::create_dir_all(path.parent().unwrap())?;
+        fs::write(&path, "")?;
+    }
+    fs::write(app.join("env.staging.toml"), "")?;
+    // The test runs in the crate's directory, which is neither `app` nor above it.
+    assert!(!app.starts_with(env::current_dir()?));
+    for file in files {
+        assert!(has_own_config_filename(&app.join(file)), "{file} is config");
+    }
+    assert!(!has_own_config_filename(&app.join("env.staging.toml")));
+    Ok(())
+}
+
 /// Override filenames come from a project `.miserc.toml` that loads without
 /// trust, and are looked up in every ancestor directory: they are names, not
 /// patterns.

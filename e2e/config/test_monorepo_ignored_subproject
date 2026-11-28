@@ -37,3 +37,15 @@ assert_succeed "test ! -e sub-env-ran"
 assert_contains "mise -C apps/sub trust --show" "untrusted"
 assert_not_contains "mise -C apps/sub env 2>&1" "FROM_SUB"
 assert_succeed "test ! -e sub-env-ran"
+
+# An ignored ancestor config that links to a subproject's config does not hide that
+# subproject's tasks: the walk checks the ignore before it counts the target as seen.
+mkdir -p apps/live
+cat <<'EOF2' >apps/live/mise.toml
+[tasks.serve]
+run = "echo serve"
+EOF2
+ln -s live/mise.toml apps/mise.toml
+assert "mise trust --ignore apps/mise.toml"
+assert_contains "mise tasks ls --all 2>&1" "//apps/live:serve"
+assert_contains "mise run //apps/live:serve" "serve"
