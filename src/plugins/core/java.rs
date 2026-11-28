@@ -540,6 +540,9 @@ impl Backend for JavaPlugin {
 
     fn list_installed_versions_matching(&self, query: &str) -> Vec<String> {
         let versions = self.list_installed_versions();
+        if let Some(query) = SdkmanQuery::parse(query) {
+            return sdkman_installed_match(versions, &query, self.ba().installs_path());
+        }
         // Java doesn't support the `prerelease` opt-in; always filter.
         self.fuzzy_match_filter(versions, query, true)
     }
@@ -836,13 +839,6 @@ fn sdkman_java_version(id: &str) -> String {
         "zulu" => zulu_java_version(&parts, build),
         _ => with_build(core),
     };
-    // A Liberica NIK release names the JDK it bundles (`openjdk25`) before its own version.
-    // SDKMAN leaves that out, and `25.0.4.r25` gives only its major.
-    if vendor == "liberica-nik"
-        && let Some(nik) = version.split_once(".r").map(|(nik, _)| nik)
-    {
-        return format!("{prefix}-{nik}");
-    }
     format!("{prefix}-{version}")
 }
 
@@ -910,7 +906,8 @@ enum SdkmanQueryKind {
     /// never have a `0` second component (`8.98.0.111`).
     ZuluJavaVersion,
     /// A Liberica NIK build without the JDK it bundles, such as `liberica-nik-25.0.5.1+1` for
-    /// `liberica-nik-openjdk25-25.0.5.1+1`, or without a build number.
+    /// `liberica-nik-openjdk25-25.0.5.1+1`, or without a build number. SDKMAN can give the
+    /// bundled JDK major instead, as `.r25` in `liberica-nik-25.0.4.r25`.
     NikVersion,
     /// A JetBrains Runtime build whose build number lost its dot, such as
     /// `jetbrains-21.0.11-b1163125` for `jetbrains-21.0.11-b1163.125`.
@@ -922,11 +919,7 @@ enum SdkmanQueryKind {
 
 impl<'a> SdkmanQuery<'a> {
     fn parse(query: &'a str) -> Option<Self> {
-        let at = query
-            .match_indices('-')
-            .find(|(i, _)| query[i + 1..].starts_with(|c: char| c.is_ascii_digit()))?
-            .0;
-        let (prefix, version) = (&query[..at], &query[at + 1..]);
+        let (prefix, version) = split_vendor_prefix(query)?;
         let kind = if prefix == "zulu" || prefix.starts_with("zulu-") {
             let parts = version.split('.').collect::<Vec<_>>();
             if parts.len() < 3 || parts[1] != "0" {
@@ -961,6 +954,68 @@ fn semeru_release(version: &str) -> Option<&str> {
         .filter(|release| release.split('.').count() == 3)
 }
 
+impl SdkmanQuery<'_> {
+    /// Whether the build `prefix-version` is the one this query names. `java_version` gives
+    /// the build's Java version, which only a Zulu query reads.
+    fn matches(
+        &self,
+        prefix: &str,
+        version: &str,
+        java_version: impl FnOnce() -> Option<String>,
+    ) -> bool {
+        match self.kind {
+            SdkmanQueryKind::ZuluJavaVersion => {
+                prefix == self.prefix && java_version().as_deref() == Some(self.version)
+            }
+            SdkmanQueryKind::NikVersion => {
+                let (wanted, wanted_jdk) = nik_query_version(self.version);
+                prefix.rsplit_once("-openjdk").is_some_and(|(nik, jdk)| {
+                    nik == self.prefix
+                        && jdk.chars().all(|c| c.is_ascii_digit())
+                        && wanted_jdk.is_none_or(|wanted_jdk| jdk == wanted_jdk)
+                }) && (version == wanted
+                    || (!wanted.contains('+') && version.starts_with(&format!("{wanted}+"))))
+            }
+            SdkmanQueryKind::JetbrainsBuild => {
+                prefix == self.prefix
+                    && version.rsplit_once("-b").is_some_and(|(v, b)| {
+                        format!("{v}-b{}", b.replace('.', "")) == self.version
+                    })
+            }
+            SdkmanQueryKind::SemeruRelease => {
+                prefix == self.prefix
+                    && (version == self.version
+                        || semeru_release(self.version)
+                            .is_some_and(|release| version.starts_with(&format!("{release}+"))))
+            }
+        }
+    }
+}
+
+/// The Liberica NIK version a query names, and the major of the JDK it bundles when SDKMAN
+/// gave one: `25.0.4.r25` is `("25.0.4", Some("25"))`.
+fn nik_query_version(version: &str) -> (String, Option<&str>) {
+    let (core, build) = match version.split_once('+') {
+        Some((core, build)) => (core, Some(build)),
+        None => (version, None),
+    };
+    let Some((nik, jdk)) = core
+        .rsplit_once(".r")
+        .filter(|(_, jdk)| !jdk.is_empty() && jdk.chars().all(|c| c.is_ascii_digit()))
+    else {
+        return (version.to_string(), None);
+    };
+    let nik = match nik.split('.').collect::<Vec<_>>()[..] {
+        [major, minor, patch, "0"] => format!("{major}.{minor}.{patch}"),
+        _ => nik.to_string(),
+    };
+    let nik = match build {
+        Some(build) => format!("{nik}+{build}"),
+        None => nik,
+    };
+    (nik, Some(jdk))
+}
+
 /// The catalog versions `query` names on `platform`.
 fn sdkman_catalog_match(
     metadata: &HashMap<String, JavaMetadata>,
@@ -971,37 +1026,57 @@ fn sdkman_catalog_match(
         .values()
         .filter(|m| {
             let key = m.to_version_string(platform);
-            let Some(prefix) = key.strip_suffix(&format!("-{}", m.version)) else {
-                return false;
-            };
-            match query.kind {
-                SdkmanQueryKind::ZuluJavaVersion => {
-                    prefix == query.prefix && m.java_version == query.version
-                }
-                SdkmanQueryKind::NikVersion => {
-                    let jdk = m.java_version.split('.').next().unwrap_or_default();
-                    prefix.strip_suffix(&format!("-openjdk{jdk}")) == Some(query.prefix)
-                        && (m.version == query.version
-                            || (!query.version.contains('+')
-                                && m.version.starts_with(&format!("{}+", query.version))))
-                }
-                SdkmanQueryKind::JetbrainsBuild => {
-                    prefix == query.prefix
-                        && m.version.rsplit_once("-b").is_some_and(|(v, b)| {
-                            format!("{v}-b{}", b.replace('.', "")) == query.version
-                        })
-                }
-                SdkmanQueryKind::SemeruRelease => {
-                    prefix == query.prefix
-                        && (m.version == query.version
-                            || semeru_release(query.version).is_some_and(|release| {
-                                m.version.starts_with(&format!("{release}+"))
-                            }))
-                }
-            }
+            key.strip_suffix(&format!("-{}", m.version))
+                .is_some_and(|prefix| {
+                    query.matches(prefix, &m.version, || Some(m.java_version.clone()))
+                })
         })
         .map(|m| m.to_version_string(platform))
         .collect()
+}
+
+/// The installed versions `query` names, so a build installed from `.sdkmanrc` is found
+/// again without the catalog. A Zulu build's Java version comes from its `release` file.
+fn sdkman_installed_match(
+    installed: Vec<String>,
+    query: &SdkmanQuery,
+    installs_path: &Path,
+) -> Vec<String> {
+    installed
+        .into_iter()
+        .filter(|installed| {
+            let Some((prefix, version)) = split_vendor_prefix(installed) else {
+                return false;
+            };
+            query.matches(prefix, version, || {
+                release_java_version(&installs_path.join(installed))
+            })
+        })
+        .collect()
+}
+
+/// `zulu-javafx-8.98.0.111` as `("zulu-javafx", "8.98.0.111")`: the vendor and features end
+/// at the first `-` followed by a digit.
+fn split_vendor_prefix(version: &str) -> Option<(&str, &str)> {
+    let at = version
+        .match_indices('-')
+        .find(|(i, _)| version[i + 1..].starts_with(|c: char| c.is_ascii_digit()))?
+        .0;
+    Some((&version[..at], &version[at + 1..]))
+}
+
+/// The `JAVA_VERSION` of the JDK in `install_path`, as the catalog writes it: `8.0.514` for
+/// Java 8's `1.8.0_514`.
+fn release_java_version(install_path: &Path) -> Option<String> {
+    let release = fs::read_to_string(install_path.join("release")).ok()?;
+    let version = release
+        .lines()
+        .find_map(|line| line.trim().strip_prefix("JAVA_VERSION="))?
+        .trim_matches('"');
+    Some(match version.strip_prefix("1.") {
+        Some(legacy) => legacy.replacen('_', ".", 1),
+        None => version.to_string(),
+    })
 }
 
 /// Every metadata entry under its full version string, plus a shorthand entry like
@@ -1511,7 +1586,8 @@ mod tests {
             ("21.0.13.1-crac+6-librca", "liberica-crac-21.0.13.1+6"),
             ("8.0.514.0-fx+5-librca", "liberica-javafx-8u514+5"),
             ("24.0.1.0-fx+1-nik", "liberica-nik-javafx-24.0.1+1"),
-            ("25.0.4.r25-nik", "liberica-nik-25.0.4"),
+            ("25.0.4.r25-nik", "liberica-nik-25.0.4.r25"),
+            ("22.3.5.r17-nik", "liberica-nik-22.3.5.r17"),
             ("26.0.2.0+11.1-amzn", "corretto-26.0.2.11.1"),
             ("8.514.1.1-amzn", "corretto-8.514.01.1"),
             ("8.0.512.0+8.1-amzn", "corretto-8.512.08.1"),
@@ -1535,6 +1611,51 @@ mod tests {
         ] {
             assert_eq!(parse(&format!("java={id}\n")).await, [version], "{id}");
         }
+    }
+
+    #[test]
+    fn sdkman_queries_match_installed_builds() {
+        let dir = tempfile::tempdir().unwrap();
+        let installed = [
+            ("zulu-javafx-8.98.0.111", Some("1.8.0_512")),
+            ("zulu-21.54.109.0", Some("21.0.13.0.3")),
+            ("liberica-nik-openjdk25-25.0.5.1+1", None),
+            ("jetbrains-21.0.11-b1163.125", None),
+            ("semeru-openj9-22.0.1+8_openj9-0.45.0", None),
+        ];
+        for (version, java_version) in installed {
+            let path = dir.path().join(version);
+            fs::create_dir_all(&path).unwrap();
+            if let Some(java_version) = java_version {
+                fs::write(
+                    path.join("release"),
+                    format!(
+                        "IMPLEMENTOR=\"Azul Systems, Inc.\"\nJAVA_VERSION=\"{java_version}\"\n"
+                    ),
+                )
+                .unwrap();
+            }
+        }
+        let find = |query: &str| {
+            let query = SdkmanQuery::parse(query).unwrap();
+            let versions = installed.iter().map(|(v, _)| v.to_string()).collect();
+            sdkman_installed_match(versions, &query, dir.path())
+        };
+        assert_eq!(find("zulu-javafx-8.0.512"), ["zulu-javafx-8.98.0.111"]);
+        assert!(find("zulu-8.0.512").is_empty());
+        assert_eq!(find("zulu-21.0.13.0.3"), ["zulu-21.54.109.0"]);
+        assert_eq!(
+            find("liberica-nik-25.0.5.1+1"),
+            ["liberica-nik-openjdk25-25.0.5.1+1"]
+        );
+        assert_eq!(
+            find("jetbrains-21.0.11-b1163125"),
+            ["jetbrains-21.0.11-b1163.125"]
+        );
+        assert_eq!(
+            find("semeru-openj9-22.0.1.0"),
+            ["semeru-openj9-22.0.1+8_openj9-0.45.0"]
+        );
     }
 
     fn catalog_entry(
@@ -1564,6 +1685,9 @@ mod tests {
             catalog_entry("zulu", "8.98.0.201", "8.0.514", &["javafx"]),
             catalog_entry("liberica-nik", "25.0.5.1+1", "25.0.5.1+5", &["javafx"]),
             catalog_entry("liberica-nik", "25.0.4+1", "25.0.4+10", &[]),
+            catalog_entry("liberica-nik", "25.0.4.1+1", "25.0.4+10", &[]),
+            catalog_entry("liberica-nik", "22.3.5+1", "17.0.13+12", &[]),
+            catalog_entry("liberica-nik", "22.3.5+2", "21.0.5+11", &[]),
             catalog_entry("jetbrains", "21.0.11-b1163.125", "21.0.11-b1163.125", &[]),
             catalog_entry("jetbrains", "21.0.11-b1163.12", "21.0.11-b1163.12", &[]),
             JavaMetadata {
@@ -1596,6 +1720,16 @@ mod tests {
             find("liberica-nik-25.0.4"),
             ["liberica-nik-openjdk25-25.0.4+1"]
         );
+        // `.r17` picks the release that bundles JDK 17, never a longer NIK version
+        assert_eq!(
+            find("liberica-nik-25.0.4.r25"),
+            ["liberica-nik-openjdk25-25.0.4+1"]
+        );
+        assert_eq!(
+            find("liberica-nik-22.3.5.r17"),
+            ["liberica-nik-openjdk17-22.3.5+1"]
+        );
+        assert!(find("liberica-nik-22.3.5.r11").is_empty());
         assert_eq!(
             find("jetbrains-21.0.11-b1163125"),
             ["jetbrains-21.0.11-b1163.125"]
