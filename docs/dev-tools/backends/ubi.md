@@ -57,6 +57,11 @@ works.
    `--force` replaces only the versions your config selects. Other versions
    ubi installed in that directory stay there; delete them with
    `mise prune <tool>`, which keeps the versions a config still uses.
+   Prune can't tell which backend installed a version, so a version that
+   another project selects stays as ubi installed it: run
+   `mise install --force <tool>` in each project that uses the tool, after
+   removing its `ubi:` lock entries. `mise prune --dry-run <tool>` lists what
+   prune would delete.
 
 4. If you use a lockfile, run `mise lock` to write entries for the new tool.
    The old installation of a `ubi:owner/repo` tool stays in mise's data
