@@ -336,10 +336,12 @@ impl CondaBackend {
             // If `dest` now holds what was just downloaded from `url`, treat this as
             // success. With no sha256 pin, that is checked against the download, since
             // the winner may have fetched a same-named archive from another channel.
-            let won =
-                Self::cached_archive_matches(dest, checksum)? || Self::same_archive(&temp, dest)?;
+            // Remove the download before returning any error from the comparison,
+            // so a failed install does not leave a copy of the archive behind.
+            let won = Self::cached_archive_matches(dest, checksum)
+                .and_then(|matches| Ok(matches || Self::same_archive(&temp, dest)?));
             let _ = file::remove_all(&temp);
-            if won {
+            if won? {
                 return Ok(());
             }
 
